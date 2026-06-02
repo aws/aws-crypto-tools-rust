@@ -1,0 +1,23 @@
+name: Library Rust Tests
+
+on:
+  workflow_call:
+
+jobs:
+  testRust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Support longpaths on Git checkout
+        run: |
+          git config --global core.longpaths true
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
