@@ -1,1 +1,7 @@
 **/target
+# agent reports are useful but only for the dev, not really something we want to check in
+.agent-reports/
+
+# Duvet
+.duvet/reports/**
+.duvet/requirements/**

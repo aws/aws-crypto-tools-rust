@@ -1,8 +1,8 @@
-- [ ] 3. Cargo Check — PASS/FAIL: ___
-- [ ] 4. Cargo Test — PASS/FAIL: ___
-- [ ] 5. Cargo Clippy — PASS/FAIL: ___
-- [ ] 6. Duvet Query — gaps: ___
-- [ ] 7. Make Duvet — regressions: ___
-- [ ] 8. Git Add — files staged: ___
-- [ ] 9. Git Commit — hash: ___
-- [ ] 10. Verify Commit — confirmed: ___
+- [x] 3. Cargo Check — PASS/FAIL: PASS
+- [x] 4. Cargo Test — PASS/FAIL: PASS (9 passed)
+- [x] 5. Cargo Clippy — PASS/FAIL: PASS (0 warnings)
+- [x] 6. Duvet Query — gaps: Not-implemented=0; 24 intentional type=todo (behavioral MUSTs, tracked); implemented scope fully covered
+- [x] 7. Make Duvet — regressions: none (no Makefile -> ran `duvet report`; first baseline, nothing to regress)
+- [x] 8. Git Add — files staged: scoped (5 src/test + .duvet/config+snapshot + 6 compliance TOMLs + .agent-reports/mpl-client)
+- [x] 9. Git Commit — hash: 57a8179
+- [x] 10. Verify Commit — confirmed: `57a8179 feat(mpl): add commitment-policy enums with duvet coverage`
