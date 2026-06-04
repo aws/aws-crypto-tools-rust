@@ -8,4 +8,3 @@ authors = ["AWS-CryptoTools"]
 readme = "README.md"
 
 [dependencies]
-tokio = {version = "1.49.0", features = ["full"] }
