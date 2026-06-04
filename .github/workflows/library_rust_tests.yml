@@ -1,10 +1,19 @@
+# Reusable workflow that builds and tests a single project (subdirectory) in
+# the monorepo. Callers pass the project directory name via the `project`
+# input (e.g. "mpl"). All cargo commands run scoped to that subdirectory.
 name: Library Rust Tests
 
 on:
   workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to build and test (e.g. mpl, esdk)."
+        required: true
+        type: string
 
 jobs:
   testRust:
+    name: ${{ inputs.project }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -13,11 +22,36 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.project }}
     steps:
       - name: Support longpaths on Git checkout
-        run: |
-          git config --global core.longpaths true
+        run: git config --global core.longpaths true
+        working-directory: .
+
       - uses: actions/checkout@v6
         with:
           submodules: 'true'
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.project }}
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose
