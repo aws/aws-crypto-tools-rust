@@ -37,6 +37,9 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
+      # dorny/paths-filter calls the GitHub "list PR files" API on
+      # pull_request events, which requires pull-requests: read.
+      pull-requests: read
     outputs:
       projects: ${{ steps.set.outputs.projects }}
     steps:
