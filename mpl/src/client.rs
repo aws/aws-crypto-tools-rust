@@ -3,7 +3,10 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
-pub struct MaterialProvidersConfig {}
+pub struct MaterialProvidersConfig {
+    /// The commitment policy for this client.
+    pub commitment_policy: CommitmentPolicy,
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
@@ -38,6 +41,12 @@ pub struct MaterialProvidersBuilder {
 }
 
 impl MaterialProvidersBuilder {
+    #[must_use]
+    pub fn commitment_policy(mut self, policy: CommitmentPolicy) -> Self {
+        self.config.commitment_policy = policy;
+        self
+    }
+
     #[must_use]
     pub fn config(mut self, config: MaterialProvidersConfig) -> Self {
         self.config = config;

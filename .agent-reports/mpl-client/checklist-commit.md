@@ -1,0 +1,8 @@
+- [ ] 3. Cargo Check — PASS/FAIL: ___
+- [ ] 4. Cargo Test — PASS/FAIL: ___
+- [ ] 5. Cargo Clippy — PASS/FAIL: ___
+- [ ] 6. Duvet Query — gaps: ___
+- [ ] 7. Make Duvet — regressions: ___
+- [ ] 8. Git Add — files staged: ___
+- [ ] 9. Git Commit — hash: ___
+- [ ] 10. Verify Commit — confirmed: ___

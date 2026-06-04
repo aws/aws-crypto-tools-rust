@@ -1,0 +1,35 @@
+target = "spec/framework/commitment-policy.md#supported-commitment-policy-enum"
+
+# Supported Commitment Policy ENUM
+#
+# The Material Providers Library also MUST provide
+# a union ENUM for all distinct commitment policy ENUMs
+# called the Commitment Policy ENUM.
+# In this specification this union Commitment Policy ENUM
+# will be denoted as `Format.FormatENUM`
+# to uniquely identify an Commitment Policy ENUM across all supported formats.
+# For example `ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT`
+# is the Commitment Policy ENUM for the ESDK Commitment Policy ENUM `FORBID_ENCRYPT_ALLOW_DECRYPT`.
+# This means that different formats MAY have duplicate Format Commitment Policy ENUM.
+# 
+# | Algorithm Suite ENUM                 |
+# | ------------------------------------ |
+# | ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT    |
+# | ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT   |
+# | ESDK.REQUIRE_ENCRYPT_REQUIRE_DECRYPT |
+# | DBE.REQUIRE_ENCRYPT_REQUIRE_DECRYPT  |
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Material Providers Library also MUST provide
+a union ENUM for all distinct commitment policy ENUMs
+called the Commitment Policy ENUM.
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+This means that different formats MAY have duplicate Format Commitment Policy ENUM.
+'''
+

@@ -1,0 +1,28 @@
+target = "spec/framework/commitment-policy.md#esdk-forbid-encrypt-allow-decrypt"
+
+# ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT
+#
+# When the commitment policy `ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT` is configured:
+# 
+# - `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` MUST be the default algorithm suite
+# - [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of False
+# - [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST support all algorithm suites
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` MUST be the default algorithm suite
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of False
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST support all algorithm suites
+'''
+
