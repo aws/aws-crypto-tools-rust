@@ -4,4 +4,3 @@
 mod client;
 
 pub use client::*;
-pub use commitment_policy::{CommitmentPolicy, DbeCommitmentPolicy, EsdkCommitmentPolicy};

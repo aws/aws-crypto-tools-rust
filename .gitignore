@@ -3,5 +3,6 @@
 .agent-reports/
 
 # Duvet
+.duvet/snapshot.txt
 .duvet/reports/**
 .duvet/requirements/**
