@@ -20,6 +20,19 @@ reported the issue. Please try to include as much information as you can. Detail
 * Anything unusual about your environment or deployment
 
 
+## Development setup
+
+After cloning, enable the shared git hooks once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This installs a `pre-commit` hook that runs `rustfmt` on staged Rust files
+so your commits never carry formatting drift. CI enforces
+`cargo fmt --all -- --check`, so the hook prevents avoidable CI failures.
+See [`.githooks/README.md`](./.githooks/README.md) for details.
+
 ## Contributing via Pull Requests
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 
