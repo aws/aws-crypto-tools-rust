@@ -88,6 +88,96 @@ fn test_branch_key_32_bytes_by_construction() {
 }
 
 #[test]
+fn test_branch_key_version_getter() {
+    let version = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    let mat = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        version.to_string(),
+        EncryptionContext::new(),
+    )
+    .unwrap();
+    assert_eq!(mat.branch_key_version(), version);
+}
+
+#[test]
+fn test_branch_key_encryption_context_getter() {
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"key".to_vec(), b"value".to_vec());
+    let mat = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string(),
+        ec,
+    )
+    .unwrap();
+    assert_eq!(mat.encryption_context().len(), 1);
+}
+
+#[test]
+fn test_uuid_rejects_non_version_4_specifically() {
+    //= ../spec/framework/structures.md#branch-key-version
+    //= type=test
+    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
+    let result = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        // Version 3 UUID — position 14 is '3' not '4'
+        "550e8400-e29b-31d4-a716-446655440000".to_string(),
+        EncryptionContext::new(),
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("not a valid UUIDv4"),
+        "Version 3 UUID must be rejected"
+    );
+}
+
+#[test]
+fn test_uuid_rejects_wrong_hyphen_positions() {
+    //= ../spec/framework/structures.md#branch-key-version
+    //= type=test
+    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
+    let result = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        // 36 chars but hyphen at position 9 instead of 8
+        "550e84000-e29b41d4-a716-446655440000".to_string(),
+        EncryptionContext::new(),
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("not a valid UUIDv4"),
+        "UUID with wrong hyphen positions must be rejected"
+    );
+}
+
+#[test]
+fn test_uuid_rejects_non_hex_digit_in_body() {
+    //= ../spec/framework/structures.md#branch-key-version
+    //= type=test
+    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
+    let result = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        // Valid structure (hyphens, version '4', variant 'a') but 'X' at position 35
+        "550e8400-e29b-41d4-a716-44665544000X".to_string(),
+        EncryptionContext::new(),
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("not a valid UUIDv4"),
+        "UUID with non-hex character must be rejected"
+    );
+}
+
+#[test]
 fn test_debug_redacts_branch_key() {
     let mat = BranchKeyMaterials::new(
         [0xFF; 32],

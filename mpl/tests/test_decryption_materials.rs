@@ -173,3 +173,87 @@ fn test_symmetric_signing_key_debug_redacted_dec() {
     assert!(!debug_output.contains("sym-secret-key"));
     assert!(debug_output.contains("REDACTED"));
 }
+
+#[test]
+fn test_field_getters_return_constructed_values() {
+    let suite = AlgorithmSuite::new(true, true);
+    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
+    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let pdk = PlaintextDataKey::new(b"secret".to_vec());
+    let vk = VerificationKey::new(b"verify".to_vec());
+    let ssk = SymmetricSigningKey::new(b"sym".to_vec());
+
+    let mat = DecryptionMaterials::new(
+        suite,
+        ec.clone(),
+        reck.clone(),
+        Some(pdk),
+        Some(vk),
+        Some(ssk),
+    )
+    .unwrap();
+
+    //= ../spec/framework/structures.md#fields
+    //= type=test
+    //# This structure MUST include the following fields:
+    assert_eq!(*mat.algorithm_suite(), suite);
+    assert_eq!(*mat.encryption_context(), ec);
+    assert_eq!(*mat.required_encryption_context_keys(), reck);
+
+    //= ../spec/framework/structures.md#fields
+    //= type=test
+    //# This structure MAY include any of the following fields:
+    assert_eq!(mat.verification_key().unwrap().as_bytes(), b"verify");
+    assert_eq!(mat.symmetric_signing_key().unwrap().as_bytes(), b"sym");
+}
+
+#[test]
+fn test_field_getters_return_none_for_omitted_optional_fields() {
+    let suite = AlgorithmSuite::new(false, false);
+    let ec = EncryptionContext::new();
+    let reck = BTreeSet::new();
+
+    let mat = DecryptionMaterials::new(suite, ec, reck, None, None, None).unwrap();
+
+    assert!(mat.plaintext_data_key().is_none());
+    assert!(mat.verification_key().is_none());
+    assert!(mat.symmetric_signing_key().is_none());
+}
+
+#[test]
+fn test_debug_format_includes_all_fields() {
+    let suite = AlgorithmSuite::new(true, true);
+    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
+    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let pdk = PlaintextDataKey::new(b"secret".to_vec());
+    let vk = VerificationKey::new(b"verify".to_vec());
+    let ssk = SymmetricSigningKey::new(b"sym".to_vec());
+
+    let mat = DecryptionMaterials::new(suite, ec, reck, Some(pdk), Some(vk), Some(ssk)).unwrap();
+    let debug = format!("{:?}", mat);
+
+    assert!(debug.contains("DecryptionMaterials"));
+    assert!(debug.contains("algorithm_suite"));
+    assert!(debug.contains("encryption_context"));
+    assert!(debug.contains("required_encryption_context_keys"));
+    assert!(debug.contains("plaintext_data_key"));
+    assert!(debug.contains("verification_key"));
+    assert!(debug.contains("symmetric_signing_key"));
+}
+
+#[test]
+fn test_validate_aws_crypto_public_key_should_include_with_verification() {
+    let suite = AlgorithmSuite::new(true, false);
+    // EC does NOT contain aws-crypto-public-key, but verification key IS present
+    let ec = make_ec_with_keys(&[b"other-key"]);
+    let reck = BTreeSet::new();
+    let vk = VerificationKey::new(b"verify".to_vec());
+
+    //= ../spec/framework/structures.md#encryption-context-2
+    //= type=test
+    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
+    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
+    let mat = DecryptionMaterials::new(suite, ec, reck, None, Some(vk), None).unwrap();
+    let err = mat.validate_aws_crypto_public_key().unwrap_err();
+    assert!(err.to_string().contains("SHOULD include"));
+}

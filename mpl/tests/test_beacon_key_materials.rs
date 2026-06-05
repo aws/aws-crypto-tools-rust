@@ -51,3 +51,33 @@ fn test_debug_redacts_secret_material() {
     assert!(!debug_output.contains("secret-hmac"));
     assert!(debug_output.contains("REDACTED"));
 }
+
+#[test]
+fn test_beacon_key_getter_none_path() {
+    let mat = BeaconKeyMaterials::new(
+        "beacon-none".to_string(),
+        EncryptionContext::new(),
+        None,
+        None,
+    );
+    assert!(mat.beacon_key().is_none());
+}
+
+#[test]
+fn test_beacon_key_getter_some_path() {
+    let mat = BeaconKeyMaterials::new(
+        "beacon-some".to_string(),
+        EncryptionContext::new(),
+        Some(b"test-key-data".to_vec()),
+        None,
+    );
+    assert_eq!(mat.beacon_key().unwrap(), b"test-key-data");
+}
+
+#[test]
+fn test_beacon_encryption_context_getter() {
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"k".to_vec(), b"v".to_vec());
+    let mat = BeaconKeyMaterials::new("id".to_string(), ec, None, None);
+    assert_eq!(mat.encryption_context().len(), 1);
+}

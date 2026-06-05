@@ -247,3 +247,88 @@ fn test_symmetric_signing_key_debug_redacted() {
     assert!(!debug_output.contains("symmetric-secret"));
     assert!(debug_output.contains("REDACTED"));
 }
+
+#[test]
+fn test_field_getters_return_constructed_values() {
+    let suite = AlgorithmSuite::new(true, true);
+    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
+    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
+    let sk = SigningKey::new(b"sign-bytes".to_vec());
+    let ssk = vec![SymmetricSigningKey::new(b"sym-bytes".to_vec())];
+    let edk = make_edk();
+
+    let mat = EncryptionMaterials::new(
+        suite,
+        vec![edk],
+        ec.clone(),
+        reck.clone(),
+        Some(pdk),
+        Some(sk),
+        Some(ssk),
+    )
+    .unwrap();
+
+    assert_eq!(*mat.algorithm_suite(), suite);
+    assert_eq!(mat.encrypted_data_keys().len(), 1);
+    assert_eq!(*mat.encryption_context(), ec);
+    assert_eq!(*mat.required_encryption_context_keys(), reck);
+    assert_eq!(mat.signing_key().unwrap().as_bytes(), b"sign-bytes");
+    assert_eq!(mat.symmetric_signing_keys().unwrap().len(), 1);
+}
+
+#[test]
+fn test_field_getters_return_none_for_omitted_optional_fields() {
+    let suite = AlgorithmSuite::new(false, false);
+    let ec = EncryptionContext::new();
+    let reck = BTreeSet::new();
+
+    let mat = EncryptionMaterials::new(suite, vec![], ec, reck, None, None, None).unwrap();
+
+    assert!(mat.plaintext_data_key().is_none());
+    assert!(mat.signing_key().is_none());
+    assert!(mat.symmetric_signing_keys().is_none());
+}
+
+#[test]
+fn test_debug_format_includes_all_fields() {
+    let suite = AlgorithmSuite::new(true, true);
+    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
+    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
+    let sk = SigningKey::new(b"sign-bytes".to_vec());
+    let ssk = vec![SymmetricSigningKey::new(b"sym-bytes".to_vec())];
+    let edk = make_edk();
+
+    let mat = EncryptionMaterials::new(suite, vec![edk], ec, reck, Some(pdk), Some(sk), Some(ssk))
+        .unwrap();
+
+    let s = format!("{:?}", mat);
+    assert!(s.contains("EncryptionMaterials"));
+    assert!(s.contains("algorithm_suite"));
+    assert!(s.contains("encrypted_data_keys"));
+    assert!(s.contains("encryption_context"));
+    assert!(s.contains("required_encryption_context_keys"));
+    assert!(s.contains("plaintext_data_key"));
+    assert!(s.contains("signing_key"));
+    assert!(s.contains("symmetric_signing_keys"));
+}
+
+#[test]
+fn test_validate_aws_crypto_public_key_should_include_with_signing() {
+    let suite = AlgorithmSuite::new(true, false);
+    let ec = make_ec_with_keys(&[b"other-key"]);
+    let reck = BTreeSet::new();
+    let pdk = PlaintextDataKey::new(b"key".to_vec());
+    let sk = SigningKey::new(b"sign".to_vec());
+    let edk = make_edk();
+
+    //= ../spec/framework/structures.md#encryption-context-1
+    //= type=test
+    //# If an [encryption material](#encryption-materials) contains a [signing key](#signing-key),
+    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
+    let mat =
+        EncryptionMaterials::new(suite, vec![edk], ec, reck, Some(pdk), Some(sk), None).unwrap();
+    let err = mat.validate_aws_crypto_public_key().unwrap_err();
+    assert!(err.to_string().contains("SHOULD include"));
+}
