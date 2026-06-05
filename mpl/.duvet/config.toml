@@ -8,7 +8,7 @@ pattern = "tests/**/*.rs"
 type = "test"
 
 [[specification]]
-source = "../spec/framework/commitment-policy.md"
+source = "../spec/framework/structures.md"
 format = "markdown"
 
 [[requirement]]
