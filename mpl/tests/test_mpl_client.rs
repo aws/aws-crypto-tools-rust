@@ -14,7 +14,9 @@ fn test_mpl_default_uses_default_config() {
 
 #[test]
 fn test_mpl_builder() {
-    let mpl = MaterialProviders::builder().build().expect("build should succeed");
+    let mpl = MaterialProviders::builder()
+        .build()
+        .expect("build should succeed");
     assert_eq!(mpl.config(), &MaterialProvidersConfig::default());
 }
 

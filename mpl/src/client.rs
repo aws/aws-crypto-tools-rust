@@ -47,6 +47,8 @@ impl MaterialProvidersBuilder {
     }
 
     pub fn build(self) -> Result<MaterialProviders, Error> {
-        Ok(MaterialProviders { config: self.config })
+        Ok(MaterialProviders {
+            config: self.config,
+        })
     }
 }
