@@ -27,9 +27,6 @@ fn test_valid_uuid_v4_accepted() {
     ];
 
     for uuid in valid_uuids {
-        //= ../spec/framework/structures.md#branch-key-version
-        //= type=test
-        //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
         let result = BranchKeyMaterials::new(
             branch_key,
             "id".to_string(),
@@ -116,9 +113,6 @@ fn test_branch_key_encryption_context_getter() {
 
 #[test]
 fn test_uuid_rejects_non_version_4_specifically() {
-    //= ../spec/framework/structures.md#branch-key-version
-    //= type=test
-    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
     let result = BranchKeyMaterials::new(
         [0x00; 32],
         "id".to_string(),
@@ -137,9 +131,6 @@ fn test_uuid_rejects_non_version_4_specifically() {
 
 #[test]
 fn test_uuid_rejects_wrong_hyphen_positions() {
-    //= ../spec/framework/structures.md#branch-key-version
-    //= type=test
-    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
     let result = BranchKeyMaterials::new(
         [0x00; 32],
         "id".to_string(),
@@ -158,9 +149,6 @@ fn test_uuid_rejects_wrong_hyphen_positions() {
 
 #[test]
 fn test_uuid_rejects_non_hex_digit_in_body() {
-    //= ../spec/framework/structures.md#branch-key-version
-    //= type=test
-    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
     let result = BranchKeyMaterials::new(
         [0x00; 32],
         "id".to_string(),

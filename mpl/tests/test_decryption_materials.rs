@@ -193,16 +193,10 @@ fn test_field_getters_return_constructed_values() {
     )
     .unwrap();
 
-    //= ../spec/framework/structures.md#fields
-    //= type=test
-    //# This structure MUST include the following fields:
     assert_eq!(*mat.algorithm_suite(), suite);
     assert_eq!(*mat.encryption_context(), ec);
     assert_eq!(*mat.required_encryption_context_keys(), reck);
 
-    //= ../spec/framework/structures.md#fields
-    //= type=test
-    //# This structure MAY include any of the following fields:
     assert_eq!(mat.verification_key().unwrap().as_bytes(), b"verify");
     assert_eq!(mat.symmetric_signing_key().unwrap().as_bytes(), b"sym");
 }
@@ -249,10 +243,6 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
     let reck = BTreeSet::new();
     let vk = VerificationKey::new(b"verify".to_vec());
 
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=test
-    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
     let mat = DecryptionMaterials::new(suite, ec, reck, None, Some(vk), None).unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
     assert!(err.to_string().contains("SHOULD include"));

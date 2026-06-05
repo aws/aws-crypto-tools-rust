@@ -323,10 +323,6 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let sk = SigningKey::new(b"sign".to_vec());
     let edk = make_edk();
 
-    //= ../spec/framework/structures.md#encryption-context-1
-    //= type=test
-    //# If an [encryption material](#encryption-materials) contains a [signing key](#signing-key),
-    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
     let mat =
         EncryptionMaterials::new(suite, vec![edk], ec, reck, Some(pdk), Some(sk), None).unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
