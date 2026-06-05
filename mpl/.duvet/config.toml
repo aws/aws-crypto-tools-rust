@@ -1,0 +1,21 @@
+'$schema' = "https://awslabs.github.io/duvet/config/v0.4.0.json"
+
+[[source]]
+pattern = "src/**/*.rs"
+
+[[source]]
+pattern = "tests/**/*.rs"
+type = "test"
+
+[[specification]]
+source = "../spec/framework/commitment-policy.md"
+format = "markdown"
+
+[[requirement]]
+pattern = "compliance/**/*.toml"
+
+[report.html]
+enabled = true
+
+[report.snapshot]
+enabled = true
