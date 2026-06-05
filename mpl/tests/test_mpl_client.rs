@@ -14,18 +14,13 @@ fn test_mpl_default_uses_default_config() {
 
 #[test]
 fn test_mpl_builder() {
-    let mpl = MaterialProviders::builder()
-        .build()
-        .expect("build should succeed");
+    let mpl = MaterialProviders::builder().build();
     assert_eq!(mpl.config(), &MaterialProvidersConfig::default());
 }
 
 #[test]
 fn test_mpl_builder_with_config() {
     let config = MaterialProvidersConfig::default();
-    let mpl = MaterialProviders::builder()
-        .config(config)
-        .build()
-        .expect("build should succeed");
+    let mpl = MaterialProviders::builder().config(config).build();
     assert_eq!(mpl.config(), &config);
 }

@@ -1,8 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::error::Error;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub struct MaterialProvidersConfig {}
@@ -46,9 +44,11 @@ impl MaterialProvidersBuilder {
         self
     }
 
-    pub fn build(self) -> Result<MaterialProviders, Error> {
-        Ok(MaterialProviders {
+    /// Build the `MaterialProviders` client.
+    #[must_use]
+    pub fn build(self) -> MaterialProviders {
+        MaterialProviders {
             config: self.config,
-        })
+        }
     }
 }
