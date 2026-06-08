@@ -9,7 +9,12 @@ type = "test"
 
 [[specification]]
 source = "../spec/framework/structures.md"
-format = "markdown"
+
+[[specification]]
+source = "../spec/framework/algorithm-suites.md"
+
+[[specification]]
+source = "../spec/framework/commitment-policy.md"
 
 [[requirement]]
 pattern = "compliance/**/*.toml"
