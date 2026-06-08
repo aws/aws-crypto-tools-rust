@@ -27,7 +27,9 @@ pub mod encryption_materials;
 pub mod error;
 
 pub use algorithm_suite::{
-    AlgorithmSuite, PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey,
+    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm,
+    EncryptionAlgorithmMode, Format, KeyDerivationAlgorithm, PlaintextDataKey, SigningKey,
+    SymmetricSignatureAlgorithm, SymmetricSigningKey, VerificationKey,
 };
 pub use beacon_key_materials::BeaconKeyMaterials;
 pub use branch_key_materials::BranchKeyMaterials;

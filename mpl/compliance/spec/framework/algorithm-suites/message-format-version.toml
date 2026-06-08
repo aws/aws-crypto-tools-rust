@@ -1,0 +1,14 @@
+target = "../spec/framework/algorithm-suites.md#message-format-version"
+
+# Message Format Version
+#
+# Indicates the serialization or message format version for the supported algorithm suite.
+# This value can be duplicated across [supported formats](#supported-formats).
+# This MUST be used to branch any serialization/deserialization logic in [supported formats](#supported-formats).
+
+[[spec]]
+level = "MUST"
+quote = '''
+This MUST be used to branch any serialization/deserialization logic in [supported formats](#supported-formats).
+'''
+

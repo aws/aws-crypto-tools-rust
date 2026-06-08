@@ -1,0 +1,19 @@
+target = "../spec/framework/algorithm-suites.md#supported-algorithm-suite-data"
+
+# Supported Algorithm Suite Data
+#
+# - Algorithm Suite 05 78 MUST store the commit key in the suite data
+# - Algorithm Suite 04 78 MUST store the commit key in the suite data
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Algorithm Suite 05 78 MUST store the commit key in the suite data
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Algorithm Suite 04 78 MUST store the commit key in the suite data
+'''
+

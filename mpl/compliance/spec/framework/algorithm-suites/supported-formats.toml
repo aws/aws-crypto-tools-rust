@@ -1,0 +1,19 @@
+target = "../spec/framework/algorithm-suites.md#supported-formats"
+
+# Supported Formats
+#
+# The following table inclues the cryptographic formats supported by the Material Providers Library.
+# Both short and long name MUST be unique.
+# 
+# | Cryptographic Format (long)                  | Cryptographic Format (short) |
+# | -------------------------------------------- | ---------------------------- |
+# | AWS Encryption SDK Message Format            | ESDK                         |
+# | S3 Encryption Client Cryptographic Format    | S3EC                         |
+# | AWS Database Encryption Cryptographic Format | DBE                          |
+
+[[spec]]
+level = "MUST"
+quote = '''
+Both short and long name MUST be unique.
+'''
+

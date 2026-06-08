@@ -1,0 +1,16 @@
+target = "../spec/framework/algorithm-suites.md#algorithm-suite-data-length"
+
+# Algorithm Suite Data Length
+#
+# Then length of the [algorithm suite data](#algorithm-suite-data).
+# The field MAY be length 0.
+# Its length and how the contents are used
+# are determined by the algorithm suite.
+# Where the contents are stored is determined by the message format.
+
+[[spec]]
+level = "MAY"
+quote = '''
+The field MAY be length 0.
+'''
+

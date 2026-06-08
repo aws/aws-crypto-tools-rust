@@ -1,0 +1,48 @@
+target = "../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm"
+
+# Asymmetric Signature Algorithm
+#
+# This field is OPTIONAL.
+# 
+# The asymmetric signature algorithm defines what asymmetric algorithm to use for asymmetric signature generation and verification.
+# 
+# If the algorithm suite includes an asymmetric signature algorithm:
+# 
+# - Asymmetric signatures MUST be generated using the specified asymmetric signature algorithm.
+# - Asymmetric signatures MUST be verified using the specified asymmetric signature algorithm.
+# 
+# If the algorithm suite does not include a asymmetric signature algorithm:
+# 
+# - Asymmetric signatures MUST NOT be generated.
+# - Asymmetric signatures MUST NOT be verified.
+
+[[spec]]
+level = "MAY"
+quote = '''
+This field is OPTIONAL.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Asymmetric signatures MUST be generated using the specified asymmetric signature algorithm.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Asymmetric signatures MUST be verified using the specified asymmetric signature algorithm.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Asymmetric signatures MUST NOT be generated.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Asymmetric signatures MUST NOT be verified.
+'''
+
