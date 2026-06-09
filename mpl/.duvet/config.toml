@@ -16,6 +16,12 @@ source = "../spec/framework/algorithm-suites.md"
 [[specification]]
 source = "../spec/framework/commitment-policy.md"
 
+[[specification]]
+source = "../spec/framework/cmm-interface.md"
+
+[[specification]]
+source = "../spec/framework/keyring-interface.md"
+
 [[requirement]]
 pattern = "compliance/**/*.toml"
 
