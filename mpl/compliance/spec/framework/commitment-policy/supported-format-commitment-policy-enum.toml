@@ -1,0 +1,32 @@
+target = "../spec/framework/commitment-policy.md#supported-format-commitment-policy-enum"
+
+# Supported Format Commitment Policy ENUM
+#
+# The following tables include the commitment policies
+# supported by the Material Providers Library
+# for each [supported format](./algorithm-suites.md#supported-formats).
+# 
+# The Material Providers Library MUST provide
+# a distinct commitment policy ENUM for each format.
+# The `Format` Commitment Policy ENUM, where `Format`
+# is a value from [supported format short name](./algorithm-suites.md#supported-formats).
+# This ENUM can be used to configure
+# which Commitment Policies it supports.
+# 
+# | ESDK Commitment Policy ENUM     |
+# | ------------------------------- |
+# | FORBID_ENCRYPT_ALLOW_DECRYPT    |
+# | REQUIRE_ENCRYPT_ALLOW_DECRYPT   |
+# | REQUIRE_ENCRYPT_REQUIRE_DECRYPT |
+# 
+# | DBE Commitment Policy ENUM      |
+# | ------------------------------- |
+# | REQUIRE_ENCRYPT_REQUIRE_DECRYPT |
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Material Providers Library MUST provide
+a distinct commitment policy ENUM for each format.
+'''
+

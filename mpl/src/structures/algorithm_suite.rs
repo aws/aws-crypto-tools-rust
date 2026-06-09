@@ -449,6 +449,15 @@ impl AlgorithmSuite {
         self.commit_kdf
     }
 
+    /// Returns true when this suite has a commitment KDF (i.e. its
+    /// [Key Commitment] value is True). Convenience predicate so callers can
+    /// match the spec phrasing literally.
+    ///
+    /// [Key Commitment]: ../../../spec/framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings
+    pub const fn key_commitment(&self) -> bool {
+        self.commit_kdf.is_some()
+    }
+
     pub const fn asymmetric_signature_algorithm(&self) -> Option<AsymmetricSignatureAlgorithm> {
         self.asymmetric_signature_algorithm
     }

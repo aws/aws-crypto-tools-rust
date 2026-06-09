@@ -1,0 +1,28 @@
+target = "../spec/framework/commitment-policy.md#esdk-require-encrypt-allow-decrypt"
+
+# ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT
+#
+# When the commitment policy `ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT` is configured:
+# 
+# - `05 78` MUST be the default algorithm suite
+# - [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of True
+# - [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST support all algorithm suites
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `05 78` MUST be the default algorithm suite
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of True
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST support all algorithm suites
+'''
+
