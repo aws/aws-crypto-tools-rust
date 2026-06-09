@@ -20,6 +20,10 @@ use super::error::MaterialsError;
 //= ../spec/framework/structures.md#fields
 //= type=implication
 //# This structure MAY include any of the following fields:
+//
+//= ../spec/framework/cmm-interface.md#decrypt-materials
+//= type=implication
+//# The decryption materials returned MUST include the following:
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
@@ -54,6 +58,10 @@ impl DecryptionMaterials {
     //= reason=Cannot validate cryptographic correspondence without the keypair generation context; documented invariant.
     //# The mapped value from the reserved key `aws-crypto-public-key`
     //# SHOULD be the signature verification key stored on the [decryption materials](#decryption-materials).
+    //
+    //= ../spec/framework/cmm-interface.md#decrypt-materials
+    //= type=implication
+    //# - The decryption materials returned MUST follow the specification for [decryption-materials](structures.md#decryption-materials).
     pub fn new(
         algorithm_suite_id: AlgorithmSuiteId,
         encryption_context: EncryptionContext,
@@ -68,6 +76,10 @@ impl DecryptionMaterials {
         //= ../spec/framework/structures.md#required-encryption-context-keys-1
         //# Every key in Required Encryption Context Keys
         //# MUST be a key in the [encryption context](#encryption-context-2).
+        //
+        //= ../spec/framework/cmm-interface.md#decrypt-materials
+        //= type=implication
+        //# - All keys in this set MUST exist in the decryption materials encryption context.
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
                 return Err(MaterialsError::new(format!(

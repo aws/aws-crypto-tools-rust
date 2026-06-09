@@ -1,0 +1,15 @@
+target = "../spec/framework/cmm-interface.md#behaviors"
+
+# Behaviors
+#
+# The CMM Interface MUST support the following behaviors:
+# 
+# - [Get Encryption Materials](#get-encryption-materials)
+# - [Decrypt Materials](#decrypt-materials)
+
+[[spec]]
+level = "MUST"
+quote = '''
+The CMM Interface MUST support the following behaviors:
+'''
+

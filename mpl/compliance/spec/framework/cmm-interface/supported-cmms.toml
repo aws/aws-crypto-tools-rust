@@ -1,0 +1,18 @@
+target = "../spec/framework/cmm-interface.md#supported-cmms"
+
+# Supported CMMs
+#
+# The AWS Encryption SDK provides the following built-in CMM types:
+# 
+# - [Default CMM](default-cmm.md)
+# - [Caching CMM](caching-cmm.md)
+# - [Expected Encryption Context CMM](./expected-encryption-context-cmm.md)
+# 
+# Note: A user MAY create their own custom CMM.
+
+[[spec]]
+level = "MAY"
+quote = '''
+Note: A user MAY create their own custom CMM.
+'''
+

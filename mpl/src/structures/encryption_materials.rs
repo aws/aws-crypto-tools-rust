@@ -21,6 +21,10 @@ use super::error::MaterialsError;
 //= ../spec/framework/structures.md#structure-2
 //= type=implication
 //# This structure MAY include any of the following fields:
+//
+//= ../spec/framework/cmm-interface.md#get-encryption-materials
+//= type=implication
+//# The encryption materials returned MUST include the following:
 pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
@@ -65,6 +69,10 @@ impl EncryptionMaterials {
     //= reason=Cannot validate cryptographic correspondence without the keypair generation context; documented invariant.
     //# The mapped value from the reserved key `aws-crypto-public-key` SHOULD be the signature verification key
     //# corresponding to the [signing key](#signing-key) stored on the [encryption material](#encryption-materials).
+    //
+    //= ../spec/framework/cmm-interface.md#get-encryption-materials
+    //= type=implication
+    //# - The encryption materials returned MUST follow the specification for [encryption-materials](structures.md#encryption-materials).
     pub fn new(
         algorithm_suite_id: AlgorithmSuiteId,
         encrypted_data_keys: Vec<EncryptedDataKey>,
@@ -80,6 +88,11 @@ impl EncryptionMaterials {
         //= ../spec/framework/structures.md#required-encryption-context-keys
         //# Every key in Required Encryption Context Keys
         //# MUST be a key in the [encryption context](#encryption-context-1).
+        //
+        //= ../spec/framework/cmm-interface.md#get-encryption-materials
+        //= type=implication
+        //# - For every key in [Required Encryption Context Keys](structures.md#required-encryption-context-keys)
+        //# there MUST be a matching key in the [Encryption Context](structures.md#encryption-context-1).
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
                 return Err(MaterialsError::new(format!(

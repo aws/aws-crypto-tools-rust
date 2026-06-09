@@ -49,6 +49,67 @@ fn test_keyring_failed_constructor() {
 }
 
 #[test]
+fn test_required_encryption_context_key_missing_constructor() {
+    let err = MaterialsError::required_encryption_context_key_missing(
+        "RECK key b\"region\" not present in materials EC",
+    );
+    assert_eq!(
+        err.kind,
+        MaterialsErrorKind::RequiredEncryptionContextKeyMissing
+    );
+    assert_eq!(
+        err.message,
+        "RECK key b\"region\" not present in materials EC"
+    );
+    assert_eq!(
+        err.kind(),
+        &MaterialsErrorKind::RequiredEncryptionContextKeyMissing
+    );
+}
+
+#[test]
+fn test_encryption_context_value_mismatch_constructor() {
+    let err = MaterialsError::encryption_context_value_mismatch(
+        "key b\"purpose\" reproduced=foo stored=bar",
+    );
+    assert_eq!(err.kind, MaterialsErrorKind::EncryptionContextValueMismatch);
+    assert_eq!(err.message, "key b\"purpose\" reproduced=foo stored=bar");
+    assert_eq!(
+        err.kind(),
+        &MaterialsErrorKind::EncryptionContextValueMismatch
+    );
+}
+
+#[test]
+fn test_aws_crypto_public_key_missing_constructor() {
+    let err = MaterialsError::aws_crypto_public_key_missing(
+        "signing suite EC missing aws-crypto-public-key",
+    );
+    assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyMissing);
+    assert_eq!(
+        err.message,
+        "signing suite EC missing aws-crypto-public-key"
+    );
+    assert_eq!(err.kind(), &MaterialsErrorKind::AwsCryptoPublicKeyMissing);
+}
+
+#[test]
+fn test_aws_crypto_public_key_unexpected_constructor() {
+    let err = MaterialsError::aws_crypto_public_key_unexpected(
+        "non-signing suite EC contains aws-crypto-public-key",
+    );
+    assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyUnexpected);
+    assert_eq!(
+        err.message,
+        "non-signing suite EC contains aws-crypto-public-key"
+    );
+    assert_eq!(
+        err.kind(),
+        &MaterialsErrorKind::AwsCryptoPublicKeyUnexpected
+    );
+}
+
+#[test]
 fn test_display_includes_kind_and_message() {
     let err = MaterialsError::keyring_failed("rate-limited");
     let formatted = format!("{err}");
