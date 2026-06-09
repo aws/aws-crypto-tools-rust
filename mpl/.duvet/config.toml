@@ -22,6 +22,9 @@ source = "../spec/framework/cmm-interface.md"
 [[specification]]
 source = "../spec/framework/keyring-interface.md"
 
+[[specification]]
+source = "../spec/framework/default-cmm.md"
+
 [[requirement]]
 pattern = "compliance/**/*.toml"
 
