@@ -39,4 +39,4 @@ pub use decryption_materials::DecryptionMaterials;
 pub use encrypted_data_key::EncryptedDataKey;
 pub use encryption_context::EncryptionContext;
 pub use encryption_materials::EncryptionMaterials;
-pub use error::MaterialsError;
+pub use error::{MaterialsError, MaterialsErrorKind};

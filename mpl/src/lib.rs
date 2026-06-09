@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod client;
+pub mod keyring;
 pub mod structures;
 
 pub use client::*;
+pub use keyring::Keyring;

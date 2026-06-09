@@ -19,8 +19,26 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptedDataKey {
     /// UTF-8 key provider identifier.
+    ///
+    /// The MUST-be-binary half of the spec citation below is satisfied by
+    /// construction — Rust's `String` is a UTF-8 byte sequence. The
+    /// SHOULD-equal-namespace half is concrete-keyring scope (each concrete
+    /// keyring chooses the value when constructing the EDK).
+    //= ../spec/framework/keyring-interface.md#key-provider-id
+    //= type=implication
+    //# The key provider ID MUST be a binary value
+    //# and SHOULD be equal to a UTF-8 encoding of the key namespace.
     pub key_provider_id: String,
     /// Opaque key provider information bytes.
+    ///
+    /// The MUST-be-binary half of the spec citation below is satisfied by
+    /// construction — `Vec<u8>` is a binary byte sequence. The
+    /// SHOULD-equal-name half is concrete-keyring scope (each concrete
+    /// keyring chooses the value when constructing the EDK).
+    //= ../spec/framework/keyring-interface.md#key-provider-info
+    //= type=implication
+    //# The key provider info MUST be a binary value
+    //# and SHOULD be equal to a UTF-8 encoding of the key name.
     pub key_provider_info: Vec<u8>,
     /// Opaque ciphertext bytes.
     pub ciphertext: Vec<u8>,

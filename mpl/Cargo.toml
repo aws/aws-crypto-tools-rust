@@ -8,3 +8,8 @@ authors = ["AWS-CryptoTools"]
 readme = "README.md"
 
 [dependencies]
+async-trait = "=0.1.83"
+tokio = { version = "=1.41.1", features = ["rt", "macros"], default-features = false }
+
+[dev-dependencies]
+tokio = { version = "=1.41.1", features = ["rt", "macros", "test-util"], default-features = false }
