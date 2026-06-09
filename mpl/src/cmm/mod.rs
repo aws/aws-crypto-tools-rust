@@ -27,10 +27,12 @@
 //! replaced with `type=implementation` on the concrete method, and
 //! `type=test` will be placed on the contract test that proves it.
 
+pub mod default_cmm;
 pub mod request;
 
 use async_trait::async_trait;
 
+pub use default_cmm::DefaultCmm;
 pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 
 use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};

@@ -9,6 +9,8 @@ readme = "README.md"
 
 [dependencies]
 async-trait = "=0.1.83"
+aws-lc-rs = { version = "=1.17.0", features = ["fips"] }
+base64 = "=0.22.1"
 tokio = { version = "=1.41.1", features = ["rt", "macros"], default-features = false }
 
 [dev-dependencies]
