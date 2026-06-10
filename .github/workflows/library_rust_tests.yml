@@ -34,6 +34,14 @@ jobs:
         with:
           submodules: 'true'
 
+      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
+      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
+      # for this workflow by default.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
