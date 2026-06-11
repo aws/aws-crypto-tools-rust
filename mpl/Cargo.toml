@@ -1,0 +1,10 @@
+[package]
+name = "aws-crypto-mpl"
+version = "0.1.0"
+edition = "2024"
+license = "ISC AND (Apache-2.0 OR ISC)"
+description = "aws-cryptographic-material-providers-library is a low level library for implementing client side encryption."
+authors = ["AWS-CryptoTools"]
+readme = "README.md"
+
+[dependencies]

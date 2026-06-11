@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Pre-commit hook: formats every staged Rust file with rustfmt and
+# re-stages it, so the commit captures the formatted version
+# automatically.
+#
+# Skips entirely when no Rust files are staged. Operates only on the
+# staged set, so unstaged work in other files is never silently swept in.
+#
+# To enable this hook after cloning, run once:
+#     git config core.hooksPath .githooks
+
+set -euo pipefail
+
+# Edition matches mpl/Cargo.toml. Update if a future crate uses a
+# different edition.
+RUST_EDITION="2024"
+
+staged_rs=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$' || true)
+
+if [ -z "$staged_rs" ]; then
+    exit 0
+fi
+
+echo "[pre-commit] Formatting staged Rust files..."
+while IFS= read -r file; do
+    if [ -f "$file" ]; then
+        rustfmt --edition "$RUST_EDITION" "$file"
+        git add "$file"
+    fi
+done <<< "$staged_rs"
+
+echo "[pre-commit] Done."
