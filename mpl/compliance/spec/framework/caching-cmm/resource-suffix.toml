@@ -1,0 +1,33 @@
+target = "../spec/framework/caching-cmm.md#resource-suffix"
+
+# Resource Suffix
+#
+# There are three resource suffixes for the Caching CMM:
+# 
+# - Caching CMM: Encryption Materials, Without Algorithm Suite:
+#   ```
+#   0x00 + NULL_BYTE + SerializeEncryptionContext(getEncryptionMaterialsRequest.encryptionContext)
+#   ```
+# - Caching CMM: Encryption Materials, With Algorithm Suite:
+#   ```
+#   0x01 + NULL_BYTE + AlgorithmSuiteId(getEncryptionMaterialsRequest.algorithmSuite) + NULL_BYTE + SerializeEncryptionContext(getEncryptionMaterialsRequest.encryptionContext)
+#   ```
+# - Caching CMM: Decryption Materials:
+#   ```
+#   AlgorithmSuiteId(decryptMaterialsRequest.algorithmSuite) + NULL_BYTE + CONCATENATE(SORTED(EDK)) + NULL_BYTE + SerializeEncryptionContext(decryptMaterialsRequest.encryptionContext)
+#   ```
+# 
+# The aforementioned 4 definitions ([Resource Identifier](#resource-identifier),
+# [Scope Identifier](#scope-identifier), [Partition ID](#partition-id-1),
+# and [Resource Suffix](#resource-suffix)) MUST be appended together with the null byte,
+# 0x00, and the SHA384 of the result should be taken as the final cache identifier.
+
+[[spec]]
+level = "MUST"
+quote = '''
+The aforementioned 4 definitions ([Resource Identifier](#resource-identifier),
+[Scope Identifier](#scope-identifier), [Partition ID](#partition-id-1),
+and [Resource Suffix](#resource-suffix)) MUST be appended together with the null byte,
+0x00, and the SHA384 of the result should be taken as the final cache identifier.
+'''
+

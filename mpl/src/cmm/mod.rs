@@ -27,11 +27,15 @@
 //! replaced with `type=implementation` on the concrete method, and
 //! `type=test` will be placed on the contract test that proves it.
 
+pub mod cache;
+pub mod caching_cmm;
 pub mod default_cmm;
 pub mod request;
 
 use async_trait::async_trait;
 
+pub use cache::{CacheEntryId, CryptographicMaterialsCache, UsageStats};
+pub use caching_cmm::CachingCmm;
 pub use default_cmm::DefaultCmm;
 pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 

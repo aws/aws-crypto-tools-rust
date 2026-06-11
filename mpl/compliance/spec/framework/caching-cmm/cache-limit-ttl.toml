@@ -1,0 +1,14 @@
+target = "../spec/framework/caching-cmm.md#cache-limit-ttl"
+
+# Cache Limit TTL
+#
+# The maximum amount of time in seconds that a data key can be used.
+# The Caching CMM MUST set a time-to-live (TTL) for data keys in the CMC.
+# This value must be greater than zero.
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Caching CMM MUST set a time-to-live (TTL) for data keys in the CMC.
+'''
+

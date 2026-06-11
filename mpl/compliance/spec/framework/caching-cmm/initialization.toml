@@ -1,0 +1,52 @@
+target = "../spec/framework/caching-cmm.md#initialization"
+
+# Initialization
+#
+# On caching CMM initialization,
+# the caller MUST provide the following values:
+# 
+# - [Underlying Cryptographic Materials Cache (CMC)](#underlying-cryptographic-materials-cache)
+# - [Cache Limit TTL](#cache-limit-ttl)
+# 
+# Additionally, the caller MUST provide one of the following values:
+# 
+# - [Underlying Cryptographic Materials Manager (CMM)](#underlying-cryptographic-materials-manager)
+# - [Keyring](keyring-interface.md)
+# 
+# If the caller provides a keyring,
+# then the caching CMM MUST set its underlying CMM
+# to a [default CMM](default-cmm.md) initialized with the keyring.
+# 
+# Finally, the caching CMM MUST optionally accept the following values:
+# 
+# - [Partition ID](#partition-id)
+# - [Limit Bytes](#limit-bytes)
+# - [Limit Messages](#limit-messages)
+
+[[spec]]
+level = "MUST"
+quote = '''
+On caching CMM initialization,
+the caller MUST provide the following values:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+Additionally, the caller MUST provide one of the following values:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the caller provides a keyring,
+then the caching CMM MUST set its underlying CMM
+to a [default CMM](default-cmm.md) initialized with the keyring.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+Finally, the caching CMM MUST optionally accept the following values:
+'''
+

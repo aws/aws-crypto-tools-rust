@@ -1,0 +1,29 @@
+target = "../spec/framework/caching-cmm.md#usage-stats"
+
+# Usage Stats
+#
+# The usage stats contains two fields:
+# 
+# - [Messages Encrypted](#messages-encrypted)
+# - [Bytes Encrypted](#bytes-encrypted)
+# 
+# When the caching CMM stores encryption materials into the cryptographic materials cache,
+# the caching CMM MUST set the initial usage stats for the cache entry.
+# 
+# When the caching CMM obtains encryption materials from the cryptographic materials cache,
+# the caching CMM MUST update the usage stats for the cache entry retrieved.
+
+[[spec]]
+level = "MUST"
+quote = '''
+When the caching CMM stores encryption materials into the cryptographic materials cache,
+the caching CMM MUST set the initial usage stats for the cache entry.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+When the caching CMM obtains encryption materials from the cryptographic materials cache,
+the caching CMM MUST update the usage stats for the cache entry retrieved.
+'''
+

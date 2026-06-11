@@ -24,6 +24,7 @@ use super::error::MaterialsError;
 //= ../spec/framework/cmm-interface.md#decrypt-materials
 //= type=implication
 //# The decryption materials returned MUST include the following:
+#[derive(Clone)]
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,

@@ -7,5 +7,8 @@ pub mod keyring;
 pub mod structures;
 
 pub use client::*;
-pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
+pub use cmm::{
+    CacheEntryId, CachingCmm, Cmm, CryptographicMaterialsCache, DecryptMaterialsRequest,
+    DefaultCmm, EncryptionMaterialsRequest, UsageStats,
+};
 pub use keyring::Keyring;

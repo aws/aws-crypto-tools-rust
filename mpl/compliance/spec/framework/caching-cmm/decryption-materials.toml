@@ -1,0 +1,106 @@
+target = "../spec/framework/caching-cmm.md#decryption-materials"
+
+# Decryption Materials
+#
+# When the caching CMM receives a Decrypt Materials request,
+# it MUST calculate the cache entry identifier as
+# the SHA-384 hash of the concatenation of the following byte strings,
+# in the order listed:
+# 
+# - MUST be the Resource ID for the Caching CMM (0x01)
+# - MUST be the Scope ID for Decrypt (0x02)
+# - MUST be the UTF-8 encoding of the caching CMM’s Partition ID
+# - Resource Suffix
+#   - MUST be the two-byte Algorithm Suite ID corresponding to the algorithm suite in the request
+#   - MUST be the concatenation of the lexicographically-sorted serialized encrypted data keys,
+#     where serialization is as defined in the [Encrypted Data Key Entries specification](../data-format/message-header.md#encrypted-data-key-entries).
+#   - MUST be the serialized encryption context
+# 
+# All the above fields must be separated by a single NULL_BYTE `0x00`.
+# 
+# | Field                      | Length (bytes) | Interpreted as |
+# | -------------------------- | -------------- | -------------- |
+# | Resource ID                | 1              | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Scope ID                   | 1              | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Partition ID               | Variable       | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Algorithm Suite ID         | 2              | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Concatenated Sorted EDKs   | variable       | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | SerializeEncryptionContext | Variable       | bytes          |
+# 
+# As a formula:
+# 
+# ```
+# resource-id = [0x01]
+# scope-id = [0x02]
+# partition-id = UTF8Encode(cachingCMM.partitionId)
+# algorithm-suite-id = AlgorithmSuiteId(decryptMaterialsRequest.algorithmSuite)
+# concatenated-sorted-edks = CONCATENATE(SORTED(EDK))
+# serialized-encryption-context = SerializeEncryptionContext(decryptMaterialsRequest.encryptionContext)
+# NULL_BYTE = [0x00]
+# 
+# ENTRY_ID = SHA384(
+#     resource-id
+#     + NULL_BYTE
+#     + scope-id
+#     + NULL_BYTE
+#     + partition-id
+#     + NULL_BYTE
+#     + algorithm-suite-id
+#     + NULL_BYTE
+#     + concatenated-sorted-edks
+#     + NULL_BYTE
+#     + serialized-encryption-context
+# )
+# ```
+
+[[spec]]
+level = "MUST"
+quote = '''
+When the caching CMM receives a Decrypt Materials request,
+it MUST calculate the cache entry identifier as
+the SHA-384 hash of the concatenation of the following byte strings,
+in the order listed:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the Resource ID for the Caching CMM (0x01)
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the Scope ID for Decrypt (0x02)
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the UTF-8 encoding of the caching CMM’s Partition ID
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the two-byte Algorithm Suite ID corresponding to the algorithm suite in the request
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the concatenation of the lexicographically-sorted serialized encrypted data keys,
+where serialization is as defined in the [Encrypted Data Key Entries specification](../data-format/message-header.md#encrypted-data-key-entries).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the serialized encryption context
+'''
+

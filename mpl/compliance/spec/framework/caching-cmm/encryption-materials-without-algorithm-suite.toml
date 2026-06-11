@@ -1,0 +1,92 @@
+target = "../spec/framework/caching-cmm.md#encryption-materials-without-algorithm-suite"
+
+# Encryption Materials, Without Algorithm Suite
+#
+# If the Get Encryption Materials request does not specify an algorithm suite,
+# then the cache entry identifier MUST be calculated
+# as the SHA-384 hash of the concatenation of the following byte strings,
+# in the order listed:
+# 
+# - MUST be the Resource ID for the Caching CMM (0x01)
+# - MUST be the Scope ID for Encrypt (0x01)
+# - MUST be the UTF-8 encoding of the caching CMM’s Partition ID
+# - Resource Suffix
+#   - MUST be the Algorithm Suite Hex byte `0x00` to indicate Encryption Materials Without Algorithm Suite
+#   - MUST be the serialized encryption context
+# 
+# All the above fields must be separated by a single NULL_BYTE `0x00`.
+# 
+# | Field                      | Length (bytes) | Interpreted as |
+# | -------------------------- | -------------- | -------------- |
+# | Resource ID                | 1              | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Scope ID                   | 1              | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Partition ID               | Variable       | bytes          |
+# | Null Byte                  | 1              | `0x00`         |
+# | Algorithm Suite Hex byte   | 1              | bytes (`0x00`) |
+# | Null Byte                  | 1              | `0x00`         |
+# | SerializeEncryptionContext | Variable       | bytes          |
+# 
+# As a formula:
+# 
+# ```
+# resource-id = [0x01]
+# scope-id = [0x01]
+# partition-id = UTF8Encode(cachingCMM.partitionId)
+# algorithm-suite-hex-byte = [0x00]
+# serialized-encryption-context = SerializeEncryptionContext(getEncryptionMaterialsRequest.encryptionContext)
+# NULL_BYTE = [0x00]
+# 
+# ENTRY_ID = SHA384(
+#     resource-id
+#     + NULL_BYTE
+#     + scope-id
+#     + NULL_BYTE
+#     + partition-id
+#     + NULL_BYTE
+#     + algorithm-suite-hex-byte
+#     + NULL_BYTE
+#     + serialized-encryption-context
+# )
+# ```
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the Get Encryption Materials request does not specify an algorithm suite,
+then the cache entry identifier MUST be calculated
+as the SHA-384 hash of the concatenation of the following byte strings,
+in the order listed:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the Resource ID for the Caching CMM (0x01)
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the Scope ID for Encrypt (0x01)
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the UTF-8 encoding of the caching CMM’s Partition ID
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the Algorithm Suite Hex byte `0x00` to indicate Encryption Materials Without Algorithm Suite
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST be the serialized encryption context
+'''
+

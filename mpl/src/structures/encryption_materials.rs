@@ -25,6 +25,7 @@ use super::error::MaterialsError;
 //= ../spec/framework/cmm-interface.md#get-encryption-materials
 //= type=implication
 //# The encryption materials returned MUST include the following:
+#[derive(Clone)]
 pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
