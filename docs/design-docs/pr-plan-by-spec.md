@@ -56,27 +56,37 @@ stack level.
 - `mpl/.duvet/config.toml` — adds one `[[specification]]` entry per slice
   that introduces a new spec file.
 
-## Out of scope (already merged or not part of this breakout)
+## Out of scope (already on `main`)
 
-- `.github/workflows/*.yml`, `.githooks/*` — already merged via separate PRs
-  to `main`.
+- `.github/workflows/pull.yml`, `.github/workflows/retry_failed_ci.yml` —
+  already merged to `main` directly.
 
 ## PRs
 
 ### PR 1 — `client-scaffold`
 
-**Topic:** Initial `mpl` crate scaffolding and async client/builder skeleton.
+**Topic:** Initial `mpl` crate scaffolding, async client/builder skeleton, and
+repo-level dev-loop / CI infra (git hooks, workflow updates).
 **Spec:** none (pre-spec setup).
 **Review branch:** `aws-crypto-rust/client-scaffold-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-client-scaffold`
 **Base branch (PR target):** `main`
 **Depends on:** —
 
-**Source:**
+**Source (mpl scaffold):**
 - `mpl/Cargo.toml` (scaffold state — empty `[dependencies]`)
 - `mpl/Cargo.lock` (scaffold state — package only)
 - `mpl/src/lib.rs` (scaffold state — `mod client; pub use client::*;`)
 - `mpl/src/client.rs`
+
+**Source (repo / CI / dev-loop infra):**
+- `.gitignore` (new — `target`, `.agent-reports`, duvet artifacts)
+- `.githooks/pre-commit` (new — `cargo fmt` pre-commit hook)
+- `.githooks/README.md` (new — hook setup docs)
+- `.github/workflows/library_rust_tests.yml` (modified — adds Go install,
+  `llvm-tools-preview`, `cargo-llvm-cov`, replaces `cargo test` with
+  `cargo llvm-cov --all-features --workspace --fail-under-lines 100`)
+- `CONTRIBUTING.md` (modified — adds hook install instructions)
 
 **Tests:**
 - `mpl/tests/test_mpl_client.rs`
@@ -85,7 +95,8 @@ stack level.
 
 **Notes:**
 - This slice's review branch is the buildable scaffold that all later
-  review branches stack on. CI is expected to pass.
+  review branches stack on. CI is expected to pass, including the new 100%
+  line-coverage gate.
 - `lib.rs`, `Cargo.toml`, and `Cargo.lock` are shared files (see "Shared
   files" section). PR 1's snapshot is the original scaffold state from
   commit `c498a02`, **not** the current state on
@@ -93,6 +104,8 @@ stack level.
   (`structures`, `cmm`, `keyring`) and depends on crates that are added by
   later slices. Each later slice's PR shows its incremental diff to these
   shared files.
+- The infra files (gitignore, hooks, workflow, CONTRIBUTING) are
+  one-time additions and are not modified again by later slices.
 
 ---
 
