@@ -17,7 +17,10 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
   cross-slice infra. They are read-only references for focused review and are
   not expected to compile on their own. Working code lives on
   `aws-crypto-rust/unreviewed`.
-- CI does not run on review branches.
+- CI runs on PRs cut from review branches. Because review branches
+  intentionally omit `Cargo.toml`, `Cargo.lock`, and shared helpers, CI is
+  expected to fail and should be treated as informational. Verification of
+  build, tests, and coverage happens on `aws-crypto-rust/unreviewed`.
 - A given source file is "owned" by exactly one PR (the PR where its substance
   is the primary concern). When a later slice modifies an earlier slice's file
   in a non-trivial way, that is called out in the later PR's notes.
@@ -240,8 +243,10 @@ compliance directory yet.
 
 Each PR description should:
 
-- Note that CI does not run on this branch and that helpers/scaffolding are
-  intentionally omitted.
+- Note that this branch intentionally omits helpers and scaffolding
+  (`Cargo.toml`, `Cargo.lock`, shared test helpers), so CI is expected to
+  fail. Verification of build, tests, and coverage is done on
+  `aws-crypto-rust/unreviewed`.
 - Link to `aws-crypto-rust/unreviewed` for the full working tree.
 - Link to the relevant `spec/framework/<file>.md`.
 - Call out any cross-slice file ownership (see each PR's Notes section above).
