@@ -8,34 +8,58 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
 ## Conventions
 
 - All paths are relative to the repository root (`aws-crypto-tools-rust/`).
-- `review_branch` follows the pattern `aws-crypto-rust/<slug>-review` and is
-  cut from `main`.
+- `review_branch` follows the pattern `aws-crypto-rust/<slug>-review`.
 - `sync_worktree` follows the pattern
   `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-<slug>` and tracks
   the matching `review_branch`.
-- Review branches intentionally omit shared test helpers, scaffolding, and
-  cross-slice infra. They are read-only references for focused review and are
-  not expected to compile on their own. Working code lives on
-  `aws-crypto-rust/unreviewed`.
-- CI runs on PRs cut from review branches. Because review branches
-  intentionally omit `Cargo.toml`, `Cargo.lock`, and shared helpers, CI is
-  expected to fail and should be treated as informational. Verification of
-  build, tests, and coverage happens on `aws-crypto-rust/unreviewed`.
-- A given source file is "owned" by exactly one PR (the PR where its substance
-  is the primary concern). When a later slice modifies an earlier slice's file
-  in a non-trivial way, that is called out in the later PR's notes.
+- **Review branches are stacked.** Slice 1's review branch is cut from `main`.
+  Each subsequent slice's review branch is cut from the *previous* slice's
+  review branch. Each PR's base branch is the previous slice's review branch
+  (slice 1's PR base is `main`). This way each PR diff shows only that
+  slice's contribution.
+- **Each review branch is a buildable, CI-passing snapshot** of `main` plus
+  slices 1..N's cumulative content. Achieving this requires that "shared
+  files" (those touched by multiple slices — see the next section) carry
+  their per-stack-level snapshot, not the latest state on
+  `aws-crypto-rust/unreviewed`. The simple `git checkout
+  aws-crypto-rust/unreviewed -- <file>` works only for files newly introduced
+  in that slice; shared files require a curated snapshot at the right stack
+  level.
+- CI runs on PRs cut from review branches and is expected to **pass**. If CI
+  fails on a review PR, the slice's snapshot is wrong (usually because a
+  shared file was synced from the wrong source).
+- A given file's *substance* is owned by exactly one PR (the PR where its
+  primary purpose is reviewed). Shared files can be modified by later slices;
+  each slice's PR shows only its incremental diff to a shared file.
 
-## Cross-slice infra (not its own PR)
+## Shared files (modified across slices)
 
-These files aggregate changes across slices and stay only on `unreviewed`. They
-are reviewed implicitly by the slice that introduced their relevant content:
+These files are touched by more than one slice. Each slice's PR diff includes
+that slice's incremental change to the file. The full file at the end of a
+given slice's review branch is the snapshot of cumulative work through that
+stack level.
 
-- `mpl/Cargo.toml`, `mpl/Cargo.lock` — dependencies grow with each slice.
-- `mpl/src/lib.rs` — public re-exports grow with each slice.
-- `mpl/src/structures/mod.rs` — submodule wiring grows with each structures slice.
+- `mpl/Cargo.toml`, `mpl/Cargo.lock` — slice 1 introduces the scaffold (no
+  deps). Later slices add deps as needed (notably PR 5 `async-trait`, PR 7
+  if applicable). Each slice's PR shows the dep diff it introduces.
+- `mpl/src/lib.rs` — slice 1 introduces the scaffold (`mod client; pub use
+  client::*;`). Slice 2 adds `pub mod structures;`. Slice 5 adds `pub mod
+  keyring; pub use keyring::Keyring;`. Slice 6 adds `pub mod cmm; pub use
+  cmm::{...};`. Each slice's PR shows the lib.rs diff it introduces.
+- `mpl/src/structures/mod.rs` — slice 2 introduces it. Slices 3 and 4 add
+  submodule + re-export lines for `algorithm_suite` and `commitment_policy`.
+- `mpl/src/structures/error.rs` — slice 2 introduces `MaterialsError` /
+  `MaterialsErrorKind`. Slice 5 (keyring) extends with new variants. Slice 6
+  may extend further.
+- `mpl/src/cmm/mod.rs` — slice 6 introduces it. Slice 7 modifies its
+  re-exports for `DefaultCmm`.
 - `mpl/.duvet/config.toml` — adds one `[[specification]]` entry per slice
-  introducing a new spec file.
-- `.github/workflows/*.yml`, `.githooks/*` — already merged via separate PRs to `main`.
+  that introduces a new spec file.
+
+## Out of scope (already merged or not part of this breakout)
+
+- `.github/workflows/*.yml`, `.githooks/*` — already merged via separate PRs
+  to `main`.
 
 ## PRs
 
@@ -45,10 +69,13 @@ are reviewed implicitly by the slice that introduced their relevant content:
 **Spec:** none (pre-spec setup).
 **Review branch:** `aws-crypto-rust/client-scaffold-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-client-scaffold`
+**Base branch (PR target):** `main`
 **Depends on:** —
 
 **Source:**
-- `mpl/src/lib.rs`
+- `mpl/Cargo.toml` (scaffold state — empty `[dependencies]`)
+- `mpl/Cargo.lock` (scaffold state — package only)
+- `mpl/src/lib.rs` (scaffold state — `mod client; pub use client::*;`)
 - `mpl/src/client.rs`
 
 **Tests:**
@@ -57,12 +84,15 @@ are reviewed implicitly by the slice that introduced their relevant content:
 **Compliance:** none.
 
 **Notes:**
-- `lib.rs` will be repeatedly modified by later slices to wire in new modules.
-  This PR shows the original scaffold version. Reviewers should check later PRs
-  for the full module surface.
-- Includes the duvet bootstrap (`mpl/.duvet/config.toml` initial state) only
-  conceptually; the file itself stays on `unreviewed` because it accumulates
-  additions across slices.
+- This slice's review branch is the buildable scaffold that all later
+  review branches stack on. CI is expected to pass.
+- `lib.rs`, `Cargo.toml`, and `Cargo.lock` are shared files (see "Shared
+  files" section). PR 1's snapshot is the original scaffold state from
+  commit `c498a02`, **not** the current state on
+  `aws-crypto-rust/unreviewed` — the unreviewed state references modules
+  (`structures`, `cmm`, `keyring`) and depends on crates that are added by
+  later slices. Each later slice's PR shows its incremental diff to these
+  shared files.
 
 ---
 
@@ -73,6 +103,7 @@ encryption context, branch / beacon key materials, MaterialsError).
 **Spec:** [`spec/framework/structures.md`](../../spec/framework/structures.md)
 **Review branch:** `aws-crypto-rust/structures-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-structures`
+**Base branch (PR target):** `aws-crypto-rust/client-scaffold-review`
 **Depends on:** PR 1
 
 **Source:**
@@ -97,15 +128,16 @@ encryption context, branch / beacon key materials, MaterialsError).
 compliance directory.
 
 **Notes:**
-- `error.rs` is later extended in PR 5 (keyring) with new `MaterialsErrorKind`
-  variants. This PR's snapshot reflects the **current** state of
-  `error.rs` on `unreviewed`, including those later additions, because the
-  file is owned here.
-- `encrypted_data_key.rs` and the materials structs are also lightly modified
-  by later slices (algorithm-suite, keyring). Same story: review the current
-  snapshot.
+- This snapshot is the slice-2-state of these files: structures and
+  `MaterialsError` as introduced by this slice. Later slices contribute
+  incremental diffs to shared files (`error.rs` in PR 5; `encrypted_data_key.rs`
+  and the materials structs in PRs 3 / 5 / 6) — those diffs appear in the
+  later PR, not this one.
 - `algorithm_suite.rs` and `commitment_policy.rs` are owned by PRs 3 and 4
   respectively and are not in this PR.
+- `mpl/src/lib.rs`, `mpl/Cargo.toml`, and `mpl/Cargo.lock` are shared files
+  carried over from PR 1; PR 2's diff to them (e.g., `+pub mod structures;`
+  in `lib.rs`) is included in this PR.
 
 ---
 
@@ -116,6 +148,7 @@ suite types (encryption alg, KDF, signature alg, format).
 **Spec:** [`spec/framework/algorithm-suites.md`](../../spec/framework/algorithm-suites.md)
 **Review branch:** `aws-crypto-rust/algorithm-suite-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-algorithm-suite`
+**Base branch (PR target):** `aws-crypto-rust/structures-review`
 **Depends on:** PR 2
 
 **Source:**
@@ -142,6 +175,7 @@ default-suite-lookup and per-suite allow checks.
 **Spec:** [`spec/framework/commitment-policy.md`](../../spec/framework/commitment-policy.md)
 **Review branch:** `aws-crypto-rust/commitment-policy-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-commitment-policy`
+**Base branch (PR target):** `aws-crypto-rust/algorithm-suite-review`
 **Depends on:** PR 3
 
 **Source:**
@@ -165,6 +199,7 @@ default-suite-lookup and per-suite allow checks.
 **Spec:** [`spec/framework/keyring-interface.md`](../../spec/framework/keyring-interface.md)
 **Review branch:** `aws-crypto-rust/keyring-interface-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-keyring-interface`
+**Base branch (PR target):** `aws-crypto-rust/commitment-policy-review`
 **Depends on:** PR 2 (materials, error), PR 3 (algorithm suite)
 
 **Source:**
@@ -178,9 +213,12 @@ default-suite-lookup and per-suite allow checks.
 - `mpl/compliance/spec/framework/keyring-interface/*.toml`
 
 **Notes:**
-- The `MaterialsError` extensions live in `mpl/src/structures/error.rs`, which
-  is **owned by PR 2**. Reviewers should read `error.rs` on the `structures`
-  review branch in conjunction with this PR's contract tests.
+- The `MaterialsError` extensions live in `mpl/src/structures/error.rs`,
+  which is **introduced by PR 2** but extended here. PR 5's diff includes the
+  new `MaterialsErrorKind` variants added on top of PR 2's snapshot.
+- Shared-file modifications introduced by this PR: `lib.rs`
+  (`+pub mod keyring; pub use keyring::Keyring;`), `Cargo.toml` /
+  `Cargo.lock` (adds `async-trait`), `error.rs` (new variants).
 
 ---
 
@@ -191,6 +229,7 @@ default-suite-lookup and per-suite allow checks.
 **Spec:** [`spec/framework/cmm-interface.md`](../../spec/framework/cmm-interface.md)
 **Review branch:** `aws-crypto-rust/cmm-interface-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-cmm-interface`
+**Base branch (PR target):** `aws-crypto-rust/keyring-interface-review`
 **Depends on:** PR 2, PR 3, PR 4 (commitment policy is on the request type)
 
 **Source:**
@@ -215,6 +254,7 @@ commitment-policy and algorithm-suite rules).
 **Spec:** [`spec/framework/default-cmm.md`](../../spec/framework/default-cmm.md)
 **Review branch:** `aws-crypto-rust/default-cmm-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-default-cmm`
+**Base branch (PR target):** `aws-crypto-rust/cmm-interface-review`
 **Depends on:** PR 4, PR 5, PR 6
 
 **Source:**
@@ -227,7 +267,11 @@ commitment-policy and algorithm-suite rules).
 compliance directory yet.
 
 **Notes:**
-- Modifies `mpl/src/cmm/mod.rs` (re-export). That file is **owned by PR 6**.
+- Modifies `mpl/src/cmm/mod.rs` (re-export). That file is **introduced by
+  PR 6**; PR 7's diff to it appears in this PR.
+- Shared-file modifications introduced by this PR: `cmm/mod.rs` (re-export
+  for `DefaultCmm`), `lib.rs` (if applicable), `Cargo.toml` / `Cargo.lock`
+  (any new deps).
 
 ---
 
@@ -243,10 +287,10 @@ compliance directory yet.
 
 Each PR description should:
 
-- Note that this branch intentionally omits helpers and scaffolding
-  (`Cargo.toml`, `Cargo.lock`, shared test helpers), so CI is expected to
-  fail. Verification of build, tests, and coverage is done on
-  `aws-crypto-rust/unreviewed`.
+- Note that this branch is part of a stacked review chain (see
+  `docs/design-docs/pr-plan-by-spec.md`) and that CI is expected to pass
+  on its own scope.
 - Link to `aws-crypto-rust/unreviewed` for the full working tree.
 - Link to the relevant `spec/framework/<file>.md`.
-- Call out any cross-slice file ownership (see each PR's Notes section above).
+- Call out any shared-file modifications (lib.rs, Cargo.toml, error.rs,
+  etc.) the PR introduces.
