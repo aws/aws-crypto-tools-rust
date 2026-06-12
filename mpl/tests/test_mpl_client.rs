@@ -5,11 +5,14 @@ use aws_crypto_mpl::{MaterialProviders, MaterialProvidersConfig};
 
 #[test]
 fn test_mpl_default_uses_default_config() {
-    let _ = MaterialProviders::default();
+    let mpl = MaterialProviders::default();
+    assert_eq!(mpl.config(), &MaterialProvidersConfig::default());
+}
 
-    let config = MaterialProvidersConfig::default();
-    let mpl = MaterialProviders::new(config);
-    assert_eq!(mpl.config(), &config);
+#[test]
+fn test_mpl_new_uses_provided_config() {
+    let mpl = MaterialProviders::new(MaterialProvidersConfig::default());
+    assert_eq!(mpl.config(), &MaterialProvidersConfig::default());
 }
 
 #[test]
@@ -20,7 +23,8 @@ fn test_mpl_builder() {
 
 #[test]
 fn test_mpl_builder_with_config() {
-    let config = MaterialProvidersConfig::default();
-    let mpl = MaterialProviders::builder().config(config).build();
-    assert_eq!(mpl.config(), &config);
+    let mpl = MaterialProviders::builder()
+        .config(MaterialProvidersConfig::default())
+        .build();
+    assert_eq!(mpl.config(), &MaterialProvidersConfig::default());
 }
