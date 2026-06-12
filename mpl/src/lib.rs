@@ -13,4 +13,7 @@ pub use client::*;
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::Keyring;
 #[cfg(feature = "keystore")]
-pub use keystore::{KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration};
+pub use keystore::{
+    KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration, encryption_context,
+    kms_config, record,
+};

@@ -56,17 +56,6 @@ pub struct KeyStoreInfo {
 //# that is a KMS ARN.
 //
 //= ../spec/framework/branch-key-store.md#aws-kms-configuration
-//= type=exception
-//= reason=Abstract trait contract; no concrete keystore in this commit. Per master plan Phase 4 (slug keystore-kms-config), this exception will be replaced with type=implementation on the ARN validation logic and type=test on the contract test that proves it.
-//# This ARN MUST NOT be an Alias.
-//
-//= ../spec/framework/branch-key-store.md#aws-kms-configuration
-//= type=exception
-//= reason=Abstract trait contract; no concrete keystore in this commit. Per master plan Phase 4 (slug keystore-kms-config), this exception will be replaced with type=implementation on the ARN validation logic and type=test on the contract test that proves it.
-//# This ARN MUST be a valid
-//# [AWS KMS Key ARN](./aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-arn).
-//
-//= ../spec/framework/branch-key-store.md#aws-kms-configuration
 //= type=implication
 //# To be clear, an KMS ARN for a Multi-Region Key MAY be provided to the `KMS Key ARN` configuration,
 //# and a KMS ARN for non Multi-Region Key MAY be provided to the `KMS MRKey ARN` configuration.
