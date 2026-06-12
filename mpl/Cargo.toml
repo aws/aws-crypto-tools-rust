@@ -12,5 +12,9 @@ aws-lc-rs = { version = "=1.17.0", features = ["fips"] }
 base64 = "=0.22.1"
 tokio = { version = "=1.41.1", features = ["rt", "macros"], default-features = false }
 
+[features]
+default = []
+keystore = []
+
 [dev-dependencies]
 tokio = { version = "=1.41.1", features = ["rt", "macros", "test-util"], default-features = false }
