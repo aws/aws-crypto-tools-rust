@@ -1,0 +1,75 @@
+target = "../spec/framework/branch-key-store.md#getactivebranchkey"
+
+# GetActiveBranchKey
+#
+# On invocation, the caller:
+# 
+# - MUST supply a `branch-key-id`
+# 
+# To get the active version for the branch key id from the keystore
+# this operation MUST call AWS DDB `GetItem`
+# using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
+# 
+# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+# If the record does not contain the defined fields, this operation MUST fail.
+# 
+# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+# 
+# If the branch key fails to decrypt, GetActiveBranchKey MUST fail.
+# 
+# This GetActiveBranchKey MUST construct [branch key materials](./structures.md#branch-key-materials)
+# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
+# 
+# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST supply a `branch-key-id`
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+To get the active version for the branch key id from the keystore
+this operation MUST call AWS DDB `GetItem`
+using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the record does not contain the defined fields, this operation MUST fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the branch key fails to decrypt, GetActiveBranchKey MUST fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This GetActiveBranchKey MUST construct [branch key materials](./structures.md#branch-key-materials)
+according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
+'''
+

@@ -1,0 +1,29 @@
+target = "../spec/framework/branch-key-store.md#custom-encryption-context-from-authenticated-encryption-context"
+
+# Custom Encryption Context From Authenticated Encryption Context
+#
+# The custom encryption context is stored as map of UTF8 Encoded bytes.
+# 
+# For every key in the [encryption context](./structures.md#encryption-context-3)
+# the string `aws-crypto-ec:` + the UTF8 decode of this key
+# MUST exist as a key in the authenticated encryption context.
+# Also, the value in the [encryption context](./structures.md#encryption-context-3) for this key
+# MUST equal the value in the authenticated encryption context
+# for the constructed key.
+
+[[spec]]
+level = "MUST"
+quote = '''
+For every key in the [encryption context](./structures.md#encryption-context-3)
+the string `aws-crypto-ec:` + the UTF8 decode of this key
+MUST exist as a key in the authenticated encryption context.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+Also, the value in the [encryption context](./structures.md#encryption-context-3) for this key
+MUST equal the value in the authenticated encryption context
+for the constructed key.
+'''
+

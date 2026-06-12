@@ -1,0 +1,63 @@
+target = "../spec/framework/branch-key-store.md#aws-kms-configuration"
+
+# AWS KMS Configuration
+#
+# This configures the Keystore's KMS Key ARN restrictions,
+# which determines which KMS Key(s) is used
+# to wrap and unwrap the keys stored in Amazon DynamoDB.
+# There are four (4) options:
+# 
+# - Discovery
+# - MRDiscovery
+# - Single Region Key Compatibility, denoted as `KMS Key ARN`
+# - Multi Region Key Compatibility, denoted as `KMS MRKey ARN`
+# 
+# `KMS Key ARN` and `KMS MRKey ARN` MUST take an additional argument
+# that is a KMS ARN.
+# This ARN MUST NOT be an Alias.
+# This ARN MUST be a valid
+# [AWS KMS Key ARN](./aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-arn).
+# 
+# Both `KMS Key ARN` and `KMS MRKey ARN` accept MRK or regular Single Region KMS ARNs.
+# 
+# To be clear, an KMS ARN for a Multi-Region Key MAY be provided to the `KMS Key ARN` configuration,
+# and a KMS ARN for non Multi-Region Key MAY be provided to the `KMS MRKey ARN` configuration.
+# 
+# `Discovery` does not take an additional argument.
+# 
+# `MRDiscovery` MUST take an additional argument, which is a region.
+# Any MRK ARN discovered will be changed to this region before use.
+
+[[spec]]
+level = "MUST"
+quote = '''
+`KMS Key ARN` and `KMS MRKey ARN` MUST take an additional argument
+that is a KMS ARN.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This ARN MUST NOT be an Alias.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This ARN MUST be a valid
+[AWS KMS Key ARN](./aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-arn).
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+To be clear, an KMS ARN for a Multi-Region Key MAY be provided to the `KMS Key ARN` configuration,
+and a KMS ARN for non Multi-Region Key MAY be provided to the `KMS MRKey ARN` configuration.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+`MRDiscovery` MUST take an additional argument, which is a region.
+'''
+

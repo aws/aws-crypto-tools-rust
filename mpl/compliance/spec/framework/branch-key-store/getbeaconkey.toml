@@ -1,0 +1,73 @@
+target = "../spec/framework/branch-key-store.md#getbeaconkey"
+
+# GetBeaconKey
+#
+# On invocation, the caller:
+# 
+# - MUST supply a `branch-key-id`
+# 
+# To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
+# using the `branch-key-id` as the Partition Key and "beacon:ACTIVE" value as the Sort Key.
+# 
+# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+# If the record does not contain the defined fields, this operation MUST fail.
+# 
+# The operation MUST decrypt the beacon key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+# 
+# If the beacon key fails to decrypt, this operation MUST fail.
+# 
+# This GetBeaconKey MUST construct [beacon key materials](./structures.md#beacon-key-materials) from the decrypted branch key material
+# and the `branchKeyId` from the returned `branch-key-id` field.
+# 
+# This operation MUST return the constructed [beacon key materials](./structures.md#beacon-key-materials).
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST supply a `branch-key-id`
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
+using the `branch-key-id` as the Partition Key and "beacon:ACTIVE" value as the Sort Key.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the record does not contain the defined fields, this operation MUST fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The operation MUST decrypt the beacon key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the beacon key fails to decrypt, this operation MUST fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This GetBeaconKey MUST construct [beacon key materials](./structures.md#beacon-key-materials) from the decrypted branch key material
+and the `branchKeyId` from the returned `branch-key-id` field.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This operation MUST return the constructed [beacon key materials](./structures.md#beacon-key-materials).
+'''
+

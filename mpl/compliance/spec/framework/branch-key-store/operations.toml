@@ -1,0 +1,20 @@
+target = "../spec/framework/branch-key-store.md#operations"
+
+# Operations
+#
+# The Keystore MUST support the following operations:
+# 
+# - [GetKeyStoreInfo](#getkeystoreinfo)
+# - [CreateKeyStore](#createkeystore)
+# - [CreateKey](#createkey)
+# - [VersionKey](#versionkey)
+# - [GetActiveBranchKey](#getactivebranchkey)
+# - [GetBranchKeyVersion](#getbranchkeyversion)
+# - [GetBeaconKey](#getbeaconkey)
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Keystore MUST support the following operations:
+'''
+

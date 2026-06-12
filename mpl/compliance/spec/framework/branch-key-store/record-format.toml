@@ -1,0 +1,37 @@
+target = "../spec/framework/branch-key-store.md#record-format"
+
+# Record Format
+#
+# A branch key record MUST include the following key-value pairs:
+# 
+# 1. `branch-key-id` : Unique identifier for a branch key; represented as [AWS DDB String](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+# 1. `type` : One of the following; represented as [AWS DDB String](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+#    - The string literal `"beacon:ACTIVE"`. Then `enc` is the wrapped beacon key.
+#    - The string `"branch:version:"` + `version`, where `version` is the Branch Key Version. Then `enc` is the wrapped branch key.
+#    - The string literal `"branch:ACTIVE"`. Then `enc` is the wrapped beacon key of the active version. Then
+# 1. `version` : Only exists if `type` is the string literal `"branch:ACTIVE"`.
+#    Then it is the Branch Key Version. represented as [AWS DDB String](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+# 1. `enc` : Encrypted version of the key;
+#    represented as [AWS DDB Binary](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+# 1. `kms-arn`: The AWS KMS Key ARN used to generate the `enc` value.
+#    represented as [AWS DDB String](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+# 1. `create-time`: Timestamp in ISO 8601 format in UTC, to microsecond precision.
+#    Represented as [AWS DDB String](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+# 1. `hierarchy-version`: Version of the hierarchical keyring;
+#    represented as [AWS DDB Number](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes)
+# 
+# A branch key record MAY include [custom encryption context](#custom-encryption-context) key-value pairs.
+# These attributes should be prefixed with `aws-crypto-ec:` the same way they are for [AWS KMS encryption context](#encryption-context).
+
+[[spec]]
+level = "MUST"
+quote = '''
+A branch key record MUST include the following key-value pairs:
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+A branch key record MAY include [custom encryption context](#custom-encryption-context) key-value pairs.
+'''
+

@@ -1,0 +1,31 @@
+target = "../spec/framework/branch-key-store.md#active-encryption-context"
+
+# ACTIVE Encryption Context
+#
+# The ACTIVE branch key is a copy of the DECRYPT_ONLY with the same `version`.
+# It is structured slightly differently so that the active version can be accessed quickly.
+# 
+# In addition to the [encryption context](#encryption-context):
+# 
+# The ACTIVE encryption context value of the `type` attribute MUST equal to `"branch:ACTIVE"`.
+# The ACTIVE encryption context MUST have a `version` attribute.
+# The `version` attribute MUST store the branch key version formatted like `"branch:version:"` + `version`.
+
+[[spec]]
+level = "MUST"
+quote = '''
+The ACTIVE encryption context value of the `type` attribute MUST equal to `"branch:ACTIVE"`.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The ACTIVE encryption context MUST have a `version` attribute.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The `version` attribute MUST store the branch key version formatted like `"branch:version:"` + `version`.
+'''
+

@@ -25,6 +25,12 @@ source = "../spec/framework/keyring-interface.md"
 [[specification]]
 source = "../spec/framework/default-cmm.md"
 
+[[specification]]
+source = "../spec/framework/branch-key-store.md"
+
+[[specification]]
+source = "../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md"
+
 [[requirement]]
 pattern = "compliance/**/*.toml"
 

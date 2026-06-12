@@ -1,0 +1,164 @@
+target = "../spec/framework/branch-key-store.md#versionkey"
+
+# VersionKey
+#
+# On invocation, the caller:
+# 
+# - MUST supply a `branch-key-id`
+# 
+# If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`,
+# this operation MUST immediately fail.
+# 
+# VersionKey MUST first get the active version for the branch key from the keystore
+# by calling AWS DDB `GetItem`
+# using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
+# 
+# The `kms-arn` field of DDB response item MUST be [compatible with](#aws-key-arn-compatibility)
+# the configured `KMS ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
+# 
+# The `kms-arn` stored in the DDB table MUST NOT change as a result of this operation,
+# even if the KeyStore is configured with a `KMS MRKey ARN` that does not exactly match the stored ARN.
+# If such were allowed, clients using non-MRK KeyStores might suddenly stop working.
+# 
+# The values on the AWS DDB response item
+# MUST be authenticated according to [authenticating a keystore item](#authenticating-a-keystore-item).
+# If the item fails to authenticate this operation MUST fail.
+# 
+# The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to [Wrapped Branch Key Creation](#wrapped-branch-key-creation).
+# 
+# To add the new branch key to the keystore,
+# the operation MUST call [Amazon DynamoDB API TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+# The call to Amazon DynamoDB TransactWriteItems MUST use the configured Amazon DynamoDB Client to make the call.
+# The operation MUST call Amazon DynamoDB TransactWriteItems with a request constructed as follows:
+# 
+# List of TransactWriteItem:
+# 
+# - PUT:
+#   - Item:
+#     - “branch-key-id” (S): `branchKeyId`,
+#     - “type“ (S): "branch:version:" + `version`,
+#     - “enc” (B): the wrapped DECRYPT_ONLY Branch Key `CiphertextBlob` from the KMS operation
+#     - “create-time” (S): `timestamp`
+#     - "kms-arn" (S): configured KMS Key
+#     - “hierarchy-version” (N): 1
+#     - Every key-value pair of the custom [encryption context](./structures.md#encryption-context-3) that is associated with the branch key
+#       MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value.
+#   - ConditionExpression: `attribute_not_exists(branch-key-id)`
+#   - TableName: the configured Table Name
+# - PUT:
+#   - Item:
+#     - “branch-key-id” (S): `branchKeyId`,
+#     - “type“ (S): "branch:ACTIVE",
+#     - “enc” (B): wrapped ACTIVE Branch Key `CiphertextBlob` from the KMS operation
+#     - “create-time” (S): `timestamp`
+#     - "kms-arn" (S): configured KMS Key
+#     - “hierarchy-version” (N): 1
+#     - Every key-value pair of the custom [encryption context](./structures.md#encryption-context-3) that is associated with the branch key
+#       MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value.
+#   - ConditionExpression: `attribute_exists(branch-key-id) AND enc = :encOld`
+#   - ExpressionAttributeValues: `{":encOld" := DDB.AttributeValue.B(oldCiphertextBlob)}`
+#   - TableName: the configured Table Name
+# 
+# TransactWriteItemRequest:
+# 
+# - TransactWriteItems: List of TransactWriteItem
+# 
+# If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data.
+# Otherwise, this operation MUST yield an error.
+# 
+# The condition expression for the Active Input ensures
+# the Active Item in DynamoDB has not changed since it was read.
+# This prevents overwrites due to a race in updating the Active Item.
+
+[[spec]]
+level = "MUST"
+quote = '''
+- MUST supply a `branch-key-id`
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`,
+this operation MUST immediately fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+VersionKey MUST first get the active version for the branch key from the keystore
+by calling AWS DDB `GetItem`
+using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The `kms-arn` field of DDB response item MUST be [compatible with](#aws-key-arn-compatibility)
+the configured `KMS ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The `kms-arn` stored in the DDB table MUST NOT change as a result of this operation,
+even if the KeyStore is configured with a `KMS MRKey ARN` that does not exactly match the stored ARN.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The values on the AWS DDB response item
+MUST be authenticated according to [authenticating a keystore item](#authenticating-a-keystore-item).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the item fails to authenticate this operation MUST fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to [Wrapped Branch Key Creation](#wrapped-branch-key-creation).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+To add the new branch key to the keystore,
+the operation MUST call [Amazon DynamoDB API TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The call to Amazon DynamoDB TransactWriteItems MUST use the configured Amazon DynamoDB Client to make the call.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The operation MUST call Amazon DynamoDB TransactWriteItems with a request constructed as follows:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Every key-value pair of the custom [encryption context](./structures.md#encryption-context-3) that is associated with the branch key
+MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+Otherwise, this operation MUST yield an error.
+'''
+

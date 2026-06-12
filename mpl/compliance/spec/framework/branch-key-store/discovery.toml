@@ -1,0 +1,28 @@
+target = "../spec/framework/branch-key-store.md#discovery"
+
+# Discovery
+#
+# Discovery takes no additional information.
+# 
+# The Keystore MAY use the KMS Key ARNs already
+# persisted to the backing DynamoDB table,
+# provided they are in records created
+# with an identical Logical Keystore Name.
+# 
+# The `VersionKey` and `CreateKey` Operations are NOT supported
+# and will fail with a runtime exception.
+# 
+# There is no Multi-Region logic with this configuration;
+# if a Multi-Region Key is encountered,
+# and the region in the ARN is not the region of the KMS Client,
+# requests will fail with KMS Exceptions.
+
+[[spec]]
+level = "MAY"
+quote = '''
+The Keystore MAY use the KMS Key ARNs already
+persisted to the backing DynamoDB table,
+provided they are in records created
+with an identical Logical Keystore Name.
+'''
+
