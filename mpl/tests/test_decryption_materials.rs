@@ -47,10 +47,6 @@ fn test_required_ec_keys_must_be_subset() {
     let ec = make_ec_with_keys(&[b"existing"]);
     let reck = BTreeSet::from([b"missing".to_vec()]);
 
-    //= ../spec/framework/structures.md#required-encryption-context-keys-1
-    //= type=test
-    //# Every key in Required Encryption Context Keys
-    //# MUST be a key in the [encryption context](#encryption-context-2).
     let result = DecryptionMaterials::new(suite, ec, reck, None, None, None);
     assert!(result.is_err());
     assert!(
@@ -68,10 +64,6 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
     let reck = BTreeSet::new();
     let ssk = SymmetricSigningKey::new(b"sym".to_vec());
 
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=test
-    //# If the algorithm suite does not contain a symmetric signing algorithm,
-    //# the symmetric signing key MUST NOT be included in the materials.
     let result = DecryptionMaterials::new(suite, ec, reck, None, None, Some(ssk));
     assert!(result.is_err());
     assert!(
@@ -90,11 +82,6 @@ fn test_symmetric_key_iff_plaintext_data_key() {
     let pdk = PlaintextDataKey::new(b"key".to_vec());
 
     // PDK present but no SSK → error
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=test
-    //# If the algorithm suite does contain a symmetric signing algorithm,
-    //# the symmetric signing key MUST also be included in the materials
-    //# if and only if the materials also include a [plaintext data key](#plaintext-data-key-1).
     let result = DecryptionMaterials::new(suite, ec.clone(), reck.clone(), Some(pdk), None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("if and only if"));
@@ -112,10 +99,6 @@ fn test_validate_aws_crypto_public_key_happy_path() {
     let reck = BTreeSet::new();
     let vk = VerificationKey::new(b"verify".to_vec());
 
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=test
-    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
     let mat = DecryptionMaterials::new(suite, ec, reck, None, Some(vk), None).unwrap();
     assert!(mat.validate_aws_crypto_public_key().is_ok());
 }
@@ -126,10 +109,6 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
     let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
     let reck = BTreeSet::new();
 
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=test
-    //# If a [decryption materials](#decryption-materials) does not contain a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
     let mat = DecryptionMaterials::new(suite, ec, reck, None, None, None).unwrap();
     assert!(
         mat.validate_aws_crypto_public_key()
@@ -155,9 +134,6 @@ fn test_plaintext_data_key_immutability_decryption() {
 
 #[test]
 fn test_plaintext_data_key_zeroize_decryption() {
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //= type=test
-    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     let mut pdk = PlaintextDataKey::new(b"secret-dec".to_vec());
     pdk.zeroize();
     assert!(pdk.as_bytes().iter().all(|&b| b == 0));
@@ -165,9 +141,6 @@ fn test_plaintext_data_key_zeroize_decryption() {
 
 #[test]
 fn test_symmetric_signing_key_debug_redacted_dec() {
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=test
-    //# This value MUST be kept secret.
     let ssk = SymmetricSigningKey::new(b"sym-secret-key".to_vec());
     let debug_output = format!("{:?}", ssk);
     assert!(!debug_output.contains("sym-secret-key"));

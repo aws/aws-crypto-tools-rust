@@ -13,13 +13,6 @@ use super::error::MaterialsError;
 
 /// Materials needed for decryption.
 ///
-//= ../spec/framework/structures.md#fields
-//= type=implication
-//# This structure MUST include the following fields:
-//
-//= ../spec/framework/structures.md#fields
-//= type=implication
-//# This structure MAY include any of the following fields:
 pub struct DecryptionMaterials {
     algorithm_suite: AlgorithmSuite,
     encryption_context: EncryptionContext,
@@ -31,28 +24,6 @@ pub struct DecryptionMaterials {
 
 impl DecryptionMaterials {
     /// Construct decryption materials, enforcing all spec invariants.
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //= type=exception
-    //= reason=Algorithm-suite-defined property, validated when materials are consumed by decrypt; out of scope for this crate.
-    //# The plaintext data key MUST:
-    //
-    //= ../spec/framework/structures.md#verification-key
-    //= type=exception
-    //= reason=Algorithm suite property; cross-references algorithm-suites.md.
-    //# The verification key MUST fit the specification for the [asymmetric signature algorithm](algorithm-suites.md#asymmetric-signature-algorithm)
-    //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
-    //
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=exception
-    //= reason=Algorithm suite property; cross-references algorithm-suites.md.
-    //# If included, the symmetric signature key MUST fit the specification for the [symmetric signature algorithm](algorithm-suites.md#symmetric-signature-algorithm)
-    //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
-    //
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=exception
-    //= reason=Cannot validate cryptographic correspondence without the keypair generation context; documented invariant.
-    //# The mapped value from the reserved key `aws-crypto-public-key`
-    //# SHOULD be the signature verification key stored on the [decryption materials](#decryption-materials).
     pub fn new(
         algorithm_suite: AlgorithmSuite,
         encryption_context: EncryptionContext,
@@ -62,9 +33,6 @@ impl DecryptionMaterials {
         symmetric_signing_key: Option<SymmetricSigningKey>,
     ) -> Result<Self, MaterialsError> {
         // Required encryption context keys must be a subset of encryption context keys
-        //= ../spec/framework/structures.md#required-encryption-context-keys-1
-        //# Every key in Required Encryption Context Keys
-        //# MUST be a key in the [encryption context](#encryption-context-2).
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
                 return Err(MaterialsError::new(format!(
@@ -75,9 +43,6 @@ impl DecryptionMaterials {
         }
 
         // If no symmetric signing, symmetric signing key must not be included
-        //= ../spec/framework/structures.md#symmetric-signing-key
-        //# If the algorithm suite does not contain a symmetric signing algorithm,
-        //# the symmetric signing key MUST NOT be included in the materials.
         if !algorithm_suite.has_symmetric_signing() && symmetric_signing_key.is_some() {
             return Err(MaterialsError::new(
                 "Symmetric signing key must not be present when algorithm suite has no symmetric signing",
@@ -85,10 +50,6 @@ impl DecryptionMaterials {
         }
 
         // If symmetric signing, symmetric signing key must be present iff plaintext data key is present
-        //= ../spec/framework/structures.md#symmetric-signing-key
-        //# If the algorithm suite does contain a symmetric signing algorithm,
-        //# the symmetric signing key MUST also be included in the materials
-        //# if and only if the materials also include a [plaintext data key](#plaintext-data-key-1).
         if algorithm_suite.has_symmetric_signing()
             && plaintext_data_key.is_some() != symmetric_signing_key.is_some()
         {
@@ -119,9 +80,6 @@ impl DecryptionMaterials {
         &self.required_encryption_context_keys
     }
 
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //= type=implication
-    //# The plaintext data key SHOULD be stored as immutable data.
     pub fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
         self.plaintext_data_key.as_ref()
     }
@@ -135,13 +93,6 @@ impl DecryptionMaterials {
     }
 
     /// Validate the aws-crypto-public-key convention for decryption materials.
-    //= ../spec/framework/structures.md#encryption-context-2
-    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
-    //
-    //= ../spec/framework/structures.md#encryption-context-2
-    //# If a [decryption materials](#decryption-materials) does not contain a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
     pub fn validate_aws_crypto_public_key(&self) -> Result<(), MaterialsError> {
         let has_key = self
             .encryption_context

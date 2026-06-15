@@ -9,13 +9,6 @@ use super::encryption_context::EncryptionContext;
 
 /// Materials used in structured encryption containing HMAC keys derived from a beacon key.
 ///
-//= ../spec/framework/structures.md#structure-4
-//= type=implication
-//# This structure MUST include the following fields:
-//
-//= ../spec/framework/structures.md#structure-4
-//= type=implication
-//# This structure MAY include the following fields:
 pub struct BeaconKeyMaterials {
     beacon_key_id: String,
     encryption_context: EncryptionContext,

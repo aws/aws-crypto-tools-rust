@@ -3,20 +3,6 @@
 
 //! Framework structures for cryptographic materials.
 
-//= ../spec/framework/structures.md#overview
-//= type=implication
-//# These structures define a group of related fields that MUST hold certain properties.
-//
-//= ../spec/framework/structures.md#overview
-//= type=implication
-//# Wherever these structures are referenced in this specification,
-//# implementations MUST ensure that all properties of a structure's fields are upheld.
-//
-//= ../spec/framework/structures.md#overview
-//= type=implication
-//# While these structures will usually be represented as objects, lower level languages MAY represent
-//# these fields in a less strictly defined way as long as all field properties are still upheld.
-
 pub mod algorithm_suite;
 pub mod beacon_key_materials;
 pub mod branch_key_materials;

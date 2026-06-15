@@ -39,9 +39,6 @@ fn test_valid_uuid_v4_accepted() {
 
 #[test]
 fn test_malformed_uuid_rejected() {
-    //= ../spec/framework/structures.md#branch-key-version
-    //= type=test
-    //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
     let branch_key = [0x00u8; 32];
     let invalid_uuids = [
         "not-a-uuid",
