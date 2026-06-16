@@ -316,3 +316,28 @@ fn test_equality_is_order_independent() {
     let entries_b: Vec<_> = ec_b.iter().collect();
     assert_eq!(entries_a, entries_b);
 }
+
+#[test]
+fn test_serialize_produces_known_bytes() {
+    // Pin the wire format with a hand-computed vector for {"a" -> "1"}.
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"a".to_vec(), b"1".to_vec());
+
+    let expected: &[u8] = &[
+        0x00, 0x01, // count = 1
+        0x00, 0x01, // key_len = 1
+        b'a', // key
+        0x00, 0x01, // val_len = 1
+        b'1', // value
+    ];
+    assert_eq!(ec.serialize().unwrap().as_slice(), expected);
+}
+
+#[test]
+fn test_deserialize_known_bytes_produces_expected_context() {
+    // Same wire form as test_serialize_produces_known_bytes, decoded.
+    let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, b'1'];
+    let ec = EncryptionContext::deserialize(bytes).unwrap();
+    assert_eq!(ec.len(), 1);
+    assert_eq!(ec.get(b"a"), Some(&b"1".to_vec()));
+}
