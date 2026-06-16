@@ -423,3 +423,29 @@ fn test_serialize_known_bytes_for_4byte_utf8() {
     ];
     assert_eq!(ec.serialize().unwrap().as_slice(), expected);
 }
+
+#[test]
+fn test_deserialize_rejects_trailing_bytes() {
+    // Build a valid wire form for {"a" -> "1"} and append one junk byte.
+    let mut bytes: Vec<u8> = vec![0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, b'1'];
+    bytes.push(0xFF); // trailing junk
+
+    let result = EncryptionContext::deserialize(&bytes);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("Trailing bytes"));
+}
+
+#[test]
+fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
+    // Two-entry wire form followed by junk; ensures the check fires regardless
+    // of where the entry loop terminates.
+    let bytes: Vec<u8> = vec![
+        0x00, 0x02, // count = 2
+        0x00, 0x01, b'a', 0x00, 0x01, b'1', // a -> 1
+        0x00, 0x01, b'b', 0x00, 0x01, b'2', // b -> 2
+        0xDE, 0xAD, // trailing junk
+    ];
+    let result = EncryptionContext::deserialize(&bytes);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message.contains("Trailing bytes"));
+}
