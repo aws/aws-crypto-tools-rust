@@ -160,6 +160,13 @@ impl EncryptionContext {
             }
         }
 
+        if offset != bytes.len() {
+            return Err(MaterialsError::new(format!(
+                "Trailing bytes after deserialization: {} byte(s) left over",
+                bytes.len() - offset
+            )));
+        }
+
         Ok(Self(map))
     }
 }
