@@ -449,3 +449,85 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("Trailing bytes"));
 }
+
+// ============================================================================
+// EncryptionContext spec gap: empty keys
+// ============================================================================
+//
+// The structures.md framework specification describes encryption-context
+// entries as non-empty UTF-8 byte strings — keys are conceptually identifiers
+// and are therefore expected to have at least one byte. The current Rust
+// implementation does NOT enforce this invariant at any of the four entry
+// points to the type:
+//
+//   1. EncryptionContext::insert(...)   — accepts an empty Vec<u8> key
+//   2. EncryptionContext::from_map(...) — accepts a BTreeMap with an empty key
+//   3. EncryptionContext::deserialize() — accepts a wire form with key_len = 0
+//   4. EncryptionContext::serialize()   — by symmetry with (1)/(2), will emit
+//                                         key_len = 0 for any empty-keyed entry
+//
+// The three tests below pin the *current* (permissive) behavior so that any
+// future tightening of the contract — i.e., adding empty-key rejection at
+// these entry points — produces a deliberate, reviewable test failure rather
+// than silently changing observable behavior.
+//
+// These are NOT spec-conformance tests. When/if the contract is tightened,
+// these tests should be flipped: each `assert! / assert_eq!` should become an
+// assertion that the entry point returns an `Err(MaterialsError { kind:
+// Validation, .. })`, and the source updated to match. Doing so will also
+// require changing `from_map`'s return type from `Self` to
+// `Result<Self, MaterialsError>` (a breaking API change).
+//
+// Why we are not enforcing now:
+//   - Rejection is a behavioral change at four entry points and changes one
+//     public signature (from_map -> Result<_, _>).
+//   - The validation belongs in the same review as a broader
+//     EncryptionContext invariant pass (e.g., key/value max-length in the
+//     spec, value emptiness rules) rather than as a one-off here.
+//   - PR #11 is scoped to the structures-slice review; expanding scope risks
+//     the slice's stack-level snapshot diverging from neighboring slices.
+//
+// Tracked: revisit as part of a future EncryptionContext-invariants pass.
+// ============================================================================
+
+#[test]
+fn test_insert_accepts_empty_key_currently_unenforced() {
+    // CURRENT BEHAVIOR (not spec-conformant): insert accepts an empty key.
+    // If/when empty keys are rejected, flip to assert that some sentinel
+    // error path is taken (e.g., insert is changed to return Result and
+    // returns Err on empty input).
+    let mut ec = EncryptionContext::new();
+    ec.insert(Vec::new(), b"value".to_vec());
+    assert_eq!(ec.len(), 1);
+    assert_eq!(ec.get(&[]), Some(&b"value".to_vec()));
+}
+
+#[test]
+fn test_from_map_accepts_empty_key_currently_unenforced() {
+    // CURRENT BEHAVIOR (not spec-conformant): from_map silently accepts a
+    // BTreeMap whose keys include an empty Vec<u8>.
+    // If/when empty keys are rejected, from_map's signature must change to
+    // Result<Self, MaterialsError>; this test would become an Err assertion.
+    let mut map = std::collections::BTreeMap::new();
+    map.insert(Vec::new(), b"value".to_vec());
+    let ec = EncryptionContext::from_map(map);
+    assert_eq!(ec.len(), 1);
+    assert!(ec.contains_key(&[]));
+}
+
+#[test]
+fn test_deserialize_accepts_empty_key_length_currently_unenforced() {
+    // CURRENT BEHAVIOR (not spec-conformant): deserialize accepts a wire
+    // form with key_len = 0. If/when empty keys are rejected, this test
+    // should be flipped to assert deserialize returns Err with a message
+    // identifying the empty-key violation.
+    let bytes: &[u8] = &[
+        0x00, 0x01, // count = 1
+        0x00, 0x00, // key_len = 0 (EMPTY KEY — current impl accepts this)
+        0x00, 0x01, // val_len = 1
+        b'1', // value
+    ];
+    let ec = EncryptionContext::deserialize(bytes).unwrap();
+    assert_eq!(ec.len(), 1);
+    assert_eq!(ec.get(&[]), Some(&b"1".to_vec()));
+}
