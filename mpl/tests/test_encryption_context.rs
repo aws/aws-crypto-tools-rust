@@ -270,3 +270,49 @@ fn test_serialize_rejects_too_many_entries() {
     assert!(err.message.contains("entry count"));
     assert!(err.message.contains("u16::MAX"));
 }
+
+#[test]
+fn test_contains_key() {
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"present".to_vec(), b"v".to_vec());
+    assert!(ec.contains_key(b"present"));
+    assert!(!ec.contains_key(b"absent"));
+}
+
+#[test]
+fn test_default_produces_empty_context() {
+    let ec = EncryptionContext::default();
+    assert!(ec.is_empty());
+    assert_eq!(ec.len(), 0);
+    // Default should also serialize to empty bytes (matches new()).
+    assert!(ec.serialize().unwrap().is_empty());
+}
+
+#[test]
+fn test_insert_overwrites_existing_key() {
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"k".to_vec(), b"v1".to_vec());
+    ec.insert(b"k".to_vec(), b"v2".to_vec());
+    assert_eq!(ec.get(b"k"), Some(&b"v2".to_vec()));
+    assert_eq!(ec.len(), 1);
+}
+
+#[test]
+fn test_equality_is_order_independent() {
+    let mut ec_a = EncryptionContext::new();
+    ec_a.insert(b"b".to_vec(), b"2".to_vec());
+    ec_a.insert(b"a".to_vec(), b"1".to_vec());
+    ec_a.insert(b"c".to_vec(), b"3".to_vec());
+
+    let mut ec_b = EncryptionContext::new();
+    ec_b.insert(b"a".to_vec(), b"1".to_vec());
+    ec_b.insert(b"b".to_vec(), b"2".to_vec());
+    ec_b.insert(b"c".to_vec(), b"3".to_vec());
+
+    assert_eq!(ec_a, ec_b);
+
+    // Both iterate in canonical sorted-by-byte order regardless of insert order.
+    let entries_a: Vec<_> = ec_a.iter().collect();
+    let entries_b: Vec<_> = ec_b.iter().collect();
+    assert_eq!(entries_a, entries_b);
+}
