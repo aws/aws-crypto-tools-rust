@@ -341,3 +341,40 @@ fn test_deserialize_known_bytes_produces_expected_context() {
     assert_eq!(ec.len(), 1);
     assert_eq!(ec.get(b"a"), Some(&b"1".to_vec()));
 }
+
+#[test]
+fn test_serialize_accepts_max_u16_key_length() {
+    // Existing tests prove >u16::MAX is rejected; lock the at-max success path.
+    let mut ec = EncryptionContext::new();
+    let max_key = vec![0xAA; u16::MAX as usize];
+    ec.insert(max_key.clone(), b"v".to_vec());
+
+    let serialized = ec.serialize().unwrap();
+    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    assert_eq!(deserialized.get(&max_key), Some(&b"v".to_vec()));
+}
+
+#[test]
+fn test_serialize_accepts_max_u16_value_length() {
+    let mut ec = EncryptionContext::new();
+    let max_val = vec![0xBB; u16::MAX as usize];
+    ec.insert(b"k".to_vec(), max_val.clone());
+
+    let serialized = ec.serialize().unwrap();
+    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    assert_eq!(deserialized.get(b"k"), Some(&max_val));
+}
+
+#[test]
+fn test_serialize_accepts_max_u16_entry_count() {
+    let mut ec = EncryptionContext::new();
+    // Insert exactly u16::MAX (65_535) distinct entries.
+    for i in 0..u16::MAX as u32 {
+        ec.insert(i.to_be_bytes().to_vec(), b"v".to_vec());
+    }
+    assert_eq!(ec.len(), u16::MAX as usize);
+
+    let serialized = ec.serialize().unwrap();
+    // Leading two bytes encode the count.
+    assert_eq!(u16::from_be_bytes([serialized[0], serialized[1]]), u16::MAX);
+}
