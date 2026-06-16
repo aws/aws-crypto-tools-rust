@@ -12,6 +12,7 @@ use super::error::MaterialsError;
 
 /// Materials needed for encryption.
 ///
+#[derive(Debug)]
 pub struct EncryptionMaterials {
     algorithm_suite: AlgorithmSuite,
     encrypted_data_keys: Vec<EncryptedDataKey>,
@@ -131,22 +132,5 @@ impl EncryptionMaterials {
             ));
         }
         Ok(())
-    }
-}
-
-impl std::fmt::Debug for EncryptionMaterials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EncryptionMaterials")
-            .field("algorithm_suite", &self.algorithm_suite)
-            .field("encrypted_data_keys", &self.encrypted_data_keys)
-            .field("encryption_context", &self.encryption_context)
-            .field(
-                "required_encryption_context_keys",
-                &self.required_encryption_context_keys,
-            )
-            .field("plaintext_data_key", &self.plaintext_data_key)
-            .field("signing_key", &self.signing_key)
-            .field("symmetric_signing_keys", &self.symmetric_signing_keys)
-            .finish()
     }
 }

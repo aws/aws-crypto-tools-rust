@@ -13,6 +13,7 @@ use super::error::MaterialsError;
 
 /// Materials needed for decryption.
 ///
+#[derive(Debug)]
 pub struct DecryptionMaterials {
     algorithm_suite: AlgorithmSuite,
     encryption_context: EncryptionContext,
@@ -108,21 +109,5 @@ impl DecryptionMaterials {
             ));
         }
         Ok(())
-    }
-}
-
-impl std::fmt::Debug for DecryptionMaterials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DecryptionMaterials")
-            .field("algorithm_suite", &self.algorithm_suite)
-            .field("encryption_context", &self.encryption_context)
-            .field(
-                "required_encryption_context_keys",
-                &self.required_encryption_context_keys,
-            )
-            .field("plaintext_data_key", &self.plaintext_data_key)
-            .field("verification_key", &self.verification_key)
-            .field("symmetric_signing_key", &self.symmetric_signing_key)
-            .finish()
     }
 }
