@@ -378,3 +378,48 @@ fn test_serialize_accepts_max_u16_entry_count() {
     // Leading two bytes encode the count.
     assert_eq!(u16::from_be_bytes([serialized[0], serialized[1]]), u16::MAX);
 }
+
+#[test]
+fn test_round_trip_preserves_multibyte_utf8() {
+    // Representative codepoints across all four UTF-8 byte-length classes:
+    //   1-byte ASCII  : 'a'  (U+0061)  -> [0x61]
+    //   2-byte Latin  : 'é'  (U+00E9)  -> [0xC3, 0xA9]
+    //   3-byte CJK    : '日' (U+65E5)  -> [0xE6, 0x97, 0xA5]
+    //   4-byte emoji  : '🦀' (U+1F980) -> [0xF0, 0x9F, 0xA6, 0x80]
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"a".to_vec(), "ascii".as_bytes().to_vec());
+    ec.insert("é".as_bytes().to_vec(), "latín".as_bytes().to_vec());
+    ec.insert("日".as_bytes().to_vec(), "中文".as_bytes().to_vec());
+    ec.insert("🦀".as_bytes().to_vec(), "🎉🦀".as_bytes().to_vec());
+
+    let serialized = ec.serialize().unwrap();
+    let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
+    assert_eq!(ec, deserialized);
+
+    // UTF-8 has the property that lexicographic byte order matches Unicode
+    // codepoint order. The structures.md spec mandates "ascending order
+    // according to the UTF-8 encoded binary value", and BTreeMap iterates by
+    // binary byte order; this asserts both agree across byte-length boundaries.
+    let keys: Vec<_> = deserialized.iter().map(|(k, _)| k.clone()).collect();
+    assert_eq!(keys[0], b"a");
+    assert_eq!(keys[1], "é".as_bytes());
+    assert_eq!(keys[2], "日".as_bytes());
+    assert_eq!(keys[3], "🦀".as_bytes());
+}
+
+#[test]
+fn test_serialize_known_bytes_for_4byte_utf8() {
+    // Lock the wire format for a 4-byte UTF-8 codepoint on both halves of an
+    // entry. Complements test_serialize_produces_known_bytes (1-byte ASCII).
+    let mut ec = EncryptionContext::new();
+    ec.insert("🦀".as_bytes().to_vec(), "🦀".as_bytes().to_vec());
+
+    let expected: &[u8] = &[
+        0x00, 0x01, // count = 1
+        0x00, 0x04, // key_len = 4
+        0xF0, 0x9F, 0xA6, 0x80, // "🦀" UTF-8
+        0x00, 0x04, // val_len = 4
+        0xF0, 0x9F, 0xA6, 0x80, // "🦀" UTF-8
+    ];
+    assert_eq!(ec.serialize().unwrap().as_slice(), expected);
+}
