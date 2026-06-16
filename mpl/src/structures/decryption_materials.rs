@@ -13,17 +13,6 @@ use super::error::MaterialsError;
 
 /// Materials needed for decryption.
 ///
-//= ../spec/framework/structures.md#fields
-//= type=implication
-//# This structure MUST include the following fields:
-//
-//= ../spec/framework/structures.md#fields
-//= type=implication
-//# This structure MAY include any of the following fields:
-//
-//= ../spec/framework/cmm-interface.md#decrypt-materials
-//= type=implication
-//# The decryption materials returned MUST include the following:
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
@@ -35,33 +24,6 @@ pub struct DecryptionMaterials {
 
 impl DecryptionMaterials {
     /// Construct decryption materials, enforcing all spec invariants.
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //= type=exception
-    //= reason=Plaintext data key length is constrained by the algorithm suite's encryption key length, validated when materials are consumed by decrypt; see #encryption-algorithm in algorithm-suites.md.
-    //# The plaintext data key MUST:
-    //
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=exception
-    //= reason=ESDK algorithm suites never include a symmetric signature algorithm; this clause is vacuously satisfied for every variant of AlgorithmSuiteId in this MPL implementation.
-    //# If included, the symmetric signature key MUST fit the specification for the [symmetric signature algorithm](algorithm-suites.md#symmetric-signature-algorithm)
-    //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
-    //
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=exception
-    //= reason=ESDK algorithm suites never include a symmetric signature algorithm; this clause is vacuously satisfied for every variant of AlgorithmSuiteId in this MPL implementation.
-    //# If the algorithm suite does contain a symmetric signing algorithm,
-    //# the symmetric signing key MUST also be included in the materials
-    //# if and only if the materials also include a [plaintext data key](#plaintext-data-key-1).
-    //
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=exception
-    //= reason=Cannot validate cryptographic correspondence without the keypair generation context; documented invariant.
-    //# The mapped value from the reserved key `aws-crypto-public-key`
-    //# SHOULD be the signature verification key stored on the [decryption materials](#decryption-materials).
-    //
-    //= ../spec/framework/cmm-interface.md#decrypt-materials
-    //= type=implication
-    //# - The decryption materials returned MUST follow the specification for [decryption-materials](structures.md#decryption-materials).
     pub fn new(
         algorithm_suite_id: AlgorithmSuiteId,
         encryption_context: EncryptionContext,
@@ -73,13 +35,6 @@ impl DecryptionMaterials {
         let suite = algorithm_suite_id.specification();
 
         // Required encryption context keys must be a subset of encryption context keys
-        //= ../spec/framework/structures.md#required-encryption-context-keys-1
-        //# Every key in Required Encryption Context Keys
-        //# MUST be a key in the [encryption context](#encryption-context-2).
-        //
-        //= ../spec/framework/cmm-interface.md#decrypt-materials
-        //= type=implication
-        //# - All keys in this set MUST exist in the decryption materials encryption context.
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
                 return Err(MaterialsError::new(format!(
@@ -91,8 +46,6 @@ impl DecryptionMaterials {
 
         // If no asymmetric signing, verification key must not be present.
         if !algorithm_suite_id.has_asymmetric_signing() && verification_key.is_some() {
-            //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-            //# - Asymmetric signatures MUST NOT be verified.
             return Err(MaterialsError::new(
                 "Verification key must not be present when algorithm suite has no asymmetric signing",
             ));
@@ -100,9 +53,6 @@ impl DecryptionMaterials {
 
         // If asymmetric signing, the verification key (when present) MUST match
         // the suite's asymmetric signature algorithm SEC1-uncompressed length.
-        //= ../spec/framework/structures.md#verification-key
-        //# The verification key MUST fit the specification for the [asymmetric signature algorithm](algorithm-suites.md#asymmetric-signature-algorithm)
-        //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
         if let Some(ref vk) = verification_key
             && let Some(expected_len) = suite.verification_key_length()
             && vk.len() != expected_len
@@ -115,12 +65,7 @@ impl DecryptionMaterials {
         }
 
         // If no symmetric signing, symmetric signing key must not be included
-        //= ../spec/framework/structures.md#symmetric-signing-key
-        //# If the algorithm suite does not contain a symmetric signing algorithm,
-        //# the symmetric signing key MUST NOT be included in the materials.
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_key.is_some() {
-            //= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-            //# - Symmetric signatures MUST NOT be verified.
             return Err(MaterialsError::new(
                 "Symmetric signing key must not be present when algorithm suite has no symmetric signing",
             ));
@@ -152,9 +97,6 @@ impl DecryptionMaterials {
         &self.required_encryption_context_keys
     }
 
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //= type=implication
-    //# The plaintext data key SHOULD be stored as immutable data.
     pub fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
         self.plaintext_data_key.as_ref()
     }
@@ -168,13 +110,6 @@ impl DecryptionMaterials {
     }
 
     /// Validate the aws-crypto-public-key convention for decryption materials.
-    //= ../spec/framework/structures.md#encryption-context-2
-    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
-    //
-    //= ../spec/framework/structures.md#encryption-context-2
-    //# If a [decryption materials](#decryption-materials) does not contain a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
     pub fn validate_aws_crypto_public_key(&self) -> Result<(), MaterialsError> {
         let has_key = self
             .encryption_context

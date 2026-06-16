@@ -53,10 +53,6 @@ fn test_required_ec_keys_must_be_subset() {
     let ec = make_ec_with_keys(&[b"existing"]);
     let reck = BTreeSet::from([b"missing".to_vec()]);
 
-    //= ../spec/framework/structures.md#required-encryption-context-keys-1
-    //= type=test
-    //# Every key in Required Encryption Context Keys
-    //# MUST be a key in the [encryption context](#encryption-context-2).
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None);
     assert!(result.is_err());
     assert!(
@@ -73,14 +69,6 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
     let reck = BTreeSet::new();
     let ssk = SymmetricSigningKey::new(b"sym".to_vec());
 
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=test
-    //# If the algorithm suite does not contain a symmetric signing algorithm,
-    //# the symmetric signing key MUST NOT be included in the materials.
-    //
-    //= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-    //= type=test
-    //# - Symmetric signatures MUST NOT be verified.
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, Some(ssk));
     assert!(result.is_err());
     assert!(
@@ -98,10 +86,6 @@ fn test_verification_key_length_must_match_algorithm_suite() {
     // 32 bytes is wrong for P-384 (which expects 97 bytes).
     let bad_vk = VerificationKey::new(vec![0x04; 32]);
 
-    //= ../spec/framework/structures.md#verification-key
-    //= type=test
-    //# The verification key MUST fit the specification for the [asymmetric signature algorithm](algorithm-suites.md#asymmetric-signature-algorithm)
-    //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
     let result = DecryptionMaterials::new(SIGN_SUITE, ec, reck, None, Some(bad_vk), None);
     let err = result.expect_err("expected verification-key length mismatch error");
     assert!(
@@ -127,9 +111,6 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
     let reck = BTreeSet::new();
     let vk = VerificationKey::new(vec![0x04; 97]);
 
-    //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-    //= type=test
-    //# - Asymmetric signatures MUST NOT be verified.
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, Some(vk), None);
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
     assert!(err.message.contains("Verification key must not be present"));
@@ -141,10 +122,6 @@ fn test_validate_aws_crypto_public_key_happy_path() {
     let reck = BTreeSet::new();
     let vk = p384_verification_key();
 
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=test
-    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
     let mat = DecryptionMaterials::new(SIGN_SUITE, ec, reck, None, Some(vk), None).unwrap();
     assert!(mat.validate_aws_crypto_public_key().is_ok());
 }
@@ -154,10 +131,6 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
     let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
     let reck = BTreeSet::new();
 
-    //= ../spec/framework/structures.md#encryption-context-2
-    //= type=test
-    //# If a [decryption materials](#decryption-materials) does not contain a [verification key](#verification-key),
-    //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
     let mat = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None).unwrap();
     assert!(
         mat.validate_aws_crypto_public_key()
@@ -182,9 +155,6 @@ fn test_plaintext_data_key_immutability_decryption() {
 
 #[test]
 fn test_plaintext_data_key_zeroize_decryption() {
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //= type=test
-    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     let mut pdk = PlaintextDataKey::new(b"secret-dec".to_vec());
     pdk.zeroize();
     assert!(pdk.as_bytes().iter().all(|&b| b == 0));
@@ -192,9 +162,6 @@ fn test_plaintext_data_key_zeroize_decryption() {
 
 #[test]
 fn test_symmetric_signing_key_debug_redacted_dec() {
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //= type=test
-    //# This value MUST be kept secret.
     let ssk = SymmetricSigningKey::new(b"sym-secret-key".to_vec());
     let debug_output = format!("{:?}", ssk);
     assert!(!debug_output.contains("sym-secret-key"));

@@ -8,13 +8,7 @@ use super::error::MaterialsError;
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
-//= ../spec/framework/structures.md#structure-3
-//= type=implication
-//# This structure MUST include all of the following fields:
 pub struct BranchKeyMaterials {
-    //= ../spec/framework/structures.md#branch-key
-    //= type=implication
-    //# This key MUST be 32 bytes long.
     branch_key: [u8; 32],
     branch_key_id: String,
     branch_key_version: String,
@@ -23,19 +17,12 @@ pub struct BranchKeyMaterials {
 
 impl BranchKeyMaterials {
     /// Construct branch key materials. Validates that `branch_key_version` is a valid UUIDv4.
-    //= ../spec/framework/structures.md#branch-key
-    //= type=exception
-    //= reason=Origin requirement; enforced at the keystore layer (branch-key-store.md), not at this type.
-    //# This data key MUST only be generated through
-    //# AWS KMS using the [`GenerateDataKeyWithoutPlaintext`](https://docs.aws.amazon.com/kms/latest/APIReference/API_GenerateDataKeyWithoutPlaintext.html) API.
     pub fn new(
         branch_key: [u8; 32],
         branch_key_id: String,
         branch_key_version: String,
         encryption_context: EncryptionContext,
     ) -> Result<Self, MaterialsError> {
-        //= ../spec/framework/structures.md#branch-key-version
-        //# This value MUST be a version 4 [UUID](https://www.ietf.org/rfc/rfc4122.txt).
         if !is_valid_uuid_v4(&branch_key_version) {
             return Err(MaterialsError::new(format!(
                 "Branch key version is not a valid UUIDv4: {}",

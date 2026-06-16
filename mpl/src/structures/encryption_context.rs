@@ -9,29 +9,6 @@ use super::error::MaterialsError;
 
 /// A key-value mapping of arbitrary, non-secret, UTF-8 encoded strings used as AAD.
 ///
-//= ../spec/framework/structures.md#structure-1
-//= type=exception
-//= reason=Guidance for callers, not enforceable in code.
-//# Users SHOULD use the encryption context to store:
-//
-//= ../spec/framework/structures.md#structure-1
-//= type=exception
-//= reason=Guidance for callers; documented in API surface.
-//# - Non-secret data that MUST remain associated with the [message](../data-format/message.md) ciphertext.
-//
-//= ../spec/framework/structures.md#structure-1
-//= type=exception
-//= reason=Cannot enforce caller usage at the type level; documented in API surface.
-//# Users MUST NOT use the encryption context to store secret data.
-//
-//= ../spec/framework/structures.md#key-value-pair-entries
-//= type=implication
-//# This sequence MUST NOT contain duplicate entries.
-//
-//= ../spec/framework/structures.md#key-value-pair-entries
-//= type=implication
-//# These entries MUST be sorted, by key,
-//# in ascending order according to the UTF-8 encoded binary value.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct EncryptionContext(BTreeMap<Vec<u8>, Vec<u8>>);
 
@@ -89,16 +66,6 @@ impl EncryptionContext {
 
     /// Serialize the encryption context to bytes.
     ///
-    //= ../spec/framework/structures.md#serialization
-    //# If the encryption context is empty, its serialization MUST be
-    //# an empty byte sequence.
-    //
-    //= ../spec/framework/structures.md#serialization
-    //# If the encryption context is not empty, its serialization MUST
-    //# take the following form:
-    //
-    //= ../spec/framework/structures.md#key-value-pair-count
-    //# The value of this field MUST be greater than 0.
     pub fn serialize(&self) -> Result<Vec<u8>, MaterialsError> {
         if self.0.is_empty() {
             return Ok(Vec::new());

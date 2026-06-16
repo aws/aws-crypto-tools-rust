@@ -7,10 +7,6 @@ use aws_crypto_mpl::structures::EncryptionContext;
 fn test_empty_serializes_to_empty_bytes() {
     let ec = EncryptionContext::new();
 
-    //= ../spec/framework/structures.md#serialization
-    //= type=test
-    //# If the encryption context is empty, its serialization MUST be
-    //# an empty byte sequence.
     assert!(ec.serialize().unwrap().is_empty());
 }
 
@@ -19,10 +15,6 @@ fn test_single_entry_round_trip() {
     let mut ec = EncryptionContext::new();
     ec.insert(b"key1".to_vec(), b"value1".to_vec());
 
-    //= ../spec/framework/structures.md#serialization
-    //= type=test
-    //# If the encryption context is not empty, its serialization MUST
-    //# take the following form:
     let serialized = ec.serialize().unwrap();
     let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
     assert_eq!(ec, deserialized);
@@ -88,9 +80,6 @@ fn test_key_value_pair_count_must_be_greater_than_zero() {
     // Construct bytes with count = 0
     let bytes = 0u16.to_be_bytes();
 
-    //= ../spec/framework/structures.md#key-value-pair-count
-    //= type=test
-    //# The value of this field MUST be greater than 0.
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("greater than 0"),);
