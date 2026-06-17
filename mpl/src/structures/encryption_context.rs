@@ -3,7 +3,7 @@
 
 //! Encryption context key-value mapping.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
 use super::error::MaterialsError;
 
@@ -152,11 +152,16 @@ impl EncryptionContext {
             let value = bytes[offset..val_end].to_vec();
             offset = val_end;
 
-            if map.insert(key.clone(), value).is_some() {
-                return Err(MaterialsError::new(format!(
-                    "Duplicate key in encryption context: {:?}",
-                    key
-                )));
+            match map.entry(key) {
+                Entry::Occupied(occupied) => {
+                    return Err(MaterialsError::new(format!(
+                        "Duplicate key in encryption context: {:?}",
+                        occupied.key()
+                    )));
+                }
+                Entry::Vacant(vacant) => {
+                    vacant.insert(value);
+                }
             }
         }
 
