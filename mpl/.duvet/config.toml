@@ -31,6 +31,9 @@ source = "../spec/framework/branch-key-store.md"
 [[specification]]
 source = "../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md"
 
+[[specification]]
+source = "../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md"
+
 [[requirement]]
 pattern = "compliance/**/*.toml"
 
