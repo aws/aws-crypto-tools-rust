@@ -7,3 +7,6 @@
 **/.duvet/snapshot.txt
 **/.duvet/reports/**
 **/.duvet/requirements/**
+
+# Editor / IDE — local workspace config not meant to be shared
+.vscode/
