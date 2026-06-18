@@ -136,6 +136,28 @@ fn test_symmetric_keys_length_must_match_edks() {
 }
 
 #[test]
+fn test_symmetric_keys_required_when_edks_present() {
+    // Companion to test_symmetric_keys_length_must_match_edks: covers the
+    // None-side of the invariant. When the suite has symmetric signing AND
+    // the EDK list is non-empty, the symmetric_signing_keys list MUST be
+    // present (it MAY be omitted only when EDKs are empty).
+    let suite = AlgorithmSuite::new(false, true);
+    let ec = EncryptionContext::new();
+    let reck = BTreeSet::new();
+    let pdk = PlaintextDataKey::new(b"key".to_vec());
+    let edk = make_edk();
+
+    let result = EncryptionMaterials::new(suite, vec![edk], ec, reck, Some(pdk), None, None);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .message
+            .contains("Symmetric signing keys must be present")
+    );
+}
+
+#[test]
 fn test_symmetric_keys_may_be_omitted_when_edks_empty() {
     let suite = AlgorithmSuite::new(false, true);
     let ec = EncryptionContext::new();

@@ -65,6 +65,18 @@ impl EncryptionMaterials {
             ));
         }
 
+        // If symmetric signing AND there are encrypted data keys, the
+        // symmetric_signing_keys list MUST be present. The list MAY be
+        // omitted only when the EDK list is empty.
+        if algorithm_suite.has_symmetric_signing()
+            && symmetric_signing_keys.is_none()
+            && !encrypted_data_keys.is_empty()
+        {
+            return Err(MaterialsError::new(
+                "Symmetric signing keys must be present when algorithm suite has symmetric signing and encrypted data keys are non-empty",
+            ));
+        }
+
         // If symmetric signing, list length must equal encrypted data keys length
         if algorithm_suite.has_symmetric_signing()
             && let Some(ref keys) = symmetric_signing_keys

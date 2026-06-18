@@ -75,6 +75,26 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
 }
 
 #[test]
+fn test_verification_key_rejected_without_asymmetric_signing() {
+    // Mirror of test_signing_key_rejected_without_asymmetric_signing in
+    // test_encryption_materials.rs: a verification key on a non-signing suite
+    // is internally inconsistent and MUST be rejected at construction.
+    let suite = AlgorithmSuite::new(false, false);
+    let ec = EncryptionContext::new();
+    let reck = BTreeSet::new();
+    let vk = VerificationKey::new(b"verify".to_vec());
+
+    let result = DecryptionMaterials::new(suite, ec, reck, None, Some(vk), None);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .message
+            .contains("Verification key must not be present")
+    );
+}
+
+#[test]
 fn test_symmetric_key_iff_plaintext_data_key() {
     let suite = AlgorithmSuite::new(false, true);
     let ec = EncryptionContext::new();

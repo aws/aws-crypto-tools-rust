@@ -43,6 +43,13 @@ impl DecryptionMaterials {
             }
         }
 
+        // If no asymmetric signing, verification key must not be present.
+        if !algorithm_suite.has_asymmetric_signing() && verification_key.is_some() {
+            return Err(MaterialsError::new(
+                "Verification key must not be present when algorithm suite has no asymmetric signing",
+            ));
+        }
+
         // If no symmetric signing, symmetric signing key must not be included
         if !algorithm_suite.has_symmetric_signing() && symmetric_signing_key.is_some() {
             return Err(MaterialsError::new(
