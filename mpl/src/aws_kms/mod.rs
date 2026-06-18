@@ -4,3 +4,6 @@
 //! AWS KMS shared utilities.
 
 pub mod mrk_match;
+
+#[cfg(feature = "keystore")]
+pub mod hierarchical_keyring;
