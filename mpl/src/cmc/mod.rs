@@ -13,26 +13,27 @@
 //! caching CMM can hold an arbitrary, runtime-configured cache.
 //! `async_trait` boxes the future to make `dyn Cmc` work today.
 //!
-//! # Concrete-CMC-deferred clauses (`type=exception`)
+//! # Concrete-CMC implementations
 //!
-//! This commit introduces the abstract `Cmc` trait scaffolding plus the
-//! `CacheEntry` data type only — no concrete CMC (LocalCmc, StormTrackerCmc,
-//! …) is implemented yet. Behavioral MUSTs on `put_cache_entry` /
-//! `get_cache_entry` (TTL enforcement, "must create a new entry", "must
-//! include all usage metadata"), the SHOULD on background processing, and
-//! the multi-thread MAYs are therefore annotated `type=exception` here.
-//! They are exercised TODAY by the mock-driven contract harness in
-//! `tests/test_cmc_contract.rs`, but those tests intentionally carry no
-//! `type=test` annotations: when each concrete CMC is added in a future
-//! commit, the matching exception below will be replaced with
-//! `type=implementation` on the concrete method, and `type=test` will be
-//! placed on the contract test that proves it.
+//! [`LocalCmc`] is the first concrete CMC in the MPL — an in-memory
+//! least-recently-used cache with TTL-aware pruning. The behavioral MUSTs
+//! on `put_cache_entry` / `get_cache_entry` (TTL enforcement, "must create
+//! a new entry", "must include all usage metadata") and the
+//! `usage-metadata` SHOULD-be-atomic clause are therefore satisfied by
+//! `LocalCmc`'s methods and verified by `tests/test_local_cmc.rs`.
+//!
+//! Multi-thread visibility MAYs and storm-tracker permissions remain
+//! `type=exception` on the trait until SynchronizedLocalCmc and
+//! StormTrackerCmc land — those concrete caches will earn
+//! `type=implementation,test` for the visibility clauses when added.
 
 pub mod entry;
+pub mod local;
 
 use async_trait::async_trait;
 
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+pub use local::LocalCmc;
 
 use std::fmt;
 use std::sync::Arc;
@@ -99,7 +100,7 @@ impl std::error::Error for CmcError {}
 //
 //= ../spec/framework/cryptographic-materials-cache.md#background-processing
 //= type=exception
-//= reason=SHOULD applies to concrete CMCs, not the abstract trait. A future LocalCmc may spawn a sweeper thread or expose a `clear_expired()` method; that concrete impl will earn `type=implementation,test` for this requirement.
+//= reason=Per-get pruning in LocalCmc::get_cache_entry bounds the staleness of long-idle expired entries to the N least-recently-used window on every get; a separate background sweeper is out of scope for the abstract trait and for the basic LocalCmc, and belongs to a higher-level wrapper such as SynchronizedLocalCmc.
 //# An implementation SHOULD provide a way to avoid this, for example,
 //# by spawning a background thread to occasionally remove expired entries.
 #[async_trait]
@@ -108,19 +109,8 @@ pub trait Cmc: Send + Sync {
     /// Mirrors the `Put Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#put-cache-entry).
     //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-    //= type=exception
-    //= reason=Abstract trait contract; no concrete CMC exists in this commit. Behavior is exercised today by mock-driven contract tests in tests/test_cmc_contract.rs. When a concrete CMC (e.g., LocalCmc) is added, this exception will be replaced with `type=implementation` on the concrete method and `type=test` on the contract test that proves it.
-    //# The CMC MUST create a new cache entry for the specified cache ID.
-    //
-    //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
     //= type=implication
     //# This operation MUST NOT return the inserted cache entry.
-    //
-    //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-    //= type=exception
-    //= reason=Abstract trait contract; no concrete CMC exists in this commit. The signature accepts a fully-formed CacheEntry whose UsageMetadata is set at construction; the concrete LocalCmc will earn `type=implementation,test` when it stores the entry verbatim.
-    //# The cache entry MUST include all [usage metadata](#usage-metadata)
-    //# since this information can not be updated after the put operation.
     //
     //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
     //= type=exception
@@ -133,19 +123,6 @@ pub trait Cmc: Send + Sync {
     /// Retrieve the cache entry for the supplied cache identifier, returning
     /// `None` on cache miss. Mirrors the `Get Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
-    //= ../spec/framework/cryptographic-materials-cache.md#time-to-live-ttl
-    //= type=exception
-    //= reason=Abstract trait contract; no concrete CMC exists in this commit. The TTL-expired-MUST-NOT-return rule is exercised today by mock-driven contract tests in tests/test_cmc_contract.rs that advance a mock clock past the entry's expiry. When a concrete CMC (e.g., LocalCmc) is added, this exception will be replaced with `type=implementation` on the concrete `get_cache_entry` and `type=test` on the contract test that proves it.
-    //# After a cache entry's TTL has elapsed,
-    //# we say that the entry is _TTL-expired_,
-    //# and a CMC MUST NOT return the entry to any caller.
-    //
-    //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
-    //= type=exception
-    //= reason=Abstract trait contract; no concrete CMC exists in this commit. The TTL-validation MUST is exercised today by mock-driven contract tests in tests/test_cmc_contract.rs. When a concrete CMC is added, this exception will be replaced with `type=implementation` on the concrete method and `type=test` on the contract test that proves it.
-    //# The CMC MUST validate that the cache entry
-    //# has not exceeded it's stored [TTL](#time-to-live-ttl).
-    //
     //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
     //= type=exception
     //= reason=Permission MAY — concrete cache choice (e.g., a stale-tolerant tier MAY return miss). StormTrackerCmc will exercise this branch when added.

@@ -12,7 +12,7 @@ pub mod structures;
 
 pub use client::*;
 pub use cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcError, CmcErrorKind, MessageUsage,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcError, CmcErrorKind, LocalCmc, MessageUsage,
     UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
