@@ -6,10 +6,13 @@
 pub mod mrk_match;
 
 #[cfg(feature = "keystore")]
-pub mod hierarchical_keyring;
+pub(crate) mod branch_key_wrap;
 
 #[cfg(feature = "keystore")]
 pub(crate) mod cache_entry_identifier;
+
+#[cfg(feature = "keystore")]
+pub mod hierarchical_keyring;
 
 /// Crate-internal surfaces re-exported for integration tests.
 ///
@@ -18,5 +21,6 @@ pub(crate) mod cache_entry_identifier;
 #[cfg(feature = "keystore")]
 #[doc(hidden)]
 pub mod __test_internals {
+    pub use super::branch_key_wrap::{compute_aad, unwrap, wrap};
     pub use super::cache_entry_identifier::{for_decrypt, for_encrypt};
 }
