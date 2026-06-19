@@ -34,6 +34,15 @@ source = "../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md"
 [[specification]]
 source = "../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md"
 
+[[specification]]
+source = "../spec/framework/cryptographic-materials-cache.md"
+
+[[specification]]
+source = "../spec/framework/local-cryptographic-materials-cache.md"
+
+[[specification]]
+source = "../spec/framework/storm-tracking-cryptographic-materials-cache.md"
+
 [[requirement]]
 pattern = "compliance/**/*.toml"
 
