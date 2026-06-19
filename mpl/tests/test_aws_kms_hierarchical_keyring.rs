@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use aws_crypto_mpl::aws_kms::__test_internals::{for_decrypt, for_encrypt};
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySource, CacheType, HierarchicalKeyring,
 };
@@ -270,4 +271,184 @@ fn branch_key_source_supplier_variant_compiles() {
         keyring.branch_key_source(),
         BranchKeySource::Supplier(_)
     ));
+}
+
+// ─── Cache entry identifier formula tests (Appendix A) ──────────────────────
+
+/// SHA-384 digest of a single concatenated byte sequence. Local helper used to
+/// derive the *expected* cache identifier from an explicitly-laid-out byte
+/// sequence — independent of the implementation under test, so the assertion
+/// catches any drift in the implementation's byte layout.
+fn sha384(input: &[u8]) -> [u8; 48] {
+    let d = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA384, input);
+    let mut out = [0u8; 48];
+    out.copy_from_slice(d.as_ref());
+    out
+}
+
+#[test]
+fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
+    // Independently chosen fixtures. The bytes below define the expected
+    // wire-shape per Appendix A; if the implementation deviates, SHA-384
+    // diverges.
+    let partition_id: &[u8] = b"\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff\x00";
+    let logical_key_store_name = "logical-store";
+    let branch_key_id = "branch-key-1";
+
+    // Manually build the byte sequence the spec dictates:
+    //   [resource_id=0x02, NULL, scope_id_encrypt=0x01, NULL,
+    //    partition_id..., NULL,
+    //    UTF8(logical_key_store_name), NULL,
+    //    UTF8(branch_key_id)]
+    let mut expected_input = Vec::new();
+    expected_input.push(0x02_u8);
+    expected_input.push(0x00_u8);
+    expected_input.push(0x01_u8);
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(partition_id);
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(logical_key_store_name.as_bytes());
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(branch_key_id.as_bytes());
+    let expected = sha384(&expected_input);
+
+    let actual = for_encrypt(partition_id, logical_key_store_name, branch_key_id);
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //= type=test
+    //# When the hierarchical keyring receives an OnEncrypt request,
+    //# the cache entry identifier MUST be calculated as the
+    //# SHA-384 hash of the following byte strings, in the order listed:
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //= type=test
+    //# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //= type=test
+    //# - MUST be the Scope ID for Encrypt (0x01)
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //= type=test
+    //# - MUST be the Partition ID for the Hierarchical Keyring
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#resource-suffix
+    //= type=test
+    //# The aforementioned 4 definitions ([Resource Identifier](#resource-identifier),
+    //# [Scope Identifier](#scope-identifier), [Partition ID](#partition-id-1), and
+    //# [Resource Suffix](#resource-suffix)) MUST be appended together with the null byte, 0x00,
+    //# and the SHA384 of the result should be taken as the final cache identifier.
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
+    let partition_id: &[u8] = b"\xde\xad\xbe\xef\xfe\xed\xfa\xce\x01\x02\x03\x04\x05\x06\x07\x08";
+    let logical_key_store_name = "logical-store-2";
+    let branch_key_id = "branch-key-2";
+    let branch_key_version = "ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb";
+
+    let mut expected_input = Vec::new();
+    expected_input.push(0x02_u8);
+    expected_input.push(0x00_u8);
+    expected_input.push(0x02_u8);
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(partition_id);
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(logical_key_store_name.as_bytes());
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(branch_key_id.as_bytes());
+    expected_input.push(0x00_u8);
+    expected_input.extend_from_slice(branch_key_version.as_bytes());
+    let expected = sha384(&expected_input);
+
+    let actual = for_decrypt(
+        partition_id,
+        logical_key_store_name,
+        branch_key_id,
+        branch_key_version,
+    );
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //= type=test
+    //# When the hierarchical keyring receives an OnDecrypt request,
+    //# it MUST calculate the cache entry identifier as the
+    //# SHA-384 hash of the following byte strings, in the order listed:
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //= type=test
+    //# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //= type=test
+    //# - MUST be the Scope ID for Decrypt (0x02)
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //= type=test
+    //# - MUST be the Partition ID for the Hierarchical Keyring
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
+    // Same partition / logical name / branch key id; the only difference
+    // between for_encrypt and for_decrypt's hash inputs is:
+    //   - scope_id (0x01 vs 0x02)
+    //   - presence of branch_key_version (absent vs present)
+    // The hashes MUST therefore differ. This is the regression check that
+    // the encrypt/decrypt scope IDs actually flow into the SHA-384 input.
+    let partition_id: &[u8] = b"shared-partition";
+    let logical = "shared-logical";
+    let branch_id = "shared-branch";
+    let version = "1.0";
+
+    let enc = for_encrypt(partition_id, logical, branch_id);
+    let dec = for_decrypt(partition_id, logical, branch_id, version);
+
+    assert_ne!(
+        enc, dec,
+        "encrypt and decrypt cache identifiers must differ for the same partition/logical/branch (scope IDs differentiate)"
+    );
+}
+
+#[test]
+fn cache_entry_identifier_distinct_branch_key_ids_produce_distinct_outputs() {
+    // Negative-collision regression: changing the branch_key_id MUST
+    // change the cache identifier. Both for_encrypt and for_decrypt
+    // checked.
+    let partition_id: &[u8] = b"some-partition-bytes";
+    let logical = "logical-name";
+
+    let enc_a = for_encrypt(partition_id, logical, "branch-a");
+    let enc_b = for_encrypt(partition_id, logical, "branch-b");
+    assert_ne!(
+        enc_a, enc_b,
+        "for_encrypt must produce distinct outputs for distinct branch key ids"
+    );
+
+    let dec_a = for_decrypt(partition_id, logical, "branch-a", "v1");
+    let dec_b = for_decrypt(partition_id, logical, "branch-b", "v1");
+    assert_ne!(
+        dec_a, dec_b,
+        "for_decrypt must produce distinct outputs for distinct branch key ids"
+    );
+}
+
+#[test]
+fn cache_entry_identifier_distinct_versions_produce_distinct_outputs() {
+    // Decrypt-only: the branch_key_version field MUST contribute to the
+    // hash. Two for_decrypt calls that differ only in branch_key_version
+    // MUST produce distinct outputs.
+    let partition_id: &[u8] = b"another-partition";
+    let logical = "logical-name";
+    let branch_id = "branch-id";
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //= type=test
+    //# - MUST be the UTF8 encoded branch-key-version
+    assert_ne!(
+        for_decrypt(partition_id, logical, branch_id, "v1"),
+        for_decrypt(partition_id, logical, branch_id, "v2"),
+        "for_decrypt must produce distinct outputs for distinct branch key versions"
+    );
 }

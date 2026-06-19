@@ -93,6 +93,10 @@ pub struct HierarchicalKeyring {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id
     //= type=implication
     //# The Partition ID MUST NOT be changed after initialization.
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
+    //= type=implication
+    //# The constructor of the Hierarchical Keyring MUST record these bytes at construction time.
     partition_id_bytes: Vec<u8>,
 }
 
@@ -126,6 +130,10 @@ impl HierarchicalKeyring {
             ));
         }
 
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
+        //= type=implication
+        //# It can either be a String provided by the user, which MUST be interpreted as the bytes of
+        //# UTF-8 Encoding of the String, or a v4 UUID, which SHOULD be interpreted as the 16 byte representation of the UUID.
         let partition_id_bytes = match partition_id {
             //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id
             //= type=implication
