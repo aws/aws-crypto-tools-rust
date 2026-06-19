@@ -39,10 +39,6 @@ pub struct BytesUsage(pub u64);
 
 /// Per-entry usage metadata. The caching CMM consults these counters when
 /// deciding whether the cached materials are still safe to reuse.
-//= ../spec/framework/cryptographic-materials-cache.md#usage-metadata
-//= type=exception
-//= reason=Update-atomicity is a concrete-cache concern; the abstract trait does not fix update semantics. The matching `LocalCmc` impl will provide either interior mutability or `&mut self` access and earn `type=implementation,test` then.
-//# Updating usage metadata SHOULD be atomic.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UsageMetadata {
     /// Number of messages encrypted by the cached encryption materials.
