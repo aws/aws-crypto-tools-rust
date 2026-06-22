@@ -324,13 +324,24 @@ fn record_from_ddb_item(
     let mut attributes: BTreeMap<String, String> = BTreeMap::new();
     for (k, v) in item {
         match v {
+            // String attributes (branch-key-id, type, version, kms-arn,
+            // create-time, custom-ec keys) are echoed verbatim.
             AttributeValue::S(s) => {
                 attributes.insert(k, s);
+            }
+            // Number attributes (notably `hierarchy-version`) are stored
+            // by DDB as decimal strings; carry that string through. The
+            // EC bound on the encrypt side stringifies Numbers the same
+            // way (see `keystore::encryption_context::build_base`), so
+            // round-tripping the decimal string preserves the EC bound
+            // through KMS.
+            AttributeValue::N(n) => {
+                attributes.insert(k, n);
             }
             other => {
                 return Err(KeystoreError::new(
                     KeystoreErrorKind::RecordMalformed,
-                    format!("Record attribute '{k}' must be String, got {other:?}",),
+                    format!("Record attribute '{k}' must be String or Number, got {other:?}",),
                 ));
             }
         }
