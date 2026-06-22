@@ -182,8 +182,13 @@ fn derive_branch_key(
 /// ```text
 /// salt(16) || iv(12) || version(16) || encrypted_key(plaintext_len) || tag(16)
 /// ```
+///
+/// `encryption_context` is the input encryption-materials' EC, bound
+/// into the AAD per spec `#branch-key-wrapping-and-unwrapping-aad` item 4
+/// ("encryption context from the input encryption materials").
 pub fn wrap(
     materials: &BranchKeyMaterials,
+    encryption_context: &EncryptionContext,
     plaintext_data_key: &[u8],
 ) -> Result<Vec<u8>, MaterialsError> {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
@@ -208,7 +213,7 @@ pub fn wrap(
     let aad_bytes = compute_aad(
         materials.branch_key_id(),
         materials.branch_key_version(),
-        materials.encryption_context(),
+        encryption_context,
     )?;
 
     // 5. AES-256-GCM seal.
@@ -277,8 +282,12 @@ pub fn wrap(
 ///
 /// Expects the on-wire layout
 /// `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`.
+///
+/// `encryption_context` is the input decryption-materials' EC, bound
+/// into the AAD per spec `#branch-key-wrapping-and-unwrapping-aad` item 4.
 pub fn unwrap(
     materials: &BranchKeyMaterials,
+    encryption_context: &EncryptionContext,
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, MaterialsError> {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
@@ -314,12 +323,13 @@ pub fn unwrap(
     let derived_branch_key = derive_branch_key(materials.branch_key(), &salt)?;
 
     // Build the AAD using the materials' branch_key_id, branch_key_version,
-    // and encryption_context. Note: A1 mandates the AAD is included in the
-    // AES Decrypt call; A2 mandates the concatenation order.
+    // and the supplied encryption_context (the decryption-materials' EC).
+    // Note: A1 mandates the AAD is included in the AES Decrypt call;
+    // A2 mandates the concatenation order.
     let aad_bytes = compute_aad(
         materials.branch_key_id(),
         materials.branch_key_version(),
-        materials.encryption_context(),
+        encryption_context,
     )?;
 
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping

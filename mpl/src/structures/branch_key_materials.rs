@@ -8,6 +8,7 @@ use super::error::MaterialsError;
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
+#[derive(Clone)]
 pub struct BranchKeyMaterials {
     branch_key: [u8; 32],
     branch_key_id: String,

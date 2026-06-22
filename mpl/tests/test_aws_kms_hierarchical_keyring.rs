@@ -749,8 +749,10 @@ fn wrap_unwrap_round_trip_recovers_plaintext() {
     let plaintext: &[u8] = b"a-data-key-for-testing-32-bytes!"; // 32 bytes
     assert_eq!(plaintext.len(), 32);
 
-    let ciphertext = branch_key_wrap(&materials, plaintext).expect("wrap must succeed");
-    let recovered = branch_key_unwrap(&materials, &ciphertext).expect("unwrap must succeed");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), plaintext)
+        .expect("wrap must succeed");
+    let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("unwrap must succeed");
 
     // Round-trip success requires the IV value passed to AES-GCM seal on
     // wrap to match the IV bytes stored on-wire (which unwrap reads via
@@ -775,9 +777,10 @@ fn wrap_round_trip_with_nonempty_encryption_context() {
     let materials = fixture_materials_with_ec(ec);
 
     let plaintext = vec![0xAA_u8; 32];
-    let ciphertext = branch_key_wrap(&materials, &plaintext).expect("wrap must succeed");
-    let recovered =
-        branch_key_unwrap(&materials, &ciphertext).expect("unwrap must succeed with same EC");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), &plaintext)
+        .expect("wrap must succeed");
+    let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("unwrap must succeed with same EC");
     assert_eq!(recovered, plaintext);
 }
 
@@ -786,7 +789,8 @@ fn wrap_ciphertext_layout_lengths_match_spec() {
     let materials = fixture_materials_empty_ec();
     let plaintext = vec![0x42_u8; 32];
 
-    let ciphertext = branch_key_wrap(&materials, &plaintext).expect("wrap must succeed");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), &plaintext)
+        .expect("wrap must succeed");
 
     // salt (16) + iv (12) + version (16) + plaintext_len + tag (16) = 60 + plaintext_len
     let expected_len = 16 + 12 + 16 + plaintext.len() + 16;
@@ -810,8 +814,10 @@ fn wrap_then_unwrap_with_tampered_encrypted_key_fails() {
     assert_eq!(plaintext.len(), 32);
 
     // First confirm the untampered round-trip succeeds (baseline).
-    let ciphertext = branch_key_wrap(&materials, plaintext).expect("wrap must succeed");
-    let pristine = branch_key_unwrap(&materials, &ciphertext).expect("baseline unwrap");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), plaintext)
+        .expect("wrap must succeed");
+    let pristine = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("baseline unwrap");
     assert_eq!(pristine, plaintext, "baseline round-trip must work");
 
     // Tamper a byte in the encrypted-key region: bytes [44 .. ciphertext.len() - 16]
@@ -821,7 +827,7 @@ fn wrap_then_unwrap_with_tampered_encrypted_key_fails() {
     tampered[44] ^= 0x01;
     assert_ne!(tampered[44], original, "tamper must change the byte");
 
-    let result = branch_key_unwrap(&materials, &tampered);
+    let result = branch_key_unwrap(&materials, materials.encryption_context(), &tampered);
     let err = result.expect_err("unwrap with tampered encrypted-key must fail");
 
     // Tampering a byte in the encrypted-key region invalidates the AES-GCM
@@ -842,8 +848,10 @@ fn wrap_then_unwrap_with_tampered_tag_fails() {
     let materials = fixture_materials_empty_ec();
     let plaintext = vec![0x55_u8; 32];
 
-    let ciphertext = branch_key_wrap(&materials, &plaintext).expect("wrap must succeed");
-    branch_key_unwrap(&materials, &ciphertext).expect("baseline unwrap");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), &plaintext)
+        .expect("wrap must succeed");
+    branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("baseline unwrap");
 
     // Tamper a byte in the tag region (last 16 bytes of the ciphertext).
     let mut tampered = ciphertext.clone();
@@ -855,7 +863,7 @@ fn wrap_then_unwrap_with_tampered_tag_fails() {
         "tamper must change the byte"
     );
 
-    let result = branch_key_unwrap(&materials, &tampered);
+    let result = branch_key_unwrap(&materials, materials.encryption_context(), &tampered);
     let err = result.expect_err("unwrap with tampered tag must fail");
 
     // Tampering a byte in the tag region invalidates the AES-GCM authentication,
@@ -876,8 +884,10 @@ fn wrap_then_unwrap_with_tampered_iv_fails() {
     let materials = fixture_materials_empty_ec();
     let plaintext = vec![0x77_u8; 32];
 
-    let ciphertext = branch_key_wrap(&materials, &plaintext).expect("wrap must succeed");
-    branch_key_unwrap(&materials, &ciphertext).expect("baseline unwrap");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), &plaintext)
+        .expect("wrap must succeed");
+    branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("baseline unwrap");
 
     // Tamper a byte in the IV region (bytes 16..28 — after the 16-byte salt).
     let mut tampered = ciphertext.clone();
@@ -886,7 +896,7 @@ fn wrap_then_unwrap_with_tampered_iv_fails() {
     tampered[iv_offset] ^= 0x10;
     assert_ne!(tampered[iv_offset], original, "tamper must change the byte");
 
-    let result = branch_key_unwrap(&materials, &tampered);
+    let result = branch_key_unwrap(&materials, materials.encryption_context(), &tampered);
     let err = result.expect_err("unwrap with tampered IV must fail");
 
     // Tampering the IV causes AES-GCM authentication to fail because the tag
@@ -906,7 +916,12 @@ fn wrap_then_unwrap_with_tampered_iv_fails() {
 fn wrap_then_unwrap_with_different_branch_key_fails() {
     let materials_wrap = fixture_materials_empty_ec();
     let plaintext = vec![0x11_u8; 32];
-    let ciphertext = branch_key_wrap(&materials_wrap, &plaintext).expect("wrap must succeed");
+    let ciphertext = branch_key_wrap(
+        &materials_wrap,
+        materials_wrap.encryption_context(),
+        &plaintext,
+    )
+    .expect("wrap must succeed");
 
     // Construct a second BranchKeyMaterials with a different branch_key
     // but otherwise identical inputs.
@@ -920,7 +935,11 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     )
     .expect("materials with different branch_key must construct");
 
-    let result = branch_key_unwrap(&materials_unwrap, &ciphertext);
+    let result = branch_key_unwrap(
+        &materials_unwrap,
+        materials_unwrap.encryption_context(),
+        &ciphertext,
+    );
     let err = result.expect_err("unwrap with different branch_key must fail");
 
     // Different branch_key bytes derive a different AES-256-GCM cipher key
@@ -944,7 +963,12 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
 fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     let materials_wrap = fixture_materials_empty_ec();
     let plaintext = vec![0x33_u8; 32];
-    let ciphertext = branch_key_wrap(&materials_wrap, &plaintext).expect("wrap must succeed");
+    let ciphertext = branch_key_wrap(
+        &materials_wrap,
+        materials_wrap.encryption_context(),
+        &plaintext,
+    )
+    .expect("wrap must succeed");
 
     // Same branch_key bytes (so KDF derivation is identical), same EC, same
     // version — but a different branch_key_id, which means the AAD differs.
@@ -956,7 +980,11 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     )
     .expect("BranchKeyMaterials::new must accept the alternate id");
 
-    let result = branch_key_unwrap(&materials_unwrap, &ciphertext);
+    let result = branch_key_unwrap(
+        &materials_unwrap,
+        materials_unwrap.encryption_context(),
+        &ciphertext,
+    );
     let err = result.expect_err("unwrap with different branch_key_id in AAD must fail");
 
     // Tampering the wrap-side AAD's branch_key_id (via constructing a
@@ -987,13 +1015,22 @@ fn wrap_then_unwrap_with_different_encryption_context_fails() {
     // AES-GCM authentication on unwrap must fail.
     let materials_wrap = fixture_materials_empty_ec();
     let plaintext = vec![0x66_u8; 32];
-    let ciphertext = branch_key_wrap(&materials_wrap, &plaintext).expect("wrap must succeed");
+    let ciphertext = branch_key_wrap(
+        &materials_wrap,
+        materials_wrap.encryption_context(),
+        &plaintext,
+    )
+    .expect("wrap must succeed");
 
     let mut other_ec = EncryptionContext::new();
     other_ec.insert(b"region".to_vec(), b"us-east-1".to_vec());
     let materials_unwrap = fixture_materials_with_ec(other_ec);
 
-    let result = branch_key_unwrap(&materials_unwrap, &ciphertext);
+    let result = branch_key_unwrap(
+        &materials_unwrap,
+        materials_unwrap.encryption_context(),
+        &ciphertext,
+    );
     let err = result.expect_err("unwrap with different EC must fail");
 
     // The serialized encryption context is part of the AES-GCM AAD on both
@@ -1018,8 +1055,10 @@ fn wrap_two_calls_produce_distinct_ciphertexts() {
     let materials = fixture_materials_empty_ec();
     let plaintext = vec![0x99_u8; 32];
 
-    let ct1 = branch_key_wrap(&materials, &plaintext).expect("first wrap");
-    let ct2 = branch_key_wrap(&materials, &plaintext).expect("second wrap");
+    let ct1 = branch_key_wrap(&materials, materials.encryption_context(), &plaintext)
+        .expect("first wrap");
+    let ct2 = branch_key_wrap(&materials, materials.encryption_context(), &plaintext)
+        .expect("second wrap");
     assert_ne!(
         ct1, ct2,
         "two wraps of the same plaintext must differ (random salt and IV)",
@@ -1033,7 +1072,7 @@ fn unwrap_too_short_ciphertext_returns_error() {
     let materials = fixture_materials_empty_ec();
     let too_short = vec![0u8; 32];
 
-    let result = branch_key_unwrap(&materials, &too_short);
+    let result = branch_key_unwrap(&materials, materials.encryption_context(), &too_short);
     let err = result.expect_err("unwrap of too-short ciphertext must fail");
 
     // The unwrap call cannot complete deserialization (a required step)
@@ -1066,7 +1105,8 @@ fn wrap_succeeds_with_known_inputs_and_unwrap_round_trips() {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
     //= type=test
     //# The hierarchical keyring MUST:
-    let ciphertext = branch_key_wrap(&materials, plaintext).expect("wrap must succeed");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), plaintext)
+        .expect("wrap must succeed");
 
     // A successful round-trip requires every unwrap step (salt deserialization,
     // IV deserialization, version deserialization, encrypted_key deserialization,
@@ -1074,7 +1114,8 @@ fn wrap_succeeds_with_known_inputs_and_unwrap_round_trips() {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
     //= type=test
     //# To decrypt an encrypted data key with a branch key, the hierarchical keyring MUST:
-    let recovered = branch_key_unwrap(&materials, &ciphertext).expect("unwrap must succeed");
+    let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("unwrap must succeed");
     assert_eq!(recovered, plaintext, "round-trip must recover plaintext");
 }
 
@@ -1085,7 +1126,8 @@ fn wrap_then_unwrap_with_smaller_plaintext_round_trips() {
     let materials = fixture_materials_empty_ec();
     let plaintext: &[u8] = &[0xCC];
 
-    let ciphertext = branch_key_wrap(&materials, plaintext).expect("wrap must succeed");
+    let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), plaintext)
+        .expect("wrap must succeed");
 
     // A 1-byte plaintext flows through wrap and unwrap; tampering the
     // encrypted-key region (already covered by another test) proves the
@@ -1093,7 +1135,8 @@ fn wrap_then_unwrap_with_smaller_plaintext_round_trips() {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
     //= type=test
     //# - MUST use the plain text data key that will be wrapped by the `derivedBranchKey` as the AES-GCM message.
-    let recovered = branch_key_unwrap(&materials, &ciphertext).expect("unwrap must succeed");
+    let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
+        .expect("unwrap must succeed");
     assert_eq!(recovered, plaintext, "1-byte plaintext must round-trip");
 }
 
@@ -1110,7 +1153,7 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     ec.insert(b"k".to_vec(), vec![0u8; 65_536]);
     let materials = fixture_materials_with_ec(ec);
 
-    let result = branch_key_wrap(&materials, &[0u8; 32]);
+    let result = branch_key_wrap(&materials, materials.encryption_context(), &[0u8; 32]);
     let err = result.expect_err("wrap must fail when EC serialization fails");
 
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
@@ -1121,4 +1164,399 @@ fn wrap_fails_when_encryption_context_value_too_large() {
         MaterialsErrorKind::Validation,
         "expected Validation error from EC serialize via wrap; got {err:?}",
     );
+}
+
+// ─── OnEncrypt tests (slice 3) ──────────────────────────────────────────────
+//
+// These tests exercise the [`Keyring::on_encrypt`] body via a
+// `FakeKeystore` that returns canned BranchKeyMaterials. The KMS / DDB
+// SDKs are NOT involved; the test crypto is the same wrap / unwrap
+// helpers under `aws_kms::__test_internals`, so a successful round-trip
+// proves the EDK's wire format and the AAD / KDF derivation match.
+
+mod onencrypt {
+    use super::*;
+    use std::sync::Mutex;
+
+    use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
+    use aws_crypto_mpl::structures::{
+        AlgorithmSuiteId, EncryptionMaterials, MaterialsError, PlaintextDataKey,
+    };
+    use aws_crypto_mpl::{Keyring, KmsConfiguration};
+
+    /// Stable test fixtures.
+    const FIXED_BRANCH_KEY: [u8; 32] = [
+        0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
+        0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
+        0x60, 0x61,
+    ];
+    const FIXED_BRANCH_KEY_ID: &str = "test-branch-key-id";
+    const FIXED_BRANCH_KEY_VERSION: &str = "11111111-2222-4333-8444-555555555555";
+    const LOGICAL_KEYSTORE_NAME: &str = "test-logical-name";
+
+    /// A keystore double that returns canned `BranchKeyMaterials` and
+    /// counts call-throughs so cache-hit / cache-miss tests can assert
+    /// keystore behaviour from the outside.
+    struct FakeKeystore {
+        materials: BranchKeyMaterials,
+        get_active_calls: Mutex<u32>,
+    }
+
+    impl FakeKeystore {
+        fn new(materials: BranchKeyMaterials) -> Arc<Self> {
+            Arc::new(Self {
+                materials,
+                get_active_calls: Mutex::new(0),
+            })
+        }
+
+        fn get_active_calls(&self) -> u32 {
+            *self.get_active_calls.lock().unwrap()
+        }
+    }
+
+    #[async_trait]
+    impl Keystore for FakeKeystore {
+        async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            Ok(KeyStoreInfo {
+                keystore_id: "test-id".to_string(),
+                keystore_name: "test-table".to_string(),
+                logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
+                aws_kms_grant_tokens: Vec::new(),
+                aws_kms_configuration: KmsConfiguration::Discovery,
+            })
+        }
+
+        async fn create_key_store(&self) -> Result<String, KeystoreError> {
+            unimplemented!("FakeKeystore::create_key_store")
+        }
+        async fn create_key(
+            &self,
+            _branch_key_id: Option<String>,
+            _encryption_context: Option<EncryptionContext>,
+        ) -> Result<String, KeystoreError> {
+            unimplemented!("FakeKeystore::create_key")
+        }
+        async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
+            unimplemented!("FakeKeystore::version_key")
+        }
+
+        async fn get_active_branch_key(
+            &self,
+            _branch_key_id: String,
+        ) -> Result<BranchKeyMaterials, KeystoreError> {
+            *self.get_active_calls.lock().unwrap() += 1;
+            Ok(self.materials.clone())
+        }
+
+        async fn get_branch_key_version(
+            &self,
+            _branch_key_id: String,
+            _branch_key_version: String,
+        ) -> Result<BranchKeyMaterials, KeystoreError> {
+            unimplemented!("FakeKeystore::get_branch_key_version")
+        }
+        async fn get_beacon_key(
+            &self,
+            _branch_key_id: String,
+        ) -> Result<BeaconKeyMaterials, KeystoreError> {
+            unimplemented!("FakeKeystore::get_beacon_key")
+        }
+    }
+
+    /// Build canned `BranchKeyMaterials` with an empty encryption context.
+    fn fixture_materials_empty_ec() -> BranchKeyMaterials {
+        BranchKeyMaterials::new(
+            FIXED_BRANCH_KEY,
+            FIXED_BRANCH_KEY_ID.to_string(),
+            FIXED_BRANCH_KEY_VERSION.to_string(),
+            EncryptionContext::new(),
+        )
+        .unwrap()
+    }
+
+    /// Build empty encryption materials for the AES-256-GCM/HKDF-SHA512
+    /// committed suite (encryption-key-length = 32). Suite choice is
+    /// arbitrary — the test only depends on `encryption_key_length`.
+    fn fixture_empty_materials_with_id(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
+        EncryptionMaterials::new(
+            suite_id,
+            Vec::new(),
+            EncryptionContext::new(),
+            Default::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> HierarchicalKeyring {
+        HierarchicalKeyring::new(
+            keystore,
+            3600,
+            BranchKeySource::Identifier(branch_key_id.to_string()),
+            Some(CacheType::Default),
+            Some("partition-id".to_string()),
+        )
+        .unwrap()
+    }
+
+    /// Pick a non-signing suite so `signing_key`/`symmetric_signing_keys`
+    /// invariants don't intrude on the test.
+    fn non_signing_suite() -> AlgorithmSuiteId {
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_generates_random_data_key_when_materials_lack_one() {
+        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
+        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let suite_id = non_signing_suite();
+        let materials_in = fixture_empty_materials_with_id(suite_id);
+        assert!(materials_in.plaintext_data_key().is_none());
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+        //= type=test
+        //# If the input [encryption materials](../structures.md#encryption-materials) do not contain a plaintext data key,
+        //# OnEncrypt MUST generate a random plaintext data key, according to the key length defined in the [algorithm suite](../algorithm-suites.md#encryption-key-length).
+        let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
+        let pdk = materials_out
+            .plaintext_data_key()
+            .expect("on_encrypt must produce a plaintext data key");
+        assert_eq!(pdk.len(), suite_id.specification().encryption_key_length());
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_preserves_existing_plaintext_data_key() {
+        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
+        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let suite_id = non_signing_suite();
+        let bytes = vec![0xAA; suite_id.specification().encryption_key_length()];
+        let materials_in = EncryptionMaterials::new(
+            suite_id,
+            Vec::new(),
+            EncryptionContext::new(),
+            Default::default(),
+            Some(PlaintextDataKey::new(bytes.clone())),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
+        assert_eq!(
+            materials_out.plaintext_data_key().unwrap().as_bytes(),
+            &bytes,
+            "on_encrypt MUST preserve a caller-supplied plaintext data key"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_appends_exactly_one_edk_with_aws_kms_hierarchy_provider() {
+        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
+        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let materials_out = keyring
+            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .await
+            .unwrap();
+
+        let edks = materials_out.encrypted_data_keys();
+        assert_eq!(edks.len(), 1, "on_encrypt MUST append exactly one EDK");
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+        //= type=test
+        //# - [key provider id](../structures.md#key-provider-id): MUST be UTF8 Encoded "aws-kms-hierarchy"
+        assert_eq!(edks[0].key_provider_id, "aws-kms-hierarchy");
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+        //= type=test
+        //# - [key provider info](../structures.md#key-provider-information): MUST be the UTF8 Encoded AWS DDB response `branch-key-id`
+        assert_eq!(
+            edks[0].key_provider_info.as_slice(),
+            FIXED_BRANCH_KEY_ID.as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_edk_round_trips_through_branch_key_unwrap() {
+        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
+        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let materials_out = keyring
+            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .await
+            .unwrap();
+        let edk = &materials_out.encrypted_data_keys()[0];
+
+        // The EDK ciphertext was produced by the keyring calling into
+        // branch_key_wrap::wrap with FakeKeystore's BranchKeyMaterials and
+        // the (empty) encryption context from the input EncryptionMaterials.
+        // Re-running branch_key_unwrap with the same materials and the same
+        // EC must recover the plaintext DK that on_encrypt set.
+        let recovered = branch_key_unwrap(
+            &fixture_materials_empty_ec(),
+            &EncryptionContext::new(),
+            &edk.ciphertext,
+        )
+        .unwrap();
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+        //= type=test
+        //# - [ciphertext](../structures.md#ciphertext): MUST be serialized as the [hierarchical keyring ciphertext](#ciphertext)
+        assert_eq!(
+            &recovered,
+            materials_out.plaintext_data_key().unwrap().as_bytes(),
+            "EDK ciphertext MUST round-trip through branch_key_wrap/unwrap"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_caches_branch_key_materials_after_keystore_call() {
+        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
+        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+
+        // First call: cache miss → keystore is called.
+        keyring
+            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .await
+            .unwrap();
+        assert_eq!(
+            keystore.get_active_calls(),
+            1,
+            "first on_encrypt must call keystore.get_active_branch_key once"
+        );
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+        //= type=test
+        //# If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key wrapping.
+        //
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
+        //= type=test
+        //# If the Keystore's GetActiveBranchKey operation succeeds
+        //# the keyring MUST put the returned branch key materials in the cache using the
+        //# formula defined in [Appendix A](#appendix-a-cache-entry-identifier-formulas).
+        keyring
+            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .await
+            .unwrap();
+        assert_eq!(
+            keystore.get_active_calls(),
+            1,
+            "second on_encrypt must hit the cache and NOT call keystore.get_active_branch_key again"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_propagates_keystore_failure() {
+        struct FailingKeystore;
+
+        #[async_trait]
+        impl Keystore for FailingKeystore {
+            async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+                Ok(KeyStoreInfo {
+                    keystore_id: "id".to_string(),
+                    keystore_name: "table".to_string(),
+                    logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
+                    aws_kms_grant_tokens: Vec::new(),
+                    aws_kms_configuration: KmsConfiguration::Discovery,
+                })
+            }
+            async fn create_key_store(&self) -> Result<String, KeystoreError> {
+                unimplemented!()
+            }
+            async fn create_key(
+                &self,
+                _branch_key_id: Option<String>,
+                _encryption_context: Option<EncryptionContext>,
+            ) -> Result<String, KeystoreError> {
+                unimplemented!()
+            }
+            async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
+                unimplemented!()
+            }
+            async fn get_active_branch_key(
+                &self,
+                _branch_key_id: String,
+            ) -> Result<BranchKeyMaterials, KeystoreError> {
+                Err(KeystoreError::new(
+                    KeystoreErrorKind::RecordNotFound,
+                    "no such branch key",
+                ))
+            }
+            async fn get_branch_key_version(
+                &self,
+                _branch_key_id: String,
+                _branch_key_version: String,
+            ) -> Result<BranchKeyMaterials, KeystoreError> {
+                unimplemented!()
+            }
+            async fn get_beacon_key(
+                &self,
+                _branch_key_id: String,
+            ) -> Result<BeaconKeyMaterials, KeystoreError> {
+                unimplemented!()
+            }
+        }
+        let keyring = HierarchicalKeyring::new(
+            Arc::new(FailingKeystore) as Arc<dyn Keystore>,
+            3600,
+            BranchKeySource::Identifier("bk".to_string()),
+            Some(CacheType::Default),
+            None,
+        )
+        .unwrap();
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
+        //= type=test
+        //# Otherwise, OnEncrypt MUST fail.
+        let err = match keyring
+            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .await
+        {
+            Ok(_) => panic!("on_encrypt must fail when keystore.get_active_branch_key fails"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_uses_branch_key_supplier_when_configured() {
+        struct FixedSupplier(&'static str);
+        #[async_trait]
+        impl BranchKeySupplier for FixedSupplier {
+            async fn get_branch_key_id(
+                &self,
+                _ec: &EncryptionContext,
+            ) -> Result<String, MaterialsError> {
+                Ok(self.0.to_string())
+            }
+        }
+
+        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
+        let keyring = HierarchicalKeyring::new(
+            Arc::clone(&keystore) as Arc<dyn Keystore>,
+            3600,
+            BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
+            Some(CacheType::Default),
+            None,
+        )
+        .unwrap();
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+        //= type=test
+        //# The `branchKeyId` used in this operation is either the configured branchKeyId, if supplied, or the result of the `branchKeySupplier`'s
+        //# `getBranchKeyId` operation, using the encryption material's encryption context as input.
+        let materials_out = keyring
+            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .await
+            .unwrap();
+
+        let edk = &materials_out.encrypted_data_keys()[0];
+        assert_eq!(
+            edk.key_provider_info.as_slice(),
+            FIXED_BRANCH_KEY_ID.as_bytes()
+        );
+        assert_eq!(keystore.get_active_calls(), 1);
+    }
 }
