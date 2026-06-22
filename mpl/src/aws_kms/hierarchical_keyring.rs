@@ -1,25 +1,37 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! AWS KMS Hierarchical Keyring — construction / configuration surface.
+//! AWS KMS Hierarchical Keyring — construction / configuration surface +
+//! cache wiring.
 //!
 //! Implements the static-configuration slice of
-//! `spec/framework/aws-kms/aws-kms-hierarchical-keyring.md` — the [`Keyring`]
-//! impl is a stub (cycle 1, slice 1); the OnEncrypt / OnDecrypt bodies, the
-//! cryptographic-materials-cache, branch-key wrapping/unwrapping, AAD
-//! construction, and cache-entry-identifier formulas land in subsequent
-//! cycles. Deferred cache-related MUSTs are annotated `type=todo` against a
-//! `cache-module` tracking issue.
+//! `spec/framework/aws-kms/aws-kms-hierarchical-keyring.md` plus the
+//! cache-initialization clauses of the same `#initialization` section.
+//! The [`Keyring`] impl's OnEncrypt / OnDecrypt bodies are still stubs;
+//! they wire the cache + the existing branch-key wrap/unwrap helpers
+//! into the spec's algorithms in the next cycle.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use crate::Keyring;
+use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc, TimeUnits};
 use crate::keystore::Keystore;
 use crate::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials, MaterialsError,
 };
+
+/// Default entry capacity for the keyring-local CMC. Spec text: "If no
+/// max cache size is provided, the cryptographic materials cache MUST be
+/// configured to a max cache size of 1000."
+const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
+
+/// Default entry-pruning tail size for the keyring-local CMC. The spec
+/// constrains `entry_capacity` (above) but not the pruning tail size;
+/// 64 strikes a reasonable balance between pruning amortization and
+/// per-`get` work.
+const DEFAULT_CACHE_PRUNING_TAIL_SIZE: usize = 64;
 
 /// Identifier source for the hierarchical keyring's branch key.
 ///
@@ -34,16 +46,50 @@ pub enum BranchKeySource {
     Supplier(Arc<dyn BranchKeySupplier>),
 }
 
-/// Cache configuration.
+/// Storm-tracking cache configuration. Mirrors the parameter set
+/// accepted by [`StormTrackingCmc::new`]; bundled into a struct so the
+/// [`CacheType::StormTracking`] variant stays ergonomic.
+pub struct StormTrackingParameters {
+    /// Maximum number of entries the underlying [`LocalCmc`] holds.
+    pub entry_capacity: usize,
+    /// Number of LRU entries scanned per get for TTL-aware pruning.
+    pub entry_pruning_tail_size: usize,
+    /// Window during which a soon-to-expire entry is still served.
+    pub grace_period: u64,
+    /// Window during which a recent NoSuchEntry is treated as inflight.
+    pub grace_interval: u64,
+    /// Maximum concurrent in-flight refresh fan-out.
+    pub fan_out: usize,
+    /// Maximum time an inflight entry may remain inflight before failing.
+    pub inflight_ttl: u64,
+    /// Sleep granularity (always milliseconds).
+    pub sleep_milli: u64,
+    /// Time unit for the duration parameters above. Defaults to seconds.
+    pub time_units: Option<TimeUnits>,
+}
+
+/// Cache configuration for a [`HierarchicalKeyring`].
 ///
-/// This is a placeholder enum for the cycle 1 slice — the variants `Shared`
-/// and `StormTracking` and the cryptographic-materials-cache wiring land in a
-/// later cycle alongside the cache module itself.
+/// The three variants correspond to the spec's `#cache-type` discussion:
+/// a keyring-local default cache, an externally-supplied `Shared` cache
+/// that may be reused across multiple Cryptographic Material Providers,
+/// and a keyring-local Storm-tracking cache for high-fan-out workloads.
 #[non_exhaustive]
 pub enum CacheType {
-    /// A keyring-local default cache. Sizing / TTL are configured by the
-    /// keyring's other parameters.
+    /// A keyring-local [`LocalCmc`] with entry capacity 1000. Per spec
+    /// `#initialization`: "If no max cache size is provided, the
+    /// cryptographic materials cache MUST be configured to a max cache
+    /// size of 1000." Also: "If no `cache` is provided, a `DefaultCache`
+    /// MUST be configured with entry capacity of 1000."
     Default,
+    /// Use the caller-supplied [`Cmc`] impl directly. Common when one
+    /// cache is shared across multiple Hierarchical Keyrings (or other
+    /// CMPs); see `#shared-cache-considerations`.
+    Shared(Arc<dyn Cmc>),
+    /// Build a keyring-local [`StormTrackingCmc`] with the supplied
+    /// parameters. The keyring validates that
+    /// `grace_period < cache limit TTL` per spec `#initialization`.
+    StormTracking(StormTrackingParameters),
 }
 
 /// User-supplied callback that maps an encryption context to a branch key id.
@@ -65,11 +111,9 @@ pub trait BranchKeySupplier: Send + Sync {
 
 /// AWS KMS Hierarchical Keyring.
 ///
-/// See [`HierarchicalKeyring::new`] for construction. Cycle 1, slice 1
-/// implements the construction / configuration surface only — the
-/// [`Keyring`] impl returns a `MaterialsError` indicating "not yet
-/// implemented" until subsequent cycles fill the OnEncrypt / OnDecrypt
-/// bodies.
+/// See [`HierarchicalKeyring::new`] for construction. The [`Keyring`]
+/// impl's OnEncrypt / OnDecrypt bodies are still stubs; the cache
+/// wiring done in this slice unblocks those bodies.
 pub struct HierarchicalKeyring {
     //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
     //= type=implication
@@ -98,6 +142,11 @@ pub struct HierarchicalKeyring {
     //= type=implication
     //# The constructor of the Hierarchical Keyring MUST record these bytes at construction time.
     partition_id_bytes: Vec<u8>,
+
+    /// Cryptographic-materials cache for branch-key materials. Either a
+    /// keyring-local `LocalCmc`/`StormTrackingCmc` built at construction
+    /// time, or a `Shared` cache supplied by the caller.
+    cache: Arc<dyn Cmc>,
 }
 
 impl HierarchicalKeyring {
@@ -109,6 +158,9 @@ impl HierarchicalKeyring {
     /// If `partition_id` is `None`, a fresh v4 UUID is generated and stored
     /// as the 16-byte partition id, per
     /// `aws-kms-hierarchical-keyring.md#partition-id`.
+    ///
+    /// `cache_type` selects the cache backing — see [`CacheType`]. When
+    /// `None`, behaves as `Some(CacheType::Default)`.
     pub fn new(
         keystore: Arc<dyn Keystore>,
         ttl_seconds: u64,
@@ -116,7 +168,7 @@ impl HierarchicalKeyring {
         //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
         //= type=implication
         //# - MAY provide a [Cache Type](#cache-type)
-        _cache_type: Option<CacheType>,
+        cache_type: Option<CacheType>,
         //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
         //= type=implication
         //# - MAY provide a [Partition ID](#partition-id)
@@ -129,6 +181,67 @@ impl HierarchicalKeyring {
                 "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",
             ));
         }
+
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+        //# On initialization the Hierarchical Keyring MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md) with the configured cache limit TTL and the max cache size.
+        //
+        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+        //# If the Hierarchical Keyring does NOT get a `Shared` cache on initialization,
+        //# it MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md)
+        //# with the user provided cache limit TTL and the entry capacity.
+        let cache: Arc<dyn Cmc> = match cache_type.unwrap_or(CacheType::Default) {
+            CacheType::Default => {
+                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+                //# If no max cache size is provided, the cryptographic materials cache MUST be configured to a
+                //# max cache size of 1000.
+                //
+                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+                //# If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000.
+                let local = LocalCmc::new(
+                    DEFAULT_CACHE_ENTRY_CAPACITY,
+                    DEFAULT_CACHE_PRUNING_TAIL_SIZE,
+                )
+                .map_err(|e| {
+                    MaterialsError::new(format!(
+                        "HierarchicalKeyring: failed to initialize default LocalCmc: {e}",
+                    ))
+                })?;
+                Arc::new(local)
+            }
+            CacheType::Shared(cache) => cache,
+            CacheType::StormTracking(params) => {
+                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+                //# If the cache to initialize is a [Storm Tracking Cryptographic Materials Cache](../storm-tracking-cryptographic-materials-cache.md#overview)
+                //# then the [Grace Period](../storm-tracking-cryptographic-materials-cache.md#grace-period) MUST be less than the [cache limit TTL](#cache-limit-ttl).
+                let grace_in_seconds = match params.time_units.unwrap_or_default() {
+                    TimeUnits::Seconds => params.grace_period,
+                    TimeUnits::Milliseconds => params.grace_period / 1000,
+                };
+                if grace_in_seconds >= ttl_seconds {
+                    return Err(MaterialsError::new(format!(
+                        "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
+                        params.grace_period,
+                        params.time_units.unwrap_or_default(),
+                    )));
+                }
+                let storm = StormTrackingCmc::new(
+                    params.entry_capacity,
+                    params.entry_pruning_tail_size,
+                    params.grace_period,
+                    params.grace_interval,
+                    params.fan_out,
+                    params.inflight_ttl,
+                    params.sleep_milli,
+                    params.time_units,
+                )
+                .map_err(|e| {
+                    MaterialsError::new(format!(
+                        "HierarchicalKeyring: failed to initialize StormTrackingCmc: {e}",
+                    ))
+                })?;
+                Arc::new(storm)
+            }
+        };
 
         //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
         //= type=implication
@@ -149,6 +262,7 @@ impl HierarchicalKeyring {
             ttl_seconds,
             branch_key_source,
             partition_id_bytes,
+            cache,
         })
     }
 
@@ -177,6 +291,14 @@ impl HierarchicalKeyring {
     #[doc(hidden)]
     pub fn partition_id_bytes(&self) -> &[u8] {
         &self.partition_id_bytes
+    }
+
+    /// The configured cache. Hidden from the public API surface;
+    /// intended for tests asserting that `CacheType::Shared(...)` round-
+    /// trips the supplied `Arc<dyn Cmc>` verbatim.
+    #[doc(hidden)]
+    pub fn cache(&self) -> &Arc<dyn Cmc> {
+        &self.cache
     }
 }
 
@@ -225,46 +347,3 @@ impl Keyring for HierarchicalKeyring {
         ))
     }
 }
-
-// ─── Deferred cache-related requirements ────────────────────────────────────
-//
-// The cryptographic-materials-cache module, the Storm Tracking cache, and the
-// `Shared`/`Default` cache wiring are not yet implemented in this crate. The
-// requirements below are tracked under the `cache-module` tracking issue and
-// will become `type=implementation` (with paired `type=test`) once the cache
-// module lands.
-
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-//= type=todo
-//= tracking-issue=cache-module
-//# If the cache to initialize is a [Storm Tracking Cryptographic Materials Cache](../storm-tracking-cryptographic-materials-cache.md#overview)
-//# then the [Grace Period](../storm-tracking-cryptographic-materials-cache.md#grace-period) MUST be less than the [cache limit TTL](#cache-limit-ttl).
-//
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-//= type=todo
-//= tracking-issue=cache-module
-//# On initialization the Hierarchical Keyring MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md) with the configured cache limit TTL and the max cache size.
-//
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-//= type=todo
-//= tracking-issue=cache-module
-//# If no max cache size is provided, the cryptographic materials cache MUST be configured to a
-//# max cache size of 1000.
-//
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-//= type=todo
-//= tracking-issue=cache-module
-//# If the Hierarchical Keyring does NOT get a `Shared` cache on initialization,
-//# it MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md)
-//# with the user provided cache limit TTL and the entry capacity.
-//
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-//= type=todo
-//= tracking-issue=cache-module
-//# If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000.
-//
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#cache-limit-ttl
-//= type=todo
-//= tracking-issue=cache-module
-//# The maximum amount of time in seconds that an entry within the cache may be used before it MUST be evicted.
-const _DEFERRED_CACHE_REQUIREMENTS: () = ();

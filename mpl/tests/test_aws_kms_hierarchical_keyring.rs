@@ -275,6 +275,190 @@ fn branch_key_source_supplier_variant_compiles() {
     ));
 }
 
+// ─── Cache wiring tests (slice 2) ───────────────────────────────────────────
+
+#[test]
+fn new_with_default_cache_succeeds() {
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+    //= type=test
+    //# If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000.
+    let keyring = HierarchicalKeyring::new(
+        stub_keystore(),
+        3600,
+        BranchKeySource::Identifier("bk".to_string()),
+        Some(CacheType::Default),
+        None,
+    )
+    .expect("CacheType::Default must succeed");
+    // Construction succeeded — a Cmc was built and stored.
+    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
+}
+
+#[test]
+fn new_with_cache_type_none_uses_default() {
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+    //= type=test
+    //# On initialization the Hierarchical Keyring MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md) with the configured cache limit TTL and the max cache size.
+    let keyring = HierarchicalKeyring::new(
+        stub_keystore(),
+        3600,
+        BranchKeySource::Identifier("bk".to_string()),
+        None,
+        None,
+    )
+    .expect("None cache_type must default to a built-in cache");
+    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
+}
+
+#[test]
+fn new_with_shared_cache_round_trips_provided_arc() {
+    use aws_crypto_mpl::{Cmc, LocalCmc};
+
+    let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
+    let supplied_for_compare = Arc::clone(&supplied);
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+    //= type=test
+    //# If the Hierarchical Keyring does NOT get a `Shared` cache on initialization,
+    //# it MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md)
+    //# with the user provided cache limit TTL and the entry capacity.
+    let keyring = HierarchicalKeyring::new(
+        stub_keystore(),
+        3600,
+        BranchKeySource::Identifier("bk".to_string()),
+        Some(CacheType::Shared(supplied)),
+        None,
+    )
+    .expect("CacheType::Shared(Arc<dyn Cmc>) must succeed");
+
+    // The exact `Arc` supplied is what the keyring stores. Tested via
+    // pointer-identity rather than behaviour because the struct field is
+    // not directly observable.
+    let stored: &Arc<dyn Cmc> = keyring.cache();
+    assert!(
+        Arc::ptr_eq(stored, &supplied_for_compare),
+        "CacheType::Shared MUST round-trip the supplied Arc verbatim"
+    );
+}
+
+#[test]
+fn new_with_storm_tracking_cache_succeeds() {
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+
+    let params = StormTrackingParameters {
+        entry_capacity: 16,
+        entry_pruning_tail_size: 4,
+        grace_period: 60,
+        grace_interval: 1,
+        fan_out: 4,
+        inflight_ttl: 30,
+        sleep_milli: 10,
+        time_units: None,
+    };
+    let keyring = HierarchicalKeyring::new(
+        stub_keystore(),
+        3600, // ttl_seconds — strictly greater than grace_period (60).
+        BranchKeySource::Identifier("bk".to_string()),
+        Some(CacheType::StormTracking(params)),
+        None,
+    )
+    .expect("CacheType::StormTracking with grace_period < ttl must succeed");
+    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
+}
+
+#[test]
+fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+
+    let params = StormTrackingParameters {
+        entry_capacity: 16,
+        entry_pruning_tail_size: 4,
+        grace_period: 60,
+        grace_interval: 1,
+        fan_out: 4,
+        inflight_ttl: 30,
+        sleep_milli: 10,
+        time_units: None,
+    };
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+    //= type=test
+    //# If the cache to initialize is a [Storm Tracking Cryptographic Materials Cache](../storm-tracking-cryptographic-materials-cache.md#overview)
+    //# then the [Grace Period](../storm-tracking-cryptographic-materials-cache.md#grace-period) MUST be less than the [cache limit TTL](#cache-limit-ttl).
+    let err = match HierarchicalKeyring::new(
+        stub_keystore(),
+        60, // ttl_seconds == grace_period — must fail.
+        BranchKeySource::Identifier("bk".to_string()),
+        Some(CacheType::StormTracking(params)),
+        None,
+    ) {
+        Ok(_) => panic!("StormTracking with grace_period == ttl_seconds must fail"),
+        Err(e) => e,
+    };
+    assert!(
+        err.message.contains("grace period"),
+        "error message must mention the grace period; got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+
+    let params = StormTrackingParameters {
+        entry_capacity: 16,
+        entry_pruning_tail_size: 4,
+        grace_period: 120, // > ttl_seconds below
+        grace_interval: 1,
+        fan_out: 4,
+        inflight_ttl: 30,
+        sleep_milli: 10,
+        time_units: None,
+    };
+    let err = match HierarchicalKeyring::new(
+        stub_keystore(),
+        60,
+        BranchKeySource::Identifier("bk".to_string()),
+        Some(CacheType::StormTracking(params)),
+        None,
+    ) {
+        Ok(_) => panic!("StormTracking with grace_period > ttl_seconds must fail"),
+        Err(e) => e,
+    };
+    assert!(
+        err.message.contains("grace period"),
+        "error message must mention the grace period; got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
+    use aws_crypto_mpl::TimeUnits;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+
+    // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
+    // inflight_ttl <= grace_period is required by StormTrackingCmc.
+    let params = StormTrackingParameters {
+        entry_capacity: 16,
+        entry_pruning_tail_size: 4,
+        grace_period: 5_000,
+        grace_interval: 100,
+        fan_out: 4,
+        inflight_ttl: 1_000,
+        sleep_milli: 10,
+        time_units: Some(TimeUnits::Milliseconds),
+    };
+    HierarchicalKeyring::new(
+        stub_keystore(),
+        60,
+        BranchKeySource::Identifier("bk".to_string()),
+        Some(CacheType::StormTracking(params)),
+        None,
+    )
+    .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
+}
+
 // ─── Cache entry identifier formula tests (Appendix A) ──────────────────────
 
 /// SHA-384 digest of a single concatenated byte sequence. Local helper used to
