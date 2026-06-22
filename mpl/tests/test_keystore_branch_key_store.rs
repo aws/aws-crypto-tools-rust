@@ -202,12 +202,45 @@ async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
     assert_eq!(info.keystore_id, store.keystore_id());
 }
 
+// ─── Read-path APIs ─────────────────────────────────────────────────────────
+//
+// Without real AWS credentials and a real DynamoDB table, the read path
+// fails at the SDK call. These tests assert the methods now dispatch
+// into the SDK (rather than returning the slice-1a `Internal` stub) by
+// observing a `Dynamodb`-kind error. Happy-path coverage lands in
+// real-AWS integration tests in a later slice.
+
+#[tokio::test]
+async fn get_active_branch_key_dispatches_to_dynamodb() {
+    let (kms, ddb) = dummy_clients();
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
+    let err = match store.get_active_branch_key("bk-1".to_string()).await {
+        Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+}
+
+#[tokio::test]
+async fn get_branch_key_version_dispatches_to_dynamodb() {
+    let (kms, ddb) = dummy_clients();
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
+    let err = match store
+        .get_branch_key_version("bk-1".to_string(), "v-1".to_string())
+        .await
+    {
+        Ok(_) => panic!("get_branch_key_version unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+}
+
 // ─── Slice 1a stubs: deferred operations return errors ──────────────────────
 //
 // These tests pin the contract that operations beyond `get_key_store_info`
-// return an explicit "not yet implemented in this slice" error rather
-// than panicking. They will be replaced (or deleted) when the
-// corresponding slice lands a real implementation.
+// and the read-path methods return an explicit "not yet implemented in
+// this slice" error rather than panicking. They will be replaced (or
+// deleted) when the corresponding slice lands a real implementation.
 
 #[tokio::test]
 async fn create_key_store_is_not_implemented_in_slice_1a() {
@@ -228,28 +261,6 @@ async fn version_key_is_not_implemented_in_slice_1a() {
     let (kms, ddb) = dummy_clients();
     let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
     assert_not_implemented(store.version_key("bk-1".to_string()).await, "version_key");
-}
-
-#[tokio::test]
-async fn get_active_branch_key_is_not_implemented_in_slice_1a() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
-    assert_not_implemented(
-        store.get_active_branch_key("bk-1".to_string()).await,
-        "get_active_branch_key",
-    );
-}
-
-#[tokio::test]
-async fn get_branch_key_version_is_not_implemented_in_slice_1a() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
-    assert_not_implemented(
-        store
-            .get_branch_key_version("bk-1".to_string(), "v-1".to_string())
-            .await,
-        "get_branch_key_version",
-    );
 }
 
 #[tokio::test]
