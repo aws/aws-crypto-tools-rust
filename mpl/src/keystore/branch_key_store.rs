@@ -24,9 +24,9 @@
 //!   fresh version + DDB `TransactWriteItems`).
 
 use async_trait::async_trait;
-use aws_lc_rs::rand::fill;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
+use uuid::Uuid;
 
 use crate::keystore::Keystore;
 use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo};
@@ -90,7 +90,7 @@ impl BranchKeyStore {
             Some(id) => id,
             //= ../spec/framework/branch-key-store.md#keystore-id
             //# If one is not supplied, then a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt) MUST be used.
-            None => generate_v4_uuid_string()?,
+            None => Uuid::new_v4().to_string(),
         };
 
         Ok(Self {
@@ -166,30 +166,4 @@ fn not_implemented_yet(op: &str) -> KeystoreError {
         KeystoreErrorKind::Internal,
         format!("BranchKeyStore::{op} is not yet implemented in this slice"),
     )
-}
-
-/// Generate the canonical 36-character (8-4-4-4-12) hex string
-/// representation of a fresh v4 UUID using the `aws_lc_rs` CSPRNG, with
-/// version and variant bits set per RFC 4122 §4.4.
-fn generate_v4_uuid_string() -> Result<String, KeystoreError> {
-    let mut bytes = [0u8; 16];
-    fill(&mut bytes).map_err(|_| {
-        KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "BranchKeyStore: failed to obtain entropy for v4-UUID keystore-id",
-        )
-    })?;
-    // RFC 4122 §4.4: set the version (top 4 bits of byte 6) to 0b0100 (4).
-    bytes[6] = (bytes[6] & 0x0F) | 0x40;
-    // RFC 4122 §4.4: set the variant (top 2 bits of byte 8) to 0b10.
-    bytes[8] = (bytes[8] & 0x3F) | 0x80;
-
-    let mut s = String::with_capacity(36);
-    for (i, &b) in bytes.iter().enumerate() {
-        if i == 4 || i == 6 || i == 8 || i == 10 {
-            s.push('-');
-        }
-        s.push_str(&format!("{b:02x}"));
-    }
-    Ok(s)
 }
