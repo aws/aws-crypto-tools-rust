@@ -66,3 +66,34 @@ jobs:
 
       - name: Test + line coverage gate (100%)
         run: cargo llvm-cov --all-features --workspace --fail-under-lines 100 --verbose
+
+      # TODO(integ-tests-creds): Wire up AWS credentials before uncommenting
+      # the steps below.
+      #
+      # The keystore integ tests in
+      #   mpl/tests/test_keystore_branch_key_store_integ.rs
+      # are #[ignore]'d by default and exercise the BranchKeyStore read
+      # path against real AWS. They need read access to:
+      #   * DynamoDB table `KeyStoreDdbTable` in account 370957321024
+      #     (us-west-2)
+      #   * KMS keys in account 370957321024 (us-west-2) and account
+      #     658956600833 (us-east-1, us-west-2, ap-south-2)
+      #
+      # Recommended approach: OIDC role assumption via
+      # aws-actions/configure-aws-credentials@v5. `id-token: write` is
+      # already granted on the caller workflow (.github/workflows/pull.yml)
+      # and on the `testRust` job above.
+      #
+      # When uncommenting, also extend the matrix or add a separate
+      # `if:` if more than mpl ends up needing real-AWS integ tests.
+      #
+      # - name: Configure AWS credentials (integ tests)
+      #   if: inputs.project == 'mpl'
+      #   uses: aws-actions/configure-aws-credentials@v5
+      #   with:
+      #     role-to-assume: arn:aws:iam::370957321024:role/<TODO-INTEG-TEST-ROLE>
+      #     aws-region: us-west-2
+      #
+      # - name: Integ tests — keystore read path (real AWS)
+      #   if: inputs.project == 'mpl'
+      #   run: cargo test --features keystore --test test_keystore_branch_key_store_integ -- --ignored
