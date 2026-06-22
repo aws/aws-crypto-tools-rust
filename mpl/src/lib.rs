@@ -19,6 +19,6 @@ pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsReque
 pub use keyring::Keyring;
 #[cfg(feature = "keystore")]
 pub use keystore::{
-    KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration, encryption_context,
-    kms_config, record,
+    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+    encryption_context, kms_config, record,
 };

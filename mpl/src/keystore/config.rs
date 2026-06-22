@@ -11,11 +11,6 @@
 //= type=implication
 //# The following inputs MUST be specified to create a KeyStore:
 //
-//= ../spec/framework/branch-key-store.md#keystore-id
-//= type=exception
-//= reason=Abstract trait contract; no concrete keystore in this commit. Per master plan Phase 4 (slug keystore-kms-config), this exception will be replaced with type=implementation on the UUID v4 fallback logic and type=test on the contract test that proves it.
-//# If one is not supplied, then a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt) MUST be used.
-//
 //= ../spec/framework/branch-key-store.md#getkeystoreinfo
 //= type=implication
 //# This MUST include:
