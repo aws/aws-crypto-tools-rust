@@ -13,7 +13,7 @@ pub mod structures;
 pub use client::*;
 pub use cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcError, CmcErrorKind, LocalCmc, MessageUsage,
-    UsageMetadata,
+    StormTrackingCmc, TimeUnits, UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::Keyring;

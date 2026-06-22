@@ -29,11 +29,13 @@
 
 pub mod entry;
 pub mod local;
+pub mod storm_tracking;
 
 use async_trait::async_trait;
 
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use local::LocalCmc;
+pub use storm_tracking::{StormTrackingCmc, TimeUnits};
 
 use std::fmt;
 use std::sync::Arc;
@@ -114,7 +116,7 @@ pub trait Cmc: Send + Sync {
     //
     //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
     //= type=exception
-    //= reason=Visibility MAY — depends on the concrete cache's locking/visibility model. SynchronizedLocalCmc and StormTrackerCmc will each define their own cross-thread visibility guarantee when added.
+    //= reason=Visibility MAY — realized by StormTrackingCmc which acquires its inflight Mutex on every put then forwards to LocalCmc; cross-thread visibility for the next get follows from the Mutex release/acquire happens-before edge.
     //# If used in a multi-threaded context,
     //# the next [Get Cache Entry](#get-cache-entry) operation
     //# MAY not return the entry just added.
@@ -125,12 +127,12 @@ pub trait Cmc: Send + Sync {
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
     //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
     //= type=exception
-    //= reason=Permission MAY — concrete cache choice (e.g., a stale-tolerant tier MAY return miss). StormTrackerCmc will exercise this branch when added.
+    //= reason=Permission MAY — realized by StormTrackingCmc::get_cache_entry's "within grace period AND not inflight → return NoSuchEntry" branch (10.4) and equivalent inflight-update branches (10.6, 10.11).
     //# - Get Cache Entry MAY return a cache miss when the TTL has net yet been exceeded.
     //
     //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
     //= type=exception
-    //= reason=Permission MAY — concrete cache choice (storm-tracker pattern). StormTrackerCmc will exercise this delayed-return branch when added.
+    //= reason=Permission MAY — realized by StormTrackingCmc::get_cache_entry's blocking branches (10.7, 10.10) which spin on sleep_milli intervals until either the FanOut slot opens or the key appears.
     //# - Get Cache Entry MAY not return immediately if no cache entry exists for the specified cache ID,
     //# and a cache miss was recently returned for another thread.
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError>;

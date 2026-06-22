@@ -10,11 +10,11 @@ authors = ["AWS-CryptoTools"]
 async-trait = "=0.1.83"
 aws-lc-rs = { version = "=1.17.0", features = ["fips"] }
 base64 = "=0.22.1"
-tokio = { version = "=1.41.1", features = ["rt", "macros"], default-features = false }
+tokio = { version = "=1.41.1", features = ["rt", "macros", "time"], default-features = false }
 
 [features]
 default = []
 keystore = []
 
 [dev-dependencies]
-tokio = { version = "=1.41.1", features = ["rt", "macros", "test-util"], default-features = false }
+tokio = { version = "=1.41.1", features = ["rt", "macros", "test-util", "time"], default-features = false }
