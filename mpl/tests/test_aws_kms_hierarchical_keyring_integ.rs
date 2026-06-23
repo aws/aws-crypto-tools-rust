@@ -19,8 +19,8 @@
 //! test / Keyrings / AwsKms / AwsKmsHierarchicalKeyring /
 //! `TestAwsKmsHierarchicalKeyring.dfy` (commit `09e485a3...`).
 //!
-//! Slice 3 ports the on-encrypt half of the Dafny round-trip tests; the
-//! decrypt half lands in slice 4 once `on_decrypt` is implemented.
+//! Slice 3 ports the on-encrypt half of the Dafny round-trip tests; slice 4
+//! ports the encrypt → on_decrypt full round trip.
 
 #![cfg(feature = "keystore")]
 
@@ -36,7 +36,8 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
 };
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BranchKeyMaterials, EncryptionContext, EncryptionMaterials,
+    AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
+    EncryptionMaterials,
 };
 use aws_crypto_mpl::{KeyStoreConfig, Keyring, KmsConfiguration};
 
@@ -176,6 +177,116 @@ async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
     assert!(
         warm * 5 < cold,
         "second on_encrypt should be at least 5x faster than the first \
+         (cold={:?}, warm={:?}); cache may not be in use",
+        cold,
+        warm
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
+    // Full encrypt → decrypt round trip against the real keystore. Proves
+    // the EDK ciphertext produced by on_encrypt is decryptable by
+    // on_decrypt going through:
+    //   1. Branch-key id resolution
+    //   2. Logical keystore name lookup (DDB GetItem path on get_key_store_info)
+    //   3. Cache lookup (decrypt scope id) — MISS, since on_encrypt cached
+    //      under the encrypt scope id, which is a different key
+    //   4. keystore.get_branch_key_version(branch_key_id, version) call
+    //      (DDB GetItem + KMS Decrypt for the version-specific record)
+    //   5. branch_key_unwrap with the input DM's encryption context
+    let keystore = build_keystore().await;
+    let keyring = HierarchicalKeyring::new(
+        keystore,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Default),
+        Some("partition-id-integ-decrypt".to_string()),
+    )
+    .unwrap();
+
+    let materials_in = fresh_materials();
+    let ec = materials_in.encryption_context().clone();
+    let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
+    let pdk_bytes = materials_out
+        .plaintext_data_key()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let edks = materials_out.encrypted_data_keys().to_vec();
+
+    // Build empty decryption materials with the same EC the encrypt side
+    // used; the AAD bound into the EDK ciphertext is computed over this EC.
+    let dm_in = DecryptionMaterials::new(
+        non_signing_suite(),
+        ec,
+        Default::default(),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let dm_out = keyring
+        .on_decrypt(dm_in, &edks)
+        .await
+        .expect("on_decrypt against real keystore must succeed for an EDK we just produced");
+
+    assert_eq!(
+        dm_out.plaintext_data_key().unwrap().as_bytes(),
+        pdk_bytes,
+        "on_decrypt must recover the same plaintext data key on_encrypt set",
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
+    // First on_decrypt MUST hit the keystore (cache miss). Second
+    // on_decrypt MUST be served entirely from the cache. We can't observe
+    // keystore call counts directly through the BranchKeyStore API, but
+    // we can observe the latency difference: a cached on_decrypt skips
+    // the DDB GetItem + KMS Decrypt round-trip and is dramatically faster.
+    use std::time::Instant;
+
+    let keystore = build_keystore().await;
+    let keyring = HierarchicalKeyring::new(
+        keystore,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Default),
+        Some("partition-id-integ-decrypt-cache".to_string()),
+    )
+    .unwrap();
+
+    let materials_in = fresh_materials();
+    let ec = materials_in.encryption_context().clone();
+    let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
+    let edks = materials_out.encrypted_data_keys().to_vec();
+
+    let make_dm = || {
+        DecryptionMaterials::new(
+            non_signing_suite(),
+            ec.clone(),
+            Default::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    };
+
+    let t0 = Instant::now();
+    let _ = keyring.on_decrypt(make_dm(), &edks).await.unwrap();
+    let cold = t0.elapsed();
+
+    let t1 = Instant::now();
+    let _ = keyring.on_decrypt(make_dm(), &edks).await.unwrap();
+    let warm = t1.elapsed();
+
+    assert!(
+        warm * 5 < cold,
+        "second on_decrypt should be at least 5x faster than the first \
          (cold={:?}, warm={:?}); cache may not be in use",
         cold,
         warm
