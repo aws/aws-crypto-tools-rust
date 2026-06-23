@@ -20,7 +20,24 @@
 //! `TestAwsKmsHierarchicalKeyring.dfy` (commit `09e485a3...`).
 //!
 //! Slice 3 ports the on-encrypt half of the Dafny round-trip tests; slice 4
-//! ports the encrypt → on_decrypt full round trip.
+//! ports the encrypt → on_decrypt full round trip. Slice 5 ports the
+//! remaining suites (`TestHierarchyClientESDKSuite` second half +
+//! `TestSharedCache*`).
+//!
+//! Two Dafny suites are intentionally NOT ported here:
+//! - `TestHierarchyClientDBESuite` — DBE algorithm suites are out of scope
+//!   for this Rust implementation (annotated `type=exception` on every DBE /
+//!   S3EC variant in `structures/algorithm_suite.rs`).
+//! - `TestBranchKeyIdSupplier` and `TestInvalidDataKeyError` — both require
+//!   two distinct branch keys configured under the SAME KEY_ARN. The team
+//!   keystore currently only has one such key (`BRANCH_KEY_ID`); the second
+//!   key (`POSTAL_HORN_BRANCH_KEY_ID`) is intentionally configured with a
+//!   mismatched kms-arn for ARN-disagreement tests. The supplier and
+//!   wrong-EC failure paths are fully covered by unit tests in
+//!   `test_aws_kms_hierarchical_keyring.rs::ondecrypt::*` (the
+//!   `*_uses_branch_key_supplier_when_configured`,
+//!   `*_skips_edks_with_wrong_branch_key_id`, and `*_collects_per_edk_errors_*`
+//!   tests).
 
 #![cfg(feature = "keystore")]
 
@@ -290,5 +307,394 @@ async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
          (cold={:?}, warm={:?}); cache may not be in use",
         cold,
         warm
+    );
+}
+
+// ─── Helpers for shared-cache tests ────────────────────────────────────────
+
+/// Build a KMS client pinned to the supplied region. Mirrors Dafny's
+/// `KMS.KMSClientForRegion`.
+async fn kms_client_for_region(region: &'static str) -> KmsClient {
+    let cfg = aws_config::defaults(BehaviorVersion::latest())
+        .region(Region::new(region))
+        .load()
+        .await;
+    KmsClient::new(&cfg)
+}
+
+/// Build a DynamoDB client pinned to `us-west-2` (where the test table
+/// lives, regardless of which KMS region the keystore is using).
+async fn ddb_client_us_west_2() -> DynamoDbClient {
+    let cfg = aws_config::defaults(BehaviorVersion::latest())
+        .region(Region::new("us-west-2"))
+        .load()
+        .await;
+    DynamoDbClient::new(&cfg)
+}
+
+/// Build a `BranchKeyStore` with the supplied KMS client and logical
+/// keystore name. The DDB client is pinned to `us-west-2`.
+async fn build_keystore_with_kms_and_logical_name(
+    kms: KmsClient,
+    logical_keystore_name: &str,
+) -> Arc<dyn Keystore> {
+    Arc::new(
+        BranchKeyStore::new(
+            KeyStoreConfig {
+                table_name: BRANCH_KEY_STORE_NAME.to_string(),
+                kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+                logical_keystore_name: logical_keystore_name.to_string(),
+                keystore_id: None,
+                aws_kms_grant_tokens: None,
+            },
+            kms,
+            ddb_client_us_west_2().await,
+        )
+        .unwrap(),
+    )
+}
+
+/// Run an `on_encrypt` → `on_decrypt` round trip and assert the recovered
+/// PDK matches. Mirrors Dafny's `TestRoundtrip`.
+async fn run_round_trip(
+    keyring: &HierarchicalKeyring,
+    materials_in: EncryptionMaterials,
+    expected_branch_key_id: &str,
+) {
+    let suite_id = materials_in.algorithm_suite_id();
+    let ec = materials_in.encryption_context().clone();
+
+    let materials_out = keyring
+        .on_encrypt(materials_in)
+        .await
+        .expect("on_encrypt against real keystore must succeed");
+
+    // Verify the EDK was created with the expected branch key id.
+    let edks = materials_out.encrypted_data_keys().to_vec();
+    assert_eq!(edks.len(), 1);
+    assert_eq!(edks[0].key_provider_id, "aws-kms-hierarchy");
+    assert_eq!(
+        edks[0].key_provider_info.as_slice(),
+        expected_branch_key_id.as_bytes(),
+        "EDK provider_info MUST equal the configured branch_key_id",
+    );
+    let pdk_bytes = materials_out
+        .plaintext_data_key()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+
+    let dm_in =
+        DecryptionMaterials::new(suite_id, ec, Default::default(), None, None, None).unwrap();
+    let dm_out = keyring
+        .on_decrypt(dm_in, &edks)
+        .await
+        .expect("on_decrypt against real keystore must succeed for an EDK we just produced");
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
+    //= type=test
+    //# If a decryption succeeds, this keyring MUST add the resulting
+    //# plaintext data key to the decryption materials and return the
+    //# modified materials.
+    assert_eq!(
+        dm_out.plaintext_data_key().unwrap().as_bytes(),
+        pdk_bytes,
+        "round trip MUST recover the same plaintext data key on_encrypt set",
+    );
+}
+
+// ─── TestHierarchyClientESDKSuite — pre-existing PDK variant ───────────────
+
+#[tokio::test]
+#[ignore]
+async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
+    // Second half of Dafny `TestHierarchyClientESDKSuite`: encrypt with
+    // a caller-supplied (zeroed) PDK. on_encrypt MUST preserve the PDK
+    // (per `#onencrypt` "If the input materials' plaintext data key is
+    // not empty ... MUST use the existing plaintext data key") and the
+    // produced EDK MUST round-trip back to the same PDK on decrypt.
+    let keystore = build_keystore().await;
+    let keyring = HierarchicalKeyring::new(
+        keystore,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Default),
+        Some("partition-id-integ-existing-pdk".to_string()),
+    )
+    .unwrap();
+
+    let suite = non_signing_suite();
+    let key_len = suite.specification().encryption_key_length();
+    let zeroed = vec![0u8; key_len];
+
+    let mut ec = EncryptionContext::new();
+    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    let materials_in = EncryptionMaterials::new(
+        suite,
+        Vec::new(),
+        ec,
+        Default::default(),
+        Some(aws_crypto_mpl::structures::PlaintextDataKey::new(
+            zeroed.clone(),
+        )),
+        None,
+        None,
+    )
+    .unwrap();
+
+    run_round_trip(&keyring, materials_in, BRANCH_KEY_ID).await;
+}
+
+// ─── TestSharedCache* suites ───────────────────────────────────────────────
+//
+// These four tests mirror the Dafny `TestSharedCache*` suites. They each
+// build two `HierarchicalKeyring`s (HK1, HK2) that share a single
+// `LocalCmc` via `CacheType::Shared`. HK1's keystore uses a us-west-2 KMS
+// client; HK2's keystore uses a us-east-2 KMS client. KEY_ARN is in
+// us-west-2, so any KMS Decrypt issued by HK2's keystore fails.
+//
+// The four tests differ only in (partition_id, logical_keystore_name)
+// configuration and observe whether HK1's cache entry is reachable from
+// HK2 — i.e., they verify the cache identifier formula at
+// `#appendix-a-cache-entry-identifier-formulas` binds those exact fields.
+
+/// Build a non-signing-suite encryption materials with a small EC. Mirrors
+/// the Dafny `GetTestMaterials(TEST_ESDK_ALG_SUITE_ID)` call.
+fn shared_cache_materials() -> EncryptionMaterials {
+    fresh_materials()
+}
+
+/// Build a fresh `LocalCmc` wrapped in `Arc<dyn Cmc>`, suitable for
+/// constructing a `CacheType::Shared` for each of HK1 and HK2.
+fn shared_cache_arc() -> Arc<dyn aws_crypto_mpl::Cmc> {
+    use aws_crypto_mpl::{Cmc, LocalCmc};
+    let local: Arc<dyn Cmc> = Arc::new(LocalCmc::new(100, 50).unwrap());
+    local
+}
+
+#[tokio::test]
+#[ignore]
+async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_name() {
+    // HK1 and HK2 share Partition ID, Logical Key Store Name, and Branch
+    // Key ID — so per `#shared-cache-considerations` they MUST share cache
+    // entries. After HK1's round trip populates the cache, HK2's encrypt
+    // (which would otherwise fail because its KMS client is us-east-2 and
+    // the key is us-west-2) succeeds entirely from the cached entry.
+    let keystore_west = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-west-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+    let keystore_east = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-east-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+
+    let cache_arc = shared_cache_arc();
+
+    let hk1 = HierarchicalKeyring::new(
+        keystore_west,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(Arc::clone(&cache_arc))),
+        Some("partitionId".to_string()),
+    )
+    .unwrap();
+    let hk2 = HierarchicalKeyring::new(
+        keystore_east,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(cache_arc)),
+        Some("partitionId".to_string()),
+    )
+    .unwrap();
+
+    // HK2 encrypt fails first (cache empty, KMS region mismatch).
+    let err = hk2.on_encrypt(shared_cache_materials()).await;
+    assert!(
+        err.is_err(),
+        "HK2 on_encrypt MUST fail before the cache is populated (KMS region mismatch)",
+    );
+
+    // HK1 round-trip succeeds (and populates the shared cache).
+    run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
+    //= type=test
+    //# - Same Partition ID
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
+    //= type=test
+    //# - Same Logical Key Store Name of the Key Store for the Hierarchical Keyring
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
+    //= type=test
+    //# - Same Branch Key ID
+    //
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
+    //= type=test
+    //= reason=HK2's KMS client cannot decrypt the us-west-2 key; success here proves the entry came from HK1's cache.
+    //# then they WILL share the cache entries in the `Shared` Cache.
+    run_round_trip(&hk2, shared_cache_materials(), BRANCH_KEY_ID).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_logical_keystore_name()
+{
+    // HK1 and HK2 leave partition_id = None, so each keyring generates a
+    // fresh v4 UUID. The cache identifier binds the partition id, so the
+    // entries do NOT collide and HK2's second encrypt MUST still fail.
+    let keystore_west = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-west-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+    let keystore_east = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-east-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+
+    let cache_arc = shared_cache_arc();
+
+    let hk1 = HierarchicalKeyring::new(
+        keystore_west,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(Arc::clone(&cache_arc))),
+        None,
+    )
+    .unwrap();
+    let hk2 = HierarchicalKeyring::new(
+        keystore_east,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(cache_arc)),
+        None,
+    )
+    .unwrap();
+
+    assert!(
+        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+        "HK2 on_encrypt MUST fail before the cache is populated",
+    );
+
+    run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
+    //= type=test
+    //# - (Default) A a random 16-byte UUID, which makes
+    //#   it unique for every Hierarchical Keyring. In this case, two Hierarchical Keyrings (or another Material Provider)
+    //#   CANNOT share the same cache entries in the cache.
+    assert!(
+        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+        "HK2 on_encrypt MUST still fail — distinct random partition ids prevent cache reuse",
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn integ_shared_cache_with_different_specified_partition_id_and_same_logical_keystore_name() {
+    // HK1 and HK2 set explicit, distinct partition ids. Cache miss
+    // expected: HK2's encrypt MUST still fail.
+    let keystore_west = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-west-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+    let keystore_east = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-east-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+
+    let cache_arc = shared_cache_arc();
+
+    let hk1 = HierarchicalKeyring::new(
+        keystore_west,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(Arc::clone(&cache_arc))),
+        Some("partitionIdHK1".to_string()),
+    )
+    .unwrap();
+    let hk2 = HierarchicalKeyring::new(
+        keystore_east,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(cache_arc)),
+        Some("partitionIdHK2".to_string()),
+    )
+    .unwrap();
+
+    assert!(
+        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+        "HK2 on_encrypt MUST fail before the cache is populated",
+    );
+
+    run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
+    //= type=test
+    //# - If the Partition ID is set by the user and is different for two Hierarchical Keyrings (or another Material Provider),
+    //#   they CANNOT share the same cache entries in the cache.
+    assert!(
+        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+        "HK2 on_encrypt MUST still fail — distinct partition ids prevent cache reuse",
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystore_name() {
+    // HK1 and HK2 share Partition ID but differ in Logical Key Store Name.
+    // Cache identifier binds the logical keystore name, so HK2's encrypt
+    // MUST still fail after HK1's round trip populates the cache.
+    let keystore_west = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-west-2").await,
+        LOGICAL_KEY_STORE_NAME,
+    )
+    .await;
+    let keystore_east = build_keystore_with_kms_and_logical_name(
+        kms_client_for_region("us-east-2").await,
+        &format!("{LOGICAL_KEY_STORE_NAME}New"),
+    )
+    .await;
+
+    let cache_arc = shared_cache_arc();
+
+    let hk1 = HierarchicalKeyring::new(
+        keystore_west,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(Arc::clone(&cache_arc))),
+        Some("partitionId".to_string()),
+    )
+    .unwrap();
+    let hk2 = HierarchicalKeyring::new(
+        keystore_east,
+        3600,
+        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(CacheType::Shared(cache_arc)),
+        Some("partitionId".to_string()),
+    )
+    .unwrap();
+
+    assert!(
+        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+        "HK2 on_encrypt MUST fail before the cache is populated",
+    );
+
+    run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
+
+    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#logical-key-store-name
+    //= type=test
+    //# - If we set the Logical Key Store Names for K1 and K2 to be different, HK1 (which uses Key Store client K1)
+    //#   and HK2 (which uses Key Store client K2) will NOT be able to share cache entries.
+    assert!(
+        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+        "HK2 on_encrypt MUST still fail — different logical keystore names prevent cache reuse",
     );
 }
