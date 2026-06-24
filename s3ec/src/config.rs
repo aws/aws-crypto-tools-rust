@@ -90,6 +90,13 @@ pub struct S3EncryptionConfig {
     pub encryption_algorithm: Option<EncryptionAlgorithm>,
     /// Configured key commitment policy.
     pub commitment_policy: Option<CommitmentPolicy>,
+    /// Whether PutObject writes the content metadata to a separate instruction
+    /// file (a sidecar S3 object) instead of the S3 object metadata.
+    pub instruction_file_put_enabled: bool,
+    /// Whether instruction-file reads are disabled on GetObject. When `false`
+    /// (the default), the client falls back to reading an instruction file
+    /// when the object metadata does not carry a decryptable envelope.
+    pub disable_instruction_file: bool,
 }
 
 // The manual `Default` impl is kept (rather than `#[derive(Default)]`) because
@@ -112,6 +119,10 @@ impl Default for S3EncryptionConfig {
             buffer_size: None,
             encryption_algorithm: None,
             commitment_policy: None,
+            //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+            //# Instruction File writes MUST NOT be enabled by default.
+            instruction_file_put_enabled: false,
+            disable_instruction_file: false,
         }
     }
 }

@@ -58,6 +58,16 @@ pub const KEY_COMMITMENT_V3: &str = "x-amz-d";
 /// V3 message ID mapkey.
 pub const MESSAGE_ID_V3: &str = "x-amz-i";
 
+/// User-metadata mapkey set on an instruction-file S3 object marking it as an
+/// S3EC instruction file. The cross-implementation harness asserts its presence
+/// on the written `.instruction` object.
+pub const INSTRUCTION_FILE_MARKER: &str = "x-amz-crypto-instr-file";
+
+//= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+//# The default Instruction File behavior uses the same S3 object key as its associated object suffixed with ".instruction".
+/// The default instruction-file S3 object key suffix.
+pub const DEFAULT_INSTRUCTION_FILE_SUFFIX: &str = ".instruction";
+
 /// Content metadata for an S3EC-encrypted object.
 ///
 /// Fields hold the already-encoded (base64 / JSON string) values exactly as
@@ -142,6 +152,62 @@ impl ObjectMetadata {
         put(KEY_COMMITMENT_V3, &self.key_commitment_v3);
         put(MESSAGE_ID_V3, &self.message_id_v3);
         map
+    }
+
+    /// Split the content metadata for an instruction-file write into
+    /// `(object_metadata, instruction_file_metadata)`.
+    ///
+    /// The object metadata portion is stored on the encrypted S3 object; the
+    /// instruction file portion is serialized to JSON and stored in the
+    /// sidecar `.instruction` object.
+    pub fn split_for_instruction_file(&self) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
+        let mut object_metadata = BTreeMap::new();
+        let mut instruction_file = BTreeMap::new();
+
+        if self.encrypted_data_key_v3.is_some() {
+            // V3: the content-related metadata stays in the object metadata,
+            // and only the encrypted-data-key-related metadata is written to
+            // the instruction file (so the data key can be re-encrypted in
+            // place without rewriting the object).
+            let mut put_obj = |k: &str, v: &Option<String>| {
+                if let Some(value) = v {
+                    object_metadata.insert(k.to_string(), value.clone());
+                }
+            };
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-c" and its value in the Object Metadata when writing with an Instruction File.
+            put_obj(CONTENT_CIPHER_V3, &self.content_cipher_v3);
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-d" and its value in the Object Metadata when writing with an Instruction File.
+            put_obj(KEY_COMMITMENT_V3, &self.key_commitment_v3);
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-i" and its value in the Object Metadata when writing with an Instruction File.
+            put_obj(MESSAGE_ID_V3, &self.message_id_v3);
+
+            let mut put_inst = |k: &str, v: &Option<String>| {
+                if let Some(value) = v {
+                    instruction_file.insert(k.to_string(), value.clone());
+                }
+            };
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-3" and its value in the Instruction File.
+            put_inst(ENCRYPTED_DATA_KEY_V3, &self.encrypted_data_key_v3);
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-w" and its value in the Instruction File.
+            put_inst(WRAP_ALGORITHM_V3, &self.wrap_algorithm_v3);
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-m" and its value (when present in the content metadata) in the Instruction File.
+            put_inst(MAT_DESC_V3, &self.mat_desc_v3);
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //# - The V3 message format MUST store the mapkey "x-amz-t" and its value (when present in the content metadata) in the Instruction File.
+            put_inst(ENCRYPTION_CONTEXT_V3, &self.encryption_context_v3);
+        } else {
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v1v2-instruction-files
+            //# In the V1/V2 message format, all of the content metadata MUST be stored in the Instruction File.
+            instruction_file = self.to_map();
+        }
+
+        (object_metadata, instruction_file)
     }
 
     /// Whether the metadata is in the V1 format.

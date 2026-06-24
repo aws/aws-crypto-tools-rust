@@ -139,6 +139,74 @@ impl S3EncryptionClient {
         let metadata: std::collections::HashMap<String, String> =
             object_metadata.to_map().into_iter().collect();
 
+        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //# Instruction File writes MUST be optionally configured during client creation or on each PutObject request.
+        if self.config.instruction_file_put_enabled {
+            return self
+                .put_object_with_instruction_file(bucket, key, body, &object_metadata)
+                .await;
+        }
+
+        //= spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
+        //# By default, the S3EC MUST store content metadata in the S3 Object Metadata.
+        self.s3
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(ByteStream::from(body))
+            .set_metadata(Some(metadata))
+            .send()
+            .await
+            .map_err(|e| S3EncryptionError::Sdk(format!("S3 PutObject failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Store an encrypted object together with a sidecar instruction file.
+    ///
+    /// The content metadata is split: the instruction-file portion is
+    /// serialized to a JSON string and stored in the `<key>.instruction`
+    /// object, while the object-metadata portion (empty for V1/V2; the
+    /// content-related mapkeys for V3) is attached to the encrypted object.
+    async fn put_object_with_instruction_file(
+        &self,
+        bucket: &str,
+        key: &str,
+        body: Vec<u8>,
+        object_metadata: &ObjectMetadata,
+    ) -> Result<()> {
+        let (object_map, instruction_map) = object_metadata.split_for_instruction_file();
+
+        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //# The content metadata stored in the Instruction File MUST be serialized to a JSON string.
+        let instruction_json = serde_json::to_string(&instruction_map).map_err(|e| {
+            S3EncryptionError::Format(format!("failed to serialize instruction file: {e}"))
+        })?;
+
+        // The instruction file is written first so that, once the encrypted
+        // object is visible, its instruction file already exists for readers.
+        let instruction_key = format!("{key}{}", metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
+        let instruction_marker: std::collections::HashMap<String, String> = [(
+            metadata::INSTRUCTION_FILE_MARKER.to_string(),
+            metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX.to_string(),
+        )]
+        .into_iter()
+        .collect();
+
+        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //# The serialized JSON string MUST be the only contents of the Instruction File.
+        self.s3
+            .put_object()
+            .bucket(bucket)
+            .key(&instruction_key)
+            .body(ByteStream::from(instruction_json.into_bytes()))
+            .set_metadata(Some(instruction_marker))
+            .send()
+            .await
+            .map_err(|e| {
+                S3EncryptionError::Sdk(format!("S3 PutObject (instruction file) failed: {e}"))
+            })?;
+
+        let metadata: std::collections::HashMap<String, String> = object_map.into_iter().collect();
         self.s3
             .put_object()
             .bucket(bucket)
@@ -159,6 +227,7 @@ impl S3EncryptionClient {
         bucket: &str,
         key: &str,
         encryption_context: &BTreeMap<String, String>,
+        instruction_file_suffix: Option<&str>,
     ) -> Result<DecryptedObject> {
         let keyring = self.require_keyring()?;
 
@@ -187,7 +256,28 @@ impl S3EncryptionClient {
             .map_err(|e| S3EncryptionError::Sdk(format!("failed to read S3 body: {e}")))?
             .to_vec();
 
-        let md = ObjectMetadata::from_map(&raw_metadata);
+        // Decryption metadata starts from the object metadata. When the object
+        // metadata does not carry a complete decryptable envelope, the metadata
+        // was written to a sidecar instruction file; fetch it and merge.
+        let mut decrypt_map = raw_metadata.clone();
+        let mut md = ObjectMetadata::from_map(&decrypt_map);
+
+        let object_metadata_is_decryptable =
+            md.is_v1_format() || md.is_v2_format() || md.is_v3_format();
+        if !self.config.disable_instruction_file && !object_metadata_is_decryptable {
+            //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+            //# The S3EC SHOULD support providing a custom Instruction File suffix on GetObject requests, regardless of whether or not re-encryption is supported.
+            let suffix =
+                instruction_file_suffix.unwrap_or(metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
+            let instruction_key = format!("{key}{suffix}");
+            let instruction_metadata = self
+                .fetch_instruction_file(bucket, &instruction_key)
+                .await?;
+            for (k, v) in instruction_metadata {
+                decrypt_map.insert(k, v);
+            }
+            md = ObjectMetadata::from_map(&decrypt_map);
+        }
 
         //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
         //# If there are multiple mapkeys which are meant to be exclusive to different versions, such as "x-amz-key", "x-amz-key-v2", and "x-amz-3" then the S3EC SHOULD throw an exception.
@@ -214,6 +304,40 @@ impl S3EncryptionClient {
         Ok(DecryptedObject {
             plaintext,
             metadata: raw_metadata,
+        })
+    }
+
+    /// Fetch and parse a sidecar instruction file as a content-metadata map.
+    ///
+    /// The instruction file's body is a JSON object string mapping S3EC
+    /// content-metadata mapkeys to their stored values.
+    async fn fetch_instruction_file(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Result<BTreeMap<String, String>> {
+        let response = self
+            .s3
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| {
+                S3EncryptionError::Sdk(format!("S3 GetObject (instruction file) failed: {e}"))
+            })?;
+
+        let body = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| {
+                S3EncryptionError::Sdk(format!("failed to read instruction file body: {e}"))
+            })?
+            .to_vec();
+
+        serde_json::from_slice(&body).map_err(|e| {
+            S3EncryptionError::Format(format!("failed to parse instruction file JSON: {e}"))
         })
     }
 
@@ -480,5 +604,90 @@ mod tests {
 
         let err = open_v3_content(&DATA_KEY, &parsed, &body).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    // Reconstruct the decryption-time metadata map exactly as `get_object`
+    // does for an instruction-file object: start from the object metadata,
+    // then merge the instruction-file portion over it.
+    fn merge_instruction_file(
+        object_map: &BTreeMap<String, String>,
+        instruction_map: &BTreeMap<String, String>,
+    ) -> BTreeMap<String, String> {
+        let mut merged = object_map.clone();
+        for (k, v) in instruction_map {
+            merged.insert(k.clone(), v.clone());
+        }
+        merged
+    }
+
+    /// A V2 (non-committing) object written with an instruction file stores ALL
+    /// of its content metadata in the instruction file (none in the object
+    /// metadata), and round-trips once the instruction file is merged back.
+    #[test]
+    fn v2_instruction_file_split_round_trips() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let plaintext = b"instruction-file V2 payload";
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, plaintext).unwrap();
+        let (object_map, instruction_map) = md.split_for_instruction_file();
+
+        // V1/V2: nothing in object metadata, everything in the instruction file.
+        assert!(object_map.is_empty());
+        assert!(instruction_map.contains_key(crate::metadata::ENCRYPTED_DATA_KEY_V2));
+        assert!(instruction_map.contains_key(crate::metadata::CONTENT_IV));
+
+        // The object metadata alone is not a decryptable envelope.
+        assert!(!ObjectMetadata::from_map(&object_map).is_v2_format());
+
+        // After merging the instruction file, the object decrypts.
+        let merged = merge_instruction_file(&object_map, &instruction_map);
+        let parsed = ObjectMetadata::from_map(&merged);
+        assert!(parsed.is_v2_format());
+        assert_eq!(open_v2_content(&DATA_KEY, &parsed, &body).unwrap(), plaintext);
+    }
+
+    /// A V3 (key-committing) object written with an instruction file keeps the
+    /// content-related mapkeys (`x-amz-c`, `x-amz-d`, `x-amz-i`) in the object
+    /// metadata and writes the data-key-related mapkeys (`x-amz-3`, `x-amz-w`,
+    /// `x-amz-t`) to the instruction file, and round-trips once merged.
+    #[test]
+    fn v3_instruction_file_split_round_trips() {
+        use crate::metadata::{
+            CONTENT_CIPHER_V3 as C, ENCRYPTED_DATA_KEY_V3, ENCRYPTION_CONTEXT_V3, KEY_COMMITMENT_V3,
+            MESSAGE_ID_V3, WRAP_ALGORITHM_V3 as W,
+        };
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let plaintext = b"instruction-file V3 payload";
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, plaintext).unwrap();
+        let (object_map, instruction_map) = md.split_for_instruction_file();
+
+        // Content-related mapkeys stay in object metadata.
+        assert!(object_map.contains_key(C));
+        assert!(object_map.contains_key(KEY_COMMITMENT_V3));
+        assert!(object_map.contains_key(MESSAGE_ID_V3));
+        assert!(!object_map.contains_key(ENCRYPTED_DATA_KEY_V3));
+
+        // Data-key-related mapkeys go to the instruction file.
+        assert!(instruction_map.contains_key(ENCRYPTED_DATA_KEY_V3));
+        assert!(instruction_map.contains_key(W));
+        assert!(instruction_map.contains_key(ENCRYPTION_CONTEXT_V3));
+        // The "x-amz-c"/"x-amz-d"/"x-amz-i" keys MUST NOT be in the instruction file.
+        assert!(!instruction_map.contains_key(C));
+        assert!(!instruction_map.contains_key(KEY_COMMITMENT_V3));
+        assert!(!instruction_map.contains_key(MESSAGE_ID_V3));
+
+        // The object metadata alone (missing x-amz-3) is not decryptable.
+        assert!(!ObjectMetadata::from_map(&object_map).is_v3_format());
+
+        // After merging the instruction file, the object decrypts.
+        let merged = merge_instruction_file(&object_map, &instruction_map);
+        let parsed = ObjectMetadata::from_map(&merged);
+        assert!(parsed.is_v3_format());
+        assert_eq!(open_v3_content(&DATA_KEY, &parsed, &body).unwrap(), plaintext);
     }
 }
