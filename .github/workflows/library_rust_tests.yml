@@ -59,10 +59,19 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        # `--all-features` ensures feature-gated targets (e.g. the
+        # `aws_kms_hierarchical` example, gated on `keystore`) are
+        # type-checked under all supported feature combinations.
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build
         run: cargo build --verbose
+
+      - name: Build examples
+        # Examples with `required-features` are skipped by `cargo build`
+        # without the matching feature flags. Build them explicitly so
+        # CI catches breakage between the library and any example bin.
+        run: cargo build --all-features --examples --verbose
 
       - name: Test + line coverage gate (100%)
         run: cargo llvm-cov --all-features --workspace --fail-under-lines 100 --verbose
@@ -97,3 +106,35 @@ jobs:
       # - name: Integ tests — keystore read path (real AWS)
       #   if: inputs.project == 'mpl'
       #   run: cargo test --features keystore --test test_keystore_branch_key_store_integ -- --ignored
+
+      # TODO(examples-creds): Wire up AWS credentials before uncommenting
+      # the steps below.
+      #
+      # The `aws_kms_hierarchical` example
+      # (mpl/examples/aws_kms_hierarchical/) builds without AWS access
+      # but at runtime exercises the same KMS Decrypt + DDB GetItem
+      # surface as the keystore integ tests. It additionally needs the
+      # following env vars (passed through to `Config::from_env`):
+      #
+      #   * MPL_EXAMPLE_KEY_STORE_TABLE          — DDB table name
+      #   * MPL_EXAMPLE_LOGICAL_KEY_STORE_NAME   — logical keystore name
+      #   * MPL_EXAMPLE_KMS_KEY_ARN              — KMS Key ARN
+      #   * MPL_EXAMPLE_BRANCH_KEY_ID            — pre-existing branch
+      #                                            key id in that table
+      #   (optional) MPL_EXAMPLE_REGION,
+      #              MPL_EXAMPLE_BRANCH_KEY_ID_TENANT_A,
+      #              MPL_EXAMPLE_BRANCH_KEY_ID_TENANT_B
+      #
+      # The credentials block above (TODO(integ-tests-creds)) covers the
+      # role assumption; this block reuses it. Wire both at the same
+      # time. Sourcing the env vars from repository variables (not
+      # secrets — none of these values are sensitive) is recommended.
+      #
+      # - name: Run examples (real AWS)
+      #   if: inputs.project == 'mpl'
+      #   env:
+      #     MPL_EXAMPLE_KEY_STORE_TABLE: ${{ vars.MPL_EXAMPLE_KEY_STORE_TABLE }}
+      #     MPL_EXAMPLE_LOGICAL_KEY_STORE_NAME: ${{ vars.MPL_EXAMPLE_LOGICAL_KEY_STORE_NAME }}
+      #     MPL_EXAMPLE_KMS_KEY_ARN: ${{ vars.MPL_EXAMPLE_KMS_KEY_ARN }}
+      #     MPL_EXAMPLE_BRANCH_KEY_ID: ${{ vars.MPL_EXAMPLE_BRANCH_KEY_ID }}
+      #   run: cargo run --features keystore --example aws_kms_hierarchical
