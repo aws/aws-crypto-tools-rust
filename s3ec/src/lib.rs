@@ -9,11 +9,15 @@
 
 pub mod client;
 pub mod config;
+pub mod crypto;
 pub mod error;
+pub mod metadata;
+pub mod suite;
 
 pub use client::S3EncryptionClient;
 pub use config::{CommitmentPolicy, EncryptionAlgorithm, S3EncryptionConfig};
 pub use error::{Result, S3EncryptionError};
+pub use metadata::ObjectMetadata;
 
 #[cfg(test)]
 mod tests {
