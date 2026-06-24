@@ -43,6 +43,11 @@ pub const CONTENT_CIPHER: &str = "x-amz-cek-alg";
 /// Content cipher auth-tag length mapkey (V2).
 pub const TAG_LENGTH: &str = "x-amz-tag-len";
 
+/// The `x-amz-cek-alg` content-cipher value for non-committing AES-GCM (V1/V2).
+pub const CONTENT_CIPHER_GCM: &str = "AES/GCM/NoPadding";
+/// The `x-amz-cek-alg` content-cipher value for the legacy AES-CBC suite (V1/V2).
+pub const CONTENT_CIPHER_CBC: &str = "AES/CBC/PKCS5Padding";
+
 /// V3 content cipher mapkey.
 pub const CONTENT_CIPHER_V3: &str = "x-amz-c";
 /// V3 encrypted data key mapkey.
@@ -320,6 +325,25 @@ impl ObjectMetadata {
         Self::decode_b64(CONTENT_IV, &self.content_iv)
     }
 
+    /// The content-encryption algorithm of a V1/V2 object, read from the
+    /// `x-amz-cek-alg` content-cipher mapkey.
+    ///
+    /// The V2 metadata format is shared by both the non-committing AES-GCM
+    /// suite and the legacy AES-CBC suite; the content cipher distinguishes
+    /// them.
+    pub fn v2_content_algorithm(&self) -> Result<EncryptionAlgorithm> {
+        match self.content_cipher.as_deref() {
+            Some(CONTENT_CIPHER_GCM) => Ok(EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf),
+            Some(CONTENT_CIPHER_CBC) => Ok(EncryptionAlgorithm::AlgAes256CbcIv16NoKdf),
+            Some(other) => Err(S3EncryptionError::Format(format!(
+                "unknown content encryption algorithm: {other}"
+            ))),
+            None => Err(S3EncryptionError::Format(
+                "V2 format object missing required x-amz-cek-alg metadata".to_string(),
+            )),
+        }
+    }
+
     /// The decoded V3 encrypted data key (`x-amz-3`).
     pub fn v3_encrypted_data_key(&self) -> Result<Vec<u8>> {
         Self::decode_b64(ENCRYPTED_DATA_KEY_V3, &self.encrypted_data_key_v3)
@@ -511,6 +535,29 @@ mod tests {
         assert_eq!(parsed.v2_encrypted_data_key().unwrap(), edk);
         assert_eq!(parsed.content_iv_bytes().unwrap(), iv);
         assert_eq!(parsed.v2_stored_context().unwrap(), ctx());
+    }
+
+    #[test]
+    fn v2_content_algorithm_detects_cipher() {
+        let mut md = v2_metadata();
+        // The standard V2 GCM fixture reports the GCM suite.
+        assert_eq!(
+            md.v2_content_algorithm().unwrap(),
+            EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf
+        );
+
+        // A legacy object reuses the V2 metadata format with the CBC cipher.
+        md.content_cipher = Some(CONTENT_CIPHER_CBC.to_string());
+        assert_eq!(
+            md.v2_content_algorithm().unwrap(),
+            EncryptionAlgorithm::AlgAes256CbcIv16NoKdf
+        );
+
+        // An unknown cipher and a missing cipher are both format errors.
+        md.content_cipher = Some("AES/XTS/NoPadding".to_string());
+        assert!(md.v2_content_algorithm().is_err());
+        md.content_cipher = None;
+        assert!(md.v2_content_algorithm().is_err());
     }
 
     #[test]

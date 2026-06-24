@@ -17,6 +17,10 @@
 //! top of these primitives by the client.
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
+use aws_lc_rs::cipher::{
+    DecryptionContext, PaddedBlockDecryptingKey, UnboundCipherKey, AES_256,
+};
+use aws_lc_rs::iv::FixedLength;
 use aws_lc_rs::{constant_time, hkdf, rand};
 
 use crate::config::EncryptionAlgorithm;
@@ -87,6 +91,50 @@ pub fn decrypt_content_gcm(
     //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
     aes_gcm_open(data_key, iv, &[], ciphertext_with_tag)
+}
+
+// ---------------------------------------------------------------------------
+// Legacy, unauthenticated AES-CBC (ALG_AES_256_CBC_IV16_NO_KDF).
+//
+// This is a decrypt-only legacy read path: objects written by older S3
+// encryption clients (CryptoMode.EncryptionOnly) use AES-256-CBC with
+// PKCS5/PKCS7 padding and a 16-byte IV. CBC carries no authentication tag, so
+// the caller MUST gate this path on the legacy-unauthenticated-modes
+// configuration before invoking it.
+// ---------------------------------------------------------------------------
+
+/// Decrypt object content encrypted with the legacy, unauthenticated
+/// `ALG_AES_256_CBC_IV16_NO_KDF` suite: AES-256 in CBC mode with PKCS7 padding
+/// (compatible with the Java JCE `AES/CBC/PKCS5Padding`) and a 16-byte IV.
+///
+/// CBC provides no authentication tag, so this path performs no integrity
+/// verification. To avoid exposing a padding-oracle distinguisher, every
+/// failure mode (bad padding, truncated ciphertext, wrong key) collapses to a
+/// single uniform error.
+pub fn decrypt_content_cbc(data_key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
+    //= spec/s3-encryption/decryption.md#cbc-decryption
+    //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is enabled,
+    //# then the S3EC MUST create a cipher with AES in CBC Mode with PKCS5Padding or PKCS7Padding compatible padding for a 16-byte block cipher (example: for the Java JCE, this is "AES/CBC/PKCS5Padding").
+    let unbound = UnboundCipherKey::new(&AES_256, data_key)
+        .map_err(|_| crypto_err("invalid AES-256-CBC key"))?;
+    let key = PaddedBlockDecryptingKey::cbc_pkcs7(unbound)
+        //= spec/s3-encryption/decryption.md#cbc-decryption
+        //# If the cipher object cannot be created as described above,
+        //# Decryption MUST fail.
+        .map_err(|_| crypto_err("failed to initialize AES/CBC/PKCS5Padding cipher"))?;
+
+    // The CBC IV is a fixed 16 bytes; a different length is a malformed object.
+    let iv: FixedLength<16> = iv
+        .try_into()
+        .map_err(|_| crypto_err("invalid CBC IV length"))?;
+    let context = DecryptionContext::Iv128(iv);
+
+    let mut in_out = ciphertext.to_vec();
+    let plaintext = key
+        .decrypt(&mut in_out, context)
+        // Uniform failure: do not distinguish padding errors from other faults.
+        .map_err(|_| crypto_err("failed to decrypt CBC content"))?;
+    Ok(plaintext.to_vec())
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +255,57 @@ mod tests {
 
     const DATA_KEY: [u8; 32] = [7u8; 32];
     const COMMITTING: EncryptionAlgorithm = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+
+    /// Encrypt with AES-256-CBC/PKCS7 to produce a legacy fixture, returning
+    /// `(iv, ciphertext)`. Mirrors what an old S3 encryption client writes.
+    fn cbc_encrypt(data_key: &[u8], plaintext: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        use aws_lc_rs::cipher::{PaddedBlockEncryptingKey, UnboundCipherKey, AES_256};
+        let unbound = UnboundCipherKey::new(&AES_256, data_key).unwrap();
+        let key = PaddedBlockEncryptingKey::cbc_pkcs7(unbound).unwrap();
+        let mut in_out = plaintext.to_vec();
+        let context = key.encrypt(&mut in_out).unwrap();
+        let iv = <&[u8]>::try_from(&context).unwrap().to_vec();
+        (iv, in_out)
+    }
+
+    #[test]
+    fn cbc_round_trip_recovers_plaintext() {
+        let plaintext = b"the quick brown fox jumps over the lazy dog";
+        let (iv, ct) = cbc_encrypt(&DATA_KEY, plaintext);
+
+        // CBC uses a 16-byte IV and pads to the 16-byte block boundary.
+        assert_eq!(iv.len(), 16);
+        assert_eq!(ct.len() % 16, 0);
+
+        let recovered = decrypt_content_cbc(&DATA_KEY, &iv, &ct).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
+    fn cbc_round_trip_handles_block_aligned_plaintext() {
+        // Exactly one block: PKCS7 adds a full padding block.
+        let plaintext = [0xABu8; 16];
+        let (iv, ct) = cbc_encrypt(&DATA_KEY, &plaintext);
+        assert_eq!(ct.len(), 32);
+        let recovered = decrypt_content_cbc(&DATA_KEY, &iv, &ct).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
+    fn cbc_wrong_key_fails() {
+        let (iv, ct) = cbc_encrypt(&DATA_KEY, b"sensitive payload");
+        let wrong_key = [9u8; 32];
+        let err = decrypt_content_cbc(&wrong_key, &iv, &ct).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn cbc_rejects_malformed_iv_length() {
+        let (_iv, ct) = cbc_encrypt(&DATA_KEY, b"payload");
+        // A 12-byte (GCM-sized) IV is not a valid CBC IV.
+        let err = decrypt_content_cbc(&DATA_KEY, &[0u8; 12], &ct).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
 
     #[test]
     fn gcm_round_trip_recovers_plaintext() {

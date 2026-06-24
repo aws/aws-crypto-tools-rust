@@ -355,6 +355,10 @@ impl S3EncryptionClient {
         ciphertext: &[u8],
         request_context: &BTreeMap<String, String>,
     ) -> Result<Vec<u8>> {
+        // The V2 metadata format is shared by the non-committing AES-GCM suite
+        // and the legacy AES-CBC suite; determine which from the content cipher.
+        let content_alg = md.v2_content_algorithm()?;
+
         //= spec/s3-encryption/key-commitment.md#commitment-policy
         //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
         if self.config.effective_commitment_policy()
@@ -363,6 +367,20 @@ impl S3EncryptionClient {
             return Err(S3EncryptionError::Crypto(
                 "cannot decrypt a non-key-committing object when the commitment policy is \
                  REQUIRE_ENCRYPT_REQUIRE_DECRYPT"
+                    .to_string(),
+            ));
+        }
+
+        //= spec/s3-encryption/decryption.md#legacy-decryption
+        //# The S3EC MUST NOT decrypt objects encrypted using legacy unauthenticated algorithm suites unless specifically configured to do so.
+        //
+        //= spec/s3-encryption/decryption.md#cbc-decryption
+        //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is NOT enabled,
+        //# the S3EC MUST throw an error which details that client was not configured to decrypt objects with ALG_AES_256_CBC_IV16_NO_KDF.
+        if content_alg.is_legacy() && !self.config.enable_legacy_unauthenticated_modes {
+            return Err(S3EncryptionError::Crypto(
+                "client was not configured to decrypt objects with \
+                 ALG_AES_256_CBC_IV16_NO_KDF; enable legacy unauthenticated modes to allow it"
                     .to_string(),
             ));
         }
@@ -475,15 +493,27 @@ fn build_encrypted_object(
     }
 }
 
-/// Decrypt V2 (non-committing AES-GCM) content given the unwrapped data key.
-/// Pure (no-I/O) decrypt half of the GetObject pipeline.
+/// Decrypt V2 content given the unwrapped data key. The V2 metadata format is
+/// shared by the non-committing AES-GCM suite and the legacy AES-CBC suite, so
+/// the content cipher (`x-amz-cek-alg`) selects the primitive. Pure (no-I/O)
+/// decrypt half of the GetObject pipeline.
 fn open_v2_content(
     plaintext_data_key: &[u8],
     md: &ObjectMetadata,
     ciphertext: &[u8],
 ) -> Result<Vec<u8>> {
     let iv = md.content_iv_bytes()?;
-    crypto::decrypt_content_gcm(plaintext_data_key, &iv, ciphertext)
+    match md.v2_content_algorithm()? {
+        crate::config::EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf => {
+            crypto::decrypt_content_gcm(plaintext_data_key, &iv, ciphertext)
+        }
+        crate::config::EncryptionAlgorithm::AlgAes256CbcIv16NoKdf => {
+            crypto::decrypt_content_cbc(plaintext_data_key, &iv, ciphertext)
+        }
+        other => Err(S3EncryptionError::Format(format!(
+            "unexpected V2 content algorithm: {other:?}"
+        ))),
+    }
 }
 
 /// Decrypt V3 (key-committing AES-GCM) content given the unwrapped data key,
@@ -644,6 +674,46 @@ mod tests {
 
         let err = open_v3_content(&DATA_KEY, &parsed, &body).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// A legacy AES-CBC object reuses the V2 metadata format (`x-amz-key-v2`,
+    /// 16-byte `x-amz-iv`, `x-amz-cek-alg = AES/CBC/PKCS5Padding`) and decrypts
+    /// through the shared V2 content path. This is the legacy read path the old
+    /// (CryptoMode.EncryptionOnly) S3 encryption client produces.
+    #[test]
+    fn v2_cbc_object_round_trips_through_wire_map() {
+        use crate::metadata::{CONTENT_CIPHER, CONTENT_CIPHER_CBC, CONTENT_IV, ENCRYPTED_DATA_KEY_V2};
+        use aws_lc_rs::cipher::{PaddedBlockEncryptingKey, UnboundCipherKey, AES_256};
+        use base64::engine::general_purpose::STANDARD as BASE64;
+        use base64::Engine;
+
+        let plaintext = b"legacy CBC content payload";
+
+        // Produce a CBC fixture exactly as an old client would.
+        let unbound = UnboundCipherKey::new(&AES_256, &DATA_KEY).unwrap();
+        let enc = PaddedBlockEncryptingKey::cbc_pkcs7(unbound).unwrap();
+        let mut body = plaintext.to_vec();
+        let ctx = enc.encrypt(&mut body).unwrap();
+        let iv = <&[u8]>::try_from(&ctx).unwrap().to_vec();
+        assert_eq!(iv.len(), 16);
+
+        let map = BTreeMap::from([
+            (ENCRYPTED_DATA_KEY_V2.to_string(), BASE64.encode(EDK)),
+            (CONTENT_IV.to_string(), BASE64.encode(&iv)),
+            (CONTENT_CIPHER.to_string(), CONTENT_CIPHER_CBC.to_string()),
+        ]);
+        let parsed = ObjectMetadata::from_map(&map);
+
+        // It is classified as V2 format and reports the CBC content algorithm.
+        assert!(parsed.is_v2_format());
+        assert_eq!(
+            parsed.v2_content_algorithm().unwrap(),
+            EncryptionAlgorithm::AlgAes256CbcIv16NoKdf
+        );
+
+        // The shared V2 content path routes to CBC and recovers the plaintext.
+        let recovered = open_v2_content(&DATA_KEY, &parsed, &body).unwrap();
+        assert_eq!(recovered, plaintext);
     }
 
     // Reconstruct the decryption-time metadata map exactly as `get_object`
