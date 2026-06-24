@@ -108,22 +108,13 @@ impl S3EncryptionClient {
         let context = KmsKeyring::build_encryption_context(encryption_context, suite);
         let (plaintext_data_key, encrypted_data_key) = keyring.wrap(&context).await?;
 
-        let (body, object_metadata) = if suite.is_committing() {
-            let (message_id, key_commitment, ciphertext) =
-                crypto::encrypt_content_committing(suite, &plaintext_data_key, plaintext)?;
-            let md = ObjectMetadata::for_v3(
-                suite,
-                &encrypted_data_key,
-                &message_id,
-                &key_commitment,
-                &context,
-            )?;
-            (ciphertext, md)
-        } else {
-            let (iv, ciphertext) = crypto::encrypt_content_gcm(&plaintext_data_key, plaintext)?;
-            let md = ObjectMetadata::for_v2(&encrypted_data_key, &iv, &context)?;
-            (ciphertext, md)
-        };
+        let (body, object_metadata) = build_encrypted_object(
+            suite,
+            &plaintext_data_key,
+            &encrypted_data_key,
+            &context,
+            plaintext,
+        )?;
 
         let metadata: std::collections::HashMap<String, String> =
             object_metadata.to_map().into_iter().collect();
@@ -226,7 +217,6 @@ impl S3EncryptionClient {
         }
 
         let encrypted_data_key = md.v2_encrypted_data_key()?;
-        let iv = md.content_iv_bytes()?;
         let stored_context = md.v2_stored_context()?;
         let wrap_algorithm = md
             .wrap_algorithm
@@ -242,7 +232,7 @@ impl S3EncryptionClient {
             )
             .await?;
 
-        crypto::decrypt_content_gcm(&plaintext_data_key, &iv, ciphertext)
+        open_v2_content(&plaintext_data_key, md, ciphertext)
     }
 
     async fn decrypt_v3(
@@ -252,8 +242,6 @@ impl S3EncryptionClient {
         ciphertext: &[u8],
         request_context: &BTreeMap<String, String>,
     ) -> Result<Vec<u8>> {
-        let suite = crate::config::EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-
         let encrypted_data_key = md.v3_encrypted_data_key()?;
         let stored_context = md.v3_stored_context()?;
         // The V3 wrapping algorithm is a compressed code; "12" (kms+context) is
@@ -270,15 +258,207 @@ impl S3EncryptionClient {
             )
             .await?;
 
-        let message_id = md.v3_message_id()?;
-        let key_commitment = md.v3_key_commitment()?;
+        open_v3_content(&plaintext_data_key, md, ciphertext)
+    }
+}
 
-        crypto::decrypt_content_committing(
+/// Assemble the encrypted body and content metadata for an object from an
+/// already-wrapped data key. This is the pure (no-I/O) encrypt half of the
+/// PutObject pipeline, factored out so the V2/V3 branch selection and metadata
+/// assembly can be exercised without KMS or S3.
+fn build_encrypted_object(
+    suite: crate::config::EncryptionAlgorithm,
+    plaintext_data_key: &[u8],
+    encrypted_data_key: &[u8],
+    context: &BTreeMap<String, String>,
+    plaintext: &[u8],
+) -> Result<(Vec<u8>, ObjectMetadata)> {
+    if suite.is_committing() {
+        let (message_id, key_commitment, ciphertext) =
+            crypto::encrypt_content_committing(suite, plaintext_data_key, plaintext)?;
+        let md = ObjectMetadata::for_v3(
             suite,
-            &plaintext_data_key,
+            encrypted_data_key,
             &message_id,
             &key_commitment,
-            ciphertext,
-        )
+            context,
+        )?;
+        Ok((ciphertext, md))
+    } else {
+        let (iv, ciphertext) = crypto::encrypt_content_gcm(plaintext_data_key, plaintext)?;
+        let md = ObjectMetadata::for_v2(encrypted_data_key, &iv, context)?;
+        Ok((ciphertext, md))
+    }
+}
+
+/// Decrypt V2 (non-committing AES-GCM) content given the unwrapped data key.
+/// Pure (no-I/O) decrypt half of the GetObject pipeline.
+fn open_v2_content(
+    plaintext_data_key: &[u8],
+    md: &ObjectMetadata,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    let iv = md.content_iv_bytes()?;
+    crypto::decrypt_content_gcm(plaintext_data_key, &iv, ciphertext)
+}
+
+/// Decrypt V3 (key-committing AES-GCM) content given the unwrapped data key,
+/// verifying the stored key commitment. Pure (no-I/O) decrypt half of the
+/// GetObject pipeline.
+fn open_v3_content(
+    plaintext_data_key: &[u8],
+    md: &ObjectMetadata,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    let suite = crate::config::EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+    let message_id = md.v3_message_id()?;
+    let key_commitment = md.v3_key_commitment()?;
+    crypto::decrypt_content_committing(
+        suite,
+        plaintext_data_key,
+        &message_id,
+        &key_commitment,
+        ciphertext,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::EncryptionAlgorithm;
+    use crate::keyring::{KmsKeyring, RESERVED_CEK_ALG_KEY};
+    use crate::metadata::{CONTENT_CIPHER_V3, TAG_LENGTH, WRAP_ALGORITHM_V3};
+
+    // A fixed 32-byte data key standing in for the plaintext data key that KMS
+    // GenerateDataKey would return — lets us exercise the full encrypt-assemble
+    // → wire-map → parse → decrypt path without KMS or S3.
+    const DATA_KEY: [u8; 32] = [7u8; 32];
+    const EDK: &[u8] = b"wrapped-data-key-bytes";
+
+    fn caller_ctx() -> BTreeMap<String, String> {
+        [("user".to_string(), "alice".to_string())]
+            .into_iter()
+            .collect()
+    }
+
+    /// V2 (non-committing) object survives the round trip through the S3
+    /// user-metadata string map, and carries the reserved content-algorithm
+    /// key in its stored context exactly as the python reference writes it.
+    #[test]
+    fn v2_object_round_trips_through_wire_map() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let plaintext = b"hello non-committing world";
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, plaintext).unwrap();
+
+        // Serialize to the S3 string map and parse it back, as S3 would.
+        let map = md.to_map();
+        let parsed = ObjectMetadata::from_map(&map);
+
+        assert!(parsed.is_v2_format());
+        assert!(!parsed.has_exclusive_key_collision());
+        assert_eq!(map.get(crate::metadata::CONTENT_CIPHER).unwrap(), "AES/GCM/NoPadding");
+        assert_eq!(map.get(TAG_LENGTH).unwrap(), "128");
+        // The stored matdesc carries the reserved cek-alg key (cipher name).
+        assert_eq!(
+            parsed.v2_stored_context().unwrap().get(RESERVED_CEK_ALG_KEY).unwrap(),
+            "AES/GCM/NoPadding"
+        );
+
+        let recovered = open_v2_content(&DATA_KEY, &parsed, &body).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    /// V3 (key-committing) object survives the round trip, persists the decimal
+    /// suite ID and compressed wrap code, omits the V2-only tag-length key, and
+    /// records the reserved content-algorithm key as "115".
+    #[test]
+    fn v3_object_round_trips_through_wire_map() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let plaintext = b"hello key-committing world";
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, plaintext).unwrap();
+
+        let map = md.to_map();
+        let parsed = ObjectMetadata::from_map(&map);
+
+        assert!(parsed.is_v3_format());
+        assert!(!parsed.has_exclusive_key_collision());
+        assert_eq!(map.get(CONTENT_CIPHER_V3).unwrap(), "115");
+        assert_eq!(map.get(WRAP_ALGORITHM_V3).unwrap(), "12");
+        // tag-len is V2-only and MUST NOT appear on a V3 object.
+        assert!(!map.contains_key(TAG_LENGTH));
+        assert_eq!(
+            parsed.v3_stored_context().unwrap().get(RESERVED_CEK_ALG_KEY).unwrap(),
+            "115"
+        );
+
+        let recovered = open_v3_content(&DATA_KEY, &parsed, &body).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    /// Empty plaintext is a valid object (tag-only body) and round-trips.
+    #[test]
+    fn v2_empty_plaintext_round_trips() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
+        let context = KmsKeyring::build_encryption_context(&BTreeMap::new(), suite);
+
+        let (body, md) = build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"").unwrap();
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+
+        let recovered = open_v2_content(&DATA_KEY, &parsed, &body).unwrap();
+        assert!(recovered.is_empty());
+    }
+
+    /// A data key other than the one used to encrypt must not decrypt a V3
+    /// object: key-commitment verification fails closed before any plaintext is
+    /// released.
+    #[test]
+    fn v3_wrong_data_key_fails_commitment_verification() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"secret").unwrap();
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+
+        let wrong_key = [9u8; 32];
+        let err = open_v3_content(&wrong_key, &parsed, &body).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// A data key other than the one used to encrypt must not decrypt a V2
+    /// object: GCM tag authentication fails.
+    #[test]
+    fn v2_wrong_data_key_fails_authentication() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"secret").unwrap();
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+
+        let wrong_key = [9u8; 32];
+        let err = open_v2_content(&wrong_key, &parsed, &body).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// Tampering with the stored V3 ciphertext body must fail authentication.
+    #[test]
+    fn v3_tampered_body_fails() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+
+        let (mut body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"secret payload").unwrap();
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+        body[0] ^= 0xFF;
+
+        let err = open_v3_content(&DATA_KEY, &parsed, &body).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 }
