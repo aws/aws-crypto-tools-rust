@@ -95,7 +95,7 @@ impl KmsKeyring {
         //# If the stored encryption context with the two reserved keys removed does not match the provided encryption context, the KmsKeyring MUST throw an exception.
         if &stripped != request {
             return Err(S3EncryptionError::Crypto(
-                "provided encryption context does not match information retrieved from S3"
+                "Provided encryption context does not match information retrieved from S3"
                     .to_string(),
             ));
         }
@@ -163,7 +163,7 @@ impl KmsKeyring {
                 //# The KmsV1 mode MUST be only enabled when legacy wrapping algorithms are enabled.
                 if !self.enable_legacy_wrapping_algorithms {
                     return Err(S3EncryptionError::Crypto(format!(
-                        "enable legacy wrapping algorithms to use legacy key wrapping algorithm: \
+                        "Enable legacy wrapping algorithms to use legacy key wrapping algorithm: \
                          {wrap_algorithm}"
                     )));
                 }
@@ -261,6 +261,15 @@ mod tests {
         let request = ctx(&[("user", "bob")]);
         let err = KmsKeyring::validate_decryption_context(&stored, &request).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+        // The cross-language harness asserts (case-sensitively) that the
+        // decrypt-time context-mismatch message contains this exact phrase,
+        // matching the reference (python/java) servers. See
+        // RoundTripTests#crossLanguageTestKmsWithSubsetEncCtxFails.
+        assert!(
+            err.to_string()
+                .contains("Provided encryption context does not match information retrieved from S3"),
+            "actual: {err}"
+        );
     }
 
     #[test]
