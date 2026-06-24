@@ -14,7 +14,12 @@
 
 use std::collections::BTreeMap;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+
+use crate::config::EncryptionAlgorithm;
 use crate::error::{Result, S3EncryptionError};
+use crate::keyring::WRAP_ALG_KMS_CONTEXT;
 
 // ---------------------------------------------------------------------------
 // MapKey constants.
@@ -183,6 +188,115 @@ impl ObjectMetadata {
         .count();
         count > 1
     }
+
+    /// Build V2 (non-committing AES-GCM) content metadata from the encryption
+    /// outputs. The encrypted data key and IV are base64-encoded; the full
+    /// encryption context (including the reserved content-algorithm key) is
+    /// stored as JSON in `x-amz-matdesc`.
+    pub fn for_v2(
+        encrypted_data_key: &[u8],
+        content_iv: &[u8],
+        encryption_context: &BTreeMap<String, String>,
+    ) -> Result<Self> {
+        Ok(Self {
+            encrypted_data_key_v2: Some(BASE64.encode(encrypted_data_key)),
+            wrap_algorithm: Some(WRAP_ALG_KMS_CONTEXT.to_string()),
+            materials_description: Some(encode_context(encryption_context)?),
+            content_iv: Some(BASE64.encode(content_iv)),
+            content_cipher: Some(
+                EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf.content_cipher_value(),
+            ),
+            tag_length: Some("128".to_string()),
+            ..Default::default()
+        })
+    }
+
+    /// Build V3 (key-committing AES-GCM) content metadata from the encryption
+    /// outputs. The encrypted data key, message ID, and key commitment are
+    /// base64-encoded; the full encryption context is stored as JSON in
+    /// `x-amz-t`.
+    pub fn for_v3(
+        suite: EncryptionAlgorithm,
+        encrypted_data_key: &[u8],
+        message_id: &[u8],
+        key_commitment: &[u8],
+        encryption_context: &BTreeMap<String, String>,
+    ) -> Result<Self> {
+        Ok(Self {
+            content_cipher_v3: Some(suite.content_cipher_value()),
+            encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
+            // "12" is the V3 compressed code for the kms+context wrapping algorithm.
+            wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_KMS_CONTEXT)?.to_string()),
+            message_id_v3: Some(BASE64.encode(message_id)),
+            key_commitment_v3: Some(BASE64.encode(key_commitment)),
+            encryption_context_v3: Some(encode_context(encryption_context)?),
+            ..Default::default()
+        })
+    }
+
+    /// Decode a base64 metadata field, mapping decode failures to a format error.
+    fn decode_b64(field: &str, value: &Option<String>) -> Result<Vec<u8>> {
+        let value = value
+            .as_ref()
+            .ok_or_else(|| S3EncryptionError::Format(format!("missing metadata field: {field}")))?;
+        BASE64
+            .decode(value)
+            .map_err(|e| S3EncryptionError::Format(format!("invalid base64 in {field}: {e}")))
+    }
+
+    /// The decoded V2 encrypted data key (`x-amz-key-v2`).
+    pub fn v2_encrypted_data_key(&self) -> Result<Vec<u8>> {
+        Self::decode_b64(ENCRYPTED_DATA_KEY_V2, &self.encrypted_data_key_v2)
+    }
+
+    /// The decoded content IV (`x-amz-iv`).
+    pub fn content_iv_bytes(&self) -> Result<Vec<u8>> {
+        Self::decode_b64(CONTENT_IV, &self.content_iv)
+    }
+
+    /// The decoded V3 encrypted data key (`x-amz-3`).
+    pub fn v3_encrypted_data_key(&self) -> Result<Vec<u8>> {
+        Self::decode_b64(ENCRYPTED_DATA_KEY_V3, &self.encrypted_data_key_v3)
+    }
+
+    /// The decoded V3 message ID (`x-amz-i`).
+    pub fn v3_message_id(&self) -> Result<Vec<u8>> {
+        Self::decode_b64(MESSAGE_ID_V3, &self.message_id_v3)
+    }
+
+    /// The decoded V3 key commitment (`x-amz-d`).
+    pub fn v3_key_commitment(&self) -> Result<Vec<u8>> {
+        Self::decode_b64(KEY_COMMITMENT_V3, &self.key_commitment_v3)
+    }
+
+    /// The stored encryption context for a V2 object, parsed from the JSON
+    /// `x-amz-matdesc` material description.
+    pub fn v2_stored_context(&self) -> Result<BTreeMap<String, String>> {
+        parse_context(self.materials_description.as_deref())
+    }
+
+    /// The stored encryption context for a V3 object, parsed from the JSON
+    /// `x-amz-t` encryption-context field.
+    pub fn v3_stored_context(&self) -> Result<BTreeMap<String, String>> {
+        parse_context(self.encryption_context_v3.as_deref())
+    }
+}
+
+/// Serialize an encryption context to the JSON form stored in object metadata.
+fn encode_context(context: &BTreeMap<String, String>) -> Result<String> {
+    serde_json::to_string(context)
+        .map_err(|e| S3EncryptionError::Format(format!("failed to encode encryption context: {e}")))
+}
+
+/// Parse the JSON encryption-context string stored in object metadata. A
+/// missing field yields an empty context.
+fn parse_context(value: Option<&str>) -> Result<BTreeMap<String, String>> {
+    match value {
+        None => Ok(BTreeMap::new()),
+        Some(s) => serde_json::from_str(s).map_err(|e| {
+            S3EncryptionError::Format(format!("failed to parse encryption context: {e}"))
+        }),
+    }
 }
 
 /// Translate a V3 compressed wrapping-algorithm code to its canonical name.
@@ -304,5 +418,51 @@ mod tests {
         }
         assert!(v3_wrap_algorithm_to_name("99").is_err());
         assert!(v3_wrap_algorithm_to_code("AES/CBC").is_err());
+    }
+
+    fn ctx() -> BTreeMap<String, String> {
+        [
+            ("user".to_string(), "alice".to_string()),
+            ("aws:x-amz-cek-alg".to_string(), "115".to_string()),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn for_v2_builds_decodable_metadata() {
+        let edk = b"encrypted-data-key";
+        let iv = [0xABu8; 12];
+        let md = ObjectMetadata::for_v2(edk, &iv, &ctx()).unwrap();
+
+        assert!(md.is_v2_format());
+        assert_eq!(md.wrap_algorithm.as_deref(), Some("kms+context"));
+        assert_eq!(md.content_cipher.as_deref(), Some("AES/GCM/NoPadding"));
+        assert_eq!(md.tag_length.as_deref(), Some("128"));
+
+        // Round-trips through the S3 metadata map and back to decoded bytes.
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+        assert_eq!(parsed.v2_encrypted_data_key().unwrap(), edk);
+        assert_eq!(parsed.content_iv_bytes().unwrap(), iv);
+        assert_eq!(parsed.v2_stored_context().unwrap(), ctx());
+    }
+
+    #[test]
+    fn for_v3_builds_decodable_metadata() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let edk = b"encrypted-data-key";
+        let message_id = [0x11u8; 28];
+        let commitment = [0x22u8; 28];
+        let md = ObjectMetadata::for_v3(suite, edk, &message_id, &commitment, &ctx()).unwrap();
+
+        assert!(md.is_v3_format());
+        assert_eq!(md.content_cipher_v3.as_deref(), Some("115"));
+        assert_eq!(md.wrap_algorithm_v3.as_deref(), Some("12"));
+
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+        assert_eq!(parsed.v3_encrypted_data_key().unwrap(), edk);
+        assert_eq!(parsed.v3_message_id().unwrap(), message_id);
+        assert_eq!(parsed.v3_key_commitment().unwrap(), commitment);
+        assert_eq!(parsed.v3_stored_context().unwrap(), ctx());
     }
 }

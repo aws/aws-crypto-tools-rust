@@ -112,7 +112,29 @@ impl Default for S3EncryptionConfig {
     }
 }
 
+/// The default content-encryption suite when none is configured: the
+/// key-committing AES-GCM suite (persisted as the V3 content format).
+pub const DEFAULT_ENCRYPTION_ALGORITHM: EncryptionAlgorithm =
+    EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+
+/// The default key commitment policy when none is configured.
+pub const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
+    CommitmentPolicy::RequireEncryptRequireDecrypt;
+
 impl S3EncryptionConfig {
+    /// The encryption algorithm suite to use for PutObject, applying the
+    /// default ([`DEFAULT_ENCRYPTION_ALGORITHM`]) when none is configured.
+    pub fn effective_encryption_algorithm(&self) -> EncryptionAlgorithm {
+        self.encryption_algorithm
+            .unwrap_or(DEFAULT_ENCRYPTION_ALGORITHM)
+    }
+
+    /// The key commitment policy to enforce, applying the default
+    /// ([`DEFAULT_COMMITMENT_POLICY`]) when none is configured.
+    pub fn effective_commitment_policy(&self) -> CommitmentPolicy {
+        self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY)
+    }
+
     /// Validate the configuration against the requirements in `client.md`.
     pub fn validate(&self) -> Result<()> {
         //= spec/s3-encryption/client.md#set-buffer-size
@@ -133,6 +155,42 @@ impl S3EncryptionConfig {
                     "configured encryption algorithm is legacy and not permitted for encryption"
                         .to_string(),
                 ));
+            }
+        }
+
+        //= spec/s3-encryption/client.md#key-commitment
+        //# The S3EC MUST validate the configured Encryption Algorithm against the provided key commitment policy.
+        let alg = self.effective_encryption_algorithm();
+        match self.effective_commitment_policy() {
+            //= spec/s3-encryption/key-commitment.md#commitment-policy
+            //# When the commitment policy is REQUIRE_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST only encrypt using an algorithm suite which supports key commitment.
+            //
+            //= spec/s3-encryption/key-commitment.md#commitment-policy
+            //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST only encrypt using an algorithm suite which supports key commitment.
+            CommitmentPolicy::RequireEncryptAllowDecrypt
+            | CommitmentPolicy::RequireEncryptRequireDecrypt => {
+                if !alg.is_committing() {
+                    //= spec/s3-encryption/client.md#key-commitment
+                    //# If the configured Encryption Algorithm is incompatible with the key commitment policy, then it MUST throw an exception.
+                    return Err(S3EncryptionError::Configuration(
+                        "commitment policy requires a key-committing algorithm suite, but the \
+                         configured algorithm suite does not support key commitment"
+                            .to_string(),
+                    ));
+                }
+            }
+            //= spec/s3-encryption/key-commitment.md#commitment-policy
+            //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST NOT encrypt using an algorithm suite which supports key commitment.
+            CommitmentPolicy::ForbidEncryptAllowDecrypt => {
+                if alg.is_committing() {
+                    //= spec/s3-encryption/client.md#key-commitment
+                    //# If the configured Encryption Algorithm is incompatible with the key commitment policy, then it MUST throw an exception.
+                    return Err(S3EncryptionError::Configuration(
+                        "commitment policy forbids key-committing algorithm suites, but the \
+                         configured algorithm suite supports key commitment"
+                            .to_string(),
+                    ));
+                }
             }
         }
 

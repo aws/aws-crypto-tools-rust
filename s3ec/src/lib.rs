@@ -11,6 +11,7 @@ pub mod client;
 pub mod config;
 pub mod crypto;
 pub mod error;
+pub mod keyring;
 pub mod metadata;
 pub mod suite;
 
