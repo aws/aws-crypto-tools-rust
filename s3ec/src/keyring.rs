@@ -273,6 +273,29 @@ mod tests {
     }
 
     #[test]
+    fn validate_context_rejects_missing_subset() {
+        // The object was encrypted WITH a caller context, but the decryptor
+        // provides NO context at all. Stripping the reserved key still leaves
+        // a non-empty stored context, so validation MUST fail closed with the
+        // same cross-language message. This mirrors
+        // RoundTripTests#crossLanguageTestKmsWithSubsetEncCtxFails, where the
+        // GetObject request omits `.metadata(...)` entirely.
+        let stored = ctx(&[
+            ("user-defined-enc-ctx-key", "user-defined-enc-ctx-value"),
+            ("user-defined-enc-ctx-key-2", "user-defined-enc-ctx-value-2"),
+            (RESERVED_CEK_ALG_KEY, "AES/GCM/NoPadding"),
+        ]);
+        let request = ctx(&[]);
+        let err = KmsKeyring::validate_decryption_context(&stored, &request).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+        assert!(
+            err.to_string()
+                .contains("Provided encryption context does not match information retrieved from S3"),
+            "actual: {err}"
+        );
+    }
+
+    #[test]
     fn validate_context_rejects_reserved_key_in_request() {
         let stored = ctx(&[(RESERVED_CEK_ALG_KEY, "115")]);
         let request = ctx(&[(RESERVED_CEK_ALG_KEY, "115")]);
