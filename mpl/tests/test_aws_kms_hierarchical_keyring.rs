@@ -19,7 +19,7 @@ use aws_crypto_mpl::aws_kms::__test_internals::{
     compute_aad, for_decrypt, for_encrypt, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-    BranchKeySource, CacheType, HierarchicalKeyring,
+    BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring,
 };
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError};
@@ -139,7 +139,7 @@ fn new_with_positive_ttl_succeeds() {
         keystore,
         1, // smallest legal TTL
         BranchKeySource::Identifier("branch-key-id".to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         None,
     );
 
@@ -286,10 +286,10 @@ fn new_with_default_cache_succeeds() {
         stub_keystore(),
         3600,
         BranchKeySource::Identifier("bk".to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         None,
     )
-    .expect("CacheType::Default must succeed");
+    .expect("CacheType::Default(DefaultCache::default()) must succeed");
     // Construction succeeded — a Cmc was built and stored.
     let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
@@ -343,9 +343,9 @@ fn new_with_shared_cache_round_trips_provided_arc() {
 
 #[test]
 fn new_with_storm_tracking_cache_succeeds() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
-    let params = StormTrackingParameters {
+    let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
         grace_period: 60,
@@ -368,9 +368,9 @@ fn new_with_storm_tracking_cache_succeeds() {
 
 #[test]
 fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
-    let params = StormTrackingParameters {
+    let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
         grace_period: 60,
@@ -403,9 +403,9 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
 
 #[test]
 fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
-    let params = StormTrackingParameters {
+    let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
         grace_period: 120, // > ttl_seconds below
@@ -435,11 +435,11 @@ fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 #[test]
 fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     use aws_crypto_mpl::TimeUnits;
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingParameters;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
     // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
-    let params = StormTrackingParameters {
+    let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
         grace_period: 5_000,
@@ -1297,7 +1297,7 @@ mod onencrypt {
             keystore,
             3600,
             BranchKeySource::Identifier(branch_key_id.to_string()),
-            Some(CacheType::Default),
+            Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
         .unwrap()
@@ -1502,7 +1502,7 @@ mod onencrypt {
             Arc::new(FailingKeystore) as Arc<dyn Keystore>,
             3600,
             BranchKeySource::Identifier("bk".to_string()),
-            Some(CacheType::Default),
+            Some(CacheType::Default(DefaultCache::default())),
             None,
         )
         .unwrap();
@@ -1538,7 +1538,7 @@ mod onencrypt {
             Arc::clone(&keystore) as Arc<dyn Keystore>,
             3600,
             BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
-            Some(CacheType::Default),
+            Some(CacheType::Default(DefaultCache::default())),
             None,
         )
         .unwrap();
@@ -1720,7 +1720,7 @@ mod ondecrypt {
             keystore,
             3600,
             BranchKeySource::Identifier(branch_key_id.to_string()),
-            Some(CacheType::Default),
+            Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
         .unwrap()
@@ -2091,7 +2091,7 @@ mod ondecrypt {
             Arc::new(FailingKeystore) as Arc<dyn Keystore>,
             3600,
             BranchKeySource::Identifier(FIXED_BRANCH_KEY_ID.to_string()),
-            Some(CacheType::Default),
+            Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
         .unwrap();
@@ -2133,7 +2133,7 @@ mod ondecrypt {
             Arc::clone(&keystore) as Arc<dyn Keystore>,
             3600,
             BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
-            Some(CacheType::Default),
+            Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
         .unwrap();

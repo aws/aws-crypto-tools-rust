@@ -49,7 +49,7 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-    BranchKeySource, CacheType, HierarchicalKeyring,
+    BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring,
 };
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
@@ -122,7 +122,7 @@ async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
         keystore,
         3600,
         BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ".to_string()),
     )
     .unwrap();
@@ -178,7 +178,7 @@ async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
         keystore,
         3600,
         BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-cache".to_string()),
     )
     .unwrap();
@@ -218,7 +218,7 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
         keystore,
         3600,
         BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-decrypt".to_string()),
     )
     .unwrap();
@@ -271,7 +271,7 @@ async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
         keystore,
         3600,
         BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-decrypt-cache".to_string()),
     )
     .unwrap();
@@ -418,7 +418,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
         keystore,
         3600,
         BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
-        Some(CacheType::Default),
+        Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-existing-pdk".to_string()),
     )
     .unwrap();

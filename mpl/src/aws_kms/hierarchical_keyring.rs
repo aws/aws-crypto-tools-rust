@@ -51,10 +51,96 @@ pub enum BranchKeySource {
     Supplier(Arc<dyn BranchKeySupplier>),
 }
 
-/// Storm-tracking cache configuration. Mirrors the parameter set
-/// accepted by [`StormTrackingCmc::new`]; bundled into a struct so the
-/// [`CacheType::StormTracking`] variant stays ergonomic.
-pub struct StormTrackingParameters {
+/// Configuration for a keyring-local "default" Cryptographic Materials
+/// Cache (a wrapped [`LocalCmc`]). Carried by [`CacheType::Default`].
+///
+/// Use [`DefaultCache::default()`] to get the spec-mandated entry capacity
+/// (1000) and a sensible pruning tail size; use [`DefaultCache::builder`]
+/// to customize either field.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DefaultCache {
+    /// Maximum number of entries the cache holds. Per spec
+    /// `aws-kms-hierarchical-keyring.md#initialization`, the default value
+    /// when none is provided MUST be 1000.
+    pub entry_capacity: usize,
+    /// Number of LRU entries scanned per get for TTL-aware pruning. The
+    /// spec is silent on this knob; 64 strikes a balance between
+    /// pruning amortization and per-`get` work.
+    pub entry_pruning_tail_size: usize,
+}
+
+impl Default for DefaultCache {
+    fn default() -> Self {
+        Self {
+            entry_capacity: DEFAULT_CACHE_ENTRY_CAPACITY,
+            entry_pruning_tail_size: DEFAULT_CACHE_PRUNING_TAIL_SIZE,
+        }
+    }
+}
+
+impl DefaultCache {
+    /// Construct a `DefaultCache` with explicit capacity and pruning tail size.
+    #[must_use]
+    pub const fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Self {
+        Self {
+            entry_capacity,
+            entry_pruning_tail_size,
+        }
+    }
+
+    /// Start a fluent builder for `DefaultCache`. Unset fields default to
+    /// the spec/implementation defaults (entry_capacity = 1000,
+    /// entry_pruning_tail_size = 64).
+    #[must_use]
+    pub fn builder() -> DefaultCacheBuilder {
+        DefaultCacheBuilder::default()
+    }
+}
+
+/// Fluent builder for [`DefaultCache`]. Call [`Self::build`] to produce the
+/// configured `DefaultCache`; unset fields fall back to the spec defaults.
+#[derive(Debug, Clone, Default)]
+pub struct DefaultCacheBuilder {
+    entry_capacity: Option<usize>,
+    entry_pruning_tail_size: Option<usize>,
+}
+
+impl DefaultCacheBuilder {
+    /// Override the maximum number of entries held by the cache.
+    #[must_use]
+    pub const fn entry_capacity(mut self, n: usize) -> Self {
+        self.entry_capacity = Some(n);
+        self
+    }
+
+    /// Override the number of LRU entries scanned per `get` for pruning.
+    #[must_use]
+    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+        self.entry_pruning_tail_size = Some(n);
+        self
+    }
+
+    /// Finalize the builder into a [`DefaultCache`].
+    #[must_use]
+    pub fn build(self) -> DefaultCache {
+        DefaultCache {
+            entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
+            entry_pruning_tail_size: self
+                .entry_pruning_tail_size
+                .unwrap_or(DEFAULT_CACHE_PRUNING_TAIL_SIZE),
+        }
+    }
+}
+
+/// Configuration for a keyring-local Storm-tracking Cryptographic Materials
+/// Cache. Carried by [`CacheType::StormTracking`].
+///
+/// Mirrors the parameter set accepted by [`StormTrackingCmc::new`]; bundled
+/// into a struct so the [`CacheType::StormTracking`] variant stays ergonomic.
+/// Use [`StormTrackingCache::builder`] for a fluent constructor, or set the
+/// fields directly.
+#[derive(Debug, Clone)]
+pub struct StormTrackingCache {
     /// Maximum number of entries the underlying [`LocalCmc`] holds.
     pub entry_capacity: usize,
     /// Number of LRU entries scanned per get for TTL-aware pruning.
@@ -73,6 +159,122 @@ pub struct StormTrackingParameters {
     pub time_units: Option<TimeUnits>,
 }
 
+impl StormTrackingCache {
+    /// Start a fluent builder for `StormTrackingCache`. All numeric fields
+    /// must be supplied via the builder before [`StormTrackingCacheBuilder::build`]
+    /// is called; `time_units` is optional and defaults to seconds.
+    #[must_use]
+    pub fn builder() -> StormTrackingCacheBuilder {
+        StormTrackingCacheBuilder::default()
+    }
+}
+
+/// Fluent builder for [`StormTrackingCache`]. All seven numeric fields
+/// (`entry_capacity`, `entry_pruning_tail_size`, `grace_period`,
+/// `grace_interval`, `fan_out`, `inflight_ttl`, `sleep_milli`) are
+/// required; [`StormTrackingCacheBuilder::build`] returns an error if any
+/// were left unset. `time_units` is optional.
+#[derive(Debug, Clone, Default)]
+pub struct StormTrackingCacheBuilder {
+    entry_capacity: Option<usize>,
+    entry_pruning_tail_size: Option<usize>,
+    grace_period: Option<u64>,
+    grace_interval: Option<u64>,
+    fan_out: Option<usize>,
+    inflight_ttl: Option<u64>,
+    sleep_milli: Option<u64>,
+    time_units: Option<TimeUnits>,
+}
+
+impl StormTrackingCacheBuilder {
+    /// Set `entry_capacity`. See [`StormTrackingCache::entry_capacity`].
+    #[must_use]
+    pub const fn entry_capacity(mut self, n: usize) -> Self {
+        self.entry_capacity = Some(n);
+        self
+    }
+
+    /// Set `entry_pruning_tail_size`.
+    #[must_use]
+    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+        self.entry_pruning_tail_size = Some(n);
+        self
+    }
+
+    /// Set `grace_period`.
+    #[must_use]
+    pub const fn grace_period(mut self, n: u64) -> Self {
+        self.grace_period = Some(n);
+        self
+    }
+
+    /// Set `grace_interval`.
+    #[must_use]
+    pub const fn grace_interval(mut self, n: u64) -> Self {
+        self.grace_interval = Some(n);
+        self
+    }
+
+    /// Set `fan_out`.
+    #[must_use]
+    pub const fn fan_out(mut self, n: usize) -> Self {
+        self.fan_out = Some(n);
+        self
+    }
+
+    /// Set `inflight_ttl`.
+    #[must_use]
+    pub const fn inflight_ttl(mut self, n: u64) -> Self {
+        self.inflight_ttl = Some(n);
+        self
+    }
+
+    /// Set `sleep_milli`.
+    #[must_use]
+    pub const fn sleep_milli(mut self, n: u64) -> Self {
+        self.sleep_milli = Some(n);
+        self
+    }
+
+    /// Set `time_units` (defaults to seconds when unset).
+    #[must_use]
+    pub const fn time_units(mut self, u: TimeUnits) -> Self {
+        self.time_units = Some(u);
+        self
+    }
+
+    /// Finalize the builder. Returns an error naming the first missing
+    /// required field if any of the seven numeric fields were left unset.
+    pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
+        Ok(StormTrackingCache {
+            entry_capacity: self.entry_capacity.ok_or_else(|| {
+                MaterialsError::new("StormTrackingCacheBuilder: entry_capacity is required")
+            })?,
+            entry_pruning_tail_size: self.entry_pruning_tail_size.ok_or_else(|| {
+                MaterialsError::new(
+                    "StormTrackingCacheBuilder: entry_pruning_tail_size is required",
+                )
+            })?,
+            grace_period: self.grace_period.ok_or_else(|| {
+                MaterialsError::new("StormTrackingCacheBuilder: grace_period is required")
+            })?,
+            grace_interval: self.grace_interval.ok_or_else(|| {
+                MaterialsError::new("StormTrackingCacheBuilder: grace_interval is required")
+            })?,
+            fan_out: self.fan_out.ok_or_else(|| {
+                MaterialsError::new("StormTrackingCacheBuilder: fan_out is required")
+            })?,
+            inflight_ttl: self.inflight_ttl.ok_or_else(|| {
+                MaterialsError::new("StormTrackingCacheBuilder: inflight_ttl is required")
+            })?,
+            sleep_milli: self.sleep_milli.ok_or_else(|| {
+                MaterialsError::new("StormTrackingCacheBuilder: sleep_milli is required")
+            })?,
+            time_units: self.time_units,
+        })
+    }
+}
+
 /// Cache configuration for a [`HierarchicalKeyring`].
 ///
 /// The three variants correspond to the spec's `#cache-type` discussion:
@@ -81,20 +283,20 @@ pub struct StormTrackingParameters {
 /// and a keyring-local Storm-tracking cache for high-fan-out workloads.
 #[non_exhaustive]
 pub enum CacheType {
-    /// A keyring-local [`LocalCmc`] with entry capacity 1000. Per spec
-    /// `#initialization`: "If no max cache size is provided, the
-    /// cryptographic materials cache MUST be configured to a max cache
-    /// size of 1000." Also: "If no `cache` is provided, a `DefaultCache`
-    /// MUST be configured with entry capacity of 1000."
-    Default,
+    /// A keyring-local [`LocalCmc`] configured by the carried
+    /// [`DefaultCache`]. Per spec `#initialization`: "If no max cache size
+    /// is provided, the cryptographic materials cache MUST be configured
+    /// to a max cache size of 1000." Use [`DefaultCache::default()`] for
+    /// the spec defaults.
+    Default(DefaultCache),
     /// Use the caller-supplied [`Cmc`] impl directly. Common when one
     /// cache is shared across multiple Hierarchical Keyrings (or other
     /// CMPs); see `#shared-cache-considerations`.
     Shared(Arc<dyn Cmc>),
-    /// Build a keyring-local [`StormTrackingCmc`] with the supplied
-    /// parameters. The keyring validates that
+    /// Build a keyring-local [`StormTrackingCmc`] with the carried
+    /// [`StormTrackingCache`] parameters. The keyring validates that
     /// `grace_period < cache limit TTL` per spec `#initialization`.
-    StormTracking(StormTrackingParameters),
+    StormTracking(StormTrackingCache),
 }
 
 /// User-supplied callback that maps an encryption context to a branch key id.
@@ -165,7 +367,7 @@ impl HierarchicalKeyring {
     /// `aws-kms-hierarchical-keyring.md#partition-id`.
     ///
     /// `cache_type` selects the cache backing — see [`CacheType`]. When
-    /// `None`, behaves as `Some(CacheType::Default)`.
+    /// `None`, behaves as `Some(CacheType::Default(DefaultCache::default()))`.
     pub fn new(
         keystore: Arc<dyn Keystore>,
         ttl_seconds: u64,
@@ -194,8 +396,10 @@ impl HierarchicalKeyring {
         //# If the Hierarchical Keyring does NOT get a `Shared` cache on initialization,
         //# it MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md)
         //# with the user provided cache limit TTL and the entry capacity.
-        let cache: Arc<dyn Cmc> = match cache_type.unwrap_or(CacheType::Default) {
-            CacheType::Default => {
+        let cache: Arc<dyn Cmc> = match cache_type
+            .unwrap_or(CacheType::Default(DefaultCache::default()))
+        {
+            CacheType::Default(default_cache) => {
                 //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
                 //# If no max cache size is provided, the cryptographic materials cache MUST be configured to a
                 //# max cache size of 1000.
@@ -203,8 +407,8 @@ impl HierarchicalKeyring {
                 //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
                 //# If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000.
                 let local = LocalCmc::new(
-                    DEFAULT_CACHE_ENTRY_CAPACITY,
-                    DEFAULT_CACHE_PRUNING_TAIL_SIZE,
+                    default_cache.entry_capacity,
+                    default_cache.entry_pruning_tail_size,
                 )
                 .map_err(|e| {
                     MaterialsError::new(format!(
