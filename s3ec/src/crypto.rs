@@ -18,7 +18,7 @@
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use aws_lc_rs::cipher::{
-    DecryptionContext, PaddedBlockDecryptingKey, UnboundCipherKey, AES_256,
+    DecryptingKey, DecryptionContext, PaddedBlockDecryptingKey, UnboundCipherKey, AES_256,
 };
 use aws_lc_rs::iv::FixedLength;
 use aws_lc_rs::{constant_time, hkdf, rand};
@@ -249,6 +249,115 @@ pub fn decrypt_content_committing(
     aes_gcm_open(&derived_encryption_key, &iv, &aad, ciphertext_with_tag)
 }
 
+// ---------------------------------------------------------------------------
+// Ranged Gets (partial content decryption).
+//
+// A ranged GetObject returns a subset of the object's plaintext bytes. Because
+// only part of the ciphertext is available (or, when the whole object is held
+// in memory, because the whole-object GCM tag does not cover an arbitrary
+// sub-range), an authenticated GCM suite cannot verify its tag over a range.
+// The spec therefore mandates decrypting the range with the corresponding
+// CTR-based algorithm suite. AES-GCM encryption is AES-CTR under the hood, so
+// the same content key reproduces the keystream when started from the GCM
+// counter block (J0) for the first requested plaintext block.
+// ---------------------------------------------------------------------------
+
+/// The number of bytes covered by a single AES cipher block.
+const AES_BLOCK_LEN: usize = 16;
+
+/// Decrypt an inclusive plaintext byte range `[start, end_inclusive]` of
+/// GCM-encrypted `content` (the ciphertext body, with the trailing GCM tag
+/// already removed) using AES-CTR.
+///
+/// `iv` is the 12-byte GCM IV. The AES-GCM counter for plaintext block `i`
+/// (0-indexed) is `inc32` applied `i + 1` times to the pre-counter block
+/// `J0 = iv || 0x0000_0001`, i.e. a counter value of `i + 2` in the trailing
+/// 32 bits. To decrypt a byte that falls inside block `b`, the keystream must
+/// begin at that block boundary, so the range is widened down to `b * 16`
+/// before applying CTR and the partial-block prefix is then discarded.
+pub fn decrypt_range_ctr(
+    key: &[u8],
+    iv: &[u8],
+    content: &[u8],
+    start: usize,
+    end_inclusive: usize,
+) -> Result<Vec<u8>> {
+    if iv.len() != 12 {
+        return Err(crypto_err(
+            "ranged GCM decryption requires a 12-byte GCM IV",
+        ));
+    }
+    if content.is_empty() || start >= content.len() || start > end_inclusive {
+        return Ok(Vec::new());
+    }
+    // The customer range is clamped to the available plaintext (the ciphertext
+    // body length equals the plaintext length for the stream-cipher suites).
+    let end_inclusive = end_inclusive.min(content.len() - 1);
+
+    //= spec/s3-encryption/decryption.md#ranged-gets
+    //# If the S3EC supports Ranged Gets, the S3EC MUST adjust the customer-provided range to include the beginning and end of the cipher blocks for the given range.
+    let block_index = start / AES_BLOCK_LEN;
+    let aligned_start = block_index * AES_BLOCK_LEN;
+
+    // GCM counter for plaintext block `block_index` is `block_index + 2` in the
+    // trailing 32-bit counter field (J0 counter is 1; the first plaintext block
+    // uses J0 + 1). Objects in scope never wrap the 32-bit counter; use wrapping
+    // arithmetic defensively.
+    let counter = u32::try_from(block_index)
+        .unwrap_or(u32::MAX)
+        .wrapping_add(2);
+    let mut counter_block = [0u8; AES_BLOCK_LEN];
+    counter_block[..12].copy_from_slice(iv);
+    counter_block[12..].copy_from_slice(&counter.to_be_bytes());
+
+    let mut buf = content[aligned_start..=end_inclusive].to_vec();
+
+    let unbound =
+        UnboundCipherKey::new(&AES_256, key).map_err(|_| crypto_err("invalid AES-256 key"))?;
+    let decrypting_key =
+        DecryptingKey::ctr(unbound).map_err(|_| crypto_err("failed to initialize AES-CTR cipher"))?;
+    let context: FixedLength<16> = counter_block
+        .as_slice()
+        .try_into()
+        .map_err(|_| crypto_err("invalid AES-CTR counter block"))?;
+    let plaintext = decrypting_key
+        .decrypt(&mut buf, DecryptionContext::Iv128(context))
+        .map_err(|_| crypto_err("AES-CTR decryption failed"))?;
+
+    // Discard the partial-block prefix introduced by aligning down to the block
+    // boundary, leaving exactly the requested `[start, end_inclusive]` bytes.
+    let prefix = start - aligned_start;
+    Ok(plaintext[prefix..].to_vec())
+}
+
+/// Decrypt an inclusive plaintext byte range of key-committing
+/// (`ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY`) content using the corresponding
+/// CTR suite, after verifying the stored key commitment.
+///
+/// `content` is the ciphertext body with the trailing GCM tag removed.
+pub fn decrypt_range_committing(
+    suite: EncryptionAlgorithm,
+    plaintext_data_key: &[u8],
+    message_id: &[u8],
+    stored_commitment: &[u8],
+    content: &[u8],
+    start: usize,
+    end_inclusive: usize,
+) -> Result<Vec<u8>> {
+    let (derived_encryption_key, derived_commitment) =
+        derive_keys(suite, plaintext_data_key, message_id)?;
+
+    //= spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //# When using an algorithm suite which supports key commitment, the client MUST throw an exception when the derived key commitment value and stored key commitment value do not match.
+    constant_time::verify_slices_are_equal(stored_commitment, &derived_commitment)
+        .map_err(|_| crypto_err("key commitment verification failed"))?;
+
+    //= spec/s3-encryption/decryption.md#ranged-gets
+    //# If the object was encrypted with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, then ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY MUST be used to decrypt the range of the object.
+    let iv = suite.committing_iv();
+    decrypt_range_ctr(&derived_encryption_key, &iv, content, start, end_inclusive)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,6 +512,78 @@ mod tests {
         ct[2] ^= 0x01;
         let err = decrypt_content_committing(COMMITTING, &DATA_KEY, &message_id, &commit_key, &ct)
             .unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    // ---- Ranged Gets (CTR-based partial decryption) -----------------------
+
+    /// A multi-block plaintext so that ranges can straddle block boundaries.
+    fn ranged_plaintext() -> Vec<u8> {
+        (0..=200u8).collect()
+    }
+
+    /// AES-CTR decryption of a range of GCM content must reproduce the exact
+    /// plaintext slice that whole-object GCM decryption would yield. This
+    /// validates the GCM counter-block arithmetic without needing S3 or KMS.
+    #[test]
+    fn gcm_ranged_matches_plaintext_slice() {
+        let plaintext = ranged_plaintext();
+        let (iv, ct) = encrypt_content_gcm(&DATA_KEY, &plaintext).unwrap();
+        let content = &ct[..ct.len() - 16]; // strip the appended GCM tag
+
+        // start, end (inclusive), and whole-file ranges, including block-aligned,
+        // mid-block, and cross-block cases.
+        let cases = [(0usize, 5usize), (5, 10), (10, 100), (15, 17), (16, 47), (0, plaintext.len() - 1), (200, 200)];
+        for (start, end) in cases {
+            let ranged = decrypt_range_ctr(&DATA_KEY, &iv, content, start, end).unwrap();
+            assert_eq!(
+                ranged,
+                &plaintext[start..=end],
+                "GCM ranged decrypt mismatch for [{start}, {end}]"
+            );
+        }
+    }
+
+    /// A range whose end is clamped to the end of the content (the harness
+    /// "Include tag" case requests a range beyond the plaintext length).
+    #[test]
+    fn gcm_ranged_clamps_end_to_content() {
+        let plaintext = ranged_plaintext();
+        let (iv, ct) = encrypt_content_gcm(&DATA_KEY, &plaintext).unwrap();
+        let content = &ct[..ct.len() - 16];
+        let ranged = decrypt_range_ctr(&DATA_KEY, &iv, content, 10, 1000).unwrap();
+        assert_eq!(ranged, &plaintext[10..]);
+    }
+
+    /// Committing-suite (KC-GCM) ranged decrypt must match the plaintext slice
+    /// and must reject a mutated commitment before releasing any plaintext.
+    #[test]
+    fn committing_ranged_matches_plaintext_slice() {
+        let plaintext = ranged_plaintext();
+        let (message_id, commit_key, ct) =
+            encrypt_content_committing(COMMITTING, &DATA_KEY, &plaintext).unwrap();
+        let content = &ct[..ct.len() - 16];
+
+        for (start, end) in [(0usize, 5usize), (5, 10), (16, 100), (0, plaintext.len() - 1)] {
+            let ranged = decrypt_range_committing(
+                COMMITTING, &DATA_KEY, &message_id, &commit_key, content, start, end,
+            )
+            .unwrap();
+            assert_eq!(ranged, &plaintext[start..=end]);
+        }
+    }
+
+    #[test]
+    fn committing_ranged_rejects_mutated_commitment() {
+        let plaintext = ranged_plaintext();
+        let (message_id, mut commit_key, ct) =
+            encrypt_content_committing(COMMITTING, &DATA_KEY, &plaintext).unwrap();
+        let content = ct[..ct.len() - 16].to_vec();
+        commit_key[0] ^= 0xFF;
+        let err = decrypt_range_committing(
+            COMMITTING, &DATA_KEY, &message_id, &commit_key, &content, 0, 10,
+        )
+        .unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 }
