@@ -222,12 +222,18 @@ impl S3EncryptionClient {
     /// Fetch `bucket`/`key`, unwrap its data key via KMS, and decrypt its
     /// content. `encryption_context` is the caller-provided (request) context
     /// validated against the object's stored context.
+    ///
+    /// `range`, when present, is an HTTP `Range` header value (`bytes=start-end`
+    /// or `bytes=start-`) requesting a subset of the object's plaintext. The
+    /// returned plaintext is the corresponding `[start, end]` slice (inclusive,
+    /// clamped to the object length).
     pub async fn get_object(
         &self,
         bucket: &str,
         key: &str,
         encryption_context: &BTreeMap<String, String>,
         instruction_file_suffix: Option<&str>,
+        range: Option<&str>,
     ) -> Result<DecryptedObject> {
         let keyring = self.require_keyring()?;
 
@@ -296,11 +302,15 @@ impl S3EncryptionClient {
             ));
         }
 
+        // A ranged GetObject requests a `[start, end]` subset of the object's
+        // plaintext. An invalid/absent range header decrypts the whole object.
+        let parsed_range = range.and_then(parse_byte_range);
+
         let plaintext = if md.is_v3_format() {
-            self.decrypt_v3(keyring, &md, &ciphertext, encryption_context)
+            self.decrypt_v3(keyring, &md, &ciphertext, encryption_context, parsed_range)
                 .await?
         } else if md.is_v2_format() {
-            self.decrypt_v2(keyring, &md, &ciphertext, encryption_context)
+            self.decrypt_v2(keyring, &md, &ciphertext, encryption_context, parsed_range)
                 .await?
         } else {
             return Err(S3EncryptionError::Format(
@@ -354,6 +364,7 @@ impl S3EncryptionClient {
         md: &ObjectMetadata,
         ciphertext: &[u8],
         request_context: &BTreeMap<String, String>,
+        range: Option<(usize, usize)>,
     ) -> Result<Vec<u8>> {
         // The V2 metadata format is shared by the non-committing AES-GCM suite
         // and the legacy AES-CBC suite; determine which from the content cipher.
@@ -401,7 +412,10 @@ impl S3EncryptionClient {
             )
             .await?;
 
-        open_v2_content(&plaintext_data_key, md, ciphertext)
+        match range {
+            Some((start, end)) => open_v2_content_range(&plaintext_data_key, md, ciphertext, start, end),
+            None => open_v2_content(&plaintext_data_key, md, ciphertext),
+        }
     }
 
     async fn decrypt_v3(
@@ -410,6 +424,7 @@ impl S3EncryptionClient {
         md: &ObjectMetadata,
         ciphertext: &[u8],
         request_context: &BTreeMap<String, String>,
+        range: Option<(usize, usize)>,
     ) -> Result<Vec<u8>> {
         let encrypted_data_key = md.v3_encrypted_data_key()?;
         let stored_context = md.v3_stored_context()?;
@@ -427,7 +442,10 @@ impl S3EncryptionClient {
             )
             .await?;
 
-        open_v3_content(&plaintext_data_key, md, ciphertext)
+        match range {
+            Some((start, end)) => open_v3_content_range(&plaintext_data_key, md, ciphertext, start, end),
+            None => open_v3_content(&plaintext_data_key, md, ciphertext),
+        }
     }
 }
 
@@ -534,6 +552,109 @@ fn open_v3_content(
         &key_commitment,
         ciphertext,
     )
+}
+
+/// GCM authentication tag length (bytes) appended to authenticated content.
+const GCM_TAG_LEN: usize = 16;
+
+/// Strip the trailing GCM authentication tag from an authenticated ciphertext,
+/// returning the content body (which, for the stream-cipher suites, has the
+/// same length and byte offsets as the plaintext).
+fn content_body_without_tag(ciphertext: &[u8]) -> Result<&[u8]> {
+    let len = ciphertext
+        .len()
+        .checked_sub(GCM_TAG_LEN)
+        .ok_or_else(|| S3EncryptionError::Format("ciphertext too short to contain a GCM tag".to_string()))?;
+    Ok(&ciphertext[..len])
+}
+
+/// Parse an HTTP `Range` header value of the form `bytes=start-end` or
+/// `bytes=start-` into an inclusive `(start, end)` plaintext byte range.
+///
+/// An open-ended range (`bytes=start-`) yields `end = usize::MAX`, which the
+/// range decryptor clamps to the object length. Returns `None` for any value
+/// that is not a single well-formed byte range, in which case the caller
+/// decrypts the whole object (mirroring the reference client, which makes no
+/// range adjustment for an unparseable range).
+fn parse_byte_range(range: &str) -> Option<(usize, usize)> {
+    let spec = range.strip_prefix("bytes=")?;
+    let (start_str, end_str) = spec.split_once('-')?;
+    let start: usize = start_str.parse().ok()?;
+    let end: usize = if end_str.is_empty() {
+        usize::MAX
+    } else {
+        end_str.parse().ok()?
+    };
+    if start > end {
+        return None;
+    }
+    Some((start, end))
+}
+
+/// Decrypt an inclusive plaintext byte range of V2 content given the unwrapped
+/// data key.
+///
+/// For the authenticated AES-GCM suite the whole-object tag cannot be verified
+/// over a sub-range, so the corresponding CTR suite decrypts the range. The
+/// legacy AES-CBC suite has no CTR counterpart in scope; its content is
+/// decrypted in full and the requested slice returned.
+fn open_v2_content_range(
+    plaintext_data_key: &[u8],
+    md: &ObjectMetadata,
+    ciphertext: &[u8],
+    start: usize,
+    end_inclusive: usize,
+) -> Result<Vec<u8>> {
+    let iv = md.content_iv_bytes()?;
+    match md.v2_content_algorithm()? {
+        crate::config::EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf => {
+            //= spec/s3-encryption/decryption.md#ranged-gets
+            //# If the object was encrypted with ALG_AES_256_GCM_IV12_TAG16_NO_KDF, then ALG_AES_256_CTR_IV16_TAG16_NO_KDF MUST be used to decrypt the range of the object.
+            let body = content_body_without_tag(ciphertext)?;
+            crypto::decrypt_range_ctr(plaintext_data_key, &iv, body, start, end_inclusive)
+        }
+        crate::config::EncryptionAlgorithm::AlgAes256CbcIv16NoKdf => {
+            let plaintext = crypto::decrypt_content_cbc(plaintext_data_key, &iv, ciphertext)?;
+            Ok(slice_plaintext(&plaintext, start, end_inclusive))
+        }
+        other => Err(S3EncryptionError::Format(format!(
+            "unexpected V2 content algorithm: {other:?}"
+        ))),
+    }
+}
+
+/// Decrypt an inclusive plaintext byte range of V3 (key-committing) content,
+/// verifying the stored key commitment before releasing any plaintext.
+fn open_v3_content_range(
+    plaintext_data_key: &[u8],
+    md: &ObjectMetadata,
+    ciphertext: &[u8],
+    start: usize,
+    end_inclusive: usize,
+) -> Result<Vec<u8>> {
+    let suite = crate::config::EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+    let message_id = md.v3_message_id()?;
+    let key_commitment = md.v3_key_commitment()?;
+    let body = content_body_without_tag(ciphertext)?;
+    crypto::decrypt_range_committing(
+        suite,
+        plaintext_data_key,
+        &message_id,
+        &key_commitment,
+        body,
+        start,
+        end_inclusive,
+    )
+}
+
+/// Return the inclusive `[start, end]` slice of an already-decrypted plaintext,
+/// clamped to the available bytes.
+fn slice_plaintext(plaintext: &[u8], start: usize, end_inclusive: usize) -> Vec<u8> {
+    if plaintext.is_empty() || start >= plaintext.len() {
+        return Vec::new();
+    }
+    let end = end_inclusive.min(plaintext.len() - 1);
+    plaintext[start..=end].to_vec()
 }
 
 #[cfg(test)]
@@ -840,5 +961,73 @@ mod tests {
 
         let err = validate_instruction_file_metadata(&instruction_map).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Format(_)));
+    }
+
+    /// An HTTP `Range` header parses into an inclusive `(start, end)` plaintext
+    /// byte range; an open-ended range yields `usize::MAX` for clamping, and a
+    /// malformed range parses to `None` (whole-object decrypt).
+    #[test]
+    fn byte_range_parsing() {
+        assert_eq!(parse_byte_range("bytes=0-5"), Some((0, 5)));
+        assert_eq!(parse_byte_range("bytes=10-1000"), Some((10, 1000)));
+        assert_eq!(parse_byte_range("bytes=7-"), Some((7, usize::MAX)));
+        // Malformed / unsupported forms decrypt the whole object.
+        assert_eq!(parse_byte_range("bytes=5-3"), None);
+        assert_eq!(parse_byte_range("bytes=abc"), None);
+        assert_eq!(parse_byte_range("0-5"), None);
+        assert_eq!(parse_byte_range("bytes=0-5,7-9"), None);
+    }
+
+    /// A ranged read of a V2 (non-committing AES-GCM) object returns exactly the
+    /// requested inclusive plaintext slice, decrypting only the range via the
+    /// CTR suite after the trailing GCM tag is stripped. End-beyond-length is
+    /// clamped to the object length (the "include tag" harness case).
+    #[test]
+    fn v2_ranged_read_returns_requested_slice() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let plaintext: Vec<u8> = (0u8..=200).collect();
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, &plaintext).unwrap();
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+
+        for (start, end) in [(0usize, 5usize), (5, 10), (17, 33), (10, 100_000)] {
+            let got = open_v2_content_range(&DATA_KEY, &parsed, &body, start, end).unwrap();
+            let clamped_end = end.min(plaintext.len() - 1);
+            assert_eq!(got, plaintext[start..=clamped_end], "range [{start}, {end}]");
+        }
+    }
+
+    /// A ranged read of a V3 (key-committing) object returns the requested
+    /// plaintext slice and still verifies the stored key commitment: a mutated
+    /// commitment fails closed before any plaintext is released.
+    #[test]
+    fn v3_ranged_read_slice_and_commitment_check() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let plaintext: Vec<u8> = (0u8..=200).collect();
+
+        let (body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, &plaintext).unwrap();
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+
+        let got = open_v3_content_range(&DATA_KEY, &parsed, &body, 5, 10).unwrap();
+        assert_eq!(got, plaintext[5..=10]);
+
+        // Mutate the stored commitment (x-amz-d); the ranged read must reject it.
+        use base64::engine::general_purpose::STANDARD as BASE64;
+        use base64::Engine;
+        let mut map = md.to_map();
+        let d = map.get(crate::metadata::KEY_COMMITMENT_V3).unwrap().clone();
+        let mut bytes = BASE64.decode(&d).unwrap();
+        bytes[0] ^= 0xFF;
+        map.insert(
+            crate::metadata::KEY_COMMITMENT_V3.to_string(),
+            BASE64.encode(&bytes),
+        );
+        let tampered = ObjectMetadata::from_map(&map);
+        let err = open_v3_content_range(&DATA_KEY, &tampered, &body, 5, 10).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 }
