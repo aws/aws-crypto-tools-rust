@@ -273,6 +273,13 @@ impl S3EncryptionClient {
             let instruction_metadata = self
                 .fetch_instruction_file(bucket, &instruction_key)
                 .await?;
+
+            // The V3 object-metadata-exclusive mapkeys MUST NOT appear in the
+            // instruction file. Their presence means the instruction file has
+            // been tampered with (commitment/message-id relocated out of the
+            // object metadata), so reject before merging or decrypting.
+            validate_instruction_file_metadata(&instruction_metadata)?;
+
             for (k, v) in instruction_metadata {
                 decrypt_map.insert(k, v);
             }
@@ -404,6 +411,39 @@ impl S3EncryptionClient {
 
         open_v3_content(&plaintext_data_key, md, ciphertext)
     }
+}
+
+/// Reject a fetched instruction file that carries any V3 object-metadata-exclusive
+/// mapkey. These keys (`x-amz-c`, `x-amz-d`, `x-amz-i`) bind the content cipher,
+/// key commitment, and message id; the V3 format mandates they live only in the
+/// object metadata. Finding them in the instruction file means it has been
+/// tampered with to relocate the commitment, which must fail closed.
+fn validate_instruction_file_metadata(
+    instruction_metadata: &BTreeMap<String, String>,
+) -> Result<()> {
+    //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //# - The V3 message format MUST NOT store the mapkey "x-amz-c" and its value in the Instruction File.
+    //
+    //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //# - The V3 message format MUST NOT store the mapkey "x-amz-d" and its value in the Instruction File.
+    //
+    //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //# - The V3 message format MUST NOT store the mapkey "x-amz-i" and its value in the Instruction File.
+    let forbidden: Vec<&str> = [
+        metadata::CONTENT_CIPHER_V3,
+        metadata::KEY_COMMITMENT_V3,
+        metadata::MESSAGE_ID_V3,
+    ]
+    .into_iter()
+    .filter(|k| instruction_metadata.contains_key(*k))
+    .collect();
+    if !forbidden.is_empty() {
+        return Err(S3EncryptionError::Format(format!(
+            "instruction file is tampered: it contains object-metadata-exclusive \
+             mapkeys {forbidden:?}"
+        )));
+    }
+    Ok(())
 }
 
 /// Assemble the encrypted body and content metadata for an object from an
@@ -689,5 +729,46 @@ mod tests {
         let parsed = ObjectMetadata::from_map(&merged);
         assert!(parsed.is_v3_format());
         assert_eq!(open_v3_content(&DATA_KEY, &parsed, &body).unwrap(), plaintext);
+    }
+
+    /// A well-formed V3 instruction file (data-key mapkeys only) passes the
+    /// tamper validation.
+    #[test]
+    fn instruction_file_without_object_exclusive_keys_is_accepted() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let (_body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"payload").unwrap();
+        let (_object_map, instruction_map) = md.split_for_instruction_file();
+
+        assert!(validate_instruction_file_metadata(&instruction_map).is_ok());
+    }
+
+    /// An instruction file that carries a V3 object-metadata-exclusive mapkey
+    /// (here `x-amz-d`, the key commitment) is rejected as tampered. This is the
+    /// `bad-both-meta-and-instruction` / `bad-only-instruction` decrypt case:
+    /// the commitment MUST NOT be sourced from the instruction file.
+    #[test]
+    fn instruction_file_with_relocated_commitment_is_rejected() {
+        use crate::metadata::{KEY_COMMITMENT_V3, MESSAGE_ID_V3};
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
+        let (_body, md) =
+            build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"payload").unwrap();
+        let (object_map, mut instruction_map) = md.split_for_instruction_file();
+
+        // Relocate the commitment and message id into the instruction file, as
+        // the cross-language tamper fixture does.
+        instruction_map.insert(
+            KEY_COMMITMENT_V3.to_string(),
+            object_map.get(KEY_COMMITMENT_V3).unwrap().clone(),
+        );
+        instruction_map.insert(
+            MESSAGE_ID_V3.to_string(),
+            object_map.get(MESSAGE_ID_V3).unwrap().clone(),
+        );
+
+        let err = validate_instruction_file_metadata(&instruction_map).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Format(_)));
     }
 }
