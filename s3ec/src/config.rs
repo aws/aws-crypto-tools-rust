@@ -92,6 +92,10 @@ pub struct S3EncryptionConfig {
     pub commitment_policy: Option<CommitmentPolicy>,
 }
 
+// The manual `Default` impl is kept (rather than `#[derive(Default)]`) because
+// it hosts the duvet `//=` spec annotations for the "MUST be set to false by
+// default" requirements below. Deriving would delete those citations.
+#[allow(clippy::derivable_impls)]
 impl Default for S3EncryptionConfig {
     fn default() -> Self {
         Self {
