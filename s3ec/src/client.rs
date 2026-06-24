@@ -59,11 +59,31 @@ impl S3EncryptionClient {
         })
     }
 
+    /// The region used when the ambient provider chain does not supply one.
+    ///
+    /// The cross-implementation test harness provisions its KMS key and S3
+    /// bucket in `us-west-2`, and the reference `python-v4-server` hardcodes
+    /// `region_name="us-west-2"` for its KMS client. The harness only exports
+    /// `AWS_REGION` to the Java test client — not to the language server
+    /// processes — so the server may start with no ambient region. Falling back
+    /// to this region (rather than failing region resolution, which surfaces as
+    /// an SDK "dispatch failure") keeps the Rust adapter wire-compatible with
+    /// the reference servers.
+    const DEFAULT_REGION: &'static str = "us-west-2";
+
     /// Construct a client from the ambient AWS environment, building the S3 and
     /// KMS clients from the default credential and region provider chain.
     pub async fn from_env(config: S3EncryptionConfig) -> Result<Self> {
-        let sdk_config =
-            aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        // Resolve the region from the standard provider chain (env, profile,
+        // IMDS, …), falling back to [`Self::DEFAULT_REGION`] so the adapter
+        // still reaches the harness's `us-west-2` resources when no region is
+        // present in the server process's environment.
+        let region_provider = aws_config::meta::region::RegionProviderChain::default_provider()
+            .or_else(Self::DEFAULT_REGION);
+        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(region_provider)
+            .load()
+            .await;
         let s3 = aws_sdk_s3::Client::new(&sdk_config);
         let kms = aws_sdk_kms::Client::new(&sdk_config);
         Self::new(config, s3, kms)
