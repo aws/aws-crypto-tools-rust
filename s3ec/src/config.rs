@@ -115,19 +115,19 @@ impl Default for S3EncryptionConfig {
             kms_key_id: None,
             aes_wrapping_key: None,
             rsa_wrapping_key: None,
-            //= spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+            //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
             //# The option to enable legacy wrapping algorithms MUST be set to false by default.
             enable_legacy_wrapping_algorithms: false,
-            //= spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+            //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
             //# The option to enable legacy unauthenticated modes MUST be set to false by default.
             enable_legacy_unauthenticated_modes: false,
-            //= spec/s3-encryption/client.md#enable-delayed-authentication
+            //= ../spec/s3-encryption/client.md#enable-delayed-authentication
             //# Delayed Authentication mode MUST be set to false by default.
             enable_delayed_authentication_mode: false,
             buffer_size: None,
             encryption_algorithm: None,
             commitment_policy: None,
-            //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
             //# Instruction File writes MUST NOT be enabled by default.
             instruction_file_put_enabled: false,
             disable_instruction_file: false,
@@ -179,7 +179,7 @@ impl S3EncryptionConfig {
             ));
         }
 
-        //= spec/s3-encryption/client.md#set-buffer-size
+        //= ../spec/s3-encryption/client.md#set-buffer-size
         //# If Delayed Authentication mode is enabled, and the buffer size has been set to a value other than its default, the S3EC MUST throw an exception.
         if self.enable_delayed_authentication_mode && self.buffer_size.is_some() {
             return Err(S3EncryptionError::Configuration(
@@ -189,7 +189,7 @@ impl S3EncryptionConfig {
         }
 
         if let Some(alg) = self.encryption_algorithm {
-            //= spec/s3-encryption/client.md#encryption-algorithm
+            //= ../spec/s3-encryption/client.md#encryption-algorithm
             //# The S3EC MUST validate that the configured encryption algorithm is not legacy.
             //# If the configured encryption algorithm is legacy, then the S3EC MUST throw an exception.
             if alg.is_legacy() {
@@ -200,19 +200,19 @@ impl S3EncryptionConfig {
             }
         }
 
-        //= spec/s3-encryption/client.md#key-commitment
+        //= ../spec/s3-encryption/client.md#key-commitment
         //# The S3EC MUST validate the configured Encryption Algorithm against the provided key commitment policy.
         let alg = self.effective_encryption_algorithm();
         match self.effective_commitment_policy() {
-            //= spec/s3-encryption/key-commitment.md#commitment-policy
+            //= ../spec/s3-encryption/key-commitment.md#commitment-policy
             //# When the commitment policy is REQUIRE_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST only encrypt using an algorithm suite which supports key commitment.
             //
-            //= spec/s3-encryption/key-commitment.md#commitment-policy
+            //= ../spec/s3-encryption/key-commitment.md#commitment-policy
             //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST only encrypt using an algorithm suite which supports key commitment.
             CommitmentPolicy::RequireEncryptAllowDecrypt
             | CommitmentPolicy::RequireEncryptRequireDecrypt => {
                 if !alg.is_committing() {
-                    //= spec/s3-encryption/client.md#key-commitment
+                    //= ../spec/s3-encryption/client.md#key-commitment
                     //# If the configured Encryption Algorithm is incompatible with the key commitment policy, then it MUST throw an exception.
                     return Err(S3EncryptionError::Configuration(
                         "commitment policy requires a key-committing algorithm suite, but the \
@@ -221,11 +221,11 @@ impl S3EncryptionConfig {
                     ));
                 }
             }
-            //= spec/s3-encryption/key-commitment.md#commitment-policy
+            //= ../spec/s3-encryption/key-commitment.md#commitment-policy
             //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST NOT encrypt using an algorithm suite which supports key commitment.
             CommitmentPolicy::ForbidEncryptAllowDecrypt => {
                 if alg.is_committing() {
-                    //= spec/s3-encryption/client.md#key-commitment
+                    //= ../spec/s3-encryption/client.md#key-commitment
                     //# If the configured Encryption Algorithm is incompatible with the key commitment policy, then it MUST throw an exception.
                     return Err(S3EncryptionError::Configuration(
                         "commitment policy forbids key-committing algorithm suites, but the \

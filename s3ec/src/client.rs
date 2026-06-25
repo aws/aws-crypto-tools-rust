@@ -52,7 +52,7 @@ pub struct S3EncryptionClient {
 }
 
 impl S3EncryptionClient {
-    //= spec/s3-encryption/client.md#cryptographic-materials
+    //= ../spec/s3-encryption/client.md#cryptographic-materials
     //# The S3EC MUST accept either one CMM or one Keyring instance upon initialization.
     /// Construct a client from a validated config and the wrapped SDK clients.
     pub fn new(
@@ -159,7 +159,7 @@ impl S3EncryptionClient {
     ) -> Result<()> {
         let keyring = self.require_keyring()?;
 
-        //= spec/s3-encryption/encryption.md#content-encryption
+        //= ../spec/s3-encryption/encryption.md#content-encryption
         //# The S3EC MUST use the encryption algorithm configured during [client](./client.md) initialization.
         let suite = self.config.effective_encryption_algorithm();
 
@@ -201,7 +201,7 @@ impl S3EncryptionClient {
         let metadata: std::collections::HashMap<String, String> =
             object_metadata.to_map().into_iter().collect();
 
-        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
         //# Instruction File writes MUST be optionally configured during client creation or on each PutObject request.
         if self.config.instruction_file_put_enabled {
             return self
@@ -209,7 +209,7 @@ impl S3EncryptionClient {
                 .await;
         }
 
-        //= spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
         //# By default, the S3EC MUST store content metadata in the S3 Object Metadata.
         self.s3
             .put_object()
@@ -274,7 +274,7 @@ impl S3EncryptionClient {
         suffix: &str,
         instruction_map: &BTreeMap<String, String>,
     ) -> Result<()> {
-        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
         //# The content metadata stored in the Instruction File MUST be serialized to a JSON string.
         let instruction_json = serde_json::to_string(instruction_map).map_err(|e| {
             S3EncryptionError::Format(format!("failed to serialize instruction file: {e}"))
@@ -288,7 +288,7 @@ impl S3EncryptionClient {
         .into_iter()
         .collect();
 
-        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
         //# The serialized JSON string MUST be the only contents of the Instruction File.
         self.s3
             .put_object()
@@ -356,7 +356,7 @@ impl S3EncryptionClient {
         let object_metadata_is_decryptable =
             md.is_v1_format() || md.is_v2_format() || md.is_v3_format();
         if !self.config.disable_instruction_file && !object_metadata_is_decryptable {
-            //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
             //# The S3EC SHOULD support providing a custom Instruction File suffix on GetObject requests, regardless of whether or not re-encryption is supported.
             let suffix =
                 instruction_file_suffix.unwrap_or(metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
@@ -377,7 +377,7 @@ impl S3EncryptionClient {
             md = ObjectMetadata::from_map(&decrypt_map);
         }
 
-        //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+        //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
         //# If there are multiple mapkeys which are meant to be exclusive to different versions, such as "x-amz-key", "x-amz-key-v2", and "x-amz-3" then the S3EC SHOULD throw an exception.
         if md.has_exclusive_key_collision() {
             return Err(S3EncryptionError::Format(
@@ -455,7 +455,7 @@ impl S3EncryptionClient {
         // and the legacy AES-CBC suite; determine which from the content cipher.
         let content_alg = md.v2_content_algorithm()?;
 
-        //= spec/s3-encryption/key-commitment.md#commitment-policy
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
         //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
         if self.config.effective_commitment_policy()
             == CommitmentPolicy::RequireEncryptRequireDecrypt
@@ -467,10 +467,10 @@ impl S3EncryptionClient {
             ));
         }
 
-        //= spec/s3-encryption/decryption.md#legacy-decryption
+        //= ../spec/s3-encryption/decryption.md#legacy-decryption
         //# The S3EC MUST NOT decrypt objects encrypted using legacy unauthenticated algorithm suites unless specifically configured to do so.
         //
-        //= spec/s3-encryption/decryption.md#cbc-decryption
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
         //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is NOT enabled,
         //# the S3EC MUST throw an error which details that client was not configured to decrypt objects with ALG_AES_256_CBC_IV16_NO_KDF.
         if content_alg.is_legacy() && !self.config.enable_legacy_unauthenticated_modes {
@@ -652,10 +652,10 @@ impl S3EncryptionClient {
         Ok(md)
     }
 
-    //= spec/s3-encryption/client.md#optional-api-operations
+    //= ../spec/s3-encryption/client.md#optional-api-operations
     //# - ReEncryptInstructionFile MAY be implemented by the S3EC.
     //
-    //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
     //# The S3EC MAY support re-encryption/key rotation via Instruction Files.
     /// Re-encrypt an object's instruction file under a new raw keyring, rotating
     /// the wrapping key without rewriting the (unchanged) object content.
@@ -686,7 +686,7 @@ impl S3EncryptionClient {
         let current_keyring = self.require_keyring()?;
         let new_keyring = Keyring::raw(new_aes_wrapping_key, new_rsa_wrapping_key)?;
 
-        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
         //# The S3EC MUST NOT support providing a custom Instruction File suffix on ordinary writes; custom suffixes MUST only be used during re-encryption.
         // The harness sends the suffix without its leading dot; the reference
         // prepends one. A custom (non-default) suffix is only valid for an RSA
@@ -715,7 +715,7 @@ impl S3EncryptionClient {
         let suite = md.v3_content_algorithm()?;
 
         // Decrypt the existing data key with the client's current keyring.
-        //= spec/s3-encryption/client.md#optional-api-operations
+        //= ../spec/s3-encryption/client.md#optional-api-operations
         //# - ReEncryptInstructionFile MUST decrypt the instruction file's encrypted data key for the given object using the client's CMM.
         let encrypted_data_key = md.v3_encrypted_data_key()?;
         let stored_context = md.v3_stored_context()?;
@@ -734,7 +734,7 @@ impl S3EncryptionClient {
             .await?;
 
         // Re-wrap the same data key under the new keyring (EncryptDataKey only).
-        //= spec/s3-encryption/client.md#optional-api-operations
+        //= ../spec/s3-encryption/client.md#optional-api-operations
         //# - ReEncryptInstructionFile MUST re-encrypt the plaintext data key with a provided keyring.
         let (new_encrypted_data_key, new_wrap_algorithm) = match &new_keyring {
             Keyring::Aes(aes) => (
@@ -834,13 +834,13 @@ impl Keyring {
 fn validate_instruction_file_metadata(
     instruction_metadata: &BTreeMap<String, String>,
 ) -> Result<()> {
-    //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
     //# - The V3 message format MUST NOT store the mapkey "x-amz-c" and its value in the Instruction File.
     //
-    //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
     //# - The V3 message format MUST NOT store the mapkey "x-amz-d" and its value in the Instruction File.
     //
-    //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
     //# - The V3 message format MUST NOT store the mapkey "x-amz-i" and its value in the Instruction File.
     let forbidden: Vec<&str> = [
         metadata::CONTENT_CIPHER_V3,
@@ -1039,7 +1039,7 @@ fn open_v2_content_range(
     let iv = md.content_iv_bytes()?;
     match md.v2_content_algorithm()? {
         crate::config::EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf => {
-            //= spec/s3-encryption/decryption.md#ranged-gets
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
             //# If the object was encrypted with ALG_AES_256_GCM_IV12_TAG16_NO_KDF, then ALG_AES_256_CTR_IV16_TAG16_NO_KDF MUST be used to decrypt the range of the object.
             let body = content_body_without_tag(ciphertext)?;
             crypto::decrypt_range_ctr(plaintext_data_key, &iv, body, start, end_inclusive)

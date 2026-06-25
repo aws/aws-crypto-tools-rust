@@ -24,7 +24,7 @@ use crate::keyring::{WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT, WRAP_ALG_RSA_OAEP_S
 // ---------------------------------------------------------------------------
 // MapKey constants.
 //
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# The "x-amz-" prefix denotes that the metadata is owned by an Amazon product and MUST be prepended to all S3EC metadata mapkeys.
 // ---------------------------------------------------------------------------
 
@@ -68,7 +68,7 @@ pub const MESSAGE_ID_V3: &str = "x-amz-i";
 /// on the written `.instruction` object.
 pub const INSTRUCTION_FILE_MARKER: &str = "x-amz-crypto-instr-file";
 
-//= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+//= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
 //# The default Instruction File behavior uses the same S3 object key as its associated object suffixed with ".instruction".
 /// The default instruction-file S3 object key suffix.
 pub const DEFAULT_INSTRUCTION_FILE_SUFFIX: &str = ".instruction";
@@ -179,13 +179,13 @@ impl ObjectMetadata {
                     object_metadata.insert(k.to_string(), value.clone());
                 }
             };
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-c" and its value in the Object Metadata when writing with an Instruction File.
             put_obj(CONTENT_CIPHER_V3, &self.content_cipher_v3);
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-d" and its value in the Object Metadata when writing with an Instruction File.
             put_obj(KEY_COMMITMENT_V3, &self.key_commitment_v3);
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-i" and its value in the Object Metadata when writing with an Instruction File.
             put_obj(MESSAGE_ID_V3, &self.message_id_v3);
 
@@ -194,20 +194,20 @@ impl ObjectMetadata {
                     instruction_file.insert(k.to_string(), value.clone());
                 }
             };
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-3" and its value in the Instruction File.
             put_inst(ENCRYPTED_DATA_KEY_V3, &self.encrypted_data_key_v3);
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-w" and its value in the Instruction File.
             put_inst(WRAP_ALGORITHM_V3, &self.wrap_algorithm_v3);
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-m" and its value (when present in the content metadata) in the Instruction File.
             put_inst(MAT_DESC_V3, &self.mat_desc_v3);
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
             //# - The V3 message format MUST store the mapkey "x-amz-t" and its value (when present in the content metadata) in the Instruction File.
             put_inst(ENCRYPTION_CONTEXT_V3, &self.encryption_context_v3);
         } else {
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v1-v2-instruction-files
+            //= ../spec/s3-encryption/data-format/metadata-strategy.md#v1-v2-instruction-files
             //# In the V1/V2 message format, all of the content metadata MUST be stored in the Instruction File.
             instruction_file = self.to_map();
         }
@@ -223,7 +223,7 @@ impl ObjectMetadata {
             && self.encrypted_data_key_v3.is_none()
     }
 
-    //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
     //# If the metadata contains "x-amz-iv" and "x-amz-key-v2" but no other version exclusive keys then the object MUST be considered as an S3EC-encrypted object using the V2 format.
     /// Whether the metadata is in the V2 format.
     pub fn is_v2_format(&self) -> bool {
@@ -233,7 +233,7 @@ impl ObjectMetadata {
             && self.encrypted_data_key_v3.is_none()
     }
 
-    //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
     //# If the metadata contains "x-amz-3" and "x-amz-d" and "x-amz-i" but no other version exclusive keys then the object MUST be considered an S3EC-encrypted object using the V3 format.
     /// Whether the metadata is in the V3 format.
     pub fn is_v3_format(&self) -> bool {
@@ -244,7 +244,7 @@ impl ObjectMetadata {
             && self.encrypted_data_key_v2.is_none()
     }
 
-    //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
     //# If there are multiple mapkeys which are meant to be exclusive to different versions, such as "x-amz-key", "x-amz-key-v2", and "x-amz-3" then the S3EC SHOULD throw an exception.
     /// Whether the metadata carries encrypted-data-key mapkeys from more than
     /// one exclusive format version (a tamper / format-confusion signal).
@@ -320,7 +320,7 @@ impl ObjectMetadata {
         Ok(Self {
             content_cipher_v3: Some(suite.content_cipher_value()),
             encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
-            //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+            //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
             //# - The wrapping algorithm value "02" MUST be translated to AES/GCM upon retrieval, and vice versa on write.
             wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_AES_GCM)?.to_string()),
             message_id_v3: Some(BASE64.encode(message_id)),
@@ -361,7 +361,7 @@ impl ObjectMetadata {
         Ok(Self {
             content_cipher_v3: Some(suite.content_cipher_value()),
             encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
-            //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+            //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
             //# - The wrapping algorithm value "22" MUST be translated to RSA-OAEP-SHA1 upon retrieval, and vice versa on write.
             wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_RSA_OAEP_SHA1)?.to_string()),
             message_id_v3: Some(BASE64.encode(message_id)),
@@ -447,7 +447,7 @@ impl ObjectMetadata {
     /// and the object would still decrypt.
     pub fn v3_content_algorithm(&self) -> Result<EncryptionAlgorithm> {
         let committing = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-        //= spec/s3-encryption/data-format/content-metadata.md#v2-v3-shared
+        //= ../spec/s3-encryption/data-format/content-metadata.md#v2-v3-shared
         //# - AES/GCM/NoPadding
         //# - AES/CBC/PKCS5Padding
         //# - 115
@@ -500,13 +500,13 @@ fn parse_context(value: Option<&str>) -> Result<BTreeMap<String, String>> {
 /// Translate a V3 compressed wrapping-algorithm code to its canonical name.
 pub fn v3_wrap_algorithm_to_name(code: &str) -> Result<&'static str> {
     match code {
-        //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+        //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
         //# - The wrapping algorithm value "02" MUST be translated to AES/GCM upon retrieval, and vice versa on write.
         "02" => Ok("AES/GCM"),
-        //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+        //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
         //# - The wrapping algorithm value "12" MUST be translated to kms+context upon retrieval, and vice versa on write.
         "12" => Ok("kms+context"),
-        //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+        //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
         //# - The wrapping algorithm value "22" MUST be translated to RSA-OAEP-SHA1 upon retrieval, and vice versa on write.
         "22" => Ok("RSA-OAEP-SHA1"),
         other => Err(S3EncryptionError::Format(format!(
