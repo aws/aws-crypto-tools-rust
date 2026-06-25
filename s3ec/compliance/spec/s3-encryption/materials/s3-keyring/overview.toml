@@ -1,0 +1,26 @@
+target = "../spec/s3-encryption/materials/s3-keyring.md#overview"
+
+# Overview
+#
+# The S3EC SHOULD implement an S3 Keyring to consolidate validation and other functionality common to all S3 Keyrings.
+# If implemented, the S3 Keyring MUST implement the Keyring interface.
+# If implemented, the S3 Keyring MUST NOT be able to be instantiated as a Keyring instance.
+
+[[spec]]
+level = "SHOULD"
+quote = '''
+The S3EC SHOULD implement an S3 Keyring to consolidate validation and other functionality common to all S3 Keyrings.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If implemented, the S3 Keyring MUST implement the Keyring interface.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If implemented, the S3 Keyring MUST NOT be able to be instantiated as a Keyring instance.
+'''
+

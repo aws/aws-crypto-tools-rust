@@ -1,0 +1,19 @@
+target = "../spec/s3-encryption/materials/keyrings.md#supported-keyrings"
+
+# Supported Keyrings
+#
+# The Amazon S3 Encryption Client provides the following keyring implementations:
+# 
+# - [S3 Keyring](s3-keyring.md)
+# - [S3 KMS Keyring](s3-kms-keyring.md)
+# - [S3 AES Keyring](s3-aes-keyring.md)
+# - [S3 RSA Keyring](s3-rsa-keyring.md)
+# 
+# Note: A user MAY create their own custom keyring(s).
+
+[[spec]]
+level = "MAY"
+quote = '''
+Note: A user MAY create their own custom keyring(s).
+'''
+

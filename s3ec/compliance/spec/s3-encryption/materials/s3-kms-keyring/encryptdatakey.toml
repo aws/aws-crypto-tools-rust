@@ -1,0 +1,65 @@
+target = "../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey"
+
+# EncryptDataKey
+#
+# The KmsKeyring MUST implement the EncryptDataKey method.
+# The keyring MUST call [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) using the configured AWS KMS client.
+# The keyring must AWS KMS Encrypt call with a request constructed as follows:
+# 
+# - `KeyId` MUST be the configured AWS KMS key identifier.
+# - `PlaintextDataKey` MUST be the plaintext data key in the [encryption materials](../structures.md#encryption-materials).
+# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [encryption materials](../structures.md#encryption-materials).
+# - A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
+# 
+# If the call to [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) does not succeed, OnEncrypt MUST fail.
+# 
+# If the call to AWS KMS Encrypt is successful, OnEncrypt MUST return the `CiphertextBlob` as a collection of bytes.
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST implement the EncryptDataKey method.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The keyring MUST call [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) using the configured AWS KMS client.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `KeyId` MUST be the configured AWS KMS key identifier.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `PlaintextDataKey` MUST be the plaintext data key in the [encryption materials](../structures.md#encryption-materials).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [encryption materials](../structures.md#encryption-materials).
+'''
+
+[[spec]]
+level = "SHOULD"
+quote = '''
+- A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the call to [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) does not succeed, OnEncrypt MUST fail.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the call to AWS KMS Encrypt is successful, OnEncrypt MUST return the `CiphertextBlob` as a collection of bytes.
+'''
+

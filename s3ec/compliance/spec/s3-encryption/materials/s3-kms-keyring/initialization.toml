@@ -1,0 +1,55 @@
+target = "../spec/s3-encryption/materials/s3-kms-keyring.md#initialization"
+
+# Initialization
+#
+# On initialization, the caller MAY provide an AWS KMS SDK client instance.
+# If the caller does not provide an AWS KMS SDK client instance or provides a null value, the KmsKeyring MUST create a default KMS client instance.
+# On initialization, the caller MUST provide an AWS KMS key identifier.
+# 
+# The KmsKeyring MAY validate that the AWS KMS key identifier is not null or empty.
+# If the KmsKeyring validates that the AWS KMS key identifier is not null or empty, then it MUST throw an exception.
+# The KmsKeyring MAY validate that the AWS KMS key identifier is [a valid AWS KMS Key identifier](../../framework/aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-identifier).
+# If the KmsKeyring validates that the AWS KMS key identifier is not a valid AWS KMS Key identifier, then it MUST throw an exception.
+
+[[spec]]
+level = "MAY"
+quote = '''
+On initialization, the caller MAY provide an AWS KMS SDK client instance.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the caller does not provide an AWS KMS SDK client instance or provides a null value, the KmsKeyring MUST create a default KMS client instance.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+On initialization, the caller MUST provide an AWS KMS key identifier.
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+The KmsKeyring MAY validate that the AWS KMS key identifier is not null or empty.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the KmsKeyring validates that the AWS KMS key identifier is not null or empty, then it MUST throw an exception.
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+The KmsKeyring MAY validate that the AWS KMS key identifier is [a valid AWS KMS Key identifier](../../framework/aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-identifier).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the KmsKeyring validates that the AWS KMS key identifier is not a valid AWS KMS Key identifier, then it MUST throw an exception.
+'''
+

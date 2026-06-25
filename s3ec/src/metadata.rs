@@ -207,7 +207,7 @@ impl ObjectMetadata {
             //# - The V3 message format MUST store the mapkey "x-amz-t" and its value (when present in the content metadata) in the Instruction File.
             put_inst(ENCRYPTION_CONTEXT_V3, &self.encryption_context_v3);
         } else {
-            //= spec/s3-encryption/data-format/metadata-strategy.md#v1v2-instruction-files
+            //= spec/s3-encryption/data-format/metadata-strategy.md#v1-v2-instruction-files
             //# In the V1/V2 message format, all of the content metadata MUST be stored in the Instruction File.
             instruction_file = self.to_map();
         }
@@ -447,7 +447,7 @@ impl ObjectMetadata {
     /// and the object would still decrypt.
     pub fn v3_content_algorithm(&self) -> Result<EncryptionAlgorithm> {
         let committing = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-        //= spec/s3-encryption/data-format/content-metadata.md#v2v3-shared
+        //= spec/s3-encryption/data-format/content-metadata.md#v2-v3-shared
         //# - AES/GCM/NoPadding
         //# - AES/CBC/PKCS5Padding
         //# - 115

@@ -1,0 +1,48 @@
+target = "../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes"
+
+# Supported Wrapping Algorithm Modes
+#
+# The KmsKeyring has two supported algorithm modes: KmsV1 and Kms+Context (V2).
+# The KmsKeyring MUST NOT support encryption using KmsV1 mode.
+# The KmsKeyring MUST support decryption using KmsV1 mode.
+# The KmsV1 mode MUST be only enabled when legacy wrapping algorithms are enabled.
+# The KmsKeyring MUST support encryption using Kms+Context mode.
+# The KmsKeyring MUST support decryption using Kms+Context mode.
+# The Kms+Context mode MUST be enabled as a fully-supported (non-legacy) wrapping algorithm.
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST NOT support encryption using KmsV1 mode.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST support decryption using KmsV1 mode.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsV1 mode MUST be only enabled when legacy wrapping algorithms are enabled.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST support encryption using Kms+Context mode.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST support decryption using Kms+Context mode.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Kms+Context mode MUST be enabled as a fully-supported (non-legacy) wrapping algorithm.
+'''
+
