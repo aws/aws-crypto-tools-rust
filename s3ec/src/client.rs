@@ -426,6 +426,12 @@ impl S3EncryptionClient {
         request_context: &BTreeMap<String, String>,
         range: Option<(usize, usize)>,
     ) -> Result<Vec<u8>> {
+        // Resolve the content-encryption suite from the stored `x-amz-c` value
+        // and reject any unknown/tampered value before doing any KMS work. The
+        // suite ID is bound into the key-derivation inputs and the GCM AAD, so
+        // ignoring `x-amz-c` would let a mutated value decrypt successfully.
+        let suite = md.v3_content_algorithm()?;
+
         let encrypted_data_key = md.v3_encrypted_data_key()?;
         let stored_context = md.v3_stored_context()?;
         // The V3 wrapping algorithm is a compressed code; "12" (kms+context) is
@@ -443,8 +449,10 @@ impl S3EncryptionClient {
             .await?;
 
         match range {
-            Some((start, end)) => open_v3_content_range(&plaintext_data_key, md, ciphertext, start, end),
-            None => open_v3_content(&plaintext_data_key, md, ciphertext),
+            Some((start, end)) => {
+                open_v3_content_range(suite, &plaintext_data_key, md, ciphertext, start, end)
+            }
+            None => open_v3_content(suite, &plaintext_data_key, md, ciphertext),
         }
     }
 }
@@ -538,11 +546,11 @@ fn open_v2_content(
 /// verifying the stored key commitment. Pure (no-I/O) decrypt half of the
 /// GetObject pipeline.
 fn open_v3_content(
+    suite: crate::config::EncryptionAlgorithm,
     plaintext_data_key: &[u8],
     md: &ObjectMetadata,
     ciphertext: &[u8],
 ) -> Result<Vec<u8>> {
-    let suite = crate::config::EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
     let message_id = md.v3_message_id()?;
     let key_commitment = md.v3_key_commitment()?;
     crypto::decrypt_content_committing(
@@ -626,13 +634,13 @@ fn open_v2_content_range(
 /// Decrypt an inclusive plaintext byte range of V3 (key-committing) content,
 /// verifying the stored key commitment before releasing any plaintext.
 fn open_v3_content_range(
+    suite: crate::config::EncryptionAlgorithm,
     plaintext_data_key: &[u8],
     md: &ObjectMetadata,
     ciphertext: &[u8],
     start: usize,
     end_inclusive: usize,
 ) -> Result<Vec<u8>> {
-    let suite = crate::config::EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
     let message_id = md.v3_message_id()?;
     let key_commitment = md.v3_key_commitment()?;
     let body = content_body_without_tag(ciphertext)?;
@@ -732,7 +740,7 @@ mod tests {
             "115"
         );
 
-        let recovered = open_v3_content(&DATA_KEY, &parsed, &body).unwrap();
+        let recovered = open_v3_content(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &parsed, &body).unwrap();
         assert_eq!(recovered, plaintext);
     }
 
@@ -762,7 +770,7 @@ mod tests {
         let parsed = ObjectMetadata::from_map(&md.to_map());
 
         let wrong_key = [9u8; 32];
-        let err = open_v3_content(&wrong_key, &parsed, &body).unwrap_err();
+        let err = open_v3_content(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &wrong_key, &parsed, &body).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 
@@ -793,7 +801,7 @@ mod tests {
         let parsed = ObjectMetadata::from_map(&md.to_map());
         body[0] ^= 0xFF;
 
-        let err = open_v3_content(&DATA_KEY, &parsed, &body).unwrap_err();
+        let err = open_v3_content(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &parsed, &body).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 
@@ -919,7 +927,16 @@ mod tests {
         let merged = merge_instruction_file(&object_map, &instruction_map);
         let parsed = ObjectMetadata::from_map(&merged);
         assert!(parsed.is_v3_format());
-        assert_eq!(open_v3_content(&DATA_KEY, &parsed, &body).unwrap(), plaintext);
+        assert_eq!(
+            open_v3_content(
+                EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey,
+                &DATA_KEY,
+                &parsed,
+                &body
+            )
+            .unwrap(),
+            plaintext
+        );
     }
 
     /// A well-formed V3 instruction file (data-key mapkeys only) passes the
@@ -1012,7 +1029,7 @@ mod tests {
             build_encrypted_object(suite, &DATA_KEY, EDK, &context, &plaintext).unwrap();
         let parsed = ObjectMetadata::from_map(&md.to_map());
 
-        let got = open_v3_content_range(&DATA_KEY, &parsed, &body, 5, 10).unwrap();
+        let got = open_v3_content_range(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &parsed, &body, 5, 10).unwrap();
         assert_eq!(got, plaintext[5..=10]);
 
         // Mutate the stored commitment (x-amz-d); the ranged read must reject it.
@@ -1027,7 +1044,7 @@ mod tests {
             BASE64.encode(&bytes),
         );
         let tampered = ObjectMetadata::from_map(&map);
-        let err = open_v3_content_range(&DATA_KEY, &tampered, &body, 5, 10).unwrap_err();
+        let err = open_v3_content_range(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &tampered, &body, 5, 10).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 }

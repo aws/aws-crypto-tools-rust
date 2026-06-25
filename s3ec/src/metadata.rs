@@ -354,6 +354,32 @@ impl ObjectMetadata {
         Self::decode_b64(MESSAGE_ID_V3, &self.message_id_v3)
     }
 
+    /// The content-encryption algorithm of a V3 object, read from the
+    /// `x-amz-c` content-cipher mapkey.
+    ///
+    /// The only valid V3 content-cipher value is the integer suite ID `115`,
+    /// which denotes `ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY`. The stored value
+    /// is bound into the key-commitment/derivation inputs and the GCM AAD, so a
+    /// reader MUST resolve the suite from it (rather than assuming one) and
+    /// reject any other value; otherwise a tampered `x-amz-c` would be ignored
+    /// and the object would still decrypt.
+    pub fn v3_content_algorithm(&self) -> Result<EncryptionAlgorithm> {
+        let committing = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        //= spec/s3-encryption/data-format/content-metadata.md#v2v3-shared
+        //# - AES/GCM/NoPadding
+        //# - AES/CBC/PKCS5Padding
+        //# - 115
+        match self.content_cipher_v3.as_deref() {
+            Some(v) if v == committing.content_cipher_value() => Ok(committing),
+            Some(other) => Err(S3EncryptionError::Format(format!(
+                "unknown content encryption algorithm: {other}"
+            ))),
+            None => Err(S3EncryptionError::Format(
+                "V3 format object missing required x-amz-c metadata".to_string(),
+            )),
+        }
+    }
+
     /// The decoded V3 key commitment (`x-amz-d`).
     pub fn v3_key_commitment(&self) -> Result<Vec<u8>> {
         Self::decode_b64(KEY_COMMITMENT_V3, &self.key_commitment_v3)
@@ -445,6 +471,35 @@ mod tests {
             encryption_context_v3: Some("{}".to_string()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn v3_content_algorithm_accepts_committing_suite() {
+        let md = v3_metadata();
+        assert_eq!(
+            md.v3_content_algorithm().unwrap(),
+            EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey
+        );
+    }
+
+    #[test]
+    fn v3_content_algorithm_rejects_mutated_content_cipher() {
+        // The harness tampers with `x-amz-c` by base64-decoding its value,
+        // flipping a bit, and re-encoding — yielding a value other than the
+        // sole valid V3 content cipher ("115"). A reader MUST reject it rather
+        // than ignore it (which would let a tampered object decrypt).
+        let mut md = v3_metadata();
+        md.content_cipher_v3 = Some("not-115".to_string());
+        let err = md.v3_content_algorithm().unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Format(_)));
+    }
+
+    #[test]
+    fn v3_content_algorithm_rejects_missing_content_cipher() {
+        let mut md = v3_metadata();
+        md.content_cipher_v3 = None;
+        let err = md.v3_content_algorithm().unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Format(_)));
     }
 
     #[test]
