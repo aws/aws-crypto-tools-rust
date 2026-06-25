@@ -26,9 +26,17 @@ fn aes_keyring_wrap_unwrap_round_trips() {
     let keyring = AesKeyring::new(vec![0x42u8; 32]);
     let (plaintext_dk, wrapped) = keyring.wrap(COMMITTING).unwrap();
     // A fresh 256-bit data key is generated and wrapped (IV + key + tag).
+    //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //= type=test
+    //= reason=wrap() calls GenerateDataKey, producing a fresh 32-byte (256-bit) plaintext data key
+    //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
     assert_eq!(plaintext_dk.len(), 32);
     assert_eq!(wrapped.len(), 12 + 32 + 16);
     let recovered = keyring.unwrap(&wrapped, COMMITTING).unwrap();
+    //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //= type=test
+    //= reason=unwrap() is DecryptDataKey; it recovers exactly the data key that was wrapped
+    //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
     assert_eq!(recovered, plaintext_dk);
 }
 
@@ -57,6 +65,10 @@ fn aes_keyring_encrypt_data_key_preserves_existing_key() {
     let keyring = AesKeyring::new(vec![0x42u8; 32]);
     let data_key = vec![0x5Au8; 32];
     let wrapped = keyring.encrypt_data_key(&data_key, COMMITTING).unwrap();
+    //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //= type=test
+    //= reason=encrypt_data_key is EncryptDataKey; the wrapped output unwraps back to the exact input data key, proving the method wraps it
+    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
     assert_eq!(keyring.unwrap(&wrapped, COMMITTING).unwrap(), data_key);
 }
 

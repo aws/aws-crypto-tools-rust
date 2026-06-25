@@ -36,6 +36,210 @@ pub const RESERVED_CEK_ALG_KEY: &str = "aws:x-amz-cek-alg";
 /// Reserved encryption-context key used by the legacy KmsV1 mode.
 pub const RESERVED_KMS_CMK_ID_KEY: &str = "kms_cmk_id";
 
+/// The encryption materials an [`S3Keyring`]'s [`on_encrypt`](S3Keyring::on_encrypt)
+/// operates on: the chosen algorithm suite together with the plaintext data
+/// key and the encrypted (wrapped) data key. Either key may be absent on input;
+/// `on_encrypt` populates whichever is missing.
+#[derive(Clone, Debug)]
+pub struct EncryptionMaterials {
+    suite: EncryptionAlgorithm,
+    plaintext_data_key: Option<Vec<u8>>,
+    encrypted_data_key: Option<Vec<u8>>,
+}
+
+impl EncryptionMaterials {
+    /// Encryption materials for `suite` with no data keys derived yet.
+    pub fn new(suite: EncryptionAlgorithm) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: None,
+            encrypted_data_key: None,
+        }
+    }
+
+    /// Encryption materials carrying an already-derived plaintext data key (the
+    /// re-encryption case, where the object's existing data key is preserved
+    /// and only re-wrapped).
+    pub fn with_plaintext_data_key(
+        suite: EncryptionAlgorithm,
+        plaintext_data_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: Some(plaintext_data_key),
+            encrypted_data_key: None,
+        }
+    }
+
+    /// Encryption materials that already carry both a plaintext data key and an
+    /// encrypted data key. [`on_encrypt`](S3Keyring::on_encrypt) returns these
+    /// unchanged without re-wrapping.
+    pub fn with_data_keys(
+        suite: EncryptionAlgorithm,
+        plaintext_data_key: Vec<u8>,
+        encrypted_data_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: Some(plaintext_data_key),
+            encrypted_data_key: Some(encrypted_data_key),
+        }
+    }
+
+    /// The plaintext data key, if one has been derived.
+    pub fn plaintext_data_key(&self) -> Option<&[u8]> {
+        self.plaintext_data_key.as_deref()
+    }
+
+    /// The encrypted (wrapped) data key, if one has been produced.
+    pub fn encrypted_data_key(&self) -> Option<&[u8]> {
+        self.encrypted_data_key.as_deref()
+    }
+}
+
+/// The decryption materials an [`S3Keyring`]'s [`on_decrypt`](S3Keyring::on_decrypt)
+/// operates on: the algorithm suite and the plaintext data key, which
+/// `on_decrypt` populates from the single input encrypted data key.
+#[derive(Clone, Debug)]
+pub struct DecryptionMaterials {
+    suite: EncryptionAlgorithm,
+    plaintext_data_key: Option<Vec<u8>>,
+}
+
+impl DecryptionMaterials {
+    /// Decryption materials for `suite` with no plaintext data key yet.
+    pub fn new(suite: EncryptionAlgorithm) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: None,
+        }
+    }
+
+    /// Decryption materials that already carry a plaintext data key. The
+    /// [`on_decrypt`](S3Keyring::on_decrypt) operation rejects these.
+    pub fn with_plaintext_data_key(
+        suite: EncryptionAlgorithm,
+        plaintext_data_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: Some(plaintext_data_key),
+        }
+    }
+
+    /// The recovered plaintext data key, set once `on_decrypt` succeeds.
+    pub fn plaintext_data_key(&self) -> Option<&[u8]> {
+        self.plaintext_data_key.as_deref()
+    }
+}
+
+//= ../spec/s3-encryption/materials/s3-keyring.md#overview
+//# The S3EC SHOULD implement an S3 Keyring to consolidate validation and other functionality common to all S3 Keyrings.
+//
+//= ../spec/s3-encryption/materials/s3-keyring.md#overview
+//= type=implication
+//= reason=the trait's provided on_encrypt/on_decrypt methods are the OnEncrypt/OnDecrypt operations that make up the Keyring interface
+//# If implemented, the S3 Keyring MUST implement the Keyring interface.
+//
+//= ../spec/s3-encryption/materials/s3-keyring.md#overview
+//= type=implication
+//= reason=S3Keyring is a Rust trait, not a constructible type; only the concrete keyrings that implement it can be instantiated, so it can never be instantiated as a standalone Keyring value
+//# If implemented, the S3 Keyring MUST NOT be able to be instantiated as a Keyring instance.
+/// A shared base for the S3EC's raw (non-KMS) keyrings that consolidates the
+/// validation and the OnEncrypt/OnDecrypt control flow common to all S3
+/// Keyrings.
+///
+/// Concrete keyrings supply the three abstract operations — GenerateDataKey,
+/// EncryptDataKey, and DecryptDataKey — and inherit the
+/// [`on_encrypt`](S3Keyring::on_encrypt) / [`on_decrypt`](S3Keyring::on_decrypt)
+/// template methods that realize the Keyring interface. The [`AesKeyring`] and
+/// [`RsaKeyring`] implement this trait; their inherent `wrap`/`encrypt_data_key`/
+/// `unwrap` methods are the concrete realizations of the abstract operations.
+pub trait S3Keyring {
+    /// GenerateDataKey: produce a fresh plaintext data key sized for `suite`.
+    /// The default generates cryptographically random bytes — the behavior
+    /// common to every raw S3 Keyring.
+    fn generate_data_key(&self, suite: EncryptionAlgorithm) -> Result<Vec<u8>> {
+        crate::crypto::random_bytes(suite.data_key_length())
+    }
+
+    /// EncryptDataKey: wrap an existing plaintext data key for `suite`.
+    fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>>;
+
+    /// DecryptDataKey: unwrap a wrapped data key for `suite`.
+    fn decrypt_data_key(
+        &self,
+        encrypted_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>>;
+
+    /// OnEncrypt: ensure the materials carry a plaintext data key and a
+    /// matching encrypted data key, generating and/or wrapping as needed.
+    fn on_encrypt(&self, materials: &mut EncryptionMaterials) -> Result<()> {
+        //= ../spec/s3-encryption/materials/s3-keyring.md#onencrypt
+        //# If the Plaintext Data Key in the input EncryptionMaterials is null, the S3 Keyring MUST call the GenerateDataKey method using the materials.
+        if materials.plaintext_data_key.is_none() {
+            materials.plaintext_data_key = Some(self.generate_data_key(materials.suite)?);
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#onencrypt
+        //# If the materials returned from GenerateDataKey contain an EncryptedDataKey, the S3 Keyring MUST return the materials.
+        if materials.encrypted_data_key.is_some() {
+            return Ok(());
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#onencrypt
+        //# If the materials returned from GenerateDataKey do not contain an EncryptedDataKey, the S3 Keyring MUST call the EncryptDataKey method using the materials.
+        let plaintext_data_key = materials
+            .plaintext_data_key
+            .clone()
+            .expect("plaintext data key was generated above when absent");
+        materials.encrypted_data_key =
+            Some(self.encrypt_data_key(&plaintext_data_key, materials.suite)?);
+        Ok(())
+    }
+
+    /// OnDecrypt: validate the inputs and recover the plaintext data key from
+    /// the single input encrypted data key.
+    fn on_decrypt(
+        &self,
+        materials: &mut DecryptionMaterials,
+        encrypted_data_keys: &[Vec<u8>],
+    ) -> Result<()> {
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //# If the input DecryptionMaterials contains a Plaintext Data Key, the S3 Keyring MUST throw an exception.
+        if materials.plaintext_data_key.is_some() {
+            return Err(S3EncryptionError::Crypto(
+                "decryption materials already contain a plaintext data key".to_string(),
+            ));
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //# If the input collection of EncryptedDataKey instances contains any number of EDKs other than 1, the S3 Keyring MUST throw an exception.
+        if encrypted_data_keys.len() != 1 {
+            return Err(S3EncryptionError::Crypto(format!(
+                "expected exactly one encrypted data key, got {}",
+                encrypted_data_keys.len()
+            )));
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //= type=exception
+        //= reason=raw keyrings have a single fixed key provider, so the optional Key Provider ID match is not performed
+        //# The S3 Keyring MAY validate that the Key Provider ID of the Encrypted Data Key matches the expected default Key Provider ID value.
+        //
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //# The S3 Keyring MUST call the DecryptDataKey method using the materials and add the resulting plaintext data key to the materials.
+        let plaintext_data_key = self.decrypt_data_key(&encrypted_data_keys[0], materials.suite)?;
+        materials.plaintext_data_key = Some(plaintext_data_key);
+        Ok(())
+    }
+}
+
 //= ../spec/s3-encryption/materials/keyrings.md#interface
 //= type=implication
 //# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
@@ -437,6 +641,30 @@ impl AesKeyring {
     }
 }
 
+impl S3Keyring for AesKeyring {
+    /// EncryptDataKey for the raw AES keyring. The body mirrors the inherent
+    /// [`AesKeyring::encrypt_data_key`] (it is inlined rather than delegated to
+    /// keep trait-vs-inherent method resolution unambiguous).
+    fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        let aad = Self::wrap_aad(suite);
+        crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), plaintext_data_key)
+    }
+
+    /// DecryptDataKey for the raw AES keyring, delegating to the inherent
+    /// [`AesKeyring::unwrap`].
+    fn decrypt_data_key(
+        &self,
+        encrypted_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        self.unwrap(encrypted_data_key, suite)
+    }
+}
+
 /// A raw RSA keyring that wraps and unwraps content data keys with a
 /// caller-supplied RSA key pair using RSA-OAEP-SHA1 (the non-legacy
 /// "RSA-OAEP-SHA1" wrapping algorithm).
@@ -502,5 +730,33 @@ impl RsaKeyring {
             content_cipher.as_bytes(),
             wrapped_data_key,
         )
+    }
+}
+
+impl S3Keyring for RsaKeyring {
+    /// EncryptDataKey for the raw RSA keyring. The body mirrors the inherent
+    /// [`RsaKeyring::encrypt_data_key`] (it is inlined rather than delegated to
+    /// keep trait-vs-inherent method resolution unambiguous).
+    fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        let content_cipher = suite.content_cipher_value();
+        crate::crypto::wrap_data_key_rsa_oaep(
+            &self.private_key_pkcs8,
+            content_cipher.as_bytes(),
+            plaintext_data_key,
+        )
+    }
+
+    /// DecryptDataKey for the raw RSA keyring, delegating to the inherent
+    /// [`RsaKeyring::unwrap`].
+    fn decrypt_data_key(
+        &self,
+        encrypted_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        self.unwrap(encrypted_data_key, suite)
     }
 }
