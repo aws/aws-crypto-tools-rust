@@ -655,6 +655,15 @@ fn encode_context(context: &BTreeMap<String, String>) -> Result<String> {
 ///
 /// The S3 web server's "double encoding" scheme is not applied or decoded:
 /// this client stores and reads the JSON string verbatim.
+//= ../spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
+//= type=exception
+//= reason=The S3 server "double encoding" is neither applied nor decoded; the metadata JSON is stored and read verbatim (tracked separately).
+//# The S3EC SHOULD support decoding the S3 Server's "double encoding".
+//
+//= ../spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
+//= reason=parse_context applies no decoding transform; the stored JSON string is parsed verbatim, so the content metadata is returned untouched.
+//# If the S3EC does not support decoding the S3 Server's "double encoding" then it MUST return the content metadata untouched.
+//
 //= ../spec/s3-encryption/data-format/content-metadata.md#v1-v2-shared
 //= type=exception
 //= reason=The matdesc JSON is stored/read verbatim; S3 double-encoding is not applied (tracked separately).

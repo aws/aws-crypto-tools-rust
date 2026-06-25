@@ -403,9 +403,173 @@ async fn re_encrypt_instruction_file_rotates_aes_to_rsa() {
         .get_object("bucket", "obj", &ctx, None, None)
         .await
         .unwrap();
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=re-encrypting the sidecar instruction file rotates the data-key wrap from AES to RSA; the RSA-only client then decrypts, proving key rotation via Instruction Files.
+    //# The S3EC MAY support re-encryption/key rotation via Instruction Files.
+    //
     //= ../spec/s3-encryption/client.md#optional-api-operations
     //= type=test
     //= reason=the new RSA keyring recovers the plaintext, proving re_encrypt re-wrapped the plaintext data key under the provided keyring
     //# - ReEncryptInstructionFile MUST re-encrypt the plaintext data key with a provided keyring.
+    assert_eq!(decrypted.plaintext.as_slice(), plaintext.as_slice());
+}
+
+// ===========================================================================
+// Metadata Strategy (#object-metadata, #instruction-file)
+// ===========================================================================
+
+#[tokio::test]
+async fn put_object_default_stores_content_metadata_in_object_metadata() {
+    let store = new_store();
+    // Instruction-file writes disabled — the default strategy.
+    let client = build_client(&store, aes_committing_config(false));
+    client
+        .put_object("bucket", "obj", b"payload", &BTreeMap::new())
+        .await
+        .unwrap();
+
+    let guard = store.lock().unwrap();
+    let (_body, obj_meta) = guard.get("obj").expect("object stored");
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
+    //= type=test
+    //= reason=with instruction-file writes disabled (the default), the V3 content metadata (x-amz-3) is attached to the S3 object itself, not a sidecar.
+    //# By default, the S3EC MUST store content metadata in the S3 Object Metadata.
+    assert!(obj_meta.contains_key(metadata::ENCRYPTED_DATA_KEY_V3));
+
+    // No sidecar instruction file is written in the default path.
+    assert!(!guard.contains_key("obj.instruction"));
+}
+
+#[tokio::test]
+async fn put_object_with_instruction_file_writes_json_sidecar() {
+    let store = new_store();
+    // Instruction-file writes enabled.
+    let client = build_client(&store, aes_committing_config(true));
+    client
+        .put_object("bucket", "obj", b"payload", &BTreeMap::new())
+        .await
+        .unwrap();
+
+    let guard = store.lock().unwrap();
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=the object key is "obj"; enabling instruction-file writes stores the data-key metadata at the suffixed key "obj.instruction".
+    //# The default Instruction File behavior uses the same S3 object key as its associated object suffixed with ".instruction".
+    let (if_body, _) = guard
+        .get("obj.instruction")
+        .expect("sidecar instruction file written");
+
+    let parsed: BTreeMap<String, String> =
+        serde_json::from_slice(if_body).expect("instruction file body must be JSON");
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=the sidecar holds the V3 data-key metadata (x-amz-3), proving content metadata is written to an Instruction File.
+    //# The S3EC MUST support writing some or all (depending on format) content metadata to an Instruction File.
+    assert!(parsed.contains_key(metadata::ENCRYPTED_DATA_KEY_V3));
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=the sidecar body parses as a JSON object whose x-amz-w value is the raw-AES wrap code "02", proving the metadata was serialized to a JSON string.
+    //# The content metadata stored in the Instruction File MUST be serialized to a JSON string.
+    assert_eq!(
+        parsed.get(metadata::WRAP_ALGORITHM_V3).map(String::as_str),
+        Some("02")
+    );
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=re-serializing the parsed map reproduces the file byte-for-byte, so the JSON string is the only content of the file.
+    //# The serialized JSON string MUST be the only contents of the Instruction File.
+    assert_eq!(serde_json::to_vec(&parsed).unwrap(), *if_body);
+}
+
+#[test]
+fn instruction_file_writes_disabled_by_default() {
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //# Instruction File writes MUST NOT be enabled by default.
+    assert!(!S3EncryptionConfig::default().instruction_file_put_enabled);
+}
+
+#[tokio::test]
+async fn instruction_file_writes_are_optionally_configured() {
+    // Disabled: content metadata on the object, no sidecar.
+    let disabled_store = new_store();
+    build_client(&disabled_store, aes_committing_config(false))
+        .put_object("bucket", "obj", b"payload", &BTreeMap::new())
+        .await
+        .unwrap();
+
+    // Enabled: a sidecar instruction file is written.
+    let enabled_store = new_store();
+    build_client(&enabled_store, aes_committing_config(true))
+        .put_object("bucket", "obj", b"payload", &BTreeMap::new())
+        .await
+        .unwrap();
+
+    let disabled = disabled_store.lock().unwrap();
+    let enabled = enabled_store.lock().unwrap();
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=the instruction_file_put_enabled config flag toggles whether PutObject writes a sidecar: disabled → none, enabled → present.
+    //# Instruction File writes MUST be optionally configured during client creation or on each PutObject request.
+    assert!(!disabled.contains_key("obj.instruction"));
+    assert!(enabled.contains_key("obj.instruction"));
+}
+
+#[tokio::test]
+async fn custom_instruction_file_suffix_only_on_reencrypt_and_getobject() {
+    let store = new_store();
+    let rsa_key = rsa_pkcs8_key();
+    let plaintext = b"custom suffix payload";
+    let ctx = BTreeMap::new();
+
+    // An ordinary write (instruction-file enabled) always lands at the default
+    // ".instruction" suffix; PutObject exposes no custom-suffix parameter.
+    let source = build_client(&store, aes_committing_config(true));
+    source
+        .put_object("bucket", "obj", plaintext, &ctx)
+        .await
+        .unwrap();
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=PutObject has no suffix parameter, so the ordinary write lands at the default "obj.instruction"; a custom suffix is supplied only to re_encrypt (which writes "obj.v2" below).
+    //# The S3EC MUST NOT support providing a custom Instruction File suffix on ordinary writes; custom suffixes MUST only be used during re-encryption.
+    assert!(store.lock().unwrap().contains_key("obj.instruction"));
+
+    // Re-encryption accepts a custom suffix; the rotated instruction file is
+    // written at "obj.v2".
+    source
+        .re_encrypt("bucket", "obj", None, Some(rsa_key.clone()), Some("v2"), false)
+        .await
+        .unwrap();
+    assert!(store.lock().unwrap().contains_key("obj.v2"));
+
+    // GetObject can be pointed at the custom-suffix instruction file. The
+    // RSA-only client can decrypt only via the "obj.v2" sidecar (the default
+    // "obj.instruction" still holds the AES-wrapped key it cannot unwrap).
+    let rotated_cfg = S3EncryptionConfig {
+        rsa_wrapping_key: Some(rsa_key),
+        encryption_algorithm: Some(COMMITTING),
+        commitment_policy: Some(CommitmentPolicy::RequireEncryptRequireDecrypt),
+        instruction_file_put_enabled: true,
+        ..Default::default()
+    };
+    let rotated = build_client(&store, rotated_cfg);
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //= type=test
+    //= reason=passing the ".v2" suffix locates the re-encrypted "obj.v2" instruction file and decrypts with the RSA keyring; the default sidecar holds an AES key this client cannot unwrap.
+    //# The S3EC SHOULD support providing a custom Instruction File suffix on GetObject requests, regardless of whether or not re-encryption is supported.
+    let decrypted = rotated
+        .get_object("bucket", "obj", &ctx, Some(".v2"), None)
+        .await
+        .unwrap();
     assert_eq!(decrypted.plaintext.as_slice(), plaintext.as_slice());
 }

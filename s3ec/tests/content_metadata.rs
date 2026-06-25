@@ -547,3 +547,80 @@ fn v3_split_keeps_c_d_i_in_object_metadata_only() {
 fn default_instruction_file_suffix_is_dot_instruction() {
     assert_eq!(metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX, ".instruction");
 }
+
+// The client neither applies nor decodes the S3 server's "double encoding":
+// a stored material-description / encryption-context JSON value is returned
+// verbatim. A value containing a literal "%41" (which a double-decoding pass
+// would rewrite to "A") must survive untouched.
+#[test]
+fn stored_context_is_returned_untouched() {
+    let md = ObjectMetadata {
+        materials_description: Some(r#"{"k":"v%41"}"#.to_string()),
+        ..Default::default()
+    };
+    let parsed = md.v2_stored_context().unwrap();
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#object-metadata
+    //= type=test
+    //= reason=the "%41" value is returned as-is, not decoded to "A", proving no double-decoding transform is applied.
+    //# If the S3EC does not support decoding the S3 Server's "double encoding" then it MUST return the content metadata untouched.
+    assert_eq!(parsed.get("k").map(String::as_str), Some("v%41"));
+}
+
+// split_for_instruction_file routes each V3 mapkey to its spec-mandated
+// location: the content-related keys (x-amz-c/d/i) stay in the Object
+// Metadata, while the data-key-related keys (x-amz-3/w/m/t) go to the
+// Instruction File. The fixture populates x-amz-m and x-amz-t so the
+// "when present" keys are exercised.
+#[test]
+fn v3_split_routes_each_mapkey_to_its_location() {
+    let md = ObjectMetadata {
+        content_cipher_v3: Some("115".to_string()),
+        encrypted_data_key_v3: Some("ZWRrYnl0ZXM=".to_string()),
+        wrap_algorithm_v3: Some("02".to_string()),
+        key_commitment_v3: Some("Y29tbWl0".to_string()),
+        message_id_v3: Some("bXNnaWQ=".to_string()),
+        mat_desc_v3: Some(r#"{"who":"alice"}"#.to_string()),
+        encryption_context_v3: Some(r#"{"aws:x-amz-cek-alg":"115"}"#.to_string()),
+        ..Default::default()
+    };
+    let (object_map, instruction_map) = md.split_for_instruction_file();
+
+    // Content-related mapkeys: stored in the Object Metadata.
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-c" and its value in the Object Metadata when writing with an Instruction File.
+    assert!(object_map.contains_key(CONTENT_CIPHER_V3));
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-d" and its value in the Object Metadata when writing with an Instruction File.
+    assert!(object_map.contains_key(KEY_COMMITMENT_V3));
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-i" and its value in the Object Metadata when writing with an Instruction File.
+    assert!(object_map.contains_key(MESSAGE_ID_V3));
+
+    // Data-key-related mapkeys: stored in the Instruction File.
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-3" and its value in the Instruction File.
+    assert!(instruction_map.contains_key(ENCRYPTED_DATA_KEY_V3));
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-w" and its value in the Instruction File.
+    assert!(instruction_map.contains_key(WRAP_ALGORITHM_V3));
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-m" and its value (when present in the content metadata) in the Instruction File.
+    assert!(instruction_map.contains_key(MAT_DESC_V3));
+
+    //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+    //= type=test
+    //# - The V3 message format MUST store the mapkey "x-amz-t" and its value (when present in the content metadata) in the Instruction File.
+    assert!(instruction_map.contains_key(ENCRYPTION_CONTEXT_V3));
+}

@@ -331,6 +331,8 @@ impl S3EncryptionClient {
         body: Vec<u8>,
         object_metadata: &ObjectMetadata,
     ) -> Result<()> {
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //# The S3EC MUST support writing some or all (depending on format) content metadata to an Instruction File.
         let (object_map, instruction_map) = object_metadata.split_for_instruction_file();
 
         // The instruction file is written first so that, once the encrypted
@@ -1590,6 +1592,10 @@ mod tests {
 
         // V1/V2: nothing in object metadata, everything in the instruction file.
         assert!(object_map.is_empty());
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#v1-v2-instruction-files
+        //= type=test
+        //= reason=object_map is empty while the instruction file holds the V2 envelope (edk + iv), so all content metadata is stored in the instruction file.
+        //# In the V1/V2 message format, all of the content metadata MUST be stored in the Instruction File.
         assert!(instruction_map.contains_key(crate::metadata::ENCRYPTED_DATA_KEY_V2));
         assert!(instruction_map.contains_key(crate::metadata::CONTENT_IV));
 
@@ -1669,31 +1675,53 @@ mod tests {
     }
 
     /// An instruction file that carries a V3 object-metadata-exclusive mapkey
-    /// (here `x-amz-d`, the key commitment) is rejected as tampered. This is the
+    /// (`x-amz-c`, `x-amz-d`, or `x-amz-i`) is rejected as tampered. This is the
     /// `bad-both-meta-and-instruction` / `bad-only-instruction` decrypt case:
-    /// the commitment MUST NOT be sourced from the instruction file.
+    /// these keys MUST NOT be sourced from the instruction file. Each key is
+    /// relocated individually so every MUST-NOT requirement is exercised.
     #[test]
     fn instruction_file_with_relocated_commitment_is_rejected() {
-        use crate::metadata::{KEY_COMMITMENT_V3, MESSAGE_ID_V3};
+        use crate::metadata::{CONTENT_CIPHER_V3, KEY_COMMITMENT_V3, MESSAGE_ID_V3};
         let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
         let context = KmsKeyring::build_encryption_context(&caller_ctx(), suite);
         let (_body, md) =
             build_encrypted_object(suite, &DATA_KEY, EDK, &context, b"payload").unwrap();
-        let (object_map, mut instruction_map) = md.split_for_instruction_file();
+        let (object_map, base_instruction) = md.split_for_instruction_file();
 
-        // Relocate the commitment and message id into the instruction file, as
-        // the cross-language tamper fixture does.
-        instruction_map.insert(
-            KEY_COMMITMENT_V3.to_string(),
-            object_map.get(KEY_COMMITMENT_V3).unwrap().clone(),
-        );
-        instruction_map.insert(
-            MESSAGE_ID_V3.to_string(),
-            object_map.get(MESSAGE_ID_V3).unwrap().clone(),
-        );
+        // Relocate a single object-metadata-exclusive mapkey into the
+        // instruction file, as the cross-language tamper fixture does.
+        let relocate = |k: &str| {
+            let mut tampered = base_instruction.clone();
+            tampered.insert(k.to_string(), object_map.get(k).unwrap().clone());
+            validate_instruction_file_metadata(&tampered)
+        };
 
-        let err = validate_instruction_file_metadata(&instruction_map).unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Format(_)));
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+        //= type=test
+        //= reason=relocating x-amz-c into the instruction file is rejected, proving the content cipher is never sourced from the instruction file.
+        //# - The V3 message format MUST NOT store the mapkey "x-amz-c" and its value in the Instruction File.
+        assert!(matches!(
+            relocate(CONTENT_CIPHER_V3).unwrap_err(),
+            S3EncryptionError::Format(_)
+        ));
+
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+        //= type=test
+        //= reason=relocating x-amz-d into the instruction file is rejected, proving the key commitment is never sourced from the instruction file.
+        //# - The V3 message format MUST NOT store the mapkey "x-amz-d" and its value in the Instruction File.
+        assert!(matches!(
+            relocate(KEY_COMMITMENT_V3).unwrap_err(),
+            S3EncryptionError::Format(_)
+        ));
+
+        //= ../spec/s3-encryption/data-format/metadata-strategy.md#v3-instruction-files
+        //= type=test
+        //= reason=relocating x-amz-i into the instruction file is rejected, proving the message id is never sourced from the instruction file.
+        //# - The V3 message format MUST NOT store the mapkey "x-amz-i" and its value in the Instruction File.
+        assert!(matches!(
+            relocate(MESSAGE_ID_V3).unwrap_err(),
+            S3EncryptionError::Format(_)
+        ));
     }
 
     /// An HTTP `Range` header parses into an inclusive `(start, end)` plaintext
