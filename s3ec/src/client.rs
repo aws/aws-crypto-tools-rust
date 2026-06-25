@@ -444,6 +444,12 @@ impl S3EncryptionClient {
             })
             .unwrap_or_default();
 
+        // A ranged response to a request that asked for no range signals a
+        // multipart download, which is unsupported. Capture it before the body
+        // is consumed below.
+        let response_has_range = response.content_range().is_some();
+        enforce_response_range_matches_request(response_has_range, range.is_some())?;
+
         let ciphertext = response
             .body
             .collect()
@@ -493,6 +499,8 @@ impl S3EncryptionClient {
 
         // A ranged GetObject requests a `[start, end]` subset of the object's
         // plaintext. An invalid/absent range header decrypts the whole object.
+        //= ../spec/s3-encryption/decryption.md#ranged-gets
+        //# The S3EC MAY support the "range" parameter on GetObject which specifies a subset of bytes to download and decrypt.
         let parsed_range = range.and_then(parse_byte_range);
 
         //= ../spec/s3-encryption/client.md#required-api-operations
@@ -564,27 +572,11 @@ impl S3EncryptionClient {
         // Reaching the V2 decrypt path means the object's content suite does
         // NOT support key commitment, so the decrypt decision depends solely on
         // the configured commitment policy.
+        //= ../spec/s3-encryption/decryption.md#key-commitment
+        //# The S3EC MUST validate the algorithm suite used for decryption against the key commitment policy before attempting to decrypt the content ciphertext.
         enforce_v2_decrypt_commitment_policy(self.config.effective_commitment_policy())?;
 
-        //= ../spec/s3-encryption/decryption.md#legacy-decryption
-        //# The S3EC MUST NOT decrypt objects encrypted using legacy unauthenticated algorithm suites unless specifically configured to do so.
-        //
-        //= ../spec/s3-encryption/decryption.md#cbc-decryption
-        //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is NOT enabled,
-        //# the S3EC MUST throw an error which details that client was not configured to decrypt objects with ALG_AES_256_CBC_IV16_NO_KDF.
-        //
-        //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
-        //= reason=when legacy unauthenticated modes are enabled this gate does not fire, so a legacy AES-CBC object decrypts on the shared V2 path alongside the fully-supported AES-GCM suite
-        //# When enabled, the S3EC MUST be able to decrypt objects encrypted with all content encryption algorithms (both legacy and fully supported).
-        if content_alg.is_legacy() && !self.config.enable_legacy_unauthenticated_modes {
-            //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
-            //# When disabled, the S3EC MUST NOT decrypt objects encrypted using legacy content encryption algorithms; it MUST throw an exception when attempting to decrypt an object encrypted with a legacy content encryption algorithm.
-            return Err(S3EncryptionError::Crypto(
-                "client was not configured to decrypt objects with \
-                 ALG_AES_256_CBC_IV16_NO_KDF; enable legacy unauthenticated modes to allow it"
-                    .to_string(),
-            ));
-        }
+        enforce_legacy_decryption_gate(content_alg, self.config.enable_legacy_unauthenticated_modes)?;
 
         let encrypted_data_key = md.v2_encrypted_data_key()?;
         let stored_context = md.v2_stored_context()?;
@@ -1268,6 +1260,60 @@ fn open_v3_content_range(
     )
 }
 
+/// Enforce the legacy-unauthenticated-decryption gate for a V2-format object.
+///
+/// The V2 metadata format is shared by the fully-supported AES-GCM suite and
+/// the legacy, unauthenticated AES-CBC suite. A legacy object may only be
+/// decrypted when the client is explicitly configured to enable legacy
+/// unauthenticated modes.
+fn enforce_legacy_decryption_gate(
+    content_alg: crate::config::EncryptionAlgorithm,
+    enable_legacy_unauthenticated_modes: bool,
+) -> Result<()> {
+    //= ../spec/s3-encryption/decryption.md#legacy-decryption
+    //# The S3EC MUST NOT decrypt objects encrypted using legacy unauthenticated algorithm suites unless specifically configured to do so.
+    //
+    //= ../spec/s3-encryption/decryption.md#cbc-decryption
+    //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is NOT enabled,
+    //# the S3EC MUST throw an error which details that client was not configured to decrypt objects with ALG_AES_256_CBC_IV16_NO_KDF.
+    //
+    //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+    //= reason=when legacy unauthenticated modes are enabled this gate does not fire, so a legacy AES-CBC object decrypts on the shared V2 path alongside the fully-supported AES-GCM suite
+    //# When enabled, the S3EC MUST be able to decrypt objects encrypted with all content encryption algorithms (both legacy and fully supported).
+    if content_alg.is_legacy() && !enable_legacy_unauthenticated_modes {
+        //= ../spec/s3-encryption/decryption.md#legacy-decryption
+        //# If the S3EC is not configured to enable legacy unauthenticated content decryption, the client MUST throw an exception when attempting to decrypt an object encrypted with a legacy unauthenticated algorithm suite.
+        //
+        //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+        //# When disabled, the S3EC MUST NOT decrypt objects encrypted using legacy content encryption algorithms; it MUST throw an exception when attempting to decrypt an object encrypted with a legacy content encryption algorithm.
+        return Err(S3EncryptionError::Crypto(
+            "client was not configured to decrypt objects with \
+             ALG_AES_256_CBC_IV16_NO_KDF; enable legacy unauthenticated modes to allow it"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Reject a GetObject response that carries a range when the request did not
+/// ask for one. A ranged response to an un-ranged request indicates a
+/// "multipart download", which the S3EC does not currently support.
+fn enforce_response_range_matches_request(
+    response_has_range: bool,
+    request_has_range: bool,
+) -> Result<()> {
+    //= ../spec/s3-encryption/decryption.md#ranged-gets
+    //# If the GetObject response contains a range, but the GetObject request does not contain a range, the S3EC MUST throw an exception.
+    if response_has_range && !request_has_range {
+        return Err(S3EncryptionError::Format(
+            "GetObject response contains a range but the request did not request one; \
+             multipart downloads are not supported"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Enforce the configured key commitment policy for a V2 (non-committing)
 /// object's decrypt path.
 ///
@@ -1278,6 +1324,9 @@ fn enforce_v2_decrypt_commitment_policy(policy: CommitmentPolicy) -> Result<()> 
     match policy {
         //= ../spec/s3-encryption/key-commitment.md#commitment-policy
         //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
+        //
+        //= ../spec/s3-encryption/decryption.md#key-commitment
+        //# If the commitment policy requires decryption using a committing algorithm suite, and the algorithm suite associated with the object does not support key commitment, then the S3EC MUST throw an exception.
         CommitmentPolicy::RequireEncryptRequireDecrypt => Err(S3EncryptionError::Crypto(
             "cannot decrypt a non-key-committing object when the commitment policy is \
              REQUIRE_ENCRYPT_REQUIRE_DECRYPT"
@@ -1756,6 +1805,15 @@ mod tests {
         for (start, end) in [(0usize, 5usize), (5, 10), (17, 33), (10, 100_000)] {
             let got = open_v2_content_range(&DATA_KEY, &parsed, &body, start, end).unwrap();
             let clamped_end = end.min(plaintext.len() - 1);
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
+            //= type=test
+            //= reason=a ranged GetObject of a V2 object returns exactly the requested inclusive plaintext slice
+            //# The S3EC MAY support the "range" parameter on GetObject which specifies a subset of bytes to download and decrypt.
+            //
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
+            //= type=test
+            //= reason=the V2 object is AES-GCM-IV12; its range decrypts to the correct plaintext only because the CTR_IV16 suite is used
+            //# If the object was encrypted with ALG_AES_256_GCM_IV12_TAG16_NO_KDF, then ALG_AES_256_CTR_IV16_TAG16_NO_KDF MUST be used to decrypt the range of the object.
             assert_eq!(got, plaintext[start..=clamped_end], "range [{start}, {end}]");
         }
     }
@@ -1914,6 +1972,73 @@ mod tests {
         //= ../spec/s3-encryption/key-commitment.md#commitment-policy
         //= type=test
         //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
+        //
+        //= ../spec/s3-encryption/decryption.md#key-commitment
+        //= type=test
+        //= reason=the V2 decrypt path runs this policy gate before any content decryption; under require-require it rejects the non-committing suite
+        //# The S3EC MUST validate the algorithm suite used for decryption against the key commitment policy before attempting to decrypt the content ciphertext.
+        //
+        //= ../spec/s3-encryption/decryption.md#key-commitment
+        //= type=test
+        //# If the commitment policy requires decryption using a committing algorithm suite, and the algorithm suite associated with the object does not support key commitment, then the S3EC MUST throw an exception.
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// A legacy (AES-CBC) object must not be decrypted unless the client is
+    /// explicitly configured for legacy unauthenticated modes; the fully
+    /// supported AES-GCM suite decrypts regardless.
+    #[test]
+    fn legacy_cbc_rejected_when_legacy_disabled() {
+        use EncryptionAlgorithm::{AlgAes256CbcIv16NoKdf, AlgAes256GcmIv12Tag16NoKdf};
+
+        // A fully-supported AES-GCM object is not gated by the legacy flag.
+        assert!(enforce_legacy_decryption_gate(AlgAes256GcmIv12Tag16NoKdf, false).is_ok());
+
+        //= ../spec/s3-encryption/decryption.md#legacy-decryption
+        //= type=test
+        //# The S3EC MUST NOT decrypt objects encrypted using legacy unauthenticated algorithm suites unless specifically configured to do so.
+        //
+        //= ../spec/s3-encryption/decryption.md#legacy-decryption
+        //= type=test
+        //# If the S3EC is not configured to enable legacy unauthenticated content decryption, the client MUST throw an exception when attempting to decrypt an object encrypted with a legacy unauthenticated algorithm suite.
+        let err = enforce_legacy_decryption_gate(AlgAes256CbcIv16NoKdf, false).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=test
+        //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is NOT enabled,
+        //# the S3EC MUST throw an error which details that client was not configured to decrypt objects with ALG_AES_256_CBC_IV16_NO_KDF.
+        let S3EncryptionError::Crypto(msg) = &err else {
+            panic!("expected Crypto error, got {err:?}")
+        };
+        assert!(
+            msg.contains("ALG_AES_256_CBC_IV16_NO_KDF"),
+            "error must name the CBC suite; got: {msg}"
+        );
+    }
+
+    /// When legacy unauthenticated modes are enabled, a legacy AES-CBC object
+    /// passes the gate. Regression coverage for the enabled path.
+    #[test]
+    fn legacy_cbc_allowed_when_legacy_enabled() {
+        assert!(
+            enforce_legacy_decryption_gate(EncryptionAlgorithm::AlgAes256CbcIv16NoKdf, true).is_ok()
+        );
+    }
+
+    /// A ranged GetObject response to a request that asked for no range is a
+    /// multipart download and must be rejected; every other combination
+    /// proceeds.
+    #[test]
+    fn response_range_without_request_range_is_rejected() {
+        // An un-ranged response, and a ranged response to a ranged request, are fine.
+        assert!(enforce_response_range_matches_request(false, false).is_ok());
+        assert!(enforce_response_range_matches_request(true, true).is_ok());
+
+        //= ../spec/s3-encryption/decryption.md#ranged-gets
+        //= type=test
+        //# If the GetObject response contains a range, but the GetObject request does not contain a range, the S3EC MUST throw an exception.
+        let err = enforce_response_range_matches_request(true, false).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Format(_)));
     }
 }

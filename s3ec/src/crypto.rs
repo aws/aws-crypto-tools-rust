@@ -342,6 +342,12 @@ pub fn decrypt_content_cbc(data_key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Res
         //= ../spec/s3-encryption/decryption.md#cbc-decryption
         //# If the cipher object cannot be created as described above,
         //# Decryption MUST fail.
+        //
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=exception
+        //= reason=aws-lc-rs supports AES-CBC with PKCS7 padding, so the cipher-initialization failure this SHOULD describes (the crypto provider lacking CBC/PKCS5Padding support) cannot arise
+        //# The error SHOULD detail why the cipher could not be initialized
+        //# (such as CBC or PKCS5Padding is not supported by the underlying crypto provider).
         .map_err(|_| crypto_err("failed to initialize AES/CBC/PKCS5Padding cipher"))?;
 
     // The CBC IV is a fixed 16 bytes; a different length is a malformed object.
@@ -483,6 +489,8 @@ pub fn decrypt_content_committing(
     ciphertext_with_tag: &[u8],
 ) -> Result<Vec<u8>> {
     //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= type=implication
+    //= reason=the derived encryption key is never applied: aes_gcm_open below is unreachable unless verify_slices_are_equal succeeds via `?`, so an unverified key cannot be used to decrypt
     //# When using an algorithm suite which supports key commitment, the client MUST verify the key commitment values match before deriving the [derived encryption key](./key-derivation.md#hkdf-operation).
     let (derived_encryption_key, derived_commitment) =
         derive_keys(suite, plaintext_data_key, message_id)?;
@@ -491,6 +499,8 @@ pub fn decrypt_content_committing(
     //# When using an algorithm suite which supports key commitment, the client MUST verify that the [derived key commitment](./key-derivation.md#hkdf-operation) contains the same bytes as the stored key commitment retrieved from the stored object's metadata.
     //
     //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= type=implication
+    //= reason=verification uses aws-lc-rs constant_time::verify_slices_are_equal, which compares in constant time by construction
     //# When using an algorithm suite which supports key commitment, the verification of the derived key commitment value MUST be done in constant time.
     //
     //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
@@ -632,8 +642,6 @@ pub fn decrypt_range_committing(
     let (derived_encryption_key, derived_commitment) =
         derive_keys(suite, plaintext_data_key, message_id)?;
 
-    //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
-    //# When using an algorithm suite which supports key commitment, the client MUST throw an exception when the derived key commitment value and stored key commitment value do not match.
     constant_time::verify_slices_are_equal(stored_commitment, &derived_commitment)
         .map_err(|_| crypto_err("key commitment verification failed"))?;
 
@@ -671,6 +679,11 @@ mod tests {
         assert_eq!(iv.len(), 16);
         assert_eq!(ct.len() % 16, 0);
 
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=test
+        //= reason=decrypting a CBC/PKCS7 fixture recovers the exact plaintext, proving an AES-CBC cipher with PKCS7 padding for a 16-byte block was created
+        //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is enabled,
+        //# then the S3EC MUST create a cipher with AES in CBC Mode with PKCS5Padding or PKCS7Padding compatible padding for a 16-byte block cipher (example: for the Java JCE, this is "AES/CBC/PKCS5Padding").
         let recovered = decrypt_content_cbc(&DATA_KEY, &iv, &ct).unwrap();
         assert_eq!(recovered, plaintext);
     }
@@ -697,6 +710,11 @@ mod tests {
     fn cbc_rejects_malformed_iv_length() {
         let (_iv, ct) = cbc_encrypt(&DATA_KEY, b"payload");
         // A 12-byte (GCM-sized) IV is not a valid CBC IV.
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=test
+        //= reason=a malformed 12-byte IV cannot initialize the 16-byte-block CBC cipher context, so decryption fails
+        //# If the cipher object cannot be created as described above,
+        //# Decryption MUST fail.
         let err = decrypt_content_cbc(&DATA_KEY, &[0u8; 12], &ct).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
@@ -786,6 +804,14 @@ mod tests {
         commit_key[0] ^= 0xFF;
         let err = decrypt_content_committing(COMMITTING, &DATA_KEY, &message_id, &commit_key, &ct)
             .unwrap_err();
+        //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+        //= type=test
+        //= reason=mutating the stored commitment makes it differ from the derived commitment, and decrypt is rejected, proving the derived value is compared against the stored bytes
+        //# When using an algorithm suite which supports key commitment, the client MUST verify that the [derived key commitment](./key-derivation.md#hkdf-operation) contains the same bytes as the stored key commitment retrieved from the stored object's metadata.
+        //
+        //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+        //= type=test
+        //# When using an algorithm suite which supports key commitment, the client MUST throw an exception when the derived key commitment value and stored key commitment value do not match.
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 
@@ -923,6 +949,10 @@ mod tests {
         let cases = [(0usize, 5usize), (5, 10), (10, 100), (15, 17), (16, 47), (0, plaintext.len() - 1), (200, 200)];
         for (start, end) in cases {
             let ranged = decrypt_range_ctr(&DATA_KEY, &iv, content, start, end).unwrap();
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
+            //= type=test
+            //= reason=mid-block start ranges (e.g. [15,17] and [16,47]) decrypt to the exact plaintext slice, proving the range was widened to the enclosing cipher-block boundaries
+            //# If the S3EC supports Ranged Gets, the S3EC MUST adjust the customer-provided range to include the beginning and end of the cipher blocks for the given range.
             assert_eq!(
                 ranged,
                 &plaintext[start..=end],
@@ -956,6 +986,10 @@ mod tests {
                 COMMITTING, &DATA_KEY, &message_id, &commit_key, content, start, end,
             )
             .unwrap();
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
+            //= type=test
+            //= reason=a committing GCM-HKDF object's range decrypts to the exact plaintext slice via the committing CTR suite (decrypt_range_committing)
+            //# If the object was encrypted with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, then ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY MUST be used to decrypt the range of the object.
             assert_eq!(ranged, &plaintext[start..=end]);
         }
     }
