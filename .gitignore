@@ -10,3 +10,7 @@
 
 # macOS
 **/.DS_Store
+/duvet-client/
+/duvet-crypto/
+/duvet-keyring/
+/duvet-metadata/
