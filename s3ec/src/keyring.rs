@@ -36,6 +36,13 @@ pub const RESERVED_CEK_ALG_KEY: &str = "aws:x-amz-cek-alg";
 /// Reserved encryption-context key used by the legacy KmsV1 mode.
 pub const RESERVED_KMS_CMK_ID_KEY: &str = "kms_cmk_id";
 
+//= ../spec/s3-encryption/materials/keyrings.md#interface
+//= type=implication
+//# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
+//
+//= ../spec/s3-encryption/materials/keyrings.md#supported-keyrings
+//= type=implication
+//# Note: A user MAY create their own custom keyring(s).
 /// A KMS-backed keyring that wraps and unwraps content data keys.
 #[derive(Clone)]
 pub struct KmsKeyring {
@@ -54,6 +61,8 @@ impl KmsKeyring {
         kms_key_id: String,
         enable_legacy_wrapping_algorithms: bool,
     ) -> Self {
+        //= ../spec/s3-encryption/materials/keyrings.md#interface
+        //# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
         Self {
             kms,
             kms_key_id,
@@ -108,6 +117,18 @@ impl KmsKeyring {
         Ok(())
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnEncrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST accept an instance of EncryptionMaterials as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST return an instance of EncryptionMaterials as output.
+    //
     //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
     //# The KmsKeyring MUST support encryption using Kms+Context mode.
     /// Wrap a freshly generated data key via `KMS GenerateDataKey`.
@@ -143,6 +164,17 @@ impl KmsKeyring {
         Ok((plaintext, encrypted))
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnDecrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST accept an instance of DecryptionMaterials and a collection of EncryptedDataKey instances as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST return an instance of DecryptionMaterials as output.
     /// Unwrap an encrypted data key via `KMS Decrypt`, dispatching on the
     /// wrapping algorithm recorded in the object metadata.
     ///
@@ -218,6 +250,13 @@ impl KmsKeyring {
     }
 }
 
+//= ../spec/s3-encryption/materials/keyrings.md#interface
+//= type=implication
+//# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
+//
+//= ../spec/s3-encryption/materials/keyrings.md#supported-keyrings
+//= type=implication
+//# Note: A user MAY create their own custom keyring(s).
 /// A raw AES keyring that wraps and unwraps content data keys with a
 /// caller-supplied AES-256 key using AES-GCM (the non-legacy "AES/GCM"
 /// wrapping algorithm).
@@ -248,6 +287,18 @@ impl AesKeyring {
         suite.content_cipher_value()
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnEncrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST accept an instance of EncryptionMaterials as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST return an instance of EncryptionMaterials as output.
+    //
     //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
     /// Generate a fresh content data key and wrap it with the configured AES
@@ -276,6 +327,18 @@ impl AesKeyring {
         crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), plaintext_data_key)
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnDecrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST accept an instance of DecryptionMaterials and a collection of EncryptedDataKey instances as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST return an instance of DecryptionMaterials as output.
+    //
     //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
     /// Unwrap a wrapped data key with the configured AES key (`DecryptDataKey`).
@@ -286,6 +349,13 @@ impl AesKeyring {
     }
 }
 
+//= ../spec/s3-encryption/materials/keyrings.md#interface
+//= type=implication
+//# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
+//
+//= ../spec/s3-encryption/materials/keyrings.md#supported-keyrings
+//= type=implication
+//# Note: A user MAY create their own custom keyring(s).
 /// A raw RSA keyring that wraps and unwraps content data keys with a
 /// caller-supplied RSA key pair using RSA-OAEP-SHA1 (the non-legacy
 /// "RSA-OAEP-SHA1" wrapping algorithm).
@@ -312,6 +382,18 @@ impl RsaKeyring {
         Self { private_key_pkcs8 }
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnEncrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST accept an instance of EncryptionMaterials as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST return an instance of EncryptionMaterials as output.
+    //
     //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
     /// Generate a fresh content data key and wrap it under the configured RSA
@@ -345,6 +427,18 @@ impl RsaKeyring {
         )
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnDecrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST accept an instance of DecryptionMaterials and a collection of EncryptedDataKey instances as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST return an instance of DecryptionMaterials as output.
+    //
     //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
     /// Unwrap a wrapped data key with the configured RSA private key

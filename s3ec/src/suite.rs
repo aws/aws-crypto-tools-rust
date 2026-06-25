@@ -75,7 +75,7 @@ impl EncryptionAlgorithm {
         }
     }
 
-    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //= spec/s3-encryption/key-derivation.md#hkdf-operation
     //# This means that the IV for ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, which is 12 bytes long, would be `[0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01 ]`.
     /// The fixed all-`0x01` IV used for content encryption by the committing
     /// AES-GCM suite (in place of a generated IV).

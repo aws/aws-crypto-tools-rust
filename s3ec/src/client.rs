@@ -52,7 +52,7 @@ pub struct S3EncryptionClient {
 }
 
 impl S3EncryptionClient {
-    //= ../spec/s3-encryption/client.md#cryptographic-materials
+    //= spec/s3-encryption/client.md#cryptographic-materials
     //# The S3EC MUST accept either one CMM or one Keyring instance upon initialization.
     /// Construct a client from a validated config and the wrapped SDK clients.
     pub fn new(
@@ -159,7 +159,7 @@ impl S3EncryptionClient {
     ) -> Result<()> {
         let keyring = self.require_keyring()?;
 
-        //= ../spec/s3-encryption/encryption.md#content-encryption
+        //= spec/s3-encryption/encryption.md#content-encryption
         //# The S3EC MUST use the encryption algorithm configured during [client](./client.md) initialization.
         let suite = self.config.effective_encryption_algorithm();
 
