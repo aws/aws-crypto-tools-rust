@@ -70,6 +70,52 @@ pub fn random_bytes(len: usize) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// The maximum plaintext content length (in bytes) for the AES-GCM content
+/// suites. AES-GCM with a 32-bit block counter can authenticate at most
+/// `2^36 - 32` bytes under a single key/IV; `2^36` is the conservative limit
+/// shared across the S3EC content suites.
+const MAX_GCM_CONTENT_LENGTH: usize = 1 << 36;
+
+/// Validate that a plaintext content length does not exceed the algorithm
+/// suite's cipher maximum content length.
+///
+/// Taking the length as a `usize` (rather than the plaintext slice) keeps this
+/// check exercisable without allocating a multi-gigabyte buffer.
+pub fn validate_content_length(len: usize) -> Result<()> {
+    //= ../spec/s3-encryption/encryption.md#content-encryption
+    //# The client MUST validate that the length of the plaintext bytes does not exceed the algorithm suite's cipher's maximum content length in bytes.
+    if len > MAX_GCM_CONTENT_LENGTH {
+        return Err(crypto_err("plaintext exceeds maximum content length"));
+    }
+    Ok(())
+}
+
+/// Reject an IV or Message ID that is entirely zero bytes.
+///
+/// An all-zero IV/Message ID is technically valid but overwhelmingly indicates
+/// the value was not generated correctly, so the client refuses it.
+pub fn reject_if_iv_or_message_id_is_zeros(bytes: &[u8]) -> Result<()> {
+    //= ../spec/s3-encryption/encryption.md#cipher-initialization
+    //# The client SHOULD validate that the generated IV or Message ID is not zeros.
+    if bytes.iter().all(|&b| b == 0) {
+        return Err(crypto_err("generated IV or message ID is all zeros"));
+    }
+    Ok(())
+}
+
+/// Generate a fresh IV or Message ID of `len` bytes and reject an all-zero
+/// result. Callers pass the IV / Message ID length defined by the algorithm
+/// suite (`suite.iv_length()` / `suite.message_id_length()`).
+fn generate_iv_or_message_id(len: usize) -> Result<Vec<u8>> {
+    //= ../spec/s3-encryption/encryption.md#content-encryption
+    //= reason=`len` is the IV or Message ID length defined by the algorithm suite, supplied by the encrypt functions
+    //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
+    let mut buf = vec![0u8; len];
+    rand::fill(&mut buf).map_err(|_| crypto_err("failed to generate IV or message ID"))?;
+    reject_if_iv_or_message_id_is_zeros(&buf)?;
+    Ok(buf)
+}
+
 // ---------------------------------------------------------------------------
 // Raw AES-GCM data-key wrapping (RawAes keyring, "AES/GCM" wrapping algorithm).
 //
@@ -236,22 +282,9 @@ pub fn unwrap_data_key_rsa_oaep(
 pub fn encrypt_content_gcm(data_key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
     let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
 
-    //= ../spec/s3-encryption/encryption.md#content-encryption
-    //# The client MUST validate that the length of the plaintext bytes does not exceed the algorithm suite's cipher's maximum content length in bytes.
-    if plaintext.len() > (1u64 << 36) as usize {
-        return Err(crypto_err("plaintext exceeds maximum content length"));
-    }
+    validate_content_length(plaintext.len())?;
 
-    //= ../spec/s3-encryption/encryption.md#content-encryption
-    //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
-    let mut iv = vec![0u8; suite.iv_length()];
-    rand::fill(&mut iv).map_err(|_| crypto_err("failed to generate IV"))?;
-
-    //= ../spec/s3-encryption/encryption.md#cipher-initialization
-    //# The client SHOULD validate that the generated IV or Message ID is not zeros.
-    if iv.iter().all(|&b| b == 0) {
-        return Err(crypto_err("generated IV is all zeros"));
-    }
+    let iv = generate_iv_or_message_id(suite.iv_length())?;
 
     //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST initialize the cipher, or call an AES-GCM encryption API, with the plaintext data key, the generated IV, and the tag length defined in the Algorithm Suite when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
@@ -259,8 +292,9 @@ pub fn encrypt_content_gcm(data_key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>
     //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
     let ciphertext = aes_gcm_seal(data_key, &iv, &[], plaintext)?;
-    
+
     //= ../spec/s3-encryption/encryption.md#content-encryption
+    //= reason=the returned IV is persisted as the x-amz-iv content metadata field by the caller
     //# The generated IV or Message ID MUST be set or returned from the encryption process such that it can be included in the content metadata.
     Ok((iv, ciphertext))
 }
@@ -271,8 +305,8 @@ pub fn decrypt_content_gcm(
     iv: &[u8],
     ciphertext_with_tag: &[u8],
 ) -> Result<Vec<u8>> {
-    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
-    //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
+    // No AAD is provided for the non-committing GCM suite, mirroring the
+    // encrypt path (see `encrypt_content_gcm`).
     aes_gcm_open(data_key, iv, &[], ciphertext_with_tag)
 }
 
@@ -382,22 +416,9 @@ pub fn encrypt_content_committing(
     plaintext_data_key: &[u8],
     plaintext: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    //= ../spec/s3-encryption/encryption.md#content-encryption
-    //# The client MUST validate that the length of the plaintext bytes does not exceed the algorithm suite's cipher's maximum content length in bytes.
-    if plaintext.len() > (1u64 << 36) as usize {
-        return Err(crypto_err("plaintext exceeds maximum content length"));
-    }
+    validate_content_length(plaintext.len())?;
 
-    //= ../spec/s3-encryption/encryption.md#content-encryption
-    //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
-    let mut message_id = vec![0u8; suite.message_id_length()];
-    rand::fill(&mut message_id).map_err(|_| crypto_err("failed to generate message ID"))?;
-
-    //= ../spec/s3-encryption/encryption.md#cipher-initialization
-    //# The client SHOULD validate that the generated IV or Message ID is not zeros.
-    if message_id.iter().all(|&b| b == 0) {
-        return Err(crypto_err("generated message ID is all zeros"));
-    }
+    let message_id = generate_iv_or_message_id(suite.message_id_length())?;
 
     //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
     //# The client MUST use HKDF to derive the key commitment value and the derived encrypting key as described in [Key Derivation](key-derivation.md).
@@ -447,6 +468,37 @@ pub fn decrypt_content_committing(
     let iv = suite.committing_iv();
     let aad = suite.suite_id_bytes();
     aes_gcm_open(&derived_encryption_key, &iv, &aad, ciphertext_with_tag)
+}
+
+// ---------------------------------------------------------------------------
+// AES-CTR content encryption is unsupported.
+//
+// The CTR algorithm suites (ALG_AES_256_CTR_IV16_TAG16_NO_KDF and
+// ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY) exist only to decrypt *ranges* of an
+// object that was encrypted with the corresponding AES-GCM suite (see
+// `decrypt_range_ctr`). They are never used to encrypt, so any attempt to do
+// so fails unconditionally.
+// ---------------------------------------------------------------------------
+
+/// Attempting to encrypt content with `ALG_AES_256_CTR_IV16_TAG16_NO_KDF`
+/// always fails: AES-CTR is a decrypt-only (ranged-get) suite.
+pub fn encrypt_content_ctr(_data_key: &[u8], _plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-ctr-iv16-tag16-no-kdf
+    //# Attempts to encrypt using AES-CTR MUST fail.
+    Err(crypto_err("encryption using AES-CTR is not supported"))
+}
+
+/// Attempting to encrypt content with `ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY`
+/// always fails: key-committing AES-CTR is a decrypt-only (ranged-get) suite.
+pub fn encrypt_content_committing_ctr(
+    _data_key: &[u8],
+    _plaintext: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-ctr-hkdf-sha512-commit-key
+    //# Attempts to encrypt using key committing AES-CTR MUST fail.
+    Err(crypto_err(
+        "encryption using key committing AES-CTR is not supported",
+    ))
 }
 
 // ---------------------------------------------------------------------------
