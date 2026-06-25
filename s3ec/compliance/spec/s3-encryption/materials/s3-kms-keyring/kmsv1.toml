@@ -1,0 +1,58 @@
+target = "../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1"
+
+# KmsV1
+#
+# To attempt to decrypt a particular [encrypted data key](../structures.md#encrypted-data-key), the KmsKeyring MUST call [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html) with the configured AWS KMS client.
+# 
+# When calling [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html), the keyring must call with a request constructed as follows:
+# 
+# - `KeyId` MUST be the configured AWS KMS key identifier.
+# - `CiphertextBlob` MUST be the [encrypted data key ciphertext](../structures.md#ciphertext).
+# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [decryption materials](../structures.md#decryption-materials).
+# - A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
+# 
+# The KmsKeyring MUST immediately return the plaintext as a collection of bytes.
+# If the KmsKeyring fails to successfully decrypt the [encrypted data key](../structures.md#encrypted-data-key), then it MUST throw an exception.
+
+[[spec]]
+level = "MUST"
+quote = '''
+To attempt to decrypt a particular [encrypted data key](../structures.md#encrypted-data-key), the KmsKeyring MUST call [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html) with the configured AWS KMS client.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `KeyId` MUST be the configured AWS KMS key identifier.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `CiphertextBlob` MUST be the [encrypted data key ciphertext](../structures.md#ciphertext).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [decryption materials](../structures.md#decryption-materials).
+'''
+
+[[spec]]
+level = "SHOULD"
+quote = '''
+- A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST immediately return the plaintext as a collection of bytes.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the KmsKeyring fails to successfully decrypt the [encrypted data key](../structures.md#encrypted-data-key), then it MUST throw an exception.
+'''
+

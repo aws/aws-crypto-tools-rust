@@ -1,0 +1,12 @@
+target = "../spec/s3-encryption/materials/s3-kms-keyring.md#interface"
+
+# Interface
+#
+# The KmsKeyring MUST implement the [Keyring interface](keyrings.md#interface) and include the behavior described in the [S3 Keyring](s3-keyring.md).
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST implement the [Keyring interface](keyrings.md#interface) and include the behavior described in the [S3 Keyring](s3-keyring.md).
+'''
+

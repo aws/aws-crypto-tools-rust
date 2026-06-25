@@ -1,0 +1,46 @@
+target = "../spec/s3-encryption/data-format/content-metadata.md#us-ascii-preferred-string"
+
+# US-ASCII Preferred String
+#
+# Amazon S3 defines the character space for String values in object metadata:
+# 
+# > Amazon S3 allows arbitrary Unicode characters in your metadata values.
+# > To avoid issues related to the presentation of these metadata values, you should conform to using US-ASCII characters when using REST and UTF-8 when using SOAP or browser-based uploads through POST. When using non-US-ASCII characters in your metadata values, the provided Unicode string is examined for non-US-ASCII characters. Values of such headers are character decoded as per RFC 2047 before storing and encoded as per RFC 2047 to make them mail-safe before returning.
+# 
+# -- Source: [Amazon S3 User Guide on Using Metadata -- Quoted on 2026/01/26](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html#UserMetadata "Amazon S3 User Guide on Using Metadata -- Quoted on 2026/01/26")
+# 
+# As US-ASCII is common to both SOAP and REST,
+# and the S3 Encryption Client is agnostic on how metadata is viewed,
+# the S3 Encryption Client is preferential with respect to stings in the metadata.
+# Thus,
+# Content Metadata MapKeys SHOULD be restricted to US-ASCII.
+# 
+# An implementation MAY support UTF-8.
+# If an implementation does NOT support UTF-8,
+# then the implementation SHOULD throw an error if non-US-ASCII characters are encountered;
+# the error SHOULD detail that the implementation does not support non-US-ASCII characters but encountered non-US-ASCII characters.
+# 
+# [//]: # "See https://taskei.amazon.dev/tasks/P330807252 for details on UTF-8."
+# [//]: # " LocalWords:  mapkeys "
+
+[[spec]]
+level = "SHOULD"
+quote = '''
+Thus,
+Content Metadata MapKeys SHOULD be restricted to US-ASCII.
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+An implementation MAY support UTF-8.
+'''
+
+[[spec]]
+level = "SHOULD"
+quote = '''
+If an implementation does NOT support UTF-8,
+then the implementation SHOULD throw an error if non-US-ASCII characters are encountered;
+the error SHOULD detail that the implementation does not support non-US-ASCII characters but encountered non-US-ASCII characters.
+'''
+

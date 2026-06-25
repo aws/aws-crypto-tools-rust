@@ -1,0 +1,35 @@
+target = "../spec/s3-encryption/materials/s3-keyring.md#ondecrypt"
+
+# OnDecrypt
+#
+# If the input DecryptionMaterials contains a Plaintext Data Key, the S3 Keyring MUST throw an exception.
+# If the input collection of EncryptedDataKey instances contains any number of EDKs other than 1, the S3 Keyring MUST throw an exception.
+# The S3 Keyring MAY validate that the Key Provider ID of the Encrypted Data Key matches the expected default Key Provider ID value.
+# The S3 Keyring MUST call the DecryptDataKey method using the materials and add the resulting plaintext data key to the materials.
+# The OnDecrypt operation is responsible for ensuring that the DecryptionMaterials contain valid plaintext and encrypted data keys.
+# The OnDecrypt operation is also responsible for ensuring that the DecryptionMaterials are valid and contain valid plaintext and encrypted data keys.
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the input DecryptionMaterials contains a Plaintext Data Key, the S3 Keyring MUST throw an exception.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the input collection of EncryptedDataKey instances contains any number of EDKs other than 1, the S3 Keyring MUST throw an exception.
+'''
+
+[[spec]]
+level = "MAY"
+quote = '''
+The S3 Keyring MAY validate that the Key Provider ID of the Encrypted Data Key matches the expected default Key Provider ID value.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The S3 Keyring MUST call the DecryptDataKey method using the materials and add the resulting plaintext data key to the materials.
+'''
+

@@ -1,0 +1,26 @@
+target = "../spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey"
+
+# DecryptDataKey
+#
+# The KmsKeyring MUST determine whether to decrypt using KmsV1 mode or Kms+Context mode.
+# If the Key Provider Info of the Encrypted Data Key is "kms", the KmsKeyring MUST attempt to decrypt using KmsV1 mode.
+# If the Key Provider Info of the Encrypted Data Key is "kms+context", the KmsKeyring MUST attempt to decrypt using Kms+Context mode.
+
+[[spec]]
+level = "MUST"
+quote = '''
+The KmsKeyring MUST determine whether to decrypt using KmsV1 mode or Kms+Context mode.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the Key Provider Info of the Encrypted Data Key is "kms", the KmsKeyring MUST attempt to decrypt using KmsV1 mode.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the Key Provider Info of the Encrypted Data Key is "kms+context", the KmsKeyring MUST attempt to decrypt using Kms+Context mode.
+'''
+

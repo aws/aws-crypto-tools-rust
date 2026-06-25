@@ -1,0 +1,56 @@
+target = "../spec/s3-encryption/materials/keyrings.md#interface"
+
+# Interface
+#
+# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
+# 
+# The Keyring interface MUST include the OnEncrypt operation.
+# The OnEncrypt operation MUST accept an instance of EncryptionMaterials as input.
+# The OnEncrypt operation MUST return an instance of EncryptionMaterials as output.
+# 
+# The Keyring interface MUST include the OnDecrypt operation.
+# The OnDecrypt operation MUST accept an instance of DecryptionMaterials and a collection of EncryptedDataKey instances as input.
+# The OnDecrypt operation MUST return an instance of DecryptionMaterials as output.
+
+[[spec]]
+level = "SHOULD"
+quote = '''
+The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Keyring interface MUST include the OnEncrypt operation.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The OnEncrypt operation MUST accept an instance of EncryptionMaterials as input.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The OnEncrypt operation MUST return an instance of EncryptionMaterials as output.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The Keyring interface MUST include the OnDecrypt operation.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The OnDecrypt operation MUST accept an instance of DecryptionMaterials and a collection of EncryptedDataKey instances as input.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+The OnDecrypt operation MUST return an instance of DecryptionMaterials as output.
+'''
+

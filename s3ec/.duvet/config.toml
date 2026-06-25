@@ -1,0 +1,47 @@
+'$schema' = "https://awslabs.github.io/duvet/config/v0.4.0.json"
+
+[[source]]
+pattern = "src/**/*.rs"
+
+[[source]]
+pattern = "tests/**/*.rs"
+type = "test"
+
+[[specification]]
+source = "../spec/s3-encryption/client.md"
+
+[[specification]]
+source = "../spec/s3-encryption/encryption.md"
+
+[[specification]]
+source = "../spec/s3-encryption/decryption.md"
+
+[[specification]]
+source = "../spec/s3-encryption/key-commitment.md"
+
+[[specification]]
+source = "../spec/s3-encryption/key-derivation.md"
+
+[[specification]]
+source = "../spec/s3-encryption/data-format/content-metadata.md"
+
+[[specification]]
+source = "../spec/s3-encryption/data-format/metadata-strategy.md"
+
+[[specification]]
+source = "../spec/s3-encryption/materials/keyrings.md"
+
+[[specification]]
+source = "../spec/s3-encryption/materials/s3-keyring.md"
+
+[[specification]]
+source = "../spec/s3-encryption/materials/s3-kms-keyring.md"
+
+[[requirement]]
+pattern = "compliance/**/*.toml"
+
+[report.html]
+enabled = true
+
+[report.snapshot]
+enabled = true

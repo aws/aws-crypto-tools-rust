@@ -1,0 +1,27 @@
+target = "../spec/s3-encryption/materials/s3-keyring.md#onencrypt"
+
+# OnEncrypt
+#
+# If the Plaintext Data Key in the input EncryptionMaterials is null, the S3 Keyring MUST call the GenerateDataKey method using the materials.
+# If the materials returned from GenerateDataKey contain an EncryptedDataKey, the S3 Keyring MUST return the materials.
+# If the materials returned from GenerateDataKey do not contain an EncryptedDataKey, the S3 Keyring MUST call the EncryptDataKey method using the materials.
+# The OnEncrypt operation is responsible for ensuring that the EncryptionMaterials are valid and contain valid plaintext and encrypted data keys.
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the Plaintext Data Key in the input EncryptionMaterials is null, the S3 Keyring MUST call the GenerateDataKey method using the materials.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the materials returned from GenerateDataKey contain an EncryptedDataKey, the S3 Keyring MUST return the materials.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+If the materials returned from GenerateDataKey do not contain an EncryptedDataKey, the S3 Keyring MUST call the EncryptDataKey method using the materials.
+'''
+
