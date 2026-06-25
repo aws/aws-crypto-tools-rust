@@ -7,3 +7,10 @@
 **/.duvet/snapshot.txt
 **/.duvet/reports/**
 **/.duvet/requirements/**
+
+# macOS
+**/.DS_Store
+/duvet-client/
+/duvet-crypto/
+/duvet-keyring/
+/duvet-metadata/

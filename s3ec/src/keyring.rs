@@ -36,6 +36,222 @@ pub const RESERVED_CEK_ALG_KEY: &str = "aws:x-amz-cek-alg";
 /// Reserved encryption-context key used by the legacy KmsV1 mode.
 pub const RESERVED_KMS_CMK_ID_KEY: &str = "kms_cmk_id";
 
+/// The encryption materials an [`S3Keyring`]'s [`on_encrypt`](S3Keyring::on_encrypt)
+/// operates on: the chosen algorithm suite together with the plaintext data
+/// key and the encrypted (wrapped) data key. Either key may be absent on input;
+/// `on_encrypt` populates whichever is missing.
+#[derive(Clone, Debug)]
+pub struct EncryptionMaterials {
+    suite: EncryptionAlgorithm,
+    plaintext_data_key: Option<Vec<u8>>,
+    encrypted_data_key: Option<Vec<u8>>,
+}
+
+impl EncryptionMaterials {
+    /// Encryption materials for `suite` with no data keys derived yet.
+    pub fn new(suite: EncryptionAlgorithm) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: None,
+            encrypted_data_key: None,
+        }
+    }
+
+    /// Encryption materials carrying an already-derived plaintext data key (the
+    /// re-encryption case, where the object's existing data key is preserved
+    /// and only re-wrapped).
+    pub fn with_plaintext_data_key(
+        suite: EncryptionAlgorithm,
+        plaintext_data_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: Some(plaintext_data_key),
+            encrypted_data_key: None,
+        }
+    }
+
+    /// Encryption materials that already carry both a plaintext data key and an
+    /// encrypted data key. [`on_encrypt`](S3Keyring::on_encrypt) returns these
+    /// unchanged without re-wrapping.
+    pub fn with_data_keys(
+        suite: EncryptionAlgorithm,
+        plaintext_data_key: Vec<u8>,
+        encrypted_data_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: Some(plaintext_data_key),
+            encrypted_data_key: Some(encrypted_data_key),
+        }
+    }
+
+    /// The plaintext data key, if one has been derived.
+    pub fn plaintext_data_key(&self) -> Option<&[u8]> {
+        self.plaintext_data_key.as_deref()
+    }
+
+    /// The encrypted (wrapped) data key, if one has been produced.
+    pub fn encrypted_data_key(&self) -> Option<&[u8]> {
+        self.encrypted_data_key.as_deref()
+    }
+}
+
+/// The decryption materials an [`S3Keyring`]'s [`on_decrypt`](S3Keyring::on_decrypt)
+/// operates on: the algorithm suite and the plaintext data key, which
+/// `on_decrypt` populates from the single input encrypted data key.
+#[derive(Clone, Debug)]
+pub struct DecryptionMaterials {
+    suite: EncryptionAlgorithm,
+    plaintext_data_key: Option<Vec<u8>>,
+}
+
+impl DecryptionMaterials {
+    /// Decryption materials for `suite` with no plaintext data key yet.
+    pub fn new(suite: EncryptionAlgorithm) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: None,
+        }
+    }
+
+    /// Decryption materials that already carry a plaintext data key. The
+    /// [`on_decrypt`](S3Keyring::on_decrypt) operation rejects these.
+    pub fn with_plaintext_data_key(
+        suite: EncryptionAlgorithm,
+        plaintext_data_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            suite,
+            plaintext_data_key: Some(plaintext_data_key),
+        }
+    }
+
+    /// The recovered plaintext data key, set once `on_decrypt` succeeds.
+    pub fn plaintext_data_key(&self) -> Option<&[u8]> {
+        self.plaintext_data_key.as_deref()
+    }
+}
+
+//= ../spec/s3-encryption/materials/s3-keyring.md#overview
+//# The S3EC SHOULD implement an S3 Keyring to consolidate validation and other functionality common to all S3 Keyrings.
+//
+//= ../spec/s3-encryption/materials/s3-keyring.md#overview
+//= type=implication
+//= reason=the trait's provided on_encrypt/on_decrypt methods are the OnEncrypt/OnDecrypt operations that make up the Keyring interface
+//# If implemented, the S3 Keyring MUST implement the Keyring interface.
+//
+//= ../spec/s3-encryption/materials/s3-keyring.md#overview
+//= type=implication
+//= reason=S3Keyring is a Rust trait, not a constructible type; only the concrete keyrings that implement it can be instantiated, so it can never be instantiated as a standalone Keyring value
+//# If implemented, the S3 Keyring MUST NOT be able to be instantiated as a Keyring instance.
+/// A shared base for the S3EC's raw (non-KMS) keyrings that consolidates the
+/// validation and the OnEncrypt/OnDecrypt control flow common to all S3
+/// Keyrings.
+///
+/// Concrete keyrings supply the three abstract operations — GenerateDataKey,
+/// EncryptDataKey, and DecryptDataKey — and inherit the
+/// [`on_encrypt`](S3Keyring::on_encrypt) / [`on_decrypt`](S3Keyring::on_decrypt)
+/// template methods that realize the Keyring interface. The [`AesKeyring`] and
+/// [`RsaKeyring`] implement this trait; their inherent `wrap`/`encrypt_data_key`/
+/// `unwrap` methods are the concrete realizations of the abstract operations.
+pub trait S3Keyring {
+    /// GenerateDataKey: produce a fresh plaintext data key sized for `suite`.
+    /// The default generates cryptographically random bytes — the behavior
+    /// common to every raw S3 Keyring.
+    fn generate_data_key(&self, suite: EncryptionAlgorithm) -> Result<Vec<u8>> {
+        crate::crypto::random_bytes(suite.data_key_length())
+    }
+
+    /// EncryptDataKey: wrap an existing plaintext data key for `suite`.
+    fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>>;
+
+    /// DecryptDataKey: unwrap a wrapped data key for `suite`.
+    fn decrypt_data_key(
+        &self,
+        encrypted_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>>;
+
+    /// OnEncrypt: ensure the materials carry a plaintext data key and a
+    /// matching encrypted data key, generating and/or wrapping as needed.
+    fn on_encrypt(&self, materials: &mut EncryptionMaterials) -> Result<()> {
+        //= ../spec/s3-encryption/materials/s3-keyring.md#onencrypt
+        //# If the Plaintext Data Key in the input EncryptionMaterials is null, the S3 Keyring MUST call the GenerateDataKey method using the materials.
+        if materials.plaintext_data_key.is_none() {
+            materials.plaintext_data_key = Some(self.generate_data_key(materials.suite)?);
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#onencrypt
+        //# If the materials returned from GenerateDataKey contain an EncryptedDataKey, the S3 Keyring MUST return the materials.
+        if materials.encrypted_data_key.is_some() {
+            return Ok(());
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#onencrypt
+        //# If the materials returned from GenerateDataKey do not contain an EncryptedDataKey, the S3 Keyring MUST call the EncryptDataKey method using the materials.
+        let plaintext_data_key = materials
+            .plaintext_data_key
+            .clone()
+            .expect("plaintext data key was generated above when absent");
+        materials.encrypted_data_key =
+            Some(self.encrypt_data_key(&plaintext_data_key, materials.suite)?);
+        Ok(())
+    }
+
+    /// OnDecrypt: validate the inputs and recover the plaintext data key from
+    /// the single input encrypted data key.
+    fn on_decrypt(
+        &self,
+        materials: &mut DecryptionMaterials,
+        encrypted_data_keys: &[Vec<u8>],
+    ) -> Result<()> {
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //# If the input DecryptionMaterials contains a Plaintext Data Key, the S3 Keyring MUST throw an exception.
+        if materials.plaintext_data_key.is_some() {
+            return Err(S3EncryptionError::Crypto(
+                "decryption materials already contain a plaintext data key".to_string(),
+            ));
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //# If the input collection of EncryptedDataKey instances contains any number of EDKs other than 1, the S3 Keyring MUST throw an exception.
+        if encrypted_data_keys.len() != 1 {
+            return Err(S3EncryptionError::Crypto(format!(
+                "expected exactly one encrypted data key, got {}",
+                encrypted_data_keys.len()
+            )));
+        }
+
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //= type=exception
+        //= reason=raw keyrings have a single fixed key provider, so the optional Key Provider ID match is not performed
+        //# The S3 Keyring MAY validate that the Key Provider ID of the Encrypted Data Key matches the expected default Key Provider ID value.
+        //
+        //= ../spec/s3-encryption/materials/s3-keyring.md#ondecrypt
+        //# The S3 Keyring MUST call the DecryptDataKey method using the materials and add the resulting plaintext data key to the materials.
+        let plaintext_data_key = self.decrypt_data_key(&encrypted_data_keys[0], materials.suite)?;
+        materials.plaintext_data_key = Some(plaintext_data_key);
+        Ok(())
+    }
+}
+
+//= ../spec/s3-encryption/materials/keyrings.md#interface
+//= type=implication
+//# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
+//
+//= ../spec/s3-encryption/materials/keyrings.md#supported-keyrings
+//= type=implication
+//# Note: A user MAY create their own custom keyring(s).
+//
+//= ../spec/s3-encryption/materials/s3-kms-keyring.md#interface
+//= type=implication
+//= reason=KmsKeyring exposes the wrap/unwrap (OnEncrypt/OnDecrypt) keyring operations and the S3 Keyring wrapping behavior
+//# The KmsKeyring MUST implement the [Keyring interface](keyrings.md#interface) and include the behavior described in the [S3 Keyring](s3-keyring.md).
 /// A KMS-backed keyring that wraps and unwraps content data keys.
 #[derive(Clone)]
 pub struct KmsKeyring {
@@ -45,8 +261,40 @@ pub struct KmsKeyring {
 }
 
 impl KmsKeyring {
-    //= spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=implication
+    //= reason=new() takes aws_sdk_kms::Client by value; the optional/default-client choice is made by the caller (S3EncryptionClient::from_config)
+    //# On initialization, the caller MAY provide an AWS KMS SDK client instance.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=implication
+    //= reason=the default KMS client is constructed in S3EncryptionClient::from_config and passed in; KmsKeyring always holds a concrete client
+    //# If the caller does not provide an AWS KMS SDK client instance or provides a null value, the KmsKeyring MUST create a default KMS client instance.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=implication
+    //= reason=kms_key_id is a non-Optional String parameter; a key identifier is required to construct the keyring
     //# On initialization, the caller MUST provide an AWS KMS key identifier.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=exception
+    //= reason=this keyring does not perform the optional null/empty key-id validation; an unusable key id surfaces as a KMS error at call time
+    //# The KmsKeyring MAY validate that the AWS KMS key identifier is not null or empty.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=exception
+    //= reason=we do not perform the optional not-null/empty validation, so its conditional throw does not apply
+    //# If the KmsKeyring validates that the AWS KMS key identifier is not null or empty, then it MUST throw an exception.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=exception
+    //= reason=this keyring does not perform the optional KMS-ARN-format validation; an invalid id surfaces as a KMS error at call time
+    //# The KmsKeyring MAY validate that the AWS KMS key identifier is [a valid AWS KMS Key identifier](../../framework/aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-identifier).
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#initialization
+    //= type=exception
+    //= reason=we do not perform the optional KMS-ARN-format validation, so its conditional throw does not apply
+    //# If the KmsKeyring validates that the AWS KMS key identifier is not a valid AWS KMS Key identifier, then it MUST throw an exception.
     /// Construct a keyring from a KMS client, key identifier, and the legacy
     /// wrapping-algorithm flag.
     pub fn new(
@@ -54,6 +302,8 @@ impl KmsKeyring {
         kms_key_id: String,
         enable_legacy_wrapping_algorithms: bool,
     ) -> Self {
+        //= ../spec/s3-encryption/materials/keyrings.md#interface
+        //# The Keyring interface and its operations SHOULD adhere to the naming conventions of the implementation language.
         Self {
             kms,
             kms_key_id,
@@ -88,16 +338,16 @@ impl KmsKeyring {
             )));
         }
 
-        //= spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
         //# When decrypting using Kms+Context mode, the KmsKeyring MUST validate the provided (request) encryption context with the stored (materials) encryption context.
         //
-        //= spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
         //# The stored encryption context with the two reserved keys removed MUST match the provided encryption context.
         let mut stripped = stored.clone();
         stripped.remove(RESERVED_CEK_ALG_KEY);
         stripped.remove(RESERVED_KMS_CMK_ID_KEY);
 
-        //= spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
         //# If the stored encryption context with the two reserved keys removed does not match the provided encryption context, the KmsKeyring MUST throw an exception.
         if &stripped != request {
             return Err(S3EncryptionError::Crypto(
@@ -108,23 +358,64 @@ impl KmsKeyring {
         Ok(())
     }
 
-    //= spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnEncrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST accept an instance of EncryptionMaterials as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnEncrypt operation MUST return an instance of EncryptionMaterials as output.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
     //# The KmsKeyring MUST support encryption using Kms+Context mode.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
+    //= type=implication
+    //= reason=there is no KmsV1 encryption code path; wrap() only ever issues a Kms+Context request, so KmsV1 encryption is unsupported by construction
+    //# The KmsKeyring MUST NOT support encryption using KmsV1 mode.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+    //# The KmsKeyring MUST implement the EncryptDataKey method.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+    //= type=exception
+    //= reason=every shipping S3EC reference (Java, Python) calls KMS GenerateDataKey, not Encrypt, for the Kms+Context wrapping mode; this keyring matches them for wire compatibility (see module doc)
+    //# The keyring MUST call [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) using the configured AWS KMS client.
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+    //= type=exception
+    //= reason=GenerateDataKey produces the plaintext data key itself, so there is no PlaintextDataKey request field to populate from input materials
+    //# - `PlaintextDataKey` MUST be the plaintext data key in the [encryption materials](../structures.md#encryption-materials).
+    //
+    //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+    //= type=exception
+    //= reason=a custom API name / user agent is optional (SHOULD) and is not configured on KMS calls in this implementation
+    //# - A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
     /// Wrap a freshly generated data key via `KMS GenerateDataKey`.
     ///
     /// Returns `(plaintext_data_key, encrypted_data_key)`.
     pub async fn wrap(&self, encryption_context: &BTreeMap<String, String>) -> Result<(Vec<u8>, Vec<u8>)> {
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+        //# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [encryption materials](../structures.md#encryption-materials).
         let context: std::collections::HashMap<String, String> =
             encryption_context.clone().into_iter().collect();
 
         let response = self
             .kms
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+            //# - `KeyId` MUST be the configured AWS KMS key identifier.
             .generate_data_key()
             .key_id(&self.kms_key_id)
             .key_spec(DataKeySpec::Aes256)
             .set_encryption_context(Some(context))
             .send()
             .await
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+            //# If the call to [AWS KMS Encrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html) does not succeed, OnEncrypt MUST fail.
             .map_err(|e| S3EncryptionError::Sdk(format!("KMS GenerateDataKey failed: {e}")))?;
 
         let plaintext = response
@@ -132,6 +423,9 @@ impl KmsKeyring {
             .ok_or_else(|| S3EncryptionError::Sdk("KMS GenerateDataKey returned no plaintext".into()))?
             .as_ref()
             .to_vec();
+
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#encryptdatakey
+        //# If the call to AWS KMS Encrypt is successful, OnEncrypt MUST return the `CiphertextBlob` as a collection of bytes.
         let encrypted = response
             .ciphertext_blob()
             .ok_or_else(|| {
@@ -143,6 +437,17 @@ impl KmsKeyring {
         Ok((plaintext, encrypted))
     }
 
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The Keyring interface MUST include the OnDecrypt operation.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST accept an instance of DecryptionMaterials and a collection of EncryptedDataKey instances as input.
+    //
+    //= ../spec/s3-encryption/materials/keyrings.md#interface
+    //= type=implication
+    //# The OnDecrypt operation MUST return an instance of DecryptionMaterials as output.
     /// Unwrap an encrypted data key via `KMS Decrypt`, dispatching on the
     /// wrapping algorithm recorded in the object metadata.
     ///
@@ -154,20 +459,36 @@ impl KmsKeyring {
         stored_context: &BTreeMap<String, String>,
         request_context: &BTreeMap<String, String>,
     ) -> Result<Vec<u8>> {
-        //= spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey
         //# The KmsKeyring MUST determine whether to decrypt using KmsV1 mode or Kms+Context mode.
         match wrap_algorithm {
-            //= spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey
             //# If the Key Provider Info of the Encrypted Data Key is "kms+context", the KmsKeyring MUST attempt to decrypt using Kms+Context mode.
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
+            //# The KmsKeyring MUST support decryption using Kms+Context mode.
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
+            //= reason=the Kms+Context arm has no legacy gate, so it is always enabled regardless of enable_legacy_wrapping_algorithms
+            //# The Kms+Context mode MUST be enabled as a fully-supported (non-legacy) wrapping algorithm.
             WRAP_ALG_KMS_CONTEXT => {
                 Self::validate_decryption_context(stored_context, request_context)?;
             }
-            //= spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#decryptdatakey
             //# If the Key Provider Info of the Encrypted Data Key is "kms", the KmsKeyring MUST attempt to decrypt using KmsV1 mode.
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
+            //# The KmsKeyring MUST support decryption using KmsV1 mode.
             WRAP_ALG_KMS_V1 => {
-                //= spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
+                //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
                 //# The KmsV1 mode MUST be only enabled when legacy wrapping algorithms are enabled.
+                //
+                //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+                //= reason=when legacy wrapping algorithms are enabled this gate does not fire, so a legacy KmsV1-wrapped data key decrypts alongside the fully-supported kms+context mode
+                //# When enabled, the S3EC MUST be able to decrypt objects encrypted with all supported wrapping algorithms (both legacy and fully supported).
                 if !self.enable_legacy_wrapping_algorithms {
+                    //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+                    //# When disabled, the S3EC MUST NOT decrypt objects encrypted using legacy wrapping algorithms; it MUST throw an exception when attempting to decrypt an object encrypted with a legacy wrapping algorithm.
                     return Err(S3EncryptionError::Crypto(format!(
                         "Enable legacy wrapping algorithms to use legacy key wrapping algorithm: \
                          {wrap_algorithm}"
@@ -193,21 +514,55 @@ impl KmsKeyring {
         let context: std::collections::HashMap<String, String> =
             stored_context.clone().into_iter().collect();
 
-        //= spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
         //# To attempt to decrypt a particular [encrypted data key](../structures.md#encrypted-data-key), the KmsKeyring MUST call [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html) with the configured AWS KMS client.
+        //
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //# To attempt to decrypt a particular [encrypted data key](../structures.md#encrypted-data-key), the KmsKeyring MUST call [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html) with the configured AWS KMS client.
+        //
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
+        //= type=exception
+        //= reason=a custom API name / user agent is optional (SHOULD) and is not configured on KMS calls in this implementation
+        //# - A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
+        //
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //= type=exception
+        //= reason=a custom API name / user agent is optional (SHOULD) and is not configured on KMS calls in this implementation
+        //# - A custom API Name or User Agent string SHOULD be provided in order to provide metrics on KMS calls associated with the S3 Encryption Client.
         let response = self
             .kms
             .decrypt()
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
+            //# - `KeyId` MUST be the configured AWS KMS key identifier.
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+            //# - `KeyId` MUST be the configured AWS KMS key identifier.
             .key_id(&self.kms_key_id)
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
+            //# - `CiphertextBlob` MUST be the [encrypted data key ciphertext](../structures.md#ciphertext).
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+            //# - `CiphertextBlob` MUST be the [encrypted data key ciphertext](../structures.md#ciphertext).
             .ciphertext_blob(Blob::new(encrypted_data_key.to_vec()))
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
+            //# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [decryption materials](../structures.md#decryption-materials).
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+            //# - `EncryptionContext` MUST be the [encryption context](../structures.md#encryption-context) included in the input [decryption materials](../structures.md#decryption-materials).
             .set_encryption_context(Some(context))
             .send()
             .await
-            //= spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
+            //# If the KmsKeyring fails to successfully decrypt the [encrypted data key](../structures.md#encrypted-data-key), then it MUST throw an exception.
+            //
+            //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
             //# If the KmsKeyring fails to successfully decrypt the [encrypted data key](../structures.md#encrypted-data-key), then it MUST throw an exception.
             .map_err(|e| S3EncryptionError::Sdk(format!("KMS Decrypt failed: {e}")))?;
 
-        //= spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
+        //# The KmsKeyring MUST immediately return the plaintext as a collection of bytes.
+        //
+        //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kms-context
         //# The KmsKeyring MUST immediately return the plaintext as a collection of bytes.
         let plaintext = response
             .plaintext()
@@ -248,7 +603,7 @@ impl AesKeyring {
         suite.content_cipher_value()
     }
 
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
     /// Generate a fresh content data key and wrap it with the configured AES
     /// key (`GenerateDataKey` then `EncryptDataKey`). Returns
@@ -260,7 +615,7 @@ impl AesKeyring {
         Ok((plaintext_data_key, wrapped))
     }
 
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
     /// Wrap an already-derived plaintext data key with the configured AES key
     /// (`EncryptDataKey` only, no `GenerateDataKey`). Used by re-encryption,
@@ -276,13 +631,37 @@ impl AesKeyring {
         crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), plaintext_data_key)
     }
 
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //= ../spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
     /// Unwrap a wrapped data key with the configured AES key (`DecryptDataKey`).
     /// `suite` selects the AAD that was bound at wrap time.
     pub fn unwrap(&self, wrapped_data_key: &[u8], suite: EncryptionAlgorithm) -> Result<Vec<u8>> {
         let aad = Self::wrap_aad(suite);
         crate::crypto::unwrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), wrapped_data_key)
+    }
+}
+
+impl S3Keyring for AesKeyring {
+    /// EncryptDataKey for the raw AES keyring. The body mirrors the inherent
+    /// [`AesKeyring::encrypt_data_key`] (it is inlined rather than delegated to
+    /// keep trait-vs-inherent method resolution unambiguous).
+    fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        let aad = Self::wrap_aad(suite);
+        crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), plaintext_data_key)
+    }
+
+    /// DecryptDataKey for the raw AES keyring, delegating to the inherent
+    /// [`AesKeyring::unwrap`].
+    fn decrypt_data_key(
+        &self,
+        encrypted_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        self.unwrap(encrypted_data_key, suite)
     }
 }
 
@@ -312,8 +691,6 @@ impl RsaKeyring {
         Self { private_key_pkcs8 }
     }
 
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
-    //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
     /// Generate a fresh content data key and wrap it under the configured RSA
     /// public key (`GenerateDataKey` then `EncryptDataKey`). Returns
     /// `(plaintext_data_key, wrapped_data_key)`. The wrapped form is the
@@ -324,8 +701,6 @@ impl RsaKeyring {
         Ok((plaintext_data_key, wrapped))
     }
 
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
-    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
     /// Wrap an already-derived plaintext data key under the configured RSA
     /// public key (`EncryptDataKey` only, no `GenerateDataKey`). Used by
     /// re-encryption, which preserves the object's existing data key and only
@@ -345,8 +720,6 @@ impl RsaKeyring {
         )
     }
 
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
-    //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
     /// Unwrap a wrapped data key with the configured RSA private key
     /// (`DecryptDataKey`). `suite` selects the content-cipher value that was
     /// framed into the pseudo data key at wrap time.
@@ -360,196 +733,30 @@ impl RsaKeyring {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ctx(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
+impl S3Keyring for RsaKeyring {
+    /// EncryptDataKey for the raw RSA keyring. The body mirrors the inherent
+    /// [`RsaKeyring::encrypt_data_key`] (it is inlined rather than delegated to
+    /// keep trait-vs-inherent method resolution unambiguous).
+    fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        let content_cipher = suite.content_cipher_value();
+        crate::crypto::wrap_data_key_rsa_oaep(
+            &self.private_key_pkcs8,
+            content_cipher.as_bytes(),
+            plaintext_data_key,
+        )
     }
 
-    #[test]
-    fn build_context_adds_committing_suite_id() {
-        let caller = ctx(&[("user", "alice")]);
-        let built = KmsKeyring::build_encryption_context(
-            &caller,
-            EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey,
-        );
-        assert_eq!(built.get("user").unwrap(), "alice");
-        // The committing suite records the decimal suite ID, not the cipher name.
-        assert_eq!(built.get(RESERVED_CEK_ALG_KEY).unwrap(), "115");
-    }
-
-    #[test]
-    fn build_context_adds_gcm_cipher_name() {
-        let built = KmsKeyring::build_encryption_context(
-            &ctx(&[]),
-            EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf,
-        );
-        assert_eq!(built.get(RESERVED_CEK_ALG_KEY).unwrap(), "AES/GCM/NoPadding");
-    }
-
-    #[test]
-    fn validate_context_accepts_stored_minus_reserved() {
-        let stored = ctx(&[
-            ("user", "alice"),
-            (RESERVED_CEK_ALG_KEY, "115"),
-            (RESERVED_KMS_CMK_ID_KEY, "key-arn"),
-        ]);
-        let request = ctx(&[("user", "alice")]);
-        assert!(KmsKeyring::validate_decryption_context(&stored, &request).is_ok());
-    }
-
-    #[test]
-    fn validate_context_rejects_mismatch() {
-        let stored = ctx(&[("user", "alice"), (RESERVED_CEK_ALG_KEY, "115")]);
-        let request = ctx(&[("user", "bob")]);
-        let err = KmsKeyring::validate_decryption_context(&stored, &request).unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-        // The cross-language harness asserts (case-sensitively) that the
-        // decrypt-time context-mismatch message contains this exact phrase,
-        // matching the reference (python/java) servers. See
-        // RoundTripTests#crossLanguageTestKmsWithSubsetEncCtxFails.
-        assert!(
-            err.to_string()
-                .contains("Provided encryption context does not match information retrieved from S3"),
-            "actual: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_context_rejects_missing_subset() {
-        // The object was encrypted WITH a caller context, but the decryptor
-        // provides NO context at all. Stripping the reserved key still leaves
-        // a non-empty stored context, so validation MUST fail closed with the
-        // same cross-language message. This mirrors
-        // RoundTripTests#crossLanguageTestKmsWithSubsetEncCtxFails, where the
-        // GetObject request omits `.metadata(...)` entirely.
-        let stored = ctx(&[
-            ("user-defined-enc-ctx-key", "user-defined-enc-ctx-value"),
-            ("user-defined-enc-ctx-key-2", "user-defined-enc-ctx-value-2"),
-            (RESERVED_CEK_ALG_KEY, "AES/GCM/NoPadding"),
-        ]);
-        let request = ctx(&[]);
-        let err = KmsKeyring::validate_decryption_context(&stored, &request).unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-        assert!(
-            err.to_string()
-                .contains("Provided encryption context does not match information retrieved from S3"),
-            "actual: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_context_rejects_reserved_key_in_request() {
-        let stored = ctx(&[(RESERVED_CEK_ALG_KEY, "115")]);
-        let request = ctx(&[(RESERVED_CEK_ALG_KEY, "115")]);
-        let err = KmsKeyring::validate_decryption_context(&stored, &request).unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-    }
-
-    #[test]
-    fn aes_keyring_wrap_unwrap_round_trips() {
-        let keyring = AesKeyring::new(vec![0x42u8; 32]);
-        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-        let (plaintext_dk, wrapped) = keyring.wrap(suite).unwrap();
-        // A fresh 256-bit data key is generated and wrapped (IV + key + tag).
-        assert_eq!(plaintext_dk.len(), 32);
-        assert_eq!(wrapped.len(), 12 + 32 + 16);
-        let recovered = keyring.unwrap(&wrapped, suite).unwrap();
-        assert_eq!(recovered, plaintext_dk);
-    }
-
-    #[test]
-    fn aes_keyring_unwrap_with_wrong_suite_aad_fails() {
-        // The wrap AAD is the suite content-cipher value, so unwrapping a
-        // committing-suite-wrapped key as a non-committing key must fail.
-        let keyring = AesKeyring::new(vec![0x42u8; 32]);
-        let (_dk, wrapped) = keyring
-            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
-            .unwrap();
-        let err = keyring
-            .unwrap(&wrapped, EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf)
-            .unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-    }
-
-    #[test]
-    fn aes_keyring_rejects_wrong_length_key() {
-        // A non-256-bit wrapping key is rejected by the AES-256-GCM primitive.
-        let keyring = AesKeyring::new(vec![0x42u8; 16]);
-        let err = keyring
-            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
-            .unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-    }
-
-    fn rsa_pkcs8_key() -> Vec<u8> {
-        use aws_lc_rs::encoding::AsDer;
-        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
-        let key = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
-        key.as_der().unwrap().as_ref().to_vec()
-    }
-
-    #[test]
-    fn rsa_keyring_wrap_unwrap_round_trips() {
-        let keyring = RsaKeyring::new(rsa_pkcs8_key());
-        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-        let (plaintext_dk, wrapped) = keyring.wrap(suite).unwrap();
-        // A fresh 256-bit data key is generated; the wrapped form is the
-        // RSA-2048 OAEP ciphertext (256 bytes).
-        assert_eq!(plaintext_dk.len(), 32);
-        assert_eq!(wrapped.len(), 256);
-        let recovered = keyring.unwrap(&wrapped, suite).unwrap();
-        assert_eq!(recovered, plaintext_dk);
-    }
-
-    #[test]
-    fn rsa_keyring_unwrap_with_wrong_suite_fails() {
-        // The framed content-cipher value binds the suite, so unwrapping a
-        // committing-suite-wrapped key as a non-committing key must fail.
-        let keyring = RsaKeyring::new(rsa_pkcs8_key());
-        let (_dk, wrapped) = keyring
-            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
-            .unwrap();
-        let err = keyring
-            .unwrap(&wrapped, EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf)
-            .unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-    }
-
-    #[test]
-    fn rsa_keyring_rejects_invalid_key() {
-        let keyring = RsaKeyring::new(b"not a pkcs8 key".to_vec());
-        let err = keyring
-            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
-            .unwrap_err();
-        assert!(matches!(err, S3EncryptionError::Crypto(_)));
-    }
-
-    /// `encrypt_data_key` re-wraps an existing data key (the re-encryption
-    /// path: `EncryptDataKey` with no fresh `GenerateDataKey`), and `unwrap`
-    /// recovers exactly that data key.
-    #[test]
-    fn aes_keyring_encrypt_data_key_preserves_existing_key() {
-        let keyring = AesKeyring::new(vec![0x42u8; 32]);
-        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-        let data_key = vec![0x5Au8; 32];
-        let wrapped = keyring.encrypt_data_key(&data_key, suite).unwrap();
-        assert_eq!(keyring.unwrap(&wrapped, suite).unwrap(), data_key);
-    }
-
-    /// The RSA equivalent: re-wrapping an existing data key under the RSA public
-    /// key and recovering it unchanged.
-    #[test]
-    fn rsa_keyring_encrypt_data_key_preserves_existing_key() {
-        let keyring = RsaKeyring::new(rsa_pkcs8_key());
-        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
-        let data_key = vec![0x5Au8; 32];
-        let wrapped = keyring.encrypt_data_key(&data_key, suite).unwrap();
-        assert_eq!(keyring.unwrap(&wrapped, suite).unwrap(), data_key);
+    /// DecryptDataKey for the raw RSA keyring, delegating to the inherent
+    /// [`RsaKeyring::unwrap`].
+    fn decrypt_data_key(
+        &self,
+        encrypted_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        self.unwrap(encrypted_data_key, suite)
     }
 }

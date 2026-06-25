@@ -41,7 +41,7 @@ fn aes_gcm_seal(key: &[u8], iv: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<V
     let nonce = Nonce::try_assume_unique_for_key(iv).map_err(|_| crypto_err("invalid IV length"))?;
 
     let mut in_out = plaintext.to_vec();
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST append the GCM auth tag to the ciphertext if the underlying crypto provider does not do so automatically.
     key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut in_out)
         .map_err(|_| crypto_err("AES-256-GCM encryption failed"))?;
@@ -64,9 +64,59 @@ fn aes_gcm_open(key: &[u8], iv: &[u8], aad: &[u8], ciphertext_with_tag: &[u8]) -
 }
 
 /// Fill a fresh buffer of `len` cryptographically random bytes.
+//= ../spec/s3-encryption/client.md#randomness
+//= type=exception
+//= reason=randomness is sourced from the platform CSPRNG (aws-lc-rs / ring SystemRandom); this client does not accept an injectable source-of-randomness parameter at initialization
+//# The S3EC MAY accept a source of randomness during client initialization.
 pub fn random_bytes(len: usize) -> Result<Vec<u8>> {
     let mut buf = vec![0u8; len];
     rand::fill(&mut buf).map_err(|_| crypto_err("failed to generate random bytes"))?;
+    Ok(buf)
+}
+
+/// The maximum plaintext content length (in bytes) for the AES-GCM content
+/// suites. AES-GCM with a 32-bit block counter can authenticate at most
+/// `2^36 - 32` bytes under a single key/IV; `2^36` is the conservative limit
+/// shared across the S3EC content suites.
+const MAX_GCM_CONTENT_LENGTH: usize = 1 << 36;
+
+/// Validate that a plaintext content length does not exceed the algorithm
+/// suite's cipher maximum content length.
+///
+/// Taking the length as a `usize` (rather than the plaintext slice) keeps this
+/// check exercisable without allocating a multi-gigabyte buffer.
+pub fn validate_content_length(len: usize) -> Result<()> {
+    //= ../spec/s3-encryption/encryption.md#content-encryption
+    //# The client MUST validate that the length of the plaintext bytes does not exceed the algorithm suite's cipher's maximum content length in bytes.
+    if len > MAX_GCM_CONTENT_LENGTH {
+        return Err(crypto_err("plaintext exceeds maximum content length"));
+    }
+    Ok(())
+}
+
+/// Reject an IV or Message ID that is entirely zero bytes.
+///
+/// An all-zero IV/Message ID is technically valid but overwhelmingly indicates
+/// the value was not generated correctly, so the client refuses it.
+pub fn reject_if_iv_or_message_id_is_zeros(bytes: &[u8]) -> Result<()> {
+    //= ../spec/s3-encryption/encryption.md#cipher-initialization
+    //# The client SHOULD validate that the generated IV or Message ID is not zeros.
+    if bytes.iter().all(|&b| b == 0) {
+        return Err(crypto_err("generated IV or message ID is all zeros"));
+    }
+    Ok(())
+}
+
+/// Generate a fresh IV or Message ID of `len` bytes and reject an all-zero
+/// result. Callers pass the IV / Message ID length defined by the algorithm
+/// suite (`suite.iv_length()` / `suite.message_id_length()`).
+fn generate_iv_or_message_id(len: usize) -> Result<Vec<u8>> {
+    //= ../spec/s3-encryption/encryption.md#content-encryption
+    //= reason=`len` is the IV or Message ID length defined by the algorithm suite, supplied by the encrypt functions
+    //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
+    let mut buf = vec![0u8; len];
+    rand::fill(&mut buf).map_err(|_| crypto_err("failed to generate IV or message ID"))?;
+    reject_if_iv_or_message_id_is_zeros(&buf)?;
     Ok(buf)
 }
 
@@ -236,14 +286,20 @@ pub fn unwrap_data_key_rsa_oaep(
 pub fn encrypt_content_gcm(data_key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
     let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;
 
-    //= spec/s3-encryption/encryption.md#content-encryption
-    //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
-    let mut iv = vec![0u8; suite.iv_length()];
-    rand::fill(&mut iv).map_err(|_| crypto_err("failed to generate IV"))?;
+    validate_content_length(plaintext.len())?;
 
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    let iv = generate_iv_or_message_id(suite.iv_length())?;
+
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    //# The client MUST initialize the cipher, or call an AES-GCM encryption API, with the plaintext data key, the generated IV, and the tag length defined in the Algorithm Suite when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
+    //
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
     let ciphertext = aes_gcm_seal(data_key, &iv, &[], plaintext)?;
+
+    //= ../spec/s3-encryption/encryption.md#content-encryption
+    //= reason=the returned IV is persisted as the x-amz-iv content metadata field by the caller
+    //# The generated IV or Message ID MUST be set or returned from the encryption process such that it can be included in the content metadata.
     Ok((iv, ciphertext))
 }
 
@@ -253,8 +309,8 @@ pub fn decrypt_content_gcm(
     iv: &[u8],
     ciphertext_with_tag: &[u8],
 ) -> Result<Vec<u8>> {
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
-    //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
+    // No AAD is provided for the non-committing GCM suite, mirroring the
+    // encrypt path (see `encrypt_content_gcm`).
     aes_gcm_open(data_key, iv, &[], ciphertext_with_tag)
 }
 
@@ -277,15 +333,21 @@ pub fn decrypt_content_gcm(
 /// failure mode (bad padding, truncated ciphertext, wrong key) collapses to a
 /// single uniform error.
 pub fn decrypt_content_cbc(data_key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
-    //= spec/s3-encryption/decryption.md#cbc-decryption
+    //= ../spec/s3-encryption/decryption.md#cbc-decryption
     //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is enabled,
     //# then the S3EC MUST create a cipher with AES in CBC Mode with PKCS5Padding or PKCS7Padding compatible padding for a 16-byte block cipher (example: for the Java JCE, this is "AES/CBC/PKCS5Padding").
     let unbound = UnboundCipherKey::new(&AES_256, data_key)
         .map_err(|_| crypto_err("invalid AES-256-CBC key"))?;
     let key = PaddedBlockDecryptingKey::cbc_pkcs7(unbound)
-        //= spec/s3-encryption/decryption.md#cbc-decryption
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
         //# If the cipher object cannot be created as described above,
         //# Decryption MUST fail.
+        //
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=exception
+        //= reason=aws-lc-rs supports AES-CBC with PKCS7 padding, so the cipher-initialization failure this SHOULD describes (the crypto provider lacking CBC/PKCS5Padding support) cannot arise
+        //# The error SHOULD detail why the cipher could not be initialized
+        //# (such as CBC or PKCS5Padding is not supported by the underlying crypto provider).
         .map_err(|_| crypto_err("failed to initialize AES/CBC/PKCS5Padding cipher"))?;
 
     // The CBC IV is a fixed 16 bytes; a different length is a malformed object.
@@ -326,28 +388,53 @@ pub fn derive_keys(
     plaintext_data_key: &[u8],
     message_id: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>)> {
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
-    //# The salt MUST be the Message ID with the length defined in the algorithm suite.
+    // The key derivation input length for the committing suite is the suite's
+    // data-key length (the plaintext data key fed to HKDF is the AES-256 key).
+    if plaintext_data_key.len() != suite.data_key_length() {
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //# - The length of the input keying material MUST equal the key derivation input length specified by the algorithm suite commit key derivation setting.
+        return Err(crypto_err(
+            "plaintext data key length does not match the key derivation input length",
+        ));
+    }
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The hash function MUST be specified by the algorithm suite commitment settings.
+    //
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The salt MUST be the Message ID with the length defined in the algorithm suite.
     let salt = hkdf::Salt::new(hkdf::HKDF_SHA512, message_id);
 
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
-    //# The input keying material MUST be the plaintext data key (PDK) generated by the key provider.
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The input keying material MUST be the plaintext data key (PDK) generated by the key provider.
     let prk = salt.extract(plaintext_data_key);
 
     let suite_id = suite.suite_id_bytes();
 
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
-    //# The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string DERIVEKEY as UTF8 encoded bytes.
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string DERIVEKEY as UTF8 encoded bytes.
     let dek_info: [&[u8]; 2] = [&suite_id, b"DERIVEKEY"];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The length of the output keying material MUST equal the encryption key length specified by the algorithm suite encryption settings.
     let mut derived_encryption_key = vec![0u8; suite.data_key_length()];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The DEK input pseudorandom key MUST be the output from the extract step.
     prk.expand(&dek_info, OkmLen(derived_encryption_key.len()))
         .and_then(|okm| okm.fill(&mut derived_encryption_key))
         .map_err(|_| crypto_err("HKDF expand for derived encryption key failed"))?;
 
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
-    //# The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string COMMITKEY as UTF8 encoded bytes.
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string COMMITKEY as UTF8 encoded bytes.
     let commit_info: [&[u8]; 2] = [&suite_id, b"COMMITKEY"];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The length of the output keying material MUST equal the commit key length specified by the supported algorithm suites.
     let mut commit_key = vec![0u8; suite.commitment_length()];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# - The CK input pseudorandom key MUST be the output from the extract step.
     prk.expand(&commit_info, OkmLen(commit_key.len()))
         .and_then(|okm| okm.fill(&mut commit_key))
         .map_err(|_| crypto_err("HKDF expand for commit key failed"))?;
@@ -364,22 +451,30 @@ pub fn encrypt_content_committing(
     plaintext_data_key: &[u8],
     plaintext: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    //= spec/s3-encryption/encryption.md#content-encryption
-    //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
-    let mut message_id = vec![0u8; suite.message_id_length()];
-    rand::fill(&mut message_id).map_err(|_| crypto_err("failed to generate message ID"))?;
+    validate_content_length(plaintext.len())?;
 
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
+    let message_id = generate_iv_or_message_id(suite.message_id_length())?;
+
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
     //# The client MUST use HKDF to derive the key commitment value and the derived encrypting key as described in [Key Derivation](key-derivation.md).
     let (derived_encryption_key, commit_key) = derive_keys(suite, plaintext_data_key, &message_id)?;
 
     let iv = suite.committing_iv();
 
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# The client MUST set the AAD to the Algorithm Suite ID represented as bytes.
     let aad = suite.suite_id_bytes();
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The client MUST initialize the cipher, or call an AES-GCM encryption API, with the derived encryption key, an IV containing only bytes with the value 0x01,
+    //# and the tag length defined in the Algorithm Suite when encrypting or decrypting with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY.
+    //
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
+    //# The client MUST append the GCM auth tag to the ciphertext if the underlying crypto provider does not do so automatically.
     let ciphertext = aes_gcm_seal(&derived_encryption_key, &iv, &aad, plaintext)?;
 
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
+    //# The derived key commitment value MUST be set or returned from the encryption process such that it can be included in the content metadata.
     Ok((message_id, commit_key, ciphertext))
 }
 
@@ -393,18 +488,22 @@ pub fn decrypt_content_committing(
     stored_commitment: &[u8],
     ciphertext_with_tag: &[u8],
 ) -> Result<Vec<u8>> {
-    //= spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= type=implication
+    //= reason=the derived encryption key is never applied: aes_gcm_open below is unreachable unless verify_slices_are_equal succeeds via `?`, so an unverified key cannot be used to decrypt
     //# When using an algorithm suite which supports key commitment, the client MUST verify the key commitment values match before deriving the [derived encryption key](./key-derivation.md#hkdf-operation).
     let (derived_encryption_key, derived_commitment) =
         derive_keys(suite, plaintext_data_key, message_id)?;
 
-    //= spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
     //# When using an algorithm suite which supports key commitment, the client MUST verify that the [derived key commitment](./key-derivation.md#hkdf-operation) contains the same bytes as the stored key commitment retrieved from the stored object's metadata.
     //
-    //= spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= type=implication
+    //= reason=verification uses aws-lc-rs constant_time::verify_slices_are_equal, which compares in constant time by construction
     //# When using an algorithm suite which supports key commitment, the verification of the derived key commitment value MUST be done in constant time.
     //
-    //= spec/s3-encryption/decryption.md#decrypting-with-commitment
+    //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
     //# When using an algorithm suite which supports key commitment, the client MUST throw an exception when the derived key commitment value and stored key commitment value do not match.
     constant_time::verify_slices_are_equal(stored_commitment, &derived_commitment)
         .map_err(|_| crypto_err("key commitment verification failed"))?;
@@ -412,6 +511,37 @@ pub fn decrypt_content_committing(
     let iv = suite.committing_iv();
     let aad = suite.suite_id_bytes();
     aes_gcm_open(&derived_encryption_key, &iv, &aad, ciphertext_with_tag)
+}
+
+// ---------------------------------------------------------------------------
+// AES-CTR content encryption is unsupported.
+//
+// The CTR algorithm suites (ALG_AES_256_CTR_IV16_TAG16_NO_KDF and
+// ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY) exist only to decrypt *ranges* of an
+// object that was encrypted with the corresponding AES-GCM suite (see
+// `decrypt_range_ctr`). They are never used to encrypt, so any attempt to do
+// so fails unconditionally.
+// ---------------------------------------------------------------------------
+
+/// Attempting to encrypt content with `ALG_AES_256_CTR_IV16_TAG16_NO_KDF`
+/// always fails: AES-CTR is a decrypt-only (ranged-get) suite.
+pub fn encrypt_content_ctr(_data_key: &[u8], _plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-ctr-iv16-tag16-no-kdf
+    //# Attempts to encrypt using AES-CTR MUST fail.
+    Err(crypto_err("encryption using AES-CTR is not supported"))
+}
+
+/// Attempting to encrypt content with `ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY`
+/// always fails: key-committing AES-CTR is a decrypt-only (ranged-get) suite.
+pub fn encrypt_content_committing_ctr(
+    _data_key: &[u8],
+    _plaintext: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-ctr-hkdf-sha512-commit-key
+    //# Attempts to encrypt using key committing AES-CTR MUST fail.
+    Err(crypto_err(
+        "encryption using key committing AES-CTR is not supported",
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -459,7 +589,7 @@ pub fn decrypt_range_ctr(
     // body length equals the plaintext length for the stream-cipher suites).
     let end_inclusive = end_inclusive.min(content.len() - 1);
 
-    //= spec/s3-encryption/decryption.md#ranged-gets
+    //= ../spec/s3-encryption/decryption.md#ranged-gets
     //# If the S3EC supports Ranged Gets, the S3EC MUST adjust the customer-provided range to include the beginning and end of the cipher blocks for the given range.
     let block_index = start / AES_BLOCK_LEN;
     let aligned_start = block_index * AES_BLOCK_LEN;
@@ -512,12 +642,10 @@ pub fn decrypt_range_committing(
     let (derived_encryption_key, derived_commitment) =
         derive_keys(suite, plaintext_data_key, message_id)?;
 
-    //= spec/s3-encryption/decryption.md#decrypting-with-commitment
-    //# When using an algorithm suite which supports key commitment, the client MUST throw an exception when the derived key commitment value and stored key commitment value do not match.
     constant_time::verify_slices_are_equal(stored_commitment, &derived_commitment)
         .map_err(|_| crypto_err("key commitment verification failed"))?;
 
-    //= spec/s3-encryption/decryption.md#ranged-gets
+    //= ../spec/s3-encryption/decryption.md#ranged-gets
     //# If the object was encrypted with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, then ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY MUST be used to decrypt the range of the object.
     let iv = suite.committing_iv();
     decrypt_range_ctr(&derived_encryption_key, &iv, content, start, end_inclusive)
@@ -551,6 +679,11 @@ mod tests {
         assert_eq!(iv.len(), 16);
         assert_eq!(ct.len() % 16, 0);
 
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=test
+        //= reason=decrypting a CBC/PKCS7 fixture recovers the exact plaintext, proving an AES-CBC cipher with PKCS7 padding for a 16-byte block was created
+        //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is enabled,
+        //# then the S3EC MUST create a cipher with AES in CBC Mode with PKCS5Padding or PKCS7Padding compatible padding for a 16-byte block cipher (example: for the Java JCE, this is "AES/CBC/PKCS5Padding").
         let recovered = decrypt_content_cbc(&DATA_KEY, &iv, &ct).unwrap();
         assert_eq!(recovered, plaintext);
     }
@@ -577,6 +710,11 @@ mod tests {
     fn cbc_rejects_malformed_iv_length() {
         let (_iv, ct) = cbc_encrypt(&DATA_KEY, b"payload");
         // A 12-byte (GCM-sized) IV is not a valid CBC IV.
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
+        //= type=test
+        //= reason=a malformed 12-byte IV cannot initialize the 16-byte-block CBC cipher context, so decryption fails
+        //# If the cipher object cannot be created as described above,
+        //# Decryption MUST fail.
         let err = decrypt_content_cbc(&DATA_KEY, &[0u8; 12], &ct).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
@@ -666,6 +804,14 @@ mod tests {
         commit_key[0] ^= 0xFF;
         let err = decrypt_content_committing(COMMITTING, &DATA_KEY, &message_id, &commit_key, &ct)
             .unwrap_err();
+        //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+        //= type=test
+        //= reason=mutating the stored commitment makes it differ from the derived commitment, and decrypt is rejected, proving the derived value is compared against the stored bytes
+        //# When using an algorithm suite which supports key commitment, the client MUST verify that the [derived key commitment](./key-derivation.md#hkdf-operation) contains the same bytes as the stored key commitment retrieved from the stored object's metadata.
+        //
+        //= ../spec/s3-encryption/decryption.md#decrypting-with-commitment
+        //= type=test
+        //# When using an algorithm suite which supports key commitment, the client MUST throw an exception when the derived key commitment value and stored key commitment value do not match.
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 
@@ -678,6 +824,148 @@ mod tests {
         let err = decrypt_content_committing(COMMITTING, &DATA_KEY, &message_id, &commit_key, &ct)
             .unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// Independent RFC 5869 HKDF-SHA512 built directly from the HMAC-SHA512
+    /// primitive — deliberately NOT the `hkdf` module under test — so the
+    /// derived-key tests assert against an external authority. Only a single
+    /// expand block is needed since every output here is <= 64 bytes.
+    fn rfc5869_hkdf_sha512(salt: &[u8], ikm: &[u8], info: &[u8], len: usize) -> Vec<u8> {
+        use aws_lc_rs::hmac;
+        assert!(len <= 64, "test helper only supports a single HKDF expand block");
+        // Extract: PRK = HMAC-SHA512(salt, IKM).
+        let prk = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA512, salt), ikm);
+        // Expand: T(1) = HMAC-SHA512(PRK, info || 0x01); OKM = first `len` bytes.
+        let mut ctx = hmac::Context::with_key(&hmac::Key::new(hmac::HMAC_SHA512, prk.as_ref()));
+        ctx.update(info);
+        ctx.update(&[0x01]);
+        ctx.sign().as_ref()[..len].to_vec()
+    }
+
+    #[test]
+    fn derive_keys_matches_rfc5869_hkdf_sha512() {
+        let message_id = [0x42u8; 28];
+        let pdk = DATA_KEY;
+        let suite_id = COMMITTING.suite_id_bytes();
+
+        let mut dek_info = suite_id.clone();
+        dek_info.extend_from_slice(b"DERIVEKEY");
+        let mut ck_info = suite_id.clone();
+        ck_info.extend_from_slice(b"COMMITKEY");
+
+        // Authority values computed independently of the `hkdf` module.
+        let expected_dek = rfc5869_hkdf_sha512(&message_id, &pdk, &dek_info, 32);
+        let expected_ck = rfc5869_hkdf_sha512(&message_id, &pdk, &ck_info, 28);
+
+        let (dek, ck) = derive_keys(COMMITTING, &pdk, &message_id).unwrap();
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=DEK matches independent HKDF-SHA512; a different hash function changes these bytes
+        //# - The hash function MUST be specified by the algorithm suite commitment settings.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=independent HKDF uses the PDK as IKM; a different IKM changes these bytes
+        //# - The input keying material MUST be the plaintext data key (PDK) generated by the key provider.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=independent HKDF uses the message ID as salt; a different salt changes these bytes
+        //# - The salt MUST be the Message ID with the length defined in the algorithm suite.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=independent HKDF expands the extract-step PRK; a different PRK changes these bytes
+        //# - The DEK input pseudorandom key MUST be the output from the extract step.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=expected DEK is 32 bytes (encryption key length); a different length fails this equality
+        //# - The length of the output keying material MUST equal the encryption key length specified by the algorithm suite encryption settings.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=independent HKDF info is suite ID then "DERIVEKEY"; different info changes these bytes
+        //# - The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string DERIVEKEY as UTF8 encoded bytes.
+        assert_eq!(dek, expected_dek, "DEK must match independent HKDF-SHA512");
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=independent HKDF expands the extract-step PRK; a different PRK changes these bytes
+        //# - The CK input pseudorandom key MUST be the output from the extract step.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=expected CK is 28 bytes (commit key length); a different length fails this equality
+        //# - The length of the output keying material MUST equal the commit key length specified by the supported algorithm suites.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=independent HKDF info is suite ID then "COMMITKEY"; different info changes these bytes
+        //# - The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string COMMITKEY as UTF8 encoded bytes.
+        assert_eq!(ck, expected_ck, "commit key must match independent HKDF-SHA512");
+    }
+
+    #[test]
+    fn derive_keys_rejects_pdk_of_wrong_length() {
+        let message_id = [5u8; 28];
+        let correct_pdk = DATA_KEY; // 32 bytes == key derivation input length
+        let wrong_pdk = [7u8; 31]; // 31 bytes != key derivation input length
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=a PDK whose length equals the derivation input length derives; any other length is rejected
+        //# - The length of the input keying material MUST equal the key derivation input length specified by the algorithm suite commit key derivation setting.
+        assert!(
+            derive_keys(COMMITTING, &correct_pdk, &message_id).is_ok(),
+            "PDK with the correct length must derive"
+        );
+        assert!(
+            matches!(
+                derive_keys(COMMITTING, &wrong_pdk, &message_id).unwrap_err(),
+                S3EncryptionError::Crypto(_)
+            ),
+            "PDK with the wrong length must be rejected"
+        );
+    }
+
+    #[test]
+    fn committing_encrypt_uses_derived_key_ones_iv_and_suite_id_aad() {
+        let plaintext = b"committed content payload";
+        let (message_id, _commit_key, ct) =
+            encrypt_content_committing(COMMITTING, &DATA_KEY, plaintext).unwrap();
+
+        // Independently reconstruct the AEAD inputs the encryptor must have used.
+        let (derived_key, _) = derive_keys(COMMITTING, &DATA_KEY, &message_id).unwrap();
+        let ones_iv = vec![0x01u8; COMMITTING.iv_length()];
+        let suite_id_aad = COMMITTING.suite_id_bytes();
+
+        // The GCM tag (tag length bytes) is appended to the ciphertext.
+        assert_eq!(ct.len(), plaintext.len() + COMMITTING.tag_length());
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=opening with the derived key + all-0x01 IV recovers plaintext; a different key or IV fails GCM authentication
+        //# The client MUST initialize the cipher, or call an AES-GCM encryption API, with the derived encryption key, an IV containing only bytes with the value 0x01,
+        //# and the tag length defined in the Algorithm Suite when encrypting or decrypting with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY.
+        assert_eq!(
+            aes_gcm_open(&derived_key, &ones_iv, &suite_id_aad, &ct).unwrap(),
+            plaintext.to_vec(),
+            "derived key + all-0x01 IV must open the committing ciphertext"
+        );
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //= reason=the suite-ID AAD opens the ciphertext (above); any other AAD fails GCM auth, proving the seal bound the suite ID
+        //# The client MUST set the AAD to the Algorithm Suite ID represented as bytes.
+        assert!(
+            matches!(
+                aes_gcm_open(&derived_key, &ones_iv, b"not-the-suite-id", &ct).unwrap_err(),
+                S3EncryptionError::Crypto(_)
+            ),
+            "an AAD other than the suite ID must fail authentication"
+        );
     }
 
     const WRAP_KEY: [u8; 32] = [0x5Au8; 32];
@@ -803,6 +1091,10 @@ mod tests {
         let cases = [(0usize, 5usize), (5, 10), (10, 100), (15, 17), (16, 47), (0, plaintext.len() - 1), (200, 200)];
         for (start, end) in cases {
             let ranged = decrypt_range_ctr(&DATA_KEY, &iv, content, start, end).unwrap();
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
+            //= type=test
+            //= reason=mid-block start ranges (e.g. [15,17] and [16,47]) decrypt to the exact plaintext slice, proving the range was widened to the enclosing cipher-block boundaries
+            //# If the S3EC supports Ranged Gets, the S3EC MUST adjust the customer-provided range to include the beginning and end of the cipher blocks for the given range.
             assert_eq!(
                 ranged,
                 &plaintext[start..=end],
@@ -836,6 +1128,10 @@ mod tests {
                 COMMITTING, &DATA_KEY, &message_id, &commit_key, content, start, end,
             )
             .unwrap();
+            //= ../spec/s3-encryption/decryption.md#ranged-gets
+            //= type=test
+            //= reason=a committing GCM-HKDF object's range decrypts to the exact plaintext slice via the committing CTR suite (decrypt_range_committing)
+            //# If the object was encrypted with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, then ALG_AES_256_CTR_HKDF_SHA512_COMMIT_KEY MUST be used to decrypt the range of the object.
             assert_eq!(ranged, &plaintext[start..=end]);
         }
     }

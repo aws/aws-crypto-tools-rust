@@ -75,11 +75,17 @@ impl EncryptionAlgorithm {
         }
     }
 
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# This means that the IV for ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, which is 12 bytes long, would be `[0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01 ]`.
     /// The fixed all-`0x01` IV used for content encryption by the committing
     /// AES-GCM suite (in place of a generated IV).
     pub fn committing_iv(self) -> Vec<u8> {
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //# When encrypting or decrypting with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY,
+        //# the IV used in the AES-GCM content encryption/decryption MUST consist entirely of bytes with the value 0x01.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //# The IV's total length MUST match the IV length defined by the algorithm suite.
         vec![0x01u8; self.iv_length()]
     }
 
@@ -128,6 +134,20 @@ mod tests {
     #[test]
     fn committing_iv_is_all_ones() {
         let alg = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //# This means that the IV for ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY, which is 12 bytes long, would be `[0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01 ]`.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //# When encrypting or decrypting with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY,
+        //# the IV used in the AES-GCM content encryption/decryption MUST consist entirely of bytes with the value 0x01.
         assert_eq!(alg.committing_iv(), vec![0x01u8; 12]);
+
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //= type=test
+        //# The IV's total length MUST match the IV length defined by the algorithm suite.
+        assert_eq!(alg.committing_iv().len(), alg.iv_length());
     }
 }
