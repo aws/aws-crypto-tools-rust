@@ -10,7 +10,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use crate::config::{CommitmentPolicy, S3EncryptionConfig};
 use crate::crypto;
 use crate::error::{Result, S3EncryptionError};
-use crate::keyring::{KmsKeyring, WRAP_ALG_KMS_CONTEXT};
+use crate::keyring::{AesKeyring, KmsKeyring, WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT};
 use crate::metadata::{self, ObjectMetadata};
 
 /// The plaintext and stored object metadata returned from a decrypting
@@ -24,15 +24,25 @@ pub struct DecryptedObject {
     pub metadata: BTreeMap<String, String>,
 }
 
+/// The content-data-key keyring a client is configured with: either an AWS KMS
+/// keyring or a raw AES keyring. The harness configures exactly one.
+#[derive(Clone)]
+pub enum Keyring {
+    /// AWS KMS keyring (the `kms+context` / legacy `kms` wrapping algorithms).
+    Kms(KmsKeyring),
+    /// Raw AES keyring (the `AES/GCM` wrapping algorithm).
+    Aes(AesKeyring),
+}
+
 /// Client-side encrypting wrapper around the AWS S3 client.
 ///
 /// Holds the validated [`S3EncryptionConfig`] together with the wrapped S3 SDK
-/// client and the KMS keyring used to wrap and unwrap content data keys.
+/// client and the keyring used to wrap and unwrap content data keys.
 #[derive(Clone)]
 pub struct S3EncryptionClient {
     config: S3EncryptionConfig,
     s3: aws_sdk_s3::Client,
-    keyring: Option<KmsKeyring>,
+    keyring: Option<Keyring>,
 }
 
 impl S3EncryptionClient {
@@ -45,13 +55,18 @@ impl S3EncryptionClient {
         kms: aws_sdk_kms::Client,
     ) -> Result<Self> {
         config.validate()?;
-        let keyring = config.kms_key_id.as_ref().map(|key_id| {
-            KmsKeyring::new(
+        let keyring = if let Some(key_id) = config.kms_key_id.as_ref() {
+            Some(Keyring::Kms(KmsKeyring::new(
                 kms,
                 key_id.clone(),
                 config.enable_legacy_wrapping_algorithms,
-            )
-        });
+            )))
+        } else {
+            config
+                .aes_wrapping_key
+                .as_ref()
+                .map(|key| Keyring::Aes(AesKeyring::new(key.clone())))
+        };
         Ok(Self {
             config,
             s3,
@@ -99,9 +114,11 @@ impl S3EncryptionClient {
         &self.s3
     }
 
-    fn require_keyring(&self) -> Result<&KmsKeyring> {
+    fn require_keyring(&self) -> Result<&Keyring> {
         self.keyring.as_ref().ok_or_else(|| {
-            S3EncryptionError::Configuration("a KMS key identifier is required".to_string())
+            S3EncryptionError::Configuration(
+                "a KMS key identifier or a raw AES wrapping key is required".to_string(),
+            )
         })
     }
 
@@ -123,18 +140,31 @@ impl S3EncryptionClient {
         //# The S3EC MUST use the encryption algorithm configured during [client](./client.md) initialization.
         let suite = self.config.effective_encryption_algorithm();
 
-        // Bind the content algorithm into the KMS encryption context, then wrap
-        // a fresh data key.
-        let context = KmsKeyring::build_encryption_context(encryption_context, suite);
-        let (plaintext_data_key, encrypted_data_key) = keyring.wrap(&context).await?;
-
-        let (body, object_metadata) = build_encrypted_object(
-            suite,
-            &plaintext_data_key,
-            &encrypted_data_key,
-            &context,
-            plaintext,
-        )?;
+        // Wrap a fresh data key and assemble the encrypted object. The KMS
+        // keyring binds the content algorithm into the KMS encryption context;
+        // the raw AES keyring wraps locally and stores no encryption context.
+        let (body, object_metadata) = match keyring {
+            Keyring::Kms(kms) => {
+                let context = KmsKeyring::build_encryption_context(encryption_context, suite);
+                let (plaintext_data_key, encrypted_data_key) = kms.wrap(&context).await?;
+                build_encrypted_object(
+                    suite,
+                    &plaintext_data_key,
+                    &encrypted_data_key,
+                    &context,
+                    plaintext,
+                )?
+            }
+            Keyring::Aes(aes) => {
+                let (plaintext_data_key, encrypted_data_key) = aes.wrap(suite)?;
+                build_encrypted_object_raw_aes(
+                    suite,
+                    &plaintext_data_key,
+                    &encrypted_data_key,
+                    plaintext,
+                )?
+            }
+        };
 
         let metadata: std::collections::HashMap<String, String> =
             object_metadata.to_map().into_iter().collect();
@@ -360,7 +390,7 @@ impl S3EncryptionClient {
 
     async fn decrypt_v2(
         &self,
-        keyring: &KmsKeyring,
+        keyring: &Keyring,
         md: &ObjectMetadata,
         ciphertext: &[u8],
         request_context: &BTreeMap<String, String>,
@@ -403,10 +433,12 @@ impl S3EncryptionClient {
             .clone()
             .unwrap_or_else(|| WRAP_ALG_KMS_CONTEXT.to_string());
 
-        let plaintext_data_key = keyring
-            .unwrap(
-                &encrypted_data_key,
+        let plaintext_data_key = self
+            .unwrap_data_key(
+                keyring,
                 &wrap_algorithm,
+                content_alg,
+                &encrypted_data_key,
                 &stored_context,
                 request_context,
             )
@@ -420,7 +452,7 @@ impl S3EncryptionClient {
 
     async fn decrypt_v3(
         &self,
-        keyring: &KmsKeyring,
+        keyring: &Keyring,
         md: &ObjectMetadata,
         ciphertext: &[u8],
         request_context: &BTreeMap<String, String>,
@@ -434,15 +466,17 @@ impl S3EncryptionClient {
 
         let encrypted_data_key = md.v3_encrypted_data_key()?;
         let stored_context = md.v3_stored_context()?;
-        // The V3 wrapping algorithm is a compressed code; "12" (kms+context) is
-        // the only mode this client writes.
+        // The V3 wrapping algorithm is a compressed code: "12" (kms+context) or
+        // "02" (AES/GCM).
         let wrap_code = md.wrap_algorithm_v3.as_deref().unwrap_or("12");
         let wrap_algorithm = metadata::v3_wrap_algorithm_to_name(wrap_code)?;
 
-        let plaintext_data_key = keyring
-            .unwrap(
-                &encrypted_data_key,
+        let plaintext_data_key = self
+            .unwrap_data_key(
+                keyring,
                 wrap_algorithm,
+                suite,
+                &encrypted_data_key,
                 &stored_context,
                 request_context,
             )
@@ -453,6 +487,47 @@ impl S3EncryptionClient {
                 open_v3_content_range(suite, &plaintext_data_key, md, ciphertext, start, end)
             }
             None => open_v3_content(suite, &plaintext_data_key, md, ciphertext),
+        }
+    }
+
+    /// Unwrap an encrypted data key with the configured keyring, dispatching on
+    /// the wrapping algorithm recorded in the object metadata. A KMS keyring
+    /// rejects an `AES/GCM`-wrapped key (and vice versa) so a client never
+    /// silently decrypts an object wrapped for a different key provider.
+    async fn unwrap_data_key(
+        &self,
+        keyring: &Keyring,
+        wrap_algorithm: &str,
+        suite: crate::config::EncryptionAlgorithm,
+        encrypted_data_key: &[u8],
+        stored_context: &BTreeMap<String, String>,
+        request_context: &BTreeMap<String, String>,
+    ) -> Result<Vec<u8>> {
+        match keyring {
+            Keyring::Kms(kms) => {
+                if wrap_algorithm == WRAP_ALG_AES_GCM {
+                    return Err(S3EncryptionError::Crypto(format!(
+                        "object was wrapped with {wrap_algorithm} but the client is configured \
+                         with a KMS keyring"
+                    )));
+                }
+                kms.unwrap(
+                    encrypted_data_key,
+                    wrap_algorithm,
+                    stored_context,
+                    request_context,
+                )
+                .await
+            }
+            Keyring::Aes(aes) => {
+                if wrap_algorithm != WRAP_ALG_AES_GCM {
+                    return Err(S3EncryptionError::Crypto(format!(
+                        "object was wrapped with {wrap_algorithm} but the client is configured \
+                         with a raw AES keyring"
+                    )));
+                }
+                aes.unwrap(encrypted_data_key, suite)
+            }
         }
     }
 }
@@ -515,6 +590,33 @@ fn build_encrypted_object(
     } else {
         let (iv, ciphertext) = crypto::encrypt_content_gcm(plaintext_data_key, plaintext)?;
         let md = ObjectMetadata::for_v2(encrypted_data_key, &iv, context)?;
+        Ok((ciphertext, md))
+    }
+}
+
+/// Assemble the encrypted body and content metadata for a raw-AES-wrapped
+/// object. Like [`build_encrypted_object`] but emits raw-AES metadata
+/// (`AES/GCM` wrapping algorithm, no KMS encryption context) and takes no
+/// encryption context, since raw keyrings do not persist one.
+fn build_encrypted_object_raw_aes(
+    suite: crate::config::EncryptionAlgorithm,
+    plaintext_data_key: &[u8],
+    encrypted_data_key: &[u8],
+    plaintext: &[u8],
+) -> Result<(Vec<u8>, ObjectMetadata)> {
+    if suite.is_committing() {
+        let (message_id, key_commitment, ciphertext) =
+            crypto::encrypt_content_committing(suite, plaintext_data_key, plaintext)?;
+        let md = ObjectMetadata::for_v3_raw_aes(
+            suite,
+            encrypted_data_key,
+            &message_id,
+            &key_commitment,
+        )?;
+        Ok((ciphertext, md))
+    } else {
+        let (iv, ciphertext) = crypto::encrypt_content_gcm(plaintext_data_key, plaintext)?;
+        let md = ObjectMetadata::for_v2_raw_aes(encrypted_data_key, &iv)?;
         Ok((ciphertext, md))
     }
 }
@@ -741,6 +843,39 @@ mod tests {
         );
 
         let recovered = open_v3_content(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &parsed, &body).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    /// A raw-AES key-committing object survives the full local pipeline:
+    /// generate+wrap the data key with the AES keyring, assemble the V3
+    /// raw-AES metadata + body, round-trip through the S3 string map, then
+    /// unwrap and decrypt — all without KMS or S3. Verifies the raw-AES wire
+    /// format (AES/GCM wrap code "02", no KMS encryption context).
+    #[test]
+    fn raw_aes_v3_object_round_trips_through_wire_map() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let keyring = AesKeyring::new(vec![0x5Au8; 32]);
+        let plaintext = b"hello raw aes committing world";
+
+        let (plaintext_dk, wrapped_dk) = keyring.wrap(suite).unwrap();
+        let (body, md) =
+            build_encrypted_object_raw_aes(suite, &plaintext_dk, &wrapped_dk, plaintext).unwrap();
+
+        let map = md.to_map();
+        let parsed = ObjectMetadata::from_map(&map);
+
+        assert!(parsed.is_v3_format());
+        assert_eq!(map.get(CONTENT_CIPHER_V3).unwrap(), "115");
+        // Raw AES records the AES/GCM wrap code, and stores no KMS context.
+        assert_eq!(map.get(WRAP_ALGORITHM_V3).unwrap(), "02");
+        assert!(!map.contains_key(crate::metadata::ENCRYPTION_CONTEXT_V3));
+
+        let recovered_dk = keyring
+            .unwrap(&parsed.v3_encrypted_data_key().unwrap(), suite)
+            .unwrap();
+        assert_eq!(recovered_dk, plaintext_dk);
+
+        let recovered = open_v3_content(suite, &recovered_dk, &parsed, &body).unwrap();
         assert_eq!(recovered, plaintext);
     }
 

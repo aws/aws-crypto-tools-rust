@@ -23,6 +23,9 @@ use crate::error::{Result, S3EncryptionError};
 pub const WRAP_ALG_KMS_CONTEXT: &str = "kms+context";
 /// The legacy "kms" (KmsV1) key provider info.
 pub const WRAP_ALG_KMS_V1: &str = "kms";
+/// The raw AES-GCM ("AES/GCM") key provider info — the non-legacy wrapping
+/// algorithm used by the [`AesKeyring`]. Its V3 compressed code is "02".
+pub const WRAP_ALG_AES_GCM: &str = "AES/GCM";
 
 /// Reserved encryption-context key holding the content algorithm. The S3EC
 /// owns this key; callers MUST NOT supply it.
@@ -212,6 +215,63 @@ impl KmsKeyring {
     }
 }
 
+/// A raw AES keyring that wraps and unwraps content data keys with a
+/// caller-supplied AES-256 key using AES-GCM (the non-legacy "AES/GCM"
+/// wrapping algorithm).
+///
+/// Unlike the KMS keyring, a raw keyring performs no network calls and stores
+/// no AWS KMS encryption context: the encryption context provides no security
+/// benefit for raw keyrings and is not persisted. This is a concrete S3
+/// Keyring implementation; the wrap/unwrap below realize its abstract
+/// `GenerateDataKey`/`EncryptDataKey`/`DecryptDataKey` methods.
+#[derive(Clone)]
+pub struct AesKeyring {
+    wrapping_key: Vec<u8>,
+}
+
+impl AesKeyring {
+    /// Construct a raw AES keyring from a wrapping key. The wrapping key must
+    /// be a 256-bit (32-byte) AES key; a wrong-length key is rejected lazily by
+    /// the AES-GCM primitive when wrapping or unwrapping.
+    pub fn new(wrapping_key: Vec<u8>) -> Self {
+        Self { wrapping_key }
+    }
+
+    /// The AES-GCM AAD bound into a wrapped data key for `suite`: the suite's
+    /// content-cipher value (`"115"` for the committing suite,
+    /// `"AES/GCM/NoPadding"` for the non-committing suite). This matches the
+    /// canonical Java `AesKeyring`, keeping wrapped keys interoperable.
+    fn wrap_aad(suite: EncryptionAlgorithm) -> String {
+        suite.content_cipher_value()
+    }
+
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
+    //
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
+    /// Generate a fresh content data key and wrap it with the configured AES
+    /// key (`GenerateDataKey` + `EncryptDataKey`). Returns
+    /// `(plaintext_data_key, wrapped_data_key)`. The wrapped form is the
+    /// 12-byte GCM IV prepended to the GCM ciphertext-with-tag.
+    pub fn wrap(&self, suite: EncryptionAlgorithm) -> Result<(Vec<u8>, Vec<u8>)> {
+        let plaintext_data_key = crate::crypto::random_bytes(suite.data_key_length())?;
+        let aad = Self::wrap_aad(suite);
+        let wrapped =
+            crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), &plaintext_data_key)?;
+        Ok((plaintext_data_key, wrapped))
+    }
+
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
+    /// Unwrap a wrapped data key with the configured AES key (`DecryptDataKey`).
+    /// `suite` selects the AAD that was bound at wrap time.
+    pub fn unwrap(&self, wrapped_data_key: &[u8], suite: EncryptionAlgorithm) -> Result<Vec<u8>> {
+        let aad = Self::wrap_aad(suite);
+        crate::crypto::unwrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), wrapped_data_key)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +360,42 @@ mod tests {
         let stored = ctx(&[(RESERVED_CEK_ALG_KEY, "115")]);
         let request = ctx(&[(RESERVED_CEK_ALG_KEY, "115")]);
         let err = KmsKeyring::validate_decryption_context(&stored, &request).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn aes_keyring_wrap_unwrap_round_trips() {
+        let keyring = AesKeyring::new(vec![0x42u8; 32]);
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let (plaintext_dk, wrapped) = keyring.wrap(suite).unwrap();
+        // A fresh 256-bit data key is generated and wrapped (IV + key + tag).
+        assert_eq!(plaintext_dk.len(), 32);
+        assert_eq!(wrapped.len(), 12 + 32 + 16);
+        let recovered = keyring.unwrap(&wrapped, suite).unwrap();
+        assert_eq!(recovered, plaintext_dk);
+    }
+
+    #[test]
+    fn aes_keyring_unwrap_with_wrong_suite_aad_fails() {
+        // The wrap AAD is the suite content-cipher value, so unwrapping a
+        // committing-suite-wrapped key as a non-committing key must fail.
+        let keyring = AesKeyring::new(vec![0x42u8; 32]);
+        let (_dk, wrapped) = keyring
+            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
+            .unwrap();
+        let err = keyring
+            .unwrap(&wrapped, EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf)
+            .unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn aes_keyring_rejects_wrong_length_key() {
+        // A non-256-bit wrapping key is rejected by the AES-256-GCM primitive.
+        let keyring = AesKeyring::new(vec![0x42u8; 16]);
+        let err = keyring
+            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
+            .unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 }

@@ -60,6 +60,58 @@ fn aes_gcm_open(key: &[u8], iv: &[u8], aad: &[u8], ciphertext_with_tag: &[u8]) -
     Ok(plaintext.to_vec())
 }
 
+/// Fill a fresh buffer of `len` cryptographically random bytes.
+pub fn random_bytes(len: usize) -> Result<Vec<u8>> {
+    let mut buf = vec![0u8; len];
+    rand::fill(&mut buf).map_err(|_| crypto_err("failed to generate random bytes"))?;
+    Ok(buf)
+}
+
+// ---------------------------------------------------------------------------
+// Raw AES-GCM data-key wrapping (RawAes keyring, "AES/GCM" wrapping algorithm).
+//
+// A raw AES keyring wraps the content data key with a caller-supplied AES-256
+// key using AES-GCM. The wrapped form is the 12-byte GCM IV prepended to the
+// GCM ciphertext (which carries the appended 16-byte tag). The AAD is the
+// content-cipher value of the algorithm suite ("115" for the committing suite,
+// "AES/GCM/NoPadding" for the non-committing suite), matching the canonical
+// Java `AesKeyring` so wrapped keys interoperate across implementations.
+// ---------------------------------------------------------------------------
+
+/// Length of the GCM IV prepended to an AES-GCM-wrapped data key.
+const AES_WRAP_IV_LEN: usize = 12;
+
+/// Wrap a plaintext data key with a raw AES-256 key using AES-GCM, binding
+/// `aad` (the suite content-cipher value) into the tag. Returns the 12-byte IV
+/// prepended to the GCM ciphertext-with-tag.
+pub fn wrap_data_key_aes_gcm(
+    wrapping_key: &[u8],
+    aad: &[u8],
+    plaintext_data_key: &[u8],
+) -> Result<Vec<u8>> {
+    let iv = random_bytes(AES_WRAP_IV_LEN)?;
+    let ciphertext = aes_gcm_seal(wrapping_key, &iv, aad, plaintext_data_key)?;
+    // The wrapped data key is the IV prepended to the ciphertext.
+    let mut wrapped = iv;
+    wrapped.extend_from_slice(&ciphertext);
+    Ok(wrapped)
+}
+
+/// Unwrap an AES-GCM-wrapped data key produced by [`wrap_data_key_aes_gcm`].
+/// Splits the leading 12-byte IV from the GCM ciphertext, verifies the tag
+/// (binding `aad`), and returns the recovered plaintext data key.
+pub fn unwrap_data_key_aes_gcm(
+    wrapping_key: &[u8],
+    aad: &[u8],
+    wrapped: &[u8],
+) -> Result<Vec<u8>> {
+    if wrapped.len() <= AES_WRAP_IV_LEN {
+        return Err(crypto_err("AES-GCM wrapped data key is too short"));
+    }
+    let (iv, ciphertext) = wrapped.split_at(AES_WRAP_IV_LEN);
+    aes_gcm_open(wrapping_key, iv, aad, ciphertext)
+}
+
 // ---------------------------------------------------------------------------
 // Non-committing AES-GCM (ALG_AES_256_GCM_IV12_TAG16_NO_KDF, V2 format).
 // ---------------------------------------------------------------------------
@@ -512,6 +564,40 @@ mod tests {
         ct[2] ^= 0x01;
         let err = decrypt_content_committing(COMMITTING, &DATA_KEY, &message_id, &commit_key, &ct)
             .unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    const WRAP_KEY: [u8; 32] = [0x5Au8; 32];
+
+    #[test]
+    fn aes_gcm_data_key_wrap_round_trips() {
+        let aad = b"115";
+        let wrapped = wrap_data_key_aes_gcm(&WRAP_KEY, aad, &DATA_KEY).unwrap();
+        // 12-byte IV + 32-byte key + 16-byte tag.
+        assert_eq!(wrapped.len(), 12 + 32 + 16);
+        let recovered = unwrap_data_key_aes_gcm(&WRAP_KEY, aad, &wrapped).unwrap();
+        assert_eq!(recovered, DATA_KEY);
+    }
+
+    #[test]
+    fn aes_gcm_data_key_unwrap_rejects_mismatched_aad() {
+        // The AAD binds the algorithm-suite content-cipher value; unwrapping
+        // with a different suite's AAD must fail the GCM tag check.
+        let wrapped = wrap_data_key_aes_gcm(&WRAP_KEY, b"115", &DATA_KEY).unwrap();
+        let err = unwrap_data_key_aes_gcm(&WRAP_KEY, b"AES/GCM/NoPadding", &wrapped).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn aes_gcm_data_key_unwrap_rejects_wrong_key() {
+        let wrapped = wrap_data_key_aes_gcm(&WRAP_KEY, b"115", &DATA_KEY).unwrap();
+        let err = unwrap_data_key_aes_gcm(&[0x11u8; 32], b"115", &wrapped).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn aes_gcm_data_key_unwrap_rejects_truncated_input() {
+        let err = unwrap_data_key_aes_gcm(&WRAP_KEY, b"115", &[0u8; 8]).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 

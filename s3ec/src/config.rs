@@ -78,6 +78,9 @@ impl CommitmentPolicy {
 pub struct S3EncryptionConfig {
     /// KMS key identifier (ARN/alias) used by the KMS keyring.
     pub kms_key_id: Option<String>,
+    /// Raw AES-256 wrapping key (32 bytes) used by the raw AES keyring. Mutually
+    /// exclusive with [`Self::kms_key_id`].
+    pub aes_wrapping_key: Option<Vec<u8>>,
     /// Whether legacy wrapping algorithms are permitted on decrypt.
     pub enable_legacy_wrapping_algorithms: bool,
     /// Whether legacy (unauthenticated) content algorithms are permitted on decrypt.
@@ -107,6 +110,7 @@ impl Default for S3EncryptionConfig {
     fn default() -> Self {
         Self {
             kms_key_id: None,
+            aes_wrapping_key: None,
             //= spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
             //# The option to enable legacy wrapping algorithms MUST be set to false by default.
             enable_legacy_wrapping_algorithms: false,
@@ -152,6 +156,15 @@ impl S3EncryptionConfig {
 
     /// Validate the configuration against the requirements in `client.md`.
     pub fn validate(&self) -> Result<()> {
+        // A client is configured with at most one key provider. The harness
+        // supplies exactly one of a KMS key id or a raw AES wrapping key.
+        if self.kms_key_id.is_some() && self.aes_wrapping_key.is_some() {
+            return Err(S3EncryptionError::Configuration(
+                "only one of a KMS key identifier or a raw AES wrapping key may be configured"
+                    .to_string(),
+            ));
+        }
+
         //= spec/s3-encryption/client.md#set-buffer-size
         //# If Delayed Authentication mode is enabled, and the buffer size has been set to a value other than its default, the S3EC MUST throw an exception.
         if self.enable_delayed_authentication_mode && self.buffer_size.is_some() {

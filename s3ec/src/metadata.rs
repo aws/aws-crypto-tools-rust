@@ -19,7 +19,7 @@ use base64::Engine;
 
 use crate::config::EncryptionAlgorithm;
 use crate::error::{Result, S3EncryptionError};
-use crate::keyring::WRAP_ALG_KMS_CONTEXT;
+use crate::keyring::{WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT};
 
 // ---------------------------------------------------------------------------
 // MapKey constants.
@@ -301,6 +301,47 @@ impl ObjectMetadata {
             message_id_v3: Some(BASE64.encode(message_id)),
             key_commitment_v3: Some(BASE64.encode(key_commitment)),
             encryption_context_v3: Some(encode_context(encryption_context)?),
+            ..Default::default()
+        })
+    }
+
+    /// Build V3 raw-AES key-committing content metadata. Differs from
+    /// [`Self::for_v3`] only in the data-key wrapping: the wrapping algorithm
+    /// is `AES/GCM` (V3 code "02") and no AWS KMS encryption context (`x-amz-t`)
+    /// is stored, since raw keyrings do not persist an encryption context. The
+    /// material description (`x-amz-m`) is omitted, which a reader defaults to
+    /// the empty map.
+    pub fn for_v3_raw_aes(
+        suite: EncryptionAlgorithm,
+        encrypted_data_key: &[u8],
+        message_id: &[u8],
+        key_commitment: &[u8],
+    ) -> Result<Self> {
+        Ok(Self {
+            content_cipher_v3: Some(suite.content_cipher_value()),
+            encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
+            //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+            //# - The wrapping algorithm value "02" MUST be translated to AES/GCM upon retrieval, and vice versa on write.
+            wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_AES_GCM)?.to_string()),
+            message_id_v3: Some(BASE64.encode(message_id)),
+            key_commitment_v3: Some(BASE64.encode(key_commitment)),
+            ..Default::default()
+        })
+    }
+
+    /// Build V2 raw-AES non-committing AES-GCM content metadata. The wrapping
+    /// algorithm is `AES/GCM`; no encryption context is stored (the material
+    /// description defaults to the empty map).
+    pub fn for_v2_raw_aes(encrypted_data_key: &[u8], content_iv: &[u8]) -> Result<Self> {
+        Ok(Self {
+            encrypted_data_key_v2: Some(BASE64.encode(encrypted_data_key)),
+            wrap_algorithm: Some(WRAP_ALG_AES_GCM.to_string()),
+            materials_description: Some("{}".to_string()),
+            content_iv: Some(BASE64.encode(content_iv)),
+            content_cipher: Some(
+                EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf.content_cipher_value(),
+            ),
+            tag_length: Some("128".to_string()),
             ..Default::default()
         })
     }
@@ -632,5 +673,33 @@ mod tests {
         assert_eq!(parsed.v3_message_id().unwrap(), message_id);
         assert_eq!(parsed.v3_key_commitment().unwrap(), commitment);
         assert_eq!(parsed.v3_stored_context().unwrap(), ctx());
+    }
+
+    #[test]
+    fn for_v3_raw_aes_uses_aes_gcm_wrap_and_no_kms_context() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let edk = b"aes-wrapped-data-key";
+        let message_id = [0x33u8; 28];
+        let commitment = [0x44u8; 28];
+        let md = ObjectMetadata::for_v3_raw_aes(suite, edk, &message_id, &commitment).unwrap();
+
+        assert!(md.is_v3_format());
+        assert_eq!(md.content_cipher_v3.as_deref(), Some("115"));
+        // Raw AES uses the "02" (AES/GCM) wrapping algorithm code.
+        assert_eq!(md.wrap_algorithm_v3.as_deref(), Some("02"));
+        // No AWS KMS encryption context and no material description are stored.
+        assert!(md.encryption_context_v3.is_none());
+        assert!(md.mat_desc_v3.is_none());
+
+        let map = md.to_map();
+        assert!(!map.contains_key(ENCRYPTION_CONTEXT_V3));
+        assert!(!map.contains_key(MAT_DESC_V3));
+
+        let parsed = ObjectMetadata::from_map(&map);
+        assert_eq!(parsed.v3_encrypted_data_key().unwrap(), edk);
+        assert_eq!(
+            v3_wrap_algorithm_to_name(parsed.wrap_algorithm_v3.as_deref().unwrap()).unwrap(),
+            "AES/GCM"
+        );
     }
 }
