@@ -250,19 +250,30 @@ impl AesKeyring {
 
     //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
-    //
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
-    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
     /// Generate a fresh content data key and wrap it with the configured AES
-    /// key (`GenerateDataKey` + `EncryptDataKey`). Returns
+    /// key (`GenerateDataKey` then `EncryptDataKey`). Returns
     /// `(plaintext_data_key, wrapped_data_key)`. The wrapped form is the
     /// 12-byte GCM IV prepended to the GCM ciphertext-with-tag.
     pub fn wrap(&self, suite: EncryptionAlgorithm) -> Result<(Vec<u8>, Vec<u8>)> {
         let plaintext_data_key = crate::crypto::random_bytes(suite.data_key_length())?;
-        let aad = Self::wrap_aad(suite);
-        let wrapped =
-            crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), &plaintext_data_key)?;
+        let wrapped = self.encrypt_data_key(&plaintext_data_key, suite)?;
         Ok((plaintext_data_key, wrapped))
+    }
+
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
+    /// Wrap an already-derived plaintext data key with the configured AES key
+    /// (`EncryptDataKey` only, no `GenerateDataKey`). Used by re-encryption,
+    /// which preserves the object's existing data key and only re-wraps it
+    /// under a new keyring. The wrapped form is the 12-byte GCM IV prepended to
+    /// the GCM ciphertext-with-tag.
+    pub fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
+        let aad = Self::wrap_aad(suite);
+        crate::crypto::wrap_data_key_aes_gcm(&self.wrapping_key, aad.as_bytes(), plaintext_data_key)
     }
 
     //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
@@ -303,22 +314,35 @@ impl RsaKeyring {
 
     //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
     //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
-    //
-    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
-    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
     /// Generate a fresh content data key and wrap it under the configured RSA
-    /// public key (`GenerateDataKey` + `EncryptDataKey`). Returns
+    /// public key (`GenerateDataKey` then `EncryptDataKey`). Returns
     /// `(plaintext_data_key, wrapped_data_key)`. The wrapped form is the
     /// RSA-OAEP-SHA1 ciphertext of the pseudo data key.
     pub fn wrap(&self, suite: EncryptionAlgorithm) -> Result<(Vec<u8>, Vec<u8>)> {
         let plaintext_data_key = crate::crypto::random_bytes(suite.data_key_length())?;
+        let wrapped = self.encrypt_data_key(&plaintext_data_key, suite)?;
+        Ok((plaintext_data_key, wrapped))
+    }
+
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
+    /// Wrap an already-derived plaintext data key under the configured RSA
+    /// public key (`EncryptDataKey` only, no `GenerateDataKey`). Used by
+    /// re-encryption, which preserves the object's existing data key and only
+    /// re-wraps it under a new keyring. The wrapped form is the RSA-OAEP-SHA1
+    /// ciphertext of the pseudo data key (which frames the data key with the
+    /// suite's content-cipher value).
+    pub fn encrypt_data_key(
+        &self,
+        plaintext_data_key: &[u8],
+        suite: EncryptionAlgorithm,
+    ) -> Result<Vec<u8>> {
         let content_cipher = suite.content_cipher_value();
-        let wrapped = crate::crypto::wrap_data_key_rsa_oaep(
+        crate::crypto::wrap_data_key_rsa_oaep(
             &self.private_key_pkcs8,
             content_cipher.as_bytes(),
-            &plaintext_data_key,
-        )?;
-        Ok((plaintext_data_key, wrapped))
+            plaintext_data_key,
+        )
     }
 
     //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
@@ -504,5 +528,28 @@ mod tests {
             .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
             .unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// `encrypt_data_key` re-wraps an existing data key (the re-encryption
+    /// path: `EncryptDataKey` with no fresh `GenerateDataKey`), and `unwrap`
+    /// recovers exactly that data key.
+    #[test]
+    fn aes_keyring_encrypt_data_key_preserves_existing_key() {
+        let keyring = AesKeyring::new(vec![0x42u8; 32]);
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let data_key = vec![0x5Au8; 32];
+        let wrapped = keyring.encrypt_data_key(&data_key, suite).unwrap();
+        assert_eq!(keyring.unwrap(&wrapped, suite).unwrap(), data_key);
+    }
+
+    /// The RSA equivalent: re-wrapping an existing data key under the RSA public
+    /// key and recovering it unchanged.
+    #[test]
+    fn rsa_keyring_encrypt_data_key_preserves_existing_key() {
+        let keyring = RsaKeyring::new(rsa_pkcs8_key());
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let data_key = vec![0x5Au8; 32];
+        let wrapped = keyring.encrypt_data_key(&data_key, suite).unwrap();
+        assert_eq!(keyring.unwrap(&wrapped, suite).unwrap(), data_key);
     }
 }

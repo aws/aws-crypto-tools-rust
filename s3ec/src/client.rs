@@ -223,18 +223,52 @@ impl S3EncryptionClient {
     ) -> Result<()> {
         let (object_map, instruction_map) = object_metadata.split_for_instruction_file();
 
+        // The instruction file is written first so that, once the encrypted
+        // object is visible, its instruction file already exists for readers.
+        self.write_instruction_file(
+            bucket,
+            key,
+            metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX,
+            &instruction_map,
+        )
+        .await?;
+
+        let metadata: std::collections::HashMap<String, String> = object_map.into_iter().collect();
+        self.s3
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(ByteStream::from(body))
+            .set_metadata(Some(metadata))
+            .send()
+            .await
+            .map_err(|e| S3EncryptionError::Sdk(format!("S3 PutObject failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Serialize a content-metadata map to a sidecar instruction-file S3 object
+    /// at `<key><suffix>`.
+    ///
+    /// The instruction object carries the S3EC instruction-file user-metadata
+    /// marker (which the cross-implementation harness asserts) and its body is
+    /// the JSON-serialized metadata map.
+    async fn write_instruction_file(
+        &self,
+        bucket: &str,
+        key: &str,
+        suffix: &str,
+        instruction_map: &BTreeMap<String, String>,
+    ) -> Result<()> {
         //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
         //# The content metadata stored in the Instruction File MUST be serialized to a JSON string.
-        let instruction_json = serde_json::to_string(&instruction_map).map_err(|e| {
+        let instruction_json = serde_json::to_string(instruction_map).map_err(|e| {
             S3EncryptionError::Format(format!("failed to serialize instruction file: {e}"))
         })?;
 
-        // The instruction file is written first so that, once the encrypted
-        // object is visible, its instruction file already exists for readers.
-        let instruction_key = format!("{key}{}", metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
+        let instruction_key = format!("{key}{suffix}");
         let instruction_marker: std::collections::HashMap<String, String> = [(
             metadata::INSTRUCTION_FILE_MARKER.to_string(),
-            metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX.to_string(),
+            suffix.to_string(),
         )]
         .into_iter()
         .collect();
@@ -252,17 +286,6 @@ impl S3EncryptionClient {
             .map_err(|e| {
                 S3EncryptionError::Sdk(format!("S3 PutObject (instruction file) failed: {e}"))
             })?;
-
-        let metadata: std::collections::HashMap<String, String> = object_map.into_iter().collect();
-        self.s3
-            .put_object()
-            .bucket(bucket)
-            .key(key)
-            .body(ByteStream::from(body))
-            .set_metadata(Some(metadata))
-            .send()
-            .await
-            .map_err(|e| S3EncryptionError::Sdk(format!("S3 PutObject failed: {e}")))?;
         Ok(())
     }
 
@@ -554,6 +577,236 @@ impl S3EncryptionClient {
                 }
                 rsa.unwrap(encrypted_data_key, suite)
             }
+        }
+    }
+
+    /// Read the current content metadata of an encrypted object for
+    /// re-encryption: the S3 object metadata merged with the source instruction
+    /// file (at the default suffix). Mirrors the read half of
+    /// [`Self::get_object`] but stops once the decryptable metadata is
+    /// assembled — re-encryption never reads or rewrites the object content.
+    async fn read_reencrypt_source_metadata(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> Result<ObjectMetadata> {
+        let response = self
+            .s3
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| S3EncryptionError::Sdk(format!("S3 GetObject failed: {e}")))?;
+
+        let mut decrypt_map: BTreeMap<String, String> = response
+            .metadata()
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<BTreeMap<_, _>>()
+            })
+            .unwrap_or_default();
+        let mut md = ObjectMetadata::from_map(&decrypt_map);
+
+        // The source object was written with an instruction file, so its data
+        // key lives in the sidecar rather than the object metadata; fetch and
+        // merge it (always at the default suffix, as the reference does).
+        let object_metadata_is_decryptable =
+            md.is_v1_format() || md.is_v2_format() || md.is_v3_format();
+        if !self.config.disable_instruction_file && !object_metadata_is_decryptable {
+            let instruction_key =
+                format!("{key}{}", metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
+            let instruction_metadata = self
+                .fetch_instruction_file(bucket, &instruction_key)
+                .await?;
+            validate_instruction_file_metadata(&instruction_metadata)?;
+            for (k, v) in instruction_metadata {
+                decrypt_map.insert(k, v);
+            }
+            md = ObjectMetadata::from_map(&decrypt_map);
+        }
+
+        if md.has_exclusive_key_collision() {
+            return Err(S3EncryptionError::Format(
+                "object metadata contains encrypted-data-key mapkeys from multiple exclusive \
+                 format versions"
+                    .to_string(),
+            ));
+        }
+        Ok(md)
+    }
+
+    //= spec/s3-encryption/client.md#optional-api-operations
+    //# - ReEncryptInstructionFile MAY be implemented by the S3EC.
+    //
+    //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+    //# The S3EC MAY support re-encryption/key rotation via Instruction Files.
+    /// Re-encrypt an object's instruction file under a new raw keyring, rotating
+    /// the wrapping key without rewriting the (unchanged) object content.
+    ///
+    /// The object's existing data key is decrypted with the client's configured
+    /// keyring and re-wrapped under `new_*_wrapping_key`; the resulting
+    /// instruction file is written at `instruction_file_suffix` (a custom suffix
+    /// is only valid for an RSA destination keyring). Exactly one of
+    /// `new_aes_wrapping_key` / `new_rsa_wrapping_key` must be set.
+    pub async fn re_encrypt(
+        &self,
+        bucket: &str,
+        key: &str,
+        new_aes_wrapping_key: Option<Vec<u8>>,
+        new_rsa_wrapping_key: Option<Vec<u8>>,
+        instruction_file_suffix: Option<&str>,
+        enforce_rotation: bool,
+    ) -> Result<()> {
+        // Re-encryption rewrites the instruction file, so instruction-file
+        // writes must be enabled (mirrors the reference, which rejects
+        // otherwise).
+        if !self.config.instruction_file_put_enabled {
+            return Err(S3EncryptionError::Configuration(
+                "instruction file put operations must be enabled to re-encrypt instruction files"
+                    .to_string(),
+            ));
+        }
+        let current_keyring = self.require_keyring()?;
+        let new_keyring = Keyring::raw(new_aes_wrapping_key, new_rsa_wrapping_key)?;
+
+        //= spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
+        //# The S3EC MUST NOT support providing a custom Instruction File suffix on ordinary writes; custom suffixes MUST only be used during re-encryption.
+        // The harness sends the suffix without its leading dot; the reference
+        // prepends one. A custom (non-default) suffix is only valid for an RSA
+        // destination keyring.
+        let dest_suffix = match instruction_file_suffix {
+            Some(s) if !s.is_empty() => format!(".{s}"),
+            _ => metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX.to_string(),
+        };
+        if dest_suffix != metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX
+            && !matches!(new_keyring, Keyring::Rsa(_))
+        {
+            return Err(S3EncryptionError::Configuration(
+                "custom instruction file suffix is only applicable for RSA keyring".to_string(),
+            ));
+        }
+
+        let md = self.read_reencrypt_source_metadata(bucket, key).await?;
+
+        // Re-encryption operates on the V3 key-committing format (the format the
+        // raw keyrings write); resolve and validate the suite from `x-amz-c`.
+        if !md.is_v3_format() {
+            return Err(S3EncryptionError::Format(
+                "re-encrypt is only supported for V3 key-committing objects".to_string(),
+            ));
+        }
+        let suite = md.v3_content_algorithm()?;
+
+        // Decrypt the existing data key with the client's current keyring.
+        //= spec/s3-encryption/client.md#optional-api-operations
+        //# - ReEncryptInstructionFile MUST decrypt the instruction file's encrypted data key for the given object using the client's CMM.
+        let encrypted_data_key = md.v3_encrypted_data_key()?;
+        let stored_context = md.v3_stored_context()?;
+        let wrap_code = md.wrap_algorithm_v3.as_deref().unwrap_or("12");
+        let wrap_algorithm = metadata::v3_wrap_algorithm_to_name(wrap_code)?;
+        let empty_context = BTreeMap::new();
+        let plaintext_data_key = self
+            .unwrap_data_key(
+                current_keyring,
+                wrap_algorithm,
+                suite,
+                &encrypted_data_key,
+                &stored_context,
+                &empty_context,
+            )
+            .await?;
+
+        // Re-wrap the same data key under the new keyring (EncryptDataKey only).
+        //= spec/s3-encryption/client.md#optional-api-operations
+        //# - ReEncryptInstructionFile MUST re-encrypt the plaintext data key with a provided keyring.
+        let (new_encrypted_data_key, new_wrap_algorithm) = match &new_keyring {
+            Keyring::Aes(aes) => (
+                aes.encrypt_data_key(&plaintext_data_key, suite)?,
+                WRAP_ALG_AES_GCM,
+            ),
+            Keyring::Rsa(rsa) => (
+                rsa.encrypt_data_key(&plaintext_data_key, suite)?,
+                WRAP_ALG_RSA_OAEP_SHA1,
+            ),
+            Keyring::Kms(_) => {
+                return Err(S3EncryptionError::Configuration(
+                    "re-encrypt requires a raw AES or RSA keyring, not a KMS keyring".to_string(),
+                ))
+            }
+        };
+
+        // When rotation is enforced, the old keyring MUST NOT be able to decrypt
+        // the newly-wrapped data key (a stronger check than comparing material
+        // descriptions).
+        if enforce_rotation
+            && self
+                .unwrap_data_key(
+                    current_keyring,
+                    new_wrap_algorithm,
+                    suite,
+                    &new_encrypted_data_key,
+                    &empty_context,
+                    &empty_context,
+                )
+                .await
+                .is_ok()
+        {
+            return Err(S3EncryptionError::Crypto(
+                "re-encryption failed due to enforced rotation: the old keyring can still \
+                 decrypt the newly encrypted data key"
+                    .to_string(),
+            ));
+        }
+
+        // Preserve the original message id and key commitment: the object
+        // content and its commitment are unchanged, only the data-key wrap
+        // moves to the new keyring.
+        let message_id = md.v3_message_id()?;
+        let key_commitment = md.v3_key_commitment()?;
+        let new_md = match &new_keyring {
+            Keyring::Aes(_) => ObjectMetadata::for_v3_raw_aes(
+                suite,
+                &new_encrypted_data_key,
+                &message_id,
+                &key_commitment,
+            )?,
+            Keyring::Rsa(_) => ObjectMetadata::for_v3_raw_rsa(
+                suite,
+                &new_encrypted_data_key,
+                &message_id,
+                &key_commitment,
+            )?,
+            Keyring::Kms(_) => unreachable!("KMS destination rejected above"),
+        };
+
+        // Write only the instruction-file portion: the object metadata
+        // (`x-amz-c`/`x-amz-d`/`x-amz-i`) already lives on the unchanged object.
+        let (_object_map, instruction_map) = new_md.split_for_instruction_file();
+        self.write_instruction_file(bucket, key, &dest_suffix, &instruction_map)
+            .await?;
+        Ok(())
+    }
+}
+
+impl Keyring {
+    /// Build a raw keyring (AES or RSA) from supplied wrapping-key material,
+    /// for re-encrypting an instruction file under a new key. Exactly one of
+    /// `aes_wrapping_key` / `rsa_wrapping_key` must be set.
+    fn raw(
+        aes_wrapping_key: Option<Vec<u8>>,
+        rsa_wrapping_key: Option<Vec<u8>>,
+    ) -> Result<Self> {
+        match (aes_wrapping_key, rsa_wrapping_key) {
+            (Some(aes), None) => Ok(Keyring::Aes(AesKeyring::new(aes))),
+            (None, Some(rsa)) => Ok(Keyring::Rsa(RsaKeyring::new(rsa))),
+            (Some(_), Some(_)) => Err(S3EncryptionError::Configuration(
+                "re-encrypt accepts at most one of a raw AES or RSA wrapping key".to_string(),
+            )),
+            (None, None) => Err(S3EncryptionError::Configuration(
+                "re-encrypt requires a raw AES or RSA wrapping key".to_string(),
+            )),
         }
     }
 }
@@ -1274,5 +1527,86 @@ mod tests {
         let tampered = ObjectMetadata::from_map(&map);
         let err = open_v3_content_range(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &tampered, &body, 5, 10).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    /// End-to-end re-encryption of an instruction file from a raw-AES keyring to
+    /// a raw-RSA keyring (the AES => RSA custom-suffix case), exercised through
+    /// the pure crypto + metadata pieces `re_encrypt` composes (no S3/KMS):
+    ///
+    /// 1. Encrypt content with a raw-AES committing keyring and split the
+    ///    metadata into object metadata (`x-amz-c`/`x-amz-d`/`x-amz-i`) and the
+    ///    AES instruction file.
+    /// 2. Re-encrypt: unwrap the data key with the AES keyring, re-wrap it under
+    ///    the RSA keyring, and rebuild the instruction file preserving the
+    ///    message id and key commitment.
+    /// 3. Decrypt the object using the unchanged object metadata merged with the
+    ///    NEW (RSA) instruction file, and confirm the original plaintext is
+    ///    recovered — the commitment still validates because the data key is
+    ///    preserved across the re-wrap.
+    #[test]
+    fn reencrypt_instruction_file_aes_to_rsa_round_trips() {
+        use crate::keyring::{AesKeyring, RsaKeyring};
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let plaintext = b"rotate my wrapping key without rewriting the object";
+
+        // 1. Original raw-AES committing object.
+        let aes = AesKeyring::new(vec![0x11u8; 32]);
+        let (data_key, edk_aes) = aes.wrap(suite).unwrap();
+        let (message_id, key_commitment, body) =
+            crypto::encrypt_content_committing(suite, &data_key, plaintext).unwrap();
+        let md_aes =
+            ObjectMetadata::for_v3_raw_aes(suite, &edk_aes, &message_id, &key_commitment).unwrap();
+        let (object_map, _aes_instruction) = md_aes.split_for_instruction_file();
+
+        // 2. Re-encrypt: unwrap with AES, re-wrap the SAME data key under RSA.
+        let recovered_dk = aes.unwrap(&edk_aes, suite).unwrap();
+        assert_eq!(recovered_dk, data_key);
+        let rsa_pkcs8 = {
+            use aws_lc_rs::encoding::AsDer;
+            use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+            PrivateDecryptingKey::generate(KeySize::Rsa2048)
+                .unwrap()
+                .as_der()
+                .unwrap()
+                .as_ref()
+                .to_vec()
+        };
+        let rsa = RsaKeyring::new(rsa_pkcs8);
+        let edk_rsa = rsa.encrypt_data_key(&recovered_dk, suite).unwrap();
+        let md_rsa =
+            ObjectMetadata::for_v3_raw_rsa(suite, &edk_rsa, &message_id, &key_commitment).unwrap();
+        let (_rsa_object_map, rsa_instruction) = md_rsa.split_for_instruction_file();
+
+        // The rebuilt instruction file carries no object-metadata-exclusive keys.
+        assert!(validate_instruction_file_metadata(&rsa_instruction).is_ok());
+
+        // 3. Decrypt: unchanged object metadata + the NEW RSA instruction file.
+        let mut merged = object_map;
+        for (k, v) in rsa_instruction {
+            merged.insert(k, v);
+        }
+        let md = ObjectMetadata::from_map(&merged);
+        assert!(md.is_v3_format());
+
+        let dk_for_decrypt = rsa.unwrap(&md.v3_encrypted_data_key().unwrap(), suite).unwrap();
+        assert_eq!(dk_for_decrypt, data_key);
+        let decrypted = open_v3_content(suite, &dk_for_decrypt, &md, &body).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    /// A raw keyring is built from exactly one supplied wrapping key; supplying
+    /// both, or neither, is a configuration error.
+    #[test]
+    fn raw_keyring_requires_exactly_one_key() {
+        assert!(matches!(
+            Keyring::raw(Some(vec![0u8; 32]), None),
+            Ok(Keyring::Aes(_))
+        ));
+        assert!(matches!(
+            Keyring::raw(None, Some(vec![0u8; 8])),
+            Ok(Keyring::Rsa(_))
+        ));
+        assert!(Keyring::raw(Some(vec![0u8; 32]), Some(vec![0u8; 8])).is_err());
+        assert!(Keyring::raw(None, None).is_err());
     }
 }
