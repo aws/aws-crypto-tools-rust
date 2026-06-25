@@ -26,6 +26,9 @@ pub const WRAP_ALG_KMS_V1: &str = "kms";
 /// The raw AES-GCM ("AES/GCM") key provider info — the non-legacy wrapping
 /// algorithm used by the [`AesKeyring`]. Its V3 compressed code is "02".
 pub const WRAP_ALG_AES_GCM: &str = "AES/GCM";
+/// The raw RSA-OAEP-SHA1 ("RSA-OAEP-SHA1") key provider info — the non-legacy
+/// wrapping algorithm used by the [`RsaKeyring`]. Its V3 compressed code is "22".
+pub const WRAP_ALG_RSA_OAEP_SHA1: &str = "RSA-OAEP-SHA1";
 
 /// Reserved encryption-context key holding the content algorithm. The S3EC
 /// owns this key; callers MUST NOT supply it.
@@ -272,6 +275,67 @@ impl AesKeyring {
     }
 }
 
+/// A raw RSA keyring that wraps and unwraps content data keys with a
+/// caller-supplied RSA key pair using RSA-OAEP-SHA1 (the non-legacy
+/// "RSA-OAEP-SHA1" wrapping algorithm).
+///
+/// Like the [`AesKeyring`] this is a raw (non-KMS) keyring that performs no
+/// network calls and stores no AWS KMS encryption context. The wrapping key is
+/// the PKCS#8 DER encoding of the RSA private key, exactly as the harness
+/// supplies it (`KeyPair.getPrivate().getEncoded()`); the public key used on
+/// encrypt is derived from it. The wrapped form follows the canonical Java
+/// `RsaKeyring`: a "pseudo data key" that frames the data key together with the
+/// suite's content-cipher value, so a wrapped key can only be unwrapped for the
+/// algorithm suite it was wrapped for.
+#[derive(Clone)]
+pub struct RsaKeyring {
+    /// PKCS#8 DER-encoded RSA private key.
+    private_key_pkcs8: Vec<u8>,
+}
+
+impl RsaKeyring {
+    /// Construct a raw RSA keyring from a PKCS#8 DER-encoded RSA private key.
+    /// A malformed key is rejected lazily by the RSA primitive when wrapping or
+    /// unwrapping.
+    pub fn new(private_key_pkcs8: Vec<u8>) -> Self {
+        Self { private_key_pkcs8 }
+    }
+
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method GenerateDataKey.
+    //
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method EncryptDataKey.
+    /// Generate a fresh content data key and wrap it under the configured RSA
+    /// public key (`GenerateDataKey` + `EncryptDataKey`). Returns
+    /// `(plaintext_data_key, wrapped_data_key)`. The wrapped form is the
+    /// RSA-OAEP-SHA1 ciphertext of the pseudo data key.
+    pub fn wrap(&self, suite: EncryptionAlgorithm) -> Result<(Vec<u8>, Vec<u8>)> {
+        let plaintext_data_key = crate::crypto::random_bytes(suite.data_key_length())?;
+        let content_cipher = suite.content_cipher_value();
+        let wrapped = crate::crypto::wrap_data_key_rsa_oaep(
+            &self.private_key_pkcs8,
+            content_cipher.as_bytes(),
+            &plaintext_data_key,
+        )?;
+        Ok((plaintext_data_key, wrapped))
+    }
+
+    //= spec/s3-encryption/materials/s3-keyring.md#abstract-methods
+    //# - The S3 Keyring MUST define an abstract method DecryptDataKey.
+    /// Unwrap a wrapped data key with the configured RSA private key
+    /// (`DecryptDataKey`). `suite` selects the content-cipher value that was
+    /// framed into the pseudo data key at wrap time.
+    pub fn unwrap(&self, wrapped_data_key: &[u8], suite: EncryptionAlgorithm) -> Result<Vec<u8>> {
+        let content_cipher = suite.content_cipher_value();
+        crate::crypto::unwrap_data_key_rsa_oaep(
+            &self.private_key_pkcs8,
+            content_cipher.as_bytes(),
+            wrapped_data_key,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,6 +457,49 @@ mod tests {
     fn aes_keyring_rejects_wrong_length_key() {
         // A non-256-bit wrapping key is rejected by the AES-256-GCM primitive.
         let keyring = AesKeyring::new(vec![0x42u8; 16]);
+        let err = keyring
+            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
+            .unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    fn rsa_pkcs8_key() -> Vec<u8> {
+        use aws_lc_rs::encoding::AsDer;
+        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+        let key = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        key.as_der().unwrap().as_ref().to_vec()
+    }
+
+    #[test]
+    fn rsa_keyring_wrap_unwrap_round_trips() {
+        let keyring = RsaKeyring::new(rsa_pkcs8_key());
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let (plaintext_dk, wrapped) = keyring.wrap(suite).unwrap();
+        // A fresh 256-bit data key is generated; the wrapped form is the
+        // RSA-2048 OAEP ciphertext (256 bytes).
+        assert_eq!(plaintext_dk.len(), 32);
+        assert_eq!(wrapped.len(), 256);
+        let recovered = keyring.unwrap(&wrapped, suite).unwrap();
+        assert_eq!(recovered, plaintext_dk);
+    }
+
+    #[test]
+    fn rsa_keyring_unwrap_with_wrong_suite_fails() {
+        // The framed content-cipher value binds the suite, so unwrapping a
+        // committing-suite-wrapped key as a non-committing key must fail.
+        let keyring = RsaKeyring::new(rsa_pkcs8_key());
+        let (_dk, wrapped) = keyring
+            .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
+            .unwrap();
+        let err = keyring
+            .unwrap(&wrapped, EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf)
+            .unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn rsa_keyring_rejects_invalid_key() {
+        let keyring = RsaKeyring::new(b"not a pkcs8 key".to_vec());
         let err = keyring
             .wrap(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey)
             .unwrap_err();

@@ -10,7 +10,10 @@ use aws_sdk_s3::primitives::ByteStream;
 use crate::config::{CommitmentPolicy, S3EncryptionConfig};
 use crate::crypto;
 use crate::error::{Result, S3EncryptionError};
-use crate::keyring::{AesKeyring, KmsKeyring, WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT};
+use crate::keyring::{
+    AesKeyring, KmsKeyring, RsaKeyring, WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT,
+    WRAP_ALG_RSA_OAEP_SHA1,
+};
 use crate::metadata::{self, ObjectMetadata};
 
 /// The plaintext and stored object metadata returned from a decrypting
@@ -24,14 +27,17 @@ pub struct DecryptedObject {
     pub metadata: BTreeMap<String, String>,
 }
 
-/// The content-data-key keyring a client is configured with: either an AWS KMS
-/// keyring or a raw AES keyring. The harness configures exactly one.
+/// The content-data-key keyring a client is configured with: an AWS KMS
+/// keyring, a raw AES keyring, or a raw RSA keyring. The harness configures
+/// exactly one.
 #[derive(Clone)]
 pub enum Keyring {
     /// AWS KMS keyring (the `kms+context` / legacy `kms` wrapping algorithms).
     Kms(KmsKeyring),
     /// Raw AES keyring (the `AES/GCM` wrapping algorithm).
     Aes(AesKeyring),
+    /// Raw RSA keyring (the `RSA-OAEP-SHA1` wrapping algorithm).
+    Rsa(RsaKeyring),
 }
 
 /// Client-side encrypting wrapper around the AWS S3 client.
@@ -61,11 +67,13 @@ impl S3EncryptionClient {
                 key_id.clone(),
                 config.enable_legacy_wrapping_algorithms,
             )))
+        } else if let Some(key) = config.aes_wrapping_key.as_ref() {
+            Some(Keyring::Aes(AesKeyring::new(key.clone())))
         } else {
             config
-                .aes_wrapping_key
+                .rsa_wrapping_key
                 .as_ref()
-                .map(|key| Keyring::Aes(AesKeyring::new(key.clone())))
+                .map(|key| Keyring::Rsa(RsaKeyring::new(key.clone())))
         };
         Ok(Self {
             config,
@@ -158,6 +166,15 @@ impl S3EncryptionClient {
             Keyring::Aes(aes) => {
                 let (plaintext_data_key, encrypted_data_key) = aes.wrap(suite)?;
                 build_encrypted_object_raw_aes(
+                    suite,
+                    &plaintext_data_key,
+                    &encrypted_data_key,
+                    plaintext,
+                )?
+            }
+            Keyring::Rsa(rsa) => {
+                let (plaintext_data_key, encrypted_data_key) = rsa.wrap(suite)?;
+                build_encrypted_object_raw_rsa(
                     suite,
                     &plaintext_data_key,
                     &encrypted_data_key,
@@ -528,6 +545,15 @@ impl S3EncryptionClient {
                 }
                 aes.unwrap(encrypted_data_key, suite)
             }
+            Keyring::Rsa(rsa) => {
+                if wrap_algorithm != WRAP_ALG_RSA_OAEP_SHA1 {
+                    return Err(S3EncryptionError::Crypto(format!(
+                        "object was wrapped with {wrap_algorithm} but the client is configured \
+                         with a raw RSA keyring"
+                    )));
+                }
+                rsa.unwrap(encrypted_data_key, suite)
+            }
         }
     }
 }
@@ -617,6 +643,33 @@ fn build_encrypted_object_raw_aes(
     } else {
         let (iv, ciphertext) = crypto::encrypt_content_gcm(plaintext_data_key, plaintext)?;
         let md = ObjectMetadata::for_v2_raw_aes(encrypted_data_key, &iv)?;
+        Ok((ciphertext, md))
+    }
+}
+
+/// Assemble the encrypted body and content metadata for a raw-RSA-wrapped
+/// object. Like [`build_encrypted_object_raw_aes`] but emits raw-RSA metadata
+/// (`RSA-OAEP-SHA1` wrapping algorithm, V3 code "22", no KMS encryption
+/// context).
+fn build_encrypted_object_raw_rsa(
+    suite: crate::config::EncryptionAlgorithm,
+    plaintext_data_key: &[u8],
+    encrypted_data_key: &[u8],
+    plaintext: &[u8],
+) -> Result<(Vec<u8>, ObjectMetadata)> {
+    if suite.is_committing() {
+        let (message_id, key_commitment, ciphertext) =
+            crypto::encrypt_content_committing(suite, plaintext_data_key, plaintext)?;
+        let md = ObjectMetadata::for_v3_raw_rsa(
+            suite,
+            encrypted_data_key,
+            &message_id,
+            &key_commitment,
+        )?;
+        Ok((ciphertext, md))
+    } else {
+        let (iv, ciphertext) = crypto::encrypt_content_gcm(plaintext_data_key, plaintext)?;
+        let md = ObjectMetadata::for_v2_raw_rsa(encrypted_data_key, &iv)?;
         Ok((ciphertext, md))
     }
 }
@@ -879,7 +932,47 @@ mod tests {
         assert_eq!(recovered, plaintext);
     }
 
-    /// Empty plaintext is a valid object (tag-only body) and round-trips.
+    /// A raw-RSA key-committing object survives the full local pipeline:
+    /// generate+wrap the data key with the RSA keyring, assemble the V3 raw-RSA
+    /// metadata + body, round-trip through the S3 string map, then unwrap and
+    /// decrypt — all without KMS or S3. Verifies the raw-RSA wire format
+    /// (RSA-OAEP-SHA1 wrap code "22", no KMS encryption context).
+    #[test]
+    fn raw_rsa_v3_object_round_trips_through_wire_map() {
+        use aws_lc_rs::encoding::AsDer;
+        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let pkcs8 = PrivateDecryptingKey::generate(KeySize::Rsa2048)
+            .unwrap()
+            .as_der()
+            .unwrap()
+            .as_ref()
+            .to_vec();
+        let keyring = RsaKeyring::new(pkcs8);
+        let plaintext = b"hello raw rsa committing world";
+
+        let (plaintext_dk, wrapped_dk) = keyring.wrap(suite).unwrap();
+        let (body, md) =
+            build_encrypted_object_raw_rsa(suite, &plaintext_dk, &wrapped_dk, plaintext).unwrap();
+
+        let map = md.to_map();
+        let parsed = ObjectMetadata::from_map(&map);
+
+        assert!(parsed.is_v3_format());
+        assert_eq!(map.get(CONTENT_CIPHER_V3).unwrap(), "115");
+        // Raw RSA records the RSA-OAEP-SHA1 wrap code, and stores no KMS context.
+        assert_eq!(map.get(WRAP_ALGORITHM_V3).unwrap(), "22");
+        assert!(!map.contains_key(crate::metadata::ENCRYPTION_CONTEXT_V3));
+
+        let recovered_dk = keyring
+            .unwrap(&parsed.v3_encrypted_data_key().unwrap(), suite)
+            .unwrap();
+        assert_eq!(recovered_dk, plaintext_dk);
+
+        let recovered = open_v3_content(suite, &recovered_dk, &parsed, &body).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
     #[test]
     fn v2_empty_plaintext_round_trips() {
         let suite = EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf;

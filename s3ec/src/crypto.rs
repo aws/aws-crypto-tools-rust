@@ -21,6 +21,9 @@ use aws_lc_rs::cipher::{
     DecryptingKey, DecryptionContext, PaddedBlockDecryptingKey, UnboundCipherKey, AES_256,
 };
 use aws_lc_rs::iv::FixedLength;
+use aws_lc_rs::rsa::{
+    OaepPrivateDecryptingKey, OaepPublicEncryptingKey, PrivateDecryptingKey, OAEP_SHA1_MGF1SHA1,
+};
 use aws_lc_rs::{constant_time, hkdf, rand};
 
 use crate::config::EncryptionAlgorithm;
@@ -110,6 +113,116 @@ pub fn unwrap_data_key_aes_gcm(
     }
     let (iv, ciphertext) = wrapped.split_at(AES_WRAP_IV_LEN);
     aes_gcm_open(wrapping_key, iv, aad, ciphertext)
+}
+
+// ---------------------------------------------------------------------------
+// Raw RSA-OAEP-SHA1 data-key wrapping (RawRsa keyring, "RSA-OAEP-SHA1" wrapping
+// algorithm).
+//
+// A raw RSA keyring wraps the content data key under an RSA public key using
+// RSA-OAEP with a SHA-1 hash and MGF1-SHA1 mask. The wrapped plaintext is NOT
+// the bare data key: matching the canonical Java `RsaKeyring`, it is a
+// "pseudo data key" framing the data key together with the content-cipher
+// value so the decryptor can verify the data key was wrapped for the same
+// algorithm suite:
+//
+//   pseudo_data_key = [1-byte data-key length] || [data key] || [content-cipher value]
+//
+// where the content-cipher value is the suite's `x-amz-c`/`x-amz-cek-alg`
+// value ("115" for the committing suite, "AES/GCM/NoPadding" for the
+// non-committing suite). The harness supplies the RSA key as the PKCS#8 DER
+// encoding of the private key (`KeyPair.getPrivate().getEncoded()`); the public
+// key used for wrapping is derived from it.
+// ---------------------------------------------------------------------------
+
+/// The valid raw data-key lengths (bytes) recovered from an RSA-wrapped pseudo
+/// data key: AES-128, AES-192, or AES-256.
+const VALID_DATA_KEY_LENGTHS: [usize; 3] = [16, 24, 32];
+
+/// Parse and verify an RSA-unwrapped pseudo data key, returning the bare data
+/// key. The leading length byte selects the data key, and the trailing
+/// content-cipher bytes are compared (in constant time) against the
+/// `expected_content_cipher` derived from the object's algorithm suite. A
+/// mismatch means the object was altered or wrapped for a different suite.
+fn parse_pseudo_data_key(pseudo: &[u8], expected_content_cipher: &[u8]) -> Result<Vec<u8>> {
+    let data_key_len = *pseudo
+        .first()
+        .ok_or_else(|| crypto_err("RSA-wrapped data key is empty"))? as usize;
+    if !VALID_DATA_KEY_LENGTHS.contains(&data_key_len) {
+        return Err(crypto_err("invalid key length in RSA-wrapped data key"));
+    }
+
+    // A well-formed pseudo data key is exactly the length byte, the data key,
+    // and the content-cipher bytes for the suite.
+    let expected_total = 1 + data_key_len + expected_content_cipher.len();
+    if pseudo.len() != expected_total {
+        return Err(crypto_err(
+            "RSA-wrapped data key has an unexpected length",
+        ));
+    }
+
+    let data_key = &pseudo[1..1 + data_key_len];
+    let content_cipher = &pseudo[1 + data_key_len..];
+
+    // Constant-time comparison of the recorded content cipher: a mismatch means
+    // the data cipher does not match the one used for encryption (the object
+    // may be altered or corrupted).
+    constant_time::verify_slices_are_equal(expected_content_cipher, content_cipher)
+        .map_err(|_| crypto_err("the data cipher does not match the data cipher used for encryption"))?;
+
+    Ok(data_key.to_vec())
+}
+
+/// Wrap a plaintext data key under the RSA public key derived from
+/// `pkcs8_private_key` using RSA-OAEP-SHA1. `content_cipher` is the suite's
+/// content-cipher value, framed into the pseudo data key (see module note).
+pub fn wrap_data_key_rsa_oaep(
+    pkcs8_private_key: &[u8],
+    content_cipher: &[u8],
+    plaintext_data_key: &[u8],
+) -> Result<Vec<u8>> {
+    let data_key_len = u8::try_from(plaintext_data_key.len())
+        .map_err(|_| crypto_err("data key is too long to RSA-wrap"))?;
+
+    // Build the pseudo data key: length byte || data key || content cipher.
+    let mut pseudo = Vec::with_capacity(1 + plaintext_data_key.len() + content_cipher.len());
+    pseudo.push(data_key_len);
+    pseudo.extend_from_slice(plaintext_data_key);
+    pseudo.extend_from_slice(content_cipher);
+
+    let private = PrivateDecryptingKey::from_pkcs8(pkcs8_private_key)
+        .map_err(|_| crypto_err("invalid RSA private key (expected PKCS#8 DER)"))?;
+    let public = private.public_key();
+    let oaep = OaepPublicEncryptingKey::new(public)
+        .map_err(|_| crypto_err("failed to initialize RSA-OAEP encrypting key"))?;
+
+    let mut ciphertext = vec![0u8; oaep.ciphertext_size()];
+    let wrapped = oaep
+        .encrypt(&OAEP_SHA1_MGF1SHA1, &pseudo, &mut ciphertext, None)
+        .map_err(|_| crypto_err("RSA-OAEP data key wrap failed"))?;
+    Ok(wrapped.to_vec())
+}
+
+/// Unwrap an RSA-OAEP-SHA1-wrapped data key with the private key in
+/// `pkcs8_private_key`, verifying the framed content-cipher value against
+/// `expected_content_cipher` (the object suite's content-cipher value) before
+/// returning the bare data key.
+pub fn unwrap_data_key_rsa_oaep(
+    pkcs8_private_key: &[u8],
+    expected_content_cipher: &[u8],
+    wrapped: &[u8],
+) -> Result<Vec<u8>> {
+    let private = PrivateDecryptingKey::from_pkcs8(pkcs8_private_key)
+        .map_err(|_| crypto_err("invalid RSA private key (expected PKCS#8 DER)"))?;
+    let oaep = OaepPrivateDecryptingKey::new(private)
+        .map_err(|_| crypto_err("failed to initialize RSA-OAEP decrypting key"))?;
+
+    let mut plaintext = vec![0u8; oaep.key_size_bytes()];
+    let pseudo = oaep
+        .decrypt(&OAEP_SHA1_MGF1SHA1, wrapped, &mut plaintext, None)
+        .map_err(|_| crypto_err("RSA-OAEP data key unwrap failed"))?;
+
+    parse_pseudo_data_key(pseudo, expected_content_cipher)
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +711,74 @@ mod tests {
     #[test]
     fn aes_gcm_data_key_unwrap_rejects_truncated_input() {
         let err = unwrap_data_key_aes_gcm(&WRAP_KEY, b"115", &[0u8; 8]).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    // ---- Raw RSA-OAEP-SHA1 data-key wrapping ------------------------------
+
+    /// Build a PKCS#8 RSA private key at runtime via aws-lc-rs, mirroring the
+    /// PKCS#8 DER blob the harness supplies (`KeyPair.getPrivate().getEncoded()`).
+    fn rsa_key_for_test() -> Vec<u8> {
+        use aws_lc_rs::encoding::AsDer;
+        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+        let key = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        key.as_der().unwrap().as_ref().to_vec()
+    }
+
+    #[test]
+    fn rsa_oaep_data_key_wrap_round_trips_committing() {
+        let pkcs8 = rsa_key_for_test();
+        // The committing suite frames "115" as the content cipher.
+        let content_cipher = b"115";
+        let wrapped = wrap_data_key_rsa_oaep(&pkcs8, content_cipher, &DATA_KEY).unwrap();
+        // RSA-OAEP ciphertext is the modulus size (256 bytes for RSA-2048).
+        assert_eq!(wrapped.len(), 256);
+        let recovered = unwrap_data_key_rsa_oaep(&pkcs8, content_cipher, &wrapped).unwrap();
+        assert_eq!(recovered, DATA_KEY);
+    }
+
+    #[test]
+    fn rsa_oaep_data_key_wrap_round_trips_non_committing() {
+        let pkcs8 = rsa_key_for_test();
+        let content_cipher = b"AES/GCM/NoPadding";
+        let wrapped = wrap_data_key_rsa_oaep(&pkcs8, content_cipher, &DATA_KEY).unwrap();
+        let recovered = unwrap_data_key_rsa_oaep(&pkcs8, content_cipher, &wrapped).unwrap();
+        assert_eq!(recovered, DATA_KEY);
+    }
+
+    #[test]
+    fn rsa_oaep_unwrap_rejects_content_cipher_mismatch() {
+        // Wrapping under one suite's content cipher and unwrapping while
+        // expecting another must fail: the framed cipher value will not match.
+        let pkcs8 = rsa_key_for_test();
+        let wrapped = wrap_data_key_rsa_oaep(&pkcs8, b"115", &DATA_KEY).unwrap();
+        let err = unwrap_data_key_rsa_oaep(&pkcs8, b"AES/GCM/NoPadding", &wrapped).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn rsa_oaep_unwrap_rejects_wrong_key() {
+        let pkcs8 = rsa_key_for_test();
+        let other = rsa_key_for_test();
+        let wrapped = wrap_data_key_rsa_oaep(&pkcs8, b"115", &DATA_KEY).unwrap();
+        // A different private key cannot OAEP-decrypt the ciphertext.
+        let err = unwrap_data_key_rsa_oaep(&other, b"115", &wrapped).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn rsa_oaep_rejects_invalid_pkcs8() {
+        let err = wrap_data_key_rsa_oaep(b"not a pkcs8 key", b"115", &DATA_KEY).unwrap_err();
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
+    }
+
+    #[test]
+    fn parse_pseudo_data_key_rejects_bad_length_byte() {
+        // A length byte that is not a valid AES key length is rejected.
+        let mut pseudo = vec![20u8]; // 20 is not 16/24/32
+        pseudo.extend_from_slice(&[0u8; 20]);
+        pseudo.extend_from_slice(b"115");
+        let err = parse_pseudo_data_key(&pseudo, b"115").unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 

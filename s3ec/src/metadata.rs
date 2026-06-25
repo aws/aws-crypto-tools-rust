@@ -19,7 +19,7 @@ use base64::Engine;
 
 use crate::config::EncryptionAlgorithm;
 use crate::error::{Result, S3EncryptionError};
-use crate::keyring::{WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT};
+use crate::keyring::{WRAP_ALG_AES_GCM, WRAP_ALG_KMS_CONTEXT, WRAP_ALG_RSA_OAEP_SHA1};
 
 // ---------------------------------------------------------------------------
 // MapKey constants.
@@ -336,6 +336,47 @@ impl ObjectMetadata {
         Ok(Self {
             encrypted_data_key_v2: Some(BASE64.encode(encrypted_data_key)),
             wrap_algorithm: Some(WRAP_ALG_AES_GCM.to_string()),
+            materials_description: Some("{}".to_string()),
+            content_iv: Some(BASE64.encode(content_iv)),
+            content_cipher: Some(
+                EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf.content_cipher_value(),
+            ),
+            tag_length: Some("128".to_string()),
+            ..Default::default()
+        })
+    }
+
+    /// Build V3 raw-RSA key-committing content metadata. Differs from
+    /// [`Self::for_v3`] only in the data-key wrapping: the wrapping algorithm
+    /// is `RSA-OAEP-SHA1` (V3 code "22") and no AWS KMS encryption context
+    /// (`x-amz-t`) is stored, since raw keyrings do not persist one. The
+    /// material description (`x-amz-m`) is omitted, which a reader defaults to
+    /// the empty map.
+    pub fn for_v3_raw_rsa(
+        suite: EncryptionAlgorithm,
+        encrypted_data_key: &[u8],
+        message_id: &[u8],
+        key_commitment: &[u8],
+    ) -> Result<Self> {
+        Ok(Self {
+            content_cipher_v3: Some(suite.content_cipher_value()),
+            encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
+            //= spec/s3-encryption/data-format/content-metadata.md#v3-only
+            //# - The wrapping algorithm value "22" MUST be translated to RSA-OAEP-SHA1 upon retrieval, and vice versa on write.
+            wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_RSA_OAEP_SHA1)?.to_string()),
+            message_id_v3: Some(BASE64.encode(message_id)),
+            key_commitment_v3: Some(BASE64.encode(key_commitment)),
+            ..Default::default()
+        })
+    }
+
+    /// Build V2 raw-RSA non-committing AES-GCM content metadata. The wrapping
+    /// algorithm is `RSA-OAEP-SHA1`; no encryption context is stored (the
+    /// material description defaults to the empty map).
+    pub fn for_v2_raw_rsa(encrypted_data_key: &[u8], content_iv: &[u8]) -> Result<Self> {
+        Ok(Self {
+            encrypted_data_key_v2: Some(BASE64.encode(encrypted_data_key)),
+            wrap_algorithm: Some(WRAP_ALG_RSA_OAEP_SHA1.to_string()),
             materials_description: Some("{}".to_string()),
             content_iv: Some(BASE64.encode(content_iv)),
             content_cipher: Some(
@@ -700,6 +741,30 @@ mod tests {
         assert_eq!(
             v3_wrap_algorithm_to_name(parsed.wrap_algorithm_v3.as_deref().unwrap()).unwrap(),
             "AES/GCM"
+        );
+    }
+
+    #[test]
+    fn for_v3_raw_rsa_uses_rsa_oaep_wrap_and_no_kms_context() {
+        let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
+        let edk = b"rsa-wrapped-data-key";
+        let message_id = [0x55u8; 28];
+        let commitment = [0x66u8; 28];
+        let md = ObjectMetadata::for_v3_raw_rsa(suite, edk, &message_id, &commitment).unwrap();
+
+        assert!(md.is_v3_format());
+        assert_eq!(md.content_cipher_v3.as_deref(), Some("115"));
+        // Raw RSA uses the "22" (RSA-OAEP-SHA1) wrapping algorithm code.
+        assert_eq!(md.wrap_algorithm_v3.as_deref(), Some("22"));
+        // No AWS KMS encryption context and no material description are stored.
+        assert!(md.encryption_context_v3.is_none());
+        assert!(md.mat_desc_v3.is_none());
+
+        let parsed = ObjectMetadata::from_map(&md.to_map());
+        assert_eq!(parsed.v3_encrypted_data_key().unwrap(), edk);
+        assert_eq!(
+            v3_wrap_algorithm_to_name(parsed.wrap_algorithm_v3.as_deref().unwrap()).unwrap(),
+            "RSA-OAEP-SHA1"
         );
     }
 }

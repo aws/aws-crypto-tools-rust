@@ -81,6 +81,9 @@ pub struct S3EncryptionConfig {
     /// Raw AES-256 wrapping key (32 bytes) used by the raw AES keyring. Mutually
     /// exclusive with [`Self::kms_key_id`].
     pub aes_wrapping_key: Option<Vec<u8>>,
+    /// Raw RSA private key (PKCS#8 DER) used by the raw RSA keyring. Mutually
+    /// exclusive with [`Self::kms_key_id`] and [`Self::aes_wrapping_key`].
+    pub rsa_wrapping_key: Option<Vec<u8>>,
     /// Whether legacy wrapping algorithms are permitted on decrypt.
     pub enable_legacy_wrapping_algorithms: bool,
     /// Whether legacy (unauthenticated) content algorithms are permitted on decrypt.
@@ -111,6 +114,7 @@ impl Default for S3EncryptionConfig {
         Self {
             kms_key_id: None,
             aes_wrapping_key: None,
+            rsa_wrapping_key: None,
             //= spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
             //# The option to enable legacy wrapping algorithms MUST be set to false by default.
             enable_legacy_wrapping_algorithms: false,
@@ -157,10 +161,20 @@ impl S3EncryptionConfig {
     /// Validate the configuration against the requirements in `client.md`.
     pub fn validate(&self) -> Result<()> {
         // A client is configured with at most one key provider. The harness
-        // supplies exactly one of a KMS key id or a raw AES wrapping key.
-        if self.kms_key_id.is_some() && self.aes_wrapping_key.is_some() {
+        // supplies exactly one of a KMS key id, a raw AES wrapping key, or a
+        // raw RSA wrapping key.
+        let key_providers = [
+            self.kms_key_id.is_some(),
+            self.aes_wrapping_key.is_some(),
+            self.rsa_wrapping_key.is_some(),
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+        if key_providers > 1 {
             return Err(S3EncryptionError::Configuration(
-                "only one of a KMS key identifier or a raw AES wrapping key may be configured"
+                "only one of a KMS key identifier, a raw AES wrapping key, or a raw RSA \
+                 wrapping key may be configured"
                     .to_string(),
             ));
         }
