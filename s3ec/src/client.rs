@@ -94,6 +94,11 @@ impl S3EncryptionClient {
     /// the reference servers.
     const DEFAULT_REGION: &'static str = "us-west-2";
 
+    /// Maximum attempts for SDK calls (S3/KMS). Raised above the SDK default of
+    /// 3 so a transient dispatch/connection failure on a single network call is
+    /// retried rather than surfacing as a hard error.
+    const MAX_NETWORK_ATTEMPTS: u32 = 6;
+
     /// Construct a client from the ambient AWS environment, building the S3 and
     /// KMS clients from the default credential and region provider chain.
     pub async fn from_env(config: S3EncryptionConfig) -> Result<Self> {
@@ -103,8 +108,18 @@ impl S3EncryptionClient {
         // present in the server process's environment.
         let region_provider = aws_config::meta::region::RegionProviderChain::default_provider()
             .or_else(Self::DEFAULT_REGION);
+        // Harden the SDK clients against transient network/dispatch failures.
+        // The default standard policy retries only 3 times; a brief connection
+        // blip on a single S3/KMS call therefore surfaces as a hard
+        // "dispatch failure" instead of being ridden out. Adaptive retry plus a
+        // higher attempt ceiling makes every network call (S3 GetObject/PutObject,
+        // KMS GenerateDataKey/Decrypt) resilient to transient failures without
+        // changing any cryptographic behavior.
+        let retry_config = aws_config::retry::RetryConfig::adaptive()
+            .with_max_attempts(Self::MAX_NETWORK_ATTEMPTS);
         let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(region_provider)
+            .retry_config(retry_config)
             .load()
             .await;
         let s3 = aws_sdk_s3::Client::new(&sdk_config);
