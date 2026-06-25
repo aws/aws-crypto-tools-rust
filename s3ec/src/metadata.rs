@@ -48,18 +48,38 @@ pub const CONTENT_CIPHER_GCM: &str = "AES/GCM/NoPadding";
 /// The `x-amz-cek-alg` content-cipher value for the legacy AES-CBC suite (V1/V2).
 pub const CONTENT_CIPHER_CBC: &str = "AES/CBC/PKCS5Padding";
 
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//# - This mapkey ("x-amz-c") SHOULD be represented by a constant named "CONTENT_CIPHER_V3" or similar in the implementation code.
 /// V3 content cipher mapkey.
 pub const CONTENT_CIPHER_V3: &str = "x-amz-c";
+
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//# - This mapkey ("x-amz-3") SHOULD be represented by a constant named "ENCRYPTED_DATA_KEY_V3" or similar in the implementation code.
 /// V3 encrypted data key mapkey.
 pub const ENCRYPTED_DATA_KEY_V3: &str = "x-amz-3";
+
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys  
+//# - This mapkey ("x-amz-m") SHOULD be represented by a constant named "MAT_DESC_V3" or similar in the implementation code.
 /// V3 material description mapkey.
 pub const MAT_DESC_V3: &str = "x-amz-m";
+
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//# - This mapkey ("x-amz-t") SHOULD be represented by a constant named "ENCRYPTION_CONTEXT_V3" or similar in the implementation code.
 /// V3 KMS encryption context mapkey.
 pub const ENCRYPTION_CONTEXT_V3: &str = "x-amz-t";
+
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//# - This mapkey ("x-amz-w") SHOULD be represented by a constant named "ENCRYPTED_DATA_KEY_ALGORITHM_V3" or similar in the implementation code.
 /// V3 wrapping algorithm mapkey.
 pub const WRAP_ALGORITHM_V3: &str = "x-amz-w";
+
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//# - This mapkey ("x-amz-d") SHOULD be represented by a constant named "KEY_COMMITMENT_V3" or similar in the implementation code.
 /// V3 key commitment mapkey.
 pub const KEY_COMMITMENT_V3: &str = "x-amz-d";
+
+//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//# - This mapkey ("x-amz-i") SHOULD be represented by a constant named "MESSAGE_ID_V3" or similar in the implementation code.
 /// V3 message ID mapkey.
 pub const MESSAGE_ID_V3: &str = "x-amz-i";
 
@@ -215,6 +235,8 @@ impl ObjectMetadata {
         (object_metadata, instruction_file)
     }
 
+    //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //# - If the metadata contains "x-amz-iv" and "x-amz-key" but no other version exclusive keys then the object MUST be considered as an S3EC-encrypted object using the V1 format.
     /// Whether the metadata is in the V1 format.
     pub fn is_v1_format(&self) -> bool {
         self.content_iv.is_some()
@@ -270,13 +292,25 @@ impl ObjectMetadata {
         encryption_context: &BTreeMap<String, String>,
     ) -> Result<Self> {
         Ok(Self {
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-key-v2" MUST be present for V2 format objects.
             encrypted_data_key_v2: Some(BASE64.encode(encrypted_data_key)),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-wrap-alg" MUST be present for V2 format objects.
             wrap_algorithm: Some(WRAP_ALG_KMS_CONTEXT.to_string()),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-matdesc" MUST be present for V2 format objects.
             materials_description: Some(encode_context(encryption_context)?),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-iv" MUST be present for V2 format objects.
             content_iv: Some(BASE64.encode(content_iv)),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-cek-alg" MUST be present for V2 format objects.
             content_cipher: Some(
                 EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf.content_cipher_value(),
             ),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - If the object is encrypted using AES-GCM for content encryption, then the the mapkey "x-amz-tag-len" MUST be present.
             tag_length: Some("128".to_string()),
             ..Default::default()
         })
@@ -294,12 +328,24 @@ impl ObjectMetadata {
         encryption_context: &BTreeMap<String, String>,
     ) -> Result<Self> {
         Ok(Self {
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-c" MUST be present for V3 format objects.
             content_cipher_v3: Some(suite.content_cipher_value()),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-3" MUST be present for V3 format objects.
             encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
             // "12" is the V3 compressed code for the kms+context wrapping algorithm.
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-w" MUST be present for V3 format objects.
             wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_KMS_CONTEXT)?.to_string()),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-i" MUST be present for V3 format objects.
             message_id_v3: Some(BASE64.encode(message_id)),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-d" MUST be present for V3 format objects.
             key_commitment_v3: Some(BASE64.encode(key_commitment)),
+            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //# - The mapkey "x-amz-t" SHOULD be present for V3 format objects that use KMS Encryption Context.
             encryption_context_v3: Some(encode_context(encryption_context)?),
             ..Default::default()
         })
@@ -556,6 +602,11 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#v2-v3-shared
+    //= type=test
+    //# - AES/GCM/NoPadding
+    //# - AES/CBC/PKCS5Padding
+    //# - 115
     fn v3_content_algorithm_accepts_committing_suite() {
         let md = v3_metadata();
         assert_eq!(
@@ -585,11 +636,20 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+    //= type=test
+    //# - The mapkey "x-amz-key-v2" MUST be present for V2 format objects.
     fn v2_round_trips_through_map() {
         let md = v2_metadata();
         let map = md.to_map();
         assert_eq!(map.get(ENCRYPTED_DATA_KEY_V2).unwrap(), "ZWRrYnl0ZXM=");
+        //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+        //= type=test
+        //# - The mapkey "x-amz-cek-alg" MUST be present for V2 format objects.
         assert_eq!(map.get(CONTENT_CIPHER).unwrap(), "AES/GCM/NoPadding");
+        //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+        //= type=test
+        //# - If the object is encrypted using AES-GCM for content encryption, then the the mapkey "x-amz-tag-len" MUST be present.
         assert_eq!(map.get(TAG_LENGTH).unwrap(), "128");
         // V3-only keys must be absent.
         assert!(!map.contains_key(CONTENT_CIPHER_V3));
@@ -597,11 +657,20 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+    //= type=test
+    //# - The mapkey "x-amz-3" MUST be present for V3 format objects.
     fn v3_round_trips_through_map() {
         let md = v3_metadata();
         let map = md.to_map();
         assert_eq!(map.get(ENCRYPTED_DATA_KEY_V3).unwrap(), "ZWRrYnl0ZXM=");
+        //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+        //= type=test
+        //# - The mapkey "x-amz-d" MUST be present for V3 format objects.
         assert_eq!(map.get(KEY_COMMITMENT_V3).unwrap(), "Y29tbWl0");
+        //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+        //= type=test
+        //# - The mapkey "x-amz-i" MUST be present for V3 format objects.
         assert_eq!(map.get(MESSAGE_ID_V3).unwrap(), "bXNnaWQ=");
         // V1/V2 keys must be absent.
         assert!(!map.contains_key(ENCRYPTED_DATA_KEY_V2));
@@ -610,12 +679,18 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //= type=test
+    //# If the metadata contains "x-amz-iv" and "x-amz-key-v2" but no other version exclusive keys then the object MUST be considered as an S3EC-encrypted object using the V2 format.
     fn format_detection_is_exclusive() {
         let v2 = v2_metadata();
         assert!(v2.is_v2_format());
         assert!(!v2.is_v1_format());
         assert!(!v2.is_v3_format());
 
+        //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+        //= type=test
+        //# If the metadata contains "x-amz-3" and "x-amz-d" and "x-amz-i" but no other version exclusive keys then the object MUST be considered an S3EC-encrypted object using the V3 format.
         let v3 = v3_metadata();
         assert!(v3.is_v3_format());
         assert!(!v3.is_v1_format());
@@ -623,6 +698,9 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //= type=test
+    //# If there are multiple mapkeys which are meant to be exclusive to different versions, such as "x-amz-key", "x-amz-key-v2", and "x-amz-3" then the S3EC SHOULD throw an exception.
     fn exclusive_key_collision_detected() {
         let mut md = v2_metadata();
         assert!(!md.has_exclusive_key_collision());
@@ -634,10 +712,19 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
+    //= type=test
+    //# - The wrapping algorithm value "02" MUST be translated to AES/GCM upon retrieval, and vice versa on write.
     fn v3_wrap_algorithm_translation_round_trips() {
         for (code, name) in [
             ("02", "AES/GCM"),
+            //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
+            //= type=test
+            //# - The wrapping algorithm value "12" MUST be translated to kms+context upon retrieval, and vice versa on write.
             ("12", "kms+context"),
+            //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
+            //= type=test  
+            //# - The wrapping algorithm value "22" MUST be translated to RSA-OAEP-SHA1 upon retrieval, and vice versa on write.
             ("22", "RSA-OAEP-SHA1"),
         ] {
             assert_eq!(v3_wrap_algorithm_to_name(code).unwrap(), name);
@@ -657,6 +744,9 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+    //= type=test
+    //# The "x-amz-" prefix denotes that the metadata is owned by an Amazon product and MUST be prepended to all S3EC metadata mapkeys.
     fn for_v2_builds_decodable_metadata() {
         let edk = b"encrypted-data-key";
         let iv = [0xABu8; 12];
@@ -717,6 +807,9 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
+    //= type=test
+    //# - The wrapping algorithm value "02" MUST be translated to AES/GCM upon retrieval, and vice versa on write.
     fn for_v3_raw_aes_uses_aes_gcm_wrap_and_no_kms_context() {
         let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
         let edk = b"aes-wrapped-data-key";
@@ -745,6 +838,9 @@ mod tests {
     }
 
     #[test]
+    //= ../spec/s3-encryption/data-format/content-metadata.md#v3-only
+    //= type=test
+    //# - The wrapping algorithm value "22" MUST be translated to RSA-OAEP-SHA1 upon retrieval, and vice versa on write.
     fn for_v3_raw_rsa_uses_rsa_oaep_wrap_and_no_kms_context() {
         let suite = EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey;
         let edk = b"rsa-wrapped-data-key";
