@@ -262,6 +262,11 @@ async fn unwrap_kms_v1_calls_decrypt_when_legacy_enabled() {
     //= type=test
     //= reason=decryption via the legacy "kms" provider info succeeded, proving KmsV1 decryption is supported
     //# The KmsKeyring MUST support decryption using KmsV1 mode.
+    //
+    //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+    //= type=test
+    //= reason=with legacy wrapping enabled, a legacy KmsV1-wrapped data key decrypts successfully, proving the enabled client decrypts legacy wrapping algorithms
+    //# When enabled, the S3EC MUST be able to decrypt objects encrypted with all supported wrapping algorithms (both legacy and fully supported).
     assert_eq!(plaintext, PLAINTEXT_DK);
 
     //= ../spec/s3-encryption/materials/s3-kms-keyring.md#kmsv1
@@ -304,6 +309,11 @@ async fn unwrap_kms_v1_rejected_when_legacy_disabled() {
     //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
     //= type=test
     //# The KmsV1 mode MUST be only enabled when legacy wrapping algorithms are enabled.
+    //
+    //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+    //= type=test
+    //= reason=with legacy wrapping disabled, decrypting a legacy KmsV1-wrapped key throws and issues no KMS Decrypt call
+    //# When disabled, the S3EC MUST NOT decrypt objects encrypted using legacy wrapping algorithms; it MUST throw an exception when attempting to decrypt an object encrypted with a legacy wrapping algorithm.
     let err = keyring
         .unwrap(CIPHERTEXT_DK, WRAP_ALG_KMS_V1, &stored, &request)
         .await

@@ -27,8 +27,17 @@ mod tests {
     #[test]
     fn default_config_disables_legacy_and_delayed_auth() {
         let cfg = S3EncryptionConfig::default();
+        //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+        //= type=test
+        //# The option to enable legacy wrapping algorithms MUST be set to false by default.
         assert!(!cfg.enable_legacy_wrapping_algorithms);
+        //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+        //= type=test
+        //# The option to enable legacy unauthenticated modes MUST be set to false by default.
         assert!(!cfg.enable_legacy_unauthenticated_modes);
+        //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+        //= type=test
+        //# Delayed Authentication mode MUST be set to false by default.
         assert!(!cfg.enable_delayed_authentication_mode);
         assert!(cfg.validate().is_ok());
     }
@@ -40,6 +49,9 @@ mod tests {
             buffer_size: Some(4096),
             ..Default::default()
         };
+        //= ../spec/s3-encryption/client.md#set-buffer-size
+        //= type=test
+        //# If Delayed Authentication mode is enabled, and the buffer size has been set to a value other than its default, the S3EC MUST throw an exception.
         assert!(matches!(
             cfg.validate(),
             Err(S3EncryptionError::Configuration(_))
@@ -52,6 +64,13 @@ mod tests {
             encryption_algorithm: Some(EncryptionAlgorithm::AlgAes256CbcIv16NoKdf),
             ..Default::default()
         };
+        //= ../spec/s3-encryption/client.md#encryption-algorithm
+        //= type=test
+        //# The S3EC MUST validate that the configured encryption algorithm is not legacy.
+        //
+        //= ../spec/s3-encryption/client.md#encryption-algorithm
+        //= type=test
+        //# If the configured encryption algorithm is legacy, then the S3EC MUST throw an exception.
         assert!(matches!(
             cfg.validate(),
             Err(S3EncryptionError::Configuration(_))
@@ -83,6 +102,14 @@ mod tests {
         //= ../spec/s3-encryption/key-commitment.md#commitment-policy
         //= type=test
         //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST NOT encrypt using an algorithm suite which supports key commitment.
+        //
+        //= ../spec/s3-encryption/client.md#key-commitment
+        //= type=test
+        //# The S3EC MUST validate the configured Encryption Algorithm against the provided key commitment policy.
+        //
+        //= ../spec/s3-encryption/client.md#key-commitment
+        //= type=test
+        //# If the configured Encryption Algorithm is incompatible with the key commitment policy, then it MUST throw an exception.
         assert!(matches!(
             cfg.validate(),
             Err(S3EncryptionError::Configuration(_))

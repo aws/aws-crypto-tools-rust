@@ -80,6 +80,12 @@ impl EncryptionAlgorithm {
     /// The fixed all-`0x01` IV used for content encryption by the committing
     /// AES-GCM suite (in place of a generated IV).
     pub fn committing_iv(self) -> Vec<u8> {
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //# When encrypting or decrypting with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY,
+        //# the IV used in the AES-GCM content encryption/decryption MUST consist entirely of bytes with the value 0x01.
+        //
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //# The IV's total length MUST match the IV length defined by the algorithm suite.
         vec![0x01u8; self.iv_length()]
     }
 

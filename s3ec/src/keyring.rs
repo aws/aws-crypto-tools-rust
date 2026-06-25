@@ -278,7 +278,13 @@ impl KmsKeyring {
             WRAP_ALG_KMS_V1 => {
                 //= ../spec/s3-encryption/materials/s3-kms-keyring.md#supported-wrapping-algorithm-modes
                 //# The KmsV1 mode MUST be only enabled when legacy wrapping algorithms are enabled.
+                //
+                //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+                //= reason=when legacy wrapping algorithms are enabled this gate does not fire, so a legacy KmsV1-wrapped data key decrypts alongside the fully-supported kms+context mode
+                //# When enabled, the S3EC MUST be able to decrypt objects encrypted with all supported wrapping algorithms (both legacy and fully supported).
                 if !self.enable_legacy_wrapping_algorithms {
+                    //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+                    //# When disabled, the S3EC MUST NOT decrypt objects encrypted using legacy wrapping algorithms; it MUST throw an exception when attempting to decrypt an object encrypted with a legacy wrapping algorithm.
                     return Err(S3EncryptionError::Crypto(format!(
                         "Enable legacy wrapping algorithms to use legacy key wrapping algorithm: \
                          {wrap_algorithm}"

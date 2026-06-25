@@ -44,6 +44,10 @@ pub enum Keyring {
 ///
 /// Holds the validated [`S3EncryptionConfig`] together with the wrapped S3 SDK
 /// client and the keyring used to wrap and unwrap content data keys.
+//= ../spec/s3-encryption/client.md#aws-sdk-compatibility
+//= type=implication
+//= reason=GetObject/PutObject/DeleteObject/DeleteObjects mirror the conventional SDK S3 client method surface, so the S3EC is interface-substitutable for it
+//# The S3EC MUST adhere to the same interface for API operations as the conventional AWS SDK S3 client.
 #[derive(Clone)]
 pub struct S3EncryptionClient {
     config: S3EncryptionConfig,
@@ -51,17 +55,91 @@ pub struct S3EncryptionClient {
     keyring: Option<Keyring>,
 }
 
+// Multipart upload operations are optional (MAY) and are not implemented by
+// this client; the encrypt path operates on the whole object. The conditional
+// "if implemented, MUST ..." requirements therefore have no applicable
+// antecedent.
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=multipart upload is not implemented by this client
+//# - CreateMultipartUpload MAY be implemented by the S3EC.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=the antecedent does not apply because CreateMultipartUpload is not implemented
+//# - If implemented, CreateMultipartUpload MUST initiate a multipart upload.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=multipart upload is not implemented by this client
+//# - UploadPart MAY be implemented by the S3EC.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=the antecedent does not apply because UploadPart is not implemented
+//# - UploadPart MUST encrypt each part.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=the antecedent does not apply because UploadPart is not implemented
+//# - Each part MUST be encrypted in sequence.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=the antecedent does not apply because UploadPart is not implemented
+//# - Each part MUST be encrypted using the same cipher instance for each part.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=multipart upload is not implemented by this client
+//# - CompleteMultipartUpload MAY be implemented by the S3EC.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=the antecedent does not apply because CompleteMultipartUpload is not implemented
+//# - CompleteMultipartUpload MUST complete the multipart upload.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=multipart upload is not implemented by this client
+//# - AbortMultipartUpload MAY be implemented by the S3EC.
+//
+//= ../spec/s3-encryption/client.md#optional-api-operations
+//= type=exception
+//= reason=the antecedent does not apply because AbortMultipartUpload is not implemented
+//# - AbortMultipartUpload MUST abort the multipart upload.
 impl S3EncryptionClient {
+    /// Construct a client from a validated config and the wrapped SDK clients.
     //= ../spec/s3-encryption/client.md#cryptographic-materials
     //# The S3EC MUST accept either one CMM or one Keyring instance upon initialization.
-    /// Construct a client from a validated config and the wrapped SDK clients.
+    //
+    //= ../spec/s3-encryption/client.md#wrapped-s3-client-s
+    //= type=implication
+    //# The S3EC MUST support the option to provide an SDK S3 client instance during its initialization.
+    //
+    //= ../spec/s3-encryption/client.md#wrapped-s3-client-s
+    //= type=implication
+    //= reason=the wrapped S3 client parameter is typed aws_sdk_s3::Client; an S3EncryptionClient is a distinct type the compiler rejects, so it can never be supplied as the wrapped client
+    //# The S3EC MUST NOT support use of S3EC as the provided S3 client during its initialization; it MUST throw an exception in this case.
+    //
+    //= ../spec/s3-encryption/client.md#inherited-sdk-configuration
+    //= type=implication
+    //# The S3EC MAY support directly configuring the wrapped SDK clients through its initialization.
     pub fn new(
         config: S3EncryptionConfig,
         s3: aws_sdk_s3::Client,
         kms: aws_sdk_kms::Client,
     ) -> Result<Self> {
         config.validate()?;
+        //= ../spec/s3-encryption/client.md#cryptographic-materials
+        //= type=exception
+        //= reason=this client has no separate CMM type; a configured keyring (or key material) is used directly as the materials provider, so no DefaultCMM wrapper is constructed
+        //# When a Keyring is provided, the S3EC MUST create an instance of the DefaultCMM using the provided Keyring.
         let keyring = if let Some(key_id) = config.kms_key_id.as_ref() {
+            //= ../spec/s3-encryption/client.md#inherited-sdk-configuration
+            //= type=implication
+            //= reason=the single provided KMS client is the one used for every KMS call the client makes
+            //# If the S3EC accepts SDK client configuration, the configuration MUST be applied to all wrapped SDK clients including the KMS client.
             Some(Keyring::Kms(KmsKeyring::new(
                 kms,
                 key_id.clone(),
@@ -77,6 +155,10 @@ impl S3EncryptionClient {
         };
         Ok(Self {
             config,
+            //= ../spec/s3-encryption/client.md#inherited-sdk-configuration
+            //= type=implication
+            //= reason=the single provided S3 client is stored and used for every S3 call the client makes
+            //# If the S3EC accepts SDK client configuration, the configuration MUST be applied to all wrapped S3 clients.
             s3,
             keyring,
         })
@@ -122,6 +204,10 @@ impl S3EncryptionClient {
             .retry_config(retry_config)
             .load()
             .await;
+        //= ../spec/s3-encryption/client.md#inherited-sdk-configuration
+        //= type=exception
+        //= reason=credentials are sourced from the default provider chain (and from the wrapped clients when built via new), not from a credentials-provider parameter accepted by this constructor
+        //# For example, the S3EC MAY accept a credentials provider instance during its initialization.
         let s3 = aws_sdk_s3::Client::new(&sdk_config);
         let kms = aws_sdk_kms::Client::new(&sdk_config);
         Self::new(config, s3, kms)
@@ -133,6 +219,10 @@ impl S3EncryptionClient {
     }
 
     /// The wrapped S3 client.
+    //= ../spec/s3-encryption/client.md#aws-sdk-compatibility
+    //= type=implication
+    //= reason=s3() exposes the wrapped SDK client, so any operation unrelated to client-side encryption (e.g. CopyObject) can be invoked directly on it
+    //# The S3EC SHOULD support invoking operations unrelated to client-side encryption e.g.
     pub fn s3(&self) -> &aws_sdk_s3::Client {
         &self.s3
     }
@@ -150,6 +240,8 @@ impl S3EncryptionClient {
     /// The content is encrypted with the configured (or default) algorithm
     /// suite; the data key is wrapped by KMS bound to `encryption_context`; and
     /// the resulting content metadata is attached to the S3 object.
+    //= ../spec/s3-encryption/client.md#required-api-operations
+    //# - PutObject MUST be implemented by the S3EC.
     pub async fn put_object(
         &self,
         bucket: &str,
@@ -166,6 +258,9 @@ impl S3EncryptionClient {
         // Wrap a fresh data key and assemble the encrypted object. The KMS
         // keyring binds the content algorithm into the KMS encryption context;
         // the raw AES keyring wraps locally and stores no encryption context.
+        //= ../spec/s3-encryption/client.md#required-api-operations
+        //= reason=the body is encrypted here, before any S3 PutObject upload call below
+        //# - PutObject MUST encrypt its input data before it is uploaded to S3.
         let (body, object_metadata) = match keyring {
             Keyring::Kms(kms) => {
                 let context = KmsKeyring::build_encryption_context(encryption_context, suite);
@@ -312,6 +407,13 @@ impl S3EncryptionClient {
     /// or `bytes=start-`) requesting a subset of the object's plaintext. The
     /// returned plaintext is the corresponding `[start, end]` slice (inclusive,
     /// clamped to the object length).
+    //= ../spec/s3-encryption/client.md#required-api-operations
+    //# - GetObject MUST be implemented by the S3EC.
+    //
+    //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+    //= type=exception
+    //= reason=delayed authentication mode is not implemented; this client always authenticates content before returning it, so the MAY-release-unauthenticated path is never taken
+    //# When enabled, the S3EC MAY release plaintext from a stream which has not been authenticated.
     pub async fn get_object(
         &self,
         bucket: &str,
@@ -391,6 +493,8 @@ impl S3EncryptionClient {
         // plaintext. An invalid/absent range header decrypts the whole object.
         let parsed_range = range.and_then(parse_byte_range);
 
+        //= ../spec/s3-encryption/client.md#required-api-operations
+        //# - GetObject MUST decrypt data received from the S3 server and return it as plaintext.
         let plaintext = if md.is_v3_format() {
             self.decrypt_v3(keyring, &md, &ciphertext, encryption_context, parsed_range)
                 .await?
@@ -466,7 +570,13 @@ impl S3EncryptionClient {
         //= ../spec/s3-encryption/decryption.md#cbc-decryption
         //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is NOT enabled,
         //# the S3EC MUST throw an error which details that client was not configured to decrypt objects with ALG_AES_256_CBC_IV16_NO_KDF.
+        //
+        //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+        //= reason=when legacy unauthenticated modes are enabled this gate does not fire, so a legacy AES-CBC object decrypts on the shared V2 path alongside the fully-supported AES-GCM suite
+        //# When enabled, the S3EC MUST be able to decrypt objects encrypted with all content encryption algorithms (both legacy and fully supported).
         if content_alg.is_legacy() && !self.config.enable_legacy_unauthenticated_modes {
+            //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+            //# When disabled, the S3EC MUST NOT decrypt objects encrypted using legacy content encryption algorithms; it MUST throw an exception when attempting to decrypt an object encrypted with a legacy content encryption algorithm.
             return Err(S3EncryptionError::Crypto(
                 "client was not configured to decrypt objects with \
                  ALG_AES_256_CBC_IV16_NO_KDF; enable legacy unauthenticated modes to allow it"
@@ -796,6 +906,85 @@ impl S3EncryptionClient {
             .await?;
         Ok(())
     }
+
+    /// Delete an encrypted object together with its associated instruction file.
+    ///
+    /// The object content lives at `bucket`/`key`; its sidecar instruction file
+    /// (written when instruction-file mode is used) lives at
+    /// `<key><default-suffix>`. Both are removed so no orphaned instruction file
+    /// is left behind.
+    //= ../spec/s3-encryption/client.md#required-api-operations
+    //# - DeleteObject MUST be implemented by the S3EC.
+    pub async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
+        //= ../spec/s3-encryption/client.md#required-api-operations
+        //# - DeleteObject MUST delete the given object key.
+        self.s3
+            .delete_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| S3EncryptionError::Sdk(format!("S3 DeleteObject failed: {e}")))?;
+
+        //= ../spec/s3-encryption/client.md#required-api-operations
+        //= reason=the associated instruction file is the object key suffixed with the default instruction file suffix
+        //# - DeleteObject MUST delete the associated instruction file using the default instruction file suffix.
+        let instruction_key = format!("{key}{}", metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
+        self.s3
+            .delete_object()
+            .bucket(bucket)
+            .key(&instruction_key)
+            .send()
+            .await
+            .map_err(|e| {
+                S3EncryptionError::Sdk(format!("S3 DeleteObject (instruction file) failed: {e}"))
+            })?;
+        Ok(())
+    }
+
+    /// Delete multiple encrypted objects together with their associated
+    /// instruction files in a single batch `DeleteObjects` request.
+    ///
+    /// Each given object key, plus its `<key><default-suffix>` instruction file,
+    /// is added to the batch delete so no orphaned instruction file remains.
+    //= ../spec/s3-encryption/client.md#required-api-operations
+    //# - DeleteObjects MUST be implemented by the S3EC.
+    pub async fn delete_objects(&self, bucket: &str, keys: &[String]) -> Result<()> {
+        use aws_sdk_s3::types::{Delete, ObjectIdentifier};
+
+        let mut delete = Delete::builder();
+        for key in keys {
+            //= ../spec/s3-encryption/client.md#required-api-operations
+            //# - DeleteObjects MUST delete each of the given objects.
+            let object = ObjectIdentifier::builder()
+                .key(key)
+                .build()
+                .map_err(|e| S3EncryptionError::Sdk(format!("invalid object key: {e}")))?;
+            delete = delete.objects(object);
+
+            //= ../spec/s3-encryption/client.md#required-api-operations
+            //= reason=each object's instruction file is its key suffixed with the default instruction file suffix
+            //# - DeleteObjects MUST delete each of the corresponding instruction files using the default instruction file suffix.
+            let instruction_key = format!("{key}{}", metadata::DEFAULT_INSTRUCTION_FILE_SUFFIX);
+            let instruction_object = ObjectIdentifier::builder()
+                .key(&instruction_key)
+                .build()
+                .map_err(|e| S3EncryptionError::Sdk(format!("invalid object key: {e}")))?;
+            delete = delete.objects(instruction_object);
+        }
+        let delete = delete
+            .build()
+            .map_err(|e| S3EncryptionError::Sdk(format!("invalid delete batch: {e}")))?;
+
+        self.s3
+            .delete_objects()
+            .bucket(bucket)
+            .delete(delete)
+            .send()
+            .await
+            .map_err(|e| S3EncryptionError::Sdk(format!("S3 DeleteObjects failed: {e}")))?;
+        Ok(())
+    }
 }
 
 impl Keyring {
@@ -947,6 +1136,9 @@ fn open_v2_content(
     let iv = md.content_iv_bytes()?;
     match md.v2_content_algorithm()? {
         crate::config::EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf => {
+            //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+            //= reason=AES-GCM decrypt verifies the authentication tag and returns plaintext only on success; a failed tag yields an error and no plaintext, so unauthenticated content is never released
+            //# When disabled the S3EC MUST NOT release plaintext from a stream which has not been authenticated.
             crypto::decrypt_content_gcm(plaintext_data_key, &iv, ciphertext)
         }
         crate::config::EncryptionAlgorithm::AlgAes256CbcIv16NoKdf => {
@@ -969,6 +1161,9 @@ fn open_v3_content(
 ) -> Result<Vec<u8>> {
     let message_id = md.v3_message_id()?;
     let key_commitment = md.v3_key_commitment()?;
+    //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+    //= reason=committing AES-GCM decrypt verifies the key commitment and authentication tag and returns plaintext only on success; a failed check yields an error and no plaintext
+    //# When disabled the S3EC MUST NOT release plaintext from a stream which has not been authenticated.
     crypto::decrypt_content_committing(
         suite,
         plaintext_data_key,
@@ -1299,6 +1494,10 @@ mod tests {
         let parsed = ObjectMetadata::from_map(&md.to_map());
 
         let wrong_key = [9u8; 32];
+        //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+        //= type=test
+        //= reason=a wrong data key makes GCM tag authentication fail; decrypt returns an error and no plaintext, proving unauthenticated content is not released
+        //# When disabled the S3EC MUST NOT release plaintext from a stream which has not been authenticated.
         let err = open_v2_content(&wrong_key, &parsed, &body).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
@@ -1314,6 +1513,10 @@ mod tests {
         let parsed = ObjectMetadata::from_map(&md.to_map());
         body[0] ^= 0xFF;
 
+        //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+        //= type=test
+        //= reason=a tampered ciphertext body fails committing-GCM authentication; decrypt returns an error and no plaintext, proving unauthenticated content is not released
+        //# When disabled the S3EC MUST NOT release plaintext from a stream which has not been authenticated.
         let err = open_v3_content(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey, &DATA_KEY, &parsed, &body).unwrap_err();
         assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }

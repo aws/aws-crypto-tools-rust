@@ -64,6 +64,10 @@ fn aes_gcm_open(key: &[u8], iv: &[u8], aad: &[u8], ciphertext_with_tag: &[u8]) -
 }
 
 /// Fill a fresh buffer of `len` cryptographically random bytes.
+//= ../spec/s3-encryption/client.md#randomness
+//= type=exception
+//= reason=randomness is sourced from the platform CSPRNG (aws-lc-rs / ring SystemRandom); this client does not accept an injectable source-of-randomness parameter at initialization
+//# The S3EC MAY accept a source of randomness during client initialization.
 pub fn random_bytes(len: usize) -> Result<Vec<u8>> {
     let mut buf = vec![0u8; len];
     rand::fill(&mut buf).map_err(|_| crypto_err("failed to generate random bytes"))?;
@@ -378,6 +382,19 @@ pub fn derive_keys(
     plaintext_data_key: &[u8],
     message_id: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>)> {
+    // The key derivation input length for the committing suite is the suite's
+    // data-key length (the plaintext data key fed to HKDF is the AES-256 key).
+    if plaintext_data_key.len() != suite.data_key_length() {
+        //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+        //# The length of the input keying material MUST equal the key derivation input length specified by the algorithm suite commit key derivation setting.
+        return Err(crypto_err(
+            "plaintext data key length does not match the key derivation input length",
+        ));
+    }
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The hash function MUST be specified by the algorithm suite commitment settings.
+    //
     //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# The salt MUST be the Message ID with the length defined in the algorithm suite.
     let salt = hkdf::Salt::new(hkdf::HKDF_SHA512, message_id);
@@ -391,7 +408,13 @@ pub fn derive_keys(
     //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string DERIVEKEY as UTF8 encoded bytes.
     let dek_info: [&[u8]; 2] = [&suite_id, b"DERIVEKEY"];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The length of the output keying material MUST equal the encryption key length specified by the algorithm suite encryption settings.
     let mut derived_encryption_key = vec![0u8; suite.data_key_length()];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The DEK input pseudorandom key MUST be the output from the extract step.
     prk.expand(&dek_info, OkmLen(derived_encryption_key.len()))
         .and_then(|okm| okm.fill(&mut derived_encryption_key))
         .map_err(|_| crypto_err("HKDF expand for derived encryption key failed"))?;
@@ -399,7 +422,13 @@ pub fn derive_keys(
     //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# The input info MUST be a concatenation of the algorithm suite ID as bytes followed by the string COMMITKEY as UTF8 encoded bytes.
     let commit_info: [&[u8]; 2] = [&suite_id, b"COMMITKEY"];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The length of the output keying material MUST equal the commit key length specified by the supported algorithm suites.
     let mut commit_key = vec![0u8; suite.commitment_length()];
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The CK input pseudorandom key MUST be the output from the extract step.
     prk.expand(&commit_info, OkmLen(commit_key.len()))
         .and_then(|okm| okm.fill(&mut commit_key))
         .map_err(|_| crypto_err("HKDF expand for commit key failed"))?;
@@ -429,7 +458,11 @@ pub fn encrypt_content_committing(
     //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# The client MUST set the AAD to the Algorithm Suite ID represented as bytes.
     let aad = suite.suite_id_bytes();
-    
+
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
+    //# The client MUST initialize the cipher, or call an AES-GCM encryption API, with the derived encryption key, an IV containing only bytes with the value 0x01,
+    //# and the tag length defined in the Algorithm Suite when encrypting or decrypting with ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY.
+    //
     //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
     //# The client MUST append the GCM auth tag to the ciphertext if the underlying crypto provider does not do so automatically.
     let ciphertext = aes_gcm_seal(&derived_encryption_key, &iv, &aad, plaintext)?;

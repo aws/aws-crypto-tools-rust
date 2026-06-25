@@ -74,30 +74,66 @@ impl CommitmentPolicy {
 }
 
 /// Configuration for an [`crate::client::S3EncryptionClient`].
+//= ../spec/s3-encryption/client.md#aws-sdk-compatibility
+//= type=implication
+//# The S3EC MUST provide a different set of configuration options than the conventional S3 client.
 #[derive(Debug, Clone)]
 pub struct S3EncryptionConfig {
     /// KMS key identifier (ARN/alias) used by the KMS keyring.
     pub kms_key_id: Option<String>,
     /// Raw AES-256 wrapping key (32 bytes) used by the raw AES keyring. Mutually
     /// exclusive with [`Self::kms_key_id`].
+    //= ../spec/s3-encryption/client.md#cryptographic-materials
+    //= type=implication
+    //# The S3EC MAY accept key material directly.
     pub aes_wrapping_key: Option<Vec<u8>>,
     /// Raw RSA private key (PKCS#8 DER) used by the raw RSA keyring. Mutually
     /// exclusive with [`Self::kms_key_id`] and [`Self::aes_wrapping_key`].
     pub rsa_wrapping_key: Option<Vec<u8>>,
     /// Whether legacy wrapping algorithms are permitted on decrypt.
+    //= ../spec/s3-encryption/client.md#enable-legacy-wrapping-algorithms
+    //= type=implication
+    //# The S3EC MUST support the option to enable or disable legacy wrapping algorithms.
     pub enable_legacy_wrapping_algorithms: bool,
     /// Whether legacy (unauthenticated) content algorithms are permitted on decrypt.
+    //= ../spec/s3-encryption/client.md#enable-legacy-unauthenticated-modes
+    //= type=implication
+    //# The S3EC MUST support the option to enable or disable legacy unauthenticated modes (content encryption algorithms).
     pub enable_legacy_unauthenticated_modes: bool,
     /// Whether delayed authentication mode is enabled.
+    //= ../spec/s3-encryption/client.md#enable-delayed-authentication
+    //= type=implication
+    //# The S3EC MUST support the option to enable or disable Delayed Authentication mode.
     pub enable_delayed_authentication_mode: bool,
     /// Optional buffer size (max ciphertext bytes held in memory).
+    //= ../spec/s3-encryption/client.md#set-buffer-size
+    //= type=implication
+    //# The S3EC SHOULD accept a configurable buffer size which refers to the maximum ciphertext length in bytes to store in memory when Delayed Authentication mode is disabled.
+    //
+    //= ../spec/s3-encryption/client.md#set-buffer-size
+    //= type=exception
+    //= reason=this client buffers the whole object in memory rather than a bounded streaming buffer, so there is no separate buffer-size default to set when delayed authentication is disabled
+    //# If Delayed Authentication mode is disabled, and no buffer size is provided, the S3EC MUST set the buffer size to a reasonable default.
     pub buffer_size: Option<u64>,
     /// Configured content-encryption algorithm suite.
+    //= ../spec/s3-encryption/client.md#encryption-algorithm
+    //= type=implication
+    //# The S3EC MUST support configuration of the encryption algorithm (or algorithm suite) during its initialization.
     pub encryption_algorithm: Option<EncryptionAlgorithm>,
     /// Configured key commitment policy.
+    //= ../spec/s3-encryption/client.md#key-commitment
+    //= type=implication
+    //# The S3EC MUST support configuration of the [Key Commitment policy](./key-commitment.md) during its initialization.
     pub commitment_policy: Option<CommitmentPolicy>,
     /// Whether PutObject writes the content metadata to a separate instruction
     /// file (a sidecar S3 object) instead of the S3 object metadata.
+    //= ../spec/s3-encryption/client.md#instruction-file-configuration
+    //= type=implication
+    //# The S3EC MAY support the option to provide Instruction File Configuration during its initialization.
+    //
+    //= ../spec/s3-encryption/client.md#instruction-file-configuration
+    //= type=implication
+    //# If the S3EC in a given language supports Instruction Files, then it MUST accept Instruction File Configuration during its initialization.
     pub instruction_file_put_enabled: bool,
     /// Whether instruction-file reads are disabled on GetObject. When `false`
     /// (the default), the client falls back to reading an instruction file
@@ -129,6 +165,10 @@ impl Default for S3EncryptionConfig {
             commitment_policy: None,
             //= ../spec/s3-encryption/data-format/metadata-strategy.md#instruction-file
             //# Instruction File writes MUST NOT be enabled by default.
+            //
+            //= ../spec/s3-encryption/client.md#instruction-file-configuration
+            //= type=implication
+            //# In this case, the Instruction File Configuration SHOULD be optional, such that its default configuration is used when none is provided.
             instruction_file_put_enabled: false,
             disable_instruction_file: false,
         }
@@ -171,6 +211,10 @@ impl S3EncryptionConfig {
         .into_iter()
         .filter(|present| *present)
         .count();
+        //= ../spec/s3-encryption/client.md#cryptographic-materials
+        //= type=exception
+        //= reason=this client has no CMM abstraction; the analogous rule rejects configuring more than one key provider (KMS key id, raw AES, or raw RSA)
+        //# If both a CMM and a Keyring are provided, the S3EC MUST throw an exception.
         if key_providers > 1 {
             return Err(S3EncryptionError::Configuration(
                 "only one of a KMS key identifier, a raw AES wrapping key, or a raw RSA \
