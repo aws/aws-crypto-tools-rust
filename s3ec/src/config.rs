@@ -225,8 +225,6 @@ impl S3EncryptionConfig {
             //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST NOT encrypt using an algorithm suite which supports key commitment.
             CommitmentPolicy::ForbidEncryptAllowDecrypt => {
                 if alg.is_committing() {
-                    //= ../spec/s3-encryption/client.md#key-commitment
-                    //# If the configured Encryption Algorithm is incompatible with the key commitment policy, then it MUST throw an exception.
                     return Err(S3EncryptionError::Configuration(
                         "commitment policy forbids key-committing algorithm suites, but the \
                          configured algorithm suite supports key commitment"

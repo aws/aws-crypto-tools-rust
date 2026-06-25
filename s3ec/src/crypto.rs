@@ -41,7 +41,7 @@ fn aes_gcm_seal(key: &[u8], iv: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<V
     let nonce = Nonce::try_assume_unique_for_key(iv).map_err(|_| crypto_err("invalid IV length"))?;
 
     let mut in_out = plaintext.to_vec();
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST append the GCM auth tag to the ciphertext if the underlying crypto provider does not do so automatically.
     key.seal_in_place_append_tag(nonce, Aad::from(aad), &mut in_out)
         .map_err(|_| crypto_err("AES-256-GCM encryption failed"))?;
@@ -242,25 +242,25 @@ pub fn encrypt_content_gcm(data_key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>
         return Err(crypto_err("plaintext exceeds maximum content length"));
     }
 
-    //= spec/s3-encryption/encryption.md#content-encryption
+    //= ../spec/s3-encryption/encryption.md#content-encryption
     //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
     let mut iv = vec![0u8; suite.iv_length()];
     rand::fill(&mut iv).map_err(|_| crypto_err("failed to generate IV"))?;
 
-    //= spec/s3-encryption/encryption.md#cipher-initialization
+    //= ../spec/s3-encryption/encryption.md#cipher-initialization
     //# The client SHOULD validate that the generated IV or Message ID is not zeros.
     if iv.iter().all(|&b| b == 0) {
         return Err(crypto_err("generated IV is all zeros"));
     }
 
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST initialize the cipher, or call an AES-GCM encryption API, with the plaintext data key, the generated IV, and the tag length defined in the Algorithm Suite when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
     //
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
     let ciphertext = aes_gcm_seal(data_key, &iv, &[], plaintext)?;
     
-    //= spec/s3-encryption/encryption.md#content-encryption
+    //= ../spec/s3-encryption/encryption.md#content-encryption
     //# The generated IV or Message ID MUST be set or returned from the encryption process such that it can be included in the content metadata.
     Ok((iv, ciphertext))
 }
@@ -271,7 +271,7 @@ pub fn decrypt_content_gcm(
     iv: &[u8],
     ciphertext_with_tag: &[u8],
 ) -> Result<Vec<u8>> {
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-iv12-tag16-no-kdf
     //# The client MUST NOT provide any AAD when encrypting with ALG_AES_256_GCM_IV12_TAG16_NO_KDF.
     aes_gcm_open(data_key, iv, &[], ciphertext_with_tag)
 }
@@ -295,13 +295,13 @@ pub fn decrypt_content_gcm(
 /// failure mode (bad padding, truncated ciphertext, wrong key) collapses to a
 /// single uniform error.
 pub fn decrypt_content_cbc(data_key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
-    //= spec/s3-encryption/decryption.md#cbc-decryption
+    //= ../spec/s3-encryption/decryption.md#cbc-decryption
     //# If an object is encrypted with ALG_AES_256_CBC_IV16_NO_KDF and [legacy unauthenticated algorithm suites](#legacy-decryption) is enabled,
     //# then the S3EC MUST create a cipher with AES in CBC Mode with PKCS5Padding or PKCS7Padding compatible padding for a 16-byte block cipher (example: for the Java JCE, this is "AES/CBC/PKCS5Padding").
     let unbound = UnboundCipherKey::new(&AES_256, data_key)
         .map_err(|_| crypto_err("invalid AES-256-CBC key"))?;
     let key = PaddedBlockDecryptingKey::cbc_pkcs7(unbound)
-        //= spec/s3-encryption/decryption.md#cbc-decryption
+        //= ../spec/s3-encryption/decryption.md#cbc-decryption
         //# If the cipher object cannot be created as described above,
         //# Decryption MUST fail.
         .map_err(|_| crypto_err("failed to initialize AES/CBC/PKCS5Padding cipher"))?;
@@ -382,38 +382,38 @@ pub fn encrypt_content_committing(
     plaintext_data_key: &[u8],
     plaintext: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    //= spec/s3-encryption/encryption.md#content-encryption
+    //= ../spec/s3-encryption/encryption.md#content-encryption
     //# The client MUST validate that the length of the plaintext bytes does not exceed the algorithm suite's cipher's maximum content length in bytes.
     if plaintext.len() > (1u64 << 36) as usize {
         return Err(crypto_err("plaintext exceeds maximum content length"));
     }
 
-    //= spec/s3-encryption/encryption.md#content-encryption
+    //= ../spec/s3-encryption/encryption.md#content-encryption
     //# The client MUST generate an IV or Message ID using the length of the IV or Message ID defined in the algorithm suite.
     let mut message_id = vec![0u8; suite.message_id_length()];
     rand::fill(&mut message_id).map_err(|_| crypto_err("failed to generate message ID"))?;
 
-    //= spec/s3-encryption/encryption.md#cipher-initialization
+    //= ../spec/s3-encryption/encryption.md#cipher-initialization
     //# The client SHOULD validate that the generated IV or Message ID is not zeros.
     if message_id.iter().all(|&b| b == 0) {
         return Err(crypto_err("generated message ID is all zeros"));
     }
 
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
     //# The client MUST use HKDF to derive the key commitment value and the derived encrypting key as described in [Key Derivation](key-derivation.md).
     let (derived_encryption_key, commit_key) = derive_keys(suite, plaintext_data_key, &message_id)?;
 
     let iv = suite.committing_iv();
 
-    //= spec/s3-encryption/key-derivation.md#hkdf-operation
+    //= ../spec/s3-encryption/key-derivation.md#hkdf-operation
     //# The client MUST set the AAD to the Algorithm Suite ID represented as bytes.
     let aad = suite.suite_id_bytes();
     
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
     //# The client MUST append the GCM auth tag to the ciphertext if the underlying crypto provider does not do so automatically.
     let ciphertext = aes_gcm_seal(&derived_encryption_key, &iv, &aad, plaintext)?;
 
-    //= spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
+    //= ../spec/s3-encryption/encryption.md#alg-aes-256-gcm-hkdf-sha512-commit-key
     //# The derived key commitment value MUST be set or returned from the encryption process such that it can be included in the content metadata.
     Ok((message_id, commit_key, ciphertext))
 }

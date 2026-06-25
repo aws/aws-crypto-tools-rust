@@ -48,37 +48,37 @@ pub const CONTENT_CIPHER_GCM: &str = "AES/GCM/NoPadding";
 /// The `x-amz-cek-alg` content-cipher value for the legacy AES-CBC suite (V1/V2).
 pub const CONTENT_CIPHER_CBC: &str = "AES/CBC/PKCS5Padding";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# - This mapkey ("x-amz-c") SHOULD be represented by a constant named "CONTENT_CIPHER_V3" or similar in the implementation code.
 /// V3 content cipher mapkey.
 pub const CONTENT_CIPHER_V3: &str = "x-amz-c";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# - This mapkey ("x-amz-3") SHOULD be represented by a constant named "ENCRYPTED_DATA_KEY_V3" or similar in the implementation code.
 /// V3 encrypted data key mapkey.
 pub const ENCRYPTED_DATA_KEY_V3: &str = "x-amz-3";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys  
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys  
 //# - This mapkey ("x-amz-m") SHOULD be represented by a constant named "MAT_DESC_V3" or similar in the implementation code.
 /// V3 material description mapkey.
 pub const MAT_DESC_V3: &str = "x-amz-m";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# - This mapkey ("x-amz-t") SHOULD be represented by a constant named "ENCRYPTION_CONTEXT_V3" or similar in the implementation code.
 /// V3 KMS encryption context mapkey.
 pub const ENCRYPTION_CONTEXT_V3: &str = "x-amz-t";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# - This mapkey ("x-amz-w") SHOULD be represented by a constant named "ENCRYPTED_DATA_KEY_ALGORITHM_V3" or similar in the implementation code.
 /// V3 wrapping algorithm mapkey.
 pub const WRAP_ALGORITHM_V3: &str = "x-amz-w";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# - This mapkey ("x-amz-d") SHOULD be represented by a constant named "KEY_COMMITMENT_V3" or similar in the implementation code.
 /// V3 key commitment mapkey.
 pub const KEY_COMMITMENT_V3: &str = "x-amz-d";
 
-//= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+//= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
 //# - This mapkey ("x-amz-i") SHOULD be represented by a constant named "MESSAGE_ID_V3" or similar in the implementation code.
 /// V3 message ID mapkey.
 pub const MESSAGE_ID_V3: &str = "x-amz-i";
@@ -235,7 +235,7 @@ impl ObjectMetadata {
         (object_metadata, instruction_file)
     }
 
-    //= spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
+    //= ../spec/s3-encryption/data-format/content-metadata.md#determining-s3ec-object-status
     //# - If the metadata contains "x-amz-iv" and "x-amz-key" but no other version exclusive keys then the object MUST be considered as an S3EC-encrypted object using the V1 format.
     /// Whether the metadata is in the V1 format.
     pub fn is_v1_format(&self) -> bool {
@@ -292,24 +292,24 @@ impl ObjectMetadata {
         encryption_context: &BTreeMap<String, String>,
     ) -> Result<Self> {
         Ok(Self {
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-key-v2" MUST be present for V2 format objects.
             encrypted_data_key_v2: Some(BASE64.encode(encrypted_data_key)),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-wrap-alg" MUST be present for V2 format objects.
             wrap_algorithm: Some(WRAP_ALG_KMS_CONTEXT.to_string()),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-matdesc" MUST be present for V2 format objects.
             materials_description: Some(encode_context(encryption_context)?),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-iv" MUST be present for V2 format objects.
             content_iv: Some(BASE64.encode(content_iv)),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-cek-alg" MUST be present for V2 format objects.
             content_cipher: Some(
                 EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf.content_cipher_value(),
             ),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - If the object is encrypted using AES-GCM for content encryption, then the the mapkey "x-amz-tag-len" MUST be present.
             tag_length: Some("128".to_string()),
             ..Default::default()
@@ -328,23 +328,23 @@ impl ObjectMetadata {
         encryption_context: &BTreeMap<String, String>,
     ) -> Result<Self> {
         Ok(Self {
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-c" MUST be present for V3 format objects.
             content_cipher_v3: Some(suite.content_cipher_value()),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-3" MUST be present for V3 format objects.
             encrypted_data_key_v3: Some(BASE64.encode(encrypted_data_key)),
             // "12" is the V3 compressed code for the kms+context wrapping algorithm.
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-w" MUST be present for V3 format objects.
             wrap_algorithm_v3: Some(v3_wrap_algorithm_to_code(WRAP_ALG_KMS_CONTEXT)?.to_string()),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-i" MUST be present for V3 format objects.
             message_id_v3: Some(BASE64.encode(message_id)),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-d" MUST be present for V3 format objects.
             key_commitment_v3: Some(BASE64.encode(key_commitment)),
-            //= spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
+            //= ../spec/s3-encryption/data-format/content-metadata.md#content-metadata-mapkeys
             //# - The mapkey "x-amz-t" SHOULD be present for V3 format objects that use KMS Encryption Context.
             encryption_context_v3: Some(encode_context(encryption_context)?),
             ..Default::default()

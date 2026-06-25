@@ -70,4 +70,58 @@ mod tests {
         );
         assert!(EncryptionAlgorithm::from_smithy("BOGUS").is_err());
     }
+
+    /// FORBID_ENCRYPT_ALLOW_DECRYPT must reject a key-committing encryption
+    /// algorithm at config validation time.
+    #[test]
+    fn forbid_policy_rejects_committing_algorithm() {
+        let cfg = S3EncryptionConfig {
+            commitment_policy: Some(CommitmentPolicy::ForbidEncryptAllowDecrypt),
+            encryption_algorithm: Some(EncryptionAlgorithm::AlgAes256GcmHkdfSha512CommitKey),
+            ..Default::default()
+        };
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //= type=test
+        //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST NOT encrypt using an algorithm suite which supports key commitment.
+        assert!(matches!(
+            cfg.validate(),
+            Err(S3EncryptionError::Configuration(_))
+        ));
+    }
+
+    /// REQUIRE_ENCRYPT_ALLOW_DECRYPT must reject a non-committing encryption
+    /// algorithm at config validation time.
+    #[test]
+    fn require_allow_policy_requires_committing_algorithm() {
+        let cfg = S3EncryptionConfig {
+            commitment_policy: Some(CommitmentPolicy::RequireEncryptAllowDecrypt),
+            encryption_algorithm: Some(EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf),
+            ..Default::default()
+        };
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //= type=test
+        //# When the commitment policy is REQUIRE_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST only encrypt using an algorithm suite which supports key commitment.
+        assert!(matches!(
+            cfg.validate(),
+            Err(S3EncryptionError::Configuration(_))
+        ));
+    }
+
+    /// REQUIRE_ENCRYPT_REQUIRE_DECRYPT must reject a non-committing encryption
+    /// algorithm at config validation time.
+    #[test]
+    fn require_require_policy_requires_committing_algorithm() {
+        let cfg = S3EncryptionConfig {
+            commitment_policy: Some(CommitmentPolicy::RequireEncryptRequireDecrypt),
+            encryption_algorithm: Some(EncryptionAlgorithm::AlgAes256GcmIv12Tag16NoKdf),
+            ..Default::default()
+        };
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //= type=test
+        //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST only encrypt using an algorithm suite which supports key commitment.
+        assert!(matches!(
+            cfg.validate(),
+            Err(S3EncryptionError::Configuration(_))
+        ));
+    }
 }

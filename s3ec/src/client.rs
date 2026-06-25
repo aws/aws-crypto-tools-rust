@@ -52,7 +52,7 @@ pub struct S3EncryptionClient {
 }
 
 impl S3EncryptionClient {
-    //= spec/s3-encryption/client.md#cryptographic-materials
+    //= ../spec/s3-encryption/client.md#cryptographic-materials
     //# The S3EC MUST accept either one CMM or one Keyring instance upon initialization.
     /// Construct a client from a validated config and the wrapped SDK clients.
     pub fn new(
@@ -159,7 +159,7 @@ impl S3EncryptionClient {
     ) -> Result<()> {
         let keyring = self.require_keyring()?;
 
-        //= spec/s3-encryption/encryption.md#content-encryption
+        //= ../spec/s3-encryption/encryption.md#content-encryption
         //# The S3EC MUST use the encryption algorithm configured during [client](./client.md) initialization.
         let suite = self.config.effective_encryption_algorithm();
 
@@ -455,17 +455,10 @@ impl S3EncryptionClient {
         // and the legacy AES-CBC suite; determine which from the content cipher.
         let content_alg = md.v2_content_algorithm()?;
 
-        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
-        //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
-        if self.config.effective_commitment_policy()
-            == CommitmentPolicy::RequireEncryptRequireDecrypt
-        {
-            return Err(S3EncryptionError::Crypto(
-                "cannot decrypt a non-key-committing object when the commitment policy is \
-                 REQUIRE_ENCRYPT_REQUIRE_DECRYPT"
-                    .to_string(),
-            ));
-        }
+        // Reaching the V2 decrypt path means the object's content suite does
+        // NOT support key commitment, so the decrypt decision depends solely on
+        // the configured commitment policy.
+        enforce_v2_decrypt_commitment_policy(self.config.effective_commitment_policy())?;
 
         //= ../spec/s3-encryption/decryption.md#legacy-decryption
         //# The S3EC MUST NOT decrypt objects encrypted using legacy unauthenticated algorithm suites unless specifically configured to do so.
@@ -1078,6 +1071,30 @@ fn open_v3_content_range(
     )
 }
 
+/// Enforce the configured key commitment policy for a V2 (non-committing)
+/// object's decrypt path.
+///
+/// Reaching the V2 decrypt path means the object's content algorithm suite does
+/// not support key commitment, so each policy's decrypt decision is made purely
+/// from the policy value.
+fn enforce_v2_decrypt_commitment_policy(policy: CommitmentPolicy) -> Result<()> {
+    match policy {
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
+        CommitmentPolicy::RequireEncryptRequireDecrypt => Err(S3EncryptionError::Crypto(
+            "cannot decrypt a non-key-committing object when the commitment policy is \
+             REQUIRE_ENCRYPT_REQUIRE_DECRYPT"
+                .to_string(),
+        )),
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //# When the commitment policy is REQUIRE_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST allow decryption using algorithm suites which do not support key commitment.
+        CommitmentPolicy::RequireEncryptAllowDecrypt => Ok(()),
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST allow decryption using algorithm suites which do not support key commitment.
+        CommitmentPolicy::ForbidEncryptAllowDecrypt => Ok(()),
+    }
+}
+
 /// Return the inclusive `[start, end]` slice of an already-decrypted plaintext,
 /// clamped to the available bytes.
 fn slice_plaintext(plaintext: &[u8], start: usize, end_inclusive: usize) -> Vec<u8> {
@@ -1623,5 +1640,49 @@ mod tests {
         ));
         assert!(Keyring::raw(Some(vec![0u8; 32]), Some(vec![0u8; 8])).is_err());
         assert!(Keyring::raw(None, None).is_err());
+    }
+
+    /// Under FORBID_ENCRYPT_ALLOW_DECRYPT, the V2 (non-committing) decrypt path
+    /// is permitted: the commitment-policy gate returns Ok so decryption
+    /// proceeds.
+    #[test]
+    fn forbid_policy_allows_v2_decryption() {
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //= type=test
+        //= reason=the V2 (non-committing) decrypt gate returns Ok under FORBID_ENCRYPT_ALLOW_DECRYPT, proving decryption is allowed to proceed
+        //# When the commitment policy is FORBID_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST allow decryption using algorithm suites which do not support key commitment.
+        assert!(
+            enforce_v2_decrypt_commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+                .is_ok()
+        );
+    }
+
+    /// Under REQUIRE_ENCRYPT_ALLOW_DECRYPT, the V2 (non-committing) decrypt path
+    /// is permitted: the commitment-policy gate returns Ok so decryption
+    /// proceeds.
+    #[test]
+    fn require_allow_policy_allows_v2_decryption() {
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //= type=test
+        //= reason=the V2 (non-committing) decrypt gate returns Ok under REQUIRE_ENCRYPT_ALLOW_DECRYPT, proving decryption is allowed to proceed
+        //# When the commitment policy is REQUIRE_ENCRYPT_ALLOW_DECRYPT, the S3EC MUST allow decryption using algorithm suites which do not support key commitment.
+        assert!(
+            enforce_v2_decrypt_commitment_policy(CommitmentPolicy::RequireEncryptAllowDecrypt)
+                .is_ok()
+        );
+    }
+
+    /// Under REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the V2 (non-committing) decrypt
+    /// path is rejected: the commitment-policy gate fails closed.
+    #[test]
+    fn require_require_policy_rejects_v2_decryption() {
+        let err = enforce_v2_decrypt_commitment_policy(
+            CommitmentPolicy::RequireEncryptRequireDecrypt,
+        )
+        .unwrap_err();
+        //= ../spec/s3-encryption/key-commitment.md#commitment-policy
+        //= type=test
+        //# When the commitment policy is REQUIRE_ENCRYPT_REQUIRE_DECRYPT, the S3EC MUST NOT allow decryption using algorithm suites which do not support key commitment.
+        assert!(matches!(err, S3EncryptionError::Crypto(_)));
     }
 }
