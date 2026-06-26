@@ -141,6 +141,138 @@ pub fn hmac_sha384_verify(key_bytes: &[u8], data: &[u8], expected_tag: &[u8]) ->
 }
 
 // =============================================================================
+// Byte-faithful DB-ESDK format primitives
+//
+// These mirror the exact crypto the Dafny StructuredEncryption + MPL
+// intermediate-key-wrapping use, so the on-DDB bytes interoperate with the
+// canonical Java DB-ESDK. They are kept separate from the (spec-aligned but not
+// byte-identical) helpers above, which the legacy `encrypt` path still uses.
+// =============================================================================
+
+use aws_lc_rs::cipher::{
+    EncryptingKey, EncryptionContext, UnboundCipherKey, AES_256 as CIPHER_AES_256,
+};
+use aws_lc_rs::digest::{digest, SHA384};
+use aws_lc_rs::hmac::{HMAC_SHA512, Key as HmacKey};
+use aws_lc_rs::iv::FixedLength;
+
+/// SHA-384 digest of `data` (48 bytes). The DB-ESDK footer canonical hash.
+pub fn sha384(data: &[u8]) -> Vec<u8> {
+    digest(&SHA384, data).as_ref().to_vec()
+}
+
+/// HMAC-SHA512 tag over `data` with `key` (64 bytes).
+pub fn hmac_sha512(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let k = HmacKey::new(HMAC_SHA512, key);
+    aws_lc_rs::hmac::sign(&k, data).as_ref().to_vec()
+}
+
+/// RFC 5869 HKDF-Extract with SHA-512: `PRK = HMAC-SHA512(salt, ikm)`.
+///
+/// An empty salt is replaced by a HashLen-zero block, per the RFC.
+pub fn hkdf_sha512_extract(salt: &[u8], ikm: &[u8]) -> Vec<u8> {
+    let salt = if salt.is_empty() { &[0u8; 64][..] } else { salt };
+    hmac_sha512(salt, ikm)
+}
+
+/// RFC 5869 HKDF-Expand with SHA-512, for `out_len <= 64`
+/// (`T(1) = HMAC-SHA512(prk, info || 0x01)`, truncated to `out_len`).
+pub fn hkdf_sha512_expand(prk: &[u8], info: &[u8], out_len: usize) -> Result<Vec<u8>> {
+    if out_len > 64 {
+        return Err(DbEsdkError::crypto(
+            "HKDF-SHA512 expand of more than one block is not supported",
+        ));
+    }
+    let mut msg = info.to_vec();
+    msg.push(0x01);
+    let mut okm = hmac_sha512(prk, &msg);
+    okm.truncate(out_len);
+    Ok(okm)
+}
+
+/// HKDF-SHA512 extract-and-expand with an empty salt, deriving `out_len` bytes.
+pub fn hkdf_sha512(ikm: &[u8], info: &[u8], out_len: usize) -> Result<Vec<u8>> {
+    let prk = hkdf_sha512_extract(&[], ikm);
+    hkdf_sha512_expand(&prk, info, out_len)
+}
+
+/// AES-256-CTR keystream of `len` bytes, produced by encrypting zeros under
+/// `key` with the 16-byte `iv`. Mirrors `AesKdfCtr.Stream` (the field-key KDF).
+pub fn aes256_ctr_keystream(key: &[u8], iv: &[u8; 16], len: usize) -> Result<Vec<u8>> {
+    let mut buf = vec![0u8; len];
+    let unbound = UnboundCipherKey::new(&CIPHER_AES_256, key)
+        .map_err(|_| DbEsdkError::crypto("failed to construct AES-256-CTR key"))?;
+    let enc = EncryptingKey::ctr(unbound)
+        .map_err(|_| DbEsdkError::crypto("failed to construct AES-256-CTR encryptor"))?;
+    let context = EncryptionContext::Iv128(FixedLength::<16>::from(iv));
+    enc.less_safe_encrypt(&mut buf, context)
+        .map_err(|_| DbEsdkError::crypto("AES-256-CTR keystream generation failed"))?;
+    Ok(buf)
+}
+
+/// AES-GCM encrypt with an explicit 12-byte nonce; returns `ciphertext || tag`
+/// (no nonce prefix). The DB-ESDK stores the nonce out of band (or fixes it to
+/// zero), unlike [`aes_gcm_seal`].
+pub fn aes_gcm_encrypt(key: &[u8], nonce: &[u8; 12], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+    let k = LessSafeKey::new(unbound_key(key)?);
+    let mut in_out = plaintext.to_vec();
+    k.seal_in_place_append_tag(
+        Nonce::assume_unique_for_key(*nonce),
+        Aad::from(aad),
+        &mut in_out,
+    )
+    .map_err(|_| DbEsdkError::crypto("AES-GCM encrypt failed"))?;
+    Ok(in_out)
+}
+
+/// AES-GCM decrypt of `ciphertext || tag` with an explicit 12-byte nonce.
+pub fn aes_gcm_decrypt(
+    key: &[u8],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    ciphertext_and_tag: &[u8],
+) -> Result<Vec<u8>> {
+    if ciphertext_and_tag.len() < GCM_TAG_LEN {
+        return Err(DbEsdkError::crypto("AES-GCM ciphertext too short for a tag"));
+    }
+    let k = LessSafeKey::new(unbound_key(key)?);
+    let mut in_out = ciphertext_and_tag.to_vec();
+    let plaintext = k
+        .open_in_place(
+            Nonce::assume_unique_for_key(*nonce),
+            Aad::from(aad),
+            &mut in_out,
+        )
+        .map_err(|_| DbEsdkError::crypto("AES-GCM decrypt failed (tag mismatch)"))?;
+    Ok(plaintext.to_vec())
+}
+
+/// Standard (RFC 4648) base64 encoding with `=` padding.
+pub fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[(b2 & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+// =============================================================================
 // RSA data-key wrapping (Raw RSA keyring)
 // =============================================================================
 

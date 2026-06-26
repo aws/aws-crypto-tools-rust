@@ -32,6 +32,7 @@ pub mod config;
 pub mod crypto;
 pub mod encrypt;
 pub mod error;
+pub mod format;
 pub mod keyring;
 pub mod model;
 
