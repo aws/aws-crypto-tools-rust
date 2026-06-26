@@ -14,26 +14,30 @@
 //!   binary serialization.
 //! * [`config`] — the per-table encryption configuration (attribute actions,
 //!   keyring, algorithm suite) a `CreateClient` call supplies.
-//! * [`keyring`] — the Raw AES data-key wrapping keyring.
 //! * [`crypto`] — low-level AES-GCM / HKDF / HMAC primitives over `aws-lc-rs`.
-//! * [`encrypt`] — the item encryptor / decryptor that produces and verifies the
-//!   encrypted attribute map persisted in DynamoDB.
+//! * [`format`] — the byte-faithful DB-ESDK structured-encryption format (the
+//!   real wire format the canonical Java/Dafny DB-ESDK reads and writes),
+//!   currently for the Raw AES keyring and the non-signing suite.
 //!
-//! # Milestone state
+//! # State
 //!
-//! M2 (current): the Raw AES item encrypt/decrypt path is implemented end to end
-//! ([`encrypt::encrypt_item`] / [`encrypt::decrypt_item`]). The [`ClientRegistry`]
-//! binds a configured set of [`config::TableEncryptionConfig`]s to a unique
-//! [`ClientId`] for the TestServer `CreateClient` contract; `WriteItem` /
-//! `ReadItem` resolve the client by that id. KMS and other keyrings land in later
-//! milestones (see `BLOCKED.md`).
+//! The only encryption path is the byte-faithful [`format`] module, a direct
+//! port of the Dafny `StructuredEncryption` + MPL `IntermediateKeyWrapping`
+//! reference. The earlier home-grown, self-consistent-only encryptor was
+//! removed: it produced bytes no other DB-ESDK runtime could read, so it could
+//! never pass the cross-language conformance cells. Keyrings beyond Raw AES
+//! (KMS, RSA, ECDH, …) await their own byte-faithful ports (see `BLOCKED.md`)
+//! and are rejected by the server until then.
+//!
+//! The [`ClientRegistry`] binds a configured set of
+//! [`config::TableEncryptionConfig`]s to a unique [`ClientId`] for the
+//! TestServer `CreateClient` contract; `WriteItem` / `ReadItem` resolve the
+//! client by that id.
 
 pub mod config;
 pub mod crypto;
-pub mod encrypt;
 pub mod error;
 pub mod format;
-pub mod keyring;
 pub mod model;
 
 pub use error::{DbEsdkError, Result};

@@ -6,7 +6,7 @@
 //!
 //! The server decodes the `CreateClient` CBOR into these types and stores them
 //! in the client registry; `WriteItem` / `ReadItem` then drive
-//! [`crate::encrypt`] from the resolved [`TableEncryptionConfig`].
+//! [`crate::format`] from the resolved [`TableEncryptionConfig`].
 
 use std::collections::BTreeMap;
 
@@ -51,16 +51,6 @@ impl CryptoAction {
     pub fn is_signed(self) -> bool {
         !matches!(self, Self::DoNothing)
     }
-
-    /// A stable one-byte code for the canonical signed form.
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::EncryptAndSign => 1,
-            Self::SignAndIncludeInEncryptionContext => 2,
-            Self::SignOnly => 3,
-            Self::DoNothing => 4,
-        }
-    }
 }
 
 /// The DBE algorithm suite id (mirror of `DBEAlgorithmSuiteId`).
@@ -97,25 +87,6 @@ impl AlgorithmSuiteId {
     /// symmetric-signing, key-committing suite).
     pub fn default_suite() -> Self {
         Self::SymsigHmacSha384
-    }
-
-    /// A stable two-byte code stored in the item header.
-    pub(crate) fn code(self) -> u16 {
-        match self {
-            Self::EcdsaP384SymsigHmacSha384 => 0x0001,
-            Self::SymsigHmacSha384 => 0x0002,
-        }
-    }
-
-    /// Resolve a header code back to a suite id.
-    pub(crate) fn from_code(code: u16) -> Result<Self> {
-        match code {
-            0x0001 => Ok(Self::EcdsaP384SymsigHmacSha384),
-            0x0002 => Ok(Self::SymsigHmacSha384),
-            other => Err(DbEsdkError::invalid_item(format!(
-                "unknown algorithm suite code 0x{other:04x} in item header"
-            ))),
-        }
     }
 }
 

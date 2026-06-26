@@ -11,8 +11,8 @@
 //! (`Header`, `Footer`, `Crypt`, `Paths`, `Canonize`) plus the MPL
 //! `IntermediateKeyWrapping` and `RawAESKeyring`, and the DynamoDB item
 //! encryptor's encryption-context construction (`MakeEncryptionContextV1`).
-//! Unlike [`crate::encrypt`] (spec-aligned but not byte-identical), the bytes
-//! produced here are intended to interoperate with the canonical Java server.
+//! reference. The bytes produced here are intended to interoperate with the
+//! canonical Java/Dafny DB-ESDK server (the cross-language conformance cells).
 //!
 //! Scope this iteration: Raw AES keyring, scalar attribute types
 //! (S / N / B / BOOL / NULL), no `SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT`
