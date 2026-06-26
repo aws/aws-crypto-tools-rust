@@ -3,17 +3,27 @@
 
 //! Thin wrappers over `aws-lc-rs` for the primitives the item encryptor needs:
 //! AES-GCM authenticated encryption, HKDF-SHA384 key derivation, HMAC-SHA384
-//! signing, and CSPRNG byte generation.
+//! signing, CSPRNG byte generation, plus the asymmetric primitives the raw
+//! asymmetric keyrings drive — RSA-OAEP / PKCS#1 data-key wrapping and ECDH
+//! static key agreement.
 //!
 //! `aws-lc-rs` is the same FIPS-capable crypto provider the native MPL crate
-//! uses; this module isolates its API so the encryptor reads in domain terms.
+//! uses; this module isolates its API so the keyrings read in domain terms.
 
 use aws_lc_rs::aead::{
     Aad, LessSafeKey, Nonce, UnboundKey, AES_128_GCM, AES_192_GCM, AES_256_GCM, NONCE_LEN,
 };
+use aws_lc_rs::agreement::{
+    self, agree, PrivateKey as EcdhPrivateKey, UnparsedPublicKey, ECDH_P256, ECDH_P384, ECDH_P521,
+};
 use aws_lc_rs::hkdf::{Salt, HKDF_SHA384};
 use aws_lc_rs::hmac;
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
+use aws_lc_rs::rsa::{
+    OaepAlgorithm, OaepPrivateDecryptingKey, OaepPublicEncryptingKey, Pkcs1PrivateDecryptingKey,
+    Pkcs1PublicEncryptingKey, PrivateDecryptingKey, PublicEncryptingKey, OAEP_SHA1_MGF1SHA1,
+    OAEP_SHA256_MGF1SHA256, OAEP_SHA384_MGF1SHA384, OAEP_SHA512_MGF1SHA512,
+};
 
 use crate::error::{DbEsdkError, Result};
 
@@ -130,6 +140,216 @@ pub fn hmac_sha384_verify(key_bytes: &[u8], data: &[u8], expected_tag: &[u8]) ->
         .map_err(|_| DbEsdkError::crypto("HMAC verification failed (signature mismatch)"))
 }
 
+// =============================================================================
+// RSA data-key wrapping (Raw RSA keyring)
+// =============================================================================
+
+/// The RSA padding scheme used to wrap a data key (the crypto-layer mirror of
+/// the configured `PaddingScheme`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RsaPadding {
+    /// RSA PKCS#1 v1.5 padding.
+    Pkcs1,
+    /// RSA-OAEP with SHA-1 (hash and MGF1).
+    OaepSha1,
+    /// RSA-OAEP with SHA-256 (hash and MGF1).
+    OaepSha256,
+    /// RSA-OAEP with SHA-384 (hash and MGF1).
+    OaepSha384,
+    /// RSA-OAEP with SHA-512 (hash and MGF1).
+    OaepSha512,
+}
+
+impl RsaPadding {
+    /// The matching `aws-lc-rs` OAEP algorithm, or `None` for PKCS#1 v1.5.
+    fn oaep_algorithm(self) -> Option<&'static OaepAlgorithm> {
+        match self {
+            Self::Pkcs1 => None,
+            Self::OaepSha1 => Some(&OAEP_SHA1_MGF1SHA1),
+            Self::OaepSha256 => Some(&OAEP_SHA256_MGF1SHA256),
+            Self::OaepSha384 => Some(&OAEP_SHA384_MGF1SHA384),
+            Self::OaepSha512 => Some(&OAEP_SHA512_MGF1SHA512),
+        }
+    }
+}
+
+/// Encrypt (wrap) `plaintext` under an RSA public key supplied as DER-encoded
+/// X.509 `SubjectPublicKeyInfo` bytes, using `padding`.
+pub fn rsa_encrypt(public_key_der: &[u8], padding: RsaPadding, plaintext: &[u8]) -> Result<Vec<u8>> {
+    let public_key = PublicEncryptingKey::from_der(public_key_der)
+        .map_err(|_| DbEsdkError::crypto("invalid RSA public key (expected DER X.509 SPKI)"))?;
+
+    match padding.oaep_algorithm() {
+        None => {
+            let key = Pkcs1PublicEncryptingKey::new(public_key)
+                .map_err(|_| DbEsdkError::crypto("failed to construct RSA PKCS#1 public key"))?;
+            let mut ciphertext = vec![0u8; key.ciphertext_size()];
+            let out = key
+                .encrypt(plaintext, &mut ciphertext)
+                .map_err(|_| DbEsdkError::crypto("RSA PKCS#1 encryption failed"))?;
+            Ok(out.to_vec())
+        }
+        Some(algorithm) => {
+            let key = OaepPublicEncryptingKey::new(public_key)
+                .map_err(|_| DbEsdkError::crypto("failed to construct RSA-OAEP public key"))?;
+            let mut ciphertext = vec![0u8; key.ciphertext_size()];
+            let out = key
+                .encrypt(algorithm, plaintext, &mut ciphertext, None)
+                .map_err(|_| DbEsdkError::crypto("RSA-OAEP encryption failed"))?;
+            Ok(out.to_vec())
+        }
+    }
+}
+
+/// Decrypt (unwrap) `ciphertext` with an RSA private key supplied as DER-encoded
+/// PKCS#8 `PrivateKeyInfo` bytes, using `padding`.
+pub fn rsa_decrypt(
+    private_key_pkcs8_der: &[u8],
+    padding: RsaPadding,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    let private_key = PrivateDecryptingKey::from_pkcs8(private_key_pkcs8_der)
+        .map_err(|_| DbEsdkError::crypto("invalid RSA private key (expected DER PKCS#8)"))?;
+
+    match padding.oaep_algorithm() {
+        None => {
+            let key = Pkcs1PrivateDecryptingKey::new(private_key)
+                .map_err(|_| DbEsdkError::crypto("failed to construct RSA PKCS#1 private key"))?;
+            let mut plaintext = vec![0u8; key.min_output_size()];
+            let out = key
+                .decrypt(ciphertext, &mut plaintext)
+                .map_err(|_| DbEsdkError::crypto("RSA PKCS#1 decryption failed"))?;
+            Ok(out.to_vec())
+        }
+        Some(algorithm) => {
+            let key = OaepPrivateDecryptingKey::new(private_key)
+                .map_err(|_| DbEsdkError::crypto("failed to construct RSA-OAEP private key"))?;
+            let mut plaintext = vec![0u8; key.min_output_size()];
+            let out = key
+                .decrypt(algorithm, ciphertext, &mut plaintext, None)
+                .map_err(|_| DbEsdkError::crypto("RSA-OAEP decryption failed"))?;
+            Ok(out.to_vec())
+        }
+    }
+}
+
+// =============================================================================
+// ECDH static key agreement (Raw ECDH keyring)
+// =============================================================================
+
+/// A NIST elliptic curve usable for ECDH key agreement (the crypto-layer mirror
+/// of the configured `ECDHCurveSpec`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EcdhCurve {
+    /// NIST P-256 (secp256r1).
+    P256,
+    /// NIST P-384 (secp384r1).
+    P384,
+    /// NIST P-521 (secp521r1).
+    P521,
+}
+
+impl EcdhCurve {
+    fn agreement_algorithm(self) -> &'static agreement::Algorithm {
+        match self {
+            Self::P256 => &ECDH_P256,
+            Self::P384 => &ECDH_P384,
+            Self::P521 => &ECDH_P521,
+        }
+    }
+}
+
+/// Perform ECDH key agreement between a sender's static private key (DER-encoded
+/// PKCS#8 `PrivateKeyInfo`) and a recipient's static public key (DER-encoded
+/// X.509 `SubjectPublicKeyInfo`) on `curve`, returning the raw shared secret.
+///
+/// Both keys must lie on `curve`. The raw secret MUST be run through a KDF
+/// before use as a key — callers derive a wrapping key from it via [`hkdf_sha384`].
+pub fn ecdh_shared_secret(
+    sender_private_key_pkcs8_der: &[u8],
+    recipient_public_key_der: &[u8],
+    curve: EcdhCurve,
+) -> Result<Vec<u8>> {
+    let algorithm = curve.agreement_algorithm();
+    let private_key = EcdhPrivateKey::from_private_key_der(algorithm, sender_private_key_pkcs8_der)
+        .map_err(|_| {
+            DbEsdkError::crypto("invalid ECDH sender private key (expected DER PKCS#8 on the curve)")
+        })?;
+    let peer_public_key = UnparsedPublicKey::new(algorithm, recipient_public_key_der);
+
+    agree(
+        &private_key,
+        peer_public_key,
+        DbEsdkError::crypto("ECDH key agreement failed (curve mismatch or invalid public key)"),
+        |shared_secret| Ok(shared_secret.to_vec()),
+    )
+}
+
+// =============================================================================
+// PEM decoding
+// =============================================================================
+
+/// Decode a single PEM document (any label) into its raw DER bytes.
+///
+/// The raw asymmetric keyring configs carry PEM-encoded UTF-8 key bytes (per the
+/// MPL `CreateRaw*KeyringInput` contract); the `aws-lc-rs` key parsers want DER,
+/// so callers strip the PEM armor here first.
+pub fn pem_to_der(pem: &[u8]) -> Result<Vec<u8>> {
+    let text =
+        std::str::from_utf8(pem).map_err(|_| DbEsdkError::crypto("PEM key is not valid UTF-8"))?;
+
+    let mut base64 = String::new();
+    let mut in_body = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("-----BEGIN") {
+            in_body = true;
+        } else if trimmed.starts_with("-----END") {
+            in_body = false;
+        } else if in_body {
+            base64.push_str(trimmed);
+        }
+    }
+
+    if base64.is_empty() {
+        return Err(DbEsdkError::crypto(
+            "PEM key contained no base64 body between BEGIN/END markers",
+        ));
+    }
+    base64_decode(&base64)
+}
+
+/// Decode standard (RFC 4648) base64, ignoring whitespace and `=` padding.
+fn base64_decode(input: &str) -> Result<Vec<u8>> {
+    fn sextet(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some(u32::from(c - b'A')),
+            b'a'..=b'z' => Some(u32::from(c - b'a') + 26),
+            b'0'..=b'9' => Some(u32::from(c - b'0') + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    let mut accumulator = 0u32;
+    let mut bits = 0u32;
+    for &c in input.as_bytes() {
+        if c == b'=' || c.is_ascii_whitespace() {
+            continue;
+        }
+        let value = sextet(c).ok_or_else(|| DbEsdkError::crypto("invalid base64 in PEM key"))?;
+        accumulator = (accumulator << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((accumulator >> bits) as u8);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +394,84 @@ mod tests {
         let tag = hmac_sha384(&key, b"signed-content");
         hmac_sha384_verify(&key, b"signed-content", &tag).unwrap();
         assert!(hmac_sha384_verify(&key, b"tampered", &tag).is_err());
+    }
+
+    #[test]
+    fn pem_to_der_strips_armor_and_decodes_base64() {
+        // base64("hello") == "aGVsbG8=", wrapped in PEM armor.
+        let pem = b"-----BEGIN TEST KEY-----\naGVsbG8=\n-----END TEST KEY-----\n";
+        assert_eq!(pem_to_der(pem).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn pem_to_der_rejects_a_body_with_no_markers() {
+        assert!(pem_to_der(b"not a pem document").is_err());
+    }
+
+    #[test]
+    fn rsa_oaep_wrap_unwrap_round_trips() {
+        use aws_lc_rs::encoding::{AsDer, Pkcs8V1Der, PublicKeyX509Der};
+        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+
+        let private = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        let private_der = AsDer::<Pkcs8V1Der>::as_der(&private).unwrap();
+        let public_der = AsDer::<PublicKeyX509Der>::as_der(&private.public_key()).unwrap();
+
+        let data_key = random_bytes(32).unwrap();
+        let wrapped = rsa_encrypt(public_der.as_ref(), RsaPadding::OaepSha256, &data_key).unwrap();
+        assert_ne!(wrapped, data_key);
+        let unwrapped =
+            rsa_decrypt(private_der.as_ref(), RsaPadding::OaepSha256, &wrapped).unwrap();
+        assert_eq!(unwrapped, data_key);
+    }
+
+    #[test]
+    fn rsa_decrypt_rejects_a_different_key() {
+        use aws_lc_rs::encoding::{AsDer, Pkcs8V1Der, PublicKeyX509Der};
+        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+
+        let writer = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        let writer_public = AsDer::<PublicKeyX509Der>::as_der(&writer.public_key()).unwrap();
+        let other = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        let other_private = AsDer::<Pkcs8V1Der>::as_der(&other).unwrap();
+
+        let data_key = random_bytes(32).unwrap();
+        let wrapped =
+            rsa_encrypt(writer_public.as_ref(), RsaPadding::OaepSha256, &data_key).unwrap();
+        assert!(rsa_decrypt(other_private.as_ref(), RsaPadding::OaepSha256, &wrapped).is_err());
+    }
+
+    #[test]
+    fn ecdh_shared_secret_is_symmetric_and_deterministic() {
+        use aws_lc_rs::encoding::{AsDer, Pkcs8V1Der, PublicKeyX509Der};
+
+        let private = EcdhPrivateKey::generate(&ECDH_P256).unwrap();
+        let private_der = AsDer::<Pkcs8V1Der>::as_der(&private).unwrap();
+        let public = private.compute_public_key().unwrap();
+        let public_der = AsDer::<PublicKeyX509Der>::as_der(&public).unwrap();
+
+        // RawPrivateKeyToStaticPublicKey: the same key pair is both sender and
+        // recipient, so encrypt and decrypt derive an identical shared secret.
+        let a =
+            ecdh_shared_secret(private_der.as_ref(), public_der.as_ref(), EcdhCurve::P256).unwrap();
+        let b =
+            ecdh_shared_secret(private_der.as_ref(), public_der.as_ref(), EcdhCurve::P256).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 32, "P-256 shared secret is the 32-byte field element");
+    }
+
+    #[test]
+    fn ecdh_rejects_a_public_key_on_a_different_curve() {
+        use aws_lc_rs::encoding::{AsDer, Pkcs8V1Der, PublicKeyX509Der};
+
+        let p256 = EcdhPrivateKey::generate(&ECDH_P256).unwrap();
+        let p256_der = AsDer::<Pkcs8V1Der>::as_der(&p256).unwrap();
+        let p384 = EcdhPrivateKey::generate(&ECDH_P384).unwrap();
+        let p384_public = AsDer::<PublicKeyX509Der>::as_der(&p384.compute_public_key().unwrap())
+            .unwrap();
+
+        assert!(
+            ecdh_shared_secret(p256_der.as_ref(), p384_public.as_ref(), EcdhCurve::P256).is_err()
+        );
     }
 }
