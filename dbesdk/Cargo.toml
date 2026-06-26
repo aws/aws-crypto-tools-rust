@@ -10,3 +10,7 @@ authors = ["AWS-CryptoTools"]
 
 [dependencies]
 uuid = { version = "1", features = ["v4"] }
+# Same crypto provider the native MPL crate uses. No `fips` feature: the
+# conformance round-trip needs standard AES-GCM / HKDF / HMAC, and the non-FIPS
+# build avoids the heavier FIPS toolchain.
+aws-lc-rs = "=1.17.0"

@@ -8,38 +8,66 @@
 //! cross-language TestServer conformance suite (the Java JUnit suite drives a
 //! Rust Language_Server over rpcv2Cbor).
 //!
+//! # Layout
+//!
+//! * [`model`] — the DynamoDB item / attribute-value types and their canonical
+//!   binary serialization.
+//! * [`config`] — the per-table encryption configuration (attribute actions,
+//!   keyring, algorithm suite) a `CreateClient` call supplies.
+//! * [`keyring`] — the Raw AES data-key wrapping keyring.
+//! * [`crypto`] — low-level AES-GCM / HKDF / HMAC primitives over `aws-lc-rs`.
+//! * [`encrypt`] — the item encryptor / decryptor that produces and verifies the
+//!   encrypted attribute map persisted in DynamoDB.
+//!
 //! # Milestone state
 //!
-//! M1 (current): the [`ClientRegistry`] models the TestServer `CreateClient`
-//! contract — a configured Enhanced Client is constructed and bound to a unique,
-//! non-empty [`ClientId`]; later `WriteItem` / `ReadItem` calls resolve the same
-//! client by that id. The cryptographic item encrypt/decrypt path (attribute
-//! actions, material description, signing) and the keyring wiring (reusing the
-//! native Rust MPL crate) land in later milestones (M2+).
+//! M2 (current): the Raw AES item encrypt/decrypt path is implemented end to end
+//! ([`encrypt::encrypt_item`] / [`encrypt::decrypt_item`]). The [`ClientRegistry`]
+//! binds a configured set of [`config::TableEncryptionConfig`]s to a unique
+//! [`ClientId`] for the TestServer `CreateClient` contract; `WriteItem` /
+//! `ReadItem` resolve the client by that id. KMS and other keyrings land in later
+//! milestones (see `BLOCKED.md`).
+
+pub mod config;
+pub mod crypto;
+pub mod encrypt;
+pub mod error;
+pub mod keyring;
+pub mod model;
+
+pub use error::{DbEsdkError, Result};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+use config::TableEncryptionConfig;
 
 /// A unique, non-empty identifier for a constructed client, mirroring the
 /// model's `@length(min: 1) string ClientId`.
 pub type ClientId = String;
 
-/// The configuration of a constructed Enhanced Client.
-///
-/// For M1 this captures the physical table names the client was configured for
-/// (the keys of `tableEncryptionConfigs`); later milestones grow this into the
-/// full per-table encryption configuration (attribute actions, algorithm suite,
-/// keyring, allowed-unsigned settings) needed to encrypt/decrypt items.
+/// The configuration of a constructed Enhanced Client: the per-physical-table
+/// encryption configuration the client encrypts and decrypts items with.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClientConfig {
-    /// Physical DynamoDB table names this client is configured for.
-    pub table_names: Vec<String>,
+    /// Physical DynamoDB table name -> its encryption configuration.
+    pub table_configs: HashMap<String, TableEncryptionConfig>,
 }
 
 impl ClientConfig {
-    /// Construct a config for the given set of physical table names.
-    pub fn new(table_names: Vec<String>) -> Self {
-        Self { table_names }
+    /// Construct a config from the per-table encryption configurations.
+    pub fn new(table_configs: HashMap<String, TableEncryptionConfig>) -> Self {
+        Self { table_configs }
+    }
+
+    /// Resolve the encryption configuration for a physical table name.
+    pub fn table(&self, table_name: &str) -> Option<&TableEncryptionConfig> {
+        self.table_configs.get(table_name)
+    }
+
+    /// The physical table names this client is configured for.
+    pub fn table_names(&self) -> Vec<String> {
+        self.table_configs.keys().cloned().collect()
     }
 }
 
@@ -99,14 +127,39 @@ impl ClientRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{
+        AesWrappingAlg, AlgorithmSuiteId, KeyringConfig, RawAesKeyringConfig, TableEncryptionConfig,
+    };
+    use std::collections::BTreeMap;
+
+    fn sample_config(table: &str) -> ClientConfig {
+        let table_config = TableEncryptionConfig {
+            logical_table_name: table.to_string(),
+            partition_key_name: "partition_key".to_string(),
+            sort_key_name: None,
+            attribute_actions: BTreeMap::new(),
+            allowed_unsigned_attributes: Vec::new(),
+            allowed_unsigned_attribute_prefix: None,
+            algorithm_suite_id: AlgorithmSuiteId::default_suite(),
+            keyring: KeyringConfig::RawAes(RawAesKeyringConfig {
+                key_namespace: "ns".to_string(),
+                key_name: "k".to_string(),
+                wrapping_key: vec![0u8; 32],
+                wrapping_alg: AesWrappingAlg::Aes256,
+            }),
+        };
+        let mut configs = HashMap::new();
+        configs.insert(table.to_string(), table_config);
+        ClientConfig::new(configs)
+    }
 
     #[test]
     fn register_returns_non_empty_unique_ids() {
         let registry = ClientRegistry::new();
         assert!(registry.is_empty());
 
-        let id1 = registry.register(ClientConfig::new(vec!["TableA".to_string()]));
-        let id2 = registry.register(ClientConfig::new(vec!["TableB".to_string()]));
+        let id1 = registry.register(sample_config("TableA"));
+        let id2 = registry.register(sample_config("TableB"));
 
         assert!(!id1.is_empty(), "ClientId must be non-empty");
         assert!(!id2.is_empty(), "ClientId must be non-empty");
@@ -117,10 +170,10 @@ mod tests {
     #[test]
     fn get_resolves_registered_client_and_misses_unknown() {
         let registry = ClientRegistry::new();
-        let id = registry.register(ClientConfig::new(vec!["T".to_string()]));
+        let id = registry.register(sample_config("T"));
 
         let resolved = registry.get(&id).expect("registered id must resolve");
-        assert_eq!(resolved.table_names, vec!["T".to_string()]);
+        assert!(resolved.table("T").is_some());
         assert!(registry.get("not-a-real-id").is_none());
     }
 }
