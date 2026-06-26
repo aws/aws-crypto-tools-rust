@@ -273,6 +273,111 @@ pub fn base64_encode(input: &[u8]) -> String {
 }
 
 // =============================================================================
+// ECDSA P-384 signing (DBE signing suite, flavor 0x01)
+//
+// Mirrors the AwsCryptographyPrimitives ECDSA extern as used by the DB-ESDK
+// footer: sign the canonical hash with ECDSA-P384/SHA-384 (ASN.1/DER), retrying
+// until the DER signature is exactly the fixed footer size, and store the
+// verification key in SEC1 *compressed* form. Verification accepts the same
+// compressed key directly (aws-lc-rs/AWS-LC parse compressed SEC1 points).
+// =============================================================================
+
+use aws_lc_rs::signature::{
+    EcdsaKeyPair, KeyPair as _, UnparsedPublicKey as SigUnparsedPublicKey, ECDSA_P384_SHA384_ASN1,
+    ECDSA_P384_SHA384_ASN1_SIGNING,
+};
+
+/// The fixed DER-encoded ECDSA P-384 signature length the DB-ESDK footer uses
+/// (`Footer.dfy` `SignatureSize`).
+pub const ECDSA_P384_SIGNATURE_LEN: usize = 103;
+
+/// A freshly generated ECDSA P-384 key pair used to sign one item's canonical
+/// hash. Mirrors the DBE default CMM's per-message signing key: the verification
+/// key is exported in SEC1 *compressed* form (49 bytes) to be stored, base64, in
+/// the reserved `aws-crypto-public-key` encryption-context entry.
+pub struct EcdsaP384Signer {
+    key_pair: EcdsaKeyPair,
+    compressed_public_key: Vec<u8>,
+}
+
+impl EcdsaP384Signer {
+    /// Generate a new P-384 signing key pair and pre-compute its compressed
+    /// verification key.
+    pub fn generate() -> Result<Self> {
+        let key_pair = EcdsaKeyPair::generate(&ECDSA_P384_SHA384_ASN1_SIGNING)
+            .map_err(|_| DbEsdkError::crypto("ECDSA P-384 key generation failed"))?;
+        let compressed_public_key = sec1_compress_p384(key_pair.public_key().as_ref())?;
+        Ok(Self {
+            key_pair,
+            compressed_public_key,
+        })
+    }
+
+    /// The SEC1-compressed verification key (49 bytes: `0x02|0x03 || X`).
+    pub fn compressed_public_key(&self) -> &[u8] {
+        &self.compressed_public_key
+    }
+
+    /// Sign `message` (the footer canonical hash), retrying until the DER
+    /// signature is exactly [`ECDSA_P384_SIGNATURE_LEN`] bytes — the fixed size
+    /// the DB-ESDK footer requires. ECDSA signing is randomized, so re-signing
+    /// yields a fresh signature; ~half of P-384 DER signatures are 103 bytes, so
+    /// the bounded retry succeeds with overwhelming probability.
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
+        let rng = SystemRandom::new();
+        for _ in 0..128 {
+            let sig = self
+                .key_pair
+                .sign(&rng, message)
+                .map_err(|_| DbEsdkError::crypto("ECDSA P-384 signing failed"))?;
+            if sig.as_ref().len() == ECDSA_P384_SIGNATURE_LEN {
+                return Ok(sig.as_ref().to_vec());
+            }
+        }
+        Err(DbEsdkError::crypto(
+            "could not produce a fixed-length ECDSA P-384 signature after retries",
+        ))
+    }
+}
+
+/// Verify a DB-ESDK footer ECDSA P-384 signature over `message` (the canonical
+/// hash) with a SEC1-compressed (or uncompressed) `verification_key`.
+pub fn ecdsa_p384_verify(verification_key: &[u8], message: &[u8], signature: &[u8]) -> Result<()> {
+    SigUnparsedPublicKey::new(&ECDSA_P384_SHA384_ASN1, verification_key)
+        .verify(message, signature)
+        .map_err(|_| DbEsdkError::crypto("ECDSA P-384 signature did not verify"))
+}
+
+/// Compress a SEC1-uncompressed P-384 public point
+/// (`0x04 || X(48) || Y(48)`, 97 bytes) to compressed form
+/// (`0x02|0x03 || X(48)`, 49 bytes), per SEC1 v2 §2.3.3. The prefix encodes the
+/// parity of the Y coordinate (`0x02` even, `0x03` odd).
+fn sec1_compress_p384(uncompressed: &[u8]) -> Result<Vec<u8>> {
+    const P384_UNCOMPRESSED_LEN: usize = 97;
+    const P384_COORD_LEN: usize = 48;
+    if uncompressed.len() != P384_UNCOMPRESSED_LEN || uncompressed[0] != 0x04 {
+        return Err(DbEsdkError::crypto(
+            "expected a 97-byte SEC1-uncompressed P-384 public key",
+        ));
+    }
+    let x = &uncompressed[1..1 + P384_COORD_LEN];
+    let y = &uncompressed[1 + P384_COORD_LEN..];
+    let prefix = if y[y.len() - 1] & 1 == 0 { 0x02u8 } else { 0x03u8 };
+    let mut out = Vec::with_capacity(1 + P384_COORD_LEN);
+    out.push(prefix);
+    out.extend_from_slice(x);
+    Ok(out)
+}
+
+/// Decode standard (RFC 4648) base64 *bytes* (the ASCII encoding produced by
+/// [`base64_encode`]) into the raw bytes, ignoring `=` padding and whitespace.
+pub fn base64_decode_bytes(input: &[u8]) -> Result<Vec<u8>> {
+    let text = std::str::from_utf8(input)
+        .map_err(|_| DbEsdkError::crypto("base64 input is not valid UTF-8"))?;
+    base64_decode(text)
+}
+
+// =============================================================================
 // RSA data-key wrapping (Raw RSA keyring)
 // =============================================================================
 
@@ -605,5 +710,45 @@ mod tests {
         assert!(
             ecdh_shared_secret(p256_der.as_ref(), p384_public.as_ref(), EcdhCurve::P256).is_err()
         );
+    }
+
+    #[test]
+    fn ecdsa_p384_sign_produces_fixed_length_and_verifies() {
+        let signer = EcdsaP384Signer::generate().unwrap();
+        // SEC1-compressed P-384 verification key is 49 bytes with a 0x02/0x03 prefix.
+        let vk = signer.compressed_public_key();
+        assert_eq!(vk.len(), 49);
+        assert!(vk[0] == 0x02 || vk[0] == 0x03);
+
+        // The canonical hash is SHA-384 (48 bytes); sign it and verify.
+        let message = sha384(b"a canonical record");
+        let sig = signer.sign(&message).unwrap();
+        assert_eq!(sig.len(), ECDSA_P384_SIGNATURE_LEN, "footer signature is fixed 103 bytes");
+
+        ecdsa_p384_verify(vk, &message, &sig).unwrap();
+    }
+
+    #[test]
+    fn ecdsa_p384_verify_rejects_tampered_message_and_signature() {
+        let signer = EcdsaP384Signer::generate().unwrap();
+        let vk = signer.compressed_public_key();
+        let message = sha384(b"original");
+        let sig = signer.sign(&message).unwrap();
+
+        // Wrong message must not verify.
+        let other = sha384(b"different");
+        assert!(ecdsa_p384_verify(vk, &other, &sig).is_err());
+
+        // A flipped signature byte must not verify.
+        let mut bad = sig.clone();
+        bad[10] ^= 0x01;
+        assert!(ecdsa_p384_verify(vk, &message, &bad).is_err());
+    }
+
+    #[test]
+    fn base64_decode_bytes_round_trips_encode() {
+        let raw = random_bytes(49).unwrap();
+        let encoded = base64_encode(&raw);
+        assert_eq!(base64_decode_bytes(encoded.as_bytes()).unwrap(), raw);
     }
 }

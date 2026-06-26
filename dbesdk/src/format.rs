@@ -3,23 +3,32 @@
 
 //! Byte-faithful DB-ESDK structured-encryption format (the real wire format the
 //! canonical Java/Dafny DB-ESDK reads and writes), for the Raw AES keyring and
-//! the non-signing DBE suite
-//! (`ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_SYMSIG_HMAC_SHA384`, binaryId
-//! `0x67 0x00`).
+//! both DBE suites: the non-signing
+//! `ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_SYMSIG_HMAC_SHA384` (binaryId
+//! `0x67 0x00`) and the ECDSA-P384 signing
+//! `ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384`
+//! (binaryId `0x67 0x01`).
 //!
 //! This is a direct port of the Dafny `StructuredEncryption` modules
 //! (`Header`, `Footer`, `Crypt`, `Paths`, `Canonize`) plus the MPL
-//! `IntermediateKeyWrapping` and `RawAESKeyring`, and the DynamoDB item
-//! encryptor's encryption-context construction (`MakeEncryptionContextV1`).
-//! reference. The bytes produced here are intended to interoperate with the
-//! canonical Java/Dafny DB-ESDK server (the cross-language conformance cells).
+//! `IntermediateKeyWrapping`, `RawAESKeyring`, and the default CMM's
+//! signing-key handling, and the DynamoDB item encryptor's encryption-context
+//! construction (`MakeEncryptionContextV1`). The bytes produced here are
+//! intended to interoperate with the canonical Java/Dafny DB-ESDK server (the
+//! cross-language conformance cells).
+//!
+//! For the signing suite the default CMM generates a per-item ECDSA P-384 key
+//! pair, stores the base64 SEC1-compressed verification key in the encryption
+//! context under `aws-crypto-public-key` (which therefore appears in the stored
+//! header EC), and the footer carries an ECDSA signature after the recipient
+//! tag.
 //!
 //! Scope this iteration: Raw AES keyring, scalar attribute types
 //! (S / N / B / BOOL / NULL), no `SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT`
-//! (header version 1), no ECDSA signing. See `BLOCKED.md` for what remains
-//! (KMS EDK wrapping, sets/maps/lists, number normalization, signing suite).
+//! (header version 1). See `BLOCKED.md` for what remains (KMS / RSA / ECDH EDK
+//! wrapping, sets/maps/lists, number normalization).
 
-use crate::config::{CryptoAction, RawAesKeyringConfig, TableEncryptionConfig};
+use crate::config::{AlgorithmSuiteId, CryptoAction, RawAesKeyringConfig, TableEncryptionConfig};
 use crate::crypto;
 use crate::error::{DbEsdkError, Result};
 use crate::model::{AttributeValue, Item};
@@ -30,6 +39,7 @@ pub const HEADER_ATTRIBUTE: &str = "aws_dbe_head";
 pub const FOOTER_ATTRIBUTE: &str = "aws_dbe_foot";
 
 const FLAVOR_AES_SYMSIG: u8 = 0x00;
+const FLAVOR_AES_ECDSA: u8 = 0x01;
 const HEADER_VERSION_1: u8 = 0x01;
 const COMMITMENT_LEN: usize = 32;
 const RECIPIENT_TAG_LEN: usize = 48;
@@ -62,6 +72,10 @@ const EC_PARTITION_NAME: &[u8] = b"aws-crypto-partition-name";
 const EC_SORT_NAME: &[u8] = b"aws-crypto-sort-name";
 const EC_ATTR_PREFIX: &str = "aws-crypto-attr.";
 
+/// Reserved encryption-context key under which a signing suite stores the
+/// base64-encoded SEC1-compressed ECDSA verification key (DBE default CMM).
+const EC_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
+
 /// A signed field in canonical order: the attribute name, its action, the
 /// terminal type id, and the terminal value bytes (the encrypted value already
 /// includes its 2-byte type-id prefix; the plaintext value does not).
@@ -83,23 +97,49 @@ pub fn encrypt_item_raw_aes(
     item: &Item,
 ) -> Result<Item> {
     config.validate()?;
+    let flavor = flavor_for(config.algorithm_suite_id);
 
     // 1. Generate the message id and plaintext data key.
     let mut msg_id = [0u8; 32];
     crypto::fill_random(&mut msg_id)?;
     let plaintext_data_key = crypto::random_bytes(32)?;
 
-    // 2. Build the V1 encryption context (the material description).
-    let enc_context = make_encryption_context_v1(config, item)?;
+    // 2. Build the V1 base encryption context (the material description).
+    let mut enc_context = make_encryption_context_v1(config, item)?;
+
+    // 3. For a signing suite, generate the per-item ECDSA P-384 signing key and
+    //    seed the encryption context with the compressed verification key under
+    //    the reserved `aws-crypto-public-key` entry (DBE default CMM behavior).
+    //    This must happen BEFORE wrapping, since the keyring authenticates the
+    //    full encryption context (including the public key) as AAD.
+    let signer = if flavor == FLAVOR_AES_ECDSA {
+        let signer = crypto::EcdsaP384Signer::generate()?;
+        let b64 = crypto::base64_encode(signer.compressed_public_key()).into_bytes();
+        enc_context.push((EC_PUBLIC_KEY.to_vec(), b64));
+        enc_context.sort_by(|a, b| a.0.cmp(&b.0));
+        Some(signer)
+    } else {
+        None
+    };
     let ec_aad = serialize_context(&enc_context);
 
-    // 3. Wrap the data key (intermediate key wrapping under the Raw AES key).
+    // 4. The stored header EC is the full EC minus the caller's required keys.
+    //    The Raw AES round-trip has no caller-required keys, so the base context
+    //    keys are not stored and only the signing suite's `aws-crypto-public-key`
+    //    entry (if any) is written into the header.
+    let stored_ec: Vec<(Vec<u8>, Vec<u8>)> = enc_context
+        .iter()
+        .filter(|(k, _)| k.as_slice() == EC_PUBLIC_KEY)
+        .cloned()
+        .collect();
+
+    // 5. Wrap the data key (intermediate key wrapping under the Raw AES key).
     let wrapped = intermediate_wrap_raw_aes(raw, &plaintext_data_key, &ec_aad)?;
 
-    // 4. Derive the field root key and per-field keys.
+    // 6. Derive the field root key and per-field keys.
     let field_root_key = derive_field_root_key(&plaintext_data_key, &msg_id)?;
 
-    // 5. Canonicalize + sort signed fields, encrypt ENCRYPT_AND_SIGN terminals.
+    // 7. Canonicalize + sort signed fields, encrypt ENCRYPT_AND_SIGN terminals.
     let mut signed = collect_signed_fields(config, item)?;
     signed.sort_by(|a, b| a.canonical_path.cmp(&b.canonical_path));
 
@@ -138,15 +178,19 @@ pub fn encrypt_item_raw_aes(
         }
     }
 
-    // 6. Build the header (version/flavor/msgID/legend/EC(stored=empty)/EDKs)
-    //    and append the key commitment.
+    // 8. Build the header (version/flavor/msgID/legend/storedEC/EDKs) and append
+    //    the key commitment.
     let commit_key = derive_commit_key(&plaintext_data_key, &msg_id)?;
-    let header = serialize_header(&msg_id, &signed, &wrapped.edk, &commit_key)?;
+    let header = serialize_header(flavor, &msg_id, &signed, &stored_ec, &wrapped.edk, &commit_key)?;
 
-    // 7. Build the footer (recipient tag over the canonical record's SHA-384).
+    // 9. Build the footer: the recipient tag over the canonical record's SHA-384,
+    //    followed by the ECDSA signature for the signing suite.
     let canonical_hash = canonical_hash(&header, &ec_aad, &signed);
-    let recipient_tag = crypto::hmac_sha384(&wrapped.symmetric_signing_key, &canonical_hash);
-    let footer = recipient_tag; // single EDK, non-signing suite: footer == one tag
+    let mut footer = crypto::hmac_sha384(&wrapped.symmetric_signing_key, &canonical_hash);
+    if let Some(signer) = &signer {
+        let signature = signer.sign(&canonical_hash)?;
+        footer.extend_from_slice(&signature);
+    }
 
     output.insert(HEADER_ATTRIBUTE.to_string(), AttributeValue::B(header));
     output.insert(FOOTER_ATTRIBUTE.to_string(), AttributeValue::B(footer));
@@ -166,8 +210,14 @@ pub fn decrypt_item_raw_aes(
 
     let parsed = parse_header(&header)?;
 
-    // Reconstruct the encryption context from the stored item + config.
-    let enc_context = make_encryption_context_v1(config, stored)?;
+    // Reconstruct the full encryption context: the V1 base context (rebuilt from
+    // the stored item + config) plus any entries persisted in the header EC (the
+    // signing suite's `aws-crypto-public-key`).
+    let mut enc_context = make_encryption_context_v1(config, stored)?;
+    for (key, value) in &parsed.stored_ec {
+        enc_context.push((key.clone(), value.clone()));
+    }
+    enc_context.sort_by(|a, b| a.0.cmp(&b.0));
     let ec_aad = serialize_context(&enc_context);
 
     // Unwrap the data key.
@@ -192,6 +242,29 @@ pub fn decrypt_item_raw_aes(
         return Err(DbEsdkError::invalid_item(
             "footer recipient tag did not verify",
         ));
+    }
+
+    // Verify the ECDSA signature for the signing suite (the bytes after the
+    // single recipient tag), using the compressed verification key from the EC.
+    if parsed.flavor == FLAVOR_AES_ECDSA {
+        let verification_key = parsed
+            .stored_ec
+            .iter()
+            .find(|(k, _)| k.as_slice() == EC_PUBLIC_KEY)
+            .map(|(_, v)| v.as_slice())
+            .ok_or_else(|| {
+                DbEsdkError::invalid_item(
+                    "signing-suite header is missing the aws-crypto-public-key entry",
+                )
+            })?;
+        let verification_key = crypto::base64_decode_bytes(verification_key)?;
+        let signature = &footer[RECIPIENT_TAG_LEN..];
+        if signature.len() != crypto::ECDSA_P384_SIGNATURE_LEN {
+            return Err(DbEsdkError::invalid_item(
+                "signing-suite footer has an unexpected signature length",
+            ));
+        }
+        crypto::ecdsa_p384_verify(&verification_key, &canonical_hash, signature)?;
     }
 
     // Decrypt the ENCRYPT_AND_SIGN terminals.
@@ -594,13 +667,24 @@ fn action_legend(action: CryptoAction) -> u8 {
 // Header serialization (Header.dfy)
 // ---------------------------------------------------------------------------
 
+/// The 1-byte algorithm-suite flavor (the low byte of the binaryId `[0x67, x]`)
+/// for a DBE suite.
+fn flavor_for(suite: AlgorithmSuiteId) -> u8 {
+    match suite {
+        AlgorithmSuiteId::SymsigHmacSha384 => FLAVOR_AES_SYMSIG,
+        AlgorithmSuiteId::EcdsaP384SymsigHmacSha384 => FLAVOR_AES_ECDSA,
+    }
+}
+
 fn serialize_header(
+    flavor: u8,
     msg_id: &[u8; 32],
     signed: &[SignedField],
+    stored_ec: &[(Vec<u8>, Vec<u8>)],
     edk: &EncryptedDataKey,
     commit_key: &[u8],
 ) -> Result<Vec<u8>> {
-    let partial = serialize_partial_header(msg_id, signed, edk);
+    let partial = serialize_partial_header(flavor, msg_id, signed, stored_ec, edk);
     let commitment = header_commitment(commit_key, &partial);
     let mut full = partial;
     full.extend_from_slice(&commitment);
@@ -608,13 +692,15 @@ fn serialize_header(
 }
 
 fn serialize_partial_header(
+    flavor: u8,
     msg_id: &[u8; 32],
     signed: &[SignedField],
+    stored_ec: &[(Vec<u8>, Vec<u8>)],
     edk: &EncryptedDataKey,
 ) -> Vec<u8> {
     let mut out = Vec::new();
     out.push(HEADER_VERSION_1);
-    out.push(FLAVOR_AES_SYMSIG);
+    out.push(flavor);
     out.extend_from_slice(msg_id);
 
     // Legend: one byte per signed field in canonical order.
@@ -622,8 +708,10 @@ fn serialize_partial_header(
     out.extend_from_slice(&(legend.len() as u16).to_be_bytes());
     out.extend_from_slice(&legend);
 
-    // Stored encryption context: empty (all base keys are "required").
-    out.extend_from_slice(&0u16.to_be_bytes());
+    // Stored encryption context: `UInt16(pairCount) || sorted(len-prefixed
+    // key/val)`, identical to the AAD serialization. Empty for the non-signing
+    // suite; one `aws-crypto-public-key` pair for the signing suite.
+    out.extend_from_slice(&serialize_context(stored_ec));
 
     // Encrypted data keys: 1-byte count, then each EDK.
     out.push(1u8);
@@ -644,8 +732,10 @@ fn header_commitment(commit_key: &[u8], partial_header: &[u8]) -> Vec<u8> {
 }
 
 struct ParsedHeader {
+    flavor: u8,
     msg_id: [u8; 32],
     legend: Vec<u8>,
+    stored_ec: Vec<(Vec<u8>, Vec<u8>)>,
     edk: EncryptedDataKey,
     partial_header: Vec<u8>,
     commitment: Vec<u8>,
@@ -659,7 +749,7 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
             "unsupported header version 0x{version:02x} (byte-faithful path supports v1)"
         )));
     }
-    let _flavor = r.u8()?;
+    let flavor = r.u8()?;
     let mut msg_id = [0u8; 32];
     msg_id.copy_from_slice(r.take(32)?);
 
@@ -667,11 +757,13 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
     let legend = r.take(legend_len)?.to_vec();
 
     let ec_count = r.u16()?;
+    let mut stored_ec = Vec::with_capacity(ec_count as usize);
     for _ in 0..ec_count {
         let kl = r.u16()? as usize;
-        r.take(kl)?;
+        let key = r.take(kl)?.to_vec();
         let vl = r.u16()? as usize;
-        r.take(vl)?;
+        let value = r.take(vl)?.to_vec();
+        stored_ec.push((key, value));
     }
 
     let edk_count = r.u8()?;
@@ -692,8 +784,10 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
     let commitment = r.take(COMMITMENT_LEN)?.to_vec();
 
     Ok(ParsedHeader {
+        flavor,
         msg_id,
         legend,
+        stored_ec,
         edk: EncryptedDataKey {
             provider_id,
             provider_info,
@@ -816,6 +910,13 @@ mod tests {
             algorithm_suite_id: AlgorithmSuiteId::SymsigHmacSha384,
             keyring: KeyringConfig::RawAes(raw_config()),
         }
+    }
+
+    /// The same table config but with the ECDSA-P384 signing suite (flavor 0x01).
+    fn signing_config() -> TableEncryptionConfig {
+        let mut cfg = config();
+        cfg.algorithm_suite_id = AlgorithmSuiteId::EcdsaP384SymsigHmacSha384;
+        cfg
     }
 
     fn item() -> Item {
@@ -984,5 +1085,101 @@ mod tests {
         let mut other = raw_config();
         other.wrapping_key = vec![9u8; 32];
         assert!(decrypt_item_raw_aes(&cfg, &other, &stored).is_err());
+    }
+
+    // ---- Signing suite (flavor 0x01, ECDSA-P384) ----
+
+    #[test]
+    fn signing_suite_header_carries_flavor_and_public_key() {
+        let cfg = signing_config();
+        let raw = raw_config();
+        let stored = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
+
+        let header = match stored.get(HEADER_ATTRIBUTE).unwrap() {
+            AttributeValue::B(b) => b.clone(),
+            _ => panic!("header must be binary"),
+        };
+        assert_eq!(header[0], HEADER_VERSION_1, "version byte");
+        assert_eq!(header[1], FLAVOR_AES_ECDSA, "flavor byte is 0x01 for the signing suite");
+
+        // The stored header EC must carry exactly the aws-crypto-public-key entry.
+        let parsed = parse_header(&header).unwrap();
+        assert_eq!(parsed.flavor, FLAVOR_AES_ECDSA);
+        assert_eq!(parsed.stored_ec.len(), 1, "only the public-key entry is stored");
+        let (k, v) = &parsed.stored_ec[0];
+        assert_eq!(k.as_slice(), EC_PUBLIC_KEY);
+        // base64 of a 49-byte compressed P-384 key is 68 ASCII bytes.
+        assert_eq!(v.len(), 68, "base64(compressed P-384 key) is 68 bytes");
+
+        // Footer = 48-byte recipient tag + 103-byte ECDSA signature.
+        let footer = match stored.get(FOOTER_ATTRIBUTE).unwrap() {
+            AttributeValue::B(b) => b.clone(),
+            _ => panic!("footer must be binary"),
+        };
+        assert_eq!(
+            footer.len(),
+            RECIPIENT_TAG_LEN + crypto::ECDSA_P384_SIGNATURE_LEN,
+            "signing-suite footer is tag(48) + signature(103) = 151 bytes"
+        );
+    }
+
+    #[test]
+    fn signing_suite_round_trips() {
+        let cfg = signing_config();
+        let raw = raw_config();
+        let item = item();
+        let stored = encrypt_item_raw_aes(&cfg, &raw, &item).unwrap();
+        let decrypted = decrypt_item_raw_aes(&cfg, &raw, &stored).unwrap();
+        assert_eq!(decrypted, item);
+    }
+
+    #[test]
+    fn signing_suite_tampered_signature_fails_decrypt() {
+        let cfg = signing_config();
+        let raw = raw_config();
+        let mut stored = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
+        if let Some(AttributeValue::B(footer)) = stored.get_mut(FOOTER_ATTRIBUTE) {
+            // Flip a byte inside the ECDSA signature (past the recipient tag).
+            let idx = RECIPIENT_TAG_LEN + 10;
+            footer[idx] ^= 0x01;
+        }
+        assert!(decrypt_item_raw_aes(&cfg, &raw, &stored).is_err());
+    }
+
+    #[test]
+    fn signing_suite_tampered_public_key_fails_decrypt() {
+        let cfg = signing_config();
+        let raw = raw_config();
+        let stored = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
+
+        // Corrupt the stored verification key in the header; the signature must
+        // then fail to verify against it (or the commitment/tag must break).
+        let header = match stored.get(HEADER_ATTRIBUTE).unwrap() {
+            AttributeValue::B(b) => b.clone(),
+            _ => panic!(),
+        };
+        // Locate the public-key value bytes in the header and flip one.
+        let mut tampered = header.clone();
+        let needle = EC_PUBLIC_KEY;
+        let pos = tampered
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .expect("public-key key bytes present in header");
+        // Skip key (21) + UInt16 value length (2) to reach the value.
+        let value_start = pos + needle.len() + 2;
+        tampered[value_start] ^= 0x01;
+
+        let mut bad = stored.clone();
+        bad.insert(HEADER_ATTRIBUTE.to_string(), AttributeValue::B(tampered));
+        assert!(decrypt_item_raw_aes(&cfg, &raw, &bad).is_err());
+    }
+
+    #[test]
+    fn signing_suite_uses_fresh_signature_each_call() {
+        let cfg = signing_config();
+        let raw = raw_config();
+        let a = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
+        let b = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
+        assert_ne!(a.get(FOOTER_ATTRIBUTE), b.get(FOOTER_ATTRIBUTE));
     }
 }
