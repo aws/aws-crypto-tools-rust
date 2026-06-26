@@ -17,10 +17,10 @@
 //! ECDSA footer). No cross-language interop test exercises the stored bytes, so
 //! self-consistency is sufficient for the current conformance suite.
 
-use crate::config::{KeyringConfig, TableEncryptionConfig};
+use crate::config::TableEncryptionConfig;
 use crate::crypto;
 use crate::error::{DbEsdkError, Result};
-use crate::keyring::{RawAesKeyring, WrappedDataKey};
+use crate::keyring::{Keyring, WrappedDataKey};
 use crate::model::{AttributeValue, Item};
 
 /// The attribute holding the encrypted-item header (wrapped data key + suite id).
@@ -30,16 +30,20 @@ pub const FOOTER_ATTRIBUTE: &str = "aws_dbe_foot";
 
 const HEADER_VERSION: u8 = 0x01;
 
-/// Encrypt and sign `item` per `config`, returning the attribute map to persist.
+/// Encrypt and sign `item` per `config`, using `keyring` to wrap the data key,
+/// returning the attribute map to persist.
 ///
 /// The partition/sort key attributes and `SIGN_ONLY` attributes are carried
 /// through in plaintext; `ENCRYPT_AND_SIGN` attributes are replaced with binary
 /// ciphertext; `DO_NOTHING` attributes are passed through untouched and unsigned.
-pub fn encrypt_item(config: &TableEncryptionConfig, item: &Item) -> Result<Item> {
+pub fn encrypt_item(
+    config: &TableEncryptionConfig,
+    item: &Item,
+    keyring: &dyn Keyring,
+) -> Result<Item> {
     config.validate()?;
-    let keyring = raw_aes_keyring(config)?;
 
-    let (plaintext_data_key, wrapped) = keyring.generate_and_wrap()?;
+    let (plaintext_data_key, wrapped) = keyring.on_encrypt()?;
     let content_key = derive_content_key(config, &plaintext_data_key)?;
     let mac_key = derive_mac_key(config, &plaintext_data_key)?;
 
@@ -64,11 +68,15 @@ pub fn encrypt_item(config: &TableEncryptionConfig, item: &Item) -> Result<Item>
     Ok(output)
 }
 
-/// Decrypt and verify a stored item produced by [`encrypt_item`], returning the
-/// reconstructed plaintext item (without the header / footer metadata).
-pub fn decrypt_item(config: &TableEncryptionConfig, stored: &Item) -> Result<Item> {
+/// Decrypt and verify a stored item produced by [`encrypt_item`], using
+/// `keyring` to unwrap the data key, returning the reconstructed plaintext item
+/// (without the header / footer metadata).
+pub fn decrypt_item(
+    config: &TableEncryptionConfig,
+    stored: &Item,
+    keyring: &dyn Keyring,
+) -> Result<Item> {
     config.validate()?;
-    let keyring = raw_aes_keyring(config)?;
 
     let header = match stored.get(HEADER_ATTRIBUTE) {
         Some(AttributeValue::B(bytes)) => bytes.clone(),
@@ -88,7 +96,7 @@ pub fn decrypt_item(config: &TableEncryptionConfig, stored: &Item) -> Result<Ite
     };
 
     let (_suite, wrapped) = deserialize_header(&header)?;
-    let plaintext_data_key = keyring.unwrap(&wrapped)?;
+    let plaintext_data_key = keyring.on_decrypt(&wrapped)?;
     let content_key = derive_content_key(config, &plaintext_data_key)?;
     let mac_key = derive_mac_key(config, &plaintext_data_key)?;
 
@@ -119,15 +127,6 @@ pub fn decrypt_item(config: &TableEncryptionConfig, stored: &Item) -> Result<Ite
         }
     }
     Ok(output)
-}
-
-fn raw_aes_keyring(config: &TableEncryptionConfig) -> Result<RawAesKeyring> {
-    match &config.keyring {
-        KeyringConfig::RawAes(raw) => Ok(RawAesKeyring::new(raw)),
-        KeyringConfig::Unsupported(kind) => Err(DbEsdkError::config(format!(
-            "keyring kind '{kind}' is not implemented yet (only Raw AES is supported)"
-        ))),
-    }
 }
 
 fn derive_content_key(config: &TableEncryptionConfig, data_key: &[u8]) -> Result<Vec<u8>> {
@@ -274,8 +273,21 @@ impl<'a> ByteReader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AesWrappingAlg, AlgorithmSuiteId, CryptoAction, RawAesKeyringConfig};
+    use crate::config::{
+        AesWrappingAlg, AlgorithmSuiteId, CryptoAction, KeyringConfig, RawAesKeyringConfig,
+    };
+    use crate::keyring::RawAesKeyring;
     use std::collections::BTreeMap;
+
+    /// Build the Raw AES keyring described by a config (the tests all use a Raw
+    /// AES keyring; the KMS keyrings are exercised by the server crate's
+    /// integration against real KMS).
+    fn keyring_for(config: &TableEncryptionConfig) -> RawAesKeyring {
+        match &config.keyring {
+            KeyringConfig::RawAes(raw) => RawAesKeyring::new(raw),
+            other => panic!("test config must use a Raw AES keyring, got {other:?}"),
+        }
+    }
 
     fn config() -> TableEncryptionConfig {
         let mut actions = BTreeMap::new();
@@ -314,8 +326,9 @@ mod tests {
     #[test]
     fn encrypt_then_decrypt_returns_equal_item() {
         let config = config();
+        let keyring = keyring_for(&config);
         let item = round_trip_item();
-        let stored = encrypt_item(&config, &item).unwrap();
+        let stored = encrypt_item(&config, &item, &keyring).unwrap();
 
         // Key + sign-only attributes are plaintext; encrypted ones are binary.
         assert_eq!(stored.get("partition_key"), Some(&AttributeValue::S("pk-rawaes-001".into())));
@@ -324,16 +337,17 @@ mod tests {
         assert!(stored.contains_key(HEADER_ATTRIBUTE));
         assert!(stored.contains_key(FOOTER_ATTRIBUTE));
 
-        let decrypted = decrypt_item(&config, &stored).unwrap();
+        let decrypted = decrypt_item(&config, &stored, &keyring).unwrap();
         assert_eq!(decrypted, item);
     }
 
     #[test]
     fn each_encrypt_uses_a_fresh_data_key_and_nonce() {
         let config = config();
+        let keyring = keyring_for(&config);
         let item = round_trip_item();
-        let a = encrypt_item(&config, &item).unwrap();
-        let b = encrypt_item(&config, &item).unwrap();
+        let a = encrypt_item(&config, &item, &keyring).unwrap();
+        let b = encrypt_item(&config, &item, &keyring).unwrap();
         // Ciphertext (and wrapped data key) must differ across encryptions.
         assert_ne!(a.get("sensitive_string"), b.get("sensitive_string"));
         assert_ne!(a.get(HEADER_ATTRIBUTE), b.get(HEADER_ATTRIBUTE));
@@ -342,26 +356,29 @@ mod tests {
     #[test]
     fn decrypt_detects_tampered_ciphertext() {
         let config = config();
-        let mut stored = encrypt_item(&config, &round_trip_item()).unwrap();
+        let keyring = keyring_for(&config);
+        let mut stored = encrypt_item(&config, &round_trip_item(), &keyring).unwrap();
         if let Some(AttributeValue::B(bytes)) = stored.get_mut("sensitive_string") {
             let last = bytes.len() - 1;
             bytes[last] ^= 0x01;
         }
-        assert!(decrypt_item(&config, &stored).is_err());
+        assert!(decrypt_item(&config, &stored, &keyring).is_err());
     }
 
     #[test]
     fn decrypt_detects_tampered_sign_only_attribute() {
         let config = config();
-        let mut stored = encrypt_item(&config, &round_trip_item()).unwrap();
+        let keyring = keyring_for(&config);
+        let mut stored = encrypt_item(&config, &round_trip_item(), &keyring).unwrap();
         stored.insert("a_flag".into(), AttributeValue::Bool(false));
-        assert!(decrypt_item(&config, &stored).is_err());
+        assert!(decrypt_item(&config, &stored, &keyring).is_err());
     }
 
     #[test]
     fn decrypt_fails_with_a_different_wrapping_key() {
         let config = config();
-        let stored = encrypt_item(&config, &round_trip_item()).unwrap();
+        let keyring = keyring_for(&config);
+        let stored = encrypt_item(&config, &round_trip_item(), &keyring).unwrap();
         let mut other = config;
         other.keyring = KeyringConfig::RawAes(RawAesKeyringConfig {
             key_namespace: "test-server-namespace".to_string(),
@@ -369,14 +386,7 @@ mod tests {
             wrapping_key: vec![6u8; 32],
             wrapping_alg: AesWrappingAlg::Aes256,
         });
-        assert!(decrypt_item(&other, &stored).is_err());
-    }
-
-    #[test]
-    fn unsupported_keyring_is_a_config_error() {
-        let mut config = config();
-        config.keyring = KeyringConfig::Unsupported("awsKms".to_string());
-        let err = encrypt_item(&config, &round_trip_item()).unwrap_err();
-        assert!(matches!(err, DbEsdkError::Config(_)));
+        let other_keyring = keyring_for(&other);
+        assert!(decrypt_item(&other, &stored, &other_keyring).is_err());
     }
 }

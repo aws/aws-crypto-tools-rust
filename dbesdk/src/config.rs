@@ -167,13 +167,43 @@ pub struct RawAesKeyringConfig {
     pub wrapping_alg: AesWrappingAlg,
 }
 
-/// A keyring configuration. This milestone implements the Raw AES variant;
-/// other variants are recognized and rejected with a clear error so the failure
-/// surfaces as a modeled `DBESDKClientError` rather than a panic.
+/// Configuration for an AWS KMS keyring keyed by a single KMS key id (the
+/// `awsKms` and `awsKmsMrk` variants share this shape). Mirrors
+/// `CreateAwsKmsKeyringInput` / `CreateAwsKmsMrkKeyringInput`; the server
+/// supplies the KMS client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsKmsKeyringConfig {
+    /// The AWS KMS key identifier (key id, alias, or ARN).
+    pub kms_key_id: String,
+    /// Optional grant tokens to use when calling KMS.
+    pub grant_tokens: Vec<String>,
+}
+
+/// Configuration for an AWS KMS MRK multi-keyring (mirror of
+/// `AwsKmsMrkMultiKeyringConfig`): an optional generator key plus any number of
+/// additional key ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsKmsMrkMultiKeyringConfig {
+    /// The generator KMS key id (key id, alias, or ARN), if any.
+    pub generator: Option<String>,
+    /// Additional KMS key ids (other than the generator).
+    pub kms_key_ids: Vec<String>,
+}
+
+/// A keyring configuration. This milestone implements the Raw AES and AWS KMS
+/// (single-key, MRK, and MRK-multi) variants; other variants are recognized and
+/// rejected with a clear error so the failure surfaces as a modeled
+/// `DBESDKClientError` rather than a panic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyringConfig {
-    /// A Raw AES keyring (the only kind implemented this milestone).
+    /// A Raw AES keyring.
     RawAes(RawAesKeyringConfig),
+    /// An AWS KMS keyring for a single-Region symmetric KMS key (`awsKms`).
+    AwsKms(AwsKmsKeyringConfig),
+    /// An AWS KMS MRK keyring (single-Region or Multi-Region key) (`awsKmsMrk`).
+    AwsKmsMrk(AwsKmsKeyringConfig),
+    /// An AWS KMS MRK multi-keyring (`awsKmsMrkMulti`).
+    AwsKmsMrkMulti(AwsKmsMrkMultiKeyringConfig),
     /// Any other keyring kind, carried by its model member name so callers can
     /// report exactly which unsupported kind was requested.
     Unsupported(String),
@@ -242,6 +272,23 @@ impl TableEncryptionConfig {
                     raw.wrapping_alg
                 )));
             }
+        }
+        match &self.keyring {
+            KeyringConfig::AwsKms(c) | KeyringConfig::AwsKmsMrk(c) => {
+                if c.kms_key_id.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS keyring requires a non-empty kmsKeyId",
+                    ));
+                }
+            }
+            KeyringConfig::AwsKmsMrkMulti(c) => {
+                if c.generator.is_none() && c.kms_key_ids.is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS MRK multi-keyring requires a generator or at least one key id",
+                    ));
+                }
+            }
+            _ => {}
         }
         Ok(())
     }

@@ -22,6 +22,27 @@ use crate::error::Result;
 /// of the DBE algorithm suites).
 pub const DATA_KEY_LEN: usize = 32;
 
+/// A data-key wrapping keyring: the abstraction the item encryptor drives to
+/// obtain a fresh plaintext data key on encrypt and recover it on decrypt.
+///
+/// The item header persists the [`WrappedDataKey`] a keyring returns from
+/// [`on_encrypt`](Keyring::on_encrypt); [`on_decrypt`](Keyring::on_decrypt) is
+/// handed that same value to recover the plaintext data key. This decouples the
+/// (synchronous, pure-crypto) item encryptor from how a particular keyring kind
+/// wraps the data key — a Raw AES keyring does it locally (see [`RawAesKeyring`]),
+/// while a KMS keyring performs network calls. The trait stays synchronous; an
+/// I/O-bound keyring bridges to its async client internally.
+pub trait Keyring {
+    /// Produce a fresh plaintext data key together with the wrapped form to
+    /// persist in the item header ("OnEncrypt → Generate + Encrypt Data Key").
+    fn on_encrypt(&self) -> Result<(Vec<u8>, WrappedDataKey)>;
+
+    /// Recover the plaintext data key from the header's wrapped form
+    /// ("OnDecrypt → Decrypt Data Key"). Fails if the wrapped key cannot be
+    /// recovered under this keyring's key material / identity.
+    fn on_decrypt(&self, wrapped: &WrappedDataKey) -> Result<Vec<u8>>;
+}
+
 /// A wrapped data key: the keyring identity plus the AES-GCM-wrapped key bytes.
 ///
 /// This is what the item header persists so the data key can be recovered on
@@ -97,6 +118,16 @@ impl RawAesKeyring {
             ));
         }
         crypto::aes_gcm_open(&self.wrapping_key, &self.wrap_aad(), &wrapped.ciphertext)
+    }
+}
+
+impl Keyring for RawAesKeyring {
+    fn on_encrypt(&self) -> Result<(Vec<u8>, WrappedDataKey)> {
+        self.generate_and_wrap()
+    }
+
+    fn on_decrypt(&self, wrapped: &WrappedDataKey) -> Result<Vec<u8>> {
+        self.unwrap(wrapped)
     }
 }
 
