@@ -1,0 +1,12 @@
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "aws-db-esdk"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Native Rust AWS Database Encryption SDK for DynamoDB (DB-ESDK)."
+authors = ["AWS-CryptoTools"]
+
+[dependencies]
+uuid = { version = "1", features = ["v4"] }
