@@ -285,10 +285,84 @@ pub struct AwsKmsMrkMultiKeyringConfig {
     pub kms_key_ids: Vec<String>,
 }
 
-/// A keyring configuration. This milestone implements the Raw AES and AWS KMS
-/// (single-key, MRK, and MRK-multi) variants; other variants are recognized and
-/// rejected with a clear error so the failure surfaces as a modeled
-/// `DBESDKClientError` rather than a panic.
+/// The RSA wrapping algorithm of an AWS KMS RSA keyring (mirror of the KMS
+/// `EncryptionAlgorithmSpec` values the model exposes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KmsRsaEncryptionAlgorithm {
+    /// `RSAES_OAEP_SHA_256`.
+    OaepSha256,
+    /// `RSAES_OAEP_SHA_1`.
+    OaepSha1,
+}
+
+impl KmsRsaEncryptionAlgorithm {
+    /// Parse the model enum's wire spelling.
+    pub fn parse(name: &str) -> Result<Self> {
+        match name {
+            "RSAES_OAEP_SHA_256" => Ok(Self::OaepSha256),
+            "RSAES_OAEP_SHA_1" => Ok(Self::OaepSha1),
+            other => Err(DbEsdkError::config(format!(
+                "unknown KMS RSA encryption algorithm '{other}'"
+            ))),
+        }
+    }
+}
+
+/// Configuration for an AWS KMS RSA keyring (mirror of `AwsKmsRsaKeyringConfig`).
+/// The data key is wrapped locally with the supplied RSA public key (PEM-encoded
+/// X.509 SPKI, as exported from `kms:GetPublicKey`) and unwrapped by KMS
+/// `Decrypt` with the configured `encryptionAlgorithm`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsKmsRsaKeyringConfig {
+    /// The ARN of the asymmetric (ENCRYPT_DECRYPT, RSA) KMS key.
+    pub kms_key_id: String,
+    /// The RSA wrapping algorithm.
+    pub encryption_algorithm: KmsRsaEncryptionAlgorithm,
+    /// The RSA public key as PEM-encoded X.509 SPKI UTF-8 bytes (needed to
+    /// encrypt). KMS decrypts with the private key it holds.
+    pub public_key: Option<Vec<u8>>,
+}
+
+/// Configuration for an AWS KMS Discovery keyring (DECRYPT-ONLY) (mirror of
+/// `AwsKmsDiscoveryKeyringConfig`). It decrypts using the KMS key ARN recorded
+/// in the wrapped data key; an optional account id / partition restricts which
+/// keys it will use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsKmsDiscoveryKeyringConfig {
+    /// An allowed AWS account id for the optional discovery filter.
+    pub account_id: Option<String>,
+    /// The AWS partition for the optional discovery filter (default "aws").
+    pub partition: Option<String>,
+}
+
+/// Configuration for an AWS KMS MRK Discovery keyring (DECRYPT-ONLY, single
+/// Region) (mirror of `AwsKmsMrkDiscoveryKeyringConfig`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsKmsMrkDiscoveryKeyringConfig {
+    /// The Region this keyring decrypts in.
+    pub region: String,
+    /// An allowed AWS account id for the optional discovery filter.
+    pub account_id: Option<String>,
+    /// The AWS partition for the optional discovery filter (default "aws").
+    pub partition: Option<String>,
+}
+
+/// Configuration for a multi-keyring (mirror of `MultiKeyringConfig`): an
+/// optional generator keyring plus a (possibly empty) list of child keyrings.
+/// References [`KeyringConfig`] recursively, so any keyring kind can be a
+/// generator or child.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiKeyringConfig {
+    /// The generator keyring configuration (required to encrypt).
+    pub generator: Option<Box<KeyringConfig>>,
+    /// The child keyring configurations (may be empty).
+    pub child_keyrings: Vec<KeyringConfig>,
+}
+
+/// A keyring configuration. The Raw AES / RSA / ECDH, AWS KMS (single-key, MRK,
+/// MRK-multi, RSA), AWS KMS Discovery (single + MRK), and multi keyring variants
+/// are implemented; the remaining kinds (AWS KMS ECDH, hierarchical) are
+/// recognized and rejected with a clear modeled error rather than a panic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyringConfig {
     /// A Raw AES keyring.
@@ -303,6 +377,15 @@ pub enum KeyringConfig {
     AwsKmsMrk(AwsKmsKeyringConfig),
     /// An AWS KMS MRK multi-keyring (`awsKmsMrkMulti`).
     AwsKmsMrkMulti(AwsKmsMrkMultiKeyringConfig),
+    /// An AWS KMS RSA (asymmetric) keyring (`awsKmsRsa`).
+    AwsKmsRsa(AwsKmsRsaKeyringConfig),
+    /// An AWS KMS Discovery keyring, DECRYPT-ONLY (`awsKmsDiscovery`).
+    AwsKmsDiscovery(AwsKmsDiscoveryKeyringConfig),
+    /// An AWS KMS MRK Discovery keyring, DECRYPT-ONLY (`awsKmsMrkDiscovery`).
+    AwsKmsMrkDiscovery(AwsKmsMrkDiscoveryKeyringConfig),
+    /// A multi-keyring composed of an optional generator + child keyrings
+    /// (`multi`).
+    Multi(MultiKeyringConfig),
     /// Any other keyring kind, carried by its model member name so callers can
     /// report exactly which unsupported kind was requested.
     Unsupported(String),
@@ -401,9 +484,77 @@ impl TableEncryptionConfig {
                     ));
                 }
             }
+            KeyringConfig::AwsKmsRsa(c) => {
+                if c.kms_key_id.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS RSA keyring requires a non-empty kmsKeyId",
+                    ));
+                }
+                if c.public_key.as_ref().is_none_or(|k| k.is_empty()) {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS RSA keyring requires a public key (to encrypt)",
+                    ));
+                }
+            }
+            KeyringConfig::AwsKmsMrkDiscovery(c) => {
+                if c.region.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS MRK Discovery keyring requires a non-empty region",
+                    ));
+                }
+            }
+            KeyringConfig::Multi(c) => {
+                if c.generator.is_none() && c.child_keyrings.is_empty() {
+                    return Err(DbEsdkError::config(
+                        "multi-keyring requires a generator or at least one child keyring",
+                    ));
+                }
+                if let Some(generator) = &c.generator {
+                    Self::validate_keyring(generator)?;
+                }
+                for child in &c.child_keyrings {
+                    Self::validate_keyring(child)?;
+                }
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    /// Validate a (possibly nested) keyring configuration in isolation, reusing
+    /// the same checks `validate` applies to the table's own keyring. Used to
+    /// recurse into a multi-keyring's generator and children.
+    fn validate_keyring(keyring: &KeyringConfig) -> Result<()> {
+        match keyring {
+            KeyringConfig::RawAes(raw) => {
+                let expected = raw.wrapping_alg.key_len();
+                if raw.wrapping_key.len() != expected {
+                    return Err(DbEsdkError::config(format!(
+                        "raw AES wrapping key is {} bytes but {:?} requires {expected}",
+                        raw.wrapping_key.len(),
+                        raw.wrapping_alg
+                    )));
+                }
+                Ok(())
+            }
+            KeyringConfig::AwsKms(c) | KeyringConfig::AwsKmsMrk(c) => {
+                if c.kms_key_id.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS keyring requires a non-empty kmsKeyId",
+                    ));
+                }
+                Ok(())
+            }
+            KeyringConfig::AwsKmsMrkMulti(c) => {
+                if c.generator.is_none() && c.kms_key_ids.is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS MRK multi-keyring requires a generator or at least one key id",
+                    ));
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }
 
