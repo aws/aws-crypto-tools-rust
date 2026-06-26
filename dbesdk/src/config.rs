@@ -55,10 +55,10 @@ impl CryptoAction {
 
 /// The DBE algorithm suite id (mirror of `DBEAlgorithmSuiteId`).
 ///
-/// Only the symmetric-signing suite is fully exercised by the no-KMS round-trip
-/// path this milestone targets; the ECDSA-signing suite is recognized so the
-/// configuration decodes, with its signing behavior deferred to a later
-/// milestone.
+/// Both DBE key-committing suites are implemented byte-faithfully for the Raw
+/// AES path: the non-signing symmetric-signature suite (flavor `0x00`) and the
+/// ECDSA-P384 signing suite (flavor `0x01`). The signing suite is the DB-ESDK
+/// default (see [`AlgorithmSuiteId::default_suite`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlgorithmSuiteId {
     /// `ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384`.
@@ -83,10 +83,21 @@ impl AlgorithmSuiteId {
         }
     }
 
-    /// The default suite when the configuration does not specify one (the
-    /// symmetric-signing, key-committing suite).
+    /// The default suite when the configuration does not specify one.
+    ///
+    /// This MUST match the canonical DB-ESDK default so a Rust-written item is
+    /// byte-faithful to what the Java/Dafny DB-ESDK would write for the same
+    /// config. The DB-ESDK default CMM selects the key-committing, ECDSA-P384
+    /// *signing* suite (flavor `0x01`,
+    /// `ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384`).
+    /// The conformance `RawAesKeyringTest` does NOT override the suite, so this
+    /// default governs the cross-language Rust→Java and Rust→Rust cells; it is
+    /// confirmed against captured Java ground truth (header byte\[1\] = `0x01`,
+    /// `aws-crypto-public-key` present in the header encryption context, 151-byte
+    /// footer = 48-byte HMAC tag + 103-byte ECDSA signature) and the Dafny item
+    /// encryptor tests (parsed header == the ECDSA_P384 suite when none is set).
     pub fn default_suite() -> Self {
-        Self::SymsigHmacSha384
+        Self::EcdsaP384SymsigHmacSha384
     }
 }
 
