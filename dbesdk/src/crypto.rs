@@ -153,7 +153,7 @@ use aws_lc_rs::cipher::{
     EncryptingKey, EncryptionContext, UnboundCipherKey, AES_256 as CIPHER_AES_256,
 };
 use aws_lc_rs::digest::{digest, SHA384};
-use aws_lc_rs::hmac::{HMAC_SHA512, Key as HmacKey};
+use aws_lc_rs::hmac::{HMAC_SHA256, HMAC_SHA512, Key as HmacKey};
 use aws_lc_rs::iv::FixedLength;
 
 /// SHA-384 digest of `data` (48 bytes). The DB-ESDK footer canonical hash.
@@ -165,6 +165,45 @@ pub fn sha384(data: &[u8]) -> Vec<u8> {
 pub fn hmac_sha512(key: &[u8], data: &[u8]) -> Vec<u8> {
     let k = HmacKey::new(HMAC_SHA512, key);
     aws_lc_rs::hmac::sign(&k, data).as_ref().to_vec()
+}
+
+/// HMAC-SHA256 tag over `data` with `key` (32 bytes).
+pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let k = HmacKey::new(HMAC_SHA256, key);
+    aws_lc_rs::hmac::sign(&k, data).as_ref().to_vec()
+}
+
+/// NIST SP 800-108 KDF in counter mode using HMAC-SHA256 as the PRF (the
+/// Hierarchical keyring branch-key derivation, `KdfCtr.KdfCounterMode` with
+/// `SHA_256`). PRF input for counter `i` is
+/// `UInt32BE(i) || purpose || 0x00 || nonce || UInt32BE(out_len * 8)`.
+pub fn kdf_ctr_hmac_sha256(
+    ikm: &[u8],
+    purpose: &[u8],
+    nonce: &[u8],
+    out_len: usize,
+) -> Result<Vec<u8>> {
+    const MAC_LEN: usize = 32; // SHA-256 output length.
+    let length_bits = u32::try_from(out_len.saturating_mul(8))
+        .map_err(|_| DbEsdkError::crypto("KDF output length is too large"))?;
+
+    let mut explicit_info = Vec::with_capacity(purpose.len() + 1 + nonce.len() + 4);
+    explicit_info.extend_from_slice(purpose);
+    explicit_info.push(0x00);
+    explicit_info.extend_from_slice(nonce);
+    explicit_info.extend_from_slice(&length_bits.to_be_bytes());
+
+    let iterations = out_len.div_ceil(MAC_LEN);
+    let mut buffer = Vec::with_capacity(iterations * MAC_LEN);
+    for i in 1..=iterations {
+        let counter = u32::try_from(i).map_err(|_| DbEsdkError::crypto("KDF counter overflow"))?;
+        let mut prf_input = Vec::with_capacity(4 + explicit_info.len());
+        prf_input.extend_from_slice(&counter.to_be_bytes());
+        prf_input.extend_from_slice(&explicit_info);
+        buffer.extend_from_slice(&hmac_sha256(ikm, &prf_input));
+    }
+    buffer.truncate(out_len);
+    Ok(buffer)
 }
 
 /// RFC 5869 HKDF-Extract with SHA-512: `PRK = HMAC-SHA512(salt, ikm)`.

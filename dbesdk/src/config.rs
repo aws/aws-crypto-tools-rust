@@ -282,6 +282,29 @@ pub struct AwsKmsEcdhKeyringConfig {
     pub curve_spec: EcdhCurveSpec,
 }
 
+/// Configuration for an AWS KMS Hierarchical keyring (mirror of
+/// `HierarchicalKeyringConfig` / `CreateAwsKmsHierarchicalKeyringInput`). Branch
+/// keys are persisted in a DynamoDB key store and wrapped by a symmetric KMS
+/// key; the keyring derives a per-item wrapping key from the active branch key.
+/// The branch-key retrieval (DynamoDB `GetItem` + `kms:Decrypt`) lives in the
+/// server, which holds the AWS clients; this crate provides the byte-faithful
+/// branch-key wrap/unwrap once the branch key material is supplied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HierarchicalKeyringConfig {
+    /// The DynamoDB table backing the branch-key store.
+    pub key_store_table_name: String,
+    /// The logical key store name bound into the branch-key encryption context.
+    pub logical_key_store_name: String,
+    /// The ARN of the symmetric KMS key that wraps the branch keys.
+    pub kms_key_arn: String,
+    /// The branch key identifier to wrap/unwrap data keys with.
+    pub branch_key_id: String,
+    /// How long (seconds) branch-key material may be cached before re-retrieval.
+    pub ttl_seconds: i64,
+    /// The local cache entry capacity (optional; MPL default applies when absent).
+    pub cache_entry_capacity: Option<i32>,
+}
+
 /// Configuration for an AWS KMS keyring keyed by a single KMS key id (the
 /// `awsKms` and `awsKmsMrk` variants share this shape). Mirrors
 /// `CreateAwsKmsKeyringInput` / `CreateAwsKmsMrkKeyringInput`; the server
@@ -401,6 +424,9 @@ pub enum KeyringConfig {
     AwsKmsRsa(AwsKmsRsaKeyringConfig),
     /// An AWS KMS ECDH keyring, `KmsPrivateKeyToStaticPublicKey` (`awsKmsEcdh`).
     AwsKmsEcdh(AwsKmsEcdhKeyringConfig),
+    /// An AWS KMS Hierarchical keyring (branch keys in a DynamoDB key store)
+    /// (`hierarchical`).
+    Hierarchical(HierarchicalKeyringConfig),
     /// An AWS KMS Discovery keyring, DECRYPT-ONLY (`awsKmsDiscovery`).
     AwsKmsDiscovery(AwsKmsDiscoveryKeyringConfig),
     /// An AWS KMS MRK Discovery keyring, DECRYPT-ONLY (`awsKmsMrkDiscovery`).
@@ -527,6 +553,25 @@ impl TableEncryptionConfig {
                 if c.recipient_public_key.is_empty() {
                     return Err(DbEsdkError::config(
                         "AWS KMS ECDH keyring requires a recipient public key",
+                    ));
+                }
+            }
+            KeyringConfig::Hierarchical(c) => {
+                if c.key_store_table_name.trim().is_empty()
+                    || c.logical_key_store_name.trim().is_empty()
+                {
+                    return Err(DbEsdkError::config(
+                        "Hierarchical keyring requires a key store table name and logical name",
+                    ));
+                }
+                if c.kms_key_arn.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "Hierarchical keyring requires a KMS key ARN to wrap branch keys",
+                    ));
+                }
+                if c.branch_key_id.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "Hierarchical keyring requires a non-empty branchKeyId",
                     ));
                 }
             }

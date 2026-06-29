@@ -846,6 +846,112 @@ pub fn ecdh_unwrap_intermediate(
     crypto::aes_gcm_decrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, wrapped_key_and_tag)
 }
 
+/// The EDK key-provider id of an AWS KMS Hierarchical keyring.
+pub const HIERARCHY_PROVIDER_ID: &[u8] = b"aws-kms-hierarchy";
+
+const H_WRAP_SALT_LEN: usize = 16;
+const H_WRAP_NONCE_LEN: usize = 12;
+const H_WRAP_VERSION_LEN: usize = 16;
+/// Offset of the branch-key version uuid in the hierarchical wrapped material.
+const H_WRAP_VERSION_INDEX: usize = H_WRAP_SALT_LEN + H_WRAP_NONCE_LEN;
+/// Offset of the wrapped key + tag in the hierarchical wrapped material.
+const H_WRAP_KEY_INDEX: usize = H_WRAP_VERSION_INDEX + H_WRAP_VERSION_LEN;
+
+/// The AAD that authenticates the hierarchical branch-key wrap
+/// (`WrappingAad` in `AwsKmsHierarchicalKeyring.dfy`): the provider id, the
+/// branch key id, the raw branch-key version bytes, then the DBE encryption
+/// context AAD.
+fn hierarchical_wrapping_aad(branch_key_id_utf8: &[u8], version: &[u8], ec_aad: &[u8]) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(
+        HIERARCHY_PROVIDER_ID.len() + branch_key_id_utf8.len() + version.len() + ec_aad.len(),
+    );
+    aad.extend_from_slice(HIERARCHY_PROVIDER_ID);
+    aad.extend_from_slice(branch_key_id_utf8);
+    aad.extend_from_slice(version);
+    aad.extend_from_slice(ec_aad);
+    aad
+}
+
+/// Wrap a freshly generated intermediate key under a key derived from a branch
+/// key (`AwsKmsHierarchicalKeyring.dfy` branch-key wrapping). The branch key and
+/// its raw 16-byte version uuid are retrieved from the key store by the caller.
+///
+/// `providerWrappedIkm` = `salt(16) || iv(12) || version(16) || wrappedKey(32)
+/// || tag(16)`; the EDK provider id is `aws-kms-hierarchy` and the provider info
+/// is the UTF-8 branch-key id.
+pub fn hierarchical_wrap_intermediate(
+    branch_key: &[u8],
+    branch_key_version: &[u8],
+    branch_key_id_utf8: &[u8],
+    ec_aad: &[u8],
+) -> Result<GeneratedKey> {
+    // For each EDK a distinct intermediate key is generated at random.
+    let intermediate = crypto::random_bytes(32)?;
+    // 16-byte salt + 12-byte iv from one secure-random draw.
+    let salt = crypto::random_bytes(H_WRAP_SALT_LEN)?;
+    let mut iv = [0u8; H_WRAP_NONCE_LEN];
+    crypto::fill_random(&mut iv)?;
+
+    // derivedBranchKey = KDF-CTR-HMAC-SHA256(branchKey, purpose="aws-kms-hierarchy", salt, 32).
+    let derived = crypto::kdf_ctr_hmac_sha256(branch_key, HIERARCHY_PROVIDER_ID, &salt, 32)?;
+    let aad = hierarchical_wrapping_aad(branch_key_id_utf8, branch_key_version, ec_aad);
+    // AES-256-GCM(derivedBranchKey, iv, intermediate, aad) → wrappedKey || tag.
+    let wrapped = crypto::aes_gcm_encrypt(&derived, &iv, &aad, &intermediate)?;
+
+    let mut provider_wrapped_ikm =
+        Vec::with_capacity(H_WRAP_KEY_INDEX + wrapped.len());
+    provider_wrapped_ikm.extend_from_slice(&salt);
+    provider_wrapped_ikm.extend_from_slice(&iv);
+    provider_wrapped_ikm.extend_from_slice(branch_key_version);
+    provider_wrapped_ikm.extend_from_slice(&wrapped);
+
+    Ok(GeneratedKey {
+        intermediate_material: intermediate,
+        provider_wrapped_ikm,
+        edk_provider_id: HIERARCHY_PROVIDER_ID.to_vec(),
+        edk_provider_info: branch_key_id_utf8.to_vec(),
+    })
+}
+
+/// Recover an intermediate key wrapped by [`hierarchical_wrap_intermediate`].
+/// The caller supplies the branch key for the version encoded in the wrapped
+/// material (obtained via [`hierarchical_version_from_wrapped`]).
+pub fn hierarchical_unwrap_intermediate(
+    branch_key: &[u8],
+    branch_key_id_utf8: &[u8],
+    provider_wrapped_ikm: &[u8],
+    ec_aad: &[u8],
+) -> Result<Vec<u8>> {
+    if provider_wrapped_ikm.len() <= H_WRAP_KEY_INDEX {
+        return Err(DbEsdkError::invalid_item(
+            "hierarchical wrapped material is shorter than expected",
+        ));
+    }
+    let salt = &provider_wrapped_ikm[..H_WRAP_SALT_LEN];
+    let mut iv = [0u8; H_WRAP_NONCE_LEN];
+    iv.copy_from_slice(&provider_wrapped_ikm[H_WRAP_SALT_LEN..H_WRAP_VERSION_INDEX]);
+    let version = &provider_wrapped_ikm[H_WRAP_VERSION_INDEX..H_WRAP_KEY_INDEX];
+    let wrapped_key_and_tag = &provider_wrapped_ikm[H_WRAP_KEY_INDEX..];
+
+    let derived = crypto::kdf_ctr_hmac_sha256(branch_key, HIERARCHY_PROVIDER_ID, salt, 32)?;
+    let aad = hierarchical_wrapping_aad(branch_key_id_utf8, version, ec_aad);
+    crypto::aes_gcm_decrypt(&derived, &iv, &aad, wrapped_key_and_tag)
+}
+
+/// Extract the raw 16-byte branch-key version uuid from a hierarchical EDK's
+/// wrapped material, so the caller can retrieve the matching branch key version
+/// from the key store before unwrapping.
+pub fn hierarchical_version_from_wrapped(provider_wrapped_ikm: &[u8]) -> Result<[u8; 16]> {
+    if provider_wrapped_ikm.len() < H_WRAP_KEY_INDEX {
+        return Err(DbEsdkError::invalid_item(
+            "hierarchical wrapped material is too short for a version uuid",
+        ));
+    }
+    let mut version = [0u8; 16];
+    version.copy_from_slice(&provider_wrapped_ikm[H_WRAP_VERSION_INDEX..H_WRAP_KEY_INDEX]);
+    Ok(version)
+}
+
 impl IntermediateKeyProvider for RawEcdhProvider<'_> {
     fn generate_and_wrap(&self, _ec: &[(Vec<u8>, Vec<u8>)], ec_aad: &[u8]) -> Result<GeneratedKey> {
         let curve = self.raw.curve_spec.to_crypto();
@@ -2034,5 +2140,90 @@ mod tests {
         let mut other = ecdh.clone();
         other.sender_static_private_key = other_private;
         assert!(decrypt_item(&cfg, &RawEcdhProvider { raw: &other }, &stored).is_err());
+    }
+
+    // --- Hierarchical keyring branch-key wrap/unwrap (offline; branch key
+    //     supplied directly, as the server does after a key-store lookup). ---
+
+    #[test]
+    fn hierarchical_wrap_unwrap_round_trips() {
+        let branch_key = [0x11u8; 32];
+        let version = [0x22u8; 16];
+        let branch_key_id = b"branch-key-1";
+        let ec_aad = b"some-ec-aad-bytes";
+
+        let wrapped = hierarchical_wrap_intermediate(&branch_key, &version, branch_key_id, ec_aad)
+            .unwrap();
+        // EDK identity: provider id "aws-kms-hierarchy", info = branch key id.
+        assert_eq!(wrapped.edk_provider_id, HIERARCHY_PROVIDER_ID);
+        assert_eq!(wrapped.edk_provider_info, branch_key_id);
+        // Layout: salt(16) || iv(12) || version(16) || wrappedKey(32) || tag(16).
+        assert_eq!(wrapped.provider_wrapped_ikm.len(), 16 + 12 + 16 + 32 + 16);
+        assert_eq!(
+            hierarchical_version_from_wrapped(&wrapped.provider_wrapped_ikm).unwrap(),
+            version
+        );
+
+        let recovered = hierarchical_unwrap_intermediate(
+            &branch_key,
+            branch_key_id,
+            &wrapped.provider_wrapped_ikm,
+            ec_aad,
+        )
+        .unwrap();
+        assert_eq!(recovered, wrapped.intermediate_material);
+    }
+
+    #[test]
+    fn hierarchical_wrong_branch_key_fails_unwrap() {
+        let branch_key = [0x11u8; 32];
+        let version = [0x22u8; 16];
+        let branch_key_id = b"branch-key-1";
+        let ec_aad = b"ec";
+        let wrapped = hierarchical_wrap_intermediate(&branch_key, &version, branch_key_id, ec_aad)
+            .unwrap();
+
+        let wrong_branch_key = [0x99u8; 32];
+        assert!(hierarchical_unwrap_intermediate(
+            &wrong_branch_key,
+            branch_key_id,
+            &wrapped.provider_wrapped_ikm,
+            ec_aad,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn hierarchical_tampered_material_fails_unwrap() {
+        let branch_key = [0x11u8; 32];
+        let version = [0x22u8; 16];
+        let branch_key_id = b"branch-key-1";
+        let ec_aad = b"ec";
+        let mut wrapped =
+            hierarchical_wrap_intermediate(&branch_key, &version, branch_key_id, ec_aad)
+                .unwrap()
+                .provider_wrapped_ikm;
+        let last = wrapped.len() - 1;
+        wrapped[last] ^= 0x01;
+        assert!(
+            hierarchical_unwrap_intermediate(&branch_key, branch_key_id, &wrapped, ec_aad).is_err()
+        );
+    }
+
+    #[test]
+    fn hierarchical_wrong_ec_aad_fails_unwrap() {
+        let branch_key = [0x11u8; 32];
+        let version = [0x22u8; 16];
+        let branch_key_id = b"branch-key-1";
+        let wrapped =
+            hierarchical_wrap_intermediate(&branch_key, &version, branch_key_id, b"aad-a").unwrap();
+        // A different EC AAD changes the GCM AAD, so the unwrap must fail.
+        assert!(hierarchical_unwrap_intermediate(
+            &branch_key,
+            branch_key_id,
+            &wrapped.provider_wrapped_ikm,
+            b"aad-b",
+        )
+        .is_err());
     }
 }
