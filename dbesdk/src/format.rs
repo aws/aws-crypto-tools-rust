@@ -28,7 +28,9 @@
 //! (header version 1). See `BLOCKED.md` for what remains (KMS / RSA / ECDH EDK
 //! wrapping, sets/maps/lists, number normalization).
 
-use crate::config::{AlgorithmSuiteId, CryptoAction, RawAesKeyringConfig, TableEncryptionConfig};
+use crate::config::{
+    AlgorithmSuiteId, CryptoAction, RawAesKeyringConfig, RawRsaKeyringConfig, TableEncryptionConfig,
+};
 use crate::crypto;
 use crate::error::{DbEsdkError, Result};
 use crate::model::{AttributeValue, Item};
@@ -497,6 +499,74 @@ impl IntermediateKeyProvider for RawAesProvider<'_> {
     ) -> Result<Vec<u8>> {
         let iv = raw_aes_iv_from_provider_info(&self.raw.key_name, provider_info)?;
         crypto::aes_gcm_decrypt(&self.raw.wrapping_key, &iv, ec_aad, provider_wrapped_ikm)
+    }
+}
+
+/// The [`IntermediateKeyProvider`] for a Raw RSA keyring: the intermediate key
+/// is wrapped by RSA-encrypting it under the configured public key (and
+/// recovered by RSA-decrypting under the private key), exactly as the MPL
+/// `RawRSAKeyring` does under intermediate key wrapping
+/// (`RsaGenerateAndWrapKeyMaterial` / `RsaUnwrapKeyMaterial`).
+///
+/// Unlike the Raw AES wrap, RSA padding takes no AAD, so the encryption context
+/// does not authenticate the `providerWrappedIkm` here — the EC is still bound
+/// to the message through the wrapped PDK and the footer. The EDK carries the
+/// keyring's namespace as the provider id and the key name as the provider
+/// info (`RawRSAKeyring.OnEncrypt`); the ciphertext is the RSA-wrapped
+/// intermediate key.
+pub struct RawRsaProvider<'a> {
+    /// The Raw RSA keyring configuration (key material + namespace / name).
+    pub raw: &'a RawRsaKeyringConfig,
+}
+
+impl IntermediateKeyProvider for RawRsaProvider<'_> {
+    fn generate_and_wrap(&self, _ec: &[(Vec<u8>, Vec<u8>)], _ec_aad: &[u8]) -> Result<GeneratedKey> {
+        let public_key_pem = self.raw.public_key.as_ref().ok_or_else(|| {
+            DbEsdkError::config("a Raw RSA keyring without a public key cannot encrypt")
+        })?;
+        let public_key_der = crypto::pem_to_der(public_key_pem)?;
+        // For each EDK a distinct intermediate key is generated at random
+        // (GetEncryptKeyLength == 32 for the DBE AES-256 suites).
+        let intermediate = crypto::random_bytes(32)?;
+        let provider_wrapped_ikm = crypto::rsa_encrypt(
+            &public_key_der,
+            self.raw.padding_scheme.to_crypto(),
+            &intermediate,
+        )?;
+        Ok(GeneratedKey {
+            intermediate_material: intermediate,
+            provider_wrapped_ikm,
+            edk_provider_id: self.raw.key_namespace.as_bytes().to_vec(),
+            edk_provider_info: self.raw.key_name.as_bytes().to_vec(),
+        })
+    }
+
+    fn unwrap(
+        &self,
+        provider_id: &[u8],
+        provider_info: &[u8],
+        provider_wrapped_ikm: &[u8],
+        _ec: &[(Vec<u8>, Vec<u8>)],
+        _ec_aad: &[u8],
+    ) -> Result<Vec<u8>> {
+        // RawRSAKeyring.ShouldDecryptEDK: the keyring only attempts an EDK whose
+        // provider id == key namespace and provider info == key name.
+        if provider_id != self.raw.key_namespace.as_bytes()
+            || provider_info != self.raw.key_name.as_bytes()
+        {
+            return Err(DbEsdkError::invalid_item(
+                "Raw RSA EDK provider id/info does not match the configured keyring",
+            ));
+        }
+        let private_key_pem = self.raw.private_key.as_ref().ok_or_else(|| {
+            DbEsdkError::config("a Raw RSA keyring without a private key cannot decrypt")
+        })?;
+        let private_key_der = crypto::pem_to_der(private_key_pem)?;
+        crypto::rsa_decrypt(
+            &private_key_der,
+            self.raw.padding_scheme.to_crypto(),
+            provider_wrapped_ikm,
+        )
     }
 }
 
@@ -1329,5 +1399,106 @@ mod tests {
         let parsed = parse_header(&header).unwrap();
         assert_eq!(parsed.edk.provider_id, b"x-test-provider");
         assert_eq!(parsed.edk.provider_info, b"x-test-info");
+    }
+
+    // ---- Raw RSA keyring provider ----
+
+    /// Wrap raw DER in a single-line PEM document with the given label (the
+    /// shape the conformance suite's `TestKeyMaterial` emits: standard
+    /// `java.util.Base64` body with PEM headers).
+    fn to_pem(label: &str, der: &[u8]) -> Vec<u8> {
+        format!(
+            "-----BEGIN {label}-----\n{}\n-----END {label}-----\n",
+            crypto::base64_encode(der)
+        )
+        .into_bytes()
+    }
+
+    /// Generate an RSA-2048 key pair and return `(public_key_pem, private_key_pem)`
+    /// in the X.509 SubjectPublicKeyInfo / PKCS#8 PrivateKeyInfo PEM encodings the
+    /// Raw RSA keyring config carries.
+    fn rsa_keypair_pem() -> (Vec<u8>, Vec<u8>) {
+        use aws_lc_rs::encoding::AsDer;
+        use aws_lc_rs::rsa::{KeySize, PrivateDecryptingKey};
+        let private = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        let pkcs8 = private.as_der().unwrap();
+        let public = private.public_key();
+        let spki = public.as_der().unwrap();
+        (
+            to_pem("PUBLIC KEY", spki.as_ref()),
+            to_pem("PRIVATE KEY", pkcs8.as_ref()),
+        )
+    }
+
+    fn raw_rsa_config(public_key: Option<Vec<u8>>, private_key: Option<Vec<u8>>) -> RawRsaKeyringConfig {
+        RawRsaKeyringConfig {
+            key_namespace: "test-server-namespace".to_string(),
+            key_name: "raw-rsa-key".to_string(),
+            padding_scheme: crate::config::PaddingScheme::OaepSha256Mgf1,
+            public_key,
+            private_key,
+        }
+    }
+
+    fn rsa_table_config(rsa: RawRsaKeyringConfig, suite: AlgorithmSuiteId) -> TableEncryptionConfig {
+        let mut cfg = config();
+        cfg.algorithm_suite_id = suite;
+        cfg.keyring = KeyringConfig::RawRsa(rsa);
+        cfg
+    }
+
+    #[test]
+    fn raw_rsa_round_trips_under_both_suites() {
+        let (pubk, privk) = rsa_keypair_pem();
+        let rsa = raw_rsa_config(Some(pubk), Some(privk));
+        for suite in [
+            AlgorithmSuiteId::SymsigHmacSha384,
+            AlgorithmSuiteId::EcdsaP384SymsigHmacSha384,
+        ] {
+            let cfg = rsa_table_config(rsa.clone(), suite);
+            let item = item();
+            let stored = encrypt_item(&cfg, &RawRsaProvider { raw: &rsa }, &item).unwrap();
+            let decrypted = decrypt_item(&cfg, &RawRsaProvider { raw: &rsa }, &stored).unwrap();
+            assert_eq!(decrypted, item);
+        }
+    }
+
+    #[test]
+    fn raw_rsa_edk_carries_namespace_and_name() {
+        let (pubk, privk) = rsa_keypair_pem();
+        let rsa = raw_rsa_config(Some(pubk), Some(privk));
+        let cfg = rsa_table_config(rsa.clone(), AlgorithmSuiteId::SymsigHmacSha384);
+        let stored = encrypt_item(&cfg, &RawRsaProvider { raw: &rsa }, &item()).unwrap();
+        let header = match stored.get(HEADER_ATTRIBUTE).unwrap() {
+            AttributeValue::B(b) => b.clone(),
+            _ => panic!("header must be binary"),
+        };
+        let parsed = parse_header(&header).unwrap();
+        // RawRSAKeyring.OnEncrypt: provider id = key namespace, info = key name.
+        assert_eq!(parsed.edk.provider_id, b"test-server-namespace");
+        assert_eq!(parsed.edk.provider_info, b"raw-rsa-key");
+        // EDK ciphertext = encryptedPdk(48) || RSA-OAEP(intermediate) (256B for RSA-2048).
+        assert_eq!(parsed.edk.ciphertext.len(), 48 + 256);
+    }
+
+    #[test]
+    fn raw_rsa_without_public_key_cannot_encrypt() {
+        let (_pubk, privk) = rsa_keypair_pem();
+        let rsa = raw_rsa_config(None, Some(privk));
+        let cfg = rsa_table_config(rsa.clone(), AlgorithmSuiteId::SymsigHmacSha384);
+        assert!(encrypt_item(&cfg, &RawRsaProvider { raw: &rsa }, &item()).is_err());
+    }
+
+    #[test]
+    fn raw_rsa_wrong_private_key_fails_decrypt() {
+        let (pubk, _privk) = rsa_keypair_pem();
+        let (_pubk2, privk2) = rsa_keypair_pem();
+        let enc_cfg_rsa = raw_rsa_config(Some(pubk), None);
+        let cfg = rsa_table_config(enc_cfg_rsa.clone(), AlgorithmSuiteId::SymsigHmacSha384);
+        let stored = encrypt_item(&cfg, &RawRsaProvider { raw: &enc_cfg_rsa }, &item()).unwrap();
+
+        // Decrypt with an unrelated private key -> RSA unwrap must fail.
+        let dec_rsa = raw_rsa_config(None, Some(privk2));
+        assert!(decrypt_item(&cfg, &RawRsaProvider { raw: &dec_rsa }, &stored).is_err());
     }
 }

@@ -179,6 +179,18 @@ impl PaddingScheme {
             ))),
         }
     }
+
+    /// Map to the crypto-layer [`crate::crypto::RsaPadding`].
+    pub fn to_crypto(self) -> crate::crypto::RsaPadding {
+        use crate::crypto::RsaPadding;
+        match self {
+            Self::Pkcs1 => RsaPadding::Pkcs1,
+            Self::OaepSha1Mgf1 => RsaPadding::OaepSha1,
+            Self::OaepSha256Mgf1 => RsaPadding::OaepSha256,
+            Self::OaepSha384Mgf1 => RsaPadding::OaepSha384,
+            Self::OaepSha512Mgf1 => RsaPadding::OaepSha512,
+        }
+    }
 }
 
 /// The named elliptic curve of a Raw ECDH keyring (mirror of the MPL
