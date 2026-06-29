@@ -266,6 +266,22 @@ pub struct RawEcdhKeyringConfig {
     pub curve_spec: EcdhCurveSpec,
 }
 
+/// Configuration for an AWS KMS ECDH keyring using the
+/// `KmsPrivateKeyToStaticPublicKey` agreement scheme (mirror of
+/// `AwsKmsEcdhKeyringConfig`). The sender's private key lives in AWS KMS, so the
+/// shared secret is produced by `kms:DeriveSharedSecret`; the rest of the wrap
+/// is identical to the Raw ECDH keyring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsKmsEcdhKeyringConfig {
+    /// The sender's AWS KMS ECC key identifier (ARN), used for key agreement.
+    pub sender_kms_identifier: String,
+    /// The recipient's public key as raw DER-encoded X.509 SubjectPublicKeyInfo
+    /// bytes.
+    pub recipient_public_key: Vec<u8>,
+    /// The named curve both keys lie on.
+    pub curve_spec: EcdhCurveSpec,
+}
+
 /// Configuration for an AWS KMS keyring keyed by a single KMS key id (the
 /// `awsKms` and `awsKmsMrk` variants share this shape). Mirrors
 /// `CreateAwsKmsKeyringInput` / `CreateAwsKmsMrkKeyringInput`; the server
@@ -383,6 +399,8 @@ pub enum KeyringConfig {
     AwsKmsMrkMulti(AwsKmsMrkMultiKeyringConfig),
     /// An AWS KMS RSA (asymmetric) keyring (`awsKmsRsa`).
     AwsKmsRsa(AwsKmsRsaKeyringConfig),
+    /// An AWS KMS ECDH keyring, `KmsPrivateKeyToStaticPublicKey` (`awsKmsEcdh`).
+    AwsKmsEcdh(AwsKmsEcdhKeyringConfig),
     /// An AWS KMS Discovery keyring, DECRYPT-ONLY (`awsKmsDiscovery`).
     AwsKmsDiscovery(AwsKmsDiscoveryKeyringConfig),
     /// An AWS KMS MRK Discovery keyring, DECRYPT-ONLY (`awsKmsMrkDiscovery`).
@@ -497,6 +515,18 @@ impl TableEncryptionConfig {
                 if c.public_key.as_ref().is_none_or(|k| k.is_empty()) {
                     return Err(DbEsdkError::config(
                         "AWS KMS RSA keyring requires a public key (to encrypt)",
+                    ));
+                }
+            }
+            KeyringConfig::AwsKmsEcdh(c) => {
+                if c.sender_kms_identifier.trim().is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS ECDH keyring requires a non-empty senderKmsIdentifier",
+                    ));
+                }
+                if c.recipient_public_key.is_empty() {
+                    return Err(DbEsdkError::config(
+                        "AWS KMS ECDH keyring requires a recipient public key",
                     ));
                 }
             }

@@ -701,74 +701,149 @@ pub struct RawEcdhProvider<'a> {
     pub raw: &'a RawEcdhKeyringConfig,
 }
 
-impl RawEcdhProvider<'_> {
-    /// `FixedInfo` for the key derivation (EcdhEdkWrapping.dfy `SerializeFixedInfo`):
-    /// `"ecdh-key-derivation" || 0x00 || curve || 0x00 || "HMAC_SHA384" || 0x00
-    /// || senderCompressed || recipientCompressed || 0x00 || version(0x01) ||
-    /// 0x00 || canonicalEC`.
-    fn fixed_info(
-        curve: crypto::EcdhCurve,
-        sender_compressed: &[u8],
-        recipient_compressed: &[u8],
-        ec_aad: &[u8],
-    ) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(ECDH_KDF_LABEL);
-        out.push(ECDH_KDF_DELIMITER);
-        out.extend_from_slice(curve.kdf_name().as_bytes());
-        out.push(ECDH_KDF_DELIMITER);
-        out.extend_from_slice(ECDH_KDF_PRF_NAME);
-        out.push(ECDH_KDF_DELIMITER);
-        out.extend_from_slice(sender_compressed);
-        out.extend_from_slice(recipient_compressed);
-        out.push(ECDH_KDF_DELIMITER);
-        out.push(ECDH_KEYRING_VERSION);
-        out.push(ECDH_KDF_DELIMITER);
-        out.extend_from_slice(ec_aad);
-        out
-    }
+/// `FixedInfo` for ECDH key derivation (EcdhEdkWrapping.dfy `SerializeFixedInfo`),
+/// shared by Raw ECDH and AWS KMS ECDH (which use the same keyring version):
+/// `"ecdh-key-derivation" || 0x00 || curve || 0x00 || "HMAC_SHA384" || 0x00
+/// || senderCompressed || recipientCompressed || 0x00 || version(0x01) ||
+/// 0x00 || canonicalEC`.
+fn ecdh_fixed_info(
+    curve: crypto::EcdhCurve,
+    sender_compressed: &[u8],
+    recipient_compressed: &[u8],
+    ec_aad: &[u8],
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(ECDH_KDF_LABEL);
+    out.push(ECDH_KDF_DELIMITER);
+    out.extend_from_slice(curve.kdf_name().as_bytes());
+    out.push(ECDH_KDF_DELIMITER);
+    out.extend_from_slice(ECDH_KDF_PRF_NAME);
+    out.push(ECDH_KDF_DELIMITER);
+    out.extend_from_slice(sender_compressed);
+    out.extend_from_slice(recipient_compressed);
+    out.push(ECDH_KDF_DELIMITER);
+    out.push(ECDH_KEYRING_VERSION);
+    out.push(ECDH_KDF_DELIMITER);
+    out.extend_from_slice(ec_aad);
+    out
+}
 
-    /// EDK provider info (RawECDHKeyring.dfy `SerializeProviderInfo`):
-    /// `version(0x01) || UInt32BE(recipientLen) || recipientCompressed ||
-    /// UInt32BE(senderLen) || senderCompressed`.
-    fn serialize_provider_info(sender_compressed: &[u8], recipient_compressed: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.push(ECDH_KEYRING_VERSION);
-        out.extend_from_slice(&(recipient_compressed.len() as u32).to_be_bytes());
-        out.extend_from_slice(recipient_compressed);
-        out.extend_from_slice(&(sender_compressed.len() as u32).to_be_bytes());
-        out.extend_from_slice(sender_compressed);
-        out
-    }
+/// EDK provider info (RawECDHKeyring.dfy `SerializeProviderInfo`):
+/// `version(0x01) || UInt32BE(recipientLen) || recipientCompressed ||
+/// UInt32BE(senderLen) || senderCompressed`.
+fn ecdh_serialize_provider_info(sender_compressed: &[u8], recipient_compressed: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.push(ECDH_KEYRING_VERSION);
+    out.extend_from_slice(&(recipient_compressed.len() as u32).to_be_bytes());
+    out.extend_from_slice(recipient_compressed);
+    out.extend_from_slice(&(sender_compressed.len() as u32).to_be_bytes());
+    out.extend_from_slice(sender_compressed);
+    out
+}
 
-    /// Parse the provider info, returning `(senderCompressed, recipientCompressed)`.
-    fn parse_provider_info(info: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
-        let err = || DbEsdkError::invalid_item("malformed Raw ECDH EDK provider info");
-        if info.len() < 5 || info[0] != ECDH_KEYRING_VERSION {
-            return Err(DbEsdkError::invalid_item(
-                "Raw ECDH provider info has an unexpected keyring version",
-            ));
-        }
-        let recipient_len = u32::from_be_bytes([info[1], info[2], info[3], info[4]]) as usize;
-        let recipient_end = 5usize.checked_add(recipient_len).ok_or_else(err)?;
-        let sender_len_end = recipient_end.checked_add(4).ok_or_else(err)?;
-        if info.len() < sender_len_end {
-            return Err(err());
-        }
-        let recipient = info[5..recipient_end].to_vec();
-        let sender_len = u32::from_be_bytes([
-            info[recipient_end],
-            info[recipient_end + 1],
-            info[recipient_end + 2],
-            info[recipient_end + 3],
-        ]) as usize;
-        let sender_end = sender_len_end.checked_add(sender_len).ok_or_else(err)?;
-        if info.len() < sender_end {
-            return Err(err());
-        }
-        let sender = info[sender_len_end..sender_end].to_vec();
-        Ok((sender, recipient))
+/// Parse an ECDH EDK provider info, returning `(senderCompressed, recipientCompressed)`.
+/// Shared by Raw ECDH and AWS KMS ECDH (identical layout).
+pub fn ecdh_parse_provider_info(info: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    let err = || DbEsdkError::invalid_item("malformed ECDH EDK provider info");
+    if info.len() < 5 || info[0] != ECDH_KEYRING_VERSION {
+        return Err(DbEsdkError::invalid_item(
+            "ECDH provider info has an unexpected keyring version",
+        ));
     }
+    let recipient_len = u32::from_be_bytes([info[1], info[2], info[3], info[4]]) as usize;
+    let recipient_end = 5usize.checked_add(recipient_len).ok_or_else(err)?;
+    let sender_len_end = recipient_end.checked_add(4).ok_or_else(err)?;
+    if info.len() < sender_len_end {
+        return Err(err());
+    }
+    let recipient = info[5..recipient_end].to_vec();
+    let sender_len = u32::from_be_bytes([
+        info[recipient_end],
+        info[recipient_end + 1],
+        info[recipient_end + 2],
+        info[recipient_end + 3],
+    ]) as usize;
+    let sender_end = sender_len_end.checked_add(sender_len).ok_or_else(err)?;
+    if info.len() < sender_end {
+        return Err(err());
+    }
+    let sender = info[sender_len_end..sender_end].to_vec();
+    Ok((sender, recipient))
+}
+
+/// Wrap a freshly generated intermediate key under an ECDH-derived wrapping key
+/// (EcdhEdkWrapping.dfy data-key-wrapping), shared by Raw ECDH and AWS KMS ECDH.
+///
+/// `shared_secret` is the raw ECDH shared secret (locally agreed for Raw ECDH,
+/// or `kms:DeriveSharedSecret` for AWS KMS ECDH); `sender_compressed` /
+/// `recipient_compressed` are the compressed public keys recorded in the EDK
+/// provider info and bound into the derivation `FixedInfo`. `provider_id` is the
+/// keyring's EDK provider id (`raw-ecdh` or `aws-kms-ecdh`).
+pub fn ecdh_wrap_intermediate(
+    curve: crypto::EcdhCurve,
+    shared_secret: &[u8],
+    sender_compressed: &[u8],
+    recipient_compressed: &[u8],
+    ec_aad: &[u8],
+    provider_id: &[u8],
+) -> Result<GeneratedKey> {
+    let fixed_info = ecdh_fixed_info(curve, sender_compressed, recipient_compressed, ec_aad);
+
+    // For each EDK a distinct intermediate key is generated at random.
+    let intermediate = crypto::random_bytes(32)?;
+    let salt = crypto::random_bytes(ECDH_KDF_SALT_LEN)?;
+    let derived =
+        crypto::kdf_ctr_hmac_sha384(shared_secret, &fixed_info, &salt, ECDH_KDF_OUTPUT_LEN)?;
+    let (commitment_key, shared_wrapping_key) = derived.split_at(ECDH_COMMITMENT_KEY_LEN);
+    // AES-256-GCM(sharedWrappingKey, iv=0, intermediate, aad=fixedInfo) → ct||tag.
+    let wrapped = crypto::aes_gcm_encrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, &intermediate)?;
+
+    let mut provider_wrapped_ikm =
+        Vec::with_capacity(salt.len() + commitment_key.len() + wrapped.len());
+    provider_wrapped_ikm.extend_from_slice(&salt);
+    provider_wrapped_ikm.extend_from_slice(commitment_key);
+    provider_wrapped_ikm.extend_from_slice(&wrapped);
+
+    Ok(GeneratedKey {
+        intermediate_material: intermediate,
+        provider_wrapped_ikm,
+        edk_provider_id: provider_id.to_vec(),
+        edk_provider_info: ecdh_serialize_provider_info(sender_compressed, recipient_compressed),
+    })
+}
+
+/// Recover an intermediate key wrapped by [`ecdh_wrap_intermediate`], shared by
+/// Raw ECDH and AWS KMS ECDH. The caller supplies the re-derived `shared_secret`
+/// and the compressed public keys (parsed from the EDK provider info) so the
+/// derivation `FixedInfo` matches the writer's.
+pub fn ecdh_unwrap_intermediate(
+    curve: crypto::EcdhCurve,
+    shared_secret: &[u8],
+    sender_compressed: &[u8],
+    recipient_compressed: &[u8],
+    provider_wrapped_ikm: &[u8],
+    ec_aad: &[u8],
+) -> Result<Vec<u8>> {
+    let fixed_info = ecdh_fixed_info(curve, sender_compressed, recipient_compressed, ec_aad);
+
+    // Deserialize: salt(32) || commitmentKey(32) || encryptedKey || authTag.
+    if provider_wrapped_ikm.len() <= ECDH_WRAPPED_KEY_INDEX {
+        return Err(DbEsdkError::invalid_item(
+            "ECDH wrapped material is shorter than expected",
+        ));
+    }
+    let salt = &provider_wrapped_ikm[..ECDH_KDF_SALT_LEN];
+    let commitment_key = &provider_wrapped_ikm[ECDH_KDF_SALT_LEN..ECDH_WRAPPED_KEY_INDEX];
+    let wrapped_key_and_tag = &provider_wrapped_ikm[ECDH_WRAPPED_KEY_INDEX..];
+
+    let derived =
+        crypto::kdf_ctr_hmac_sha384(shared_secret, &fixed_info, salt, ECDH_KDF_OUTPUT_LEN)?;
+    let (calculated_commitment_key, shared_wrapping_key) = derived.split_at(ECDH_COMMITMENT_KEY_LEN);
+    // The calculated commitment key MUST equal the one stored in the EDK.
+    if !constant_time_eq(calculated_commitment_key, commitment_key) {
+        return Err(DbEsdkError::invalid_item("ECDH commitment key did not match"));
+    }
+    crypto::aes_gcm_decrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, wrapped_key_and_tag)
 }
 
 impl IntermediateKeyProvider for RawEcdhProvider<'_> {
@@ -780,30 +855,14 @@ impl IntermediateKeyProvider for RawEcdhProvider<'_> {
             crypto::ecdh_compress_spki_public_key(&self.raw.recipient_public_key, curve)?;
         let shared_secret =
             crypto::ecdh_shared_secret(&sender_private_der, &self.raw.recipient_public_key, curve)?;
-        let fixed_info =
-            Self::fixed_info(curve, &sender_compressed, &recipient_compressed, ec_aad);
-
-        // For each EDK a distinct intermediate key is generated at random.
-        let intermediate = crypto::random_bytes(32)?;
-        let salt = crypto::random_bytes(ECDH_KDF_SALT_LEN)?;
-        let derived =
-            crypto::kdf_ctr_hmac_sha384(&shared_secret, &fixed_info, &salt, ECDH_KDF_OUTPUT_LEN)?;
-        let (commitment_key, shared_wrapping_key) = derived.split_at(ECDH_COMMITMENT_KEY_LEN);
-        // AES-256-GCM(sharedWrappingKey, iv=0, intermediate, aad=fixedInfo) → ct||tag.
-        let wrapped = crypto::aes_gcm_encrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, &intermediate)?;
-
-        let mut provider_wrapped_ikm =
-            Vec::with_capacity(salt.len() + commitment_key.len() + wrapped.len());
-        provider_wrapped_ikm.extend_from_slice(&salt);
-        provider_wrapped_ikm.extend_from_slice(commitment_key);
-        provider_wrapped_ikm.extend_from_slice(&wrapped);
-
-        Ok(GeneratedKey {
-            intermediate_material: intermediate,
-            provider_wrapped_ikm,
-            edk_provider_id: ECDH_PROVIDER_ID.to_vec(),
-            edk_provider_info: Self::serialize_provider_info(&sender_compressed, &recipient_compressed),
-        })
+        ecdh_wrap_intermediate(
+            curve,
+            &shared_secret,
+            &sender_compressed,
+            &recipient_compressed,
+            ec_aad,
+            ECDH_PROVIDER_ID,
+        )
     }
 
     fn unwrap(
@@ -822,38 +881,21 @@ impl IntermediateKeyProvider for RawEcdhProvider<'_> {
         let curve = self.raw.curve_spec.to_crypto();
         // The sender / recipient compressed keys are reconstructed from the EDK
         // provider info so the derivation FixedInfo matches what the writer used.
-        let (sender_compressed, recipient_compressed) = Self::parse_provider_info(provider_info)?;
+        let (sender_compressed, recipient_compressed) = ecdh_parse_provider_info(provider_info)?;
         let sender_private_der = crypto::pem_to_der(&self.raw.sender_static_private_key)?;
         // RawPrivateKeyToStaticPublicKey: the shared secret uses the configured
         // sender static private key and the configured recipient public key
         // (which the conformance test sets to the same key pair).
         let shared_secret =
             crypto::ecdh_shared_secret(&sender_private_der, &self.raw.recipient_public_key, curve)?;
-        let fixed_info =
-            Self::fixed_info(curve, &sender_compressed, &recipient_compressed, ec_aad);
-
-        // Deserialize: salt(32) || commitmentKey(32) || encryptedKey || authTag.
-        if provider_wrapped_ikm.len() <= ECDH_WRAPPED_KEY_INDEX {
-            return Err(DbEsdkError::invalid_item(
-                "Raw ECDH wrapped material is shorter than expected",
-            ));
-        }
-        let salt = &provider_wrapped_ikm[..ECDH_KDF_SALT_LEN];
-        let commitment_key =
-            &provider_wrapped_ikm[ECDH_KDF_SALT_LEN..ECDH_WRAPPED_KEY_INDEX];
-        let wrapped_key_and_tag = &provider_wrapped_ikm[ECDH_WRAPPED_KEY_INDEX..];
-
-        let derived =
-            crypto::kdf_ctr_hmac_sha384(&shared_secret, &fixed_info, salt, ECDH_KDF_OUTPUT_LEN)?;
-        let (calculated_commitment_key, shared_wrapping_key) =
-            derived.split_at(ECDH_COMMITMENT_KEY_LEN);
-        // The calculated commitment key MUST equal the one stored in the EDK.
-        if !constant_time_eq(calculated_commitment_key, commitment_key) {
-            return Err(DbEsdkError::invalid_item(
-                "Raw ECDH commitment key did not match",
-            ));
-        }
-        crypto::aes_gcm_decrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, wrapped_key_and_tag)
+        ecdh_unwrap_intermediate(
+            curve,
+            &shared_secret,
+            &sender_compressed,
+            &recipient_compressed,
+            provider_wrapped_ikm,
+            ec_aad,
+        )
     }
 }
 
@@ -1961,9 +2003,9 @@ mod tests {
     fn raw_ecdh_provider_info_round_trips() {
         let sender = vec![0x02u8; 33];
         let recipient = vec![0x03u8; 33];
-        let info = RawEcdhProvider::serialize_provider_info(&sender, &recipient);
+        let info = ecdh_serialize_provider_info(&sender, &recipient);
         let (parsed_sender, parsed_recipient) =
-            RawEcdhProvider::parse_provider_info(&info).unwrap();
+            ecdh_parse_provider_info(&info).unwrap();
         assert_eq!(parsed_sender, sender);
         assert_eq!(parsed_recipient, recipient);
     }
