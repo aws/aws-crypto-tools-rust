@@ -119,7 +119,35 @@ pub fn encrypt_item(
     provider: &dyn IntermediateKeyProvider,
     item: &Item,
 ) -> Result<Item> {
+    encrypt_item_multi(config, &[provider], item)
+}
+
+/// Encrypt and sign `item` per `config`, wrapping the data key with EACH of
+/// `providers` (a multi-keyring producing one Encrypted Data Key per component
+/// keyring), producing the byte-faithful attribute map to persist.
+///
+/// The structured-encryption core is identical to the single-keyring case
+/// ([`encrypt_item`], which is the one-provider special case): the plaintext
+/// data key is generated once, then — exactly as the MPL multi-keyring's
+/// `OnEncrypt` (generator first, then each child) calls
+/// `IntermediateKeyWrapping.IntermediateWrap` per keyring — each provider yields
+/// its own random intermediate key, from which a distinct `(pdkEncryptionKey,
+/// symmetricSigningKey)` pair is derived; the *same* plaintext data key is
+/// sealed under each `pdkEncryptionKey` to form that keyring's EDK. The header
+/// lists all EDKs in keyring order and the footer carries one recipient tag per
+/// EDK (in the same order), each computed with that EDK's `symmetricSigningKey`
+/// (Footer.dfy `CreateFooter`).
+pub fn encrypt_item_multi(
+    config: &TableEncryptionConfig,
+    providers: &[&dyn IntermediateKeyProvider],
+    item: &Item,
+) -> Result<Item> {
     config.validate()?;
+    if providers.is_empty() {
+        return Err(DbEsdkError::config(
+            "at least one keyring is required to encrypt",
+        ));
+    }
     let flavor = flavor_for(config.algorithm_suite_id);
 
     // 1. Generate the message id and plaintext data key.
@@ -156,23 +184,34 @@ pub fn encrypt_item(
         .cloned()
         .collect();
 
-    // 5. Intermediate key wrapping. The keyring-specific portion (wrap the
-    //    intermediate key material + the EDK provider id / info) is delegated
-    //    to the provider; the generic PDK encryption + EDK serialization is
-    //    here (IntermediateKeyWrapping.dfy `IntermediateWrap`).
-    let generated = provider.generate_and_wrap(&enc_context, &ec_aad)?;
-    let (pdk_encryption_key, symmetric_signing_key) =
-        derive_keys_from_intermediate(&generated.intermediate_material)?;
-    let encrypted_pdk =
-        crypto::aes_gcm_encrypt(&pdk_encryption_key, &[0u8; 12], &ec_aad, &plaintext_data_key)?;
-    // EDK ciphertext = encryptedPdk(keyLen + tagLen = 48) || providerWrappedIkm.
-    let mut edk_ciphertext = encrypted_pdk;
-    edk_ciphertext.extend_from_slice(&generated.provider_wrapped_ikm);
-    let edk = EncryptedDataKey {
-        provider_id: generated.edk_provider_id,
-        provider_info: generated.edk_provider_info,
-        ciphertext: edk_ciphertext,
-    };
+    // 5. Intermediate key wrapping, once per keyring. The keyring-specific
+    //    portion (wrap the intermediate key material + the EDK provider id /
+    //    info) is delegated to each provider; the generic PDK encryption + EDK
+    //    serialization is here (IntermediateKeyWrapping.dfy `IntermediateWrap`).
+    //    Each keyring gets a distinct intermediate key and therefore a distinct
+    //    symmetric signing key; all seal the same plaintext data key.
+    let mut edks: Vec<EncryptedDataKey> = Vec::with_capacity(providers.len());
+    let mut symmetric_signing_keys: Vec<Vec<u8>> = Vec::with_capacity(providers.len());
+    for provider in providers {
+        let generated = provider.generate_and_wrap(&enc_context, &ec_aad)?;
+        let (pdk_encryption_key, symmetric_signing_key) =
+            derive_keys_from_intermediate(&generated.intermediate_material)?;
+        let encrypted_pdk = crypto::aes_gcm_encrypt(
+            &pdk_encryption_key,
+            &[0u8; 12],
+            &ec_aad,
+            &plaintext_data_key,
+        )?;
+        // EDK ciphertext = encryptedPdk(keyLen + tagLen = 48) || providerWrappedIkm.
+        let mut edk_ciphertext = encrypted_pdk;
+        edk_ciphertext.extend_from_slice(&generated.provider_wrapped_ikm);
+        edks.push(EncryptedDataKey {
+            provider_id: generated.edk_provider_id,
+            provider_info: generated.edk_provider_info,
+            ciphertext: edk_ciphertext,
+        });
+        symmetric_signing_keys.push(symmetric_signing_key);
+    }
 
     // 6. Derive the field root key and per-field keys.
     let field_root_key = derive_field_root_key(&plaintext_data_key, &msg_id)?;
@@ -219,12 +258,16 @@ pub fn encrypt_item(
     // 8. Build the header (version/flavor/msgID/legend/storedEC/EDKs) and append
     //    the key commitment.
     let commit_key = derive_commit_key(&plaintext_data_key, &msg_id)?;
-    let header = serialize_header(flavor, &msg_id, &signed, &stored_ec, &edk, &commit_key)?;
+    let header = serialize_header(flavor, &msg_id, &signed, &stored_ec, &edks, &commit_key)?;
 
-    // 9. Build the footer: the recipient tag over the canonical record's SHA-384,
-    //    followed by the ECDSA signature for the signing suite.
+    // 9. Build the footer: one recipient tag per EDK over the canonical record's
+    //    SHA-384 (each with that EDK's symmetric signing key, in EDK order),
+    //    followed by the single ECDSA signature for the signing suite.
     let canonical_hash = canonical_hash(&header, &ec_aad, &signed);
-    let mut footer = crypto::hmac_sha384(&symmetric_signing_key, &canonical_hash);
+    let mut footer = Vec::with_capacity(symmetric_signing_keys.len() * RECIPIENT_TAG_LEN);
+    for symmetric_signing_key in &symmetric_signing_keys {
+        footer.extend_from_slice(&crypto::hmac_sha384(symmetric_signing_key, &canonical_hash));
+    }
     if let Some(signer) = &signer {
         let signature = signer.sign(&canonical_hash)?;
         footer.extend_from_slice(&signature);
@@ -262,7 +305,30 @@ pub fn decrypt_item(
     provider: &dyn IntermediateKeyProvider,
     stored: &Item,
 ) -> Result<Item> {
+    decrypt_item_multi(config, &[provider], stored)
+}
+
+/// Decrypt and verify a stored item produced by [`encrypt_item_multi`],
+/// unwrapping the data key with whichever of `providers` (a multi-keyring's
+/// component keyrings) owns a decryptable Encrypted Data Key.
+///
+/// Mirrors the MPL multi-keyring `OnDecrypt` + Footer.dfy `validate`: every
+/// keyring is offered each stored EDK and only attempts the ones it recognizes
+/// (by provider id / info); the first EDK that unwraps yields the plaintext data
+/// key and that EDK's symmetric signing key. The footer carries one recipient
+/// tag per EDK, and verification succeeds if the tag recomputed with the
+/// recovered symmetric signing key matches any stored tag.
+pub fn decrypt_item_multi(
+    config: &TableEncryptionConfig,
+    providers: &[&dyn IntermediateKeyProvider],
+    stored: &Item,
+) -> Result<Item> {
     config.validate()?;
+    if providers.is_empty() {
+        return Err(DbEsdkError::config(
+            "at least one keyring is required to decrypt",
+        ));
+    }
 
     let header = take_binary(stored, HEADER_ATTRIBUTE)?;
     let footer = take_binary(stored, FOOTER_ATTRIBUTE)?;
@@ -279,25 +345,42 @@ pub fn decrypt_item(
     enc_context.sort_by(|a, b| a.0.cmp(&b.0));
     let ec_aad = serialize_context(&enc_context);
 
-    // Unwrap the data key. Split the EDK ciphertext into the wrapped PDK
-    // (encryptKeyLength + tagLength = 48 bytes) and the provider-wrapped
-    // intermediate key, then recover the intermediate key via the provider and
-    // decrypt the PDK with the derived key-encryption key (iv = 0).
-    if parsed.edk.ciphertext.len() < 48 {
-        return Err(DbEsdkError::invalid_item("wrapped data key too short"));
+    // Unwrap the data key. Offer each stored EDK to each keyring; a keyring
+    // recognizes only EDKs whose provider id / info it owns. The EDK ciphertext
+    // splits into the wrapped PDK (encryptKeyLength + tagLength = 48 bytes) and
+    // the provider-wrapped intermediate key; the recovered intermediate key
+    // yields this EDK's (pdkEncryptionKey, symmetricSigningKey), and the wrapped
+    // PDK is decrypted with the key-encryption key (iv = 0).
+    let mut recovered: Option<(Vec<u8>, Vec<u8>)> = None;
+    'outer: for edk in &parsed.edks {
+        if edk.ciphertext.len() < 48 {
+            continue;
+        }
+        let (encrypted_pdk, provider_wrapped_ikm) = edk.ciphertext.split_at(48);
+        for provider in providers {
+            let intermediate = match provider.unwrap(
+                &edk.provider_id,
+                &edk.provider_info,
+                provider_wrapped_ikm,
+                &enc_context,
+                &ec_aad,
+            ) {
+                Ok(intermediate) => intermediate,
+                Err(_) => continue,
+            };
+            let (pdk_encryption_key, symmetric_signing_key) =
+                derive_keys_from_intermediate(&intermediate)?;
+            if let Ok(pdk) =
+                crypto::aes_gcm_decrypt(&pdk_encryption_key, &[0u8; 12], &ec_aad, encrypted_pdk)
+            {
+                recovered = Some((pdk, symmetric_signing_key));
+                break 'outer;
+            }
+        }
     }
-    let (encrypted_pdk, provider_wrapped_ikm) = parsed.edk.ciphertext.split_at(48);
-    let intermediate = provider.unwrap(
-        &parsed.edk.provider_id,
-        &parsed.edk.provider_info,
-        provider_wrapped_ikm,
-        &enc_context,
-        &ec_aad,
-    )?;
-    let (pdk_encryption_key, symmetric_signing_key) =
-        derive_keys_from_intermediate(&intermediate)?;
-    let plaintext_data_key =
-        crypto::aes_gcm_decrypt(&pdk_encryption_key, &[0u8; 12], &ec_aad, encrypted_pdk)?;
+    let (plaintext_data_key, symmetric_signing_key) = recovered.ok_or_else(|| {
+        DbEsdkError::invalid_item("no configured keyring could decrypt any data key")
+    })?;
 
     // Verify the header commitment.
     let commit_key = derive_commit_key(&plaintext_data_key, &parsed.msg_id)?;
@@ -307,21 +390,40 @@ pub fn decrypt_item(
     }
 
     // Rebuild the signed-field list from the stored item, applying the legend
-    // actions in canonical order, then verify the footer recipient tag.
+    // actions in canonical order, then verify the footer recipient tags.
     let mut signed = collect_signed_fields_for_decrypt(config, stored, &parsed.legend)?;
     signed.sort_by(|a, b| a.canonical_path.cmp(&b.canonical_path));
 
     let canonical_hash = canonical_hash(&header, &ec_aad, &signed);
-    let expected_tag = crypto::hmac_sha384(&symmetric_signing_key, &canonical_hash);
-    if footer.len() < RECIPIENT_TAG_LEN || !constant_time_eq(&expected_tag, &footer[..RECIPIENT_TAG_LEN]) {
+
+    // The footer is one 48-byte recipient tag per EDK (in EDK order), optionally
+    // followed by the 103-byte ECDSA signature for the signing suite.
+    let n_edks = parsed.edks.len();
+    let has_signature = parsed.flavor == FLAVOR_AES_ECDSA;
+    let tags_len = n_edks * RECIPIENT_TAG_LEN;
+    let expected_footer_len =
+        tags_len + if has_signature { crypto::ECDSA_P384_SIGNATURE_LEN } else { 0 };
+    if footer.len() != expected_footer_len {
+        return Err(DbEsdkError::invalid_item(
+            "footer length does not match the number of encrypted data keys",
+        ));
+    }
+
+    // Verification succeeds if the tag recomputed with the recovered EDK's
+    // symmetric signing key matches any of the stored recipient tags.
+    let our_tag = crypto::hmac_sha384(&symmetric_signing_key, &canonical_hash);
+    let tag_matches = footer[..tags_len]
+        .chunks_exact(RECIPIENT_TAG_LEN)
+        .any(|tag| constant_time_eq(&our_tag, tag));
+    if !tag_matches {
         return Err(DbEsdkError::invalid_item(
             "footer recipient tag did not verify",
         ));
     }
 
-    // Verify the ECDSA signature for the signing suite (the bytes after the
-    // single recipient tag), using the compressed verification key from the EC.
-    if parsed.flavor == FLAVOR_AES_ECDSA {
+    // Verify the ECDSA signature for the signing suite (the bytes after all
+    // recipient tags), using the compressed verification key from the EC.
+    if has_signature {
         let verification_key = parsed
             .stored_ec
             .iter()
@@ -333,12 +435,7 @@ pub fn decrypt_item(
                 )
             })?;
         let verification_key = crypto::base64_decode_bytes(verification_key)?;
-        let signature = &footer[RECIPIENT_TAG_LEN..];
-        if signature.len() != crypto::ECDSA_P384_SIGNATURE_LEN {
-            return Err(DbEsdkError::invalid_item(
-                "signing-suite footer has an unexpected signature length",
-            ));
-        }
+        let signature = &footer[tags_len..];
         crypto::ecdsa_p384_verify(&verification_key, &canonical_hash, signature)?;
     }
 
@@ -1022,10 +1119,10 @@ fn serialize_header(
     msg_id: &[u8; 32],
     signed: &[SignedField],
     stored_ec: &[(Vec<u8>, Vec<u8>)],
-    edk: &EncryptedDataKey,
+    edks: &[EncryptedDataKey],
     commit_key: &[u8],
 ) -> Result<Vec<u8>> {
-    let partial = serialize_partial_header(flavor, msg_id, signed, stored_ec, edk);
+    let partial = serialize_partial_header(flavor, msg_id, signed, stored_ec, edks)?;
     let commitment = header_commitment(commit_key, &partial);
     let mut full = partial;
     full.extend_from_slice(&commitment);
@@ -1037,8 +1134,16 @@ fn serialize_partial_header(
     msg_id: &[u8; 32],
     signed: &[SignedField],
     stored_ec: &[(Vec<u8>, Vec<u8>)],
-    edk: &EncryptedDataKey,
-) -> Vec<u8> {
+    edks: &[EncryptedDataKey],
+) -> Result<Vec<u8>> {
+    // The EDK count is a single byte (Header.dfy `SerializeDataKeys`: the list
+    // type is bounded by UINT8_LIMIT), so at most 255 keys.
+    if edks.is_empty() || edks.len() > u8::MAX as usize {
+        return Err(DbEsdkError::config(format!(
+            "a header must carry between 1 and 255 encrypted data keys (got {})",
+            edks.len()
+        )));
+    }
     let mut out = Vec::new();
     out.push(HEADER_VERSION_1);
     out.push(flavor);
@@ -1054,15 +1159,17 @@ fn serialize_partial_header(
     // suite; one `aws-crypto-public-key` pair for the signing suite.
     out.extend_from_slice(&serialize_context(stored_ec));
 
-    // Encrypted data keys: 1-byte count, then each EDK.
-    out.push(1u8);
-    out.extend_from_slice(&(edk.provider_id.len() as u16).to_be_bytes());
-    out.extend_from_slice(&edk.provider_id);
-    out.extend_from_slice(&(edk.provider_info.len() as u16).to_be_bytes());
-    out.extend_from_slice(&edk.provider_info);
-    out.extend_from_slice(&(edk.ciphertext.len() as u16).to_be_bytes());
-    out.extend_from_slice(&edk.ciphertext);
-    out
+    // Encrypted data keys: 1-byte count, then each EDK in order.
+    out.push(edks.len() as u8);
+    for edk in edks {
+        out.extend_from_slice(&(edk.provider_id.len() as u16).to_be_bytes());
+        out.extend_from_slice(&edk.provider_id);
+        out.extend_from_slice(&(edk.provider_info.len() as u16).to_be_bytes());
+        out.extend_from_slice(&edk.provider_info);
+        out.extend_from_slice(&(edk.ciphertext.len() as u16).to_be_bytes());
+        out.extend_from_slice(&edk.ciphertext);
+    }
+    Ok(out)
 }
 
 fn header_commitment(commit_key: &[u8], partial_header: &[u8]) -> Vec<u8> {
@@ -1077,7 +1184,7 @@ struct ParsedHeader {
     msg_id: [u8; 32],
     legend: Vec<u8>,
     stored_ec: Vec<(Vec<u8>, Vec<u8>)>,
-    edk: EncryptedDataKey,
+    edks: Vec<EncryptedDataKey>,
     partial_header: Vec<u8>,
     commitment: Vec<u8>,
 }
@@ -1107,18 +1214,27 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
         stored_ec.push((key, value));
     }
 
+    // Encrypted data keys: a 1-byte count followed by that many EDK entries.
     let edk_count = r.u8()?;
-    if edk_count != 1 {
+    if edk_count == 0 {
         return Err(DbEsdkError::invalid_item(
-            "byte-faithful raw-AES path supports exactly one encrypted data key",
+            "header must carry at least one encrypted data key",
         ));
     }
-    let pid_len = r.u16()? as usize;
-    let provider_id = r.take(pid_len)?.to_vec();
-    let pinfo_len = r.u16()? as usize;
-    let provider_info = r.take(pinfo_len)?.to_vec();
-    let ct_len = r.u16()? as usize;
-    let ciphertext = r.take(ct_len)?.to_vec();
+    let mut edks = Vec::with_capacity(edk_count as usize);
+    for _ in 0..edk_count {
+        let pid_len = r.u16()? as usize;
+        let provider_id = r.take(pid_len)?.to_vec();
+        let pinfo_len = r.u16()? as usize;
+        let provider_info = r.take(pinfo_len)?.to_vec();
+        let ct_len = r.u16()? as usize;
+        let ciphertext = r.take(ct_len)?.to_vec();
+        edks.push(EncryptedDataKey {
+            provider_id,
+            provider_info,
+            ciphertext,
+        });
+    }
 
     let consumed = r.pos;
     let partial_header = data[..consumed].to_vec();
@@ -1129,11 +1245,7 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
         msg_id,
         legend,
         stored_ec,
-        edk: EncryptedDataKey {
-            provider_id,
-            provider_info,
-            ciphertext,
-        },
+        edks,
         partial_header,
         commitment,
     })
@@ -1587,8 +1699,92 @@ mod tests {
             _ => panic!("header must be binary"),
         };
         let parsed = parse_header(&header).unwrap();
-        assert_eq!(parsed.edk.provider_id, b"x-test-provider");
-        assert_eq!(parsed.edk.provider_info, b"x-test-info");
+        assert_eq!(parsed.edks[0].provider_id, b"x-test-provider");
+        assert_eq!(parsed.edks[0].provider_info, b"x-test-info");
+    }
+
+    // ---- Multi-keyring (multiple EDKs) ----
+
+    /// A second Raw AES keyring, distinct from [`raw_config`] in both namespace
+    /// /name and wrapping key, used as a second multi-keyring component.
+    fn raw_config_b() -> RawAesKeyringConfig {
+        RawAesKeyringConfig {
+            key_namespace: "other-namespace".to_string(),
+            key_name: "other-key".to_string(),
+            wrapping_key: vec![0x33u8; 32],
+            wrapping_alg: AesWrappingAlg::Aes256,
+        }
+    }
+
+    /// A multi-keyring (here two distinct Raw AES keyrings) writes one Encrypted
+    /// Data Key per component and one footer recipient tag per EDK, and the item
+    /// is decryptable by the full set of keyrings.
+    #[test]
+    fn multi_keyring_writes_one_edk_per_keyring() {
+        for cfg in [config(), signing_config()] {
+            let a = raw_config();
+            let b = raw_config_b();
+            let pa = RawAesProvider { raw: &a };
+            let pb = RawAesProvider { raw: &b };
+            let providers: [&dyn IntermediateKeyProvider; 2] = [&pa, &pb];
+
+            let item = item();
+            let stored = encrypt_item_multi(&cfg, &providers, &item).unwrap();
+
+            // The header carries exactly two EDKs, in keyring order.
+            let header = match stored.get(HEADER_ATTRIBUTE).unwrap() {
+                AttributeValue::B(b) => b.clone(),
+                _ => panic!("header must be binary"),
+            };
+            let parsed = parse_header(&header).unwrap();
+            assert_eq!(parsed.edks.len(), 2);
+            assert_eq!(parsed.edks[0].provider_id, b"my-namespace");
+            assert_eq!(parsed.edks[1].provider_id, b"other-namespace");
+
+            // The footer carries one 48-byte recipient tag per EDK, plus a
+            // 103-byte ECDSA signature for the signing suite.
+            let footer = match stored.get(FOOTER_ATTRIBUTE).unwrap() {
+                AttributeValue::B(b) => b.clone(),
+                _ => panic!("footer must be binary"),
+            };
+            let expected = 2 * RECIPIENT_TAG_LEN
+                + if cfg.algorithm_suite_id == AlgorithmSuiteId::EcdsaP384SymsigHmacSha384 {
+                    crypto::ECDSA_P384_SIGNATURE_LEN
+                } else {
+                    0
+                };
+            assert_eq!(footer.len(), expected);
+
+            // The full keyring set decrypts to the original item.
+            let decrypted = decrypt_item_multi(&cfg, &providers, &stored).unwrap();
+            assert_eq!(decrypted, item);
+        }
+    }
+
+    /// Any single component keyring of a multi-keyring can independently decrypt
+    /// an item the multi-keyring wrote (MPL multi-keyring `OnDecrypt` semantics).
+    #[test]
+    fn multi_keyring_each_component_can_decrypt_alone() {
+        let cfg = signing_config();
+        let a = raw_config();
+        let b = raw_config_b();
+        let pa = RawAesProvider { raw: &a };
+        let pb = RawAesProvider { raw: &b };
+        let stored = encrypt_item_multi(&cfg, &[&pa, &pb], &item()).unwrap();
+
+        // Either component alone recovers the item from its own EDK.
+        assert_eq!(decrypt_item_multi(&cfg, &[&pa], &stored).unwrap(), item());
+        assert_eq!(decrypt_item_multi(&cfg, &[&pb], &stored).unwrap(), item());
+
+        // A keyring that owns none of the EDKs cannot decrypt.
+        let other = RawAesKeyringConfig {
+            key_namespace: "third-namespace".to_string(),
+            key_name: "third-key".to_string(),
+            wrapping_key: vec![0x99u8; 32],
+            wrapping_alg: AesWrappingAlg::Aes256,
+        };
+        let po = RawAesProvider { raw: &other };
+        assert!(decrypt_item_multi(&cfg, &[&po], &stored).is_err());
     }
 
     // ---- Raw RSA keyring provider ----
@@ -1665,10 +1861,10 @@ mod tests {
         };
         let parsed = parse_header(&header).unwrap();
         // RawRSAKeyring.OnEncrypt: provider id = key namespace, info = key name.
-        assert_eq!(parsed.edk.provider_id, b"test-server-namespace");
-        assert_eq!(parsed.edk.provider_info, b"raw-rsa-key");
+        assert_eq!(parsed.edks[0].provider_id, b"test-server-namespace");
+        assert_eq!(parsed.edks[0].provider_info, b"raw-rsa-key");
         // EDK ciphertext = encryptedPdk(48) || RSA-OAEP(intermediate) (256B for RSA-2048).
-        assert_eq!(parsed.edk.ciphertext.len(), 48 + 256);
+        assert_eq!(parsed.edks[0].ciphertext.len(), 48 + 256);
     }
 
     #[test]
@@ -1751,14 +1947,14 @@ mod tests {
         };
         let parsed = parse_header(&header).unwrap();
         // RawECDHKeyring.OnEncrypt: provider id = "raw-ecdh".
-        assert_eq!(parsed.edk.provider_id, b"raw-ecdh");
+        assert_eq!(parsed.edks[0].provider_id, b"raw-ecdh");
         // Provider info (P-256): version(1) + recipLen(4) + recip(33) + sndLen(4)
         // + snd(33) = 75 bytes (ECDH_PROVIDER_INFO_256_LEN).
-        assert_eq!(parsed.edk.provider_info.len(), 75);
-        assert_eq!(parsed.edk.provider_info[0], 0x01, "keyring version");
+        assert_eq!(parsed.edks[0].provider_info.len(), 75);
+        assert_eq!(parsed.edks[0].provider_info[0], 0x01, "keyring version");
         // EDK ciphertext = encryptedPdk(48) || salt(32) || commitmentKey(32)
         // || wrappedIntermediate(32) || tag(16) = 48 + 112 = 160 bytes.
-        assert_eq!(parsed.edk.ciphertext.len(), 48 + 112);
+        assert_eq!(parsed.edks[0].ciphertext.len(), 48 + 112);
     }
 
     #[test]
