@@ -89,11 +89,18 @@ struct SignedField {
     value: Vec<u8>,
 }
 
-/// Encrypt and sign `item` per `config` using a Raw AES keyring, producing the
+/// Encrypt and sign `item` per `config`, wrapping the data key with `provider`
+/// (the keyring-specific portion of intermediate key wrapping), producing the
 /// byte-faithful attribute map to persist.
-pub fn encrypt_item_raw_aes(
+///
+/// The structured-encryption core (encryption-context material description,
+/// PDK encryption, per-field keys, header, footer) is identical across all
+/// keyrings; only how the per-item *intermediate key* is wrapped into the EDK
+/// (and the EDK's provider id / info) differs, which is what [`provider`]
+/// supplies. See [`IntermediateKeyProvider`].
+pub fn encrypt_item(
     config: &TableEncryptionConfig,
-    raw: &RawAesKeyringConfig,
+    provider: &dyn IntermediateKeyProvider,
     item: &Item,
 ) -> Result<Item> {
     config.validate()?;
@@ -133,8 +140,23 @@ pub fn encrypt_item_raw_aes(
         .cloned()
         .collect();
 
-    // 5. Wrap the data key (intermediate key wrapping under the Raw AES key).
-    let wrapped = intermediate_wrap_raw_aes(raw, &plaintext_data_key, &ec_aad)?;
+    // 5. Intermediate key wrapping. The keyring-specific portion (wrap the
+    //    intermediate key material + the EDK provider id / info) is delegated
+    //    to the provider; the generic PDK encryption + EDK serialization is
+    //    here (IntermediateKeyWrapping.dfy `IntermediateWrap`).
+    let generated = provider.generate_and_wrap(&enc_context, &ec_aad)?;
+    let (pdk_encryption_key, symmetric_signing_key) =
+        derive_keys_from_intermediate(&generated.intermediate_material)?;
+    let encrypted_pdk =
+        crypto::aes_gcm_encrypt(&pdk_encryption_key, &[0u8; 12], &ec_aad, &plaintext_data_key)?;
+    // EDK ciphertext = encryptedPdk(keyLen + tagLen = 48) || providerWrappedIkm.
+    let mut edk_ciphertext = encrypted_pdk;
+    edk_ciphertext.extend_from_slice(&generated.provider_wrapped_ikm);
+    let edk = EncryptedDataKey {
+        provider_id: generated.edk_provider_id,
+        provider_info: generated.edk_provider_info,
+        ciphertext: edk_ciphertext,
+    };
 
     // 6. Derive the field root key and per-field keys.
     let field_root_key = derive_field_root_key(&plaintext_data_key, &msg_id)?;
@@ -181,12 +203,12 @@ pub fn encrypt_item_raw_aes(
     // 8. Build the header (version/flavor/msgID/legend/storedEC/EDKs) and append
     //    the key commitment.
     let commit_key = derive_commit_key(&plaintext_data_key, &msg_id)?;
-    let header = serialize_header(flavor, &msg_id, &signed, &stored_ec, &wrapped.edk, &commit_key)?;
+    let header = serialize_header(flavor, &msg_id, &signed, &stored_ec, &edk, &commit_key)?;
 
     // 9. Build the footer: the recipient tag over the canonical record's SHA-384,
     //    followed by the ECDSA signature for the signing suite.
     let canonical_hash = canonical_hash(&header, &ec_aad, &signed);
-    let mut footer = crypto::hmac_sha384(&wrapped.symmetric_signing_key, &canonical_hash);
+    let mut footer = crypto::hmac_sha384(&symmetric_signing_key, &canonical_hash);
     if let Some(signer) = &signer {
         let signature = signer.sign(&canonical_hash)?;
         footer.extend_from_slice(&signature);
@@ -197,10 +219,31 @@ pub fn encrypt_item_raw_aes(
     Ok(output)
 }
 
-/// Decrypt and verify a stored item produced by [`encrypt_item_raw_aes`].
+/// Encrypt and sign `item` using a Raw AES keyring (a convenience wrapper over
+/// [`encrypt_item`] with the [`RawAesProvider`]).
+pub fn encrypt_item_raw_aes(
+    config: &TableEncryptionConfig,
+    raw: &RawAesKeyringConfig,
+    item: &Item,
+) -> Result<Item> {
+    encrypt_item(config, &RawAesProvider { raw }, item)
+}
+
+/// Decrypt and verify a stored item using a Raw AES keyring (a convenience
+/// wrapper over [`decrypt_item`] with the [`RawAesProvider`]).
 pub fn decrypt_item_raw_aes(
     config: &TableEncryptionConfig,
     raw: &RawAesKeyringConfig,
+    stored: &Item,
+) -> Result<Item> {
+    decrypt_item(config, &RawAesProvider { raw }, stored)
+}
+
+/// Decrypt and verify a stored item produced by [`encrypt_item`], unwrapping the
+/// data key with `provider`.
+pub fn decrypt_item(
+    config: &TableEncryptionConfig,
+    provider: &dyn IntermediateKeyProvider,
     stored: &Item,
 ) -> Result<Item> {
     config.validate()?;
@@ -220,9 +263,25 @@ pub fn decrypt_item_raw_aes(
     enc_context.sort_by(|a, b| a.0.cmp(&b.0));
     let ec_aad = serialize_context(&enc_context);
 
-    // Unwrap the data key.
-    let (plaintext_data_key, symmetric_signing_key) =
-        intermediate_unwrap_raw_aes(raw, &parsed.edk, &ec_aad)?;
+    // Unwrap the data key. Split the EDK ciphertext into the wrapped PDK
+    // (encryptKeyLength + tagLength = 48 bytes) and the provider-wrapped
+    // intermediate key, then recover the intermediate key via the provider and
+    // decrypt the PDK with the derived key-encryption key (iv = 0).
+    if parsed.edk.ciphertext.len() < 48 {
+        return Err(DbEsdkError::invalid_item("wrapped data key too short"));
+    }
+    let (encrypted_pdk, provider_wrapped_ikm) = parsed.edk.ciphertext.split_at(48);
+    let intermediate = provider.unwrap(
+        &parsed.edk.provider_id,
+        &parsed.edk.provider_info,
+        provider_wrapped_ikm,
+        &enc_context,
+        &ec_aad,
+    )?;
+    let (pdk_encryption_key, symmetric_signing_key) =
+        derive_keys_from_intermediate(&intermediate)?;
+    let plaintext_data_key =
+        crypto::aes_gcm_decrypt(&pdk_encryption_key, &[0u8; 12], &ec_aad, encrypted_pdk)?;
 
     // Verify the header commitment.
     let commit_key = derive_commit_key(&plaintext_data_key, &parsed.msg_id)?;
@@ -349,11 +408,51 @@ fn field_key_nonce(offset: u32) -> [u8; 16] {
     iv
 }
 
-/// The result of wrapping a data key under the Raw AES keyring with
-/// intermediate key wrapping.
-struct WrappedKey {
-    edk: EncryptedDataKey,
-    symmetric_signing_key: Vec<u8>,
+/// The keyring-specific portion of intermediate key wrapping: produce (on
+/// encrypt) and recover (on decrypt) the per-item *intermediate key*, plus the
+/// EDK provider id / info that identify the wrapping key.
+///
+/// The MPL wraps a DBE data key in two layers: a generic layer (a per-item
+/// random `intermediate key` from which the PDK-encryption key and symmetric
+/// signing key are derived, with the plaintext data key sealed under the
+/// PDK-encryption key) and a keyring layer (the intermediate key is wrapped by
+/// the keyring). Only the keyring layer differs between keyrings — Raw AES seals
+/// the intermediate key with the wrapping key, AWS KMS calls `GenerateDataKey` /
+/// `Decrypt`, etc. — so that is exactly what this trait abstracts. The generic
+/// layer lives in [`encrypt_item`] / [`decrypt_item`].
+pub trait IntermediateKeyProvider {
+    /// Produce a fresh intermediate key and its provider-wrapped form, plus the
+    /// EDK provider id / info. `ec` is the full encryption context (sorted raw
+    /// key/value byte pairs, including any signing-suite public key); `ec_aad`
+    /// is its canonical serialization (the AAD the wrap authenticates).
+    fn generate_and_wrap(&self, ec: &[(Vec<u8>, Vec<u8>)], ec_aad: &[u8]) -> Result<GeneratedKey>;
+
+    /// Recover the intermediate key from a stored EDK's provider-wrapped
+    /// intermediate-key material. `provider_id` / `provider_info` are the EDK's
+    /// identifying fields; `ec` / `ec_aad` are as in [`Self::generate_and_wrap`].
+    fn unwrap(
+        &self,
+        provider_id: &[u8],
+        provider_info: &[u8],
+        provider_wrapped_ikm: &[u8],
+        ec: &[(Vec<u8>, Vec<u8>)],
+        ec_aad: &[u8],
+    ) -> Result<Vec<u8>>;
+}
+
+/// The output of [`IntermediateKeyProvider::generate_and_wrap`]: the freshly
+/// generated intermediate key and the EDK fields that carry it.
+pub struct GeneratedKey {
+    /// The plaintext intermediate key material (the HKDF input keying material).
+    pub intermediate_material: Vec<u8>,
+    /// The keyring-wrapped intermediate key (the `providerWrappedIkm` appended
+    /// after the wrapped PDK in the EDK ciphertext).
+    pub provider_wrapped_ikm: Vec<u8>,
+    /// The EDK key-provider id (e.g. the Raw AES key namespace, or `aws-kms`).
+    pub edk_provider_id: Vec<u8>,
+    /// The EDK key-provider info (e.g. the Raw AES `keyName||...||iv`, or the
+    /// KMS key ARN).
+    pub edk_provider_info: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -363,60 +462,42 @@ struct EncryptedDataKey {
     ciphertext: Vec<u8>,
 }
 
-fn intermediate_wrap_raw_aes(
-    raw: &RawAesKeyringConfig,
-    plaintext_data_key: &[u8],
-    ec_aad: &[u8],
-) -> Result<WrappedKey> {
-    // 1. Random intermediate key material (the "intermediate key").
-    let intermediate = crypto::random_bytes(32)?;
-
-    // 2. Wrap the intermediate key with the Raw AES wrapping key (provider wrap).
-    let mut iv = [0u8; 12];
-    crypto::fill_random(&mut iv)?;
-    let provider_wrapped_ikm =
-        crypto::aes_gcm_encrypt(&raw.wrapping_key, &iv, ec_aad, &intermediate)?;
-
-    // 3. Derive the pdk-encryption key and symmetric signing key from the
-    //    intermediate key (HKDF-SHA512 extract then two expands).
-    let (pdk_encryption_key, symmetric_signing_key) = derive_keys_from_intermediate(&intermediate)?;
-
-    // 4. Encrypt the plaintext data key under the pdk-encryption key, iv = 0.
-    let encrypted_pdk = crypto::aes_gcm_encrypt(&pdk_encryption_key, &[0u8; 12], ec_aad, plaintext_data_key)?;
-
-    // 5. EDK ciphertext = encryptedPdk(48) || providerWrappedIkm(48).
-    let mut ciphertext = encrypted_pdk;
-    ciphertext.extend_from_slice(&provider_wrapped_ikm);
-
-    Ok(WrappedKey {
-        edk: EncryptedDataKey {
-            provider_id: raw.key_namespace.as_bytes().to_vec(),
-            provider_info: serialize_raw_aes_provider_info(&raw.key_name, &iv),
-            ciphertext,
-        },
-        symmetric_signing_key,
-    })
+/// The [`IntermediateKeyProvider`] for a Raw AES keyring: the intermediate key
+/// is sealed with the configured wrapping key under AES-256-GCM with a fresh
+/// random IV (which is carried in the EDK provider info), exactly as the MPL
+/// `RawAESKeyring` does under intermediate key wrapping.
+pub struct RawAesProvider<'a> {
+    /// The Raw AES keyring configuration (wrapping key + namespace / name).
+    pub raw: &'a RawAesKeyringConfig,
 }
 
-fn intermediate_unwrap_raw_aes(
-    raw: &RawAesKeyringConfig,
-    edk: &EncryptedDataKey,
-    ec_aad: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>)> {
-    // encryptedPdk is the first (keyLen + tagLen) = 48 bytes; the rest is the
-    // provider-wrapped intermediate key.
-    if edk.ciphertext.len() < 48 {
-        return Err(DbEsdkError::invalid_item("wrapped data key too short"));
+impl IntermediateKeyProvider for RawAesProvider<'_> {
+    fn generate_and_wrap(&self, _ec: &[(Vec<u8>, Vec<u8>)], ec_aad: &[u8]) -> Result<GeneratedKey> {
+        // For each EDK a distinct intermediate key is generated at random.
+        let intermediate = crypto::random_bytes(32)?;
+        let mut iv = [0u8; 12];
+        crypto::fill_random(&mut iv)?;
+        let provider_wrapped_ikm =
+            crypto::aes_gcm_encrypt(&self.raw.wrapping_key, &iv, ec_aad, &intermediate)?;
+        Ok(GeneratedKey {
+            intermediate_material: intermediate,
+            provider_wrapped_ikm,
+            edk_provider_id: self.raw.key_namespace.as_bytes().to_vec(),
+            edk_provider_info: serialize_raw_aes_provider_info(&self.raw.key_name, &iv),
+        })
     }
-    let (encrypted_pdk, provider_wrapped_ikm) = edk.ciphertext.split_at(48);
 
-    let iv = raw_aes_iv_from_provider_info(&raw.key_name, &edk.provider_info)?;
-    let intermediate = crypto::aes_gcm_decrypt(&raw.wrapping_key, &iv, ec_aad, provider_wrapped_ikm)?;
-
-    let (pdk_encryption_key, symmetric_signing_key) = derive_keys_from_intermediate(&intermediate)?;
-    let plaintext_data_key =
-        crypto::aes_gcm_decrypt(&pdk_encryption_key, &[0u8; 12], ec_aad, encrypted_pdk)?;
-    Ok((plaintext_data_key, symmetric_signing_key))
+    fn unwrap(
+        &self,
+        _provider_id: &[u8],
+        provider_info: &[u8],
+        provider_wrapped_ikm: &[u8],
+        _ec: &[(Vec<u8>, Vec<u8>)],
+        ec_aad: &[u8],
+    ) -> Result<Vec<u8>> {
+        let iv = raw_aes_iv_from_provider_info(&self.raw.key_name, provider_info)?;
+        crypto::aes_gcm_decrypt(&self.raw.wrapping_key, &iv, ec_aad, provider_wrapped_ikm)
+    }
 }
 
 /// `(pdkEncryptionKey, symmetricSigningKey)` derived from the intermediate key
@@ -1181,5 +1262,72 @@ mod tests {
         let a = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
         let b = encrypt_item_raw_aes(&cfg, &raw, &item()).unwrap();
         assert_ne!(a.get(FOOTER_ATTRIBUTE), b.get(FOOTER_ATTRIBUTE));
+    }
+
+    // ---- Generic provider abstraction ----
+
+    /// A trivial [`IntermediateKeyProvider`] that exercises the generic
+    /// [`encrypt_item`] / [`decrypt_item`] core independently of the Raw AES
+    /// keyring: the "wrap" is a reversible XOR with a fixed pad and a distinct
+    /// provider id / info. It proves the structured-encryption core consumes the
+    /// provider's output generically (it is NOT a real, secure wrapping).
+    struct XorProvider;
+
+    impl XorProvider {
+        const PAD: u8 = 0x5a;
+    }
+
+    impl IntermediateKeyProvider for XorProvider {
+        fn generate_and_wrap(
+            &self,
+            _ec: &[(Vec<u8>, Vec<u8>)],
+            _ec_aad: &[u8],
+        ) -> Result<GeneratedKey> {
+            let intermediate = crypto::random_bytes(32)?;
+            let provider_wrapped_ikm = intermediate.iter().map(|b| b ^ Self::PAD).collect();
+            Ok(GeneratedKey {
+                intermediate_material: intermediate,
+                provider_wrapped_ikm,
+                edk_provider_id: b"x-test-provider".to_vec(),
+                edk_provider_info: b"x-test-info".to_vec(),
+            })
+        }
+
+        fn unwrap(
+            &self,
+            provider_id: &[u8],
+            provider_info: &[u8],
+            provider_wrapped_ikm: &[u8],
+            _ec: &[(Vec<u8>, Vec<u8>)],
+            _ec_aad: &[u8],
+        ) -> Result<Vec<u8>> {
+            // The provider id / info written on encrypt must survive the header
+            // round-trip and reach unwrap unchanged.
+            assert_eq!(provider_id, b"x-test-provider");
+            assert_eq!(provider_info, b"x-test-info");
+            Ok(provider_wrapped_ikm.iter().map(|b| b ^ Self::PAD).collect())
+        }
+    }
+
+    #[test]
+    fn generic_provider_round_trips_under_both_suites() {
+        for cfg in [config(), signing_config()] {
+            let item = item();
+            let stored = encrypt_item(&cfg, &XorProvider, &item).unwrap();
+            let decrypted = decrypt_item(&cfg, &XorProvider, &stored).unwrap();
+            assert_eq!(decrypted, item);
+        }
+    }
+
+    #[test]
+    fn generic_provider_edk_identifiers_reach_the_header() {
+        let stored = encrypt_item(&config(), &XorProvider, &item()).unwrap();
+        let header = match stored.get(HEADER_ATTRIBUTE).unwrap() {
+            AttributeValue::B(b) => b.clone(),
+            _ => panic!("header must be binary"),
+        };
+        let parsed = parse_header(&header).unwrap();
+        assert_eq!(parsed.edk.provider_id, b"x-test-provider");
+        assert_eq!(parsed.edk.provider_info, b"x-test-info");
     }
 }

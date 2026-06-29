@@ -16,8 +16,11 @@
 //!   keyring, algorithm suite) a `CreateClient` call supplies.
 //! * [`crypto`] — low-level AES-GCM / HKDF / HMAC primitives over `aws-lc-rs`.
 //! * [`format`] — the byte-faithful DB-ESDK structured-encryption format (the
-//!   real wire format the canonical Java/Dafny DB-ESDK reads and writes),
-//!   currently for the Raw AES keyring and the non-signing suite.
+//!   real wire format the canonical Java/Dafny DB-ESDK reads and writes), for
+//!   both DBE algorithm suites. The keyring-specific portion of intermediate
+//!   key wrapping is abstracted behind
+//!   [`format::IntermediateKeyProvider`] (a Raw AES provider ships here; the
+//!   AWS KMS provider lives in the TestServer adapter).
 //!
 //! # State
 //!
@@ -25,9 +28,11 @@
 //! port of the Dafny `StructuredEncryption` + MPL `IntermediateKeyWrapping`
 //! reference. The earlier home-grown, self-consistent-only encryptor was
 //! removed: it produced bytes no other DB-ESDK runtime could read, so it could
-//! never pass the cross-language conformance cells. Keyrings beyond Raw AES
-//! (KMS, RSA, ECDH, …) await their own byte-faithful ports (see `BLOCKED.md`)
-//! and are rejected by the server until then.
+//! never pass the cross-language conformance cells. Raw AES and single-key AWS
+//! KMS (`awsKms` / `awsKmsMrk`) keyrings are implemented under both suites;
+//! remaining keyrings (KMS RSA/ECDH/multi/discovery, Raw RSA/ECDH, hierarchical)
+//! await their own intermediate-key providers (see `BLOCKED.md`) and are
+//! rejected by the server until then.
 //!
 //! The [`ClientRegistry`] binds a configured set of
 //! [`config::TableEncryptionConfig`]s to a unique [`ClientId`] for the

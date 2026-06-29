@@ -38,6 +38,14 @@ impl DbEsdkError {
     pub(crate) fn crypto(message: impl Into<String>) -> Self {
         Self::Crypto(message.into())
     }
+
+    /// Construct an error from an external keyring / intermediate-key provider
+    /// (e.g. an AWS KMS `GenerateDataKey` / `Decrypt` failure). Available to
+    /// [`crate::format::IntermediateKeyProvider`] implementations defined
+    /// outside this crate; it maps to the [`DbEsdkError::Crypto`] variant.
+    pub fn provider(message: impl Into<String>) -> Self {
+        Self::Crypto(message.into())
+    }
 }
 
 impl fmt::Display for DbEsdkError {
