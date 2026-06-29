@@ -350,20 +350,26 @@ pub fn ecdsa_p384_verify(verification_key: &[u8], message: &[u8], signature: &[u
 
 /// Compress a SEC1-uncompressed P-384 public point
 /// (`0x04 || X(48) || Y(48)`, 97 bytes) to compressed form
-/// (`0x02|0x03 || X(48)`, 49 bytes), per SEC1 v2 §2.3.3. The prefix encodes the
-/// parity of the Y coordinate (`0x02` even, `0x03` odd).
+/// (`0x02|0x03 || X(48)`, 49 bytes).
 fn sec1_compress_p384(uncompressed: &[u8]) -> Result<Vec<u8>> {
-    const P384_UNCOMPRESSED_LEN: usize = 97;
-    const P384_COORD_LEN: usize = 48;
-    if uncompressed.len() != P384_UNCOMPRESSED_LEN || uncompressed[0] != 0x04 {
+    sec1_compress(uncompressed, 48)
+}
+
+/// Compress a SEC1-uncompressed public point (`0x04 || X || Y`, where each
+/// coordinate is `coord_len` bytes) to compressed form (`0x02|0x03 || X`), per
+/// SEC1 v2 §2.3.3. The prefix encodes the parity of the Y coordinate (`0x02`
+/// even, `0x03` odd).
+fn sec1_compress(uncompressed: &[u8], coord_len: usize) -> Result<Vec<u8>> {
+    let expected = 1 + 2 * coord_len;
+    if uncompressed.len() != expected || uncompressed[0] != 0x04 {
         return Err(DbEsdkError::crypto(
-            "expected a 97-byte SEC1-uncompressed P-384 public key",
+            "expected an uncompressed SEC1 public point (0x04 || X || Y)",
         ));
     }
-    let x = &uncompressed[1..1 + P384_COORD_LEN];
-    let y = &uncompressed[1 + P384_COORD_LEN..];
+    let x = &uncompressed[1..1 + coord_len];
+    let y = &uncompressed[1 + coord_len..];
     let prefix = if y[y.len() - 1] & 1 == 0 { 0x02u8 } else { 0x03u8 };
-    let mut out = Vec::with_capacity(1 + P384_COORD_LEN);
+    let mut out = Vec::with_capacity(1 + coord_len);
     out.push(prefix);
     out.extend_from_slice(x);
     Ok(out)
@@ -520,6 +526,96 @@ pub fn ecdh_shared_secret(
         DbEsdkError::crypto("ECDH key agreement failed (curve mismatch or invalid public key)"),
         |shared_secret| Ok(shared_secret.to_vec()),
     )
+}
+
+impl EcdhCurve {
+    /// The byte length of one field coordinate on this curve (P-256 → 32,
+    /// P-384 → 48, P-521 → 66). A SEC1-uncompressed point is `1 + 2 * coord`
+    /// bytes and a compressed point is `1 + coord` bytes.
+    pub fn coordinate_len(self) -> usize {
+        match self {
+            Self::P256 => 32,
+            Self::P384 => 48,
+            Self::P521 => 66,
+        }
+    }
+
+    /// The lowercase curve name used in the ECDH key-derivation `FixedInfo`
+    /// (`Constants.CurveSpecTypeToString`).
+    pub fn kdf_name(self) -> &'static str {
+        match self {
+            Self::P256 => "p256",
+            Self::P384 => "p384",
+            Self::P521 => "p521",
+        }
+    }
+}
+
+/// The SEC1-*compressed* public key (`0x02|0x03 || X`) for the EC private key
+/// supplied as DER-encoded PKCS#8 `PrivateKeyInfo` on `curve`.
+///
+/// The Raw ECDH keyring serializes both parties' public keys in compressed form
+/// into the EDK provider info and the key-derivation `FixedInfo`.
+pub fn ecdh_compressed_public_key(private_key_pkcs8_der: &[u8], curve: EcdhCurve) -> Result<Vec<u8>> {
+    let algorithm = curve.agreement_algorithm();
+    let private_key = EcdhPrivateKey::from_private_key_der(algorithm, private_key_pkcs8_der)
+        .map_err(|_| DbEsdkError::crypto("invalid ECDH private key (expected DER PKCS#8)"))?;
+    let public_key = private_key
+        .compute_public_key()
+        .map_err(|_| DbEsdkError::crypto("failed to compute ECDH public key"))?;
+    sec1_compress(public_key.as_ref(), curve.coordinate_len())
+}
+
+/// The SEC1-*compressed* public key for the public key supplied as DER-encoded
+/// X.509 `SubjectPublicKeyInfo` on `curve`.
+///
+/// The uncompressed SEC1 point (`0x04 || X || Y`) is the trailing
+/// `1 + 2 * coord` bytes of the SPKI DER (the final `BIT STRING` content).
+pub fn ecdh_compress_spki_public_key(spki_der: &[u8], curve: EcdhCurve) -> Result<Vec<u8>> {
+    let point_len = 1 + 2 * curve.coordinate_len();
+    if spki_der.len() < point_len {
+        return Err(DbEsdkError::crypto(
+            "ECDH public key DER is too short to contain an uncompressed point",
+        ));
+    }
+    let point = &spki_der[spki_der.len() - point_len..];
+    sec1_compress(point, curve.coordinate_len())
+}
+
+/// NIST SP 800-108 KDF in counter mode using HMAC-SHA384 as the PRF (the ECDH
+/// key-agreement key derivation, `KdfCtr.KdfCounterMode` with `SHA_384`).
+///
+/// For counter `i = 1, 2, …` the PRF input is
+/// `UInt32BE(i) || purpose || 0x00 || nonce || UInt32BE(out_len * 8)`; the
+/// blocks are concatenated and truncated to `out_len` bytes.
+pub fn kdf_ctr_hmac_sha384(
+    ikm: &[u8],
+    purpose: &[u8],
+    nonce: &[u8],
+    out_len: usize,
+) -> Result<Vec<u8>> {
+    const MAC_LEN: usize = 48; // SHA-384 output length.
+    let length_bits = u32::try_from(out_len.saturating_mul(8))
+        .map_err(|_| DbEsdkError::crypto("KDF output length is too large"))?;
+
+    // explicitInfo = purpose(label) || 0x00 (separator) || nonce(context) || L.
+    let mut explicit_info = Vec::with_capacity(purpose.len() + 1 + nonce.len() + 4);
+    explicit_info.extend_from_slice(purpose);
+    explicit_info.push(0x00);
+    explicit_info.extend_from_slice(nonce);
+    explicit_info.extend_from_slice(&length_bits.to_be_bytes());
+
+    let iterations = out_len.div_ceil(MAC_LEN);
+    let mut buffer = Vec::with_capacity(iterations * MAC_LEN);
+    for i in 1..=iterations {
+        let counter = u32::try_from(i).map_err(|_| DbEsdkError::crypto("KDF counter overflow"))?;
+        let mut prf_input = Vec::with_capacity(4 + explicit_info.len());
+        prf_input.extend_from_slice(&counter.to_be_bytes());
+        prf_input.extend_from_slice(&explicit_info);
+        buffer.extend_from_slice(&hmac_sha384(ikm, &prf_input));
+    }
+    buffer.truncate(out_len);
+    Ok(buffer)
 }
 
 // =============================================================================
@@ -750,5 +846,53 @@ mod tests {
         let raw = random_bytes(49).unwrap();
         let encoded = base64_encode(&raw);
         assert_eq!(base64_decode_bytes(encoded.as_bytes()).unwrap(), raw);
+    }
+
+    #[test]
+    fn kdf_ctr_hmac_sha384_matches_manual_construction() {
+        // The SP 800-108 counter-mode PRF input for block i is
+        // UInt32BE(i) || purpose || 0x00 || nonce || UInt32BE(out_len*8).
+        // A 32-byte (48-byte IKM is the P-384 secret length) derivation needs
+        // one HMAC-SHA384 block; a 64-byte one needs two.
+        let ikm = [0x11u8; 48];
+        let purpose = b"some-fixed-info";
+        let nonce = [0x22u8; 32];
+
+        let mut explicit = Vec::new();
+        explicit.extend_from_slice(purpose);
+        explicit.push(0x00);
+        explicit.extend_from_slice(&nonce);
+        explicit.extend_from_slice(&(64u32 * 8).to_be_bytes());
+
+        let mut block1 = vec![0, 0, 0, 1];
+        block1.extend_from_slice(&explicit);
+        let mut block2 = vec![0, 0, 0, 2];
+        block2.extend_from_slice(&explicit);
+        let mut expected = hmac_sha384(&ikm, &block1);
+        expected.extend_from_slice(&hmac_sha384(&ikm, &block2));
+        expected.truncate(64);
+
+        let derived = kdf_ctr_hmac_sha384(&ikm, purpose, &nonce, 64).unwrap();
+        assert_eq!(derived, expected);
+        assert_eq!(derived.len(), 64);
+    }
+
+    #[test]
+    fn ecdh_compressed_keys_agree_for_a_keypair() {
+        use aws_lc_rs::agreement::{PrivateKey, ECDH_P256};
+        use aws_lc_rs::encoding::{AsDer, Pkcs8V1Der, PublicKeyX509Der};
+
+        let private = PrivateKey::generate(&ECDH_P256).unwrap();
+        let pkcs8 = AsDer::<Pkcs8V1Der>::as_der(&private).unwrap();
+        let public = private.compute_public_key().unwrap();
+        let spki = AsDer::<PublicKeyX509Der>::as_der(&public).unwrap();
+
+        // Compressing the public key derived from the private key and the
+        // public key parsed from the SPKI DER must yield the same 33-byte point.
+        let from_private = ecdh_compressed_public_key(pkcs8.as_ref(), EcdhCurve::P256).unwrap();
+        let from_spki = ecdh_compress_spki_public_key(spki.as_ref(), EcdhCurve::P256).unwrap();
+        assert_eq!(from_private, from_spki);
+        assert_eq!(from_private.len(), 33);
+        assert!(from_private[0] == 0x02 || from_private[0] == 0x03);
     }
 }

@@ -221,6 +221,16 @@ impl EcdhCurveSpec {
             ))),
         }
     }
+
+    /// Map to the crypto-layer [`crate::crypto::EcdhCurve`].
+    pub fn to_crypto(self) -> crate::crypto::EcdhCurve {
+        use crate::crypto::EcdhCurve;
+        match self {
+            Self::EccNistP256 => EcdhCurve::P256,
+            Self::EccNistP384 => EcdhCurve::P384,
+            Self::EccNistP521 => EcdhCurve::P521,
+        }
+    }
 }
 
 /// Configuration for a Raw RSA keyring (mirror of `RawRsaKeyringConfig`). At

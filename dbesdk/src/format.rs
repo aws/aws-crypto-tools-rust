@@ -29,7 +29,8 @@
 //! wrapping, sets/maps/lists, number normalization).
 
 use crate::config::{
-    AlgorithmSuiteId, CryptoAction, RawAesKeyringConfig, RawRsaKeyringConfig, TableEncryptionConfig,
+    AlgorithmSuiteId, CryptoAction, RawAesKeyringConfig, RawEcdhKeyringConfig, RawRsaKeyringConfig,
+    TableEncryptionConfig,
 };
 use crate::crypto;
 use crate::error::{DbEsdkError, Result};
@@ -63,6 +64,19 @@ const LABEL_DERIVE_KEY: &[u8] = b"AWS_DBE_DERIVE_KEY"; // 18 bytes
 const LABEL_COMMIT_KEY: &[u8] = b"AWS_DBE_COMMIT_KEY"; // 18 bytes
 const LABEL_KEYWRAP_MAC: &[u8] = b"AWS_MPL_INTERMEDIATE_KEYWRAP_MAC";
 const LABEL_KEYWRAP_ENC: &[u8] = b"AWS_MPL_INTERMEDIATE_KEYWRAP_ENC";
+
+// Raw ECDH EDK wrapping (EcdhEdkWrapping.dfy + Constants.dfy).
+const ECDH_PROVIDER_ID: &[u8] = b"raw-ecdh";
+const ECDH_KDF_LABEL: &[u8] = b"ecdh-key-derivation";
+const ECDH_KDF_PRF_NAME: &[u8] = b"HMAC_SHA384";
+const ECDH_KDF_DELIMITER: u8 = 0x00;
+const ECDH_KEYRING_VERSION: u8 = 0x01;
+const ECDH_KDF_SALT_LEN: usize = 32;
+const ECDH_KDF_OUTPUT_LEN: usize = 64;
+const ECDH_COMMITMENT_KEY_LEN: usize = 32;
+/// Offset of the AES-GCM wrapped intermediate key within `providerWrappedIkm`
+/// (`salt(32) || commitmentKey(32) || ...`).
+const ECDH_WRAPPED_KEY_INDEX: usize = ECDH_KDF_SALT_LEN + ECDH_COMMITMENT_KEY_LEN;
 const AWS_DBE_FIELD: &[u8] = b"AwsDbeField"; // 11 bytes
 const ENCRYPTED: &[u8] = b"ENCRYPTED"; // 9 bytes
 const PLAINTEXT: &[u8] = b"PLAINTEXT"; // 9 bytes
@@ -567,6 +581,182 @@ impl IntermediateKeyProvider for RawRsaProvider<'_> {
             self.raw.padding_scheme.to_crypto(),
             provider_wrapped_ikm,
         )
+    }
+}
+
+/// The [`IntermediateKeyProvider`] for a Raw ECDH keyring using the
+/// `RawPrivateKeyToStaticPublicKey` agreement scheme, ported from the MPL Dafny
+/// `RawECDHKeyring` + `EcdhEdkWrapping`.
+///
+/// Unlike Raw AES / RSA, the keyring does not encrypt the intermediate key
+/// directly under a static wrapping key. Instead it derives a shared secret via
+/// ECDH between the sender's static private key and the recipient's static
+/// public key, runs it through the NIST SP 800-108 counter-mode KDF (HMAC-SHA384)
+/// with a fresh 32-byte salt to produce a 64-byte block, splits that into a
+/// 32-byte commitment key and a 32-byte shared wrapping key, and AES-256-GCM
+/// seals the intermediate key (IV = 0) under the wrapping key with the
+/// derivation `FixedInfo` as AAD. The `providerWrappedIkm` is
+/// `salt(32) || commitmentKey(32) || ciphertext || tag`, and the EDK provider
+/// info carries the compressed sender + recipient public keys.
+pub struct RawEcdhProvider<'a> {
+    /// The Raw ECDH keyring configuration (sender private + recipient public
+    /// keys + curve).
+    pub raw: &'a RawEcdhKeyringConfig,
+}
+
+impl RawEcdhProvider<'_> {
+    /// `FixedInfo` for the key derivation (EcdhEdkWrapping.dfy `SerializeFixedInfo`):
+    /// `"ecdh-key-derivation" || 0x00 || curve || 0x00 || "HMAC_SHA384" || 0x00
+    /// || senderCompressed || recipientCompressed || 0x00 || version(0x01) ||
+    /// 0x00 || canonicalEC`.
+    fn fixed_info(
+        curve: crypto::EcdhCurve,
+        sender_compressed: &[u8],
+        recipient_compressed: &[u8],
+        ec_aad: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(ECDH_KDF_LABEL);
+        out.push(ECDH_KDF_DELIMITER);
+        out.extend_from_slice(curve.kdf_name().as_bytes());
+        out.push(ECDH_KDF_DELIMITER);
+        out.extend_from_slice(ECDH_KDF_PRF_NAME);
+        out.push(ECDH_KDF_DELIMITER);
+        out.extend_from_slice(sender_compressed);
+        out.extend_from_slice(recipient_compressed);
+        out.push(ECDH_KDF_DELIMITER);
+        out.push(ECDH_KEYRING_VERSION);
+        out.push(ECDH_KDF_DELIMITER);
+        out.extend_from_slice(ec_aad);
+        out
+    }
+
+    /// EDK provider info (RawECDHKeyring.dfy `SerializeProviderInfo`):
+    /// `version(0x01) || UInt32BE(recipientLen) || recipientCompressed ||
+    /// UInt32BE(senderLen) || senderCompressed`.
+    fn serialize_provider_info(sender_compressed: &[u8], recipient_compressed: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.push(ECDH_KEYRING_VERSION);
+        out.extend_from_slice(&(recipient_compressed.len() as u32).to_be_bytes());
+        out.extend_from_slice(recipient_compressed);
+        out.extend_from_slice(&(sender_compressed.len() as u32).to_be_bytes());
+        out.extend_from_slice(sender_compressed);
+        out
+    }
+
+    /// Parse the provider info, returning `(senderCompressed, recipientCompressed)`.
+    fn parse_provider_info(info: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+        let err = || DbEsdkError::invalid_item("malformed Raw ECDH EDK provider info");
+        if info.len() < 5 || info[0] != ECDH_KEYRING_VERSION {
+            return Err(DbEsdkError::invalid_item(
+                "Raw ECDH provider info has an unexpected keyring version",
+            ));
+        }
+        let recipient_len = u32::from_be_bytes([info[1], info[2], info[3], info[4]]) as usize;
+        let recipient_end = 5usize.checked_add(recipient_len).ok_or_else(err)?;
+        let sender_len_end = recipient_end.checked_add(4).ok_or_else(err)?;
+        if info.len() < sender_len_end {
+            return Err(err());
+        }
+        let recipient = info[5..recipient_end].to_vec();
+        let sender_len = u32::from_be_bytes([
+            info[recipient_end],
+            info[recipient_end + 1],
+            info[recipient_end + 2],
+            info[recipient_end + 3],
+        ]) as usize;
+        let sender_end = sender_len_end.checked_add(sender_len).ok_or_else(err)?;
+        if info.len() < sender_end {
+            return Err(err());
+        }
+        let sender = info[sender_len_end..sender_end].to_vec();
+        Ok((sender, recipient))
+    }
+}
+
+impl IntermediateKeyProvider for RawEcdhProvider<'_> {
+    fn generate_and_wrap(&self, _ec: &[(Vec<u8>, Vec<u8>)], ec_aad: &[u8]) -> Result<GeneratedKey> {
+        let curve = self.raw.curve_spec.to_crypto();
+        let sender_private_der = crypto::pem_to_der(&self.raw.sender_static_private_key)?;
+        let sender_compressed = crypto::ecdh_compressed_public_key(&sender_private_der, curve)?;
+        let recipient_compressed =
+            crypto::ecdh_compress_spki_public_key(&self.raw.recipient_public_key, curve)?;
+        let shared_secret =
+            crypto::ecdh_shared_secret(&sender_private_der, &self.raw.recipient_public_key, curve)?;
+        let fixed_info =
+            Self::fixed_info(curve, &sender_compressed, &recipient_compressed, ec_aad);
+
+        // For each EDK a distinct intermediate key is generated at random.
+        let intermediate = crypto::random_bytes(32)?;
+        let salt = crypto::random_bytes(ECDH_KDF_SALT_LEN)?;
+        let derived =
+            crypto::kdf_ctr_hmac_sha384(&shared_secret, &fixed_info, &salt, ECDH_KDF_OUTPUT_LEN)?;
+        let (commitment_key, shared_wrapping_key) = derived.split_at(ECDH_COMMITMENT_KEY_LEN);
+        // AES-256-GCM(sharedWrappingKey, iv=0, intermediate, aad=fixedInfo) → ct||tag.
+        let wrapped = crypto::aes_gcm_encrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, &intermediate)?;
+
+        let mut provider_wrapped_ikm =
+            Vec::with_capacity(salt.len() + commitment_key.len() + wrapped.len());
+        provider_wrapped_ikm.extend_from_slice(&salt);
+        provider_wrapped_ikm.extend_from_slice(commitment_key);
+        provider_wrapped_ikm.extend_from_slice(&wrapped);
+
+        Ok(GeneratedKey {
+            intermediate_material: intermediate,
+            provider_wrapped_ikm,
+            edk_provider_id: ECDH_PROVIDER_ID.to_vec(),
+            edk_provider_info: Self::serialize_provider_info(&sender_compressed, &recipient_compressed),
+        })
+    }
+
+    fn unwrap(
+        &self,
+        provider_id: &[u8],
+        provider_info: &[u8],
+        provider_wrapped_ikm: &[u8],
+        _ec: &[(Vec<u8>, Vec<u8>)],
+        ec_aad: &[u8],
+    ) -> Result<Vec<u8>> {
+        if provider_id != ECDH_PROVIDER_ID {
+            return Err(DbEsdkError::invalid_item(
+                "Raw ECDH EDK provider id does not match the configured keyring",
+            ));
+        }
+        let curve = self.raw.curve_spec.to_crypto();
+        // The sender / recipient compressed keys are reconstructed from the EDK
+        // provider info so the derivation FixedInfo matches what the writer used.
+        let (sender_compressed, recipient_compressed) = Self::parse_provider_info(provider_info)?;
+        let sender_private_der = crypto::pem_to_der(&self.raw.sender_static_private_key)?;
+        // RawPrivateKeyToStaticPublicKey: the shared secret uses the configured
+        // sender static private key and the configured recipient public key
+        // (which the conformance test sets to the same key pair).
+        let shared_secret =
+            crypto::ecdh_shared_secret(&sender_private_der, &self.raw.recipient_public_key, curve)?;
+        let fixed_info =
+            Self::fixed_info(curve, &sender_compressed, &recipient_compressed, ec_aad);
+
+        // Deserialize: salt(32) || commitmentKey(32) || encryptedKey || authTag.
+        if provider_wrapped_ikm.len() <= ECDH_WRAPPED_KEY_INDEX {
+            return Err(DbEsdkError::invalid_item(
+                "Raw ECDH wrapped material is shorter than expected",
+            ));
+        }
+        let salt = &provider_wrapped_ikm[..ECDH_KDF_SALT_LEN];
+        let commitment_key =
+            &provider_wrapped_ikm[ECDH_KDF_SALT_LEN..ECDH_WRAPPED_KEY_INDEX];
+        let wrapped_key_and_tag = &provider_wrapped_ikm[ECDH_WRAPPED_KEY_INDEX..];
+
+        let derived =
+            crypto::kdf_ctr_hmac_sha384(&shared_secret, &fixed_info, salt, ECDH_KDF_OUTPUT_LEN)?;
+        let (calculated_commitment_key, shared_wrapping_key) =
+            derived.split_at(ECDH_COMMITMENT_KEY_LEN);
+        // The calculated commitment key MUST equal the one stored in the EDK.
+        if !constant_time_eq(calculated_commitment_key, commitment_key) {
+            return Err(DbEsdkError::invalid_item(
+                "Raw ECDH commitment key did not match",
+            ));
+        }
+        crypto::aes_gcm_decrypt(shared_wrapping_key, &[0u8; 12], &fixed_info, wrapped_key_and_tag)
     }
 }
 
@@ -1500,5 +1690,111 @@ mod tests {
         // Decrypt with an unrelated private key -> RSA unwrap must fail.
         let dec_rsa = raw_rsa_config(None, Some(privk2));
         assert!(decrypt_item(&cfg, &RawRsaProvider { raw: &dec_rsa }, &stored).is_err());
+    }
+
+    // ---- Raw ECDH keyring provider ----
+
+    use crate::config::{EcdhCurveSpec, RawEcdhKeyringConfig};
+
+    /// Generate a P-256 EC key pair and return
+    /// `(sender_private_key_pkcs8_pem, recipient_public_key_x509_der)`.
+    ///
+    /// Mirrors the conformance `RawEcdhKeyringTest`, which uses one P-256 key
+    /// pair for BOTH the sender static private key (PEM PKCS#8) and the recipient
+    /// public key (DER X.509 SPKI), so encrypt and decrypt derive the same shared
+    /// secret under the RawPrivateKeyToStaticPublicKey scheme.
+    fn ecdh_keypair() -> (Vec<u8>, Vec<u8>) {
+        use aws_lc_rs::agreement::{PrivateKey, ECDH_P256};
+        use aws_lc_rs::encoding::{AsDer, Pkcs8V1Der, PublicKeyX509Der};
+        let private = PrivateKey::generate(&ECDH_P256).unwrap();
+        let pkcs8 = AsDer::<Pkcs8V1Der>::as_der(&private).unwrap();
+        let public = private.compute_public_key().unwrap();
+        let spki = AsDer::<PublicKeyX509Der>::as_der(&public).unwrap();
+        (to_pem("PRIVATE KEY", pkcs8.as_ref()), spki.as_ref().to_vec())
+    }
+
+    fn raw_ecdh_config() -> RawEcdhKeyringConfig {
+        let (sender_private, recipient_public) = ecdh_keypair();
+        RawEcdhKeyringConfig {
+            sender_static_private_key: sender_private,
+            recipient_public_key: recipient_public,
+            curve_spec: EcdhCurveSpec::EccNistP256,
+        }
+    }
+
+    fn ecdh_table_config(ecdh: RawEcdhKeyringConfig) -> TableEncryptionConfig {
+        let mut cfg = config();
+        // ECDH cannot use an asymmetric-signing suite (matches the conformance test).
+        cfg.algorithm_suite_id = AlgorithmSuiteId::SymsigHmacSha384;
+        cfg.keyring = KeyringConfig::RawEcdh(ecdh);
+        cfg
+    }
+
+    #[test]
+    fn raw_ecdh_round_trips() {
+        let ecdh = raw_ecdh_config();
+        let cfg = ecdh_table_config(ecdh.clone());
+        let item = item();
+        let stored = encrypt_item(&cfg, &RawEcdhProvider { raw: &ecdh }, &item).unwrap();
+        let decrypted = decrypt_item(&cfg, &RawEcdhProvider { raw: &ecdh }, &stored).unwrap();
+        assert_eq!(decrypted, item);
+    }
+
+    #[test]
+    fn raw_ecdh_edk_layout_matches_reference() {
+        let ecdh = raw_ecdh_config();
+        let cfg = ecdh_table_config(ecdh.clone());
+        let stored = encrypt_item(&cfg, &RawEcdhProvider { raw: &ecdh }, &item()).unwrap();
+        let header = match stored.get(HEADER_ATTRIBUTE).unwrap() {
+            AttributeValue::B(b) => b.clone(),
+            _ => panic!("header must be binary"),
+        };
+        let parsed = parse_header(&header).unwrap();
+        // RawECDHKeyring.OnEncrypt: provider id = "raw-ecdh".
+        assert_eq!(parsed.edk.provider_id, b"raw-ecdh");
+        // Provider info (P-256): version(1) + recipLen(4) + recip(33) + sndLen(4)
+        // + snd(33) = 75 bytes (ECDH_PROVIDER_INFO_256_LEN).
+        assert_eq!(parsed.edk.provider_info.len(), 75);
+        assert_eq!(parsed.edk.provider_info[0], 0x01, "keyring version");
+        // EDK ciphertext = encryptedPdk(48) || salt(32) || commitmentKey(32)
+        // || wrappedIntermediate(32) || tag(16) = 48 + 112 = 160 bytes.
+        assert_eq!(parsed.edk.ciphertext.len(), 48 + 112);
+    }
+
+    #[test]
+    fn raw_ecdh_provider_info_round_trips() {
+        let sender = vec![0x02u8; 33];
+        let recipient = vec![0x03u8; 33];
+        let info = RawEcdhProvider::serialize_provider_info(&sender, &recipient);
+        let (parsed_sender, parsed_recipient) =
+            RawEcdhProvider::parse_provider_info(&info).unwrap();
+        assert_eq!(parsed_sender, sender);
+        assert_eq!(parsed_recipient, recipient);
+    }
+
+    #[test]
+    fn raw_ecdh_tampered_ciphertext_fails_decrypt() {
+        let ecdh = raw_ecdh_config();
+        let cfg = ecdh_table_config(ecdh.clone());
+        let mut stored = encrypt_item(&cfg, &RawEcdhProvider { raw: &ecdh }, &item()).unwrap();
+        if let Some(AttributeValue::B(bytes)) = stored.get_mut("sensitive") {
+            let last = bytes.len() - 1;
+            bytes[last] ^= 0x01;
+        }
+        assert!(decrypt_item(&cfg, &RawEcdhProvider { raw: &ecdh }, &stored).is_err());
+    }
+
+    #[test]
+    fn raw_ecdh_wrong_private_key_fails_decrypt() {
+        let ecdh = raw_ecdh_config();
+        let cfg = ecdh_table_config(ecdh.clone());
+        let stored = encrypt_item(&cfg, &RawEcdhProvider { raw: &ecdh }, &item()).unwrap();
+
+        // A different sender key pair derives a different shared secret, so the
+        // commitment-key check (or AES-GCM unwrap) must fail.
+        let (other_private, _other_public) = ecdh_keypair();
+        let mut other = ecdh.clone();
+        other.sender_static_private_key = other_private;
+        assert!(decrypt_item(&cfg, &RawEcdhProvider { raw: &other }, &stored).is_err());
     }
 }
