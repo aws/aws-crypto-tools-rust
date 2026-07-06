@@ -32,6 +32,48 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
   primary purpose is reviewed). Shared files can be modified by later slices;
   each slice's PR shows only its incremental diff to a shared file.
 
+## Status snapshot
+
+Snapshot as of 2026-07-06. Update this table whenever a slice's state
+changes (branch cut, PR opened, PR merged, PR closed).
+
+| PR | Slug | GitHub PR | Status | Review branch |
+|---|---|---|---|---|
+| 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
+| 2 | `structures` | [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11) | **Closed unmerged** 2026-06-15 — needs reopen | `aws-crypto-rust/structures-review` @ `715c0a0` (11 commits on top of `main`, includes post-close review-feedback fix `715c0a0`) |
+| 3 | `algorithm-suite` | — | Not started | — |
+| 4 | `commitment-policy` | — | Not started | — |
+| 5 | `keyring-interface` | — | Not started | — |
+| 6 | `cmm-interface` | — | Not started | — |
+| 7 | `default-cmm` | — | Not started | — |
+| 8 | `structures-polish` | — | Not started | — |
+| 9 | `mrk-match` | — | Not started | — |
+| 10 | `cmc-interface` | — | Not started | — |
+| 11 | `local-cmc` | — | Not started | — |
+| 12 | `storm-tracking-cmc` | — | Not started | — |
+| 13 | `keystore-interface` | — | Not started | — |
+| 14 | `keystore-support` | — | Not started | — |
+| 15 | `branch-key-store` | — | Not started | — |
+| 16 | `hkeyring-support` | — | Not started | — |
+| 17 | `hkeyring` | — | Not started | — |
+| 18 | `client-factories` | — | Not started | — |
+| 19 | `hkeyring-examples` | — | Not started | — |
+
+**Next action:** reopen PR 2. `aws-crypto-rust/structures-review` is
+already a direct descendant of `main`, so a new PR against `main` can be
+cut from the existing branch tip (`715c0a0`). Confirm the branch snapshot
+still matches PR 2's intended scope (structures + `MaterialsError` +
+tests) before opening.
+
+**Divergence note on PR 2:** the review branch's `encryption_materials.rs`
+carries a hand-rolled slice-2-compatible version of the None-side
+`symmetric_signing_keys` invariant (commit `715c0a0`, using
+`AlgorithmSuite::new(false, true)`). The equivalent invariant on
+`aws-crypto-rust/unreviewed` uses the post-rename `AlgorithmSuiteId`
+enum and is currently unreachable (commit `406e57f`, see PR 8 notes).
+Both branches deliberately hold semantically equivalent versions
+tailored to their type systems; do **not** sync this file between them.
+
 ## Shared files (modified across slices)
 
 These files are touched by more than one slice. Each slice's PR diff includes
@@ -769,8 +811,10 @@ plumbing lands.
 
 ## Recommended review order
 
-1. PR 1 — `client-scaffold`
-2. PR 2 — `structures`
+Status markers reflect the Status snapshot above; keep the two in sync.
+
+1. PR 1 — `client-scaffold` — ✅ merged
+2. PR 2 — `structures` — ⏸ closed unmerged; needs reopen **(next up)**
 3. PR 3 — `algorithm-suite`
 4. PR 4 — `commitment-policy`
 5. PR 5 — `keyring-interface`
