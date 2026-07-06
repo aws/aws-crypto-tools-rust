@@ -51,11 +51,7 @@ impl PlaintextDataKey {
     }
 
     /// Zero the plaintext data key material.
-    //= ../spec/framework/structures.md#plaintext-data-key
-    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     //
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     pub fn zeroize(&mut self) {
         let ptr = self.0.as_mut_ptr();
         let len = self.0.len();
@@ -97,8 +93,6 @@ impl SigningKey {
 }
 
 impl fmt::Debug for SigningKey {
-    //= ../spec/framework/structures.md#signing-key
-    //# The value of this key MUST be kept secret.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SigningKey([REDACTED; {} bytes])", self.0.len())
     }
@@ -149,11 +143,7 @@ impl SymmetricSigningKey {
 }
 
 impl fmt::Debug for SymmetricSigningKey {
-    //= ../spec/framework/structures.md#symmetric-signing-keys
-    //# The value of keys in this list MUST be kept secret.
     //
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //# This value MUST be kept secret.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SymmetricSigningKey([REDACTED; {} bytes])", self.0.len())
     }
