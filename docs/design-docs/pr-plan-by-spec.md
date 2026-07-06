@@ -40,7 +40,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | PR | Slug | GitHub PR | Status | Review branch |
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
-| 2 | `structures` | [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11) | **Closed unmerged** 2026-06-15 — needs reopen | `aws-crypto-rust/structures-review` @ `715c0a0` (11 commits on top of `main`, includes post-close review-feedback fix `715c0a0`) |
+| 2 | `structures` | — | **Fresh branch cut** 2026-07-06 — ready to reopen PR against `main` | `aws-crypto-rust/structures-review` @ `c26ad6e` (one commit on top of `main`; squashed replay of retired branch tip `715c0a0`) |
 | 3 | `algorithm-suite` | — | Not started | — |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
@@ -59,16 +59,16 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 18 | `client-factories` | — | Not started | — |
 | 19 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** reopen PR 2. `aws-crypto-rust/structures-review` is
-already a direct descendant of `main`, so a new PR against `main` can be
-cut from the existing branch tip (`715c0a0`). Confirm the branch snapshot
-still matches PR 2's intended scope (structures + `MaterialsError` +
-tests) before opening.
+**Next action:** open a new GitHub PR from `aws-crypto-rust/structures-review`
+against `main`. The branch was reset 2026-07-06 for a fresh review — it
+now carries PR 2's full scope as a single squashed commit (`c26ad6e`)
+built by replaying the retired branch tip (`715c0a0`) onto `main`. Build
+and tests pass on the branch.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
-`symmetric_signing_keys` invariant (commit `715c0a0`, using
-`AlgorithmSuite::new(false, true)`). The equivalent invariant on
+`symmetric_signing_keys` invariant, using the pre-rename
+`AlgorithmSuite::new(false, true)` API. The equivalent invariant on
 `aws-crypto-rust/unreviewed` uses the post-rename `AlgorithmSuiteId`
 enum and is currently unreachable (commit `406e57f`, see PR 8 notes).
 Both branches deliberately hold semantically equivalent versions
@@ -814,7 +814,7 @@ plumbing lands.
 Status markers reflect the Status snapshot above; keep the two in sync.
 
 1. PR 1 — `client-scaffold` — ✅ merged
-2. PR 2 — `structures` — ⏸ closed unmerged; needs reopen **(next up)**
+2. PR 2 — `structures` — 🔄 fresh branch at `c26ad6e`; ready to open PR **(next up)**
 3. PR 3 — `algorithm-suite`
 4. PR 4 — `commitment-policy`
 5. PR 5 — `keyring-interface`
