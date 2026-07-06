@@ -306,10 +306,6 @@ pub enum CacheType {
 #[async_trait]
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-supplier
-    //= type=implication
-    //# This operation MUST take in an encryption context as input,
-    //# and return a branch key id (string) as output.
     async fn get_branch_key_id(
         &self,
         encryption_context: &EncryptionContext,
@@ -322,32 +318,14 @@ pub trait BranchKeySupplier: Send + Sync {
 /// impl wires the configured cache and keystore into the spec's
 /// OnEncrypt / OnDecrypt algorithms.
 pub struct HierarchicalKeyring {
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=implication
-    //# - MUST provide a [Keystore](../branch-key-store.md)
     keystore: Arc<dyn Keystore>,
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=implication
-    //# - MUST provide a [cache limit TTL](#cache-limit-ttl)
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#cache-limit-ttl
-    //= type=implication
-    //# The client MUST set a time-to-live (TTL) for [branch key materials](../structures.md#branch-key-materials) in the underlying cache.
     ttl_seconds: u64,
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=implication
-    //# - MUST provide either a Branch Key Identifier or a [Branch Key Supplier](#branch-key-supplier)
     branch_key_source: BranchKeySource,
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id
-    //= type=implication
-    //# The Partition ID MUST NOT be changed after initialization.
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
-    //= type=implication
-    //# The constructor of the Hierarchical Keyring MUST record these bytes at construction time.
     partition_id_bytes: Vec<u8>,
 
     /// Cryptographic-materials cache for branch-key materials. Either a
@@ -372,40 +350,21 @@ impl HierarchicalKeyring {
         keystore: Arc<dyn Keystore>,
         ttl_seconds: u64,
         branch_key_source: BranchKeySource,
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-        //= type=implication
-        //# - MAY provide a [Cache Type](#cache-type)
         cache_type: Option<CacheType>,
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-        //= type=implication
-        //# - MAY provide a [Partition ID](#partition-id)
         partition_id: Option<String>,
     ) -> Result<Self, MaterialsError> {
         if ttl_seconds == 0 {
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#cache-limit-ttl
-            //# This value MUST be greater than zero.
             return Err(MaterialsError::new(
                 "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",
             ));
         }
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-        //# On initialization the Hierarchical Keyring MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md) with the configured cache limit TTL and the max cache size.
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-        //# If the Hierarchical Keyring does NOT get a `Shared` cache on initialization,
-        //# it MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md)
-        //# with the user provided cache limit TTL and the entry capacity.
         let cache: Arc<dyn Cmc> = match cache_type
             .unwrap_or(CacheType::Default(DefaultCache::default()))
         {
             CacheType::Default(default_cache) => {
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-                //# If no max cache size is provided, the cryptographic materials cache MUST be configured to a
-                //# max cache size of 1000.
                 //
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-                //# If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000.
                 let local = LocalCmc::new(
                     default_cache.entry_capacity,
                     default_cache.entry_pruning_tail_size,
@@ -419,9 +378,6 @@ impl HierarchicalKeyring {
             }
             CacheType::Shared(cache) => cache,
             CacheType::StormTracking(params) => {
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-                //# If the cache to initialize is a [Storm Tracking Cryptographic Materials Cache](../storm-tracking-cryptographic-materials-cache.md#overview)
-                //# then the [Grace Period](../storm-tracking-cryptographic-materials-cache.md#grace-period) MUST be less than the [cache limit TTL](#cache-limit-ttl).
                 let grace_in_seconds = match params.time_units.unwrap_or_default() {
                     TimeUnits::Seconds => params.grace_period,
                     TimeUnits::Milliseconds => params.grace_period / 1000,
@@ -452,17 +408,8 @@ impl HierarchicalKeyring {
             }
         };
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
-        //= type=implication
-        //# It can either be a String provided by the user, which MUST be interpreted as the bytes of
-        //# UTF-8 Encoding of the String, or a v4 UUID, which SHOULD be interpreted as the 16 byte representation of the UUID.
         let partition_id_bytes = match partition_id {
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id
-            //= type=implication
-            //# If provided, it MUST be interpreted as UTF8 bytes.
             Some(s) => s.into_bytes(),
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id
-            //# If the PartitionId is NOT provided by the user, it MUST be set to the 16 byte representation of a v4 UUID.
             None => generate_v4_uuid_bytes()?,
         };
 
@@ -537,31 +484,17 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
     uuid::Uuid::from_bytes(*bytes).hyphenated().to_string()
 }
 
-//= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#interface
-//= type=implication
-//# MUST implement the [AWS Encryption SDK Keyring interface](../keyring-interface.md#interface)
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-    //= type=implication
-    //# OnEncrypt MUST take [encryption materials](../structures.md#encryption-materials) as input.
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
     ) -> Result<EncryptionMaterials, MaterialsError> {
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# The `branchKeyId` used in this operation is either the configured branchKeyId, if supplied, or the result of the `branchKeySupplier`'s
-        //# `getBranchKeyId` operation, using the encryption material's encryption context as input.
         let branch_key_id = self
             .resolve_branch_key_id(materials.encryption_context())
             .await?;
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# If the input [encryption materials](../structures.md#encryption-materials) do not contain a plaintext data key,
-        //# OnEncrypt MUST generate a random plaintext data key, according to the key length defined in the [algorithm suite](../algorithm-suites.md#encryption-key-length).
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# The process used to generate this random plaintext data key MUST use a secure source of randomness.
         let plaintext_dk = match materials.plaintext_data_key() {
             Some(pdk) => pdk.clone(),
             None => generate_random_data_key(materials.algorithm_suite())?,
@@ -580,18 +513,12 @@ impl Keyring for HierarchicalKeyring {
             })?
             .logical_keystore_name;
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# The hierarchical keyring MUST use the formulas specified in [Appendix A](#appendix-a-cache-entry-identifier-formulas)
-        //# to compute the [cache entry identifier](../cryptographic-materials-cache.md#cache-identifier).
         let cache_id = cache_entry_identifier::for_encrypt(
             &self.partition_id_bytes,
             &logical_keystore_name,
             &branch_key_id,
         );
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# The hierarchical keyring MUST attempt to find [branch key materials](../structures.md#branch-key-materials)
-        //# from the underlying [cryptographic materials cache](../local-cryptographic-materials-cache.md).
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
             MaterialsError::keyring_failed(format!(
                 "HierarchicalKeyring: cache get_cache_entry failed: {e}",
@@ -599,53 +526,28 @@ impl Keyring for HierarchicalKeyring {
         })?;
 
         let ciphertext = match cached {
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key wrapping.
             //
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# There MUST be a check (cacheEntryWithinLimits) to make sure that for the cache entry found, who's TTL has NOT expired,
-            //# `time.now() - cacheEntryCreationTime <= ttlSeconds` is true and
-            //# valid for TTL of the Hierarchical Keyring getting the cache entry.
             Some(entry) if cache_entry_within_limits(&entry, self.ttl_seconds) => {
                 let bkm = unwrap_branch_key_materials(&entry)?;
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-                //# - MUST wrap a data key with the branch key materials according to the [branch key wrapping](#branch-key-wrapping) section.
                 branch_key_wrap::wrap(bkm, materials.encryption_context(), plaintext_dk.as_bytes())?
             }
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# If this is NOT true, then we MUST treat the cache entry as expired.
             //
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# If a cache entry is not found or the cache entry is expired, the hierarchical keyring MUST attempt to obtain the branch key materials
-            //# by querying the backing branch keystore specified in the [retrieve OnEncrypt branch key materials](#query-branch-keystore-onencrypt) section.
             _ => {
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
-                //# OnEncrypt MUST call the Keystore's [GetActiveBranchKey](../branch-key-store.md#getactivebranchkey) operation with the following inputs:
                 //
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
-                //# - the `branchKeyId` used in this operation
                 let bkm = self
                     .keystore
                     .get_active_branch_key(branch_key_id.clone())
                     .await
                     .map_err(|e| {
-                        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
-                        //# Otherwise, OnEncrypt MUST fail.
                         MaterialsError::keyring_failed(format!(
                             "HierarchicalKeyring: get_active_branch_key failed: {e}",
                         ))
                     })?;
 
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
-                //# If the Keystore's GetActiveBranchKey operation succeeds
-                //# the keyring MUST put the returned branch key materials in the cache using the
-                //# formula defined in [Appendix A](#appendix-a-cache-entry-identifier-formulas).
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#cache-limit-ttl
-                    //# The maximum amount of time in seconds that an entry within the cache may be used before it MUST be evicted.
                     now + Duration::from_secs(self.ttl_seconds),
                     UsageMetadata::default(),
                 );
@@ -658,10 +560,6 @@ impl Keyring for HierarchicalKeyring {
                         ))
                     })?;
 
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-                //# If the keyring is not able to retrieve [branch key materials](../structures.md#branch-key-materials)
-                //# through the underlying cryptographic materials cache or
-                //# it no longer has access to them through the backing keystore, OnEncrypt MUST fail.
                 branch_key_wrap::wrap(
                     &bkm,
                     materials.encryption_context(),
@@ -670,24 +568,12 @@ impl Keyring for HierarchicalKeyring {
             }
         };
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# Otherwise, OnEncrypt MUST append a new [encrypted data key](../structures.md#encrypted-data-key)
-        //# to the encrypted data key list in the [encryption materials](../structures.md#encryption-materials), constructed as follows:
         let edk = EncryptedDataKey::new(
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# - [key provider id](../structures.md#key-provider-id): MUST be UTF8 Encoded "aws-kms-hierarchy"
             KEY_PROVIDER_ID_HIERARCHY.to_string(),
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# - [key provider info](../structures.md#key-provider-information): MUST be the UTF8 Encoded AWS DDB response `branch-key-id`
             branch_key_id.into_bytes(),
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-            //# - [ciphertext](../structures.md#ciphertext): MUST be serialized as the [hierarchical keyring ciphertext](#ciphertext)
             ciphertext,
         );
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //# If the keyring is unable to wrap a plaintext data key, OnEncrypt MUST fail
-        //# and MUST NOT modify the [decryption materials](structures.md#decryption-materials).
         //
         // Reaching this point means wrap succeeded above (any wrap failure
         // returned via `?`); only at this point does the function build a
@@ -707,25 +593,17 @@ impl Keyring for HierarchicalKeyring {
         )
     }
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-    //= type=implication
-    //# OnDecrypt MUST take [decryption materials](../structures.md#decryption-materials) and a list of [encrypted data keys](../structures.md#encrypted-data-keys) as input.
     async fn on_decrypt(
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
     ) -> Result<DecryptionMaterials, MaterialsError> {
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# If the decryption materials already contain a `PlainTextDataKey`, OnDecrypt MUST fail.
         if materials.plaintext_data_key().is_some() {
             return Err(MaterialsError::plaintext_already_present(
                 "HierarchicalKeyring::on_decrypt: decryption materials already contain a plaintext data key",
             ));
         }
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# The `branchKeyId` used in this operation is either the configured branchKeyId, if supplied, or the result of the `branchKeySupplier`'s
-        //# `getBranchKeyId` operation, using the decryption material's encryption context as input.
         let branch_key_id = self
             .resolve_branch_key_id(materials.encryption_context())
             .await?;
@@ -743,31 +621,18 @@ impl Keyring for HierarchicalKeyring {
             })?
             .logical_keystore_name;
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# For each encrypted data key in the filtered set, one at a time, OnDecrypt MUST attempt to decrypt the encrypted data key.
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# The set of encrypted data keys MUST first be filtered to match this keyring’s configuration. For the encrypted data key to match:
         let mut collected_errors: Vec<String> = Vec::new();
         for edk in encrypted_data_keys {
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# - Its provider ID MUST match the UTF8 Encoded value of “aws-kms-hierarchy”.
             if edk.key_provider_id != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
             }
 
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# - Deserialize the key provider info, if deserialization fails the next EDK in the set MUST be attempted.
             let Ok(edk_branch_key_id) = std::str::from_utf8(&edk.key_provider_info) else {
                 continue;
             };
 
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# - The deserialized key provider info MUST be UTF8 Decoded and MUST match this keyring's configured `Branch Key Identifier`.
             //
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-            //# - Deserialize the UTF8-Decoded `branch-key-id` from the [key provider info](../structures.md#key-provider-information) of the [encrypted data key](../structures.md#encrypted-data-key)
-            //#   and verify this is equal to the configured or supplied `branch-key-id`.
             if edk_branch_key_id != branch_key_id {
                 continue;
             }
@@ -777,9 +642,6 @@ impl Keyring for HierarchicalKeyring {
                 .await
             {
                 Ok(plaintext_dk_bytes) => {
-                    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-                    //# If a decryption succeeds, this keyring MUST
-                    //# add the resulting plaintext data key to the decryption materials and return the modified materials.
                     return DecryptionMaterials::new(
                         materials.algorithm_suite_id(),
                         materials.encryption_context().clone(),
@@ -789,16 +651,10 @@ impl Keyring for HierarchicalKeyring {
                         materials.symmetric_signing_key().cloned(),
                     );
                 }
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-                //# If this attempt results in an error, then these errors MUST be collected.
                 Err(e) => collected_errors.push(e.to_string()),
             }
         }
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# If OnDecrypt fails to successfully decrypt any [encrypted data key](../structures.md#encrypted-data-key),
-        //# then it MUST yield an error that includes all the collected errors
-        //# and MUST NOT modify the [decryption materials](structures.md#decryption-materials).
         //
         // The early-return above on `Ok` is the only path that produces a
         // mutated DecryptionMaterials; reaching this line means no EDK was
@@ -877,16 +733,9 @@ impl HierarchicalKeyring {
             .try_into()
             .expect("16-byte slice into [u8; 16]");
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-        //# OnDecrypt MUST calculate the following values:
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-        //# - Deserialize the UUID string representation of the `version` from the [encrypted data key](../structures.md#encrypted-data-key) [ciphertext](#ciphertext).
         let branch_key_version = uuid_16_bytes_to_str(&version_bytes);
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# The hierarchical keyring MUST use the OnDecrypt formula specified in [Appendix A](#decryption-materials)
-        //# in order to compute the [cache entry identifier](cryptographic-materials-cache.md#cache-identifier).
         let cache_id = cache_entry_identifier::for_decrypt(
             &self.partition_id_bytes,
             logical_keystore_name,
@@ -894,10 +743,6 @@ impl HierarchicalKeyring {
             &branch_key_version,
         );
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# To decrypt each encrypted data key in the filtered set, the hierarchical keyring MUST attempt
-        //# to find the corresponding [branch key materials](../structures.md#branch-key-materials)
-        //# from the underlying [cryptographic materials cache](../local-cryptographic-materials-cache.md).
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
             MaterialsError::keyring_failed(format!(
                 "HierarchicalKeyring: cache get_cache_entry failed: {e}",
@@ -905,51 +750,25 @@ impl HierarchicalKeyring {
         })?;
 
         let bkm = match cached {
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key unwrapping.
             //
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# There MUST be a check (cacheEntryWithinLimits) to make sure that for the cache entry found, who's TTL has NOT expired,
-            //# `time.now() - cacheEntryCreationTime <= ttlSeconds` is true and
-            //# valid for TTL of the Hierarchical Keyring getting the cache entry.
             Some(entry) if cache_entry_within_limits(&entry, self.ttl_seconds) => {
                 unwrap_branch_key_materials(&entry)?.clone()
             }
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# If this is NOT true, then we MUST treat the cache entry as expired.
             //
-            //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-            //# If a cache entry is not found or the cache entry is expired, the hierarchical keyring
-            //# MUST attempt to obtain the branch key materials by calling the backing branch key
-            //# store specified in the [retrieve OnDecrypt branch key materials](#getitem-branch-keystore-ondecrypt) section.
             _ => {
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-                //# OnDecrypt MUST call the Keystore's [GetBranchKeyVersion](../branch-key-store.md#getbranchkeyversion) operation with the following inputs:
                 //
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-                //# - The deserialized, UTF8-Decoded `branch-key-id`
                 //
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-                //# - The deserialized UUID string representation of the `version`
                 let bkm = self
                     .keystore
                     .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
                     .await
                     .map_err(|e| {
-                        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-                        //# If the keyring is not able to retrieve `branch key materials` from the backing keystore then OnDecrypt MUST fail.
                         //
-                        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-                        //# Otherwise, OnDecrypt MUST fail.
                         MaterialsError::keyring_failed(format!(
                             "HierarchicalKeyring: get_branch_key_version failed: {e}",
                         ))
                     })?;
 
-                //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-                //# If the Keystore's GetBranchKeyVersion operation succeeds
-                //# the keyring MUST put the returned branch key materials in the cache using the
-                //# formula defined in [Appendix A](#appendix-a-cache-entry-identifier-formulas).
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
@@ -969,11 +788,7 @@ impl HierarchicalKeyring {
             }
         };
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# If the keyring is able to retrieve `branch key materials` from the backing keystore, OnDecrypt:
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //# - MUST unwrap the encrypted data key with the branch key materials according to the [branch key unwrapping](#branch-key-unwrapping) section.
         branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
     }
 }

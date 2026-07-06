@@ -49,9 +49,6 @@ const TEST_VERSION_UUID: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 
 #[test]
 fn record_format_struct_has_all_required_fields() {
-    //= ../spec/framework/branch-key-store.md#record-format
-    //= type=test
-    //# A branch key record MUST include the following key-value pairs:
     let mut attributes = BTreeMap::new();
     attributes.insert(FIELD_BRANCH_KEY_ID.to_string(), "test-id".to_string());
     attributes.insert(FIELD_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
@@ -87,9 +84,6 @@ fn record_format_struct_has_all_required_fields() {
 
 #[test]
 fn record_format_optional_custom_ec_round_trips() {
-    //= ../spec/framework/branch-key-store.md#record-format
-    //= type=test
-    //# A branch key record MAY include [custom encryption context](#custom-encryption-context) key-value pairs.
     let version_str = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
     let mut ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
     ec.insert(
@@ -119,9 +113,6 @@ fn record_format_optional_custom_ec_round_trips() {
 
 #[test]
 fn materials_reconstruction_rejects_invalid_type_value() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# The `type` attribute MUST either be equal to `"branch:ACTIVE"` or start with `"branch:version:"`.
     let ec = make_authenticated_ec("invalid:type", "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid type");
@@ -148,11 +139,6 @@ fn materials_reconstruction_branch_active_uses_version_attribute() {
 
 #[test]
 fn materials_reconstruction_branch_active_rejects_missing_version() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# If the `type` attribute is equal to `"branch:ACTIVE"`
-    //# then the authenticated encryption context MUST have a `version` attribute
-    //# and the version string is this value.
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject missing version");
@@ -162,9 +148,6 @@ fn materials_reconstruction_branch_active_rejects_missing_version() {
 
 #[test]
 fn materials_reconstruction_branch_version_uses_type_value() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# If the `type` attribute start with `"branch:version:"` then the version string MUST be equal to this value.
     let type_val = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
     let ec = make_authenticated_ec(&type_val, "test-id", None);
     let result =
@@ -174,9 +157,6 @@ fn materials_reconstruction_branch_version_uses_type_value() {
 
 #[test]
 fn materials_branch_key_matches_input_plaintext() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# - [Branch Key](./structures.md#branch-key) MUST be the [decrypted branch key material](#aws-kms-branch-key-decryption)
     let version_str = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
     let key_bytes = vec![0x99; 32];
@@ -197,9 +177,6 @@ fn materials_branch_key_rejects_wrong_length() {
 
 #[test]
 fn materials_branch_key_id_matches_record() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# - [Branch Key Id](./structures.md#branch-key-id) MUST be the `branch-key-id`
     let version_str = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "my-branch-key-123", Some(&version_str));
     let result =
@@ -219,10 +196,6 @@ fn materials_version_string_starts_with_branch_version_prefix() {
 
 #[test]
 fn materials_version_rejects_invalid_prefix() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# - [Branch Key Version](./structures.md#branch-key-version)
-    //# The version string MUST start with `branch:version:`.
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some("invalid:prefix:uuid"));
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid version prefix");
@@ -232,9 +205,6 @@ fn materials_version_rejects_invalid_prefix() {
 
 #[test]
 fn materials_version_bytes_are_utf8_of_remainder() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# The remaining string encoded as UTF8 bytes MUST be the Branch Key version.
     let version_str = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
     let result =
@@ -248,10 +218,6 @@ fn materials_version_bytes_are_utf8_of_remainder() {
 
 #[test]
 fn materials_encryption_context_constructed_by_custom_ec() {
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //= type=test
-    //# - [Encryption Context](./structures.md#encryption-context-3) MUST be constructed by
-    //# [Custom Encryption Context From Authenticated Encryption Context](#custom-encryption-context-from-authenticated-encryption-context)
     let version_str = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
     let mut ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
     ec.insert(format!("{}org", CUSTOM_EC_PREFIX), "amazon".to_string());
@@ -288,11 +254,6 @@ fn custom_ec_extraction_strips_prefix() {
 
 #[test]
 fn custom_ec_extraction_preserves_values() {
-    //= ../spec/framework/branch-key-store.md#custom-encryption-context-from-authenticated-encryption-context
-    //= type=test
-    //# Also, the value in the [encryption context](./structures.md#encryption-context-3) for this key
-    //# MUST equal the value in the authenticated encryption context
-    //# for the constructed key.
     let mut auth_ec = BTreeMap::new();
     auth_ec.insert(format!("{}color", CUSTOM_EC_PREFIX), "blue".to_string());
     auth_ec.insert(format!("{}size", CUSTOM_EC_PREFIX), "large".to_string());
@@ -304,11 +265,6 @@ fn custom_ec_extraction_preserves_values() {
 
 #[test]
 fn custom_ec_extraction_ignores_non_prefixed_keys() {
-    //= ../spec/framework/branch-key-store.md#custom-encryption-context-from-authenticated-encryption-context
-    //= type=test
-    //# For every key in the [encryption context](./structures.md#encryption-context-3)
-    //# the string `aws-crypto-ec:` + the UTF8 decode of this key
-    //# MUST exist as a key in the authenticated encryption context.
     let mut auth_ec = BTreeMap::new();
     auth_ec.insert("branch-key-id".to_string(), "id".to_string());
     auth_ec.insert("type".to_string(), "branch:ACTIVE".to_string());

@@ -60,9 +60,6 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
 pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
     let parts = parse_arn(arn)?;
 
-    //= ../spec/framework/branch-key-store.md#aws-kms-configuration
-    //# This ARN MUST be a valid
-    //# [AWS KMS Key ARN](./aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-arn).
     if parts.service != "kms" {
         return Err(KeystoreError::new(
             KeystoreErrorKind::Configuration,
@@ -70,8 +67,6 @@ pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
         ));
     }
 
-    //= ../spec/framework/branch-key-store.md#aws-kms-configuration
-    //# This ARN MUST NOT be an Alias.
     if parts.resource_type == "alias" {
         return Err(KeystoreError::new(
             KeystoreErrorKind::Configuration,

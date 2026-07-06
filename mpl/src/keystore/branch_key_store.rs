@@ -76,12 +76,6 @@ impl BranchKeyStore {
     ///
     /// Returns `KeystoreError::Configuration` if the KMS configuration is
     /// invalid (malformed ARN, alias, non-`kms` service).
-    //= ../spec/framework/branch-key-store.md#kms-client
-    //= type=todo
-    //= tracking-issue=keystore-user-agent
-    //# On initialization the KeyStore SHOULD
-    //# append a user agent string to the AWS KMS SDK Client with
-    //# the value `aws-kms-hierarchy`.
     pub fn new(
         config: KeyStoreConfig,
         kms_client: KmsClient,
@@ -93,8 +87,6 @@ impl BranchKeyStore {
 
         let keystore_id = match config.keystore_id.clone() {
             Some(id) => id,
-            //= ../spec/framework/branch-key-store.md#keystore-id
-            //# If one is not supplied, then a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt) MUST be used.
             None => Uuid::new_v4().to_string(),
         };
 
@@ -206,16 +198,10 @@ impl Keystore for BranchKeyStore {
         &self,
         branch_key_id: String,
     ) -> Result<BranchKeyMaterials, KeystoreError> {
-        //= ../spec/framework/branch-key-store.md#getactivebranchkey
-        //# To get the active version for the branch key id from the keystore
-        //# this operation MUST call AWS DDB `GetItem`
-        //# using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
         let record = self
             .fetch_record(&branch_key_id, TYPE_BRANCH_ACTIVE)
             .await?;
 
-        //= ../spec/framework/branch-key-store.md#getactivebranchkey
-        //# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
         let plaintext = decrypt_branch_key(
             &self.kms_client,
             &self.config.kms_configuration,
@@ -227,12 +213,7 @@ impl Keystore for BranchKeyStore {
 
         let auth_ec = self.build_auth_ec(&record);
 
-        //= ../spec/framework/branch-key-store.md#getactivebranchkey
-        //# This GetActiveBranchKey MUST construct [branch key materials](./structures.md#branch-key-materials)
-        //# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
         //
-        //= ../spec/framework/branch-key-store.md#getactivebranchkey
-        //# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
@@ -241,14 +222,9 @@ impl Keystore for BranchKeyStore {
         branch_key_id: String,
         branch_key_version: String,
     ) -> Result<BranchKeyMaterials, KeystoreError> {
-        //= ../spec/framework/branch-key-store.md#getbranchkeyversion
-        //# To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
-        //# using the `branch-key-id` as the Partition Key and "branch:version:" + `branchKeyVersion` value as the Sort Key.
         let sort_key = format!("{TYPE_BRANCH_VERSION_PREFIX}{branch_key_version}");
         let record = self.fetch_record(&branch_key_id, &sort_key).await?;
 
-        //= ../spec/framework/branch-key-store.md#getbranchkeyversion
-        //# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
         let plaintext = decrypt_branch_key(
             &self.kms_client,
             &self.config.kms_configuration,
@@ -260,12 +236,7 @@ impl Keystore for BranchKeyStore {
 
         let auth_ec = self.build_auth_ec(&record);
 
-        //= ../spec/framework/branch-key-store.md#getbranchkeyversion
-        //# This GetBranchKeyVersion MUST construct [branch key materials](./structures.md#branch-key-materials)
-        //# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
         //
-        //= ../spec/framework/branch-key-store.md#getbranchkeyversion
-        //# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
@@ -294,17 +265,9 @@ fn not_implemented_yet(op: &str) -> KeystoreError {
 fn record_from_ddb_item(
     mut item: std::collections::HashMap<String, AttributeValue>,
 ) -> Result<EncryptedRecord, KeystoreError> {
-    //= ../spec/framework/branch-key-store.md#getactivebranchkey
-    //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
     //
-    //= ../spec/framework/branch-key-store.md#getbranchkeyversion
-    //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
     let enc_attr = item.remove(FIELD_ENC).ok_or_else(|| {
-        //= ../spec/framework/branch-key-store.md#getactivebranchkey
-        //# If the record does not contain the defined fields, this operation MUST fail.
         //
-        //= ../spec/framework/branch-key-store.md#getbranchkeyversion
-        //# If the record does not contain the defined fields, this operation MUST fail.
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
             format!("Record is missing the '{FIELD_ENC}' attribute"),

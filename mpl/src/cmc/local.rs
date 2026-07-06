@@ -112,11 +112,6 @@ impl LocalCmcInner {
 /// `entry_pruning_tail_size` (number of least-recently-used entries the
 /// cache scans for TTL-expired evictees during pruning). It implements the
 /// abstract [`Cmc`] trait so callers can plug it into a caching CMM.
-//= ../spec/framework/local-cryptographic-materials-cache.md#pruning
-//= type=exception
-//= reason=Per-get pruning (see LocalCmc::get_cache_entry, which calls prune_tail before every read) bounds the staleness of long-idle expired entries to the N least-recently-used window on every get. A separate background sweeper is out of scope for this concrete LocalCmc and belongs to a higher-level wrapper such as SynchronizedLocalCmc; LocalCmc holds no background tasks and exposes no Drop-time invariants beyond Mutex unwind.
-//# The local CMC SHOULD also periodically evict all TTL-expired entries
-//# among the `N` least recently used entries.
 pub struct LocalCmc {
     /// Configured maximum number of stored entries. The cache MUST NOT
     /// exceed this value except temporarily while a put is in progress.
@@ -139,9 +134,6 @@ impl LocalCmc {
     ///
     /// `entry_capacity` is accepted for any value in `[0, usize::MAX]`
     /// (the implementation-defined maximum is `usize::MAX`).
-    //= ../spec/framework/local-cryptographic-materials-cache.md#initialization
-    //# On initialization of the local CMC,
-    //# the caller MUST provide the following:
     pub fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Result<Self, CmcError> {
         Self::with_clock(entry_capacity, entry_pruning_tail_size, SystemTime::now)
     }
@@ -158,12 +150,7 @@ impl LocalCmc {
         F: Fn() -> SystemTime + Send + Sync + 'static,
     {
         Ok(Self {
-            //= ../spec/framework/local-cryptographic-materials-cache.md#entry-capacity
-            //# The local CMC MUST accept entry capacity values between zero
-            //# and an implementation-defined maximum, inclusive.
             entry_capacity,
-            //= ../spec/framework/local-cryptographic-materials-cache.md#initialization
-            //# The local CMC MUST also define the following:
             entry_pruning_tail_size,
             inner: Mutex::new(LocalCmcInner::new()),
             now: Arc::new(now),
@@ -202,11 +189,6 @@ impl LocalCmc {
         let now = (self.now)();
         let take_n = self.entry_pruning_tail_size.min(inner.lru.len());
         let mut to_remove: Vec<Vec<u8>> = Vec::new();
-        //= ../spec/framework/local-cryptographic-materials-cache.md#entry-pruning-tail-size
-        //# The _entry pruning tail size_
-        //# is the number of least recently used entries that the local CMC
-        //# MUST check during [pruning](#pruning)
-        //# for TTL-expired entries to evict.
         for cache_id in inner.lru.iter().take(take_n) {
             if let Some(entry) = inner.entries.get(cache_id)
                 && entry.expiry_time <= now
@@ -215,11 +197,6 @@ impl LocalCmc {
             }
         }
         for cache_id in to_remove {
-            //= ../spec/framework/local-cryptographic-materials-cache.md#pruning
-            //# To prune TTL-expired cache entries,
-            //# the local CMC MUST evict all TTL-expired entries
-            //# among the `N` least recently used entries,
-            //# where `N` is the [Entry Pruning Tail Size](#entry-pruning-tail-size).
             inner.remove(&cache_id);
         }
     }
@@ -233,29 +210,12 @@ impl Cmc for LocalCmc {
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
 
-        //= ../spec/framework/local-cryptographic-materials-cache.md#put-cache-entry
-        //# While performing a Put Cache Entry operation,
-        //# the local CMC MAY store more entries than the entry capacity.
         //
-        //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-        //# The CMC MUST create a new cache entry for the specified cache ID.
         //
-        //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-        //= type=implication
-        //# The cache entry MUST include all [usage metadata](#usage-metadata)
-        //# since this information can not be updated after the put operation.
         //
-        //= ../spec/framework/cryptographic-materials-cache.md#usage-metadata
-        //# Updating usage metadata SHOULD be atomic.
         inner.insert(cache_id.to_vec(), Arc::new(entry));
 
-        //= ../spec/framework/local-cryptographic-materials-cache.md#entry-capacity
-        //# The local CMC MUST NOT store more entries than this value,
-        //# except temporarily while performing a Put Cache Entry operation.
         //
-        //= ../spec/framework/local-cryptographic-materials-cache.md#put-cache-entry
-        //# However, before returning, the local CMC MUST evict least-recently used entries
-        //# until the number of stored entries does not exceed the entry capacity.
         while inner.len() > self.entry_capacity {
             if inner.pop_lru().is_none() {
                 break;
@@ -270,26 +230,14 @@ impl Cmc for LocalCmc {
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
 
-        //= ../spec/framework/local-cryptographic-materials-cache.md#get-cache-entry
-        //# When performing a Get Cache Entry operation,
-        //# the local CMC MUST [prune TTL-expired cache entries](#pruning).
         self.prune_tail(&mut inner);
 
         let now = (self.now)();
         match inner.entries.get(cache_id).cloned() {
             Some(entry) => {
                 if entry.expiry_time <= now {
-                    //= ../spec/framework/local-cryptographic-materials-cache.md#get-cache-entry
-                    //# The local CMC MUST NOT return any TTL-expired entry.
                     //
-                    //= ../spec/framework/cryptographic-materials-cache.md#time-to-live-ttl
-                    //# After a cache entry's TTL has elapsed,
-                    //# we say that the entry is _TTL-expired_,
-                    //# and a CMC MUST NOT return the entry to any caller.
                     //
-                    //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
-                    //# The CMC MUST validate that the cache entry
-                    //# has not exceeded it's stored [TTL](#time-to-live-ttl).
                     inner.remove(cache_id);
                     Ok(None)
                 } else {

@@ -29,9 +29,6 @@ use super::{CacheEntry, Cmc, CmcError, LocalCmc};
 ///
 /// Applies to `grace_period`, `grace_interval`, and `inflight_ttl`.
 /// Does NOT apply to `sleep_milli` (always milliseconds).
-//= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#time-units
-//= type=implication
-//# Time Units MUST be either `Seconds` or `Milliseconds` and applies to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimeUnits {
     /// Interpret numeric values as seconds (the default).
@@ -83,23 +80,15 @@ pub struct StormTrackingCmc {
 
 impl StormTrackingCmc {
     /// Construct a `StormTrackingCmc` using `SystemTime::now` as the clock.
-    //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#initialization
-    //# On initialization of the storm tracking CMC,
-    //# the caller MUST provide exactly what is required by a
-    //# [Local CMC](local-cryptographic-materials-cache.md).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         entry_capacity: usize,
         entry_pruning_tail_size: usize,
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#initialization
-        //# Initialization MUST also provide
         grace_period: u64,
         grace_interval: u64,
         fan_out: usize,
         inflight_ttl: u64,
         sleep_milli: u64,
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#initialization
-        //# Initialization MUST optionally accept the following values:
         time_units: Option<TimeUnits>,
     ) -> Result<Self, CmcError> {
         Self::with_clock(
@@ -134,11 +123,7 @@ impl StormTrackingCmc {
     {
         let units = time_units.unwrap_or_default();
         let to_duration = |v: u64| -> Duration {
-            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#time-units
-            //# If unset, or set to `Seconds`, the above values MUST be interpreted as seconds.
             //
-            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#time-units
-            //# If set to `Milliseconds`, the above values MUST be interpreted as milliseconds.
             match units {
                 TimeUnits::Seconds => Duration::from_secs(v),
                 TimeUnits::Milliseconds => Duration::from_millis(v),
@@ -149,24 +134,18 @@ impl StormTrackingCmc {
         let grace_interval_dur = to_duration(grace_interval);
         let inflight_ttl_dur = to_duration(inflight_ttl);
 
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-        //# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Grace Period](#grace-period).
         if grace_interval_dur > grace_period_dur {
             return Err(CmcError::invalid_entry(
                 "grace_interval must be <= grace_period",
             ));
         }
 
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-        //# - The [Inflight TTL](#inflight-ttl) MUST be less than or equal to the [Grace Period](#grace-period).
         if inflight_ttl_dur > grace_period_dur {
             return Err(CmcError::invalid_entry(
                 "inflight_ttl must be <= grace_period",
             ));
         }
 
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-        //# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Inflight TTL](#inflight-ttl).
         if grace_interval_dur > inflight_ttl_dur {
             return Err(CmcError::invalid_entry(
                 "grace_interval must be <= inflight_ttl",
@@ -176,15 +155,10 @@ impl StormTrackingCmc {
         let now_arc: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(now);
         let inner_clock = Arc::clone(&now_arc);
 
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#initialization
-        //# The implementation MUST instantiate a [Local CMC](local-cryptographic-materials-cache.md)
-        //# to do the actual caching.
         let inner = LocalCmc::with_clock(entry_capacity, entry_pruning_tail_size, move || {
             inner_clock()
         })?;
 
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#sleepmilli
-        //# SleepMilli MUST NOT be affected by [timeUnits](#time units)
         let sleep_milli_dur = Duration::from_millis(sleep_milli);
 
         Ok(Self {
@@ -293,49 +267,26 @@ impl StormTrackingCmc {
             Some(entry) => {
                 // Cache hit.
 
-                //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                //# - If the number of things inflight is greater than or equal to the [FanOut](#fanout)
-                //# GetCacheEntry MUST return the cache entry.
                 if state.inflight.len() >= self.fan_out {
                     return Ok(GetDecision::ReturnEntry(Arc::clone(entry)));
                 }
 
                 let within_grace = within_grace_period(entry.expiry_time, now, self.grace_period);
 
-                //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                //# - If the key's expiration _is not_ [within the grace period](#within-grace-period),
-                //# GetCacheEntry MUST return the cache entry.
                 if !within_grace {
                     return Ok(GetDecision::ReturnEntry(Arc::clone(entry)));
                 }
 
                 match state.inflight.get(cache_id).copied() {
                     None => {
-                        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                        //# - If the key's expiration _is_ [within the grace period](#within-grace-period),
-                        //# and the key _is not_ inflight
-                        //# GetCacheEntry MUST return NoSuchEntry and mark that key as inflight at the current time.
                         //
-                        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#in-flight
-                        //# For each in flight key, the storm tracking CMC MUST keep track of the most recent time
-                        //# that NoSuchEntry was returned, with accuracy to the second.
                         state.inflight.insert(cache_id.to_vec(), now);
                         Ok(GetDecision::ReturnNone)
                     }
                     Some(inflight_t) => {
                         if within_grace_interval(inflight_t, now, self.grace_interval) {
-                            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                            //# - If the key's expiration _is_ [within the grace period](#within-grace-period),
-                            //# and the key _is_ inflight
-                            //# and the inflight time _is_ [within the grace interval](#within-grace-interval)
-                            //# GetCacheEntry MUST return the cache entry.
                             Ok(GetDecision::ReturnEntry(Arc::clone(entry)))
                         } else {
-                            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                            //# - If the key's expiration _is_ [within the grace period](#within-grace-period),
-                            //# and the key _is_ inflight
-                            //# and the inflight time _is not_ [within the grace interval](#within-grace-interval)
-                            //# GetCacheEntry MUST return NoSuchEntry and update the key as inflight at the current time.
                             state.inflight.insert(cache_id.to_vec(), now);
                             Ok(GetDecision::ReturnNone)
                         }
@@ -350,9 +301,6 @@ impl StormTrackingCmc {
                             // Do NOT insert into inflight yet — blocking branch will do it after slot opens.
                             Ok(GetDecision::BlockMissNotInflight)
                         } else {
-                            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                            //# - If the key _is not_ inflight
-                            //# GetCacheEntry MUST return NoSuchEntry and mark that key as inflight at the current time.
                             state.inflight.insert(cache_id.to_vec(), now);
                             Ok(GetDecision::ReturnNone)
                         }
@@ -360,9 +308,6 @@ impl StormTrackingCmc {
                     Some(inflight_t) => {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
-                        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                        //# - If the key _is_ inflight
-                        //# and the time spent so far exceeds the [Inflight TTL](#inflight-ttl), the operation MUST fail.
                         if elapsed > self.inflight_ttl {
                             return Ok(GetDecision::Fail(CmcError::storage_failed(
                                 "InFlightTTL exceeded",
@@ -372,10 +317,6 @@ impl StormTrackingCmc {
                         if within_grace_interval(inflight_t, now, self.grace_interval) {
                             Ok(GetDecision::BlockMissInflight { inflight_t })
                         } else {
-                            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-                            //# - If the key _is_ inflight
-                            //# and the current time _is not_ [within the grace interval](#within-grace-interval)
-                            //# GetCacheEntry MUST return NoSuchEntry and update the key as inflight at the current time.
                             state.inflight.insert(cache_id.to_vec(), now);
                             Ok(GetDecision::ReturnNone)
                         }
@@ -396,9 +337,6 @@ impl StormTrackingCmc {
             GetDecision::ReturnNone => Ok(None),
             GetDecision::Fail(e) => Err(e),
 
-            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-            //# - If the number of things inflight is greater than or equal to the [FanOut](#fanout)
-            //# GetCacheEntry MUST block until a [FanOut](#fanout) slot is available, or the key appears in the cache.
             GetDecision::BlockMissNotInflight => {
                 loop {
                     tokio::time::sleep(self.sleep_milli).await;
@@ -428,10 +366,6 @@ impl StormTrackingCmc {
                 Ok(None)
             }
 
-            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-            //# - If the key _is_ inflight
-            //# and the current time _is_ [within the grace interval](#within-grace-interval)
-            //# GetCacheEntry MUST block until a [FanOut](#fanout) slot is available, or the key appears in the cache.
             GetDecision::BlockMissInflight { inflight_t } => {
                 loop {
                     tokio::time::sleep(self.sleep_milli).await;
@@ -477,9 +411,6 @@ impl StormTrackingCmc {
 /// at `expiry`.
 ///
 /// Spec formula: `(expiry - gracePeriod) <= now`
-//= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#within-grace-period
-//# A time `now` MUST be considered within the [grace period](#grace-period) for an entry that expires
-//# at a time `expiry` if `(expiry - gracePeriod) <= now`
 pub fn within_grace_period(expiry: SystemTime, now: SystemTime, grace_period: Duration) -> bool {
     expiry
         .checked_sub(grace_period)
@@ -490,10 +421,6 @@ pub fn within_grace_period(expiry: SystemTime, now: SystemTime, grace_period: Du
 /// that was first marked at `inflight`.
 ///
 /// Spec formula: `now < (inflight + graceInterval)`
-//= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#within-grace-interval
-//# A time `now` MUST be considered within the [grace interval](#grace-interval)
-//# of an inflight entry at `inflight` time
-//# if `now < (inflight + graceInterval)`
 pub fn within_grace_interval(
     inflight: SystemTime,
     now: SystemTime,
@@ -503,9 +430,6 @@ pub fn within_grace_interval(
 }
 
 #[async_trait]
-//= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#behaviors
-//# The interface MUST be exactly the same as a [Local CMC](local-cryptographic-materials-cache.md),
-//# even if used in a multi-threaded context, with two exceptions
 impl Cmc for StormTrackingCmc {
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
         {
@@ -513,8 +437,6 @@ impl Cmc for StormTrackingCmc {
                 CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
             })?;
 
-            //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#putcacheentry
-            //# PutCacheEntry MUST mark the key as not in flight.
             state.inflight.remove(cache_id);
         }
 
@@ -522,9 +444,6 @@ impl Cmc for StormTrackingCmc {
     }
 
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
-        //= ../spec/framework/storm-tracking-cryptographic-materials-cache.md#getcacheentry
-        //# The implementation MUST call the [Local CMC](local-cryptographic-materials-cache.md)
-        //# to find the cached materials for the key, if any.
         let cached = self.inner.get_cache_entry(cache_id).await?;
         let now = (self.now)();
 

@@ -391,11 +391,6 @@ async fn run_round_trip(
         .await
         .expect("on_decrypt against real keystore must succeed for an EDK we just produced");
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-    //= type=test
-    //# If a decryption succeeds, this keyring MUST add the resulting
-    //# plaintext data key to the decryption materials and return the
-    //# modified materials.
     assert_eq!(
         dm_out.plaintext_data_key().unwrap().as_bytes(),
         pdk_bytes,
@@ -520,22 +515,9 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
     // HK1 round-trip succeeds (and populates the shared cache).
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
-    //= type=test
-    //# - Same Partition ID
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
-    //= type=test
-    //# - Same Logical Key Store Name of the Key Store for the Hierarchical Keyring
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
-    //= type=test
-    //# - Same Branch Key ID
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
-    //= type=test
-    //= reason=HK2's KMS client cannot decrypt the us-west-2 key; success here proves the entry came from HK1's cache.
-    //# then they WILL share the cache entries in the `Shared` Cache.
     run_round_trip(&hk2, shared_cache_materials(), BRANCH_KEY_ID).await;
 }
 
@@ -583,11 +565,6 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
-    //= type=test
-    //# - (Default) A a random 16-byte UUID, which makes
-    //#   it unique for every Hierarchical Keyring. In this case, two Hierarchical Keyrings (or another Material Provider)
-    //#   CANNOT share the same cache entries in the cache.
     assert!(
         hk2.on_encrypt(shared_cache_materials()).await.is_err(),
         "HK2 on_encrypt MUST still fail — distinct random partition ids prevent cache reuse",
@@ -636,10 +613,6 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id-1
-    //= type=test
-    //# - If the Partition ID is set by the user and is different for two Hierarchical Keyrings (or another Material Provider),
-    //#   they CANNOT share the same cache entries in the cache.
     assert!(
         hk2.on_encrypt(shared_cache_materials()).await.is_err(),
         "HK2 on_encrypt MUST still fail — distinct partition ids prevent cache reuse",
@@ -689,10 +662,6 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#logical-key-store-name
-    //= type=test
-    //# - If we set the Logical Key Store Names for K1 and K2 to be different, HK1 (which uses Key Store client K1)
-    //#   and HK2 (which uses Key Store client K2) will NOT be able to share cache entries.
     assert!(
         hk2.on_encrypt(shared_cache_materials()).await.is_err(),
         "HK2 on_encrypt MUST still fail — different logical keystore names prevent cache reuse",

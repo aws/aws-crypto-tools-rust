@@ -96,45 +96,19 @@ impl fmt::Display for CmcError {
 
 impl std::error::Error for CmcError {}
 
-//= ../spec/framework/cryptographic-materials-cache.md#overview
-//= type=implication
-//# This document describes the interface that all CMCs MUST implement.
 //
-//= ../spec/framework/cryptographic-materials-cache.md#background-processing
-//= type=exception
-//= reason=Per-get pruning in LocalCmc::get_cache_entry bounds the staleness of long-idle expired entries to the N least-recently-used window on every get; a separate background sweeper is out of scope for the abstract trait and for the basic LocalCmc, and belongs to a higher-level wrapper such as SynchronizedLocalCmc.
-//# An implementation SHOULD provide a way to avoid this, for example,
-//# by spawning a background thread to occasionally remove expired entries.
 #[async_trait]
 pub trait Cmc: Send + Sync {
     /// Insert (or replace) the cache entry for the supplied cache identifier.
     /// Mirrors the `Put Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#put-cache-entry).
-    //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-    //= type=implication
-    //# This operation MUST NOT return the inserted cache entry.
     //
-    //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-    //= type=exception
-    //= reason=Visibility MAY — realized by StormTrackingCmc which acquires its inflight Mutex on every put then forwards to LocalCmc; cross-thread visibility for the next get follows from the Mutex release/acquire happens-before edge.
-    //# If used in a multi-threaded context,
-    //# the next [Get Cache Entry](#get-cache-entry) operation
-    //# MAY not return the entry just added.
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError>;
 
     /// Retrieve the cache entry for the supplied cache identifier, returning
     /// `None` on cache miss. Mirrors the `Get Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
-    //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
-    //= type=exception
-    //= reason=Permission MAY — realized by StormTrackingCmc::get_cache_entry's "within grace period AND not inflight → return NoSuchEntry" branch (10.4) and equivalent inflight-update branches (10.6, 10.11).
-    //# - Get Cache Entry MAY return a cache miss when the TTL has net yet been exceeded.
     //
-    //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
-    //= type=exception
-    //= reason=Permission MAY — realized by StormTrackingCmc::get_cache_entry's blocking branches (10.7, 10.10) which spin on sleep_milli intervals until either the FanOut slot opens or the key appears.
-    //# - Get Cache Entry MAY not return immediately if no cache entry exists for the specified cache ID,
-    //# and a cache miss was recently returned for another thread.
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError>;
 
     /// Delete the cache entry for the supplied cache identifier. Returns

@@ -67,9 +67,6 @@ fn new_without_keystore_id_generates_v4_uuid() {
     let store = BranchKeyStore::new(fixture_config_no_id(), kms, ddb)
         .expect("construction with valid config must succeed");
 
-    //= ../spec/framework/branch-key-store.md#keystore-id
-    //= type=test
-    //# If one is not supplied, then a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt) MUST be used.
     let id = store.keystore_id();
     assert_eq!(id.len(), 36, "v4 UUID canonical form is 36 chars");
     let bytes = id.as_bytes();
@@ -171,9 +168,6 @@ async fn get_key_store_info_returns_configured_values() {
     };
     let store = BranchKeyStore::new(cfg, kms, ddb).unwrap();
 
-    //= ../spec/framework/branch-key-store.md#getkeystoreinfo
-    //= type=test
-    //# This operation MUST return the keystore information in this keystore configuration.
     let info = store.get_key_store_info().await.unwrap();
     assert_eq!(info.keystore_id, "my-id");
     assert_eq!(info.keystore_name, "my-table");

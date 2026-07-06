@@ -117,9 +117,6 @@ fn new_with_zero_ttl_returns_validation_error() {
         Err(e) => e,
         Ok(_) => panic!("expected zero TTL to return a validation error"),
     };
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#cache-limit-ttl
-    //= type=test
-    //# This value MUST be greater than zero.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::Validation,
@@ -161,9 +158,6 @@ fn partition_id_default_is_16_byte_v4_uuid() {
 
     let bytes = keyring.partition_id_bytes();
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#partition-id
-    //= type=test
-    //# If the PartitionId is NOT provided by the user, it MUST be set to the 16 byte representation of a v4 UUID.
     assert_eq!(
         bytes.len(),
         16,
@@ -279,9 +273,6 @@ fn branch_key_source_supplier_variant_compiles() {
 
 #[test]
 fn new_with_default_cache_succeeds() {
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=test
-    //# If no `cache` is provided, a `DefaultCache` MUST be configured with entry capacity of 1000.
     let keyring = HierarchicalKeyring::new(
         stub_keystore(),
         3600,
@@ -296,9 +287,6 @@ fn new_with_default_cache_succeeds() {
 
 #[test]
 fn new_with_cache_type_none_uses_default() {
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=test
-    //# On initialization the Hierarchical Keyring MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md) with the configured cache limit TTL and the max cache size.
     let keyring = HierarchicalKeyring::new(
         stub_keystore(),
         3600,
@@ -317,11 +305,6 @@ fn new_with_shared_cache_round_trips_provided_arc() {
     let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
     let supplied_for_compare = Arc::clone(&supplied);
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=test
-    //# If the Hierarchical Keyring does NOT get a `Shared` cache on initialization,
-    //# it MUST initialize a [cryptographic-materials-cache](../local-cryptographic-materials-cache.md)
-    //# with the user provided cache limit TTL and the entry capacity.
     let keyring = HierarchicalKeyring::new(
         stub_keystore(),
         3600,
@@ -380,10 +363,6 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         sleep_milli: 10,
         time_units: None,
     };
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-    //= type=test
-    //# If the cache to initialize is a [Storm Tracking Cryptographic Materials Cache](../storm-tracking-cryptographic-materials-cache.md#overview)
-    //# then the [Grace Period](../storm-tracking-cryptographic-materials-cache.md#grace-period) MUST be less than the [cache limit TTL](#cache-limit-ttl).
     let err = match HierarchicalKeyring::new(
         stub_keystore(),
         60, // ttl_seconds == grace_period — must fail.
@@ -496,30 +475,10 @@ fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
 
     let actual = for_encrypt(partition_id, logical_key_store_name, branch_key_id);
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
-    //= type=test
-    //# When the hierarchical keyring receives an OnEncrypt request,
-    //# the cache entry identifier MUST be calculated as the
-    //# SHA-384 hash of the following byte strings, in the order listed:
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
-    //= type=test
-    //# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
-    //= type=test
-    //# - MUST be the Scope ID for Encrypt (0x01)
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
-    //= type=test
-    //# - MUST be the Partition ID for the Hierarchical Keyring
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#resource-suffix
-    //= type=test
-    //# The aforementioned 4 definitions ([Resource Identifier](#resource-identifier),
-    //# [Scope Identifier](#scope-identifier), [Partition ID](#partition-id-1), and
-    //# [Resource Suffix](#resource-suffix)) MUST be appended together with the null byte, 0x00,
-    //# and the SHA384 of the result should be taken as the final cache identifier.
     assert_eq!(actual, expected);
 }
 
@@ -547,23 +506,9 @@ fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
         branch_key_version,
     );
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
-    //= type=test
-    //# When the hierarchical keyring receives an OnDecrypt request,
-    //# it MUST calculate the cache entry identifier as the
-    //# SHA-384 hash of the following byte strings, in the order listed:
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
-    //= type=test
-    //# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
-    //= type=test
-    //# - MUST be the Scope ID for Decrypt (0x02)
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
-    //= type=test
-    //# - MUST be the Partition ID for the Hierarchical Keyring
     assert_eq!(actual, expected);
 }
 
@@ -621,9 +566,6 @@ fn cache_entry_identifier_distinct_versions_produce_distinct_outputs() {
     let logical = "logical-name";
     let branch_id = "branch-id";
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
-    //= type=test
-    //# - MUST be the UTF8 encoded branch-key-version
     assert_ne!(
         for_decrypt(partition_id, logical, branch_id, "v1"),
         for_decrypt(partition_id, logical, branch_id, "v2"),
@@ -688,9 +630,6 @@ fn compute_aad_layout_for_known_inputs() {
     // The expected bytes are independently constructed from the spec's bullet
     // list (label || branch-key-id || version || serialized-EC); a drift in
     // concatenation order or content fails this assertion.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
-    //= type=test
-    //# To construct the AAD, the keyring MUST concatenate the following values
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
     assert_eq!(aad, expected, "AAD must equal label || id || version || ec");
     assert_eq!(
@@ -733,9 +672,6 @@ fn compute_aad_fails_when_encryption_context_value_too_large() {
     let result = compute_aad(branch_key_id, version, &ec);
     let err = result.expect_err("compute_aad must fail when EC serialization fails");
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
-    //= type=test
-    //# If the keyring cannot serialize the encryption context, the operation MUST fail.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::Validation,
@@ -760,9 +696,6 @@ fn wrap_unwrap_round_trip_recovers_plaintext() {
     // different IV to AES-GCM than the one written into the layout, the
     // authentication tag would not verify on unwrap and round-trip would
     // fail.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=test
-    //# - MUST use the derived `IV` as the AES-GCM IV.
     assert_eq!(
         recovered, plaintext,
         "round-trip must recover original plaintext"
@@ -833,9 +766,6 @@ fn wrap_then_unwrap_with_tampered_encrypted_key_fails() {
     // Tampering a byte in the encrypted-key region invalidates the AES-GCM
     // authentication tag, so unwrap must fail; this proves the encrypted-key
     // bytes were the AES-GCM ciphertext input.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# - It MUST use the `encrypted key` obtained from deserialization as the AES-GCM input ciphertext.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -869,9 +799,6 @@ fn wrap_then_unwrap_with_tampered_tag_fails() {
     // Tampering a byte in the tag region invalidates the AES-GCM authentication,
     // so unwrap must fail; this proves the tag bytes were used as the AES-GCM
     // input authentication tag.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# - It MUST use the `authentication tag` obtained from deserialization as the AES-GCM input authentication tag.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -902,9 +829,6 @@ fn wrap_then_unwrap_with_tampered_iv_fails() {
     // Tampering the IV causes AES-GCM authentication to fail because the tag
     // was computed under the original IV; this proves the IV from
     // deserialization was used as the AES-GCM input IV.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# - It MUST use the `IV` obtained from deserialization as the AES-GCM input IV.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -945,13 +869,7 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     // Different branch_key bytes derive a different AES-256-GCM cipher key
     // on each side, so AES-GCM authentication fails on unwrap; this proves
     // the cipher key on both wrap and unwrap was the derivedBranchKey.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=test
-    //# - MUST use the `derivedBranchKey` as the AES-GCM cipher key.
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# - It MUST use the `derivedBranchKey` as the AES-GCM cipher key.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -994,14 +912,7 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     // was the AES-GCM AAD on the wrap side, and that the keyring
     // included branch_key_id as part of the AAD for both Encrypt and
     // Decrypt calls.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
-    //= type=test
-    //# To Encrypt and Decrypt the `wrappedDerivedBranchKey` the keyring MUST include the following values as part of the AAD for
-    //# the AES Encrypt/Decrypt calls.
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=test
-    //# - MUST use the serialized [AAD](#branch-key-wrapping-and-unwrapping-aad) as the AES-GCM AAD.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -1036,9 +947,6 @@ fn wrap_then_unwrap_with_different_encryption_context_fails() {
     // The serialized encryption context is part of the AES-GCM AAD on both
     // sides; if the unwrap-side EC differs from the wrap-side EC, the AAD
     // differs and AES-GCM authentication fails.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# - It MUST use the serialized [encryption context](#branch-key-wrapping-and-unwrapping-aad) as the AES-GCM AAD.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -1078,9 +986,6 @@ fn unwrap_too_short_ciphertext_returns_error() {
     // The unwrap call cannot complete deserialization (a required step)
     // when the input is shorter than the fixed overhead, so it must
     // return an error rather than silently succeed.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# If OnDecrypt fails to do any of the above, OnDecrypt MUST fail.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -1102,18 +1007,12 @@ fn wrap_succeeds_with_known_inputs_and_unwrap_round_trips() {
     // A successful wrap+unwrap round-trip requires every numbered step
     // (salt, IV, KDF, AES seal) to have run in order; absence of any
     // step would either error or break the round-trip.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=test
-    //# The hierarchical keyring MUST:
     let ciphertext = branch_key_wrap(&materials, materials.encryption_context(), plaintext)
         .expect("wrap must succeed");
 
     // A successful round-trip requires every unwrap step (salt deserialization,
     // IV deserialization, version deserialization, encrypted_key deserialization,
     // tag deserialization, KDF re-derivation, AES open) to have run in order.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //= type=test
-    //# To decrypt an encrypted data key with a branch key, the hierarchical keyring MUST:
     let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
         .expect("unwrap must succeed");
     assert_eq!(recovered, plaintext, "round-trip must recover plaintext");
@@ -1132,9 +1031,6 @@ fn wrap_then_unwrap_with_smaller_plaintext_round_trips() {
     // A 1-byte plaintext flows through wrap and unwrap; tampering the
     // encrypted-key region (already covered by another test) proves the
     // byte was the AES-GCM message.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=test
-    //# - MUST use the plain text data key that will be wrapped by the `derivedBranchKey` as the AES-GCM message.
     let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
         .expect("unwrap must succeed");
     assert_eq!(recovered, plaintext, "1-byte plaintext must round-trip");
@@ -1156,9 +1052,6 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     let result = branch_key_wrap(&materials, materials.encryption_context(), &[0u8; 32]);
     let err = result.expect_err("wrap must fail when EC serialization fails");
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=test
-    //# If OnEncrypt fails to do any of the above, OnEncrypt MUST fail.
     assert_eq!(
         err.kind,
         MaterialsErrorKind::Validation,
@@ -1317,10 +1210,6 @@ mod onencrypt {
         let materials_in = fixture_empty_materials_with_id(suite_id);
         assert!(materials_in.plaintext_data_key().is_none());
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //= type=test
-        //# If the input [encryption materials](../structures.md#encryption-materials) do not contain a plaintext data key,
-        //# OnEncrypt MUST generate a random plaintext data key, according to the key length defined in the [algorithm suite](../algorithm-suites.md#encryption-key-length).
         let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
         let pdk = materials_out
             .plaintext_data_key()
@@ -1365,14 +1254,8 @@ mod onencrypt {
         let edks = materials_out.encrypted_data_keys();
         assert_eq!(edks.len(), 1, "on_encrypt MUST append exactly one EDK");
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //= type=test
-        //# - [key provider id](../structures.md#key-provider-id): MUST be UTF8 Encoded "aws-kms-hierarchy"
         assert_eq!(edks[0].key_provider_id, "aws-kms-hierarchy");
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //= type=test
-        //# - [key provider info](../structures.md#key-provider-information): MUST be the UTF8 Encoded AWS DDB response `branch-key-id`
         assert_eq!(
             edks[0].key_provider_info.as_slice(),
             FIXED_BRANCH_KEY_ID.as_bytes()
@@ -1401,9 +1284,6 @@ mod onencrypt {
         )
         .unwrap();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //= type=test
-        //# - [ciphertext](../structures.md#ciphertext): MUST be serialized as the [hierarchical keyring ciphertext](#ciphertext)
         assert_eq!(
             &recovered,
             materials_out.plaintext_data_key().unwrap().as_bytes(),
@@ -1427,15 +1307,7 @@ mod onencrypt {
             "first on_encrypt must call keystore.get_active_branch_key once"
         );
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //= type=test
-        //# If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key wrapping.
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
-        //= type=test
-        //# If the Keystore's GetActiveBranchKey operation succeeds
-        //# the keyring MUST put the returned branch key materials in the cache using the
-        //# formula defined in [Appendix A](#appendix-a-cache-entry-identifier-formulas).
         keyring
             .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
             .await
@@ -1507,9 +1379,6 @@ mod onencrypt {
         )
         .unwrap();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#query-branch-keystore-onencrypt
-        //= type=test
-        //# Otherwise, OnEncrypt MUST fail.
         let err = match keyring
             .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
             .await
@@ -1543,10 +1412,6 @@ mod onencrypt {
         )
         .unwrap();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
-        //= type=test
-        //# The `branchKeyId` used in this operation is either the configured branchKeyId, if supplied, or the result of the `branchKeySupplier`'s
-        //# `getBranchKeyId` operation, using the encryption material's encryption context as input.
         let materials_out = keyring
             .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
             .await
@@ -1774,9 +1639,6 @@ mod ondecrypt {
         )
         .unwrap();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# If the decryption materials already contain a `PlainTextDataKey`, OnDecrypt MUST fail.
         let err = keyring
             .on_decrypt(dm, &edks)
             .await
@@ -1798,10 +1660,6 @@ mod ondecrypt {
             .await
             .expect("on_decrypt must succeed for an EDK produced by this keyring");
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# If a decryption succeeds, this keyring MUST
-        //# add the resulting plaintext data key to the decryption materials and return the modified materials.
         let recovered = dm_out
             .plaintext_data_key()
             .expect("on_decrypt must populate the plaintext data key on success");
@@ -1834,13 +1692,7 @@ mod ondecrypt {
             .await
             .unwrap();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-        //= type=test
-        //# - Deserialize the UUID string representation of the `version` from the [encrypted data key](../structures.md#encrypted-data-key) [ciphertext](#ciphertext).
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-        //= type=test
-        //# - The deserialized UUID string representation of the `version`
         assert_eq!(keystore.get_version_calls(), 1);
         assert_eq!(
             keystore.last_version_arg().as_deref(),
@@ -1867,15 +1719,7 @@ mod ondecrypt {
             "first on_decrypt must call get_branch_key_version once",
         );
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# If a cache entry is found and the entry's TTL has not expired, the hierarchical keyring MUST use those branch key materials for key unwrapping.
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-        //= type=test
-        //# If the Keystore's GetBranchKeyVersion operation succeeds
-        //# the keyring MUST put the returned branch key materials in the cache using the
-        //# formula defined in [Appendix A](#appendix-a-cache-entry-identifier-formulas).
         let _ = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await
@@ -1903,9 +1747,6 @@ mod ondecrypt {
         );
         edks.insert(0, bogus);
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# - Its provider ID MUST match the UTF8 Encoded value of “aws-kms-hierarchy”.
         let dm_out = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await
@@ -1932,9 +1773,6 @@ mod ondecrypt {
         );
         edks.insert(0, bogus);
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# - Deserialize the key provider info, if deserialization fails the next EDK in the set MUST be attempted.
         let dm_out = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await
@@ -1959,9 +1797,6 @@ mod ondecrypt {
         );
         edks.insert(0, bogus);
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# - The deserialized key provider info MUST be UTF8 Decoded and MUST match this keyring's configured `Branch Key Identifier`.
         let dm_out = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await
@@ -1979,11 +1814,6 @@ mod ondecrypt {
         let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# If OnDecrypt fails to successfully decrypt any [encrypted data key](../structures.md#encrypted-data-key),
-        //# then it MUST yield an error that includes all the collected errors
-        //# and MUST NOT modify the [decryption materials](structures.md#decryption-materials).
         let err = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &[])
             .await
@@ -2012,9 +1842,6 @@ mod ondecrypt {
             vec![0u8; 4],
         );
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# If this attempt results in an error, then these errors MUST be collected.
         let err = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &[truncated])
             .await
@@ -2096,13 +1923,7 @@ mod ondecrypt {
         )
         .unwrap();
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# If the keyring is not able to retrieve `branch key materials` from the backing keystore then OnDecrypt MUST fail.
         //
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#getitem-branch-keystore-ondecrypt
-        //= type=test
-        //# Otherwise, OnDecrypt MUST fail.
         let err = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await
@@ -2141,10 +1962,6 @@ mod ondecrypt {
 
         let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;
 
-        //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //= type=test
-        //# The `branchKeyId` used in this operation is either the configured branchKeyId, if supplied, or the result of the `branchKeySupplier`'s
-        //# `getBranchKeyId` operation, using the decryption material's encryption context as input.
         let dm_out = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await

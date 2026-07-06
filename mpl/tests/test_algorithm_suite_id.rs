@@ -86,13 +86,7 @@ fn test_hex_ids_match_spec_table() {
 
 #[test]
 fn test_hex_ids_are_unique_across_all_suites() {
-    //= ../spec/framework/algorithm-suites.md#supported-algorithm-suites
-    //= type=test
-    //# Algorithm Suite ID MUST be a unique hex value across all supported algorithm suites.
     //
-    //= ../spec/framework/algorithm-suites.md#algorithm-suite-id
-    //= type=test
-    //# A 2-byte hex value that MUST uniquely identify an algorithm suite.
     let mut seen = HashSet::new();
     for suite in ALL_SUITES {
         let id = suite.id_bytes();
@@ -107,11 +101,6 @@ fn test_hex_ids_are_unique_across_all_suites() {
 
 #[test]
 fn test_reserved_id_00_00_is_not_used() {
-    //= ../spec/framework/algorithm-suites.md#supported-algorithm-suites
-    //= type=test
-    //# The value `00 00` is reserved
-    //# and MUST NOT be used
-    //# as an Algorithm Suite ID in the future.
     for suite in ALL_SUITES {
         let id = suite.id_bytes();
         assert_ne!(
@@ -134,9 +123,6 @@ fn test_id_bytes_length_is_two() {
 
 #[test]
 fn test_id_bytes_can_bind_algorithm_suite_to_ciphertext() {
-    //= ../spec/framework/algorithm-suites.md#algorithm-suite-id
-    //= type=test
-    //# This 2-byte value SHOULD be used to bind algorithm suites to ciphertext.
     // The accessor returns a fresh [u8; 2] copy, ready to be written into a
     // ciphertext header. This regression check ensures the public accessor
     // remains usable for that purpose.
@@ -184,9 +170,6 @@ fn test_overview_per_suite_specification_is_defined() {
 
 #[test]
 fn test_gcm_specifics_for_every_esdk_suite() {
-    //= ../spec/framework/algorithm-suites.md#gcm
-    //= type=test
-    //# If specified to use GCM, the AWS Encryption SDK MUST use GCM with the following specifics:
     for suite in ALL_SUITES {
         let spec = suite.specification();
         assert_eq!(
@@ -251,9 +234,6 @@ fn test_structure_required_fields_present_for_every_suite() {
 
 #[test]
 fn test_encryption_key_length_matches_spec_table() {
-    //= ../spec/framework/algorithm-suites.md#encryption-algorithm
-    //= type=test
-    //# The length of the input encryption key MUST equal the [encryption key length](#encryption-key-length) specified by the algorithm suite.
     // Per spec Encryption Settings table (bits → bytes):
     let cases: [(AlgorithmSuiteId, usize); 11] = [
         (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, 16),
@@ -292,9 +272,6 @@ fn test_encryption_key_length_matches_spec_table() {
 
 #[test]
 fn test_iv_length_is_twelve_for_every_esdk_suite() {
-    //= ../spec/framework/algorithm-suites.md#encryption-algorithm-mode
-    //= type=test
-    //# The length of the input IV MUST equal the IV length specified by the algorithm suite.
     for suite in ALL_SUITES {
         assert_eq!(suite.specification().iv_length(), 12, "{:?}", suite);
     }
@@ -302,9 +279,6 @@ fn test_iv_length_is_twelve_for_every_esdk_suite() {
 
 #[test]
 fn test_authentication_tag_length_is_sixteen_for_every_esdk_suite() {
-    //= ../spec/framework/algorithm-suites.md#encryption-algorithm-mode
-    //= type=test
-    //# The length of the authentication tag MUST equal the authentication tag length specified by the algorithm suite.
     for suite in ALL_SUITES {
         assert_eq!(
             suite.specification().authentication_tag_length(),
@@ -317,9 +291,6 @@ fn test_authentication_tag_length_is_sixteen_for_every_esdk_suite() {
 
 #[test]
 fn test_encryption_kdf_matches_spec_table() {
-    //= ../spec/framework/algorithm-suites.md#encryption-key-derivation-algorithm
-    //= type=test
-    //# The specified KDF algorithm MUST be used to generate the encryption algorithm encryption key input.
     let cases: [(AlgorithmSuiteId, KeyDerivationAlgorithm); 11] = [
         (
             AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
@@ -407,9 +378,6 @@ fn test_identity_kdf_used_only_for_no_kdf_suites() {
 
 #[test]
 fn test_commit_kdf_present_only_for_commit_key_suites() {
-    //= ../spec/framework/algorithm-suites.md#commit-key-derivation-algorithm
-    //= type=test
-    //# The specified KDF algorithm MUST be used to generate the [commit key](#commit-key).
     for suite in ALL_SUITES {
         let spec = suite.specification();
         let expected_commit = matches!(
@@ -443,13 +411,7 @@ fn test_asymmetric_signature_present_for_signing_suites() {
     // this MPL layer exposes the required algorithm via
     // AlgorithmSuite::asymmetric_signature_algorithm(), and this test verifies
     // the suite-to-algorithm mapping consumers will read.
-    //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-    //= type=test
-    //# - Asymmetric signatures MUST be generated using the specified asymmetric signature algorithm.
     //
-    //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-    //= type=test
-    //# - Asymmetric signatures MUST be verified using the specified asymmetric signature algorithm.
     let cases: [(AlgorithmSuiteId, Option<AsymmetricSignatureAlgorithm>); 11] = [
         (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
         (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
@@ -491,13 +453,7 @@ fn test_no_asymmetric_signature_means_signing_disabled() {
     // downstream consumers; this MPL layer exposes has_asymmetric_signing() =
     // false for non-signing suites, which is the suite-to-algorithm mapping
     // consumers will read.
-    //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-    //= type=test
-    //# - Asymmetric signatures MUST NOT be generated.
     //
-    //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-    //= type=test
-    //# - Asymmetric signatures MUST NOT be verified.
     // For each variant whose suite spec lacks an asymmetric signature algorithm,
     // `has_asymmetric_signing()` MUST return false. Materials construction with
     // a signing key on such a suite is rejected (covered by
@@ -548,13 +504,7 @@ fn test_symmetric_signature_algorithm_is_optional_field() {
 
 #[test]
 fn test_no_symmetric_signature_means_generation_and_verification_disabled() {
-    //= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-    //= type=test
-    //# - Symmetric signatures MUST NOT be generated.
     //
-    //= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-    //= type=test
-    //# - Symmetric signatures MUST NOT be verified.
     // For every constructible ESDK variant, has_symmetric_signing() == false,
     // so callers MUST NOT generate or verify symmetric signatures with these
     // materials. The materials types reject symmetric_signing_key arguments
@@ -569,9 +519,6 @@ fn test_no_symmetric_signature_means_generation_and_verification_disabled() {
 
 #[test]
 fn test_message_format_version_branches_v1_and_v2() {
-    //= ../spec/framework/algorithm-suites.md#message-format-version
-    //= type=test
-    //# This MUST be used to branch any serialization/deserialization logic in [supported formats](#supported-formats).
     let cases: [(AlgorithmSuiteId, u8); 11] = [
         (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, 0x01),
         (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, 0x01),
@@ -609,9 +556,6 @@ fn test_message_format_version_branches_v1_and_v2() {
 
 #[test]
 fn test_suite_04_78_stores_commit_key_in_suite_data() {
-    //= ../spec/framework/algorithm-suites.md#supported-algorithm-suite-data
-    //= type=test
-    //# - Algorithm Suite 04 78 MUST store the commit key in the suite data
     let spec = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
     assert_eq!(spec.id(), [0x04, 0x78]);
     // Commit key for HKDF-SHA512 is 256 bits = 32 bytes; suite data field
@@ -622,9 +566,6 @@ fn test_suite_04_78_stores_commit_key_in_suite_data() {
 
 #[test]
 fn test_suite_05_78_stores_commit_key_in_suite_data() {
-    //= ../spec/framework/algorithm-suites.md#supported-algorithm-suite-data
-    //= type=test
-    //# - Algorithm Suite 05 78 MUST store the commit key in the suite data
     let spec = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384.specification();
     assert_eq!(spec.id(), [0x05, 0x78]);
     assert_eq!(spec.algorithm_suite_data_length(), 32);
@@ -633,9 +574,6 @@ fn test_suite_05_78_stores_commit_key_in_suite_data() {
 
 #[test]
 fn test_algorithm_suite_data_length_may_be_zero() {
-    //= ../spec/framework/algorithm-suites.md#algorithm-suite-data-length
-    //= type=test
-    //# The field MAY be length 0.
     // Every non-commit-key ESDK suite has algorithm_suite_data_length == 0.
     let zero_length_suites = [
         AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,

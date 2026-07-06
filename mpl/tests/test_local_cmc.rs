@@ -95,15 +95,7 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
     // store more entries than this value" constraint reduces to "store
     // nothing": any put must leave `len() == 0` once the post-eviction
     // sweep has run.
-    //= ../spec/framework/local-cryptographic-materials-cache.md#initialization
-    //= type=test
-    //# On initialization of the local CMC,
-    //# the caller MUST provide the following:
     //
-    //= ../spec/framework/local-cryptographic-materials-cache.md#entry-capacity
-    //= type=test
-    //# The local CMC MUST accept entry capacity values between zero
-    //# and an implementation-defined maximum, inclusive.
     let zero_cap = LocalCmc::new(0, 1).expect("zero capacity is accepted");
     assert_eq!(zero_cap.entry_capacity(), 0);
 
@@ -172,18 +164,10 @@ async fn test_put_over_capacity_evicts_lru() {
     cmc.put_cache_entry(b"middle", make_entry_at(creation, expiry))
         .await
         .expect("put middle succeeds");
-    //= ../spec/framework/local-cryptographic-materials-cache.md#put-cache-entry
-    //= type=test
-    //# While performing a Put Cache Entry operation,
-    //# the local CMC MAY store more entries than the entry capacity.
     cmc.put_cache_entry(b"newest", make_entry_at(creation, expiry))
         .await
         .expect("put newest succeeds even though cache was at capacity");
 
-    //= ../spec/framework/local-cryptographic-materials-cache.md#put-cache-entry
-    //= type=test
-    //# However, before returning, the local CMC MUST evict least-recently used entries
-    //# until the number of stored entries does not exceed the entry capacity.
     let evicted = cmc.get_cache_entry(b"oldest").await.expect("get succeeds");
     assert!(evicted.is_none(), "oldest LRU entry MUST have been evicted");
 }
@@ -200,10 +184,6 @@ async fn test_capacity_invariant_holds_after_put_returns() {
         cmc.put_cache_entry(&[i], make_entry_at(creation, expiry))
             .await
             .expect("put succeeds");
-        //= ../spec/framework/local-cryptographic-materials-cache.md#entry-capacity
-        //= type=test
-        //# The local CMC MUST NOT store more entries than this value,
-        //# except temporarily while performing a Put Cache Entry operation.
         assert!(
             cmc.len().expect("len succeeds") <= capacity,
             "post-put size MUST stay at or below the configured capacity"
@@ -226,20 +206,8 @@ async fn test_get_drops_ttl_expired_entry() {
         .await
         .expect("put succeeds");
 
-    //= ../spec/framework/local-cryptographic-materials-cache.md#get-cache-entry
-    //= type=test
-    //# The local CMC MUST NOT return any TTL-expired entry.
     //
-    //= ../spec/framework/cryptographic-materials-cache.md#time-to-live-ttl
-    //= type=test
-    //# After a cache entry's TTL has elapsed,
-    //# we say that the entry is _TTL-expired_,
-    //# and a CMC MUST NOT return the entry to any caller.
     //
-    //= ../spec/framework/cryptographic-materials-cache.md#get-cache-entry
-    //= type=test
-    //# The CMC MUST validate that the cache entry
-    //# has not exceeded it's stored [TTL](#time-to-live-ttl).
     let got = cmc
         .get_cache_entry(b"expiring")
         .await
@@ -313,10 +281,6 @@ async fn test_get_prunes_tail_window() {
 
     // Trigger a get on a fresh entry — the prune-on-get pass should drop
     // every TTL-expired entry in the LRU tail before returning.
-    //= ../spec/framework/local-cryptographic-materials-cache.md#get-cache-entry
-    //= type=test
-    //# When performing a Get Cache Entry operation,
-    //# the local CMC MUST [prune TTL-expired cache entries](#pruning).
     let _ = cmc
         .get_cache_entry(&[b'f', 0])
         .await
@@ -352,12 +316,6 @@ async fn test_pruning_evicts_all_ttl_expired_in_tail() {
     // Drive prune via a get on the fresh entry.
     let _ = cmc.get_cache_entry(b"fresh").await.expect("get succeeds");
 
-    //= ../spec/framework/local-cryptographic-materials-cache.md#pruning
-    //= type=test
-    //# To prune TTL-expired cache entries,
-    //# the local CMC MUST evict all TTL-expired entries
-    //# among the `N` least recently used entries,
-    //# where `N` is the [Entry Pruning Tail Size](#entry-pruning-tail-size).
     for i in 0..4u8 {
         let got = cmc.get_cache_entry(&[b'e', i]).await.expect("get succeeds");
         assert!(
@@ -387,9 +345,6 @@ async fn test_pruning_does_not_evict_outside_tail() {
     let fresh = creation + TTL_FRESH_OFFSET;
     let frozen_now = creation + FROZEN_NOW_OFFSET;
 
-    //= ../spec/framework/local-cryptographic-materials-cache.md#initialization
-    //= type=test
-    //# The local CMC MUST also define the following:
     let cmc = LocalCmc::with_clock(10, 1, move || frozen_now).expect("LocalCmc constructs");
     assert_eq!(cmc.entry_pruning_tail_size(), 1);
 
@@ -410,12 +365,6 @@ async fn test_pruning_does_not_evict_outside_tail() {
         .await
         .expect("get unrelated succeeds");
 
-    //= ../spec/framework/local-cryptographic-materials-cache.md#entry-pruning-tail-size
-    //= type=test
-    //# The _entry pruning tail size_
-    //# is the number of least recently used entries that the local CMC
-    //# MUST check during [pruning](#pruning)
-    //# for TTL-expired entries to evict.
     assert_eq!(
         cmc.len().expect("len succeeds"),
         2,
@@ -439,9 +388,6 @@ async fn test_put_then_get_returns_inserted_entry() {
         .await
         .expect("put succeeds");
 
-    //= ../spec/framework/cryptographic-materials-cache.md#put-cache-entry
-    //= type=test
-    //# The CMC MUST create a new cache entry for the specified cache ID.
     let got = cmc
         .get_cache_entry(b"id-1")
         .await
@@ -519,9 +465,6 @@ async fn test_concurrent_put_atomic_visibility() {
 
     // Whichever put won, the stored usage metadata must equal one of the
     // two supplied values verbatim (no torn read across the two fields).
-    //= ../spec/framework/cryptographic-materials-cache.md#usage-metadata
-    //= type=test
-    //# Updating usage metadata SHOULD be atomic.
     assert!(
         got.usage_metadata == usage_a || got.usage_metadata == usage_b,
         "concurrent puts MUST yield one of the two supplied UsageMetadata values, observed {:?}",

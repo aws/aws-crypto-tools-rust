@@ -3,17 +3,8 @@
 
 //! Configuration types for the [`Keystore`](super::Keystore) trait.
 
-//= ../spec/framework/branch-key-store.md#initialization
-//= type=implication
-//# The following inputs MAY be specified to create a KeyStore:
 //
-//= ../spec/framework/branch-key-store.md#initialization
-//= type=implication
-//# The following inputs MUST be specified to create a KeyStore:
 //
-//= ../spec/framework/branch-key-store.md#getkeystoreinfo
-//= type=implication
-//# This MUST include:
 /// Configuration for constructing a [`Keystore`](super::Keystore).
 #[derive(Debug, Clone)]
 pub struct KeyStoreConfig {
@@ -45,19 +36,8 @@ pub struct KeyStoreInfo {
     pub aws_kms_configuration: KmsConfiguration,
 }
 
-//= ../spec/framework/branch-key-store.md#aws-kms-configuration
-//= type=implication
-//# `KMS Key ARN` and `KMS MRKey ARN` MUST take an additional argument
-//# that is a KMS ARN.
 //
-//= ../spec/framework/branch-key-store.md#aws-kms-configuration
-//= type=implication
-//# To be clear, an KMS ARN for a Multi-Region Key MAY be provided to the `KMS Key ARN` configuration,
-//# and a KMS ARN for non Multi-Region Key MAY be provided to the `KMS MRKey ARN` configuration.
 //
-//= ../spec/framework/branch-key-store.md#aws-kms-configuration
-//= type=implication
-//# `MRDiscovery` MUST take an additional argument, which is a region.
 /// The KMS key configuration for a keystore.
 #[derive(Debug, Clone)]
 #[non_exhaustive]

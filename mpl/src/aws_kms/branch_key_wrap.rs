@@ -68,16 +68,12 @@ pub fn compute_aad(
 ) -> Result<Vec<u8>, MaterialsError> {
     let version_bytes = uuid_str_to_16_bytes(branch_key_version)?;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
-    //# If the keyring cannot serialize the encryption context, the operation MUST fail.
     let serialized_ec = encryption_context.serialize()?;
 
     let mut aad = Vec::with_capacity(
         HIERARCHY_LABEL.len() + branch_key_id.len() + VERSION_LEN + serialized_ec.len(),
     );
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
-    //# To construct the AAD, the keyring MUST concatenate the following values
     aad.extend_from_slice(HIERARCHY_LABEL);
     aad.extend_from_slice(branch_key_id.as_bytes());
     aad.extend_from_slice(&version_bytes);
@@ -191,9 +187,6 @@ pub fn wrap(
     encryption_context: &EncryptionContext,
     plaintext_data_key: &[u8],
 ) -> Result<Vec<u8>, MaterialsError> {
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //# The hierarchical keyring MUST:
-
     // 1. Generate a 16-byte random salt.
     let mut salt = [0u8; SALT_LEN];
     fill(&mut salt).map_err(|_| {
@@ -223,34 +216,20 @@ pub fn wrap(
     // required by the wire format below.
     let mut in_out = plaintext_data_key.to_vec();
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //# - MUST use the `derivedBranchKey` as the AES-GCM cipher key.
     let unbound = UnboundKey::new(&AES_256_GCM, &derived_branch_key)
         .map_err(|_| MaterialsError::keyring_failed("Branch key wrap: invalid AES-256 key"))?;
     let key = LessSafeKey::new(unbound);
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //# - MUST use the derived `IV` as the AES-GCM IV.
     let nonce = Nonce::assume_unique_for_key(iv);
 
     let version_bytes = uuid_str_to_16_bytes(materials.branch_key_version())?;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
-    //# To Encrypt and Decrypt the `wrappedDerivedBranchKey` the keyring MUST include the following values as part of the AAD for
-    //# the AES Encrypt/Decrypt calls.
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //# - MUST use the serialized [AAD](#branch-key-wrapping-and-unwrapping-aad) as the AES-GCM AAD.
     //
     // AES_256_GCM in aws-lc-rs always produces a 16-byte tag
     // (MAX_TAG_LEN == TAG_LEN == 16); the type-system / library
     // guarantee makes the requirement true by construction.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //= type=implication
-    //# - MUST use an authentication tag byte of length 16.
     //
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //# - MUST use the plain text data key that will be wrapped by the `derivedBranchKey` as the AES-GCM message.
     let tag = key
         .seal_in_place_separate_tag(nonce, Aad::from(&aad_bytes), &mut in_out)
         .map_err(|_| MaterialsError::keyring_failed("Branch key wrap: AES-256-GCM seal failed"))?;
@@ -270,8 +249,6 @@ pub fn wrap(
 
     // Each fallible step (entropy, KDF, AAD construction, AES seal) uses `?`
     // to propagate; reaching this Ok requires every step to have succeeded.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
-    //# If OnEncrypt fails to do any of the above, OnEncrypt MUST fail.
     Ok(output)
 }
 
@@ -290,9 +267,6 @@ pub fn unwrap(
     encryption_context: &EncryptionContext,
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, MaterialsError> {
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# To decrypt an encrypted data key with a branch key, the hierarchical keyring MUST:
-
     // Validate ciphertext is at least the fixed overhead so the slicing below is in-bounds.
     if ciphertext.len() < FIXED_OVERHEAD_LEN {
         return Err(MaterialsError::keyring_failed(format!(
@@ -332,14 +306,10 @@ pub fn unwrap(
         encryption_context,
     )?;
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# - It MUST use the `derivedBranchKey` as the AES-GCM cipher key.
     let unbound = UnboundKey::new(&AES_256_GCM, &derived_branch_key)
         .map_err(|_| MaterialsError::keyring_failed("Branch key unwrap: invalid AES-256 key"))?;
     let key = LessSafeKey::new(unbound);
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# - It MUST use the `IV` obtained from deserialization as the AES-GCM input IV.
     let nonce = Nonce::assume_unique_for_key(iv_bytes);
 
     // `LessSafeKey::open_in_place` consumes a single in-out buffer holding
@@ -347,19 +317,13 @@ pub fn unwrap(
     // following annotations can sit on the lines that copy in each piece.
     let mut combined = Vec::with_capacity(encrypted_key.len().saturating_add(TAG_LEN));
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# - It MUST use the `encrypted key` obtained from deserialization as the AES-GCM input ciphertext.
     combined.extend_from_slice(encrypted_key);
 
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# - It MUST use the `authentication tag` obtained from deserialization as the AES-GCM input authentication tag.
     combined.extend_from_slice(tag);
 
     // A1 ("the keyring MUST include the AAD values for the AES Encrypt/Decrypt
     // calls") is annotated at the wrap-side AES seal call; the requirement
     // applies symmetrically here on the AES open call.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# - It MUST use the serialized [encryption context](#branch-key-wrapping-and-unwrapping-aad) as the AES-GCM AAD.
     let plaintext_slice = key
         .open_in_place(nonce, Aad::from(&aad_bytes), &mut combined)
         .map_err(|_| {
@@ -370,7 +334,5 @@ pub fn unwrap(
     // Each fallible step (deserialization, KDF, AAD construction, AES open)
     // uses `?` to propagate; reaching this Ok requires every step to have
     // succeeded.
-    //= ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
-    //# If OnDecrypt fails to do any of the above, OnDecrypt MUST fail.
     Ok(plaintext)
 }

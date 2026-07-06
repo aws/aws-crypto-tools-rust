@@ -23,8 +23,6 @@ pub const TYPE_BRANCH_VERSION_PREFIX: &str = "branch:version:";
 pub const CUSTOM_EC_PREFIX: &str = "aws-crypto-ec:";
 
 /// A DDB record at the string-keyed abstraction level.
-//= ../spec/framework/branch-key-store.md#record-format
-//# A branch key record MUST include the following key-value pairs:
 #[derive(Debug, Clone)]
 pub struct EncryptedRecord {
     pub attributes: BTreeMap<String, String>,
@@ -38,20 +36,10 @@ pub fn custom_encryption_context_from_authenticated_encryption_context(
 ) -> Result<EncryptionContext, KeystoreError> {
     let mut ec = EncryptionContext::new();
 
-    //= ../spec/framework/branch-key-store.md#record-format
-    //# A branch key record MAY include [custom encryption context](#custom-encryption-context) key-value pairs.
     for (key, value) in authenticated_ec {
         if let Some(stripped) = key.strip_prefix(CUSTOM_EC_PREFIX) {
-            //= ../spec/framework/branch-key-store.md#custom-encryption-context-from-authenticated-encryption-context
-            //# For every key in the [encryption context](./structures.md#encryption-context-3)
-            //# the string `aws-crypto-ec:` + the UTF8 decode of this key
-            //# MUST exist as a key in the authenticated encryption context.
             let ec_key = stripped.as_bytes().to_vec();
 
-            //= ../spec/framework/branch-key-store.md#custom-encryption-context-from-authenticated-encryption-context
-            //# Also, the value in the [encryption context](./structures.md#encryption-context-3) for this key
-            //# MUST equal the value in the authenticated encryption context
-            //# for the constructed key.
             let ec_value = value.as_bytes().to_vec();
 
             ec.insert(ec_key, ec_value);
@@ -74,8 +62,6 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         )
     })?;
 
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //# The `type` attribute MUST either be equal to `"branch:ACTIVE"` or start with `"branch:version:"`.
     if type_attr != TYPE_BRANCH_ACTIVE && !type_attr.starts_with(TYPE_BRANCH_VERSION_PREFIX) {
         return Err(KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
@@ -88,10 +74,6 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
 
     // Resolve version string based on type attribute value.
     let version_string = if type_attr == TYPE_BRANCH_ACTIVE {
-        //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-        //# If the `type` attribute is equal to `"branch:ACTIVE"`
-        //# then the authenticated encryption context MUST have a `version` attribute
-        //# and the version string is this value.
         authenticated_ec
             .get(FIELD_VERSION)
             .ok_or_else(|| {
@@ -102,14 +84,9 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
             })?
             .clone()
     } else {
-        //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-        //# If the `type` attribute start with `"branch:version:"` then the version string MUST be equal to this value.
         type_attr.clone()
     };
 
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //# - [Branch Key Version](./structures.md#branch-key-version)
-    //# The version string MUST start with `branch:version:`.
     if !version_string.starts_with(TYPE_BRANCH_VERSION_PREFIX) {
         return Err(KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
@@ -120,12 +97,8 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         ));
     }
 
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //# The remaining string encoded as UTF8 bytes MUST be the Branch Key version.
     let branch_key_version = version_string[TYPE_BRANCH_VERSION_PREFIX.len()..].to_string();
 
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //# - [Branch Key Id](./structures.md#branch-key-id) MUST be the `branch-key-id`
     let branch_key_id = authenticated_ec
         .get(FIELD_BRANCH_KEY_ID)
         .ok_or_else(|| {
@@ -136,14 +109,9 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         })?
         .clone();
 
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //# - [Encryption Context](./structures.md#encryption-context-3) MUST be constructed by
-    //# [Custom Encryption Context From Authenticated Encryption Context](#custom-encryption-context-from-authenticated-encryption-context)
     let encryption_context =
         custom_encryption_context_from_authenticated_encryption_context(authenticated_ec)?;
 
-    //= ../spec/framework/branch-key-store.md#branch-key-materials-from-authenticated-encryption-context
-    //# - [Branch Key](./structures.md#branch-key) MUST be the [decrypted branch key material](#aws-kms-branch-key-decryption)
     let branch_key: [u8; 32] = plaintext_branch_key.try_into().map_err(|v: Vec<u8>| {
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,

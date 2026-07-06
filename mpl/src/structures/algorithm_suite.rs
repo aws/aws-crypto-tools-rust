@@ -9,111 +9,26 @@ use std::fmt;
 // Algorithm suite ID enum
 // ============================================================================
 
-//= ../spec/framework/algorithm-suites.md#overview
-//= type=implication
-//# The algorithm suite defines the behaviors [supported formats](#supported-formats) MUST follow for cryptographic operations.
 //
-//= ../spec/framework/algorithm-suites.md#supported-format-algorithm-suites-enum
-//= type=implication
-//# The Material Providers Library MUST provide
-//# a set of algorithm suite ENUM for each [supported format](#supported-format).
 //
-//= ../spec/framework/algorithm-suites.md#supported-algorithm-suites-enum
-//= type=implication
-//# The Material Providers Library MUST provide
-//# an ENUM that is the super set of all the [supported format algorithm suites enum](#supported-format-algorithm-suites-enum)
-//# called the Algorithm Suite ENUM.
 //
-//= ../spec/framework/algorithm-suites.md#supported-algorithm-suites-enum
-//= type=implication
-//# This means that different formats MAY have duplicate Format Algorithm Suite ENUM.
 //
-//= ../spec/framework/algorithm-suites.md#cbc
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# If specified to use CBC, the S3 Encryption Client MUST use CBC with the following specifics:
 //
-//= ../spec/framework/algorithm-suites.md#cbc
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - CBC MUST only be used to decrypt existing ciphertexts.
 //
-//= ../spec/framework/algorithm-suites.md#cbc
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - CBC MUST NOT be used to encrypt new ciphertexts.
 //
-//= ../spec/framework/algorithm-suites.md#ctr
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# If specified to use CTR, the S3 Encryption Client MUST use CTR with the following specifics:
 //
-//= ../spec/framework/algorithm-suites.md#ctr
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - CTR MUST only be used to decrypt existing ciphertexts.
 //
-//= ../spec/framework/algorithm-suites.md#ctr
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - CTR MUST NOT be used to encrypt new ciphertexts.
 //
-//= ../spec/framework/algorithm-suites.md#algorithm-suites-signature-settings
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# An algorithm suite with a symmetric signature algorithm MUST use [intermediate key wrapping](#intermediate-key-wrapping).
 //
-//= ../spec/framework/algorithm-suites.md#intermediate-key-wrapping
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - For each encrypted data key, a distinct `intermediate key` MUST be generated using cryptographically secure random bytes.
 //
-//= ../spec/framework/algorithm-suites.md#intermediate-key-wrapping
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# This intermediate key MUST have length equal to the encryption key length of the algorithm suite.
 //
-//= ../spec/framework/algorithm-suites.md#intermediate-key-wrapping
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - For each encrypted data key, a [symmetric signing key](./structures.md#symmetric-signing-key) MUST be derived from the `intermediate key`
-//# using the key derivation algorithm in the algorithm suite, with the following specifics:
 //
-//= ../spec/framework/algorithm-suites.md#intermediate-key-wrapping
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - For each encrypted data key, a `key encryption key` MUST be derived from the `intermediate key`
-//# using the key derivation algorithm in the algorithm suite, with the following specifics:
 //
-//= ../spec/framework/algorithm-suites.md#intermediate-key-wrapping
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - The [EDK ciphertext](./structures.md#ciphertext) MUST be the following serialization:
 //
-//= ../spec/framework/algorithm-suites.md#wrapped-plaintext-data-key
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# The wrapped plaintext data key MUST be the result of the following AES GCM 256 Encrypt operation:
 //
-//= ../spec/framework/algorithm-suites.md#wrapped-plaintext-data-key
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# This value MUST be equal to the algorithm suite's encryption key length + 16.
 //
-//= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - Symmetric signatures MUST be generated using the specified symmetric signature algorithm.
 //
-//= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - Symmetric signatures MUST be verified using the specified symmetric signature algorithm.
 //
-//= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-//= type=exception
-//= reason=Out of scope for this MPL implementation; only the ESDK format is supported. DBE and S3EC algorithm suites and the cryptographic constructs unique to them are not implemented.
-//# - The algorithm suite MUST also use [Intermediate Key Wrapping](#intermediate-key-wrapping).
 /// Identifies an algorithm suite supported by this Material Providers Library.
 ///
 /// This enum exposes only the ESDK supported formats; DBE and S3EC suites are
@@ -150,46 +65,20 @@ impl AlgorithmSuiteId {
     pub const fn specification(self) -> AlgorithmSuite {
         match self {
             Self::AlgAes128GcmIv12Tag16NoKdf => AlgorithmSuite {
-                //= ../spec/framework/algorithm-suites.md#algorithm-suite-id
-                //# A 2-byte hex value that MUST uniquely identify an algorithm suite.
                 //
-                //= ../spec/framework/algorithm-suites.md#algorithm-suite-id
-                //# This 2-byte value SHOULD be used to bind algorithm suites to ciphertext.
                 id: [0x00, 0x14],
-                //= ../spec/framework/algorithm-suites.md#gcm
-                //# If specified to use GCM, the AWS Encryption SDK MUST use GCM with the following specifics:
                 encryption_algorithm: EncryptionAlgorithm::Aes,
                 encryption_algorithm_mode: EncryptionAlgorithmMode::Gcm,
-                //= ../spec/framework/algorithm-suites.md#encryption-algorithm
-                //# The length of the input encryption key MUST equal the [encryption key length](#encryption-key-length) specified by the algorithm suite.
                 encryption_key_length: 16,
-                //= ../spec/framework/algorithm-suites.md#encryption-algorithm-mode
-                //# The length of the input IV MUST equal the IV length specified by the algorithm suite.
                 iv_length: 12,
-                //= ../spec/framework/algorithm-suites.md#encryption-algorithm-mode
-                //# The length of the authentication tag MUST equal the authentication tag length specified by the algorithm suite.
                 authentication_tag_length: 16,
-                //= ../spec/framework/algorithm-suites.md#identity-kdf
-                //= type=implication
-                //# The Identity KDF MUST take a byte sequence as input,
-                //# and MUST return the input, unchanged, as output.
                 //
-                //= ../spec/framework/algorithm-suites.md#identity-kdf
-                //= type=implication
-                //# If included in the algorithm suite,
-                //# the algorithm suite's encryption key length MUST equal the algorithm suite's [key derivation input length](#key-derivation-input-length).
                 //
-                //= ../spec/framework/algorithm-suites.md#encryption-key-derivation-algorithm
-                //# The specified KDF algorithm MUST be used to generate the encryption algorithm encryption key input.
                 encryption_kdf: KeyDerivationAlgorithm::IdentityKdf,
                 commit_kdf: None,
                 asymmetric_signature_algorithm: None,
                 symmetric_signature_algorithm: None,
-                //= ../spec/framework/algorithm-suites.md#message-format-version
-                //# This MUST be used to branch any serialization/deserialization logic in [supported formats](#supported-formats).
                 message_format_version: 0x01,
-                //= ../spec/framework/algorithm-suites.md#algorithm-suite-data-length
-                //# The field MAY be length 0.
                 algorithm_suite_data_length: 0,
             },
             Self::AlgAes192GcmIv12Tag16NoKdf => AlgorithmSuite {
@@ -271,11 +160,7 @@ impl AlgorithmSuiteId {
                 authentication_tag_length: 16,
                 encryption_kdf: KeyDerivationAlgorithm::HkdfSha256,
                 commit_kdf: None,
-                //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-                //# - Asymmetric signatures MUST be generated using the specified asymmetric signature algorithm.
                 //
-                //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-                //# - Asymmetric signatures MUST be verified using the specified asymmetric signature algorithm.
                 asymmetric_signature_algorithm: Some(AsymmetricSignatureAlgorithm::EcdsaP256),
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
@@ -317,14 +202,10 @@ impl AlgorithmSuiteId {
                 iv_length: 12,
                 authentication_tag_length: 16,
                 encryption_kdf: KeyDerivationAlgorithm::HkdfSha512,
-                //= ../spec/framework/algorithm-suites.md#commit-key-derivation-algorithm
-                //# The specified KDF algorithm MUST be used to generate the [commit key](#commit-key).
                 commit_kdf: Some(KeyDerivationAlgorithm::HkdfSha512),
                 asymmetric_signature_algorithm: None,
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
-                //= ../spec/framework/algorithm-suites.md#supported-algorithm-suite-data
-                //# - Algorithm Suite 04 78 MUST store the commit key in the suite data
                 algorithm_suite_data_length: 32,
             },
             Self::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => AlgorithmSuite {
@@ -339,8 +220,6 @@ impl AlgorithmSuiteId {
                 asymmetric_signature_algorithm: Some(AsymmetricSignatureAlgorithm::EcdsaP384),
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
-                //= ../spec/framework/algorithm-suites.md#supported-algorithm-suite-data
-                //# - Algorithm Suite 05 78 MUST store the commit key in the suite data
                 algorithm_suite_data_length: 32,
             },
         }
@@ -350,13 +229,7 @@ impl AlgorithmSuiteId {
     ///
     /// The byte pair is unique across the supported-suites table. Reserved
     /// value `00 00` is never produced.
-    //= ../spec/framework/algorithm-suites.md#supported-algorithm-suites
-    //# The value `00 00` is reserved
-    //# and MUST NOT be used
-    //# as an Algorithm Suite ID in the future.
     //
-    //= ../spec/framework/algorithm-suites.md#supported-algorithm-suites
-    //# Algorithm Suite ID MUST be a unique hex value across all supported algorithm suites.
     pub const fn id_bytes(self) -> [u8; 2] {
         self.specification().id
     }
@@ -387,9 +260,6 @@ impl AlgorithmSuiteId {
 ///
 /// This struct is opaque: there is no public constructor. Construct one by
 /// calling [`AlgorithmSuiteId::specification`] on a chosen suite.
-//= ../spec/framework/algorithm-suites.md#structure
-//= type=implication
-//# The fields described below are REQUIRED to be specified by algorithm suites, unless otherwise specified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlgorithmSuite {
     id: [u8; 2],
@@ -400,13 +270,7 @@ pub struct AlgorithmSuite {
     authentication_tag_length: usize,
     encryption_kdf: KeyDerivationAlgorithm,
     commit_kdf: Option<KeyDerivationAlgorithm>,
-    //= ../spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
-    //= type=implication
-    //# This field is OPTIONAL.
     asymmetric_signature_algorithm: Option<AsymmetricSignatureAlgorithm>,
-    //= ../spec/framework/algorithm-suites.md#symmetric-signature-algorithm
-    //= type=implication
-    //# This field is OPTIONAL.
     symmetric_signature_algorithm: Option<SymmetricSignatureAlgorithm>,
     message_format_version: u8,
     algorithm_suite_data_length: usize,
@@ -552,9 +416,6 @@ pub enum SymmetricSignatureAlgorithm {
 // Cryptographic format identifier (ESDK only)
 // ============================================================================
 
-//= ../spec/framework/algorithm-suites.md#supported-formats
-//= type=implication
-//# Both short and long name MUST be unique.
 /// Cryptographic format identifier. Only the ESDK format is implemented in this
 /// MPL — uniqueness of short and long name is trivial (single variant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -603,11 +464,7 @@ impl PlaintextDataKey {
     }
 
     /// Zero the plaintext data key material.
-    //= ../spec/framework/structures.md#plaintext-data-key
-    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     //
-    //= ../spec/framework/structures.md#plaintext-data-key-1
-    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     pub fn zeroize(&mut self) {
         let ptr = self.0.as_mut_ptr();
         let len = self.0.len();
@@ -649,8 +506,6 @@ impl SigningKey {
 }
 
 impl fmt::Debug for SigningKey {
-    //= ../spec/framework/structures.md#signing-key
-    //# The value of this key MUST be kept secret.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SigningKey([REDACTED; {} bytes])", self.0.len())
     }
@@ -701,11 +556,7 @@ impl SymmetricSigningKey {
 }
 
 impl fmt::Debug for SymmetricSigningKey {
-    //= ../spec/framework/structures.md#symmetric-signing-keys
-    //# The value of keys in this list MUST be kept secret.
     //
-    //= ../spec/framework/structures.md#symmetric-signing-key
-    //# This value MUST be kept secret.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SymmetricSigningKey([REDACTED; {} bytes])", self.0.len())
     }

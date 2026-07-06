@@ -13,19 +13,10 @@ use crate::structures::{AlgorithmSuiteId, CommitmentPolicy, EncryptedDataKey, En
 /// commitment policy plus, optionally, an explicit algorithm suite, a set of
 /// encryption-context keys that MUST be reproduced at decrypt time, and the
 /// maximum plaintext length the returned materials are valid for.
-//= ../spec/framework/cmm-interface.md#encryption-materials-request
-//= type=implication
-//# The encryption materials request MUST include the following:
 //
-//= ../spec/framework/cmm-interface.md#encryption-materials-request
-//= type=implication
-//# The encryption request MAY include the following:
 #[derive(Debug, Clone)]
 pub struct EncryptionMaterialsRequest {
     /// Encryption context provided by the customer. MAY be empty.
-    //= ../spec/framework/cmm-interface.md#encryption-materials-request
-    //= type=implication
-    //# - The encryption context provided MAY be empty.
     encryption_context: EncryptionContext,
     /// Commitment policy to enforce when selecting the algorithm suite.
     commitment_policy: CommitmentPolicy,
@@ -37,10 +28,6 @@ pub struct EncryptionMaterialsRequest {
     required_encryption_context_keys: Option<BTreeSet<Vec<u8>>>,
     /// Maximum plaintext length the returned materials are valid for. `None`
     /// means unbounded.
-    //= ../spec/framework/cmm-interface.md#encryption-materials-request
-    //= type=exception
-    //= reason=Concrete-CMM/encrypt-pipeline scope. The max_plaintext_length field exists on EncryptionMaterialsRequest, but no encrypt() pipeline consumes materials yet — when one is added it will check the plaintext length against this field.
-    //# The length of the plaintext to be encrypted MUST not be larger than this value.
     max_plaintext_length: Option<u64>,
 }
 
@@ -109,13 +96,7 @@ impl EncryptionMaterialsRequest {
 /// keys parsed from the header, and the encryption context parsed from the
 /// header. It MAY also include a customer-supplied reproduced encryption
 /// context to validate against the message's.
-//= ../spec/framework/cmm-interface.md#decrypt-materials-request
-//= type=implication
-//# The decrypt materials request MUST include the following:
 //
-//= ../spec/framework/cmm-interface.md#decrypt-materials-request
-//= type=implication
-//# The decrypt materials request MAY include the following:
 #[derive(Debug, Clone)]
 pub struct DecryptMaterialsRequest {
     /// Algorithm suite advertised in the message header.
@@ -125,9 +106,6 @@ pub struct DecryptMaterialsRequest {
     /// Encrypted data keys parsed from the message header.
     encrypted_data_keys: Vec<EncryptedDataKey>,
     /// Encryption context parsed from the message header. MAY be empty.
-    //= ../spec/framework/cmm-interface.md#decrypt-materials-request
-    //= type=implication
-    //# - The encryption context provided MAY be empty.
     encryption_context: EncryptionContext,
     /// Optional reproduced encryption context the customer expects to match
     /// the message's.

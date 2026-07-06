@@ -18,9 +18,6 @@ const MALFORMED: &str = "not-an-arn";
 fn identical_mrk_arns_return_true() {
     let result = aws_kms_mrk_match_for_decrypt(MRK_EAST, MRK_EAST);
 
-    //= ../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md#implementation
-    //= type=test
-    //# If both identifiers are identical, this function MUST return `true`.
     assert!(result);
 }
 
@@ -41,11 +38,6 @@ fn identical_plain_strings_return_true() {
 
 #[test]
 fn mrk_arns_same_key_different_region_return_true() {
-    //= ../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md#implementation
-    //= type=test
-    //# Otherwise if both inputs are [identified as a multi-Region keys](aws-kms-key-arn.md#identifying-an-aws-kms-multi-region-key),
-    //# this function MUST return the result of comparing
-    //# the `partition`, `service`, `accountId`, `resourceType`, and `resource` parts of both ARN inputs.
     assert!(aws_kms_mrk_match_for_decrypt(MRK_EAST, MRK_WEST));
 }
 
@@ -64,10 +56,6 @@ fn two_non_mrk_arns_return_false() {
 
 #[test]
 fn mrk_arn_and_non_mrk_arn_return_false() {
-    //= ../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md#implementation
-    //= type=test
-    //# Otherwise if either input is not [identified as a multi-Region key](aws-kms-key-arn.md#identifying-an-aws-kms-multi-region-key),
-    //# then this function MUST return `false`.
     assert!(!aws_kms_mrk_match_for_decrypt(MRK_EAST, NON_MRK_KEY));
 }
 

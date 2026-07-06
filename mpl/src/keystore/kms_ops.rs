@@ -48,37 +48,16 @@ const EC_KEY_TABLENAME: &str = "tablename";
 /// note that `enc` is not part of `attributes` (it lives in the
 /// separate [`EncryptedRecord::enc`] field), so the "MUST NOT contain
 /// `enc`" rule is satisfied by the input shape.
-//= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-//# Every attribute on the AWS DDB response item will be authenticated.
 //
-//= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-//# Every attribute except for `enc` on the AWS DDB response item
-//# MUST be authenticated in the decryption of `enc`
 pub(crate) fn build_authenticated_encryption_context(
     record_attributes: &BTreeMap<String, String>,
     logical_keystore_name: &str,
 ) -> BTreeMap<String, String> {
     let mut ec = BTreeMap::new();
 
-    //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-    //# Every key in the constructed [encryption context](#encryption-context)
-    //# except `tableName`
-    //# MUST exist as a string attribute in the AWS DDB response item.
     //
-    //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-    //# Every value in the constructed [encryption context](#encryption-context)
-    //# except the logical table name
-    //# MUST equal the value with the same key in the AWS DDB response item.
     //
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# Every key in the constructed [encryption context](#encryption-context)
-    //# except `tableName`
-    //# MUST exist as a string attribute in the AWS DDB response item.
     //
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# Every value in the constructed [encryption context](#encryption-context)
-    //# except the logical table name
-    //# MUST equal the value with the same key in the AWS DDB response item.
     for (k, v) in record_attributes {
         ec.insert(k.clone(), v.clone());
     }
@@ -91,13 +70,7 @@ pub(crate) fn build_authenticated_encryption_context(
         logical_keystore_name.to_string(),
     );
 
-    //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-    //= type=implication
-    //# The key `enc` MUST NOT exist in the constructed [encryption context](#encryption-context).
     //
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //= type=implication
-    //# The key `enc` MUST NOT exist in the constructed [encryption context](#encryption-context).
     //
     // `EncryptedRecord::attributes` does not contain `enc` by construction
     // — `enc` is the binary `EncryptedRecord::enc` field — so the EC built
@@ -126,12 +99,6 @@ pub(crate) fn resolve_keystore_arn(
 ) -> Result<String, KeystoreError> {
     match kms_config {
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
-            //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-            //# If the Keystore's [AWS KMS Configuration](#aws-kms-configuration) is `KMS Key ARN` or `KMS MRKey ARN`,
-            //# the `kms-arn` field of the DDB response item MUST be
-            //# [compatible with](#aws-key-arn-compatibility) the configured KMS Key in
-            //# the [AWS KMS Configuration](#aws-kms-configuration) for this keystore,
-            //# or the operation MUST fail.
             if !is_arn_compatible(kms_config, record_kms_arn) {
                 return Err(KeystoreError::new(
                     KeystoreErrorKind::Authentication,
@@ -143,18 +110,10 @@ pub(crate) fn resolve_keystore_arn(
             Ok(configured.clone())
         }
         KmsConfiguration::Discovery => {
-            //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-            //# If the Keystore's [AWS KMS Configuration](#aws-kms-configuration) is `Discovery` or `MRDiscovery`,
-            //# the `kms-arn` field of DDB response item MUST NOT be an Alias
-            //# or the operation MUST fail.
             reject_alias_arn(record_kms_arn)?;
             Ok(record_kms_arn.to_string())
         }
         KmsConfiguration::MrDiscovery { region } => {
-            //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-            //# If the Keystore's [AWS KMS Configuration](#aws-kms-configuration) is `Discovery` or `MRDiscovery`,
-            //# the `kms-arn` field of DDB response item MUST NOT be an Alias
-            //# or the operation MUST fail.
             reject_alias_arn(record_kms_arn)?;
             rewrite_arn_region(record_kms_arn, region)
         }
@@ -224,33 +183,16 @@ pub(crate) async fn authenticate_keystore_item(
 
     let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
 
-    //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-    //# The operation MUST use the configured `KMS SDK Client` to authenticate the value of the keystore item.
     //
-    //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-    //# The operation MUST call [AWS KMS API ReEncrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_ReEncrypt.html)
-    //# with a request constructed as follows:
     let response = kms_client
         .re_encrypt()
-        //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-        //# - `SourceEncryptionContext` MUST be the [encryption context](#encryption-context) constructed above
         .set_source_encryption_context(Some(
             ec.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         ))
-        //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-        //# - `SourceKeyId` MUST be [compatible with](#aws-key-arn-compatibility) the configured KMS Key in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
         .source_key_id(resolved_key_id.clone())
-        //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-        //# - `CiphertextBlob` MUST be the `enc` attribute value on the AWS DDB response item
         .ciphertext_blob(Blob::new(record.enc.clone()))
-        //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-        //# - `GrantTokens` MUST be the configured [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
         .set_grant_tokens(Some(grant_tokens.to_vec()))
-        //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-        //# - `DestinationKeyId` MUST be [compatible with](#aws-key-arn-compatibility) the configured KMS Key in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
         .destination_key_id(resolved_key_id)
-        //= ../spec/framework/branch-key-store.md#authenticating-a-keystore-item
-        //# - `DestinationEncryptionContext` MUST be the [encryption context](#encryption-context) constructed above
         .set_destination_encryption_context(Some(ec.into_iter().collect()))
         .send()
         .await
@@ -287,33 +229,16 @@ pub(crate) async fn decrypt_branch_key(
         )
     })?;
 
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# - `KeyId`, if the KMS Configuration is Discovery, MUST be the `kms-arn` attribute value of the AWS DDB response item.
     //
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# If the KMS Configuration is MRDiscovery, `KeyId` MUST be the `kms-arn` attribute value of the AWS DDB response item, with the region replaced by the configured region.
     //
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# Otherwise, it MUST BE the Keystore's configured KMS Key.
     let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
 
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# The operation MUST use the configured `KMS SDK Client` to decrypt the value of the branch key field.
     //
-    //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-    //# When calling [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html),
-    //# the keystore operation MUST call with a request constructed as follows:
     let response = kms_client
         .decrypt()
         .key_id(resolved_key_id)
-        //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-        //# - `CiphertextBlob` MUST be the `enc` attribute value on the AWS DDB response item
         .ciphertext_blob(Blob::new(record.enc.clone()))
-        //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-        //# - `EncryptionContext` MUST be the [encryption context](#encryption-context) constructed above
         .set_encryption_context(Some(ec.into_iter().collect()))
-        //= ../spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
-        //# - `GrantTokens` MUST be this keystore's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await

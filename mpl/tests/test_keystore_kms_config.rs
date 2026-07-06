@@ -69,9 +69,6 @@ fn validate_kms_key_arn_accepts_mrk_arn() {
 
 #[test]
 fn validate_kms_key_arn_rejects_alias() {
-    //= ../spec/framework/branch-key-store.md#aws-kms-configuration
-    //= type=test
-    //# This ARN MUST NOT be an Alias.
     let err = validate_kms_key_arn(ALIAS_ARN).unwrap_err();
     assert_eq!(err.kind, KeystoreErrorKind::Configuration);
     assert!(
@@ -83,10 +80,6 @@ fn validate_kms_key_arn_rejects_alias() {
 
 #[test]
 fn validate_kms_key_arn_rejects_non_kms_service() {
-    //= ../spec/framework/branch-key-store.md#aws-kms-configuration
-    //= type=test
-    //# This ARN MUST be a valid
-    //# [AWS KMS Key ARN](./aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-arn).
     let err = validate_kms_key_arn(NON_KMS_ARN).unwrap_err();
     assert_eq!(err.kind, KeystoreErrorKind::Configuration);
     assert!(
