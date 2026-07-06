@@ -40,7 +40,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | PR | Slug | GitHub PR | Status | Review branch |
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
-| 2 | `structures` | — | **Fresh branch cut** 2026-07-06 — ready to reopen PR against `main` | `aws-crypto-rust/structures-review` @ `c26ad6e` (one commit on top of `main`; squashed replay of retired branch tip `715c0a0`) |
+| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review** 2026-07-06 (fresh branch after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11)) | `aws-crypto-rust/structures-review` @ `c26ad6e` (one commit on top of `main`; squashed replay of retired tip `715c0a0`) |
 | 3 | `algorithm-suite` | — | Not started | — |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
@@ -59,11 +59,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 18 | `client-factories` | — | Not started | — |
 | 19 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** open a new GitHub PR from `aws-crypto-rust/structures-review`
-against `main`. The branch was reset 2026-07-06 for a fresh review — it
-now carries PR 2's full scope as a single squashed commit (`c26ad6e`)
-built by replaying the retired branch tip (`715c0a0`) onto `main`. Build
-and tests pass on the branch.
+**Next action:** review and merge [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15). The fresh review branch was cut 2026-07-06 as a single squashed commit (`c26ad6e`) replaying the retired tip `715c0a0` onto `main`. Build and tests pass on the branch. Once merged, PR 3 (`algorithm-suite`) can start.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -814,7 +810,7 @@ plumbing lands.
 Status markers reflect the Status snapshot above; keep the two in sync.
 
 1. PR 1 — `client-scaffold` — ✅ merged
-2. PR 2 — `structures` — 🔄 fresh branch at `c26ad6e`; ready to open PR **(next up)**
+2. PR 2 — `structures` — 🟢 open for review as [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) **(current)**
 3. PR 3 — `algorithm-suite`
 4. PR 4 — `commitment-policy`
 5. PR 5 — `keyring-interface`
