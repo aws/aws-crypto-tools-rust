@@ -82,6 +82,32 @@ impl EncryptionMaterials {
             ));
         }
 
+        // Defensive invariant ported from `aws-crypto-rust/structures-review`
+        // (commit `715c0a0`), which closed Copilot review feedback on PR #11:
+        // when the suite HAS symmetric signing and callers already provide
+        // EDKs, they MUST also provide a `symmetric_signing_keys` list. The
+        // spec carve-out — the list MAY be omitted when the EDK list is empty
+        // — is preserved by the `!encrypted_data_keys.is_empty()` clause.
+        //
+        // Currently unreachable on `unreviewed`: no `AlgorithmSuiteId`
+        // variant returns `true` from `has_symmetric_signing()` (every ESDK
+        // suite in `algorithm_suite.rs` sets `symmetric_signature_algorithm:
+        // None`). We bring the check over anyway so the moment a symmetric-
+        // signing suite (e.g. a DBE variant) lands in the enum, callers are
+        // held to the same invariant as slice 2's review snapshot without
+        // relying on anyone remembering to re-port this guard. When such a
+        // suite is added, add a companion `test_symmetric_keys_required_
+        // when_edks_present` test (mirroring the one on structures-review)
+        // to exercise this branch — until then the branch is uncovered.
+        if algorithm_suite_id.has_symmetric_signing()
+            && symmetric_signing_keys.is_none()
+            && !encrypted_data_keys.is_empty()
+        {
+            return Err(MaterialsError::new(
+                "Symmetric signing keys must be present when algorithm suite has symmetric signing and encrypted data keys are non-empty",
+            ));
+        }
+
         Ok(Self {
             algorithm_suite_id,
             encrypted_data_keys,
