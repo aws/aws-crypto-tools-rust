@@ -288,6 +288,62 @@ compliance directory yet.
 
 ---
 
+### PR X — `hkeyring-examples`
+
+**Topic:** Runnable AWS KMS Hierarchical Keyring examples demonstrating
+single-tenant, multi-tenant, and cache-configuration composition patterns
+against a real keystore.
+**Spec:** none (runnable docs; no new spec).
+**Review branch:** `aws-crypto-rust/hkeyring-examples-review`
+**Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-hkeyring-examples`
+**Base branch (PR target):** TBD — terminal slice; base is the
+client-factories review branch once that slice is drafted.
+**Depends on:** future `keystore`, `hkeyring`, and `client-factories`
+slices (not yet in this plan). PR number and base branch will be assigned
+once those intermediate slices are named.
+
+**Source:**
+- `mpl/examples/aws_kms_hierarchical/main.rs`
+- `mpl/examples/aws_kms_hierarchical/common.rs`
+- `mpl/examples/aws_kms_hierarchical/static_branch_key.rs`
+- `mpl/examples/aws_kms_hierarchical/branch_key_supplier.rs`
+- `mpl/examples/aws_kms_hierarchical/example_branch_key_id_supplier.rs`
+- `mpl/examples/aws_kms_hierarchical/cache_configurations.rs`
+
+**Tests:** none. Compile coverage is enforced by the `cargo build
+--all-features --examples` step in CI; runtime execution against real
+AWS is deferred until OIDC-role plumbing lands (paired with the existing
+`TODO(integ-tests-creds)` block).
+
+**Compliance:** none.
+
+**Notes:**
+- MUST land after the `keystore`, `hkeyring`, and `client-factories`
+  slices — otherwise the review branch's `cargo build --examples` step
+  fails on missing symbols (`HierarchicalKeyring`, `BranchKeyStore`,
+  `MaterialProviders::create_branch_key_store`,
+  `MaterialProviders::create_cryptographic_materials_cache`,
+  `MaterialProviders::create_aws_kms_hierarchical_keyring`). This
+  "don't break CI" constraint is what pins the slice to terminal.
+- Shared-file modification introduced by this PR: `mpl/Cargo.toml` gains
+  the `[[example]] name = "aws_kms_hierarchical"` block with
+  `required-features = ["keystore"]`. All runtime dependencies
+  (`aws-config`, `aws-sdk-kms`, `aws-sdk-dynamodb`, `tokio`) are already
+  carried from earlier slices; this PR adds no new deps.
+- The CI update in `.github/workflows/library_rust_tests.yml` — switching
+  `cargo clippy --all-targets` to `--all-features` and adding
+  `cargo build --all-features --examples --verbose` — is intentionally
+  **not** in this PR. That workflow file is called out as "already on
+  `main`" in the "Out of scope" section above; the exclusion needs to
+  be revisited or split into a separate infra amendment.
+- Modeled after the ESDK Rust hierarchical-keyring blueprint
+  (`aws/aws-encryption-sdk/releases/rust/esdk/examples/keyring/aws_kms_hierarchical`),
+  with two deviations documented on commit `9a9fc03`: the supplier is
+  async (matches this repo's `BranchKeySupplier` trait), and encrypt /
+  decrypt happen at the keyring layer (no ESDK client to drive through).
+
+---
+
 ## Recommended review order
 
 1. PR 1 — `client-scaffold`
@@ -297,6 +353,10 @@ compliance directory yet.
 5. PR 5 — `keyring-interface`
 6. PR 6 — `cmm-interface`
 7. PR 7 — `default-cmm`
+8. *(future slices: `keystore`, `hkeyring`, `client-factories` — not yet
+   drafted; must land before `hkeyring-examples` to keep CI green.)*
+9. PR X — `hkeyring-examples` *(terminal; depends on 8's intermediate
+   slices)*
 
 Each PR description should:
 
