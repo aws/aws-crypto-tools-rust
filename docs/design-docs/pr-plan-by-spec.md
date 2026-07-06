@@ -98,12 +98,15 @@ stack level.
 - `.github/workflows/pull.yml`, `.github/workflows/retry_failed_ci.yml` —
   already merged to `main` directly.
 - `.github/workflows/library_rust_tests.yml` — PR 1 introduces the
-  scaffold changes; subsequent CI drift (`764ebc4` go install,
-  `9541d05` commented-out keystore integ slot, `1bd7853` clippy
-  `--all-features` + `cargo build --examples` + commented-out example
-  run slot) is currently unassigned. Decide before landing PR 19
-  whether the examples-driven CI edits fold into PR 19 or split into a
-  standalone infra amendment PR.
+  scaffold changes; PR 19 owns the examples-driven follow-on
+  (`1bd7853`: clippy `--all-features` + `cargo build --examples` +
+  commented-out example run slot). Earlier drift is still unassigned:
+  `764ebc4` (go install for `aws-lc-rust-fips`) and `9541d05`
+  (commented-out keystore integ-test slot). Both need a home before
+  PR 19 lands; the most natural fits are PR 16 (`hkeyring-support`
+  adds the `aws-lc-rs` dep that needs Go) and PR 15
+  (`branch-key-store` owns keystore integ), but that assignment isn't
+  final.
 
 ## PRs
 
@@ -717,7 +720,7 @@ against a real keystore.
 **Base branch (PR target):** `aws-crypto-rust/client-factories-review`
 **Depends on:** PR 15, PR 17, PR 18
 
-**Source:**
+**Source (examples):**
 - `mpl/examples/aws_kms_hierarchical/main.rs`
 - `mpl/examples/aws_kms_hierarchical/common.rs`
 - `mpl/examples/aws_kms_hierarchical/static_branch_key.rs`
@@ -725,10 +728,19 @@ against a real keystore.
 - `mpl/examples/aws_kms_hierarchical/example_branch_key_id_supplier.rs`
 - `mpl/examples/aws_kms_hierarchical/cache_configurations.rs`
 
+**Source (CI):**
+- `.github/workflows/library_rust_tests.yml` (modified — switches
+  `cargo clippy --all-targets` to `--all-features` so feature-gated
+  targets get linted, adds an explicit `cargo build --all-features
+  --examples --verbose` step so the example is compile-verified in CI,
+  and reserves a commented-out `TODO(integ-tests-creds)`-sibling block
+  for actually running the example against real AWS once OIDC-role
+  plumbing lands)
+
 **Tests:** none. Compile coverage is enforced by the `cargo build
---all-features --examples` step in CI; runtime execution against real
-AWS is deferred until OIDC-role plumbing lands (paired with the existing
-`TODO(integ-tests-creds)` block).
+--all-features --examples` step in CI added by this slice; runtime
+execution against real AWS is deferred until the paired OIDC-role
+plumbing lands.
 
 **Compliance:** none.
 
@@ -743,12 +755,10 @@ AWS is deferred until OIDC-role plumbing lands (paired with the existing
   `required-features = ["keystore"]`. All runtime dependencies
   (`aws-config`, `aws-sdk-kms`, `aws-sdk-dynamodb`, `tokio`) are
   already carried from earlier slices; this PR adds no new deps.
-- The CI update in `.github/workflows/library_rust_tests.yml` —
-  switching `cargo clippy --all-targets` to `--all-features` and
-  adding `cargo build --all-features --examples --verbose` — is
-  intentionally **not** in this PR. That workflow file is called out
-  as out of scope above; the exclusion needs to be revisited or split
-  into a separate infra amendment.
+- This slice owns the examples-driven CI drift in
+  `.github/workflows/library_rust_tests.yml` (commit `1bd7853`). Earlier
+  workflow drift (`9541d05` keystore integ slot, `764ebc4` go install)
+  is still unassigned — see the Out-of-scope note above.
 - Modeled after the ESDK Rust hierarchical-keyring blueprint
   (`aws/aws-encryption-sdk/releases/rust/esdk/examples/keyring/aws_kms_hierarchical`),
   with two deviations documented on commit `9a9fc03`: the supplier is
