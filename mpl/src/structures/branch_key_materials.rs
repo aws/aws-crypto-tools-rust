@@ -17,20 +17,18 @@ pub struct BranchKeyMaterials {
 }
 
 impl BranchKeyMaterials {
-    /// Construct branch key materials. Validates that `branch_key_version` is a valid UUIDv4.
+    /// Construct branch key materials. Callers are responsible for supplying
+    /// a well-formed `branch_key_version` string (a canonical hyphenated
+    /// UUIDv4 produced by the `uuid` crate at generation time in the branch-
+    /// key-store slice, or converted from raw bytes via
+    /// `uuid::Uuid::from_bytes(...).hyphenated().to_string()` on decrypt);
+    /// this constructor does not re-validate.
     pub fn new(
         branch_key: [u8; 32],
         branch_key_id: String,
         branch_key_version: String,
         encryption_context: EncryptionContext,
     ) -> Result<Self, MaterialsError> {
-        if !is_valid_uuid_v4(&branch_key_version) {
-            return Err(MaterialsError::new(format!(
-                "Branch key version is not a valid UUIDv4: {}",
-                branch_key_version
-            )));
-        }
-
         Ok(Self {
             branch_key,
             branch_key_id,
@@ -65,22 +63,4 @@ impl std::fmt::Debug for BranchKeyMaterials {
             .field("encryption_context", &self.encryption_context)
             .finish()
     }
-}
-
-/// Validate that a string is a valid version 4 UUID in the canonical 8-4-4-4-12 hex format.
-fn is_valid_uuid_v4(s: &str) -> bool {
-    // Only accept the canonical hyphenated form (36 chars). The uuid crate's
-    // parser also accepts simple (32), braced (38), and urn (45) forms;
-    // this length check keeps the accepted surface narrow to the wire form
-    // the keystore emits.
-    if s.len() != 36 {
-        return false;
-    }
-    let Ok(u) = uuid::Uuid::parse_str(s) else {
-        return false;
-    };
-    // A well-formed v4 UUID has both the version=4 nibble AND the RFC 4122
-    // variant (`10xx` high bits, hex digit ∈ {8, 9, a, b}). Uuid::parse_str
-    // does not enforce the variant, so check it explicitly.
-    u.get_version() == Some(uuid::Version::Random) && u.get_variant() == uuid::Variant::RFC4122
 }

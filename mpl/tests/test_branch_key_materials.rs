@@ -18,7 +18,9 @@ fn test_valid_construction() {
 }
 
 #[test]
-fn test_valid_uuid_v4_accepted() {
+fn test_construction_accepts_various_version_strings() {
+    // With UUID validation removed, `new` accepts arbitrary version strings.
+    // These three canonical v4 UUIDs are the intended real-world inputs.
     let branch_key = [0x00u8; 32];
     let valid_uuids = [
         "550e8400-e29b-41d4-a716-446655440000",
@@ -33,37 +35,7 @@ fn test_valid_uuid_v4_accepted() {
             uuid.to_string(),
             EncryptionContext::new(),
         );
-        assert!(result.is_ok(), "UUID should be valid: {}", uuid);
-    }
-}
-
-#[test]
-fn test_malformed_uuid_rejected() {
-    let branch_key = [0x00u8; 32];
-    let invalid_uuids = [
-        "not-a-uuid",
-        "550e8400e29b41d4a716446655440000",      // no hyphens
-        "550e8400-e29b-41d4-a716-44665544000",   // too short
-        "550e8400-e29b-41d4-a716-4466554400000", // too long
-        "550e8400-e29b-31d4-a716-446655440000",  // version 3, not 4
-        "550e8400-e29b-41d4-0716-446655440000",  // bad variant nibble
-    ];
-
-    for uuid in invalid_uuids {
-        let result = BranchKeyMaterials::new(
-            branch_key,
-            "id".to_string(),
-            uuid.to_string(),
-            EncryptionContext::new(),
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not a valid UUIDv4"),
-            "UUID should be invalid: {}",
-            uuid
-        );
+        assert!(result.is_ok(), "Construction should succeed: {}", uuid);
     }
 }
 
@@ -106,60 +78,6 @@ fn test_branch_key_encryption_context_getter() {
     )
     .unwrap();
     assert_eq!(mat.encryption_context().len(), 1);
-}
-
-#[test]
-fn test_uuid_rejects_non_version_4_specifically() {
-    let result = BranchKeyMaterials::new(
-        [0x00; 32],
-        "id".to_string(),
-        // Version 3 UUID — position 14 is '3' not '4'
-        "550e8400-e29b-31d4-a716-446655440000".to_string(),
-        EncryptionContext::new(),
-    );
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("not a valid UUIDv4"),
-        "Version 3 UUID must be rejected"
-    );
-}
-
-#[test]
-fn test_uuid_rejects_wrong_hyphen_positions() {
-    let result = BranchKeyMaterials::new(
-        [0x00; 32],
-        "id".to_string(),
-        // 36 chars but hyphen at position 9 instead of 8
-        "550e84000-e29b41d4-a716-446655440000".to_string(),
-        EncryptionContext::new(),
-    );
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("not a valid UUIDv4"),
-        "UUID with wrong hyphen positions must be rejected"
-    );
-}
-
-#[test]
-fn test_uuid_rejects_non_hex_digit_in_body() {
-    let result = BranchKeyMaterials::new(
-        [0x00; 32],
-        "id".to_string(),
-        // Valid structure (hyphens, version '4', variant 'a') but 'X' at position 35
-        "550e8400-e29b-41d4-a716-44665544000X".to_string(),
-        EncryptionContext::new(),
-    );
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("not a valid UUIDv4"),
-        "UUID with non-hex character must be rejected"
-    );
 }
 
 #[test]

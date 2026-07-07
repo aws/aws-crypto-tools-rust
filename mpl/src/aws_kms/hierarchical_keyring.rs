@@ -476,10 +476,11 @@ fn generate_v4_uuid_bytes() -> Result<Vec<u8>, MaterialsError> {
 }
 
 /// Convert the 16-byte representation of a UUID back to its canonical
-/// 36-character hyphenated string form (`8-4-4-4-12`). The output
-/// satisfies the `is_valid_uuid_v4` check inside
-/// [`BranchKeyMaterials::new`] when the input bytes were produced by a
-/// v4 UUID generator (variant + version bits already set).
+/// 36-character hyphenated string form (`8-4-4-4-12`). The output is a
+/// well-formed UUIDv4 string suitable for passing to
+/// [`BranchKeyMaterials::new`] and the wrap/unwrap machinery when the
+/// input bytes were produced by a v4 UUID generator (variant + version
+/// bits already set).
 fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
     uuid::Uuid::from_bytes(*bytes).hyphenated().to_string()
 }

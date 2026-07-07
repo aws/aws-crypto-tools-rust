@@ -84,11 +84,11 @@ pub fn compute_aad(
 
 /// Parse a v4 UUID canonical hex string (8-4-4-4-12) into its 16 raw bytes.
 ///
-/// `BranchKeyMaterials::new` already validates the UUID shape via
-/// `is_valid_uuid_v4`, so this parse is structurally infallible at the
-/// call sites in this module. We still return `MaterialsError` rather
-/// than panicking so a future caller that bypasses `BranchKeyMaterials::new`
-/// (e.g. a fuzzer) gets a clean error instead of a process abort.
+/// `BranchKeyMaterials::new` no longer re-validates the UUID shape, so this
+/// parse acts as the actual validation gate on the branch-key-version
+/// string. Returns `MaterialsError` rather than panicking so a caller that
+/// hands us a malformed string (e.g. a corrupted keystore record or a
+/// fuzzer) gets a clean error instead of a process abort.
 fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
     let bytes = s.as_bytes();
     if bytes.len() != 36
