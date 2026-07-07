@@ -9,26 +9,6 @@ use std::fmt;
 // Algorithm suite ID enum
 // ============================================================================
 
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
 /// Identifies an algorithm suite supported by this Material Providers Library.
 ///
 /// This enum exposes only the ESDK supported formats; DBE and S3EC suites are
