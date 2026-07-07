@@ -451,14 +451,11 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
 }
 
 // ============================================================================
-// EncryptionContext spec gap: empty keys
+// EncryptionContext: current behavior on empty keys
 // ============================================================================
 //
-// The structures.md framework specification describes encryption-context
-// entries as non-empty UTF-8 byte strings — keys are conceptually identifiers
-// and are therefore expected to have at least one byte. The current Rust
-// implementation does NOT enforce this invariant at any of the four entry
-// points to the type:
+// The current Rust implementation of `EncryptionContext` accepts empty byte
+// keys at every entry point to the type:
 //
 //   1. EncryptionContext::insert(...)   — accepts an empty Vec<u8> key
 //   2. EncryptionContext::from_map(...) — accepts a BTreeMap with an empty key
@@ -466,33 +463,26 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
 //   4. EncryptionContext::serialize()   — by symmetry with (1)/(2), will emit
 //                                         key_len = 0 for any empty-keyed entry
 //
-// The three tests below pin the *current* (permissive) behavior so that any
-// future tightening of the contract — i.e., adding empty-key rejection at
-// these entry points — produces a deliberate, reviewable test failure rather
-// than silently changing observable behavior.
+// The structures.md spec's encryption-context section describes entries as
+// UTF-8 byte strings but does not itself require keys to be non-empty, so
+// this is NOT a spec-conformance gap — it is simply a permissive design
+// choice worth pinning with regression tests so any future tightening of the
+// contract produces a deliberate, reviewable test failure rather than
+// silently changing observable behavior.
 //
-// These are NOT spec-conformance tests. When/if the contract is tightened,
-// these tests should be flipped: each `assert! / assert_eq!` should become an
-// assertion that the entry point returns an `Err(MaterialsError { kind:
-// Validation, .. })`, and the source updated to match. Doing so will also
-// require changing `from_map`'s return type from `Self` to
-// `Result<Self, MaterialsError>` (a breaking API change).
-//
-// Why we are not enforcing now:
-//   - Rejection is a behavioral change at four entry points and changes one
-//     public signature (from_map -> Result<_, _>).
-//   - The validation belongs in the same review as a broader
-//     EncryptionContext invariant pass (e.g., key/value max-length in the
-//     spec, value emptiness rules) rather than as a one-off here.
-//   - PR #11 is scoped to the structures-slice review; expanding scope risks
-//     the slice's stack-level snapshot diverging from neighboring slices.
-//
-// Tracked: revisit as part of a future EncryptionContext-invariants pass.
+// If the contract is ever tightened (e.g., an internal invariant added
+// alongside a broader EncryptionContext validation pass), these tests should
+// be flipped: each `assert! / assert_eq!` should become an assertion that
+// the entry point returns an `Err(MaterialsError { message, .. })` (this
+// slice's `MaterialsError` only carries a `message` string), and
+// `from_map`'s return type would change from `Self` to
+// `Result<Self, MaterialsError>` — a breaking API change deferred to a
+// future EncryptionContext-invariants pass.
 // ============================================================================
 
 #[test]
 fn test_insert_accepts_empty_key_currently_unenforced() {
-    // CURRENT BEHAVIOR (not spec-conformant): insert accepts an empty key.
+    // CURRENT BEHAVIOR (permissive): insert accepts an empty key.
     // If/when empty keys are rejected, flip to assert that some sentinel
     // error path is taken (e.g., insert is changed to return Result and
     // returns Err on empty input).
@@ -504,7 +494,7 @@ fn test_insert_accepts_empty_key_currently_unenforced() {
 
 #[test]
 fn test_from_map_accepts_empty_key_currently_unenforced() {
-    // CURRENT BEHAVIOR (not spec-conformant): from_map silently accepts a
+    // CURRENT BEHAVIOR (permissive): from_map silently accepts a
     // BTreeMap whose keys include an empty Vec<u8>.
     // If/when empty keys are rejected, from_map's signature must change to
     // Result<Self, MaterialsError>; this test would become an Err assertion.
@@ -517,10 +507,10 @@ fn test_from_map_accepts_empty_key_currently_unenforced() {
 
 #[test]
 fn test_deserialize_accepts_empty_key_length_currently_unenforced() {
-    // CURRENT BEHAVIOR (not spec-conformant): deserialize accepts a wire
-    // form with key_len = 0. If/when empty keys are rejected, this test
-    // should be flipped to assert deserialize returns Err with a message
-    // identifying the empty-key violation.
+    // CURRENT BEHAVIOR (permissive): deserialize accepts a wire form with
+    // key_len = 0. If/when empty keys are rejected, this test should be
+    // flipped to assert deserialize returns Err with a message identifying
+    // the empty-key violation.
     let bytes: &[u8] = &[
         0x00, 0x01, // count = 1
         0x00, 0x00, // key_len = 0 (EMPTY KEY — current impl accepts this)
