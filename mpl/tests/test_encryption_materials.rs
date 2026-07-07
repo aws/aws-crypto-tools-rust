@@ -185,7 +185,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
         mat.validate_aws_crypto_public_key()
             .unwrap_err()
             .to_string()
-            .contains("SHOULD NOT include")
+            .contains("MUST NOT include")
     );
 }
 
@@ -297,7 +297,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert!(err.to_string().contains("SHOULD include"));
+    assert!(err.to_string().contains("MUST include"));
 }
 
 #[test]

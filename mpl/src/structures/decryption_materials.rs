@@ -117,12 +117,12 @@ impl DecryptionMaterials {
             .contains_key(b"aws-crypto-public-key");
         if self.verification_key.is_some() && !has_key {
             return Err(MaterialsError::new(
-                "Encryption context SHOULD include 'aws-crypto-public-key' when verification key is present",
+                "Encryption context MUST include 'aws-crypto-public-key' when verification key is present",
             ));
         }
         if self.verification_key.is_none() && has_key {
             return Err(MaterialsError::new(
-                "Encryption context SHOULD NOT include 'aws-crypto-public-key' when verification key is absent",
+                "Encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
             ));
         }
         Ok(())
