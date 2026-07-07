@@ -40,7 +40,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | PR | Slug | GitHub PR | Status | Review branch |
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
-| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review, iterating** (fresh branch cut 2026-07-06 after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11); three review-feedback pushes 2026-07-07) | `aws-crypto-rust/structures-review` @ `6a099c0` (4 commits on top of `main`: initial squash `c26ad6e`, review-comment reword + Debug-redact tests `8f003d8`, `uuid` crate adoption `7e4f4c3`, UUID-validation removal + `uuid` dep dropped `6a099c0`) |
+| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review, iterating** (fresh branch cut 2026-07-06 after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11); four review-feedback pushes 2026-07-07) | `aws-crypto-rust/structures-review` @ `5938651` (5 commits on top of `main`: initial squash `c26ad6e`, review-comment reword + Debug-redact tests `8f003d8`, `uuid` crate adoption `7e4f4c3`, UUID-validation removal + `uuid` dep dropped `6a099c0`, MUST-wording for public-key convention `5938651`) |
 | 3 | `algorithm-suite` | — | Not started | — |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
