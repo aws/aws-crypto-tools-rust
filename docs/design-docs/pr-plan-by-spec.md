@@ -41,7 +41,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
 | 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Merged** 2026-07-07 (merge commit `72b161e`) | retired after merge |
-| 3 | `algorithm-suite` | — | Not started | — |
+| 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Open for review** 2026-07-07 | `aws-crypto-rust/algorithm-suite-review` @ `5f0b5e7` (one commit on top of `main`) |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
 | 6 | `cmm-interface` | — | Not started | — |
@@ -59,9 +59,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 18 | `client-factories` | — | Not started | — |
 | 19 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** cut and open PR 3 (`algorithm-suite`) from `main`. PR 2
-merged as `72b161e` on 2026-07-07; its review branch and sync worktree
-should be retired (mirroring PR 1's post-merge cleanup).
+**Next action:** review and merge [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16). Once merged, PR 4 (`commitment-policy`) can start.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -813,7 +811,7 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 
 1. PR 1 — `client-scaffold` — ✅ merged
 2. PR 2 — `structures` — ✅ merged
-3. PR 3 — `algorithm-suite` **(next up)**
+3. PR 3 — `algorithm-suite` — 🟢 open for review as [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) **(current)**
 4. PR 4 — `commitment-policy`
 5. PR 5 — `keyring-interface`
 6. PR 6 — `cmm-interface`
