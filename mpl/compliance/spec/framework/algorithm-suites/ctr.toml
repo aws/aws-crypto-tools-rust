@@ -1,0 +1,31 @@
+target = "../spec/framework/algorithm-suites.md#ctr"
+
+# CTR
+#
+# Specification: [NIST Special Publication 800-38A](https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-38a.pdf)
+# 
+# Counter is a mode of operation for symmetric key block ciphers that provides data confidentiality but does not provide authenticated encryption.
+# 
+# If specified to use CTR, the S3 Encryption Client MUST use CTR with the following specifics:
+# 
+# - CTR MUST only be used to decrypt existing ciphertexts.
+# - CTR MUST NOT be used to encrypt new ciphertexts.
+
+[[spec]]
+level = "MUST"
+quote = '''
+If specified to use CTR, the S3 Encryption Client MUST use CTR with the following specifics:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- CTR MUST only be used to decrypt existing ciphertexts.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- CTR MUST NOT be used to encrypt new ciphertexts.
+'''
+

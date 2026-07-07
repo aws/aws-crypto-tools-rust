@@ -11,6 +11,9 @@ type = "test"
 source = "../spec/framework/structures.md"
 format = "markdown"
 
+[[specification]]
+source = "../spec/framework/algorithm-suites.md"
+
 [[requirement]]
 pattern = "compliance/**/*.toml"
 

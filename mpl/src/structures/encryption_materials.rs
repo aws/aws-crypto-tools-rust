@@ -5,7 +5,9 @@
 
 use std::collections::BTreeSet;
 
-use super::algorithm_suite::{AlgorithmSuite, PlaintextDataKey, SigningKey, SymmetricSigningKey};
+use super::algorithm_suite::{
+    AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SigningKey, SymmetricSigningKey,
+};
 use super::encrypted_data_key::EncryptedDataKey;
 use super::encryption_context::EncryptionContext;
 use super::error::MaterialsError;
@@ -14,7 +16,7 @@ use super::error::MaterialsError;
 ///
 #[derive(Debug)]
 pub struct EncryptionMaterials {
-    algorithm_suite: AlgorithmSuite,
+    algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
     encryption_context: EncryptionContext,
     required_encryption_context_keys: BTreeSet<Vec<u8>>,
@@ -26,7 +28,7 @@ pub struct EncryptionMaterials {
 impl EncryptionMaterials {
     /// Construct encryption materials, enforcing all spec invariants.
     pub fn new(
-        algorithm_suite: AlgorithmSuite,
+        algorithm_suite_id: AlgorithmSuiteId,
         encrypted_data_keys: Vec<EncryptedDataKey>,
         encryption_context: EncryptionContext,
         required_encryption_context_keys: BTreeSet<Vec<u8>>,
@@ -34,6 +36,8 @@ impl EncryptionMaterials {
         signing_key: Option<SigningKey>,
         symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
     ) -> Result<Self, MaterialsError> {
+        let suite = algorithm_suite_id.specification();
+
         // Required encryption context keys must be a subset of encryption context keys
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
@@ -52,23 +56,50 @@ impl EncryptionMaterials {
         }
 
         // If no asymmetric signing, signing key must not be present
-        if !algorithm_suite.has_asymmetric_signing() && signing_key.is_some() {
+        if !algorithm_suite_id.has_asymmetric_signing() && signing_key.is_some() {
             return Err(MaterialsError::new(
                 "Signing key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
 
+        // If asymmetric signing, the signing key (when present) MUST match the
+        // suite's asymmetric signature algorithm scalar length.
+        if let Some(ref sk) = signing_key
+            && let Some(expected_len) = suite.signing_key_length()
+            && sk.len() != expected_len
+        {
+            return Err(MaterialsError::new(format!(
+                "Signing key length ({}) does not match expected length ({}) for algorithm suite",
+                sk.len(),
+                expected_len
+            )));
+        }
+
         // If no symmetric signing, symmetric signing keys must not be included
-        if !algorithm_suite.has_symmetric_signing() && symmetric_signing_keys.is_some() {
+        if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_keys.is_some() {
             return Err(MaterialsError::new(
                 "Symmetric signing keys must not be present when algorithm suite has no symmetric signing",
             ));
         }
 
-        // If symmetric signing AND there are encrypted data keys, the
-        // symmetric_signing_keys list MUST be present. The list MAY be
-        // omitted only when the EDK list is empty.
-        if algorithm_suite.has_symmetric_signing()
+        // Defensive invariant ported from `aws-crypto-rust/structures-review`
+        // (commit `715c0a0`), which closed Copilot review feedback on PR #11:
+        // when the suite HAS symmetric signing and callers already provide
+        // EDKs, they MUST also provide a `symmetric_signing_keys` list. The
+        // spec carve-out — the list MAY be omitted when the EDK list is empty
+        // — is preserved by the `!encrypted_data_keys.is_empty()` clause.
+        //
+        // Currently unreachable on `unreviewed`: no `AlgorithmSuiteId`
+        // variant returns `true` from `has_symmetric_signing()` (every ESDK
+        // suite in `algorithm_suite.rs` sets `symmetric_signature_algorithm:
+        // None`). We bring the check over anyway so the moment a symmetric-
+        // signing suite (e.g. a DBE variant) lands in the enum, callers are
+        // held to the same invariant as slice 2's review snapshot without
+        // relying on anyone remembering to re-port this guard. When such a
+        // suite is added, add a companion `test_symmetric_keys_required_
+        // when_edks_present` test (mirroring the one on structures-review)
+        // to exercise this branch — until then the branch is uncovered.
+        if algorithm_suite_id.has_symmetric_signing()
             && symmetric_signing_keys.is_none()
             && !encrypted_data_keys.is_empty()
         {
@@ -77,20 +108,8 @@ impl EncryptionMaterials {
             ));
         }
 
-        // If symmetric signing, list length must equal encrypted data keys length
-        if algorithm_suite.has_symmetric_signing()
-            && let Some(ref keys) = symmetric_signing_keys
-            && keys.len() != encrypted_data_keys.len()
-        {
-            return Err(MaterialsError::new(format!(
-                "Symmetric signing keys length ({}) must equal encrypted data keys length ({})",
-                keys.len(),
-                encrypted_data_keys.len()
-            )));
-        }
-
         Ok(Self {
-            algorithm_suite,
+            algorithm_suite_id,
             encrypted_data_keys,
             encryption_context,
             required_encryption_context_keys,
@@ -100,8 +119,12 @@ impl EncryptionMaterials {
         })
     }
 
-    pub fn algorithm_suite(&self) -> &AlgorithmSuite {
-        &self.algorithm_suite
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    pub fn algorithm_suite(&self) -> AlgorithmSuite {
+        self.algorithm_suite_id.specification()
     }
 
     pub fn encrypted_data_keys(&self) -> &[EncryptedDataKey] {

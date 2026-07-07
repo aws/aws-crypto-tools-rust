@@ -1,0 +1,69 @@
+target = "../spec/framework/algorithm-suites.md#intermediate-key-wrapping"
+
+# Intermediate Key Wrapping
+#
+# For algorithm suites including symmetric signing, additional steps are needed in order to create material
+# unique for each encrypted data key that can be used for symmetric signing.
+# Through the creation of intermediate material during the key wrapping process,
+# those with access to unwrap a particular encrypted data key also have access to symmetric signing material associated
+# with that particular encrypted data key.
+# With this property, a message can be created that is decryptable by several parties,
+# but also signed by each party such that party A can be sure that the message was not
+# updated by party B.
+# Only those with the ability to wrap data keys for all parties are capable of
+# creating messages that will be authenticated by all parties.
+# 
+# [Encrypted data keys](./structures.md#encrypted-data-key) produced under algorithm suites using Intermediate Key Wrapping,
+# have the following requirements:
+# 
+# - For each encrypted data key, a distinct `intermediate key` MUST be generated using cryptographically secure random bytes.
+#   This intermediate key MUST have length equal to the encryption key length of the algorithm suite.
+# - For each encrypted data key, a [symmetric signing key](./structures.md#symmetric-signing-key) MUST be derived from the `intermediate key`
+#   using the key derivation algorithm in the algorithm suite, with the following specifics:
+#   - The input key material is the `intermediate key`
+#   - The salt is empty
+#   - The info is "AWS_MPL_INTERMEDIATE_KEYWRAP_MAC" as UTF8 bytes.
+# - For each encrypted data key, a `key encryption key` MUST be derived from the `intermediate key`
+#   using the key derivation algorithm in the algorithm suite, with the following specifics:
+#   - The input key material is the `intermediate key`
+#   - The salt is empty
+#   - The info is "AWS_MPL_INTERMEDIATE_KEYWRAP_ENC" as UTF8 bytes.
+# - The [EDK ciphertext](./structures.md#ciphertext) MUST be the following serialization:
+# 
+# | Field                      | Length (bytes)                                     | Interpreted as |
+# | -------------------------- | -------------------------------------------------- | -------------- |
+# | Wrapped Plaintext Data Key | The algorithm suite's encryption key length + 12   | Bytes          |
+# | Wrapped Intermediate Key   | Determined by the keyring responsible for wrapping | Bytes          |
+
+[[spec]]
+level = "MUST"
+quote = '''
+- For each encrypted data key, a distinct `intermediate key` MUST be generated using cryptographically secure random bytes.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+This intermediate key MUST have length equal to the encryption key length of the algorithm suite.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- For each encrypted data key, a [symmetric signing key](./structures.md#symmetric-signing-key) MUST be derived from the `intermediate key`
+using the key derivation algorithm in the algorithm suite, with the following specifics:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- For each encrypted data key, a `key encryption key` MUST be derived from the `intermediate key`
+using the key derivation algorithm in the algorithm suite, with the following specifics:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- The [EDK ciphertext](./structures.md#ciphertext) MUST be the following serialization:
+'''
+

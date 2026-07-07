@@ -1,0 +1,31 @@
+target = "../spec/framework/algorithm-suites.md#cbc"
+
+# CBC
+#
+# Specification: [NIST Special Publication 800-38A](https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-38a.pdf)
+# 
+# Cipher Block Chaining is a mode of operation for symmetric key block ciphers that provides data confidentiality but does not provide authenticated encryption.
+# 
+# If specified to use CBC, the S3 Encryption Client MUST use CBC with the following specifics:
+# 
+# - CBC MUST only be used to decrypt existing ciphertexts.
+# - CBC MUST NOT be used to encrypt new ciphertexts.
+
+[[spec]]
+level = "MUST"
+quote = '''
+If specified to use CBC, the S3 Encryption Client MUST use CBC with the following specifics:
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- CBC MUST only be used to decrypt existing ciphertexts.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- CBC MUST NOT be used to encrypt new ciphertexts.
+'''
+

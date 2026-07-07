@@ -1,0 +1,34 @@
+target = "../spec/framework/algorithm-suites.md#algorithm-suites-signature-settings"
+
+# Algorithm Suites Signature Settings
+#
+# The following table includes signature information for supported algorithm suites.
+# 
+# An algorithm suite with a symmetric signature algorithm MUST use [intermediate key wrapping](#intermediate-key-wrapping).
+# 
+# | Algorithm Suite ENUM                                                     | Asymmetric Signature Algorithm | Symmetric Signature Algorithm |
+# | ------------------------------------------------------------------------ | ------------------------------ | ----------------------------- |
+# | DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_SYMSIG_HMAC_SHA384            | Not applicable                 | HMAC with SHA-384             |
+# | DBE.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384 | ECDSA with P-384 and SHA-384   | HMAC with SHA-384             |
+# | ESDK.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384                   | ECDSA with P-384 and SHA-384   | Not applicable                |
+# | ESDK.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY                              | Not applicable                 | Not applicable                |
+# | ESDK.ALG_AES_256_GCM_IV12_TAG16_HKDF_SHA384_ECDSA_P384                   | ECDSA with P-384 and SHA-384   | Not applicable                |
+# | ESDK.ALG_AES_192_GCM_IV12_TAG16_HKDF_SHA384_ECDSA_P384                   | ECDSA with P-384 and SHA-384   | Not applicable                |
+# | ESDK.ALG_AES_128_GCM_IV12_TAG16_HKDF_SHA256_ECDSA_P256                   | ECDSA with P-256 and SHA-256   | Not applicable                |
+# | ESDK.ALG_AES_256_GCM_IV12_TAG16_HKDF_SHA256                              | Not applicable                 | Not applicable                |
+# | ESDK.ALG_AES_192_GCM_IV12_TAG16_HKDF_SHA256                              | Not applicable                 | Not applicable                |
+# | ESDK.ALG_AES_128_GCM_IV12_TAG16_HKDF_SHA256                              | Not applicable                 | Not applicable                |
+# | ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF                                   | Not applicable                 | Not applicable                |
+# | ESDK.ALG_AES_192_GCM_IV12_TAG16_NO_KDF                                   | Not applicable                 | Not applicable                |
+# | ESDK.ALG_AES_128_GCM_IV12_TAG16_NO_KDF                                   | Not applicable                 | Not applicable                |
+# | S3EC.ALG_AES_256_CBC_IV16_NO_KDF                                         | Not applicable                 | Not applicable                |
+# | S3EC.ALG_AES_256_CTR_IV16_TAG16_NO_KDF                                   | Not applicable                 | Not applicable                |
+# | S3EC.ALG_AES_256_GCM_IV12_TAG16_NO_KDF                                   | Not applicable                 | Not applicable                |
+# | S3EC.ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY                              | Not applicable                 | Not applicable                |
+
+[[spec]]
+level = "MUST"
+quote = '''
+An algorithm suite with a symmetric signature algorithm MUST use [intermediate key wrapping](#intermediate-key-wrapping).
+'''
+

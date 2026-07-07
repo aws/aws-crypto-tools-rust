@@ -1,0 +1,55 @@
+target = "../spec/framework/algorithm-suites.md#symmetric-signature-algorithm"
+
+# Symmetric Signature Algorithm
+#
+# This field is OPTIONAL.
+# 
+# The symmetric signature algorithm defines what symmetric algorithm to use for symmetric signature generation and verification.
+# 
+# If the algorithm suite includes an symmetric signature algorithm:
+# 
+# - Symmetric signatures MUST be generated using the specified symmetric signature algorithm.
+# - Symmetric signatures MUST be verified using the specified symmetric signature algorithm.
+# - The algorithm suite MUST also use [Intermediate Key Wrapping](#intermediate-key-wrapping).
+# 
+# If the algorithm suite does not include a symmetric signature algorithm:
+# 
+# - Symmetric signatures MUST NOT be generated.
+# - Symmetric signatures MUST NOT be verified.
+
+[[spec]]
+level = "MAY"
+quote = '''
+This field is OPTIONAL.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Symmetric signatures MUST be generated using the specified symmetric signature algorithm.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Symmetric signatures MUST be verified using the specified symmetric signature algorithm.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- The algorithm suite MUST also use [Intermediate Key Wrapping](#intermediate-key-wrapping).
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Symmetric signatures MUST NOT be generated.
+'''
+
+[[spec]]
+level = "MUST"
+quote = '''
+- Symmetric signatures MUST NOT be verified.
+'''
+

@@ -1,0 +1,13 @@
+target = "../spec/framework/algorithm-suites.md#commit-key-derivation-algorithm"
+
+# Commit Key Derivation Algorithm
+#
+# This key derivation algorithm defines what key derivation function (KDF) to use for commitment key generation.
+# The specified KDF algorithm MUST be used to generate the [commit key](#commit-key).
+
+[[spec]]
+level = "MUST"
+quote = '''
+The specified KDF algorithm MUST be used to generate the [commit key](#commit-key).
+'''
+
