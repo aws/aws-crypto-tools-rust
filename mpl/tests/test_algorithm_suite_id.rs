@@ -230,6 +230,22 @@ fn test_structure_required_fields_present_for_every_suite() {
     }
 }
 
+#[test]
+fn test_key_commitment_matches_commit_kdf_presence() {
+    // key_commitment() is a convenience predicate that MUST agree with
+    // commit_kdf().is_some() for every suite in the table. This test both
+    // pins that invariant and exercises the predicate — otherwise nothing
+    // in the tree calls key_commitment(), leaving it uncovered.
+    for suite in ALL_SUITES {
+        let spec = suite.specification();
+        assert_eq!(
+            spec.key_commitment(),
+            spec.commit_kdf().is_some(),
+            "key_commitment() disagrees with commit_kdf().is_some() for {suite:?}",
+        );
+    }
+}
+
 // --- Encryption / IV / tag / KDF settings ---
 
 #[test]
