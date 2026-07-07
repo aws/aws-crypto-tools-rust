@@ -134,7 +134,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
         mat.validate_aws_crypto_public_key()
             .unwrap_err()
             .to_string()
-            .contains("SHOULD NOT include")
+            .contains("MUST NOT include")
     );
 }
 
@@ -238,5 +238,5 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
 
     let mat = DecryptionMaterials::new(suite, ec, reck, None, Some(vk), None).unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert!(err.to_string().contains("SHOULD include"));
+    assert!(err.to_string().contains("MUST include"));
 }
