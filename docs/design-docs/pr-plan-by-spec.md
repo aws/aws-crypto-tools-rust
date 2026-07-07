@@ -41,7 +41,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
 | 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Merged** 2026-07-07 (merge commit `72b161e`) | retired after merge |
-| 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Open for review** 2026-07-07 | `aws-crypto-rust/algorithm-suite-review` @ `5f0b5e7` (one commit on top of `main`) |
+| 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Open for review** 2026-07-07 (initial push failed CI on 100% line-coverage gate; fix push same day) | `aws-crypto-rust/algorithm-suite-review` @ `5cb24cd` (2 commits on top of `main`: initial `5f0b5e7`, coverage-gate fix `5cb24cd`) |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
 | 6 | `cmm-interface` | — | Not started | — |
