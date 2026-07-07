@@ -7,4 +7,3 @@ description = "aws-cryptographic-material-providers-library is a low level libra
 authors = ["AWS-CryptoTools"]
 
 [dependencies]
-uuid = "=1.23.3"
