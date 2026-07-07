@@ -40,7 +40,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | PR | Slug | GitHub PR | Status | Review branch |
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
-| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review** 2026-07-06 (fresh branch after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11)) | `aws-crypto-rust/structures-review` @ `c26ad6e` (one commit on top of `main`; squashed replay of retired tip `715c0a0`) |
+| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review, iterating** (fresh branch cut 2026-07-06 after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11); review-feedback push 2026-07-07) | `aws-crypto-rust/structures-review` @ `8f003d8` (2 commits on top of `main`: initial squash `c26ad6e`, review-feedback fix `8f003d8`) |
 | 3 | `algorithm-suite` | — | Not started | — |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
