@@ -40,7 +40,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | PR | Slug | GitHub PR | Status | Review branch |
 |---|---|---|---|---|
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
-| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review, iterating** (fresh branch cut 2026-07-06 after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11); two review-feedback pushes 2026-07-07) | `aws-crypto-rust/structures-review` @ `7e4f4c3` (3 commits on top of `main`: initial squash `c26ad6e`, review-comment reword + Debug-redact tests `8f003d8`, `uuid` crate adoption `7e4f4c3`) |
+| 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Open for review, iterating** (fresh branch cut 2026-07-06 after retiring [#11](https://github.com/aws/aws-crypto-tools-rust/pull/11); three review-feedback pushes 2026-07-07) | `aws-crypto-rust/structures-review` @ `6a099c0` (4 commits on top of `main`: initial squash `c26ad6e`, review-comment reword + Debug-redact tests `8f003d8`, `uuid` crate adoption `7e4f4c3`, UUID-validation removal + `uuid` dep dropped `6a099c0`) |
 | 3 | `algorithm-suite` | — | Not started | — |
 | 4 | `commitment-policy` | — | Not started | — |
 | 5 | `keyring-interface` | — | Not started | — |
@@ -78,13 +78,10 @@ given slice's review branch is the snapshot of cumulative work through that
 stack level.
 
 - `mpl/Cargo.toml`, `mpl/Cargo.lock` — slice 1 introduces the scaffold (no
-  deps). Later slices add deps as needed: PR 2 adds `uuid = "=1.23.3"`
-  (parsing only — for `BranchKeyMaterials` UUIDv4 validation, in
-  response to PR #15 review feedback); PR 5 adds `async-trait`; PR 15
-  extends `uuid` with `features = ["v4"]` and adds `aws-config`,
-  `aws-sdk-dynamodb`, `aws-sdk-kms`, `base64`, `tokio`; PR 16 adds
-  `aws-lc-rs` (fips); PR 19 adds the
-  `[[example]] name = "aws_kms_hierarchical"` block with
+  deps). Later slices add deps as needed: PR 5 adds `async-trait`; PR 15
+  adds `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-kms`, `base64`, `uuid`
+  (with `features = ["v4"]`), `tokio`; PR 16 adds `aws-lc-rs` (fips);
+  PR 19 adds the `[[example]] name = "aws_kms_hierarchical"` block with
   `required-features = ["keystore"]`. PR 13 introduces the `[features]
   keystore` flag. Each slice's PR shows the diff it introduces.
 - `mpl/src/lib.rs` — slice 1 introduces the scaffold (`mod client; pub use
