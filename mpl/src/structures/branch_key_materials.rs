@@ -68,31 +68,18 @@ impl std::fmt::Debug for BranchKeyMaterials {
 
 /// Validate that a string is a valid version 4 UUID in the canonical 8-4-4-4-12 hex format.
 fn is_valid_uuid_v4(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    // Must be exactly 36 characters: 8-4-4-4-12
-    if bytes.len() != 36 {
+    // Only accept the canonical hyphenated form (36 chars). The uuid crate's
+    // parser also accepts simple (32), braced (38), and urn (45) forms;
+    // this length check keeps the accepted surface narrow to the wire form
+    // the keystore emits.
+    if s.len() != 36 {
         return false;
     }
-    // Check hyphens at positions 8, 13, 18, 23
-    if bytes[8] != b'-' || bytes[13] != b'-' || bytes[18] != b'-' || bytes[23] != b'-' {
+    let Ok(u) = uuid::Uuid::parse_str(s) else {
         return false;
-    }
-    // Check version nibble: position 14 must be '4'
-    if bytes[14] != b'4' {
-        return false;
-    }
-    // Check variant nibble: position 19 must be '8', '9', 'a', 'b', 'A', or 'B'
-    if !matches!(bytes[19], b'8' | b'9' | b'a' | b'b' | b'A' | b'B') {
-        return false;
-    }
-    // Check all other positions are hex digits
-    for (i, &b) in bytes.iter().enumerate() {
-        if i == 8 || i == 13 || i == 18 || i == 23 {
-            continue; // hyphens already checked
-        }
-        if !b.is_ascii_hexdigit() {
-            return false;
-        }
-    }
-    true
+    };
+    // A well-formed v4 UUID has both the version=4 nibble AND the RFC 4122
+    // variant (`10xx` high bits, hex digit ∈ {8, 9, a, b}). Uuid::parse_str
+    // does not enforce the variant, so check it explicitly.
+    u.get_version() == Some(uuid::Version::Random) && u.get_variant() == uuid::Variant::RFC4122
 }
