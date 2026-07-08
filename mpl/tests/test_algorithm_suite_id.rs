@@ -86,7 +86,6 @@ fn test_hex_ids_match_spec_table() {
 
 #[test]
 fn test_hex_ids_are_unique_across_all_suites() {
-    //
     let mut seen = HashSet::new();
     for suite in ALL_SUITES {
         let id = suite.id_bytes();
@@ -335,7 +334,6 @@ fn test_asymmetric_signature_present_for_signing_suites() {
     // this MPL layer exposes the required algorithm via
     // AlgorithmSuite::asymmetric_signature_algorithm(), and this test verifies
     // the suite-to-algorithm mapping consumers will read.
-    //
     let cases: [(AlgorithmSuiteId, Option<AsymmetricSignatureAlgorithm>); 11] = [
         (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
         (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
