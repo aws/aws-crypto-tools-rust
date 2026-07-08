@@ -8,10 +8,13 @@ use aws_crypto_mpl::structures::{
     SigningKey, SymmetricSigningKey,
 };
 
-// Standard ESDK suite IDs used throughout the migrated tests:
-// - NO_KDF non-signing (00 78): for `(false, false)` legacy cases.
-// - HKDF-SHA384 + ECDSA-P384 (03 78): for `(true, false)` legacy cases.
+// Standard ESDK suite IDs used throughout these tests:
+// - NO_KDF non-signing (00 78): non-signing baseline.
+// - HKDF-SHA256 + ECDSA-P256 (02 14): 32-byte signing key, 65-byte verify key.
+// - HKDF-SHA384 + ECDSA-P384 (03 78): 48-byte signing key, 97-byte verify key.
 const NO_SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
+const P256_SIGN_SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256;
 const SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384;
 
 fn make_ec_with_keys(keys: &[&[u8]]) -> EncryptionContext {
@@ -24,6 +27,11 @@ fn make_ec_with_keys(keys: &[&[u8]]) -> EncryptionContext {
 
 fn make_edk() -> EncryptedDataKey {
     EncryptedDataKey::new("p".to_string(), b"i".to_vec(), b"c".to_vec())
+}
+
+// A correctly-sized P-256 signing key (private scalar): 32 bytes.
+fn p256_signing_key() -> SigningKey {
+    SigningKey::new(vec![0x42; 32])
 }
 
 // A correctly-sized P-384 signing key (private scalar): 48 bytes.
@@ -99,41 +107,60 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
 
 #[test]
 fn test_signing_key_length_must_match_algorithm_suite() {
-    let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
-    let reck = BTreeSet::new();
-    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
-    // 16 bytes is wrong for P-384 (which expects 48 bytes).
-    let bad_sk = SigningKey::new(vec![0u8; 16]);
-    let edk = make_edk();
+    // Reject both too-short and too-long signing keys, on both P-256 (32-byte)
+    // and P-384 (48-byte) signing suites. The four (suite, actual_len)
+    // combinations catch off-by-one bugs (`>=` vs `==`, `<=` vs `==`) that a
+    // one-sided length check would miss.
+    let cases: [(AlgorithmSuiteId, usize); 4] = [
+        (P256_SIGN_SUITE, 16), // too short for P-256 (expects 32)
+        (P256_SIGN_SUITE, 48), // too long for P-256 (48 is P-384's length)
+        (SIGN_SUITE, 16),      // too short for P-384 (expects 48)
+        (SIGN_SUITE, 96),      // too long for P-384
+    ];
+    for (suite_id, bad_len) in cases {
+        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+        let reck = BTreeSet::new();
+        let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
+        let bad_sk = SigningKey::new(vec![0u8; bad_len]);
+        let edk = make_edk();
 
-    let result = EncryptionMaterials::new(
-        SIGN_SUITE,
-        vec![edk],
-        ec,
-        reck,
-        Some(pdk),
-        Some(bad_sk),
-        None,
-    );
-    let err = result.expect_err("expected signing-key length mismatch error");
-    assert!(
-        err.message.contains("Signing key length"),
-        "unexpected error message: {}",
-        err.message
-    );
+        let result =
+            EncryptionMaterials::new(suite_id, vec![edk], ec, reck, Some(pdk), Some(bad_sk), None);
+        let err = result.expect_err(&format!(
+            "{suite_id:?} with {bad_len}-byte signing key must fail"
+        ));
+        assert!(
+            err.message.contains("Signing key length"),
+            "{suite_id:?} @ {bad_len}: unexpected error message: {}",
+            err.message
+        );
+    }
 }
 
 #[test]
 fn test_signing_key_correct_length_succeeds() {
-    let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
-    let reck = BTreeSet::new();
-    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
-    let sk = p384_signing_key(); // 48 bytes — correct for P-384
-    let edk = make_edk();
+    // Positive companion to test_signing_key_length_must_match_algorithm_suite.
+    // Cover BOTH signing families: P-256 (32-byte scalar) and P-384 (48-byte
+    // scalar). Without both, an accidental swap of the two spec-table rows
+    // would go undetected.
+    let cases: [(AlgorithmSuiteId, SigningKey); 2] = [
+        (P256_SIGN_SUITE, p256_signing_key()),
+        (SIGN_SUITE, p384_signing_key()),
+    ];
+    for (suite_id, sk) in cases {
+        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+        let reck = BTreeSet::new();
+        let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
+        let edk = make_edk();
 
-    let result =
-        EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None);
-    assert!(result.is_ok());
+        let result =
+            EncryptionMaterials::new(suite_id, vec![edk], ec, reck, Some(pdk), Some(sk), None);
+        assert!(
+            result.is_ok(),
+            "{suite_id:?} with correctly-sized signing key must succeed: {:?}",
+            result.err()
+        );
+    }
 }
 
 #[test]
@@ -302,10 +329,26 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
 
 #[test]
 fn test_algorithm_suite_accessor_returns_matching_specification() {
-    let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
-
-    let mat = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None).unwrap();
-    let suite = mat.algorithm_suite();
-    assert_eq!(suite.id(), NO_SIGN_SUITE.id_bytes());
+    // The accessor returns the FULL specification struct (11 fields), not
+    // just the ID. Compare the whole struct against `id.specification()` for
+    // both a non-signing and a signing suite so drift on any field (kdf,
+    // signature alg, commit_kdf, message_format_version, suite_data_length,
+    // …) surfaces as a test failure. Comparing only `.id()` would let e.g.
+    // a wrong `commit_kdf` pass silently.
+    for suite_id in [NO_SIGN_SUITE, SIGN_SUITE] {
+        let ec = EncryptionContext::new();
+        let reck = BTreeSet::new();
+        let (sk, edks) = if suite_id == SIGN_SUITE {
+            (Some(p384_signing_key()), vec![])
+        } else {
+            (None, vec![])
+        };
+        let mat = EncryptionMaterials::new(suite_id, edks, ec, reck, None, sk, None).unwrap();
+        assert_eq!(
+            mat.algorithm_suite(),
+            suite_id.specification(),
+            "{:?}: algorithm_suite() must equal id.specification()",
+            suite_id
+        );
+    }
 }
