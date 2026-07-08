@@ -10,8 +10,8 @@
 use std::collections::HashSet;
 
 use aws_crypto_mpl::structures::{
-    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm,
-    EncryptionAlgorithmMode, Format, KeyDerivationAlgorithm,
+    AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EncryptionAlgorithm, EncryptionAlgorithmMode,
+    Format, KeyDerivationAlgorithm,
 };
 
 /// All 11 ESDK algorithm suite variants in the order their hex IDs appear in
@@ -111,41 +111,12 @@ fn test_reserved_id_00_00_is_not_used() {
     }
 }
 
-#[test]
-fn test_id_bytes_length_is_two() {
-    // 2-byte length is enforced by the [u8; 2] type. This regression test
-    // documents that the public accessor returns exactly 2 bytes.
-    for suite in ALL_SUITES {
-        let id: [u8; 2] = suite.id_bytes();
-        assert_eq!(id.len(), 2, "{:?}", suite);
-    }
-}
+// --- Format enum name pins ---
 
 #[test]
-fn test_id_bytes_can_bind_algorithm_suite_to_ciphertext() {
-    // The accessor returns a fresh [u8; 2] copy, ready to be written into a
-    // ciphertext header. This regression check ensures the public accessor
-    // remains usable for that purpose.
-    let id = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf.id_bytes();
-    let mut header_buf = [0u8; 8];
-    header_buf[0..2].copy_from_slice(&id);
-    assert_eq!(&header_buf[0..2], &[0x00, 0x78]);
-}
-
-// --- Format enum: short/long-name uniqueness ---
-
-#[test]
-fn test_format_short_and_long_names_unique() {
-    // Format::Esdk is the only variant; uniqueness of short and long name is
-    // trivially true (single-variant enum). Source-side annotation is
-    // type=implication.
-    let formats = [Format::Esdk];
-    let shorts: HashSet<&'static str> = formats.iter().map(|f| f.short_name()).collect();
-    let longs: HashSet<&'static str> = formats.iter().map(|f| f.long_name()).collect();
-    assert_eq!(shorts.len(), formats.len(), "short names must be unique");
-    assert_eq!(longs.len(), formats.len(), "long names must be unique");
-    // ESDK / S3EC / DBE never collide on either name dimension; the implementer
-    // ships only ESDK in this MPL, so uniqueness is trivial.
+fn test_format_short_and_long_names_are_the_spec_strings() {
+    // Format::Esdk is the only variant this MPL ships; pin the spec-defined
+    // short/long strings so a rename triggers a deliberate test failure.
     assert_eq!(Format::Esdk.short_name(), "ESDK");
     assert_eq!(
         Format::Esdk.long_name(),
@@ -153,20 +124,7 @@ fn test_format_short_and_long_names_unique() {
     );
 }
 
-// --- Per-section spec-table coverage ---
-
-#[test]
-fn test_overview_per_suite_specification_is_defined() {
-    // Each variant materializes a non-default specification. The enum IS the
-    // catalog of behaviors per the overview section; source-side annotation
-    // is type=implication.
-    let mut seen: HashSet<[u8; 2]> = HashSet::new();
-    for suite in ALL_SUITES {
-        let spec: AlgorithmSuite = suite.specification();
-        seen.insert(spec.id());
-    }
-    assert_eq!(seen.len(), 11);
-}
+// --- GCM specifics (shared across every ESDK suite) ---
 
 #[test]
 fn test_gcm_specifics_for_every_esdk_suite() {
@@ -184,49 +142,6 @@ fn test_gcm_specifics_for_every_esdk_suite() {
             "{:?} encryption mode",
             suite
         );
-    }
-}
-
-#[test]
-fn test_supported_format_algorithm_suites_enum_exposes_eleven_esdk_variants() {
-    // The library exposes 11 ESDK suite variants on `AlgorithmSuiteId` —
-    // matching the ESDK column of the spec's per-format ENUM table. Source-side
-    // annotation is type=implication (the enum's existence IS the requirement).
-    assert_eq!(ALL_SUITES.len(), 11);
-}
-
-#[test]
-fn test_supported_algorithm_suites_enum_is_super_set() {
-    // Only ESDK is supported, so the super-set IS the ESDK set; both have the
-    // same 11 variants. Source-side annotation is type=implication. (DBE/S3EC
-    // are out of scope — see exception annotations.)
-    assert_eq!(ALL_SUITES.len(), 11);
-}
-
-#[test]
-fn test_format_namespacing_allows_duplicate_format_enum_names() {
-    // The spec namespaces variants as `Format.FormatENUM` (e.g.
-    // `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF`). In this MPL, only the ESDK
-    // namespace exists. Source-side annotation is type=implication — the
-    // Format enum's `short_name` IS the disambiguating prefix.
-    assert_eq!(Format::Esdk.short_name(), "ESDK");
-}
-
-#[test]
-fn test_structure_required_fields_present_for_every_suite() {
-    // Each variant materializes an AlgorithmSuite with all required fields
-    // populated. The struct's compile-time field set IS the requirement;
-    // source-side annotation is type=implication.
-    for suite in ALL_SUITES {
-        let spec = suite.specification();
-        assert_eq!(spec.id().len(), 2);
-        assert!(spec.encryption_key_length() > 0);
-        assert!(spec.iv_length() > 0);
-        assert!(spec.authentication_tag_length() > 0);
-        // optional fields use Option<T>, allowed to be None
-        let _ = spec.commit_kdf();
-        let _ = spec.asymmetric_signature_algorithm();
-        let _ = spec.symmetric_signature_algorithm();
     }
 }
 
@@ -364,29 +279,22 @@ fn test_encryption_kdf_matches_spec_table() {
 }
 
 #[test]
-fn test_identity_kdf_used_only_for_no_kdf_suites() {
-    // Defense-in-depth: every NoKdf suite has IdentityKdf, every other suite
-    // does not. The two #identity-kdf requirements are annotated as
-    // type=implication on the source side because no callable Identity KDF
-    // function exists at this layer (the suite's `encryption_kdf` tag IS the
-    // observable surface; key-derivation-input length is not a separate field).
-    for suite in [
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-    ] {
-        let spec = suite.specification();
-        assert_eq!(
-            spec.encryption_kdf(),
-            KeyDerivationAlgorithm::IdentityKdf,
-            "{:?} must use Identity KDF",
-            suite
+fn test_identity_kdf_used_if_and_only_if_no_kdf_suite() {
+    // The three NoKdf variants MUST have IdentityKdf; every other variant
+    // MUST NOT. Proving BOTH directions here matches the spec's
+    // "Identity KDF is used only for the NoKdf suites" language.
+    for suite in ALL_SUITES {
+        let is_no_kdf_suite = matches!(
+            suite,
+            AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
+                | AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf
+                | AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
         );
-        // Identity KDF input length == encryption key length
-        let n = spec.encryption_key_length();
-        assert!(
-            n == 16 || n == 24 || n == 32,
-            "{:?} encryption_key_length",
+        let uses_identity_kdf =
+            suite.specification().encryption_kdf() == KeyDerivationAlgorithm::IdentityKdf;
+        assert_eq!(
+            uses_identity_kdf, is_no_kdf_suite,
+            "{:?}: IdentityKdf-iff-NoKdf-suite invariant violated",
             suite
         );
     }
@@ -484,27 +392,11 @@ fn test_no_asymmetric_signature_means_signing_disabled() {
 }
 
 #[test]
-fn test_asymmetric_signature_algorithm_is_optional_field() {
-    // Source-side annotation is type=implication — `Option<T>` encodes
-    // OPTIONAL by construction. This test exists for regression coverage
-    // documenting that variants split into both populated and unpopulated.
-    let signing_count = ALL_SUITES
-        .iter()
-        .filter(|s| s.specification().asymmetric_signature_algorithm().is_some())
-        .count();
-    let no_signing_count = ALL_SUITES
-        .iter()
-        .filter(|s| s.specification().asymmetric_signature_algorithm().is_none())
-        .count();
-    assert!(signing_count > 0, "at least one variant has signing");
-    assert!(no_signing_count > 0, "at least one variant has no signing");
-}
-
-#[test]
-fn test_symmetric_signature_algorithm_is_optional_field() {
-    // Source-side annotation is type=implication — `Option<T>` encodes OPTIONAL.
+fn test_symmetric_signature_algorithm_is_none_for_every_esdk_suite() {
     // No ESDK suite uses a symmetric signature algorithm — the field is None
-    // for every ESDK variant.
+    // for every ESDK variant, so `has_symmetric_signing()` is uniformly false.
+    // The `symmetric_signing_keys` fields on materials MUST NOT be present;
+    // that None-side invariant is covered on the materials structs.
     for suite in ALL_SUITES {
         assert!(
             suite
@@ -514,19 +406,6 @@ fn test_symmetric_signature_algorithm_is_optional_field() {
             "{:?} must NOT have a symmetric signature algorithm (no ESDK suite does)",
             suite
         );
-        assert!(!suite.has_symmetric_signing(), "{:?}", suite);
-    }
-}
-
-#[test]
-fn test_no_symmetric_signature_means_generation_and_verification_disabled() {
-    //
-    // For every constructible ESDK variant, has_symmetric_signing() == false,
-    // so callers MUST NOT generate or verify symmetric signatures with these
-    // materials. The materials types reject symmetric_signing_key arguments
-    // — covered by test_encryption_materials.rs and test_decryption_materials.rs
-    // negative-path tests; here we prove the API surface forbids the action.
-    for suite in ALL_SUITES {
         assert!(!suite.has_symmetric_signing(), "{:?}", suite);
     }
 }
@@ -613,27 +492,78 @@ fn test_algorithm_suite_data_length_may_be_zero() {
 }
 
 #[test]
-fn test_signing_key_length_p256() {
-    let spec = AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256.specification();
-    // P-256 private scalar is 32 bytes.
-    assert_eq!(spec.signing_key_length(), Some(32));
+fn test_signing_key_length_matches_spec_table() {
+    // P-256 private scalar: 32 bytes. P-384: 48 bytes. Non-signing: None.
+    let cases: [(AlgorithmSuiteId, Option<usize>); 11] = [
+        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
+        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
+        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
+        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
+        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
+        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
+        (
+            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            Some(32),
+        ),
+        (
+            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            Some(48),
+        ),
+        (
+            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            Some(48),
+        ),
+        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
+        (
+            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            Some(48),
+        ),
+    ];
+    for (suite, expected) in cases {
+        assert_eq!(
+            suite.specification().signing_key_length(),
+            expected,
+            "{:?}",
+            suite
+        );
+    }
 }
 
 #[test]
-fn test_signing_key_length_none_for_non_signing_suite() {
-    let spec = AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf.specification();
-    assert_eq!(spec.signing_key_length(), None);
-}
-
-#[test]
-fn test_verification_key_length_p256() {
-    let spec = AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256.specification();
-    // P-256 SEC1 uncompressed: 1 + 2*32 = 65 bytes.
-    assert_eq!(spec.verification_key_length(), Some(65));
-}
-
-#[test]
-fn test_verification_key_length_none_for_non_signing_suite() {
-    let spec = AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf.specification();
-    assert_eq!(spec.verification_key_length(), None);
+fn test_verification_key_length_matches_spec_table() {
+    // SEC1 uncompressed public key: 1 byte tag + 2 * coord_len.
+    // P-256: 1 + 2*32 = 65 bytes. P-384: 1 + 2*48 = 97 bytes. Non-signing: None.
+    let cases: [(AlgorithmSuiteId, Option<usize>); 11] = [
+        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
+        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
+        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
+        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
+        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
+        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
+        (
+            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+            Some(65),
+        ),
+        (
+            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+            Some(97),
+        ),
+        (
+            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+            Some(97),
+        ),
+        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
+        (
+            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            Some(97),
+        ),
+    ];
+    for (suite, expected) in cases {
+        assert_eq!(
+            suite.specification().verification_key_length(),
+            expected,
+            "{:?}",
+            suite
+        );
+    }
 }

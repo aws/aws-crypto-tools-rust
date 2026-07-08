@@ -90,11 +90,28 @@ fn test_verification_key_debug_shows_bytes() {
     // use `#[derive(Debug)]` rather than a redacting impl. This test pins
     // that design choice so a future accidental swap to a redacting impl
     // produces a deliberate test failure.
-    let vk = VerificationKey::new(b"public-verify".to_vec());
+    //
+    // Bytes chosen with distinct values so their decimal-formatted form
+    // (produced by the derived Debug on `VerificationKey(Vec<u8>)`) is
+    // unambiguously present in the output.
+    let vk = VerificationKey::new(vec![0xAB, 0xCD, 0xEF, 0x01]);
     let debug_output = format!("{:?}", vk);
     assert!(
         !debug_output.contains("REDACTED"),
         "VerificationKey Debug must NOT redact (public material), got: {debug_output}"
+    );
+    // Derived Debug for a `Vec<u8>` newtype prints each byte as decimal.
+    assert!(
+        debug_output.contains("171"),
+        "VerificationKey Debug must expose bytes; missing 171 (=0xAB) in: {debug_output}"
+    );
+    assert!(
+        debug_output.contains("205"),
+        "VerificationKey Debug must expose bytes; missing 205 (=0xCD) in: {debug_output}"
+    );
+    assert!(
+        debug_output.contains("239"),
+        "VerificationKey Debug must expose bytes; missing 239 (=0xEF) in: {debug_output}"
     );
 }
 

@@ -9,6 +9,8 @@ use aws_crypto_mpl::structures::{
 };
 
 const NO_SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
+const P256_SIGN_SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256;
 const SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384;
 
 fn make_ec_with_keys(keys: &[&[u8]]) -> EncryptionContext {
@@ -17,6 +19,13 @@ fn make_ec_with_keys(keys: &[&[u8]]) -> EncryptionContext {
         ec.insert(k.to_vec(), b"val".to_vec());
     }
     ec
+}
+
+// SEC1 uncompressed P-256 verification key: 1 byte tag (0x04) + 64 bytes (X||Y) = 65 bytes.
+fn p256_verification_key() -> VerificationKey {
+    let mut bytes = vec![0u8; 65];
+    bytes[0] = 0x04;
+    VerificationKey::new(bytes)
 }
 
 // SEC1 uncompressed P-384 verification key: 1 byte tag (0x04) + 96 bytes (X||Y) = 97 bytes.
@@ -81,35 +90,63 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
 
 #[test]
 fn test_verification_key_length_must_match_algorithm_suite() {
-    let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
-    let reck = BTreeSet::new();
-    // 32 bytes is wrong for P-384 (which expects 97 bytes).
-    let bad_vk = VerificationKey::new(vec![0x04; 32]);
+    // Reject both too-short and too-long verification keys on both P-256
+    // (65-byte SEC1) and P-384 (97-byte SEC1) signing suites. The four
+    // (suite, actual_len) combinations catch one-sided length-check bugs
+    // (`>=`, `<=`) that would otherwise slip through.
+    let cases: [(AlgorithmSuiteId, usize); 4] = [
+        (P256_SIGN_SUITE, 32), // too short for P-256 (expects 65)
+        (P256_SIGN_SUITE, 97), // too long for P-256 (97 is P-384's length)
+        (SIGN_SUITE, 32),      // too short for P-384 (expects 97)
+        (SIGN_SUITE, 200),     // too long for P-384
+    ];
+    for (suite_id, bad_len) in cases {
+        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+        let reck = BTreeSet::new();
+        let bad_vk = VerificationKey::new(vec![0x04; bad_len]);
 
-    let result = DecryptionMaterials::new(SIGN_SUITE, ec, reck, None, Some(bad_vk), None);
-    let err = result.expect_err("expected verification-key length mismatch error");
-    assert!(
-        err.message.contains("Verification key length"),
-        "unexpected error message: {}",
-        err.message
-    );
+        let result = DecryptionMaterials::new(suite_id, ec, reck, None, Some(bad_vk), None);
+        let err = result.expect_err(&format!(
+            "{suite_id:?} with {bad_len}-byte verification key must fail"
+        ));
+        assert!(
+            err.message.contains("Verification key length"),
+            "{suite_id:?} @ {bad_len}: unexpected error message: {}",
+            err.message
+        );
+    }
 }
 
 #[test]
 fn test_verification_key_correct_length_succeeds() {
-    let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
-    let reck = BTreeSet::new();
-    let vk = p384_verification_key(); // 97 bytes — correct for P-384
+    // Positive companion: cover BOTH signing families so a spec-table row
+    // swap between P-256 (65) and P-384 (97) surfaces as a failure.
+    let cases: [(AlgorithmSuiteId, VerificationKey); 2] = [
+        (P256_SIGN_SUITE, p256_verification_key()),
+        (SIGN_SUITE, p384_verification_key()),
+    ];
+    for (suite_id, vk) in cases {
+        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+        let reck = BTreeSet::new();
 
-    let result = DecryptionMaterials::new(SIGN_SUITE, ec, reck, None, Some(vk), None);
-    assert!(result.is_ok());
+        let result = DecryptionMaterials::new(suite_id, ec, reck, None, Some(vk), None);
+        assert!(
+            result.is_ok(),
+            "{suite_id:?} with correctly-sized verification key must succeed: {:?}",
+            result.err()
+        );
+    }
 }
 
 #[test]
 fn test_verification_key_rejected_without_asymmetric_signing() {
+    // On a non-signing suite the verification key is rejected by the
+    // "must not be present" check; the suite has no expected length, so
+    // the actual byte count doesn't matter. Use a minimally-sized VK so
+    // the fixture doesn't imply any length-check interaction.
     let ec = EncryptionContext::new();
     let reck = BTreeSet::new();
-    let vk = VerificationKey::new(vec![0x04; 97]);
+    let vk = VerificationKey::new(vec![0x04; 4]);
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, Some(vk), None);
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
@@ -238,10 +275,25 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
 
 #[test]
 fn test_algorithm_suite_accessor_returns_matching_specification() {
-    let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
-
-    let mat = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None).unwrap();
-    let suite = mat.algorithm_suite();
-    assert_eq!(suite.id(), NO_SIGN_SUITE.id_bytes());
+    // The accessor returns the FULL specification struct (11 fields), not
+    // just the ID. Compare the whole struct against `id.specification()` for
+    // both a non-signing and a signing suite so drift on any field (kdf,
+    // signature alg, commit_kdf, message_format_version, suite_data_length,
+    // …) surfaces as a test failure.
+    for suite_id in [NO_SIGN_SUITE, SIGN_SUITE] {
+        let ec = EncryptionContext::new();
+        let reck = BTreeSet::new();
+        let vk = if suite_id == SIGN_SUITE {
+            Some(p384_verification_key())
+        } else {
+            None
+        };
+        let mat = DecryptionMaterials::new(suite_id, ec, reck, None, vk, None).unwrap();
+        assert_eq!(
+            mat.algorithm_suite(),
+            suite_id.specification(),
+            "{:?}: algorithm_suite() must equal id.specification()",
+            suite_id
+        );
+    }
 }
