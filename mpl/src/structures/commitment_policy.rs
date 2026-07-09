@@ -16,8 +16,6 @@ use super::algorithm_suite::AlgorithmSuiteId;
 // The MAY about duplicate Format Commitment Policy ENUM is vacuously
 // satisfied: with one format implemented, no two formats can collide.
 
-//
-//
 /// Selects which ESDK algorithm suites are allowed for encrypt/decrypt and
 /// what the default suite is for encryption.
 ///

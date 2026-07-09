@@ -7,8 +7,7 @@
 //!
 //! - `#supported-format-commitment-policy-enum` — distinct ESDK Format
 //!   Commitment Policy ENUM.
-//! - `#supported-commitment-policy-enum` — union ENUM (and the MAY about
-//!   duplicate Format Commitment Policy ENUMs across formats).
+//! - `#supported-commitment-policy-enum` — union ENUM.
 //! - `#esdk-forbid-encrypt-allow-decrypt`
 //! - `#esdk-require-encrypt-allow-decrypt`
 //! - `#esdk-require-encrypt-require-decrypt`
@@ -57,7 +56,6 @@ fn test_supported_format_commitment_policy_enum_is_distinct() {
 
 #[test]
 fn test_union_commitment_policy_enum_exposes_all_variants() {
-    //
     // Every value of the union ENUM (`CommitmentPolicy`) round-trips through
     // pattern matching against itself. With one format implemented (ESDK),
     // the union ENUM is exactly the three ESDK variants.
@@ -74,26 +72,6 @@ fn test_union_commitment_policy_enum_exposes_all_variants() {
         assert!(
             matched.starts_with("ESDK."),
             "every union ENUM variant must be an ESDK.* policy in this MPL: got {matched}"
-        );
-    }
-}
-
-#[test]
-fn test_only_esdk_format_so_no_duplicate_enums() {
-    //
-    // The MAY allowance is vacuously satisfied: this MPL implements exactly
-    // one format (ESDK), so no other format's Format Commitment Policy ENUM
-    // can collide with one of these variants. We assert the precondition —
-    // every variant belongs to the ESDK format.
-    for v in ALL_VARIANTS {
-        let format_prefix = match v {
-            CommitmentPolicy::EsdkForbidEncryptAllowDecrypt
-            | CommitmentPolicy::EsdkRequireEncryptAllowDecrypt
-            | CommitmentPolicy::EsdkRequireEncryptRequireDecrypt => "ESDK",
-        };
-        assert_eq!(
-            format_prefix, "ESDK",
-            "every variant must come from the ESDK format (only one format is implemented)"
         );
     }
 }
