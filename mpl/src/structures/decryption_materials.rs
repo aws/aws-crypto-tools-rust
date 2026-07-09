@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
-    AlgorithmSuite, PlaintextDataKey, SymmetricSigningKey, VerificationKey,
+    AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SymmetricSigningKey, VerificationKey,
 };
 use super::encryption_context::EncryptionContext;
 use super::error::MaterialsError;
@@ -15,7 +15,7 @@ use super::error::MaterialsError;
 ///
 #[derive(Debug)]
 pub struct DecryptionMaterials {
-    algorithm_suite: AlgorithmSuite,
+    algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
     required_encryption_context_keys: BTreeSet<Vec<u8>>,
     plaintext_data_key: Option<PlaintextDataKey>,
@@ -26,13 +26,15 @@ pub struct DecryptionMaterials {
 impl DecryptionMaterials {
     /// Construct decryption materials, enforcing all spec invariants.
     pub fn new(
-        algorithm_suite: AlgorithmSuite,
+        algorithm_suite_id: AlgorithmSuiteId,
         encryption_context: EncryptionContext,
         required_encryption_context_keys: BTreeSet<Vec<u8>>,
         plaintext_data_key: Option<PlaintextDataKey>,
         verification_key: Option<VerificationKey>,
         symmetric_signing_key: Option<SymmetricSigningKey>,
     ) -> Result<Self, MaterialsError> {
+        let suite = algorithm_suite_id.specification();
+
         // Required encryption context keys must be a subset of encryption context keys
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
@@ -44,30 +46,34 @@ impl DecryptionMaterials {
         }
 
         // If no asymmetric signing, verification key must not be present.
-        if !algorithm_suite.has_asymmetric_signing() && verification_key.is_some() {
+        if !algorithm_suite_id.has_asymmetric_signing() && verification_key.is_some() {
             return Err(MaterialsError::new(
                 "Verification key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
 
+        // If asymmetric signing, the verification key (when present) MUST match
+        // the suite's asymmetric signature algorithm SEC1-uncompressed length.
+        if let Some(ref vk) = verification_key
+            && let Some(expected_len) = suite.verification_key_length()
+            && vk.len() != expected_len
+        {
+            return Err(MaterialsError::new(format!(
+                "Verification key length ({}) does not match expected length ({}) for algorithm suite",
+                vk.len(),
+                expected_len
+            )));
+        }
+
         // If no symmetric signing, symmetric signing key must not be included
-        if !algorithm_suite.has_symmetric_signing() && symmetric_signing_key.is_some() {
+        if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_key.is_some() {
             return Err(MaterialsError::new(
                 "Symmetric signing key must not be present when algorithm suite has no symmetric signing",
             ));
         }
 
-        // If symmetric signing, symmetric signing key must be present iff plaintext data key is present
-        if algorithm_suite.has_symmetric_signing()
-            && plaintext_data_key.is_some() != symmetric_signing_key.is_some()
-        {
-            return Err(MaterialsError::new(
-                "Symmetric signing key must be present if and only if plaintext data key is present (when algorithm suite has symmetric signing)",
-            ));
-        }
-
         Ok(Self {
-            algorithm_suite,
+            algorithm_suite_id,
             encryption_context,
             required_encryption_context_keys,
             plaintext_data_key,
@@ -76,8 +82,12 @@ impl DecryptionMaterials {
         })
     }
 
-    pub fn algorithm_suite(&self) -> &AlgorithmSuite {
-        &self.algorithm_suite
+    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    pub fn algorithm_suite(&self) -> AlgorithmSuite {
+        self.algorithm_suite_id.specification()
     }
 
     pub fn encryption_context(&self) -> &EncryptionContext {
