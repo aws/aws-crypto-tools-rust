@@ -31,7 +31,7 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 /// On `get_encryption_materials` the default CMM:
 /// - Resolves the algorithm suite from the request (or, if absent, from the
 ///   commitment policy's default).
-/// - For signing suites: generates an ECDSA key pair via `aws-lc-rs`, attaches
+/// - For signing suites: generates an ECDSA key pair via `aws-mpl-primitives`, attaches
 ///   the private signing key to the materials, and inserts the
 ///   base64-encoded SEC1-uncompressed public key into a copy of the request's
 ///   encryption context under the reserved `aws-crypto-public-key` key.
