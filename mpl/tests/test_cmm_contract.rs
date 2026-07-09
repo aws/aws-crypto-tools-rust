@@ -22,7 +22,7 @@ use aws_crypto_mpl::cmm::Cmm;
 use aws_crypto_mpl::cmm::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey, SigningKey,
+    EncryptionMaterials, Esdk, MaterialsError, MaterialsErrorKind, PlaintextDataKey, SigningKey,
     VerificationKey,
 };
 
@@ -204,7 +204,8 @@ impl Cmm for MockCmm {
 // Suites
 const NON_SIGNING_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
 const SIGNING_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
-const POLICY_NON_SIGNING: CommitmentPolicy = CommitmentPolicy::EsdkRequireEncryptAllowDecrypt;
+const POLICY_NON_SIGNING: CommitmentPolicy =
+    CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt);
 
 // Request-type constructor / getter coverage
 

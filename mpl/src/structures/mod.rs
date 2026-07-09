@@ -20,7 +20,7 @@ pub use algorithm_suite::{
 };
 pub use beacon_key_materials::BeaconKeyMaterials;
 pub use branch_key_materials::BranchKeyMaterials;
-pub use commitment_policy::CommitmentPolicy;
+pub use commitment_policy::{CommitmentPolicy, Esdk};
 pub use decryption_materials::DecryptionMaterials;
 pub use encrypted_data_key::EncryptedDataKey;
 pub use encryption_context::EncryptionContext;

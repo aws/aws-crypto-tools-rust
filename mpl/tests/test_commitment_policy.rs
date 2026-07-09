@@ -17,7 +17,7 @@
 
 use std::collections::HashSet;
 
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, CommitmentPolicy};
+use aws_crypto_mpl::structures::{AlgorithmSuiteId, CommitmentPolicy, Esdk};
 
 /// A representative committing ESDK suite (Key Commitment value: True).
 const COMMITTING: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
@@ -37,9 +37,9 @@ const NON_COMMITTING_HKDF: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12
 /// Every variant of `CommitmentPolicy`. Used to assert pairwise distinctness
 /// and to enumerate the ESDK Format Commitment Policy ENUM rows.
 const ALL_VARIANTS: [CommitmentPolicy; 3] = [
-    CommitmentPolicy::EsdkForbidEncryptAllowDecrypt,
-    CommitmentPolicy::EsdkRequireEncryptAllowDecrypt,
-    CommitmentPolicy::EsdkRequireEncryptRequireDecrypt,
+    CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt),
+    CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt),
+    CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt),
 ];
 
 #[test]
@@ -61,11 +61,13 @@ fn test_union_commitment_policy_enum_exposes_all_variants() {
     // the union ENUM is exactly the three ESDK variants.
     for v in ALL_VARIANTS {
         let matched = match v {
-            CommitmentPolicy::EsdkForbidEncryptAllowDecrypt => "ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT",
-            CommitmentPolicy::EsdkRequireEncryptAllowDecrypt => {
+            CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt) => {
+                "ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT"
+            }
+            CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt) => {
                 "ESDK.REQUIRE_ENCRYPT_ALLOW_DECRYPT"
             }
-            CommitmentPolicy::EsdkRequireEncryptRequireDecrypt => {
+            CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt) => {
                 "ESDK.REQUIRE_ENCRYPT_REQUIRE_DECRYPT"
             }
         };
@@ -78,7 +80,8 @@ fn test_union_commitment_policy_enum_exposes_all_variants() {
 
 #[test]
 fn test_forbid_encrypt_allow_decrypt_default_is_alg_aes_256_gcm_iv12_tag16_no_kdf() {
-    let default = CommitmentPolicy::EsdkForbidEncryptAllowDecrypt.default_algorithm_suite_id();
+    let default =
+        CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt).default_algorithm_suite_id();
     assert_eq!(default, AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
     // The spec also identifies this suite by raw bytes (`00 78`); cross-check.
     assert_eq!(default.specification().id(), [0x00, 0x78]);
@@ -86,7 +89,7 @@ fn test_forbid_encrypt_allow_decrypt_default_is_alg_aes_256_gcm_iv12_tag16_no_kd
 
 #[test]
 fn test_forbid_encrypt_allow_decrypt_encrypt_only_non_committing_suites() {
-    let policy = CommitmentPolicy::EsdkForbidEncryptAllowDecrypt;
+    let policy = CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt);
     // Positive: a suite with Key Commitment value False is allowed.
     assert!(
         policy.allows_for_encrypt(NON_COMMITTING),
@@ -109,7 +112,7 @@ fn test_forbid_encrypt_allow_decrypt_encrypt_only_non_committing_suites() {
 
 #[test]
 fn test_forbid_encrypt_allow_decrypt_decrypt_supports_all_suites() {
-    let policy = CommitmentPolicy::EsdkForbidEncryptAllowDecrypt;
+    let policy = CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt);
     // Both committing and non-committing suites must be allowed for decrypt.
     assert!(policy.allows_for_decrypt(NON_COMMITTING));
     assert!(policy.allows_for_decrypt(NON_COMMITTING_HKDF));
@@ -119,7 +122,8 @@ fn test_forbid_encrypt_allow_decrypt_decrypt_supports_all_suites() {
 
 #[test]
 fn test_require_encrypt_allow_decrypt_default_id_is_05_78() {
-    let default = CommitmentPolicy::EsdkRequireEncryptAllowDecrypt.default_algorithm_suite_id();
+    let default =
+        CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt).default_algorithm_suite_id();
     // Identity assertion (the variant whose id is 05 78).
     assert_eq!(
         default,
@@ -131,7 +135,7 @@ fn test_require_encrypt_allow_decrypt_default_id_is_05_78() {
 
 #[test]
 fn test_require_encrypt_allow_decrypt_encrypt_only_committing_suites() {
-    let policy = CommitmentPolicy::EsdkRequireEncryptAllowDecrypt;
+    let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt);
     // Positive: committing suites are allowed.
     assert!(
         policy.allows_for_encrypt(COMMITTING),
@@ -154,7 +158,7 @@ fn test_require_encrypt_allow_decrypt_encrypt_only_committing_suites() {
 
 #[test]
 fn test_require_encrypt_allow_decrypt_decrypt_supports_all_suites() {
-    let policy = CommitmentPolicy::EsdkRequireEncryptAllowDecrypt;
+    let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt);
     assert!(policy.allows_for_decrypt(NON_COMMITTING));
     assert!(policy.allows_for_decrypt(NON_COMMITTING_HKDF));
     assert!(policy.allows_for_decrypt(COMMITTING));
@@ -163,7 +167,8 @@ fn test_require_encrypt_allow_decrypt_decrypt_supports_all_suites() {
 
 #[test]
 fn test_require_encrypt_require_decrypt_default_id_is_05_78() {
-    let default = CommitmentPolicy::EsdkRequireEncryptRequireDecrypt.default_algorithm_suite_id();
+    let default =
+        CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt).default_algorithm_suite_id();
     assert_eq!(
         default,
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
@@ -173,7 +178,7 @@ fn test_require_encrypt_require_decrypt_default_id_is_05_78() {
 
 #[test]
 fn test_require_encrypt_require_decrypt_encrypt_only_committing_suites() {
-    let policy = CommitmentPolicy::EsdkRequireEncryptRequireDecrypt;
+    let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt);
     assert!(policy.allows_for_encrypt(COMMITTING));
     assert!(policy.allows_for_encrypt(COMMITTING_NO_SIG));
     assert!(!policy.allows_for_encrypt(NON_COMMITTING));
@@ -182,7 +187,7 @@ fn test_require_encrypt_require_decrypt_encrypt_only_committing_suites() {
 
 #[test]
 fn test_require_encrypt_require_decrypt_decrypt_only_committing_suites() {
-    let policy = CommitmentPolicy::EsdkRequireEncryptRequireDecrypt;
+    let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt);
     // Positive: committing suites are allowed.
     assert!(policy.allows_for_decrypt(COMMITTING));
     assert!(policy.allows_for_decrypt(COMMITTING_NO_SIG));
