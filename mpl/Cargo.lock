@@ -98,6 +98,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-lc-rs",
+ "aws-mpl-primitives",
  "aws-sdk-dynamodb",
  "aws-sdk-kms",
  "base64",
@@ -141,6 +142,13 @@ dependencies = [
  "cmake",
  "dunce",
  "fs_extra",
+]
+
+[[package]]
+name = "aws-mpl-primitives"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
 ]
 
 [[package]]

@@ -14,8 +14,8 @@
 //! [`super::hierarchical_keyring`] (in a later cycle).
 
 use aws_lc_rs::aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
-use aws_lc_rs::kdf::{KbkdfCtrHmacAlgorithmId, get_kbkdf_ctr_hmac_algorithm, kbkdf_ctr_hmac};
 use aws_lc_rs::rand::fill;
+use aws_mpl_primitives::{DigestAlg, kbkdf_ctr_hmac};
 
 use crate::structures::{BranchKeyMaterials, EncryptionContext, MaterialsError};
 
@@ -157,14 +157,8 @@ fn derive_branch_key(
     let output_len_bits: u32 = 256;
     info.extend_from_slice(&output_len_bits.to_be_bytes());
 
-    let alg = get_kbkdf_ctr_hmac_algorithm(KbkdfCtrHmacAlgorithmId::Sha256).ok_or_else(|| {
-        MaterialsError::keyring_failed(
-            "Branch key wrap: KBKDF-CTR-HMAC-SHA256 algorithm is unavailable",
-        )
-    })?;
-
     let mut derived = [0u8; DERIVED_KEY_LEN];
-    kbkdf_ctr_hmac(alg, branch_key, &info, &mut derived).map_err(|_| {
+    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|_| {
         MaterialsError::keyring_failed("Branch key wrap: KBKDF-CTR-HMAC-SHA256 derivation failed")
     })?;
     Ok(derived)
