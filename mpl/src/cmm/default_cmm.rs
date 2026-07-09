@@ -8,9 +8,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use aws_lc_rs::encoding::AsBigEndian;
-use aws_lc_rs::signature::{
-    ECDSA_P256_SHA256_ASN1_SIGNING, ECDSA_P384_SHA384_ASN1_SIGNING, EcdsaKeyPair, KeyPair,
+use aws_mpl_primitives::{
+    EcdsaSignatureAlgorithm as PrimEcdsaSignatureAlgorithm, ecdsa_generate_keypair,
 };
 use base64::Engine;
 
@@ -97,28 +96,20 @@ impl Cmm for DefaultCmm {
             let alg = match suite.asymmetric_signature_algorithm().expect(
                 "has_asymmetric_signing() == true implies asymmetric_signature_algorithm() is Some",
             ) {
-                AsymmetricSignatureAlgorithm::EcdsaP256 => &ECDSA_P256_SHA256_ASN1_SIGNING,
-                AsymmetricSignatureAlgorithm::EcdsaP384 => &ECDSA_P384_SHA384_ASN1_SIGNING,
+                AsymmetricSignatureAlgorithm::EcdsaP256 => PrimEcdsaSignatureAlgorithm::EcdsaP256,
+                AsymmetricSignatureAlgorithm::EcdsaP384 => PrimEcdsaSignatureAlgorithm::EcdsaP384,
             };
 
-            let key_pair = EcdsaKeyPair::generate(alg)
+            // scalar_bytes: raw private scalar (32 bytes for P-256, 48 for P-384).
+            // public_key_bytes: SEC1-uncompressed public point
+            // (65 bytes for P-256, 97 for P-384).
+            let (scalar_bytes, public_key_bytes) = ecdsa_generate_keypair(alg)
                 .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
-
-            // Extract the raw private scalar (32 bytes for P-256, 48 for P-384).
-            let scalar_bytes = key_pair
-                .private_key()
-                .as_be_bytes()
-                .expect("ECDSA private scalar encoding cannot fail for valid keypair")
-                .as_ref()
-                .to_vec();
-
-            // SEC1-uncompressed public point: 65 bytes for P-256, 97 for P-384.
-            let public_key_bytes = key_pair.public_key().as_ref();
 
             // Encode the verification key as base64 (standard alphabet, with
             // padding) and store the resulting ASCII bytes in the EC.
             let base64_public_key = base64::engine::general_purpose::STANDARD
-                .encode(public_key_bytes)
+                .encode(&public_key_bytes)
                 .into_bytes();
 
             ec.insert(RESERVED_AWS_CRYPTO_PUBLIC_KEY.to_vec(), base64_public_key);
