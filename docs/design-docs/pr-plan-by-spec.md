@@ -42,7 +42,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
 | 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Merged** 2026-07-07 (merge commit `72b161e`) | retired after merge |
 | 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Merged** 2026-07-09 (merge commit `12ba944`) | retired after merge |
-| 4 | `commitment-policy` | — | 🟢 Ready to start **(current)** | — |
+| 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Open for review** 2026-07-09 | `aws-crypto-rust/commitment-policy-review` @ `9e0bcbd` (1 commit on top of `main`) |
 | 5 | `keyring-interface` | — | Not started | — |
 | 6 | `cmm-interface` | — | Not started | — |
 | 7 | `default-cmm` | — | Not started | — |
@@ -59,7 +59,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 18 | `client-factories` | — | Not started | — |
 | 19 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** start PR 4 (`commitment-policy`) — cut branch `aws-crypto-rust/commitment-policy-review` from `main` (PR 3 merge commit `12ba944`) and begin implementation on `aws-crypto-rust/unreviewed`.
+**Next action:** review and merge [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17). Once merged, PR 5 (`keyring-interface`) can start.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -812,7 +812,7 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 1. PR 1 — `client-scaffold` — ✅ merged
 2. PR 2 — `structures` — ✅ merged
 3. PR 3 — `algorithm-suite` — ✅ merged as [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16)
-4. PR 4 — `commitment-policy` — 🟢 ready to start **(current)**
+4. PR 4 — `commitment-policy` — 🟢 open for review as [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) **(current)**
 5. PR 5 — `keyring-interface`
 6. PR 6 — `cmm-interface`
 7. PR 7 — `default-cmm`
