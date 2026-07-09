@@ -59,12 +59,8 @@
 
 use std::sync::Arc;
 
-mod aes_kdf_ctr;
-pub use aes_kdf_ctr::*;
 mod ecdsa;
 pub use ecdsa::*;
-mod ecdh;
-pub use ecdh::*;
 mod hkdf;
 pub use hkdf::*;
 
