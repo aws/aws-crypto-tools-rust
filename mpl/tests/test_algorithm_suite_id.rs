@@ -452,17 +452,20 @@ fn test_suite_04_78_stores_commit_key_in_suite_data() {
     let spec = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.specification();
     assert_eq!(spec.id(), [0x04, 0x78]);
     // Commit key for HKDF-SHA512 is 256 bits = 32 bytes; suite data field
-    // stores the commit key, so its length is 32.
+    // stores the commit key, so its length is 32. The AES-256 data key is
+    // also 32 bytes, matching the commit-key output width.
+    assert_eq!(spec.encryption_key_length(), 32);
+    assert_eq!(spec.commit_kdf(), Some(KeyDerivationAlgorithm::HkdfSha512));
     assert_eq!(spec.algorithm_suite_data_length(), 32);
-    assert!(spec.commit_kdf().is_some());
 }
 
 #[test]
 fn test_suite_05_78_stores_commit_key_in_suite_data() {
     let spec = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384.specification();
     assert_eq!(spec.id(), [0x05, 0x78]);
+    assert_eq!(spec.encryption_key_length(), 32);
+    assert_eq!(spec.commit_kdf(), Some(KeyDerivationAlgorithm::HkdfSha512));
     assert_eq!(spec.algorithm_suite_data_length(), 32);
-    assert!(spec.commit_kdf().is_some());
 }
 
 #[test]
