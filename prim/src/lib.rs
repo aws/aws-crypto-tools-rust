@@ -247,3 +247,33 @@ pub fn digest(alg: DigestAlg, data: &[u8]) -> Vec<u8> {
 pub fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
     aws_lc_rs::constant_time::verify_slices_are_equal(a, b).is_ok()
 }
+
+/// KBKDF in counter mode with HMAC as the PRF (NIST SP 800-108 §4.1).
+///
+/// Derives `okm.len()` bytes into `okm` from the key-material `ikm` and
+/// the caller-supplied `info` (typically `Label || 0x00 || Context || L_be32`
+/// per NIST fixed-info construction). The HMAC digest is selected by `alg`:
+///
+/// - `DigestAlg::Sha256` -> HMAC-SHA-256 PRF
+/// - `DigestAlg::Sha384` -> HMAC-SHA-384 PRF
+/// - `DigestAlg::Sha512` -> HMAC-SHA-512 PRF
+///
+/// This is the same algorithm consumed by the AWS KMS Hierarchical
+/// Keyring's branch-key derivation.
+pub fn kbkdf_ctr_hmac(
+    alg: DigestAlg,
+    ikm: &[u8],
+    info: &[u8],
+    okm: &mut [u8],
+) -> Result<(), Error> {
+    let alg_id = match alg {
+        DigestAlg::Sha256 => aws_lc_rs::kdf::KbkdfCtrHmacAlgorithmId::Sha256,
+        DigestAlg::Sha384 => aws_lc_rs::kdf::KbkdfCtrHmacAlgorithmId::Sha384,
+        DigestAlg::Sha512 => aws_lc_rs::kdf::KbkdfCtrHmacAlgorithmId::Sha512,
+    };
+    let algorithm = aws_lc_rs::kdf::get_kbkdf_ctr_hmac_algorithm(alg_id)
+        .ok_or_else(|| serr(format!("KBKDF-CTR-HMAC-{alg:?} algorithm is unavailable")))?;
+    aws_lc_rs::kdf::kbkdf_ctr_hmac(algorithm, ikm, info, okm)
+        .map_err(|e| serr(format!("kbkdf_ctr_hmac {e:?}")))?;
+    Ok(())
+}
