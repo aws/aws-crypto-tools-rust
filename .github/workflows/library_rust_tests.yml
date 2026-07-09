@@ -73,8 +73,18 @@ jobs:
         # CI catches breakage between the library and any example bin.
         run: cargo build --all-features --examples --verbose
 
+      # Coverage gate is 100% by default. `prim` runs at 95% because its
+      # thin wrappers over aws-lc-rs contain defensive `.map_err(...)`
+      # closures on crypto calls that don't fail in practice (RNG failure,
+      # AEAD seal overflow, HKDF-Expand output-length rejection). Hitting
+      # 100% there would require mocking aws-lc-rs.
       - name: Test + line coverage gate (100%)
+        if: inputs.project != 'prim'
         run: cargo llvm-cov --all-features --workspace --fail-under-lines 100 --verbose
+
+      - name: Test + line coverage gate (95%, prim)
+        if: inputs.project == 'prim'
+        run: cargo llvm-cov --all-features --workspace --fail-under-lines 95 --verbose
 
       # TODO(integ-tests-creds): Wire up AWS credentials before uncommenting
       # the steps below.
