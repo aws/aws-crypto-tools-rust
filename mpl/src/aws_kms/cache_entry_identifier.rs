@@ -15,7 +15,7 @@
 //! logical name will collide in the cache.
 
 //
-use aws_lc_rs::digest::{SHA384, SHA384_OUTPUT_LEN, digest};
+use aws_mpl_primitives::{DigestAlg, digest};
 
 //
 const RESOURCE_ID_HIERARCHICAL_KEYRING: u8 = 0x02;
@@ -47,7 +47,7 @@ fn build_cache_identifier(
     logical_key_store_name: &str,
     branch_key_id: &str,
     branch_key_version: Option<&str>,
-) -> [u8; SHA384_OUTPUT_LEN] {
+) -> [u8; DigestAlg::Sha384.output_len()] {
     let mut buf: Vec<u8> = vec![
         RESOURCE_ID_HIERARCHICAL_KEYRING,
         NULL_BYTE,
@@ -72,8 +72,8 @@ fn build_cache_identifier(
         buf.extend_from_slice(version.as_bytes());
     }
 
-    let digest_value = digest(&SHA384, &buf);
-    let mut output = [0u8; SHA384_OUTPUT_LEN];
+    let digest_value = digest(DigestAlg::Sha384, &buf);
+    let mut output = [0u8; DigestAlg::Sha384.output_len()];
     output.copy_from_slice(digest_value.as_ref());
     output
 }
@@ -87,7 +87,7 @@ pub fn for_encrypt(
     partition_id: &[u8],
     logical_key_store_name: &str,
     branch_key_id: &str,
-) -> [u8; SHA384_OUTPUT_LEN] {
+) -> [u8; DigestAlg::Sha384.output_len()] {
     build_cache_identifier(
         SCOPE_ID_ENCRYPT,
         partition_id,
@@ -106,7 +106,7 @@ pub fn for_decrypt(
     logical_key_store_name: &str,
     branch_key_id: &str,
     branch_key_version: &str,
-) -> [u8; SHA384_OUTPUT_LEN] {
+) -> [u8; DigestAlg::Sha384.output_len()] {
     build_cache_identifier(
         SCOPE_ID_DECRYPT,
         partition_id,

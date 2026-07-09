@@ -459,11 +459,11 @@ impl HierarchicalKeyring {
 }
 
 /// Generate the 16-byte representation of a fresh v4 UUID using the
-/// `aws_lc_rs` CSPRNG, then set the version and variant bits per
+/// `aws-mpl-primitives` CSPRNG, then set the version and variant bits per
 /// RFC 4122 §4.4.
 fn generate_v4_uuid_bytes() -> Result<Vec<u8>, MaterialsError> {
     let mut bytes = [0u8; 16];
-    aws_lc_rs::rand::fill(&mut bytes).map_err(|_| {
+    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
         MaterialsError::new(
             "HierarchicalKeyring: failed to obtain entropy for partition-id v4 UUID",
         )
@@ -795,10 +795,10 @@ impl HierarchicalKeyring {
 }
 
 /// Generate a random plaintext data key of the algorithm suite's
-/// configured encryption-key length using the `aws_lc_rs` CSPRNG.
+/// configured encryption-key length using the `aws-mpl-primitives` CSPRNG.
 fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, MaterialsError> {
     let mut bytes = vec![0u8; suite.encryption_key_length()];
-    aws_lc_rs::rand::fill(&mut bytes).map_err(|_| {
+    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
         MaterialsError::keyring_failed(
             "HierarchicalKeyring: failed to obtain entropy for random plaintext data key",
         )

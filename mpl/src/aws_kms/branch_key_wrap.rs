@@ -9,28 +9,28 @@
 //! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping),
 //! and [Branch Key Wrapping and Unwrapping AAD](
 //! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad)
-//! sections — pure crypto leaves over `aws_lc_rs` primitives, with no
+//! sections — pure crypto leaves over `aws-mpl-primitives`, with no
 //! cache or KMS dependency. Used by the `Keyring` impl in
 //! [`super::hierarchical_keyring`] (in a later cycle).
 
-use aws_lc_rs::aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
-use aws_lc_rs::rand::fill;
-use aws_mpl_primitives::{DigestAlg, kbkdf_ctr_hmac};
+use aws_mpl_primitives::{
+    AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
+};
 
 use crate::structures::{BranchKeyMaterials, EncryptionContext, MaterialsError};
 
 /// Length of the random salt used as the KDF context. Spec: 16 bytes.
 const SALT_LEN: usize = 16;
 
-/// Length of the AES-GCM IV. Spec: 12 bytes (matches `aws_lc_rs::aead::NONCE_LEN`).
-const IV_LEN: usize = NONCE_LEN;
+/// Length of the AES-GCM IV. Spec: 12 bytes.
+const IV_LEN: usize = 12;
 
 /// Length of the branch-key version (UUID) when serialized as raw bytes
 /// inside the AAD and the on-wire layout. Spec: 16 bytes.
 const VERSION_LEN: usize = 16;
 
-/// AES-GCM authentication tag length. AES-256-GCM in `aws_lc_rs` always
-/// produces a 16-byte tag (`MAX_TAG_LEN == TAG_LEN == 16`).
+/// AES-GCM authentication tag length. AES-256-GCM always produces a
+/// 16-byte tag.
 const TAG_LEN: usize = 16;
 
 /// Length of the derived branch key produced by KBKDF-CTR-HMAC-SHA256.
@@ -183,13 +183,13 @@ pub fn wrap(
 ) -> Result<Vec<u8>, MaterialsError> {
     // 1. Generate a 16-byte random salt.
     let mut salt = [0u8; SALT_LEN];
-    fill(&mut salt).map_err(|_| {
+    generate_random_bytes(&mut salt).map_err(|_| {
         MaterialsError::keyring_failed("Branch key wrap: failed to obtain entropy for salt")
     })?;
 
     // 2. Generate a 12-byte random IV.
     let mut iv = [0u8; IV_LEN];
-    fill(&mut iv).map_err(|_| {
+    generate_random_bytes(&mut iv).map_err(|_| {
         MaterialsError::keyring_failed("Branch key wrap: failed to obtain entropy for IV")
     })?;
 
@@ -203,43 +203,35 @@ pub fn wrap(
         encryption_context,
     )?;
 
-    // 5. AES-256-GCM seal.
-    //
-    // `seal_in_place_separate_tag` mutates `in_out` to the ciphertext and
-    // returns the 16-byte tag separately, which is exactly the layout
-    // required by the wire format below.
-    let mut in_out = plaintext_data_key.to_vec();
-
-    let unbound = UnboundKey::new(&AES_256_GCM, &derived_branch_key)
-        .map_err(|_| MaterialsError::keyring_failed("Branch key wrap: invalid AES-256 key"))?;
-    let key = LessSafeKey::new(unbound);
-
-    let nonce = Nonce::assume_unique_for_key(iv);
-
     let version_bytes = uuid_str_to_16_bytes(materials.branch_key_version())?;
 
+    // 5. Assemble the on-wire layout and AES-256-GCM seal directly into it.
     //
-    //
-    // AES_256_GCM in aws-lc-rs always produces a 16-byte tag
-    // (MAX_TAG_LEN == TAG_LEN == 16); the type-system / library
-    // guarantee makes the requirement true by construction.
-    //
-    let tag = key
-        .seal_in_place_separate_tag(nonce, Aad::from(&aad_bytes), &mut in_out)
-        .map_err(|_| MaterialsError::keyring_failed("Branch key wrap: AES-256-GCM seal failed"))?;
-    debug_assert_eq!(
-        tag.as_ref().len(),
-        TAG_LEN,
-        "AES-256-GCM tag must be {TAG_LEN} bytes",
-    );
-
-    // Assemble the on-wire layout.
-    let mut output = Vec::with_capacity(FIXED_OVERHEAD_LEN.saturating_add(in_out.len()));
+    // `aes_encrypt` appends `ciphertext || tag` to the buffer, which is
+    // exactly the tail of the wire format:
+    //   salt(16) || iv(12) || version(16) || encrypted_key(pt_len) || tag(16)
+    let mut output =
+        Vec::with_capacity(FIXED_OVERHEAD_LEN.saturating_add(plaintext_data_key.len()));
     output.extend_from_slice(&salt);
     output.extend_from_slice(&iv);
     output.extend_from_slice(&version_bytes);
-    output.extend_from_slice(&in_out);
-    output.extend_from_slice(tag.as_ref());
+    let pre_encrypt_len = output.len();
+
+    aes_encrypt(
+        AesGcm::Aes256Gcm,
+        &iv,
+        &derived_branch_key,
+        plaintext_data_key,
+        &aad_bytes,
+        &mut output,
+    )
+    .map_err(|_| MaterialsError::keyring_failed("Branch key wrap: AES-256-GCM seal failed"))?;
+
+    debug_assert_eq!(
+        output.len() - pre_encrypt_len,
+        plaintext_data_key.len() + TAG_LEN,
+        "AES-256-GCM output must be ciphertext (pt_len) + tag ({TAG_LEN} bytes)",
+    );
 
     // Each fallible step (entropy, KDF, AAD construction, AES seal) uses `?`
     // to propagate; reaching this Ok requires every step to have succeeded.
@@ -300,30 +292,19 @@ pub fn unwrap(
         encryption_context,
     )?;
 
-    let unbound = UnboundKey::new(&AES_256_GCM, &derived_branch_key)
-        .map_err(|_| MaterialsError::keyring_failed("Branch key unwrap: invalid AES-256 key"))?;
-    let key = LessSafeKey::new(unbound);
+    let unbound_iv = iv_bytes;
 
-    let nonce = Nonce::assume_unique_for_key(iv_bytes);
-
-    // `LessSafeKey::open_in_place` consumes a single in-out buffer holding
-    // ciphertext concatenated with the tag. Build that buffer here so the
-    // following annotations can sit on the lines that copy in each piece.
-    let mut combined = Vec::with_capacity(encrypted_key.len().saturating_add(TAG_LEN));
-
-    combined.extend_from_slice(encrypted_key);
-
-    combined.extend_from_slice(tag);
-
-    // A1 ("the keyring MUST include the AAD values for the AES Encrypt/Decrypt
-    // calls") is annotated at the wrap-side AES seal call; the requirement
-    // applies symmetrically here on the AES open call.
-    let plaintext_slice = key
-        .open_in_place(nonce, Aad::from(&aad_bytes), &mut combined)
-        .map_err(|_| {
-            MaterialsError::keyring_failed("Branch key unwrap: AES-256-GCM open failed")
-        })?;
-    let plaintext = plaintext_slice.to_vec();
+    let mut plaintext = vec![0u8; encrypted_key.len()];
+    aes_decrypt(
+        AesGcm::Aes256Gcm,
+        &derived_branch_key,
+        encrypted_key,
+        tag,
+        &unbound_iv,
+        &aad_bytes,
+        &mut plaintext,
+    )
+    .map_err(|_| MaterialsError::keyring_failed("Branch key unwrap: AES-256-GCM open failed"))?;
 
     // Each fallible step (deserialization, KDF, AAD construction, AES open)
     // uses `?` to propagate; reaching this Ok requires every step to have
