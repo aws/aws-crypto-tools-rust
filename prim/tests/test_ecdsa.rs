@@ -5,9 +5,15 @@
 //! P-384 sign/verify round-trips (both the raw-message and streaming-digest
 //! entry points), plus the tampered-message negative case that Dafny
 //! asserts. The Dafny YCompression* tests are intentionally not ported —
-//! prim does not expose a key-generation wrapper, so the compressed
-//! public-key format that Dafny's `ExternKeyGen` yields is not part of
-//! prim's contract.
+//! prim exposes verification keys in SEC1-uncompressed form, not the
+//! Y-compressed format that Dafny's `ExternKeyGen` yields.
+//!
+//! Note: prim's `ecdsa_sign` currently accepts a SEC1-DER-encoded private
+//! key while `ecdsa_generate_keypair` returns the raw private scalar in
+//! big-endian form (matching what `aws-crypto-mpl` needs to store in a
+//! `SigningKey`). Because the two forms don't compose, the sign/verify
+//! tests use aws-lc-rs directly to produce a DER-encoded keypair. A future
+//! refactor should unify prim's private-key format.
 
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::signature::{
@@ -16,13 +22,14 @@ use aws_lc_rs::signature::{
 };
 
 use aws_mpl_primitives::{
-    DigestAlg, DigestContext, EcdsaSignatureAlgorithm, Error, digest, ecdsa_sign,
-    ecdsa_sign_digest, ecdsa_verify, ecdsa_verify_context,
+    DigestAlg, DigestContext, EcdsaSignatureAlgorithm, Error, digest, ecdsa_generate_keypair,
+    ecdsa_sign, ecdsa_sign_digest, ecdsa_verify, ecdsa_verify_context,
 };
 
 /// Helper: generate a keypair for the given algorithm and return
-/// `(public_key_uncompressed_sec1, private_key_pkcs8_der)`.
-fn keypair(signing_alg: &'static EcdsaSigningAlgorithm) -> (Vec<u8>, Vec<u8>) {
+/// `(public_key_uncompressed_sec1, private_key_sec1_der)`. Used to
+/// exercise `ecdsa_sign`/`ecdsa_verify` (which currently consume DER).
+fn keypair_der(signing_alg: &'static EcdsaSigningAlgorithm) -> (Vec<u8>, Vec<u8>) {
     let pair = EcdsaKeyPair::generate(signing_alg).unwrap();
     let public_key: Vec<u8> = pair.public_key().as_ref().into();
     let private_key: Vec<u8> = pair.private_key().as_der().unwrap().as_ref().into();
@@ -33,7 +40,7 @@ fn verify_message_round_trip(
     alg: EcdsaSignatureAlgorithm,
     signing_alg: &'static EcdsaSigningAlgorithm,
 ) -> Result<(), Error> {
-    let (public_key, private_key) = keypair(signing_alg);
+    let (public_key, private_key) = keypair_der(signing_alg);
     let message = b"Hello, World!";
 
     // Raw-message sign + verify (positive).
@@ -94,34 +101,37 @@ fn test_ecdsa_p384_round_trip_and_tamper() -> Result<(), Error> {
     )
 }
 
-// Signature format assertions. The Dafny YCompression* tests check the
-// Y-compressed public-key format emitted by that codebase's KeyGen. prim's
-// contract is different: verify-side keys are uncompressed SEC1
-// (`0x04 || X || Y`), so we assert that shape instead.
+// Shape assertions for `ecdsa_generate_keypair`. Verifies the byte lengths
+// and SEC1 tag that consumers rely on.
 
 #[test]
-fn test_ecdsa_p256_public_key_uncompressed_sec1() {
-    let (public_key, _) = keypair(&ECDSA_P256_SHA256_ASN1_SIGNING);
-    // Uncompressed SEC1: 1 tag byte (0x04) + 2 * field size (32) = 65 bytes.
+fn test_ecdsa_generate_keypair_p256_shape() -> Result<(), Error> {
+    let (private_key, public_key) = ecdsa_generate_keypair(EcdsaSignatureAlgorithm::EcdsaP256)?;
+    // Private scalar: 32 bytes for P-256.
+    assert_eq!(private_key.len(), 32);
+    // Public point (uncompressed SEC1): 1 tag byte + 2 * 32 = 65 bytes.
     assert_eq!(public_key.len(), 65);
     assert_eq!(public_key[0], 0x04);
+    Ok(())
 }
 
 #[test]
-fn test_ecdsa_p384_public_key_uncompressed_sec1() {
-    let (public_key, _) = keypair(&ECDSA_P384_SHA384_ASN1_SIGNING);
-    // Uncompressed SEC1: 1 tag byte (0x04) + 2 * field size (48) = 97 bytes.
+fn test_ecdsa_generate_keypair_p384_shape() -> Result<(), Error> {
+    let (private_key, public_key) = ecdsa_generate_keypair(EcdsaSignatureAlgorithm::EcdsaP384)?;
+    // Private scalar: 48 bytes for P-384.
+    assert_eq!(private_key.len(), 48);
+    // Public point (uncompressed SEC1): 1 tag byte + 2 * 48 = 97 bytes.
     assert_eq!(public_key.len(), 97);
     assert_eq!(public_key[0], 0x04);
+    Ok(())
 }
 
 // Signature-length invariants. `ecdsa_sign` loops until the DER-encoded
-// signature has a specific length (71 for P-256, 103 for P-384). Assert
-// that invariant on the returned signatures.
+// signature has a specific length (71 for P-256, 103 for P-384).
 
 #[test]
 fn test_ecdsa_p256_signature_length_is_71() -> Result<(), Error> {
-    let (_, private_key) = keypair(&ECDSA_P256_SHA256_ASN1_SIGNING);
+    let (_, private_key) = keypair_der(&ECDSA_P256_SHA256_ASN1_SIGNING);
     let sig = ecdsa_sign(EcdsaSignatureAlgorithm::EcdsaP256, &private_key, b"m")?;
     assert_eq!(sig.len(), 71);
     Ok(())
@@ -129,7 +139,7 @@ fn test_ecdsa_p256_signature_length_is_71() -> Result<(), Error> {
 
 #[test]
 fn test_ecdsa_p384_signature_length_is_103() -> Result<(), Error> {
-    let (_, private_key) = keypair(&ECDSA_P384_SHA384_ASN1_SIGNING);
+    let (_, private_key) = keypair_der(&ECDSA_P384_SHA384_ASN1_SIGNING);
     let sig = ecdsa_sign(EcdsaSignatureAlgorithm::EcdsaP384, &private_key, b"m")?;
     assert_eq!(sig.len(), 103);
     Ok(())
@@ -141,7 +151,6 @@ fn test_ecdsa_p384_signature_length_is_103() -> Result<(), Error> {
 #[test]
 fn test_ecdsa_sign_with_bad_private_key() {
     let err = ecdsa_sign(EcdsaSignatureAlgorithm::EcdsaP256, &[0u8; 8], b"m").unwrap_err();
-    // The error surfaces from aws-lc-rs's from_private_key_der failure.
     assert!(!err.message.is_empty());
 }
 
@@ -161,7 +170,6 @@ fn test_digest_context_new_and_finish() -> Result<(), Error> {
     let mut ctx = DigestContext::new(DigestAlg::Sha256)?;
     ctx.update(b"asdf");
     let out = ctx.finish();
-    // Should match the SHA-256 KAT for "asdf".
     assert_eq!(out, digest(DigestAlg::Sha256, b"asdf"));
     Ok(())
 }
@@ -200,7 +208,6 @@ fn test_digest_context_clone_and_debug() -> Result<(), Error> {
     let cloned = ctx.clone();
     assert_eq!(ctx.finish(), cloned.finish());
 
-    // Debug shouldn't panic.
     let ctx2 = DigestContext::new(DigestAlg::Sha256)?;
     let debug_str = format!("{ctx2:?}");
     assert!(debug_str.contains("DigestContext"));

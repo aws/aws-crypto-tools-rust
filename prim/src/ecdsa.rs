@@ -2,10 +2,12 @@ use crate::DigestAlg;
 use crate::Error;
 use crate::serr;
 
+use aws_lc_rs::encoding::AsBigEndian;
 use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::signature::EcdsaKeyPair;
 use aws_lc_rs::signature::EcdsaSigningAlgorithm;
 use aws_lc_rs::signature::EcdsaVerificationAlgorithm;
+use aws_lc_rs::signature::KeyPair;
 use aws_lc_rs::signature::UnparsedPublicKey;
 
 /// Gathers Digest Data
@@ -178,4 +180,33 @@ pub fn ecdsa_verify_context(
         Ok(()) => Ok(true),
         Err(_) => Ok(false),
     }
+}
+
+/// Generate a fresh ECDSA keypair for the given signature algorithm and
+/// return `(private_key_be, public_key_sec1)`:
+///
+/// - `private_key_be`  — the raw private scalar in big-endian byte order.
+///   32 bytes for P-256, 48 bytes for P-384.
+/// - `public_key_sec1` — the public point in SEC1-uncompressed format
+///   (`0x04 || X || Y`). 65 bytes for P-256, 97 bytes for P-384.
+///
+/// The scalar and uncompressed-point formats are what consumers of this
+/// crate (e.g. `aws-crypto-mpl`'s default CMM) need to encode a signing
+/// key into a `SigningKey` and to publish the verification key in the
+/// encryption context.
+pub fn ecdsa_generate_keypair(alg: EcdsaSignatureAlgorithm) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    let signing_alg = get_sign_alg(alg);
+    let key_pair =
+        EcdsaKeyPair::generate(signing_alg).map_err(|e| serr(format!("ECDSA keygen {e:?}")))?;
+
+    let private_key_be: Vec<u8> = key_pair
+        .private_key()
+        .as_be_bytes()
+        .map_err(|e| serr(format!("ECDSA private-key encoding {e:?}")))?
+        .as_ref()
+        .to_vec();
+
+    let public_key_sec1: Vec<u8> = key_pair.public_key().as_ref().to_vec();
+
+    Ok((private_key_be, public_key_sec1))
 }
