@@ -55,3 +55,23 @@ fn test_digest_alg_default_is_sha512() {
     // DigestAlg::Sha512 is the crate's declared default.
     assert_eq!(DigestAlg::default(), DigestAlg::Sha512);
 }
+
+#[test]
+fn test_digest_alg_output_len() {
+    assert_eq!(DigestAlg::Sha256.output_len(), 32);
+    assert_eq!(DigestAlg::Sha384.output_len(), 48);
+    assert_eq!(DigestAlg::Sha512.output_len(), 64);
+    // Cross-check against the actual digest lengths.
+    assert_eq!(
+        digest(DigestAlg::Sha256, b"asdf").len(),
+        DigestAlg::Sha256.output_len()
+    );
+    assert_eq!(
+        digest(DigestAlg::Sha384, b"asdf").len(),
+        DigestAlg::Sha384.output_len()
+    );
+    assert_eq!(
+        digest(DigestAlg::Sha512, b"asdf").len(),
+        DigestAlg::Sha512.output_len()
+    );
+}

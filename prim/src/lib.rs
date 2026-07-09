@@ -79,6 +79,19 @@ pub enum DigestAlg {
     Sha512,
 }
 
+impl DigestAlg {
+    /// Returns the digest algorithm's output length in bytes: 32 for
+    /// SHA-256, 48 for SHA-384, 64 for SHA-512.
+    #[must_use]
+    pub const fn output_len(self) -> usize {
+        match self {
+            Self::Sha256 => 32,
+            Self::Sha384 => 48,
+            Self::Sha512 => 64,
+        }
+    }
+}
+
 /// Error type for this crate
 #[derive(Clone, Debug)]
 #[non_exhaustive]
