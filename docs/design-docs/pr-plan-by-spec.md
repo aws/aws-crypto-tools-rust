@@ -131,6 +131,18 @@ stack level.
 - `mpl/.duvet/config.toml` — adds one `[[specification]]` entry per slice
   that introduces a new spec file.
 
+## Never in a PR (unreviewed-only tooling)
+
+Files listed here live on `aws-crypto-rust/unreviewed` only. They must never
+appear in any review PR's `scope_files`, and must not be synced to any review
+branch. If one of these files needs to be updated, the change is made directly
+on `unreviewed` outside the PR-slice workflow.
+
+- `mpl/scripts/duvet_summary.py` — duvet coverage summary helper. Runs
+  against the local `.duvet/` output to produce a human-readable coverage
+  breakdown; not part of the shipped crate, not referenced from CI, and not
+  part of any spec-driven slice.
+
 ## Out of scope (already on `main`)
 
 - `.github/workflows/pull.yml`, `.github/workflows/retry_failed_ci.yml` —
