@@ -1624,7 +1624,7 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
 
         // First produce a real EDK so the input is non-empty; otherwise
-        // the early-return on plaintext_already_present is the only path
+        // the early-return on plaintext_data_key_already_present is the only path
         // that ever runs.
         let (pdk, edks) = produce_edk(&keyring, suite_id).await;
 
@@ -1643,7 +1643,7 @@ mod ondecrypt {
             .on_decrypt(dm, &edks)
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
-        assert_eq!(err.kind, MaterialsErrorKind::PlaintextAlreadyPresent);
+        assert_eq!(err.kind, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
     }
 
     #[tokio::test]

@@ -36,7 +36,7 @@ pub enum MaterialsErrorKind {
     NoBehaviorAttempted,
     /// Decrypt input materials already contain a plaintext data key, so the
     /// keyring fails per the OnDecrypt contract.
-    PlaintextAlreadyPresent,
+    PlaintextDataKeyAlreadyPresent,
     /// Keyring scanned the input EDK list and could not derive a plaintext
     /// data key from any entry. The decryption materials are NOT mutated.
     NoMatchingDataKey,
@@ -93,10 +93,10 @@ impl MaterialsError {
         }
     }
 
-    /// Construct a `PlaintextAlreadyPresent` error.
-    pub fn plaintext_already_present(context: impl Into<String>) -> Self {
+    /// Construct a `PlaintextDataKeyAlreadyPresent` error.
+    pub fn plaintext_data_key_already_present(context: impl Into<String>) -> Self {
         Self {
-            kind: MaterialsErrorKind::PlaintextAlreadyPresent,
+            kind: MaterialsErrorKind::PlaintextDataKeyAlreadyPresent,
             message: context.into(),
         }
     }

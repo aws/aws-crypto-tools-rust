@@ -25,11 +25,14 @@ fn test_no_behavior_attempted_constructor() {
 }
 
 #[test]
-fn test_plaintext_already_present_constructor() {
-    let err = MaterialsError::plaintext_already_present("PDK already on materials");
-    assert_eq!(err.kind, MaterialsErrorKind::PlaintextAlreadyPresent);
+fn test_plaintext_data_key_already_present_constructor() {
+    let err = MaterialsError::plaintext_data_key_already_present("PDK already on materials");
+    assert_eq!(err.kind, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
     assert_eq!(err.message, "PDK already on materials");
-    assert_eq!(err.kind(), &MaterialsErrorKind::PlaintextAlreadyPresent);
+    assert_eq!(
+        err.kind(),
+        &MaterialsErrorKind::PlaintextDataKeyAlreadyPresent
+    );
 }
 
 #[test]
@@ -152,12 +155,12 @@ fn test_clone_and_equality() {
 
 #[test]
 fn test_kind_clone_and_equality() {
-    let kind = MaterialsErrorKind::PlaintextAlreadyPresent;
+    let kind = MaterialsErrorKind::PlaintextDataKeyAlreadyPresent;
     let cloned = kind.clone();
     assert_eq!(kind, cloned);
     // Debug print covers the derive on the enum.
     let debug = format!("{kind:?}");
-    assert!(debug.contains("PlaintextAlreadyPresent"));
+    assert!(debug.contains("PlaintextDataKeyAlreadyPresent"));
 }
 
 #[test]

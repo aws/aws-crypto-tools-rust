@@ -600,7 +600,7 @@ impl Keyring for HierarchicalKeyring {
         encrypted_data_keys: &[EncryptedDataKey],
     ) -> Result<DecryptionMaterials, MaterialsError> {
         if materials.plaintext_data_key().is_some() {
-            return Err(MaterialsError::plaintext_already_present(
+            return Err(MaterialsError::plaintext_data_key_already_present(
                 "HierarchicalKeyring::on_decrypt: decryption materials already contain a plaintext data key",
             ));
         }

@@ -11,7 +11,7 @@
 //!
 //! The mock's `on_encrypt` / `on_decrypt` exercise every documented branch of
 //! the keyring interface (generate-only, encrypt-only, generate+encrypt,
-//! no-behavior, decrypt success, plaintext-already-present, no-matching-EDK,
+//! no-behavior, decrypt success, plaintext-data-key-already-present, no-matching-EDK,
 //! no-decrypt-behavior).
 
 use std::collections::BTreeSet;
@@ -156,7 +156,7 @@ impl Keyring for MockKeyring {
         encrypted_data_keys: &[EncryptedDataKey],
     ) -> Result<DecryptionMaterials, MaterialsError> {
         if materials.plaintext_data_key().is_some() {
-            return Err(MaterialsError::plaintext_already_present(
+            return Err(MaterialsError::plaintext_data_key_already_present(
                 "on_decrypt: decryption materials already contain a plaintext data key",
             ));
         }
@@ -540,12 +540,12 @@ async fn test_on_decrypt_with_existing_pdk_fails_without_mutation() {
 
     let result = keyring.on_decrypt(input, &edks).await;
 
-    let err = result.expect_err("plaintext-already-present path must fail");
+    let err = result.expect_err("plaintext-data-key-already-present path must fail");
 
     assert_eq!(
         err.kind,
-        MaterialsErrorKind::PlaintextAlreadyPresent,
-        "plaintext-already-present path must yield PlaintextAlreadyPresent; got {err:?}"
+        MaterialsErrorKind::PlaintextDataKeyAlreadyPresent,
+        "plaintext-data-key-already-present path must yield PlaintextDataKeyAlreadyPresent; got {err:?}"
     );
 
     let untouched = decryption_materials_with_pdk(COMMITTING_SUITE, original_pdk_bytes.clone());
