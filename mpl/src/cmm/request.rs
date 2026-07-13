@@ -13,7 +13,6 @@ use crate::structures::{AlgorithmSuiteId, CommitmentPolicy, EncryptedDataKey, En
 /// commitment policy plus, optionally, an explicit algorithm suite, a set of
 /// encryption-context keys that MUST be reproduced at decrypt time, and the
 /// maximum plaintext length the returned materials are valid for.
-//
 #[derive(Debug, Clone)]
 pub struct EncryptionMaterialsRequest {
     /// Encryption context provided by the customer. MAY be empty.
@@ -96,7 +95,6 @@ impl EncryptionMaterialsRequest {
 /// keys parsed from the header, and the encryption context parsed from the
 /// header. It MAY also include a customer-supplied reproduced encryption
 /// context to validate against the message's.
-//
 #[derive(Debug, Clone)]
 pub struct DecryptMaterialsRequest {
     /// Algorithm suite advertised in the message header.
