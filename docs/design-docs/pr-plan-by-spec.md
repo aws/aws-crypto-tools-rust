@@ -45,7 +45,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Merged** 2026-07-07 (merge commit `72b161e`) | retired after merge |
 | 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Merged** 2026-07-09 (merge commit `12ba944`) | retired after merge |
 | 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Merged** 2026-07-13 (merge commit `55d0e28`) | retired after merge |
-| 5 | `keyring-and-cmm-interfaces` | [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20) | **Open for review** 2026-07-13 | `aws-crypto-rust/keyring-and-cmm-interfaces-review` @ `f3294b6` (1 commit on top of `main`) |
+| 5 | `keyring-and-cmm-interfaces` | [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20) | **Open for review** 2026-07-13 | `aws-crypto-rust/keyring-and-cmm-interfaces-review` @ `8c50881` (2 commits on top of `main`) |
 | 6 | `default-cmm` | — | Not started | — |
 | 7 | `structures-polish` | — | Not started | — |
 | 8 | `mrk-match` | — | Not started | — |
