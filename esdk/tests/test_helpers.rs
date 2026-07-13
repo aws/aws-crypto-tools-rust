@@ -525,14 +525,10 @@ pub fn count_frames(ct: &[u8], frame_length: u32) -> (usize, usize) {
 
 /// Extract the content length from the final frame in the ciphertext.
 ///
-/// Locates the true final frame by walking the body from `find_body_start`
-/// (via `parse_final_frame`), rather than scanning the whole ciphertext for the
-/// first `0xFFFFFFFF` end-frame marker. The old scan was flaky: random body
-/// bytes — per-frame IVs, GCM auth tags, the wrapped data key, the message ID,
-/// the commitment value, or the encrypted content — can spuriously match the
-/// 4-byte marker *before* the real final frame, causing the following 4 bytes
-/// to be misread as the content length (observed intermittently under CI's
-/// `--all-features` run). Requires the `frame_length` used to encrypt.
+/// Walks the body via `parse_final_frame` to locate the final frame reliably —
+/// a plain search for the `0xFFFFFFFF` end-frame marker can be fooled by random
+/// body bytes (IVs, tags, wrapped key, message ID, commitment, content) that
+/// happen to contain that value. Requires the `frame_length` used to encrypt.
 pub fn final_frame_content_length(ct: &[u8], frame_length: u32) -> Option<u32> {
     Some(parse_final_frame(ct, frame_length).content_length)
 }

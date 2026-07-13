@@ -80,15 +80,14 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-      # Coverage links very large, coverage-instrumented test binaries
-      # (aws-lc-sys + aws-lc-fips-sys). With debuginfo=2 the hosted ubuntu
-      # runner ran out of memory linking them ("ld ... signal 7 [Bus error]").
-      # Line coverage does not need debuginfo, so drop it to cut peak link
-      # memory (applies to both OSes; harmless on macOS).
+      # Line coverage does not need debug info, so build the coverage binaries
+      # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
+      # coverage-instrumented); dropping debug info keeps the ubuntu link within
+      # the hosted runner's memory. Harmless on macOS.
       #
-      # TODO(esdk): line coverage gate temporarily lowered from 100 to 80 for
-      # esdk only (current esdk coverage is ~81%). All other projects (e.g.
-      # mpl) keep the 100% gate. Raise esdk back toward 100 as coverage fills in.
+      # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
+      # today); raise it toward 100 as coverage fills in. Other projects (e.g.
+      # mpl) use the 100% gate.
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
