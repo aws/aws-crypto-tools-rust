@@ -13,7 +13,10 @@ use zeroize::Zeroizing;
 // committing algorithm suites). This is `pub` only so `derive_keys` is reachable
 // from integration tests via `__test_internals`; it is not supported public API.
 #[doc(hidden)]
-#[expect(clippy::exhaustive_structs, reason = "test-internal struct, not public API")]
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "test-internal struct, not public API"
+)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExpandedKeyMaterial {
     pub data_key: Zeroizing<Vec<u8>>,
@@ -128,13 +131,23 @@ pub(crate) fn derive_key_v1(
             //# the the input info MUST be a concatenation of the [algorithm suite ID](#algorithm-suite-id)
             //# followed by the [message ID](../data-format/message-header.md#message-id).
             let standard_info: [&[u8]; 2] = [&suite.binary_id[..], message_id];
-            let info: &[&[u8]] = if on_net_v4_retry { &v4_info } else { &standard_info };
+            let info: &[&[u8]] = if on_net_v4_retry {
+                &v4_info
+            } else {
+                &standard_info
+            };
 
             //= spec/client-apis/key-derivation.md#hkdf-encryption-key
             //= type=implication
             //= reason=primitives::hkdf bundles HKDF-Extract and HKDF-Expand; the PRK input to expand is the extract output by construction of the helper
             //# - The input pseudorandom key MUST be the output from the extract step.
-            aws_mpl_legacy::primitives::hkdf(alg, &salt, plaintext_data_key, info, &mut derived_key[..])?;
+            aws_mpl_legacy::primitives::hkdf(
+                alg,
+                &salt,
+                plaintext_data_key,
+                info,
+                &mut derived_key[..],
+            )?;
 
             Ok(ExpandedKeyMaterial {
                 data_key: derived_key,

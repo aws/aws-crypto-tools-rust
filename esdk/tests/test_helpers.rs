@@ -163,14 +163,10 @@ pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
 pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, KeyringRef, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xAAu8; 30];
-    let mut input = EncryptInput::with_legacy_keyring(
-        &plaintext,
-        EncryptionContext::new(),
-        keyring.clone(),
-    );
+    let mut input =
+        EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
     input.frame_length = FrameLength::new(10).unwrap();
-    input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let ct = encrypt(&input).await.unwrap().ciphertext;
     (plaintext, keyring, ct)
 }
@@ -179,8 +175,7 @@ pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, KeyringRef, Vec<u8>) {
 pub async fn encrypt_with_v1_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
     let mut input = EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring);
-    input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
+    input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
     input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     encrypt(&input).await.unwrap().ciphertext
 }
@@ -210,11 +205,8 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
 pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, KeyringRef, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
-    let mut input = EncryptInput::with_legacy_keyring(
-        &plaintext,
-        EncryptionContext::new(),
-        keyring.clone(),
-    );
+    let mut input =
+        EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
     input.frame_length = FrameLength::new(10).unwrap();
     input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let ct = encrypt(&input).await.unwrap().ciphertext;
@@ -264,8 +256,7 @@ pub async fn encrypt_no_sign_with_ec(
     let mut input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring);
     match version {
         Version::V1 => {
-            input.algorithm_suite_id =
-                Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+            input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
             input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
         }
         Version::V2 => {
@@ -285,8 +276,7 @@ pub async fn encrypt_no_sign_ec_keyring(
     let mut input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring.clone());
     match version {
         Version::V1 => {
-            input.algorithm_suite_id =
-                Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+            input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
             input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
         }
         Version::V2 => {
@@ -1052,10 +1042,7 @@ pub fn parse_edk_at(ct: &[u8], offset: usize) -> (&str, &[u8], &[u8], usize) {
 
 /// Parse the raw EDK fields at `offset` returning all 6 fields with their lengths.
 /// Returns (kp_id_len, kp_id, kp_info_len, kp_info, edk_len, edk_data).
-pub fn parse_edk_raw_at(
-    ct: &[u8],
-    offset: usize,
-) -> (u16, &[u8], u16, &[u8], u16, &[u8]) {
+pub fn parse_edk_raw_at(ct: &[u8], offset: usize) -> (u16, &[u8], u16, &[u8], u16, &[u8]) {
     let mut pos = offset;
 
     let kp_id_len = u16::from_be_bytes([ct[pos], ct[pos + 1]]);
@@ -1271,10 +1258,8 @@ pub const EXTERNAL_V2_NONFRAMED_PT: &[u8] =
 /// `keys.json` (base64 `AAECAwQFBgcICRAREhMUFRYXGBkgISIjJCUmJygpMDE=`).
 /// Shared between the V1 and V2 external nonframed vectors above.
 pub const EXTERNAL_AES_256_WRAPPING_KEY: [u8; 32] = [
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-    0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
-    0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23,
-    0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+    0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
 ];
 
 /// Return the external nonframed ciphertext bytes for the given message version.
@@ -1320,8 +1305,7 @@ pub async fn try_decrypt_external_nonframed(
         .await
         .unwrap();
 
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(msg, EncryptionContext::new(), keyring);
+    let mut dec_input = DecryptInput::with_legacy_keyring(msg, EncryptionContext::new(), keyring);
     // V1 suite 0x0178 is non-committing; V2 suite 0x0478 is committing.
     dec_input.commitment_policy = match version {
         Version::V1 => EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
@@ -1394,8 +1378,14 @@ pub fn parse_external_nonframed_body(msg: &[u8], version: Version) -> ExternalNo
     iv.copy_from_slice(&msg[pos..pos + IV_LEN]);
     pos += IV_LEN;
     let encrypted_content_length = u64::from_be_bytes([
-        msg[pos], msg[pos + 1], msg[pos + 2], msg[pos + 3],
-        msg[pos + 4], msg[pos + 5], msg[pos + 6], msg[pos + 7],
+        msg[pos],
+        msg[pos + 1],
+        msg[pos + 2],
+        msg[pos + 3],
+        msg[pos + 4],
+        msg[pos + 5],
+        msg[pos + 6],
+        msg[pos + 7],
     ]);
     ExternalNonframedBody {
         body_start,
@@ -1403,7 +1393,6 @@ pub fn parse_external_nonframed_body(msg: &[u8], version: Version) -> ExternalNo
         encrypted_content_length,
     }
 }
-
 
 // === CallStyle parametrization for testing free-function and Esdk-client paths ===
 //

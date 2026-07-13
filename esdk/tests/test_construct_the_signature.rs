@@ -40,7 +40,9 @@ async fn test_signature_uses_signing_algorithm() {
     // Strategy: encrypt with a P-384 signing suite, extract the footer signature,
     // and verify it succeeds with EcdsaP384 but fails with EcdsaP256. This proves
     // the specific algorithm from the suite was used.
-    use aws_mpl_legacy::primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
+    use aws_mpl_legacy::primitives::{
+        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
+    };
 
     let keyring = test_keyring().await;
     let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
@@ -54,7 +56,10 @@ async fn test_signature_uses_signing_algorithm() {
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
-    let pub_key_b64 = output.encryption_context.get("aws-crypto-public-key").unwrap();
+    let pub_key_b64 = output
+        .encryption_context
+        .get("aws-crypto-public-key")
+        .unwrap();
     let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
     let (footer_offset, sig_len) = find_footer_offset(ct);
     let signature = &ct[footer_offset + 2..footer_offset + 2 + sig_len as usize];
@@ -70,10 +75,14 @@ async fn test_signature_uses_signing_algorithm() {
         signature,
     )
     .expect("verify must not error");
-    assert!(valid, "signature must verify with the correct algorithm (P-384)");
+    assert!(
+        valid,
+        "signature must verify with the correct algorithm (P-384)"
+    );
 
     // Verify with P-256 (wrong algorithm) → must NOT succeed.
-    let mut digest_wrong = DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP256).unwrap();
+    let mut digest_wrong =
+        DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP256).unwrap();
     digest_wrong.update(signed_content);
     let valid_wrong = ecdsa_verify_context(
         EcdsaSignatureAlgorithm::EcdsaP256,
@@ -99,7 +108,9 @@ async fn test_signature_key_is_signing_key() {
     // from the ciphertext, rebuild a digest over header+body, and verify the signature
     // with that key. Success proves the signing key that produced the footer corresponds
     // to the verification key in the encryption materials.
-    use aws_mpl_legacy::primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
+    use aws_mpl_legacy::primitives::{
+        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
+    };
 
     let keyring = test_keyring().await;
     let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
@@ -107,16 +118,19 @@ async fn test_signature_key_is_signing_key() {
         aws_esdk::EncryptionContext::new(),
         keyring,
     );
-    enc_input.algorithm_suite_id =
-        Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    enc_input.algorithm_suite_id = Some(
+        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+    );
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
     // Extract verification key from output encryption context.
-    let pub_key_b64 = output.encryption_context.get("aws-crypto-public-key")
+    let pub_key_b64 = output
+        .encryption_context
+        .get("aws-crypto-public-key")
         .expect("signing suite must produce aws-crypto-public-key in EC");
-    let verification_key = aws_smithy_types::base64::decode(pub_key_b64)
-        .expect("public key must be valid base64");
+    let verification_key =
+        aws_smithy_types::base64::decode(pub_key_b64).expect("public key must be valid base64");
 
     // Parse the footer: last 2+sig_len bytes of ciphertext.
     let (footer_offset, sig_len) = find_footer_offset(ct);
@@ -176,12 +190,21 @@ async fn test_signature_input_is_header_plus_body() {
     // Tamper header (byte 10 is safely within the header body for V2).
     let mut tampered_header = valid_ct.clone();
     tampered_header[10] ^= 0xFF;
-    assert_ne!(tampered_header[10], valid_ct[10], "header tamper must change the byte");
+    assert_ne!(
+        tampered_header[10], valid_ct[10],
+        "header tamper must change the byte"
+    );
 
     // Valid ct decrypts; tampered header → ValidationError (header auth tag mismatch).
-    assert!(decrypt_ciphertext_result(&valid_ct).await.is_ok(), "valid ct must decrypt");
+    assert!(
+        decrypt_ciphertext_result(&valid_ct).await.is_ok(),
+        "valid ct must decrypt"
+    );
     assert_eq!(
-        decrypt_ciphertext_result(&tampered_header).await.unwrap_err().kind,
+        decrypt_ciphertext_result(&tampered_header)
+            .await
+            .unwrap_err()
+            .kind,
         ErrorKind::ValidationError,
         "tampered header body byte must produce ValidationError"
     );
@@ -191,11 +214,17 @@ async fn test_signature_input_is_header_plus_body() {
     let body_start = find_body_start(&tampered_body, 4096).expect("body start");
     let content_off = body_start + 4 + 4 + 12 + 4;
     tampered_body[content_off] ^= 0xFF;
-    assert_ne!(tampered_body[content_off], valid_ct[content_off], "body tamper must change the byte");
+    assert_ne!(
+        tampered_body[content_off], valid_ct[content_off],
+        "body tamper must change the byte"
+    );
 
     // Valid ct decrypts; tampered body → CryptographicError (AES-GCM auth failure).
     assert_eq!(
-        decrypt_ciphertext_result(&tampered_body).await.unwrap_err().kind,
+        decrypt_ciphertext_result(&tampered_body)
+            .await
+            .unwrap_err()
+            .kind,
         ErrorKind::CryptographicError,
         "tampered body must produce CryptographicError"
     );
@@ -272,7 +301,9 @@ async fn test_footer_equals_calculated() {
     // Prove the footer in the output is a valid signature over header+body by
     // independently verifying it. If the output footer differed from the calculated
     // footer, verification would fail.
-    use aws_mpl_legacy::primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
+    use aws_mpl_legacy::primitives::{
+        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
+    };
 
     let keyring = test_keyring().await;
     let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
@@ -280,12 +311,16 @@ async fn test_footer_equals_calculated() {
         aws_esdk::EncryptionContext::new(),
         keyring.clone(),
     );
-    enc_input.algorithm_suite_id =
-        Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    enc_input.algorithm_suite_id = Some(
+        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+    );
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
-    let pub_key_b64 = output.encryption_context.get("aws-crypto-public-key").unwrap();
+    let pub_key_b64 = output
+        .encryption_context
+        .get("aws-crypto-public-key")
+        .unwrap();
     let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
     let (footer_offset, sig_len) = find_footer_offset(ct);
     let signature = &ct[footer_offset + 2..footer_offset + 2 + sig_len as usize];
@@ -347,8 +382,9 @@ async fn test_footer_serialized_releases_all_bytes() {
         aws_esdk::EncryptionContext::new(),
         keyring.clone(),
     );
-    enc_input.algorithm_suite_id =
-        Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    enc_input.algorithm_suite_id = Some(
+        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+    );
     let ct = aws_esdk::encrypt(&enc_input).await.unwrap().ciphertext;
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);

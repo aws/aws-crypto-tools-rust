@@ -117,7 +117,11 @@ async fn test_frame_fields_deserialized_from_wire() {
     //= type=test
     //= reason=On-wire content at expected offset proves it was deserialized
     //# - MUST deserialize the [Encrypted Content](../data-format/message-body.md#regular-frame-encrypted-content).
-    assert_eq!(f.content.len(), 10, "regular frame content is frame_length bytes");
+    assert_eq!(
+        f.content.len(),
+        10,
+        "regular frame content is frame_length bytes"
+    );
     assert_eq!(f.content_offset, f.iv_offset + IV_LEN, "content follows IV");
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -134,8 +138,15 @@ async fn test_frame_fields_deserialized_from_wire() {
     //= type=test
     //= reason=On-wire content_length field in final frame proves it was deserialized
     //# - MUST deserialize the [Encrypted Content Length](../data-format/message-body.md#final-frame-encrypted-content-length).
-    assert_eq!(ff.content_length_bytes.unwrap().len(), 4, "content_length is 4 bytes");
-    assert_eq!(ff.content_length, 10, "final frame content = remaining 10 bytes");
+    assert_eq!(
+        ff.content_length_bytes.unwrap().len(),
+        4,
+        "content_length is 4 bytes"
+    );
+    assert_eq!(
+        ff.content_length, 10,
+        "final frame content = remaining 10 bytes"
+    );
 
     // Round-trip corroboration: all fields consumed correctly
     let result = decrypt_ciphertext(&ct).await.plaintext;
@@ -223,11 +234,16 @@ async fn test_unframed_decrypt_fails_on_tampered_auth_tag() {
     //= reason=Untampered nonframed vector decrypts; tampered auth tag → CryptographicError, AEAD halts on failure
     //# If this decryption fails, this operation MUST immediately halt and fail.
     assert!(
-        try_decrypt_external_nonframed(Version::V2, &valid_ct).await.is_ok(),
+        try_decrypt_external_nonframed(Version::V2, &valid_ct)
+            .await
+            .is_ok(),
         "valid external vector must decrypt"
     );
     assert_eq!(
-        try_decrypt_external_nonframed(Version::V2, &tampered_ct).await.unwrap_err().kind,
+        try_decrypt_external_nonframed(Version::V2, &tampered_ct)
+            .await
+            .unwrap_err()
+            .kind,
         ErrorKind::CryptographicError,
         "tampered nonframed auth tag must produce CryptographicError"
     );
@@ -247,21 +263,35 @@ async fn test_sequence_number_end_value_is_0xffffffff() {
     //= type=test
     //= reason=On-wire bytes at frame start are exactly 0xFF 0xFF 0xFF 0xFF
     //# The value MUST be `0xFFFFFFFF`.
-    let marker = f.endframe_marker_bytes.expect("final frame must have endframe marker");
-    assert_eq!(marker, &[0xFF, 0xFF, 0xFF, 0xFF], "endframe marker must be 0xFFFFFFFF byte-by-byte");
+    let marker = f
+        .endframe_marker_bytes
+        .expect("final frame must have endframe marker");
+    assert_eq!(
+        marker,
+        &[0xFF, 0xFF, 0xFF, 0xFF],
+        "endframe marker must be 0xFFFFFFFF byte-by-byte"
+    );
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=Endframe marker field present at frame_offset on wire
     //# - MUST deserialize the [Sequence Number End](../data-format/message-body.md#sequence-number-end).
-    assert_eq!(f.endframe_marker_offset, Some(f.frame_offset), "endframe marker at frame start");
+    assert_eq!(
+        f.endframe_marker_offset,
+        Some(f.frame_offset),
+        "endframe marker at frame start"
+    );
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=Seq num field at expected offset, value=1 for single final frame
     //# - MUST deserialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
     assert_eq!(f.seq_num, 1, "final frame seq_num must be 1");
-    assert_eq!(f.seq_num_offset, f.frame_offset + 4, "seq_num follows endframe marker");
+    assert_eq!(
+        f.seq_num_offset,
+        f.frame_offset + 4,
+        "seq_num follows endframe marker"
+    );
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -274,15 +304,24 @@ async fn test_sequence_number_end_value_is_0xffffffff() {
     //= type=test
     //= reason=Content length field at expected offset, 4 bytes, value=5
     //# - MUST deserialize the [Encrypted Content Length](../data-format/message-body.md#final-frame-encrypted-content-length).
-    let cl_bytes = f.content_length_bytes.expect("final frame has content_length field");
+    let cl_bytes = f
+        .content_length_bytes
+        .expect("final frame has content_length field");
     assert_eq!(cl_bytes.len(), 4, "content_length is 4 bytes on wire");
-    assert_eq!(f.content_length, 5, "content_length = plaintext length for final frame");
+    assert_eq!(
+        f.content_length, 5,
+        "content_length = plaintext length for final frame"
+    );
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=Encrypted content at expected offset, length matches content_length field
     //# - MUST deserialize the [Encrypted Content](../data-format/message-body.md#final-frame-encrypted-content).
-    assert_eq!(f.content.len(), 5, "encrypted content = content_length bytes");
+    assert_eq!(
+        f.content.len(),
+        5,
+        "encrypted content = content_length bytes"
+    );
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -312,7 +351,10 @@ async fn test_decrypt_first_frame_sequence_number_is_one() {
     //= type=test
     //= reason=Wire parse extracts seq_num from first 4 bytes, proving deserialization
     //# - MUST deserialize the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number).
-    assert_eq!(frames[0].seq_num, 1, "first frame sequence number must be 1 on the wire");
+    assert_eq!(
+        frames[0].seq_num, 1,
+        "first frame sequence number must be 1 on the wire"
+    );
     // Round-trip corroboration
     let result = decrypt_ciphertext(&ct).await.plaintext;
     assert_eq!(result, pt);
@@ -324,7 +366,11 @@ async fn test_decrypt_sequence_numbers_increment() {
     let pt = vec![0xBBu8; 50];
     let ct = encrypt_with_frame_length(&pt, 10).await;
     let frames = parse_all_frames(&ct, 10);
-    assert_eq!(frames.len(), 5, "50 bytes / 10-byte frames = 4 regular + 1 final");
+    assert_eq!(
+        frames.len(),
+        5,
+        "50 bytes / 10-byte frames = 4 regular + 1 final"
+    );
 
     // Verify regular frames have incrementing sequence numbers on wire
     for (i, frame) in frames[..4].iter().enumerate() {
@@ -332,7 +378,10 @@ async fn test_decrypt_sequence_numbers_increment() {
         assert_eq!(frame.seq_num, (i + 1) as u32, "frame {i}: seq_num on wire");
         // Byte-level: seq_num bytes encode the expected value in big-endian
         let expected_bytes = ((i + 1) as u32).to_be_bytes();
-        assert_eq!(frame.seq_num_bytes, &expected_bytes, "frame {i}: seq_num bytes");
+        assert_eq!(
+            frame.seq_num_bytes, &expected_bytes,
+            "frame {i}: seq_num bytes"
+        );
     }
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -349,7 +398,9 @@ async fn test_decrypt_sequence_numbers_increment() {
     //# If the first 4 bytes have a value of 0xFFFFFFFF,
     //# the Decrypt operation MUST treat them as the [Sequence Number End](../data-format/message-body.md#sequence-number-end)
     //# and deserialize the following bytes according to the [final frame spec](../data-format/message-body.md#final-frame).
-    let marker = frames[4].endframe_marker_bytes.expect("final frame has marker");
+    let marker = frames[4]
+        .endframe_marker_bytes
+        .expect("final frame has marker");
     assert_eq!(marker, &[0xFF, 0xFF, 0xFF, 0xFF]);
 
     // Regular frames: first 4 bytes are NOT 0xFFFFFFFF
@@ -359,7 +410,10 @@ async fn test_decrypt_sequence_numbers_increment() {
     //# Otherwise, the Decrypt operation MUST treat them as the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number)
     //# and deserialize the following bytes according to the [regular frame spec](../data-format/message-body.md#regular-frame).
     for frame in &frames[..4] {
-        assert!(frame.endframe_marker_bytes.is_none(), "regular frame must not have endframe marker");
+        assert!(
+            frame.endframe_marker_bytes.is_none(),
+            "regular frame must not have endframe marker"
+        );
     }
 
     // Round-trip corroboration

@@ -10,8 +10,14 @@ use test_helpers::*;
 #[tokio::test(flavor = "multi_thread")]
 async fn test_footer_present_with_signing_suite() {
     for (label, ct) in [
-        ("V1", encrypt_with_v1_signing_suite(b"footer presence test").await),
-        ("V2", encrypt_with_signing_suite(b"footer presence test").await),
+        (
+            "V1",
+            encrypt_with_v1_signing_suite(b"footer presence test").await,
+        ),
+        (
+            "V2",
+            encrypt_with_signing_suite(b"footer presence test").await,
+        ),
     ] {
         //= spec/data-format/message-footer.md#overview
         //= type=test
@@ -39,8 +45,14 @@ async fn test_footer_present_with_signing_suite() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_footer_signature_length_is_two_bytes() {
     for (label, ct) in [
-        ("V1", encrypt_with_v1_signing_suite(b"sig length 2 bytes test").await),
-        ("V2", encrypt_with_signing_suite(b"sig length 2 bytes test").await),
+        (
+            "V1",
+            encrypt_with_v1_signing_suite(b"sig length 2 bytes test").await,
+        ),
+        (
+            "V2",
+            encrypt_with_signing_suite(b"sig length 2 bytes test").await,
+        ),
     ] {
         let (offset, sig_len) = find_footer_offset(&ct);
 
@@ -62,8 +74,14 @@ async fn test_footer_signature_length_is_two_bytes() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_footer_signature_length_is_uint16() {
     for (label, ct) in [
-        ("V1", encrypt_with_v1_signing_suite(b"sig length uint16 test").await),
-        ("V2", encrypt_with_signing_suite(b"sig length uint16 test").await),
+        (
+            "V1",
+            encrypt_with_v1_signing_suite(b"sig length uint16 test").await,
+        ),
+        (
+            "V2",
+            encrypt_with_signing_suite(b"sig length uint16 test").await,
+        ),
     ] {
         let (offset, sig_len) = find_footer_offset(&ct);
 
@@ -89,7 +107,10 @@ async fn test_footer_signature_length_is_uint16() {
 async fn test_no_footer_without_signing_suite() {
     let keyring = test_keyring().await;
     for (label, ct) in [
-        ("V1", encrypt_with_version(b"no footer test", Version::V1, keyring.clone()).await),
+        (
+            "V1",
+            encrypt_with_version(b"no footer test", Version::V1, keyring.clone()).await,
+        ),
         ("V2", encrypt_without_signing_suite(b"no footer test").await),
     ] {
         //= spec/data-format/message.md#structure
@@ -105,8 +126,14 @@ async fn test_no_footer_without_signing_suite() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_footer_consists_of_signature_length_then_signature() {
     for (label, ct) in [
-        ("V1", encrypt_with_v1_signing_suite(b"footer structure test").await),
-        ("V2", encrypt_with_signing_suite(b"footer structure test").await),
+        (
+            "V1",
+            encrypt_with_v1_signing_suite(b"footer structure test").await,
+        ),
+        (
+            "V2",
+            encrypt_with_signing_suite(b"footer structure test").await,
+        ),
     ] {
         let (offset, sig_len) = find_footer_offset(&ct);
         let footer = &ct[offset..];
@@ -149,9 +176,17 @@ async fn test_footer_consists_of_signature_length_then_signature() {
 async fn test_unrecognized_algorithm_suite_errors() {
     for (label, mut ct, suite_offset) in [
         // V1 header: byte 0 = version (0x01), byte 1 = type, bytes 2..4 = algorithm suite ID.
-        ("V1", encrypt_with_v1_signing_suite(b"bad suite test").await, 2usize),
+        (
+            "V1",
+            encrypt_with_v1_signing_suite(b"bad suite test").await,
+            2usize,
+        ),
         // V2 header: byte 0 = version (0x02), bytes 1..3 = algorithm suite ID.
-        ("V2", encrypt_with_signing_suite(b"bad suite test").await, 1usize),
+        (
+            "V2",
+            encrypt_with_signing_suite(b"bad suite test").await,
+            1usize,
+        ),
     ] {
         ct[suite_offset] = 0xFF;
         ct[suite_offset + 1] = 0xFF;
@@ -161,7 +196,8 @@ async fn test_unrecognized_algorithm_suite_errors() {
 
         assert!(
             matches!(err.kind, ErrorKind::ValidationError),
-            "{label}: expected ValidationError, got {:?}", err.kind
+            "{label}: expected ValidationError, got {:?}",
+            err.kind
         );
 
         let err_msg = err.to_string();

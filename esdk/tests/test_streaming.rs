@@ -6,8 +6,8 @@ mod test_helpers;
 
 use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind};
 use test_helpers::{
-    multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, run_decrypt_stream,
-    run_encrypt_stream, test_keyring, CallStyle,
+    CallStyle, multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, run_decrypt_stream,
+    run_encrypt_stream, test_keyring,
 };
 
 // Round-trips plaintext via the streaming encrypt/decrypt path. Iterates over
@@ -108,8 +108,7 @@ async fn test_decrypt_stream_multi_frame_signed_rejected_by_default() {
     for style in CallStyle::ALL {
         let (_plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
 
-        let dec_input =
-            DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+        let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
         assert!(
             !dec_input.unsafe_release_plaintext_before_verify,
             "unsafe_release_plaintext_before_verify must default to false"
@@ -172,8 +171,7 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted_by_default() {
     for style in CallStyle::ALL {
         let (plaintext, keyring, ct) = multi_frame_unsigned_for_stream().await;
 
-        let dec_input =
-            DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+        let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
         assert!(!dec_input.unsafe_release_plaintext_before_verify);
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);

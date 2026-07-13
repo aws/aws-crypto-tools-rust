@@ -41,7 +41,11 @@ async fn test_v1_header_auth_has_iv_then_tag() {
     //= type=test
     //# - The IV MUST have a value of 0.
     let iv_bytes = &ct[iv_offset..iv_offset + IV_LEN];
-    assert_eq!(iv_bytes.len(), IV_LEN, "V1 header auth IV must be {IV_LEN} bytes");
+    assert_eq!(
+        iv_bytes.len(),
+        IV_LEN,
+        "V1 header auth IV must be {IV_LEN} bytes"
+    );
     assert!(
         iv_bytes.iter().all(|&b| b == 0),
         "V1 header auth IV must be all zeros (IV=0 padded to IV length)"
@@ -53,7 +57,11 @@ async fn test_v1_header_auth_has_iv_then_tag() {
     //# this operation MUST calculate an [authentication tag](../data-format/message-header.md#authentication-tag)
     //# over the message header body.
     let tag_bytes = &ct[tag_offset..tag_offset + TAG_LEN];
-    assert_eq!(tag_bytes.len(), TAG_LEN, "V1 header auth tag must be {TAG_LEN} bytes");
+    assert_eq!(
+        tag_bytes.len(),
+        TAG_LEN,
+        "V1 header auth tag must be {TAG_LEN} bytes"
+    );
     assert!(
         tag_bytes.iter().any(|&b| b != 0),
         "V1 header auth tag must not be all zeros"
@@ -77,7 +85,11 @@ async fn test_v2_header_auth_has_tag_only() {
     let (header_body_end, tag_offset) = v2_header_auth_offsets(&ct);
 
     let tag_bytes = &ct[tag_offset..tag_offset + TAG_LEN];
-    assert_eq!(tag_bytes.len(), TAG_LEN, "V2 header auth tag must be {TAG_LEN} bytes");
+    assert_eq!(
+        tag_bytes.len(),
+        TAG_LEN,
+        "V2 header auth tag must be {TAG_LEN} bytes"
+    );
     assert!(
         tag_bytes.iter().any(|&b| b != 0),
         "V2 header auth tag must not be all zeros"
@@ -119,7 +131,11 @@ async fn test_auth_tag_present_with_required_ec_v1() {
     // Raw-byte: auth tag is present at the expected offset with the expected length.
     let (_, _, tag_offset) = v1_header_auth_offsets(&ct);
     let tag_bytes = &ct[tag_offset..tag_offset + TAG_LEN];
-    assert_eq!(tag_bytes.len(), TAG_LEN, "V1 auth tag must be {TAG_LEN} bytes");
+    assert_eq!(
+        tag_bytes.len(),
+        TAG_LEN,
+        "V1 auth tag must be {TAG_LEN} bytes"
+    );
     assert!(
         tag_bytes.iter().any(|&b| b != 0),
         "V1 auth tag must be a real AEAD output (not all zeros)"
@@ -148,7 +164,11 @@ async fn test_auth_tag_present_with_required_ec_v2() {
     // Raw-byte: auth tag is present at the expected offset with the expected length.
     let (_, tag_offset) = v2_header_auth_offsets(&ct);
     let tag_bytes = &ct[tag_offset..tag_offset + TAG_LEN];
-    assert_eq!(tag_bytes.len(), TAG_LEN, "V2 auth tag must be {TAG_LEN} bytes");
+    assert_eq!(
+        tag_bytes.len(),
+        TAG_LEN,
+        "V2 auth tag must be {TAG_LEN} bytes"
+    );
     assert!(
         tag_bytes.iter().any(|&b| b != 0),
         "V2 auth tag must be a real AEAD output (not all zeros)"

@@ -24,7 +24,10 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     // Prove the ciphertext has no footer — so if decrypt tried to run the
     // signature step, it would attempt to read footer bytes from the body
     // region and fail with a parse error.
-    assert!(!has_footer(&ct), "non-signing suite must not produce a footer");
+    assert!(
+        !has_footer(&ct),
+        "non-signing suite must not produce a footer"
+    );
 
     let decrypt_input = DecryptInput::from_encrypt(&ct, &encrypt_input);
     //= spec/client-apis/decrypt.md#behavior
@@ -128,12 +131,17 @@ async fn test_streaming_fails_for_multi_frame_signed_without_override() {
     let mut with_output = Vec::new();
 
     assert_eq!(
-        decrypt_stream(&mut without_cursor, &mut without_output, &without_override).await.unwrap_err().kind,
+        decrypt_stream(&mut without_cursor, &mut without_output, &without_override)
+            .await
+            .unwrap_err()
+            .kind,
         ErrorKind::Esdk,
         "multi-frame signed without override must produce Esdk error"
     );
     assert!(
-        decrypt_stream(&mut with_cursor, &mut with_output, &with_override).await.is_ok(),
+        decrypt_stream(&mut with_cursor, &mut with_output, &with_override)
+            .await
+            .is_ok(),
         "multi-frame signed with override must succeed"
     );
     assert_eq!(with_output, plaintext);

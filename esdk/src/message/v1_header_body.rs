@@ -6,9 +6,9 @@
 use super::encrypted_data_keys::{read_edks, write_edks};
 use super::encryption_context::{read_canonical_ec, write_aad_section};
 use super::header_types::{
-    MessageFormatVersion, V1HeaderBody, read_content_type, read_msg_type, write_content_type,
+    MessageFormatVersion, V1HeaderBody, read_content_type, read_esdk_suite_id, read_message_id_v1,
+    read_msg_type, write_content_type, write_esdk_suite_id, write_message_id,
     write_msg_format_version, write_msg_type,
-    read_esdk_suite_id, read_message_id_v1, write_esdk_suite_id, write_message_id,
 };
 use super::serializable_types::get_iv_length;
 use super::serialize_functions::{read_bytes, read_u8, read_u32, write_bytes, write_u8, write_u32};
@@ -58,7 +58,10 @@ pub(crate) fn write_v1_header_body(
     //= spec/client-apis/encrypt.md#v1-header
     //# - MUST serialize the [Type](../data-format/message-header.md#type).
     //# The value MUST correspond to [Customer Authenticated Encrypted Data](../data-format/message-header.md#supported-types).
-    debug_assert_eq!(body.message_type, super::header_types::MessageType::TypeCustomerAed);
+    debug_assert_eq!(
+        body.message_type,
+        super::header_types::MessageType::TypeCustomerAed
+    );
     write_msg_type(w, body.message_type)?;
 
     // Algorithm Suite ID

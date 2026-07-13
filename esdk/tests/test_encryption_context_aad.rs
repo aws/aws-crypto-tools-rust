@@ -52,13 +52,19 @@ async fn test_aad_serialization_order() {
 
         // 1. Key Value Pairs Length (2 bytes at the AAD offset)
         let kvp_len = u16::from_be_bytes([ct[off], ct[off + 1]]) as usize;
-        assert!(kvp_len > 0, "{version:?}: non-empty EC must have non-zero KVP length");
+        assert!(
+            kvp_len > 0,
+            "{version:?}: non-empty EC must have non-zero KVP length"
+        );
 
         // 2. Key Value Pairs (immediately follow the length field)
         let kvp_count_offset = off + 2;
         let kvp_count =
             u16::from_be_bytes([ct[kvp_count_offset], ct[kvp_count_offset + 1]]) as usize;
-        assert_eq!(kvp_count, 2, "{version:?}: AB encryption context has 2 key-value pairs");
+        assert_eq!(
+            kvp_count, 2,
+            "{version:?}: AB encryption context has 2 key-value pairs"
+        );
 
         // Cross-check: the decrypt path recovers the same encryption context, which is
         // only possible if the on-wire ordering agreed with the spec on both sides.
@@ -85,7 +91,10 @@ async fn test_aad_key_value_pairs_length_field_size() {
         // count(2) + key_len(2) + key(4) + val_len(2) + val(4) = 14 bytes.
         // The length field covers the entire Key Value Pairs structure, including
         // the Key Value Pair Count.
-        assert_eq!(kvp_len, 14, "{version:?}: KVP length for single pair keyA=valA must be 14");
+        assert_eq!(
+            kvp_len, 14,
+            "{version:?}: KVP length for single pair keyA=valA must be 14"
+        );
 
         // Cross-check: the decrypted EC matches what we encrypted, confirming the 2-byte
         // length field was parsed correctly on the decrypt side too.
@@ -109,7 +118,10 @@ async fn test_aad_key_value_pairs_length_uint16() {
         // Read the 2 bytes as big-endian u16 and verify the value.
         let kvp_len = u16::from_be_bytes([ct[off], ct[off + 1]]);
         // keyA=valA: count(2) + key_len(2) + key(4) + val_len(2) + val(4) = 14.
-        assert_eq!(kvp_len, 14, "{version:?}: UInt16 KVP length for keyA=valA must be 14");
+        assert_eq!(
+            kvp_len, 14,
+            "{version:?}: UInt16 KVP length for keyA=valA must be 14"
+        );
 
         // Cross-check: the decrypted EC round-trips, confirming both sides agree that
         // the field is a big-endian UInt16.
@@ -131,7 +143,10 @@ async fn test_aad_empty_encryption_context_length_zero() {
         //# When the [encryption context](../framework/structures.md#encryption-context) is empty, the value of this field MUST be 0.
 
         // The 2 bytes at the AAD offset must be [0x00, 0x00].
-        assert_eq!(ct[off], 0x00, "{version:?}: empty EC KVP length high byte must be 0");
+        assert_eq!(
+            ct[off], 0x00,
+            "{version:?}: empty EC KVP length high byte must be 0"
+        );
         assert_eq!(
             ct[off + 1],
             0x00,
@@ -216,8 +231,7 @@ async fn test_aad_empty_encryption_context_no_kvp_field() {
         assert_eq!(kvp_len, 0, "{version:?}: empty EC must have KVP length 0");
         // The bytes right after the 2-byte KVP Length field are the EDK count (not KVP data).
         let edk_count_offset = off + 2;
-        let edk_count =
-            u16::from_be_bytes([ct[edk_count_offset], ct[edk_count_offset + 1]]);
+        let edk_count = u16::from_be_bytes([ct[edk_count_offset], ct[edk_count_offset + 1]]);
         assert!(
             edk_count >= 1,
             "{version:?}: EDK count must be at least 1, proving no KVP field between AAD length and EDKs"

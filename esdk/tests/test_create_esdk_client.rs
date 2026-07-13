@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aws_esdk::{
-    decrypt, encrypt, mpl, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength,
-    NetV400RetryPolicy,
+    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, NetV400RetryPolicy,
+    decrypt, encrypt, mpl,
 };
 
 mod fixtures;
@@ -71,7 +71,9 @@ async fn test_net_retry_flag() {
     let mut input = DecryptInput::with_legacy_keyring(ESDK_NET_V400_MESSAGE, ec, raw_aes_keyring);
     input.net_v4_retry_policy = NetV400RetryPolicy::ForbidRetry;
 
-    let err = decrypt(&input).await.expect_err("Expected decryption to fail without retry flag");
+    let err = decrypt(&input)
+        .await
+        .expect_err("Expected decryption to fail without retry flag");
     assert!(
         matches!(err.kind, ErrorKind::CryptographicError),
         "expected CryptographicError, got {:?}",
@@ -91,8 +93,7 @@ fn test_default_commitment_policy() {
     //= type=test
     //= reason=EncryptInput::default() and DecryptInput::default() both return RequireEncryptRequireDecrypt
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    let expected =
-        aws_mpl_legacy::commitment::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
+    let expected = aws_mpl_legacy::commitment::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     assert_eq!(
         EncryptInput::default().commitment_policy,
         expected,
@@ -278,7 +279,6 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     );
 }
 
-
 // Esdk client tests
 
 use aws_esdk::{Esdk, EsdkConfig};
@@ -319,9 +319,7 @@ fn test_esdk_builder_sets_commitment_policy() {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     let esdk = Esdk::builder()
-        .commitment_policy(
-            EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
-        )
+        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
     assert_eq!(
         esdk.config().commitment_policy,
@@ -361,8 +359,7 @@ fn test_esdk_builder_sets_net_v4_retry_policy() {
 fn test_esdk_new_takes_explicit_config() {
     // Direct construction from a built EsdkConfig is also supported.
     let mut config = EsdkConfig::default();
-    config.commitment_policy =
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    config.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     config.max_encrypted_data_keys = std::num::NonZeroUsize::new(7);
     let esdk = Esdk::new(config);
     assert_eq!(
@@ -384,8 +381,7 @@ fn test_esdk_new_takes_explicit_config() {
 async fn test_esdk_encrypt_rejects_input_with_non_default_commitment_policy() {
     let esdk = Esdk::default();
     let mut input = EncryptInput::new();
-    input.commitment_policy =
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
 
     let err = esdk
         .encrypt(&input)
@@ -419,8 +415,7 @@ async fn test_esdk_encrypt_rejects_input_with_max_encrypted_data_keys() {
 async fn test_esdk_decrypt_rejects_input_with_non_default_commitment_policy() {
     let esdk = Esdk::default();
     let mut input = DecryptInput::new();
-    input.commitment_policy =
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
 
     let err = esdk
         .decrypt(&input)
@@ -476,9 +471,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
     let keyring = test_keyring().await;
 
     let esdk = Esdk::builder()
-        .commitment_policy(
-            EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
-        )
+        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
         .build();
 
     let ec = EncryptionContext::new();
@@ -519,21 +512,13 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
 async fn test_esdk_commitment_policy_actually_gates_encrypt() {
     let keyring = test_keyring().await;
     let esdk = Esdk::builder()
-        .commitment_policy(
-            EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
-        )
+        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
 
-    let mut enc_input = EncryptInput::with_legacy_keyring(
-        b"x",
-        EncryptionContext::new(),
-        keyring,
-    );
+    let mut enc_input = EncryptInput::with_legacy_keyring(b"x", EncryptionContext::new(), keyring);
     // Explicitly request a V2 committing suite. ForbidEncryptAllowDecrypt
     // forbids committing on encrypt → must fail.
-    enc_input.algorithm_suite_id = Some(
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-    );
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let err = esdk
         .encrypt(&enc_input)
         .await
@@ -554,7 +539,6 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         "expected InvalidAlgorithmSuiteInfoOnEncrypt MPL error, got: {inner}"
     );
 }
-
 
 // Symmetric to `test_esdk_commitment_policy_actually_gates_encrypt`: proves
 // the Esdk's configured commitment policy actually reaches the decrypt path.
@@ -603,10 +587,9 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     // ForbidEncryptAllowDecrypt config flowing through (not just "any V1
     // ciphertext decrypts via Esdk::decrypt").
     let default_esdk = Esdk::default();
-    let err = default_esdk
-        .decrypt(&dec_input)
-        .await
-        .expect_err("default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext");
+    let err = default_esdk.decrypt(&dec_input).await.expect_err(
+        "default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
+    );
     let ErrorKind::LegacyError(legacy) = &err.kind else {
         panic!("expected LegacyError, got {:?}: {}", err.kind, err.message);
     };

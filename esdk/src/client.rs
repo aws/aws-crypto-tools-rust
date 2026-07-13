@@ -158,7 +158,8 @@ impl Esdk {
         ciphertext: &mut dyn SafeWrite,
         input: &EncryptStreamInput,
     ) -> Result<EncryptStreamOutput, Error> {
-        crate::encrypt::encrypt_stream(plaintext, ciphertext, &fill_or_reject(input, &self.config)?).await
+        crate::encrypt::encrypt_stream(plaintext, ciphertext, &fill_or_reject(input, &self.config)?)
+            .await
     }
 
     /// Stream-decrypt with the client's configured commitment policy and EDK cap.
@@ -174,7 +175,8 @@ impl Esdk {
         plaintext: &mut dyn SafeWrite,
         input: &DecryptStreamInput,
     ) -> Result<DecryptStreamOutput, Error> {
-        crate::decrypt::decrypt_stream(ciphertext, plaintext, &fill_or_reject(input, &self.config)?).await
+        crate::decrypt::decrypt_stream(ciphertext, plaintext, &fill_or_reject(input, &self.config)?)
+            .await
     }
 }
 

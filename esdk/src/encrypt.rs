@@ -385,9 +385,7 @@ async fn step_get_encryption_materials(
         &materials
             .plaintext_data_key
             .as_ref()
-            .ok_or_else(|| esdk_err(
-                "Encryption materials must contain a plaintext data key",
-            ))?
+            .ok_or_else(|| esdk_err("Encryption materials must contain a plaintext data key"))?
             .0,
         algorithm_suite,
         false,
@@ -617,10 +615,7 @@ fn build_header_for_encrypt(
         &canonical_stored_encryption_context,
         encrypted_data_keys,
         frame_length,
-        derived_data_keys
-            .commitment_key
-            .as_deref()
-            .cloned(),
+        derived_data_keys.commitment_key.as_deref().cloned(),
     )?;
 
     let canonical_req_encryption_context = to_canonical_pairs(required_encryption_context_map);

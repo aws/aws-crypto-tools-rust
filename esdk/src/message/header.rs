@@ -203,7 +203,9 @@ pub(crate) fn validate_suite_data(
     if constant_time::verify_slices_are_equal(header_body.suite_data(), expected_suite_data)
         .is_err()
     {
-        return Err(val_err("Algorithm suite data does not match expected value"));
+        return Err(val_err(
+            "Algorithm suite data does not match expected value",
+        ));
     }
 
     let Ok(suite_data_len) = u32::try_from(expected_suite_data.len()) else {
