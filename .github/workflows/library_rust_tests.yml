@@ -50,6 +50,34 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      # The coverage step links large FIPS + coverage-instrumented test
+      # binaries. On the GitHub-hosted ubuntu runner the default GNU `ld` runs
+      # out of memory and dies with "ld terminated with signal 7 [Bus error],
+      # core dumped". mold links the same binaries with far less peak memory,
+      # so make it the default linker on Linux. macOS links fine with its
+      # native linker, so this is Linux-only.
+      - name: Install mold linker (Linux)
+        if: runner.os == 'Linux'
+        uses: rui314/setup-mold@v1
+        with:
+          make-default: true
+
+      # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
+      # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
+      # test keys in us-west-2, so CI must have AWS credentials. Assume the
+      # shared public ESDK CI role via GitHub OIDC (the job already requests
+      # `id-token: write`). This is the same role and pattern the existing
+      # aws/aws-encryption-sdk `library_rust_tests.yml` uses. The role ARN is
+      # public (no repo secret needed); access is gated by the role's OIDC
+      # trust policy, which must permit `repo:aws/aws-crypto-tools-rust:*`.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustTests
+          special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
+
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
         with:
