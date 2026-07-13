@@ -6,6 +6,7 @@
 // `aws_mpl_legacy` error type by value, so the Err variant size is not ours to shrink.
 #![allow(clippy::result_large_err)]
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

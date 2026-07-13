@@ -3,6 +3,7 @@
 
 //! Tests for post-CMM commitment policy validation and decrypt identity KDF.
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

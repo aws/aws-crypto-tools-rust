@@ -4,6 +4,7 @@
 //! Tests for spec/data-format/message-header.md
 //! header-authentication-version-1-0 and header-authentication-version-2-0
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

@@ -3,6 +3,7 @@
 
 //! Tests for spec/client-apis/encrypt.md#construct-the-body
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

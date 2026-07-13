@@ -4,6 +4,7 @@
 //! Tests for spec/data-format/message-header.md#aad,
 //! #key-value-pairs-length, and #key-value-pairs
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
