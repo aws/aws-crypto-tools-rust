@@ -418,8 +418,8 @@ async fn test_body_aad_content_length_final_frame_bounded_by_frame_length() {
     let pt = vec![0xEEu8; 15];
     let frame_length = 10u32;
     let ct = encrypt_with_frame_length(&pt, frame_length).await;
-    let final_content_len =
-        final_frame_content_length(&ct).expect("ciphertext must contain a final frame");
+    let final_content_len = final_frame_content_length(&ct, frame_length)
+        .expect("ciphertext must contain a final frame");
     //= spec/data-format/message-body-aad.md#content-length
     //= type=test
     //= reason=Final frame's content_length lies in [0, frame_length]; round-trip corroborates.
