@@ -52,7 +52,9 @@ pub(crate) fn read_msg_format_version(
         0x41 => ser_err(
             "Input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
         ),
-        _ => ser_err(&format!("unsupported message format version: {version:#04x}")),
+        _ => ser_err(&format!(
+            "unsupported message format version: {version:#04x}"
+        )),
     }
 }
 
@@ -251,11 +253,16 @@ pub(crate) fn read_esdk_suite_id(
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    let suite = aws_mpl_legacy::suites::get_algorithm_suite_info(esdk_suite_id_bytes)
-        .map_err(|e| val_err_with_cause(
-            format!("Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}", esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]),
-            e,
-        ))?;
+    let suite =
+        aws_mpl_legacy::suites::get_algorithm_suite_info(esdk_suite_id_bytes).map_err(|e| {
+            val_err_with_cause(
+                format!(
+                    "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                    esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]
+                ),
+                e,
+            )
+        })?;
     Ok(suite)
 }
 

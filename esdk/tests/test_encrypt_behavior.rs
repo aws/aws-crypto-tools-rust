@@ -22,18 +22,27 @@ async fn test_step_2_construct_header() {
     //= type=test
     //= reason=Version byte on wire matches suite's message format version
     //# The [message format version](../data-format/message-header.md#supported-versions) MUST be the value associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites).
-    assert_eq!(v2[0], 0x02, "V2 output must start with header version byte 0x02");
+    assert_eq!(
+        v2[0], 0x02,
+        "V2 output must start with header version byte 0x02"
+    );
 
     let v1 = encrypt_v1(b"test step 2 v1").await;
-    assert_eq!(v1[0], 0x01, "V1 output must start with header version byte 0x01");
+    assert_eq!(
+        v1[0], 0x01,
+        "V1 output must start with header version byte 0x01"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_step_4_construct_signature() {
     // Encrypt with a signing suite; verify footer exists on the wire, then decrypt as corroboration.
     let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(b"test step 4", EncryptionContext::new(), keyring.clone());
+    let mut enc_input = EncryptInput::with_legacy_keyring(
+        b"test step 4",
+        EncryptionContext::new(),
+        keyring.clone(),
+    );
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -43,7 +52,10 @@ async fn test_step_4_construct_signature() {
     //# - If the [encryption materials gathered](#get-the-encryption-materials) has a algorithm suite
     //# including a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# the Encrypt operation MUST perform this step.
-    assert!(has_footer(&ct), "signing suite must produce a footer on the wire");
+    assert!(
+        has_footer(&ct),
+        "signing suite must produce a footer on the wire"
+    );
     let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
     let pt = decrypt(&dec_input).await.unwrap().plaintext;
     assert_eq!(pt, b"test step 4");
@@ -64,7 +76,8 @@ async fn test_no_extra_data_in_output_message() {
     //# Any data that is not specified within the [message format](../data-format/message.md)
     //# MUST NOT be added to the output message.
     assert_eq!(
-        body_end, ct.len(),
+        body_end,
+        ct.len(),
         "V2 non-signing: ciphertext must end exactly at the final frame; trailing bytes = {}",
         ct.len() - body_end
     );
@@ -96,8 +109,7 @@ async fn test_input_suite_vs_commitment_policy_error() {
     let keyring = test_keyring().await;
     let mut enc_input =
         EncryptInput::with_legacy_keyring(b"commitment check", EncryptionContext::new(), keyring);
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
     enc_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must fail when input suite violates commitment policy");
@@ -128,7 +140,10 @@ async fn test_obtain_materials_from_cmm() {
     // expected fields; this test provides regression coverage for the basic path.)
     let pt = b"obtain materials test";
     let output = encrypt_default(pt).await;
-    assert!(!output.ciphertext.is_empty(), "encrypt must produce ciphertext from CMM-provided materials");
+    assert!(
+        !output.ciphertext.is_empty(),
+        "encrypt must produce ciphertext from CMM-provided materials"
+    );
     // Regression coverage for the basic keyring->materials path. The "a supplied keyring
     // MUST use a default CMM" requirement is proven by the cross-compat test in
     // test_keyring_to_default_cmm.rs (test_keyring_constructs_default_cmm_for_encrypt);
@@ -201,12 +216,18 @@ async fn test_cmm_request_empty_encryption_context() {
     let pt = b"empty ec test";
     let output = encrypt_default(pt).await;
     let decrypted = decrypt_ciphertext(&output.ciphertext).await;
-    assert_eq!(decrypted.plaintext, pt, "round-trip must recover original plaintext");
+    assert_eq!(
+        decrypted.plaintext, pt,
+        "round-trip must recover original plaintext"
+    );
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# Otherwise, this MUST be an empty encryption context.
     assert!(
-        !output.encryption_context.keys().any(|k| !k.starts_with("aws-crypto-")),
+        !output
+            .encryption_context
+            .keys()
+            .any(|k| !k.starts_with("aws-crypto-")),
         "output encryption context must not contain user-provided keys when input EC is empty"
     );
 }
@@ -217,8 +238,7 @@ async fn test_cmm_request_algorithm_suite_provided() {
     let keyring = test_keyring().await;
     let mut enc_input =
         EncryptInput::with_legacy_keyring(b"suite test", EncryptionContext::new(), keyring);
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let output = encrypt(&enc_input).await.unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -234,17 +254,22 @@ async fn test_cmm_request_algorithm_suite_provided() {
 async fn test_suite_from_materials_used() {
     // Encrypt with a specific suite and verify the output reports the same suite.
     let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(b"suite from materials", EncryptionContext::new(), keyring);
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    let mut enc_input = EncryptInput::with_legacy_keyring(
+        b"suite from materials",
+        EncryptionContext::new(),
+        keyring,
+    );
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let output = encrypt(&enc_input).await.unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# The [algorithm suite](../framework/algorithm-suites.md) used in all aspects of this operation
     //# MUST be the algorithm suite in the [encryption materials](../framework/structures.md#encryption-materials)
     //# returned from the [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials) call.
-    assert_eq!(output.algorithm_suite_id, EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    assert_eq!(
+        output.algorithm_suite_id,
+        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -280,7 +305,8 @@ async fn test_max_edk_exceeded_error() {
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
     //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md) encrypt MUST yield an error.
     assert_eq!(
-        err.kind, ErrorKind::ValidationError,
+        err.kind,
+        ErrorKind::ValidationError,
         "expected ValidationError, got: {err:?}"
     );
     assert!(
@@ -308,21 +334,34 @@ async fn test_encrypt_data_key_derived_from_plaintext_data_key() {
 async fn test_frame_length_input_used() {
     // Encrypt with a custom frame length and verify the header records that exact value.
     let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(b"custom frame length", EncryptionContext::new(), keyring.clone());
+    let mut enc_input = EncryptInput::with_legacy_keyring(
+        b"custom frame length",
+        EncryptionContext::new(),
+        keyring.clone(),
+    );
     enc_input.frame_length = FrameLength::new(512).unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     let fields = parse_v2_header_field_offsets(&ct);
-    let (_, fl_start, fl_end) = fields.iter().find(|(n, _, _)| *n == "Frame Length")
+    let (_, fl_start, fl_end) = fields
+        .iter()
+        .find(|(n, _, _)| *n == "Frame Length")
         .expect("V2 header must have a Frame Length field");
     assert_eq!(fl_end - fl_start, 4, "frame_length field must be 4 bytes");
-    let on_wire = u32::from_be_bytes([ct[*fl_start], ct[fl_start + 1], ct[fl_start + 2], ct[fl_start + 3]]);
+    let on_wire = u32::from_be_bytes([
+        ct[*fl_start],
+        ct[fl_start + 1],
+        ct[fl_start + 2],
+        ct[fl_start + 3],
+    ]);
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# The frame length used in the procedures described below MUST be the input [frame length](#frame-length),
     //# if supplied.
-    assert_eq!(on_wire, 512, "header frame_length must equal the input frame length");
+    assert_eq!(
+        on_wire, 512,
+        "header frame_length must equal the input frame length"
+    );
 
     let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
     let result = decrypt(&dec_input).await.unwrap();
@@ -336,14 +375,24 @@ async fn test_default_frame_length_used() {
     let ct = encrypt_default(pt).await.ciphertext;
 
     let fields = parse_v2_header_field_offsets(&ct);
-    let (_, fl_start, fl_end) = fields.iter().find(|(n, _, _)| *n == "Frame Length")
+    let (_, fl_start, fl_end) = fields
+        .iter()
+        .find(|(n, _, _)| *n == "Frame Length")
         .expect("V2 header must have a Frame Length field");
     assert_eq!(fl_end - fl_start, 4, "frame_length field must be 4 bytes");
-    let on_wire = u32::from_be_bytes([ct[*fl_start], ct[fl_start + 1], ct[fl_start + 2], ct[fl_start + 3]]);
+    let on_wire = u32::from_be_bytes([
+        ct[*fl_start],
+        ct[fl_start + 1],
+        ct[fl_start + 2],
+        ct[fl_start + 3],
+    ]);
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# If no input frame length is supplied, the default frame length MUST be used.
-    assert_eq!(on_wire, 4096, "default frame_length on the wire must be 4096");
+    assert_eq!(
+        on_wire, 4096,
+        "default frame_length on the wire must be 4096"
+    );
 
     // Round-trip corroboration.
     let result = round_trip(pt).await;
@@ -354,24 +403,31 @@ async fn test_default_frame_length_used() {
 async fn test_message_format_version_matches_suite() {
     // Encrypt with a V2 (committing) suite and verify the first byte is 0x02 (version 2).
     let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(b"version test", EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    let mut enc_input = EncryptInput::with_legacy_keyring(
+        b"version test",
+        EncryptionContext::new(),
+        keyring.clone(),
+    );
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
     //= spec/client-apis/encrypt.md#construct-the-header
     //= type=test
     //# The [message format version](../data-format/message-header.md#supported-versions) MUST be the value associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites).
-    assert_eq!(ct[0], 0x02, "V2 committing suite must produce message version 2");
+    assert_eq!(
+        ct[0], 0x02,
+        "V2 committing suite must produce message version 2"
+    );
 
     // Encrypt with a V1 (non-committing) suite and verify the first byte is 0x01 (version 1).
     let mut enc_input_v1 =
         EncryptInput::with_legacy_keyring(b"version test v1", EncryptionContext::new(), keyring);
-    enc_input_v1.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+    enc_input_v1.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
     enc_input_v1.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     let ct_v1 = encrypt(&enc_input_v1).await.unwrap().ciphertext;
-    assert_eq!(ct_v1[0], 0x01, "V1 non-committing suite must produce message version 1");
+    assert_eq!(
+        ct_v1[0], 0x01,
+        "V1 non-committing suite must produce message version 1"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -380,7 +436,10 @@ async fn test_output_includes_encrypted_message() {
     //= spec/client-apis/encrypt.md#output
     //= type=test
     //# - Encrypt operation output MUST include an [encrypted message](#encrypted-message) value.
-    assert!(!output.ciphertext.is_empty(), "output must include non-empty encrypted message");
+    assert!(
+        !output.ciphertext.is_empty(),
+        "output must include non-empty encrypted message"
+    );
     //= spec/client-apis/encrypt.md#encrypted-message
     //= type=test
     //# This MUST be a sequence of bytes
@@ -412,8 +471,7 @@ async fn test_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
     let mut enc_input =
         EncryptInput::with_legacy_keyring(b"output suite test", EncryptionContext::new(), keyring);
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let output = encrypt(&enc_input).await.unwrap();
     //= spec/client-apis/encrypt.md#output
     //= type=test
@@ -432,18 +490,18 @@ async fn test_output_includes_algorithm_suite() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_reserved_encryption_context_prefix_must_fail() {
     let keyring = test_keyring().await;
-    let ec = std::collections::HashMap::from([
-        ("aws-crypto-foo".to_string(), "bar".to_string()),
-    ]);
+    let ec = std::collections::HashMap::from([("aws-crypto-foo".to_string(), "bar".to_string())]);
     let enc_input = EncryptInput::with_legacy_keyring(b"should fail", ec, keyring);
     let result = encrypt(&enc_input).await;
-    let err = result.expect_err("encrypt must fail when encryption context has aws-crypto- prefix key");
+    let err =
+        result.expect_err("encrypt must fail when encryption context has aws-crypto- prefix key");
     //= spec/client-apis/encrypt.md#encryption-context
     //= type=test
     //# If the input encryption context contains any entries with a key beginning with `aws-crypto-`,
     //# the encryption operation MUST fail.
     assert_eq!(
-        err.kind, ErrorKind::ValidationError,
+        err.kind,
+        ErrorKind::ValidationError,
         "expected ValidationError, got: {err:?}"
     );
     assert!(
@@ -458,9 +516,7 @@ async fn test_reserved_encryption_context_prefix_must_fail() {
 async fn test_reserved_encryption_context_prefix_boundary_no_dash() {
     // Proves only 'aws-crypto-' (with dash) is reserved; 'aws-crypto' alone is valid.
     let keyring = test_keyring().await;
-    let ec = std::collections::HashMap::from([
-        ("aws-crypto".to_string(), "bar".to_string()),
-    ]);
+    let ec = std::collections::HashMap::from([("aws-crypto".to_string(), "bar".to_string())]);
     let enc_input = EncryptInput::with_legacy_keyring(b"should succeed", ec, keyring);
     let result = encrypt(&enc_input).await;
     assert!(
@@ -473,10 +529,12 @@ async fn test_reserved_encryption_context_prefix_boundary_no_dash() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_algorithm_suite_used_for_encryption() {
     let keyring = test_keyring().await;
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(b"suite used test", EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    let mut enc_input = EncryptInput::with_legacy_keyring(
+        b"suite used test",
+        EncryptionContext::new(),
+        keyring.clone(),
+    );
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let output = encrypt(&enc_input).await.unwrap();
     //= spec/client-apis/encrypt.md#algorithm-suite
     //= type=test
@@ -487,7 +545,8 @@ async fn test_algorithm_suite_used_for_encryption() {
         "the specified algorithm suite must be used for encryption"
     );
     // Verify round-trip to prove the suite was actually used for encryption
-    let dec_input = DecryptInput::with_legacy_keyring(&output.ciphertext, EncryptionContext::new(), keyring);
+    let dec_input =
+        DecryptInput::with_legacy_keyring(&output.ciphertext, EncryptionContext::new(), keyring);
     let pt = decrypt(&dec_input).await.unwrap().plaintext;
     assert_eq!(pt, b"suite used test");
 }
@@ -499,18 +558,25 @@ struct SpyCmm {
     observed_max_plaintext_length: std::sync::Arc<std::sync::Mutex<Option<Option<i64>>>>,
 }
 
-impl aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManager for SpyCmm {
+impl aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManager
+    for SpyCmm
+{
     fn get_encryption_materials(
         &self,
         input: aws_mpl_legacy::dafny::operation::get_encryption_materials::GetEncryptionMaterialsInput,
-    ) -> Result<aws_mpl_legacy::dafny::operation::get_encryption_materials::GetEncryptionMaterialsOutput, aws_mpl_legacy::dafny::types::error::Error> {
+    ) -> Result<
+        aws_mpl_legacy::dafny::operation::get_encryption_materials::GetEncryptionMaterialsOutput,
+        aws_mpl_legacy::dafny::types::error::Error,
+    > {
         // Record observations
         *self.observed_algorithm_suite_id.lock().unwrap() = Some(input.algorithm_suite_id.clone());
         *self.observed_max_plaintext_length.lock().unwrap() = Some(input.max_plaintext_length);
 
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let mut builder = self.inner.get_encryption_materials()
+                let mut builder = self
+                    .inner
+                    .get_encryption_materials()
                     .commitment_policy(input.commitment_policy.unwrap())
                     .encryption_context(input.encryption_context.unwrap());
                 if let Some(suite) = input.algorithm_suite_id {
@@ -526,10 +592,14 @@ impl aws_mpl_legacy::dafny::types::cryptographic_materials_manager::Cryptographi
     fn decrypt_materials(
         &self,
         input: aws_mpl_legacy::dafny::operation::decrypt_materials::DecryptMaterialsInput,
-    ) -> Result<aws_mpl_legacy::dafny::operation::decrypt_materials::DecryptMaterialsOutput, aws_mpl_legacy::dafny::types::error::Error> {
+    ) -> Result<
+        aws_mpl_legacy::dafny::operation::decrypt_materials::DecryptMaterialsOutput,
+        aws_mpl_legacy::dafny::types::error::Error,
+    > {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                self.inner.decrypt_materials()
+                self.inner
+                    .decrypt_materials()
                     .algorithm_suite_id(input.algorithm_suite_id.unwrap())
                     .commitment_policy(input.commitment_policy.unwrap())
                     .encryption_context(input.encryption_context.unwrap())
@@ -575,10 +645,15 @@ async fn test_cmm_request_no_algorithm_suite_field() {
     //= type=test
     //= reason=Spy CMM observes algorithm_suite_id is None when caller omits it
     //# If no Algorithm Suite is provided, this field MUST NOT be included.
-    assert_eq!(observed, Some(None), "CMM must receive algorithm_suite_id=None when caller omits it");
+    assert_eq!(
+        observed,
+        Some(None),
+        "CMM must receive algorithm_suite_id=None when caller omits it"
+    );
 
     // Round-trip corroboration
-    let dec_input = DecryptInput::with_legacy_keyring(&output.ciphertext, EncryptionContext::new(), keyring);
+    let dec_input =
+        DecryptInput::with_legacy_keyring(&output.ciphertext, EncryptionContext::new(), keyring);
     assert_eq!(decrypt(&dec_input).await.unwrap().plaintext, pt);
 }
 
@@ -600,7 +675,7 @@ async fn test_cmm_request_max_plaintext_length_equals_input() {
         observed_max_plaintext_length: observed_len.clone(),
     });
 
-    let pt = b"spy plaintext 23 bytes!";  // 23 bytes
+    let pt = b"spy plaintext 23 bytes!"; // 23 bytes
     let enc_input = EncryptInput::with_legacy_cmm(pt, EncryptionContext::new(), cmm_ref);
     encrypt(&enc_input).await.unwrap();
 
@@ -613,7 +688,9 @@ async fn test_cmm_request_max_plaintext_length_equals_input() {
     //# this length MUST be used.
     assert_eq!(
         observed,
-        Some(Some(i64::try_from(pt.len()).expect("test plaintext fits in i64"))),
+        Some(Some(
+            i64::try_from(pt.len()).expect("test plaintext fits in i64")
+        )),
         "CMM must receive max_plaintext_length equal to input plaintext length"
     );
 }
@@ -651,7 +728,9 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    encrypt_stream(&mut reader, &mut output, &stream_input).await.unwrap();
+    encrypt_stream(&mut reader, &mut output, &stream_input)
+        .await
+        .unwrap();
 
     let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
     let pt = decrypt(&dec_input).await.unwrap().plaintext;
@@ -668,7 +747,9 @@ async fn test_no_plaintext_length_bound_field_not_included() {
     let plaintext = vec![0xBBu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    encrypt_stream(&mut reader, &mut output, &stream_input).await.unwrap();
+    encrypt_stream(&mut reader, &mut output, &stream_input)
+        .await
+        .unwrap();
 
     let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
     let pt = decrypt(&dec_input).await.unwrap().plaintext;
@@ -685,7 +766,9 @@ async fn test_streaming_header_released_after_serialization() {
     let plaintext = vec![0xCCu8; 20];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    encrypt_stream(&mut reader, &mut output, &stream_input).await.unwrap();
+    encrypt_stream(&mut reader, &mut output, &stream_input)
+        .await
+        .unwrap();
 
     // Regression coverage: streaming output begins with a valid header version byte. This
     // does NOT prove the "header MUST be released" timing requirement (a buffer-everything
@@ -708,10 +791,15 @@ async fn test_message_bodies_not_equal_must_fail() {
     let content_off = body_start + 4 + 4 + IV_LEN + 4;
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[content_off] ^= 0xFF;
-    assert_ne!(tampered_ct[content_off], valid_ct[content_off], "tamper must change the byte");
+    assert_ne!(
+        tampered_ct[content_off], valid_ct[content_off],
+        "tamper must change the byte"
+    );
 
-    let valid_input = DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let tampered_input = DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+    let valid_input =
+        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+    let tampered_input =
+        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     // Regression coverage: the encrypted body is authenticated, so tampering ciphertext
     // content is rejected on decrypt. NOTE: this does NOT prove the encrypt-side
@@ -753,7 +841,6 @@ async fn test_must_not_encrypt_using_nonframed_content_type() {
     }
 }
 
-
 #[tokio::test(flavor = "multi_thread")]
 async fn test_frame_fields_serialized_per_spec() {
     // A 25-byte plaintext at frame_length=10 under a non-signing suite yields a
@@ -769,7 +856,11 @@ async fn test_frame_fields_serialized_per_spec() {
     //= type=test
     //= reason=Walking the wire yields exactly the regular+final frames the framing requires
     //# The Encrypt operation MUST serialize a regular frame or final frame with the following specifics:
-    assert_eq!(frames.len(), 3, "25 bytes / frame_length 10 must produce 3 frames");
+    assert_eq!(
+        frames.len(),
+        3,
+        "25 bytes / frame_length 10 must produce 3 frames"
+    );
 
     // Frames 1-2 of 3: regular frames — sequence numbers read from the wire must be 1 then 2.
     //= spec/client-apis/encrypt.md#construct-a-frame
@@ -781,11 +872,28 @@ async fn test_frame_fields_serialized_per_spec() {
     //= type=test
     //= reason=seq_num/IV/tag are read from wire offsets and checked against the regular-frame layout
     //# For a regular frame, each field MUST be serialized according to its specification:
-    assert!(!frames[0].is_final && !frames[1].is_final, "first two frames must be regular");
-    assert_eq!(frames[0].seq_num, 1, "first regular frame sequence number must be 1");
-    assert_eq!(frames[1].seq_num, 2, "second regular frame sequence number must be 2");
-    assert_eq!(frames[0].iv.len(), IV_LEN, "regular frame IV must be IV_LEN bytes");
-    assert_eq!(frames[0].tag.len(), TAG_LEN, "regular frame tag must be TAG_LEN bytes");
+    assert!(
+        !frames[0].is_final && !frames[1].is_final,
+        "first two frames must be regular"
+    );
+    assert_eq!(
+        frames[0].seq_num, 1,
+        "first regular frame sequence number must be 1"
+    );
+    assert_eq!(
+        frames[1].seq_num, 2,
+        "second regular frame sequence number must be 2"
+    );
+    assert_eq!(
+        frames[0].iv.len(),
+        IV_LEN,
+        "regular frame IV must be IV_LEN bytes"
+    );
+    assert_eq!(
+        frames[0].tag.len(),
+        TAG_LEN,
+        "regular frame tag must be TAG_LEN bytes"
+    );
 
     // Frame 3 of 3: final frame — ENDFRAME marker and on-wire content length read from the wire.
     let final_frame = &frames[2];
@@ -804,8 +912,14 @@ async fn test_frame_fields_serialized_per_spec() {
         Some(&ENDFRAME_MARKER[..]),
         "final frame must carry the ENDFRAME sequence-number-end marker"
     );
-    assert_eq!(final_frame.seq_num, 3, "final frame sequence number must be 3");
-    assert_eq!(final_frame.content_length, 5, "final frame on-wire content length must be 5");
+    assert_eq!(
+        final_frame.seq_num, 3,
+        "final frame sequence number must be 3"
+    );
+    assert_eq!(
+        final_frame.content_length, 5,
+        "final frame on-wire content length must be 5"
+    );
 
     // Round-trip corroboration.
     let decrypted = decrypt_ciphertext(&ct).await.plaintext;

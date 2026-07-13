@@ -104,10 +104,10 @@
 // Project disagreements with the warn set above:
 #![allow(clippy::wildcard_enum_match_arm)] // too noisy against #[non_exhaustive] MPL enums
 #![allow(clippy::multiple_crate_versions)] // transitively unavoidable
-#![allow(clippy::option_if_let_else)]      // disagree: `if let` is often clearer
-#![allow(clippy::redundant_pub_crate)]     // false positive: conflicts with unreachable_pub
-#![allow(clippy::too_many_lines)]          // disagree: arbitrary line-count threshold
-#![allow(unused_crate_dependencies)]       // false positives across workspace dev-deps
+#![allow(clippy::option_if_let_else)] // disagree: `if let` is often clearer
+#![allow(clippy::redundant_pub_crate)] // false positive: conflicts with unreachable_pub
+#![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
+#![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
 mod error;
 pub use error::*;
@@ -133,12 +133,12 @@ pub(crate) mod message;
 /// changed, renamed, or removed at any time.
 #[doc(hidden)]
 pub mod __test_internals {
-    pub use crate::message::body::body_aad::{body_aad, BodyAADContent};
-    pub use crate::key_derivation::{derive_key_v2, derive_keys, ExpandedKeyMaterial};
-    pub use crate::message::header::{HeaderInfo, read_header_body, generate_message_id};
-    pub use crate::message::header_auth::read_header_auth_tag;
-    pub use crate::message::header_types::HeaderBody;
-    pub use crate::message::DigestWriter;
     pub use crate::decrypt::get_ecdsa_alg;
     pub use crate::encrypt::get_esdk_algorithm_suite_id;
+    pub use crate::key_derivation::{ExpandedKeyMaterial, derive_key_v2, derive_keys};
+    pub use crate::message::DigestWriter;
+    pub use crate::message::body::body_aad::{BodyAADContent, body_aad};
+    pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
+    pub use crate::message::header_auth::read_header_auth_tag;
+    pub use crate::message::header_types::HeaderBody;
 }

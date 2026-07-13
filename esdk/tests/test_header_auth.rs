@@ -52,7 +52,7 @@ async fn test_v1_header_auth_structure() {
     //= spec/client-apis/encrypt.md#v1-authentication-tag
     //= type=test
     //# - MUST serialize the [IV](../data-format/message-header.md#iv).
-    // 
+    //
     //= spec/client-apis/encrypt.md#v1-authentication-tag
     //= type=test
     //# The value MUST be the IV used in the calculation above,
@@ -84,7 +84,10 @@ async fn test_v1_header_auth_structure() {
     //= reason=Validated on decrypt. If this weren't the auth tag, decrypt would fail.
     //# The value MUST be the authentication tag calculated above.
     let result = decrypt_with_version(&ct, Version::V1).await;
-    assert_eq!(result.plaintext, b"v1 header auth structure", "V1 round-trip must succeed");
+    assert_eq!(
+        result.plaintext, b"v1 header auth structure",
+        "V1 round-trip must succeed"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -118,7 +121,12 @@ async fn test_v2_header_auth_structure() {
 
     // V2 has NO IV — verify the body starts right after the tag
     let after_tag = auth_start + TAG_LEN;
-    let next_4 = u32::from_be_bytes([ct[after_tag], ct[after_tag + 1], ct[after_tag + 2], ct[after_tag + 3]]);
+    let next_4 = u32::from_be_bytes([
+        ct[after_tag],
+        ct[after_tag + 1],
+        ct[after_tag + 2],
+        ct[after_tag + 3],
+    ]);
     assert!(
         next_4 == 1 || next_4 == 0xFFFF_FFFF,
         "V2: bytes after auth tag must be body start (seq=1 or endframe), got {next_4:#010X}"
@@ -129,7 +137,10 @@ async fn test_v2_header_auth_structure() {
     //= reason=Validated on decrypt. If this weren't the auth tag, decrypt would fail.
     //# The value MUST be the authentication tag calculated above.
     let result = decrypt_ciphertext(&ct).await;
-    assert_eq!(result.plaintext, b"v2 header auth structure", "V2 round-trip must succeed");
+    assert_eq!(
+        result.plaintext, b"v2 header auth structure",
+        "V2 round-trip must succeed"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -156,9 +167,9 @@ async fn test_corrupted_header_auth_tag_fails_decrypt() {
         //= type=test
         //= reason=Corrupted auth tag causes AES-GCM verification failure, proving the tag is checked.
         //# If this tag verification fails, this operation MUST immediately halt and fail.
-        let err = decrypt(&dec_input).await.expect_err(
-            &format!("{version:?}: corrupted header auth tag must fail decryption"),
-        );
+        let err = decrypt(&dec_input).await.expect_err(&format!(
+            "{version:?}: corrupted header auth tag must fail decryption"
+        ));
         assert_eq!(
             err.kind,
             ErrorKind::CryptographicError,

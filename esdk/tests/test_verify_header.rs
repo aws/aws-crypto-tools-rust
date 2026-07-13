@@ -161,11 +161,16 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     //# all released output MUST NOT be considered signed data until
     //# this operation successfully completes.
     assert!(
-        decrypt_stream(&mut valid_cursor, &mut valid_output, &stream_input).await.is_ok(),
+        decrypt_stream(&mut valid_cursor, &mut valid_output, &stream_input)
+            .await
+            .is_ok(),
         "valid ct must stream to Ok"
     );
     assert_eq!(
-        decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input).await.unwrap_err().kind,
+        decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
+            .await
+            .unwrap_err()
+            .kind,
         ErrorKind::Esdk,
         "tampered signature must produce Esdk error"
     );
@@ -193,7 +198,10 @@ async fn test_streamed_release_parsed_header_after_verification() {
         .unwrap();
     assert_eq!(output, plaintext);
     assert_eq!(
-        result.encryption_context.get("release-key").map(String::as_str),
+        result
+            .encryption_context
+            .get("release-key")
+            .map(String::as_str),
         Some("release-value"),
     );
     assert_eq!(
@@ -201,4 +209,3 @@ async fn test_streamed_release_parsed_header_after_verification() {
         EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
     );
 }
-

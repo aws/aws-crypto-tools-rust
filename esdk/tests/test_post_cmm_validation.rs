@@ -50,9 +50,8 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
     //= type=test
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) encrypt MUST yield an error.
-    let err = result.expect_err(
-        "encrypt must fail when algorithm suite is not supported by commitment policy",
-    );
+    let err = result
+        .expect_err("encrypt must fail when algorithm suite is not supported by commitment policy");
     let ErrorKind::LegacyError(legacy) = &err.kind else {
         panic!("expected LegacyError, got: {:?}", err.kind);
     };
@@ -84,9 +83,8 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     //= type=test
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
-    let err = result.expect_err(
-        "decrypt must fail when algorithm suite is not supported by commitment policy",
-    );
+    let err = result
+        .expect_err("decrypt must fail when algorithm suite is not supported by commitment policy");
     let ErrorKind::LegacyError(legacy) = &err.kind else {
         panic!("expected LegacyError, got: {:?}", err.kind);
     };

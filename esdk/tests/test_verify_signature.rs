@@ -71,7 +71,9 @@ async fn test_verify_signature_inputs_directly_verified() {
     // algorithm, key, and input — together with negative cases for wrong
     // algorithm, wrong key, and wrong input — gives direct proof that
     // decrypt's verify-the-signature step uses these same values.
-    use aws_mpl_legacy::primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
+    use aws_mpl_legacy::primitives::{
+        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
+    };
 
     let keyring = test_keyring().await;
     let mut enc_input = EncryptInput::with_legacy_keyring(
@@ -134,10 +136,14 @@ async fn test_verify_signature_inputs_directly_verified() {
     //= reason=Verify input is ct[..footer_offset] = header+body concatenation; wrong-input negative below pins the input
     //# - The input to verify MUST be the concatenation of the serialization of the
     //# [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md).
-    assert!(valid, "P-384 verify with materials' key over header+body must succeed");
+    assert!(
+        valid,
+        "P-384 verify with materials' key over header+body must succeed"
+    );
 
     // Negative: wrong algorithm (P-256) must NOT verify a P-384 signature.
-    let mut digest_p256 = DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP256).unwrap();
+    let mut digest_p256 =
+        DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP256).unwrap();
     digest_p256.update(signed_content);
     let valid_p256 = ecdsa_verify_context(
         EcdsaSignatureAlgorithm::EcdsaP256,

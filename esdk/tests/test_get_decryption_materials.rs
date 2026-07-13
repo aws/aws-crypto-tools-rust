@@ -42,7 +42,10 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     //= reason=Right keyring → Ok; wrong keyring → default-CMM CollectionOfErrors, proving the input keyring constructs the default CMM
     //# If a CMM is not supplied as the input, the decrypt operation MUST construct a [default CMM](../framework/default-cmm.md)
     //# from the input [keyring](../framework/keyring-interface.md).
-    assert!(decrypt(&valid_input).await.is_ok(), "right keyring must decrypt");
+    assert!(
+        decrypt(&valid_input).await.is_ok(),
+        "right keyring must decrypt"
+    );
     let err = decrypt(&invalid_input)
         .await
         .expect_err("wrong keyring must fail to obtain materials");
@@ -75,7 +78,8 @@ async fn test_pre_cmm_commitment_policy_check() {
     let mut valid_input =
         DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring.clone());
     valid_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    let mut invalid_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
+    let mut invalid_input =
+        DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
     invalid_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -140,7 +144,10 @@ async fn test_algorithm_suite_from_decryption_materials() {
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
     let output_suite_id = aws_mpl_legacy::suites::AlgorithmSuiteId::Esdk(result.algorithm_suite_id);
-    assert_eq!(output_suite_id, wire_suite_id, "output suite must match header's parsed suite");
+    assert_eq!(
+        output_suite_id, wire_suite_id,
+        "output suite must match header's parsed suite"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -186,7 +193,10 @@ async fn test_commit_key_derived_and_validated() {
     //= type=test
     //= reason=Header commit key must equal derived commit key; tampering breaks equality → ValidationError
     //# The derived commit key MUST equal the commit key stored in the message header.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid commit key must decrypt");
+    assert!(
+        decrypt(&valid_input).await.is_ok(),
+        "valid commit key must decrypt"
+    );
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind,
         ErrorKind::ValidationError,
@@ -217,8 +227,12 @@ async fn test_kdf_algorithm_from_materials_suite() {
     let suite = header_body.algorithm_suite();
     // Sanity check: the suite parsed from the header declares HKDF derivation.
     assert!(
-        matches!(suite.kdf, aws_mpl_legacy::suites::DerivationAlgorithm::Hkdf(_)),
-        "parsed suite must use HKDF derivation, got: {:?}", suite.kdf
+        matches!(
+            suite.kdf,
+            aws_mpl_legacy::suites::DerivationAlgorithm::Hkdf(_)
+        ),
+        "parsed suite must use HKDF derivation, got: {:?}",
+        suite.kdf
     );
 
     let mut dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
@@ -231,7 +245,10 @@ async fn test_kdf_algorithm_from_materials_suite() {
     //# [algorithm suite](../framework/algorithm-suites.md) associated with
     //# the returned decryption materials.
     let result = decrypt(&dec_input).await.unwrap();
-    assert_eq!(result.plaintext, pt, "HKDF-derived key must decrypt the body");
+    assert_eq!(
+        result.plaintext, pt,
+        "HKDF-derived key must decrypt the body"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -266,7 +283,10 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     //# - Algorithm Suite ID: This MUST be the parsed
     //# [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# from the message header.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid suite ID must decrypt");
+    assert!(
+        decrypt(&valid_input).await.is_ok(),
+        "valid suite ID must decrypt"
+    );
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind,
         ErrorKind::ValidationError,
@@ -281,25 +301,35 @@ struct DecryptSpyCmm {
     observed_ec_keys: std::sync::Arc<std::sync::Mutex<Option<Vec<String>>>>,
 }
 
-impl aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManager for DecryptSpyCmm {
+impl aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManager
+    for DecryptSpyCmm
+{
     fn get_encryption_materials(
         &self,
         input: aws_mpl_legacy::dafny::operation::get_encryption_materials::GetEncryptionMaterialsInput,
-    ) -> Result<aws_mpl_legacy::dafny::operation::get_encryption_materials::GetEncryptionMaterialsOutput, aws_mpl_legacy::dafny::types::error::Error> {
+    ) -> Result<
+        aws_mpl_legacy::dafny::operation::get_encryption_materials::GetEncryptionMaterialsOutput,
+        aws_mpl_legacy::dafny::types::error::Error,
+    > {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                self.inner.get_encryption_materials()
+                self.inner
+                    .get_encryption_materials()
                     .commitment_policy(input.commitment_policy.unwrap())
                     .encryption_context(input.encryption_context.unwrap())
                     .max_plaintext_length(input.max_plaintext_length.unwrap())
-                    .send().await
+                    .send()
+                    .await
             })
         })
     }
     fn decrypt_materials(
         &self,
         input: aws_mpl_legacy::dafny::operation::decrypt_materials::DecryptMaterialsInput,
-    ) -> Result<aws_mpl_legacy::dafny::operation::decrypt_materials::DecryptMaterialsOutput, aws_mpl_legacy::dafny::types::error::Error> {
+    ) -> Result<
+        aws_mpl_legacy::dafny::operation::decrypt_materials::DecryptMaterialsOutput,
+        aws_mpl_legacy::dafny::types::error::Error,
+    > {
         // Record observations
         if let Some(ref edks) = input.encrypted_data_keys {
             *self.observed_edk_count.lock().unwrap() = Some(edks.len());
@@ -311,12 +341,14 @@ impl aws_mpl_legacy::dafny::types::cryptographic_materials_manager::Cryptographi
         // Delegate
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                self.inner.decrypt_materials()
+                self.inner
+                    .decrypt_materials()
                     .algorithm_suite_id(input.algorithm_suite_id.unwrap())
                     .commitment_policy(input.commitment_policy.unwrap())
                     .encryption_context(input.encryption_context.unwrap())
                     .encrypted_data_keys(input.encrypted_data_keys.unwrap())
-                    .send().await
+                    .send()
+                    .await
             })
         })
     }
@@ -373,5 +405,8 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     //# - Encryption Context: This MUST be the parsed [encryption context](../data-format/message-header.md#aad)
     //# from the message header.
     let ec_keys = observed_ec_keys.lock().unwrap().clone().unwrap();
-    assert!(ec_keys.contains(&"spy-key".to_string()), "CMM must receive EC from header containing 'spy-key'");
+    assert!(
+        ec_keys.contains(&"spy-key".to_string()),
+        "CMM must receive EC from header containing 'spy-key'"
+    );
 }
