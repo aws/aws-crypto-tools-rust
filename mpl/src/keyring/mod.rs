@@ -43,37 +43,6 @@ use crate::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
 };
 
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
 #[async_trait]
 pub trait Keyring: Send + Sync {
     /// Modify the supplied [`EncryptionMaterials`] by generating and/or

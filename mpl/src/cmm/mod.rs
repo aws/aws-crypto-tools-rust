@@ -35,25 +35,11 @@ pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 
 use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
 
-//
 #[async_trait]
 pub trait Cmm: Send + Sync {
     /// Assemble encryption materials for an encrypt request. Mirrors the
     /// `Get Encryption Materials` behavior of the
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#get-encryption-materials).
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
@@ -62,20 +48,6 @@ pub trait Cmm: Send + Sync {
     /// Assemble decryption materials for a decrypt request. Mirrors the
     /// `Decrypt Materials` behavior of the
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#decrypt-materials).
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
-    //
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
