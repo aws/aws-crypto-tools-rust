@@ -16,7 +16,9 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
   Each subsequent slice's review branch is cut from the *previous* slice's
   review branch. Each PR's base branch is the previous slice's review branch
   (slice 1's PR base is `main`). This way each PR diff shows only that
-  slice's contribution.
+  slice's contribution. Once a slice's PR merges, the previous review branch
+  is retired and the next un-merged slice cuts from `main` (which now
+  contains the merged slice's content), effectively resetting the stack.
 - **Each review branch is a buildable, CI-passing snapshot** of `main` plus
   slices 1..N's cumulative content. Achieving this requires that "shared
   files" (those touched by multiple slices — see the next section) carry
@@ -42,31 +44,30 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 1 | `client-scaffold` | [#10](https://github.com/aws/aws-crypto-tools-rust/pull/10) | **Merged** 2026-06-11 | retired after merge |
 | 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Merged** 2026-07-07 (merge commit `72b161e`) | retired after merge |
 | 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Merged** 2026-07-09 (merge commit `12ba944`) | retired after merge |
-| 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Open for review** 2026-07-09 | `aws-crypto-rust/commitment-policy-review` @ `9e0bcbd` (1 commit on top of `main`) |
-| 5 | `keyring-interface` | — | Not started | — |
-| 6 | `cmm-interface` | — | Not started | — |
-| 7 | `default-cmm` | — | Not started | — |
-| 8 | `structures-polish` | — | Not started | — |
-| 9 | `mrk-match` | — | Not started | — |
-| 10 | `cmc-interface` | — | Not started | — |
-| 11 | `local-cmc` | — | Not started | — |
-| 12 | `storm-tracking-cmc` | — | Not started | — |
-| 13 | `keystore-interface` | — | Not started | — |
-| 14 | `keystore-support` | — | Not started | — |
-| 15 | `branch-key-store` | — | Not started | — |
-| 16 | `hkeyring-support` | — | Not started | — |
-| 17 | `hkeyring` | — | Not started | — |
-| 18 | `client-factories` | — | Not started | — |
-| 19 | `hkeyring-examples` | — | Not started | — |
+| 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Merged** 2026-07-13 (merge commit `55d0e28`) | retired after merge |
+| 5 | `keyring-and-cmm-interfaces` | — | Not started | — |
+| 6 | `default-cmm` | — | Not started | — |
+| 7 | `structures-polish` | — | Not started | — |
+| 8 | `mrk-match` | — | Not started | — |
+| 9 | `cmc-interface` | — | Not started | — |
+| 10 | `local-cmc` | — | Not started | — |
+| 11 | `storm-tracking-cmc` | — | Not started | — |
+| 12 | `keystore-interface` | — | Not started | — |
+| 13 | `keystore-support` | — | Not started | — |
+| 14 | `branch-key-store` | — | Not started | — |
+| 15 | `hkeyring-support` | — | Not started | — |
+| 16 | `hkeyring` | — | Not started | — |
+| 17 | `client-factories` | — | Not started | — |
+| 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** review and merge [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17). Once merged, PR 5 (`keyring-interface`) can start.
+**Next action:** open PR 5 (`keyring-and-cmm-interfaces`) — combines the previously separate keyring-interface and cmm-interface slices into one review because the Keyring and Cmm traits share the `MaterialsError` extensions and follow the same dyn-trait pattern. Cut from `main` post PR #17 merge (merge commit `55d0e28`).
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
 `symmetric_signing_keys` invariant, using the pre-rename
 `AlgorithmSuite::new(false, true)` API. The equivalent invariant on
 `aws-crypto-rust/unreviewed` uses the post-rename `AlgorithmSuiteId`
-enum and is currently unreachable (commit `406e57f`, see PR 8 notes).
+enum and is currently unreachable (commit `406e57f`, see PR 7 notes).
 Both branches deliberately hold semantically equivalent versions
 tailored to their type systems; do **not** sync this file between them.
 
@@ -78,54 +79,53 @@ given slice's review branch is the snapshot of cumulative work through that
 stack level.
 
 - `mpl/Cargo.toml`, `mpl/Cargo.lock` — slice 1 introduces the scaffold (no
-  deps). Later slices add deps as needed: PR 5 adds `async-trait`; PR 15
+  deps). Later slices add deps as needed: PR 5 adds `async-trait`; PR 14
   adds `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-kms`, `base64`, `uuid`
-  (with `features = ["v4"]`), `tokio`; PR 16 adds `aws-lc-rs` (fips);
-  PR 19 adds the `[[example]] name = "aws_kms_hierarchical"` block with
-  `required-features = ["keystore"]`. PR 13 introduces the `[features]
+  (with `features = ["v4"]`), `tokio`; PR 15 adds `aws-lc-rs` (fips);
+  PR 18 adds the `[[example]] name = "aws_kms_hierarchical"` block with
+  `required-features = ["keystore"]`. PR 12 introduces the `[features]
   keystore` flag. Each slice's PR shows the diff it introduces.
 - `mpl/src/lib.rs` — slice 1 introduces the scaffold (`mod client; pub use
   client::*;`). Slice 2 adds `pub mod structures;`. Slice 5 adds `pub mod
-  keyring; pub use keyring::Keyring;`. Slice 6 adds `pub mod cmm; pub use
-  cmm::{...};`. Slice 9 adds `pub mod aws_kms;`. Slice 10 adds `pub mod
+  keyring; pub use keyring::Keyring;` and `pub mod cmm; pub use
+  cmm::{...};`. Slice 8 adds `pub mod aws_kms;`. Slice 9 adds `pub mod
   cmc; pub use cmc::{Cmc, CacheEntry, ...};` — later CMC slices extend
-  the re-export list. Slice 13 adds `#[cfg(feature = "keystore")] pub
-  mod keystore;`. Slice 15 adds `#[cfg(feature = "keystore")] pub use
+  the re-export list. Slice 12 adds `#[cfg(feature = "keystore")] pub
+  mod keystore;`. Slice 14 adds `#[cfg(feature = "keystore")] pub use
   keystore::{BranchKeyStore, KeyStoreConfig, ...};`. Each slice's PR
   shows the lib.rs diff it introduces.
 - `mpl/src/structures/mod.rs` — slice 2 introduces it. Slices 3 and 4 add
   submodule + re-export lines for `algorithm_suite` and `commitment_policy`.
 - `mpl/src/structures/error.rs` — slice 2 introduces `MaterialsError` /
-  `MaterialsErrorKind`. Slice 5 (keyring) extends with new variants. Slice 6
-  may extend further.
+  `MaterialsErrorKind`. Slice 5 (keyring + cmm) extends with new variants.
 - `mpl/src/structures/encryption_context.rs` and materials structs —
-  slice 2 introduces them; slice 8 (`structures-polish`) applies the
+  slice 2 introduces them; slice 7 (`structures-polish`) applies the
   reject-trailing-bytes fix, boundary / UTF-8 / known-vector tests,
   BTreeMap-entry-API perf, materials `derive(Debug)`, and the
-  drop-redundant-duvet-annotation stance. Slice 8's PR shows its
+  drop-redundant-duvet-annotation stance. Slice 7's PR shows its
   incremental diff to these PR-2-owned files.
-- `mpl/src/client.rs` — slice 1 introduces it. Slice 18
+- `mpl/src/client.rs` — slice 1 introduces it. Slice 17
   (`client-factories`) adds `create_cryptographic_materials_cache`,
   `create_branch_key_store`, and `create_aws_kms_hierarchical_keyring`
-  factory methods. Slice 18's PR shows the incremental diff.
-- `mpl/src/cmm/mod.rs` — slice 6 introduces it. Slice 7 modifies its
+  factory methods. Slice 17's PR shows the incremental diff.
+- `mpl/src/cmm/mod.rs` — slice 5 introduces it. Slice 6 modifies its
   re-exports for `DefaultCmm`.
-- `mpl/src/aws_kms/mod.rs` — slice 9 (`mrk-match`) introduces the
-  scaffold with `pub mod mrk_match;`. Slice 16 (`hkeyring-support`)
+- `mpl/src/aws_kms/mod.rs` — slice 8 (`mrk-match`) introduces the
+  scaffold with `pub mod mrk_match;`. Slice 15 (`hkeyring-support`)
   extends with `#[cfg(feature = "keystore")] pub(crate) mod
   branch_key_wrap;`, `#[cfg(feature = "keystore")] pub(crate) mod
   cache_entry_identifier;`, and the `__test_internals` re-export module.
-  Slice 17 (`hkeyring`) extends with `#[cfg(feature = "keystore")] pub
+  Slice 16 (`hkeyring`) extends with `#[cfg(feature = "keystore")] pub
   mod hierarchical_keyring;`.
-- `mpl/src/cmc/mod.rs` — slice 10 (`cmc-interface`) introduces it with
-  the `Cmc` trait, `entry` submodule, and initial re-exports. Slice 11
-  (`local-cmc`) adds `pub mod local; pub use local::LocalCmc;`. Slice 12
+- `mpl/src/cmc/mod.rs` — slice 9 (`cmc-interface`) introduces it with
+  the `Cmc` trait, `entry` submodule, and initial re-exports. Slice 10
+  (`local-cmc`) adds `pub mod local; pub use local::LocalCmc;`. Slice 11
   (`storm-tracking-cmc`) adds `pub mod storm_tracking; pub use
   storm_tracking::{StormTrackingCmc, TimeUnits};`.
-- `mpl/src/keystore/mod.rs` — slice 13 (`keystore-interface`) introduces
+- `mpl/src/keystore/mod.rs` — slice 12 (`keystore-interface`) introduces
   it with the `Keystore` trait scaffold plus `config`, `kms_config`, and
-  `error` submodules. Slice 14 (`keystore-support`) adds `pub mod
-  record;` and `pub mod encryption_context;`. Slice 15
+  `error` submodules. Slice 13 (`keystore-support`) adds `pub mod
+  record;` and `pub mod encryption_context;`. Slice 14
   (`branch-key-store`) adds `pub mod branch_key_store; pub use
   branch_key_store::BranchKeyStore; pub(crate) mod kms_ops;`.
 - `mpl/.duvet/config.toml` — adds one `[[specification]]` entry per slice
@@ -148,13 +148,13 @@ on `unreviewed` outside the PR-slice workflow.
 - `.github/workflows/pull.yml`, `.github/workflows/retry_failed_ci.yml` —
   already merged to `main` directly.
 - `.github/workflows/library_rust_tests.yml` — PR 1 introduces the
-  scaffold changes; PR 19 owns the examples-driven follow-on
+  scaffold changes; PR 18 owns the examples-driven follow-on
   (`1bd7853`: clippy `--all-features` + `cargo build --examples` +
   commented-out example run slot). Earlier drift is still unassigned:
   `764ebc4` (go install for `aws-lc-rust-fips`) and `9541d05`
   (commented-out keystore integ-test slot). Both need a home before
-  PR 19 lands; the most natural fits are PR 16 (`hkeyring-support`
-  adds the `aws-lc-rs` dep that needs Go) and PR 15
+  PR 18 lands; the most natural fits are PR 15 (`hkeyring-support`
+  adds the `aws-lc-rs` dep that needs Go) and PR 14
   (`branch-key-store` owns keystore integ), but that assignment isn't
   final.
 
@@ -241,7 +241,7 @@ compliance directory.
 - This snapshot is the slice-2-state of these files: structures and
   `MaterialsError` as introduced by this slice. Later slices contribute
   incremental diffs to shared files (`error.rs` in PR 5; `encrypted_data_key.rs`
-  and the materials structs in PRs 3 / 5 / 6) — those diffs appear in the
+  and the materials structs in PRs 3 / 5) — those diffs appear in the
   later PR, not this one.
 - `algorithm_suite.rs` and `commitment_policy.rs` are owned by PRs 3 and 4
   respectively and are not in this PR.
@@ -303,69 +303,63 @@ default-suite-lookup and per-suite allow checks.
 
 ---
 
-### PR 5 — `keyring-interface`
+### PR 5 — `keyring-and-cmm-interfaces`
 
-**Topic:** `Keyring` async trait and accompanying `MaterialsError` extensions.
-**Spec:** [`spec/framework/keyring-interface.md`](../../spec/framework/keyring-interface.md)
-**Review branch:** `aws-crypto-rust/keyring-interface-review`
-**Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-keyring-interface`
-**Base branch (PR target):** `aws-crypto-rust/commitment-policy-review`
-**Depends on:** PR 2 (materials, error), PR 3 (algorithm suite)
+**Topic:** `Keyring` and `Cmm` async traits, `EncryptionMaterialsRequest`,
+`DecryptMaterialsRequest`, and the `MaterialsError` extensions used by
+both interfaces.
+**Spec:**
+- [`spec/framework/keyring-interface.md`](../../spec/framework/keyring-interface.md)
+- [`spec/framework/cmm-interface.md`](../../spec/framework/cmm-interface.md)
+
+**Review branch:** `aws-crypto-rust/keyring-and-cmm-interfaces-review`
+**Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-keyring-and-cmm-interfaces`
+**Base branch (PR target):** `main`
+**Depends on:** PR 2 (materials, error), PR 3 (algorithm suite), PR 4 (commitment policy — used on the `EncryptionMaterialsRequest` type)
 
 **Source:**
 - `mpl/src/keyring/mod.rs`
-
-**Tests:**
-- `mpl/tests/test_keyring_contract.rs`
-- `mpl/tests/test_materials_error.rs`
-
-**Compliance:**
-- `mpl/compliance/spec/framework/keyring-interface/*.toml`
-
-**Notes:**
-- The `MaterialsError` extensions live in `mpl/src/structures/error.rs`,
-  which is **introduced by PR 2** but extended here. PR 5's diff includes the
-  new `MaterialsErrorKind` variants added on top of PR 2's snapshot.
-- Shared-file modifications introduced by this PR: `lib.rs`
-  (`+pub mod keyring; pub use keyring::Keyring;`), `Cargo.toml` /
-  `Cargo.lock` (adds `async-trait`), `error.rs` (new variants).
-
----
-
-### PR 6 — `cmm-interface`
-
-**Topic:** `Cmm` async trait, `EncryptionMaterialsRequest`, and
-`DecryptMaterialsRequest`.
-**Spec:** [`spec/framework/cmm-interface.md`](../../spec/framework/cmm-interface.md)
-**Review branch:** `aws-crypto-rust/cmm-interface-review`
-**Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-cmm-interface`
-**Base branch (PR target):** `aws-crypto-rust/keyring-interface-review`
-**Depends on:** PR 2, PR 3, PR 4 (commitment policy is on the request type)
-
-**Source:**
 - `mpl/src/cmm/mod.rs`
 - `mpl/src/cmm/request.rs`
 
 **Tests:**
+- `mpl/tests/test_keyring_contract.rs`
+- `mpl/tests/test_materials_error.rs`
 - `mpl/tests/test_cmm_contract.rs`
 
 **Compliance:**
+- `mpl/compliance/spec/framework/keyring-interface/*.toml`
 - `mpl/compliance/spec/framework/cmm-interface/*.toml`
 
 **Notes:**
-- Contract tests use the same dyn-trait pattern as `test_keyring_contract.rs`.
+- Originally scoped as two separate slices (PR 5 `keyring-interface` and
+  PR 6 `cmm-interface`); combined into one because the Keyring and Cmm
+  traits share the `MaterialsError` extensions and both follow the
+  identical dyn-trait pattern, so reviewing them together is more
+  coherent than a stacked pair.
+- The `MaterialsError` extensions live in `mpl/src/structures/error.rs`,
+  which is **introduced by PR 2** but extended here with new
+  `MaterialsErrorKind` variants used by both traits. PR 5's diff to
+  `error.rs` shows those variants added on top of PR 2's snapshot.
+- Contract tests (`test_keyring_contract.rs` and `test_cmm_contract.rs`)
+  use the same dyn-trait pattern; `test_materials_error.rs` covers the
+  new error variants directly.
+- Shared-file modifications introduced by this PR: `lib.rs` (adds
+  `pub mod keyring; pub use keyring::Keyring;` and `pub mod cmm; pub use
+  cmm::{...};`); `Cargo.toml` / `Cargo.lock` (adds `async-trait`);
+  `error.rs` (new variants).
 
 ---
 
-### PR 7 — `default-cmm`
+### PR 6 — `default-cmm`
 
 **Topic:** `DefaultCmm` implementation (delegates to a `Keyring`, applies
 commitment-policy and algorithm-suite rules).
 **Spec:** [`spec/framework/default-cmm.md`](../../spec/framework/default-cmm.md)
 **Review branch:** `aws-crypto-rust/default-cmm-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-default-cmm`
-**Base branch (PR target):** `aws-crypto-rust/cmm-interface-review`
-**Depends on:** PR 4, PR 5, PR 6
+**Base branch (PR target):** `aws-crypto-rust/keyring-and-cmm-interfaces-review`
+**Depends on:** PR 4, PR 5
 
 **Source:**
 - `mpl/src/cmm/default_cmm.rs`
@@ -378,14 +372,14 @@ compliance directory yet.
 
 **Notes:**
 - Modifies `mpl/src/cmm/mod.rs` (re-export). That file is **introduced by
-  PR 6**; PR 7's diff to it appears in this PR.
+  PR 5**; PR 6's diff to it appears in this PR.
 - Shared-file modifications introduced by this PR: `cmm/mod.rs` (re-export
   for `DefaultCmm`), `lib.rs` (if applicable), `Cargo.toml` / `Cargo.lock`
   (any new deps).
 
 ---
 
-### PR 8 — `structures-polish`
+### PR 7 — `structures-polish`
 
 **Topic:** Post-PR-2 refinements to structures files:
 `EncryptionContext` reject-trailing-bytes bugfix, u16::MAX boundary +
@@ -423,7 +417,7 @@ inline in source / tests.
 
 ---
 
-### PR 9 — `mrk-match`
+### PR 8 — `mrk-match`
 
 **Topic:** `aws_kms::mrk_match` shared utility — the MRK-match-for-decrypt
 algorithm used by hierarchical keyring and (future) MRK keyring decrypt
@@ -452,7 +446,7 @@ paths.
 
 ---
 
-### PR 10 — `cmc-interface`
+### PR 9 — `cmc-interface`
 
 **Topic:** Abstract `Cmc` async trait, `CacheEntry`, `CachedMaterials`,
 `UsageMetadata`, `BytesUsage`, `MessageUsage` — the cache contract that
@@ -475,8 +469,8 @@ every concrete CMC implements.
 
 **Notes:**
 - Uses `async_trait` for `dyn Cmc` compatibility, same rationale as
-  PR 5 / PR 6. Behavioral MUSTs on `put_cache_entry` / `get_cache_entry`
-  are annotated `type=exception` here; slices 11 and 12 convert them to
+  PR 5. Behavioral MUSTs on `put_cache_entry` / `get_cache_entry`
+  are annotated `type=exception` here; slices 10 and 12 convert them to
   `type=implementation` + `type=test` on concrete caches.
 - Shared-file modifications introduced by this PR: `lib.rs` (adds `pub
   mod cmc; pub use cmc::{Cmc, CacheEntry, CachedMaterials, UsageMetadata,
@@ -485,7 +479,7 @@ every concrete CMC implements.
 
 ---
 
-### PR 11 — `local-cmc`
+### PR 10 — `local-cmc`
 
 **Topic:** `LocalCmc` — the concrete in-memory LRU cache with TTL-aware
 pruning that the MPL ships as its default cache.
@@ -493,7 +487,7 @@ pruning that the MPL ships as its default cache.
 **Review branch:** `aws-crypto-rust/local-cmc-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-local-cmc`
 **Base branch (PR target):** `aws-crypto-rust/cmc-interface-review`
-**Depends on:** PR 10
+**Depends on:** PR 9
 
 **Source:**
 - `mpl/src/cmc/local.rs`
@@ -508,12 +502,12 @@ pruning that the MPL ships as its default cache.
 - Shared-file modifications introduced by this PR: `cmc/mod.rs` (adds
   `pub mod local; pub use local::LocalCmc;`); `.duvet/config.toml`
   (registers the local-cmc spec).
-- Fulfils PR 10's TTL / entry-lifecycle exception annotations with
+- Fulfils PR 9's TTL / entry-lifecycle exception annotations with
   `type=implementation` + `type=test` on `LocalCmc`.
 
 ---
 
-### PR 12 — `storm-tracking-cmc`
+### PR 11 — `storm-tracking-cmc`
 
 **Topic:** `StormTrackingCmc` — storm-tracking wrapper around `LocalCmc`
 that suppresses thundering-herd on cache misses.
@@ -521,7 +515,7 @@ that suppresses thundering-herd on cache misses.
 **Review branch:** `aws-crypto-rust/storm-tracking-cmc-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-storm-tracking-cmc`
 **Base branch (PR target):** `aws-crypto-rust/local-cmc-review`
-**Depends on:** PR 11
+**Depends on:** PR 10
 
 **Source:**
 - `mpl/src/cmc/storm_tracking.rs`
@@ -540,7 +534,7 @@ that suppresses thundering-herd on cache misses.
 
 ---
 
-### PR 13 — `keystore-interface`
+### PR 12 — `keystore-interface`
 
 **Topic:** `Keystore` async trait scaffolding, `KeyStoreConfig`,
 `KmsConfiguration`, `KeystoreError` — the abstract keystore contract.
@@ -566,17 +560,17 @@ fulfil it.
 - `mpl/compliance/spec/framework/branch-key-store/*.toml` (introduces
   the full compliance directory; interface-level TOMLs get
   `type=exception` annotations here, operation-specific TOMLs get their
-  concrete annotations in slices 14 and 15)
+  concrete annotations in slices 13 and 15)
 
 **Notes:**
 - Introduces the `[features] keystore` flag in `Cargo.toml` and the
   `#[cfg(feature = "keystore")] pub mod keystore;` line in `lib.rs`.
 - Registers `branch-key-store.md` in `.duvet/config.toml`.
-- No new runtime deps yet; deps come with the concrete impl in PR 15.
+- No new runtime deps yet; deps come with the concrete impl in PR 14.
 
 ---
 
-### PR 14 — `keystore-support`
+### PR 13 — `keystore-support`
 
 **Topic:** Pure-logic keystore helpers — record format serialization
 and encryption-context construction. Called by (future) concrete
@@ -586,7 +580,7 @@ encryption-context sub-requirements)
 **Review branch:** `aws-crypto-rust/keystore-support-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-keystore-support`
 **Base branch (PR target):** `aws-crypto-rust/keystore-interface-review`
-**Depends on:** PR 13
+**Depends on:** PR 12
 
 **Source:**
 - `mpl/src/keystore/record.rs`
@@ -609,7 +603,7 @@ custom-encryption-context, ...}.toml`.
 
 ---
 
-### PR 15 — `branch-key-store`
+### PR 14 — `branch-key-store`
 
 **Topic:** Concrete `BranchKeyStore` — construction, `GetKeyStoreInfo`,
 `GetActiveBranchKey`, `GetBranchKeyVersion`, plus KMS auth / decrypt
@@ -619,7 +613,7 @@ requirements)
 **Review branch:** `aws-crypto-rust/branch-key-store-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-branch-key-store`
 **Base branch (PR target):** `aws-crypto-rust/keystore-support-review`
-**Depends on:** PR 13, PR 14
+**Depends on:** PR 12, PR 13
 
 **Source:**
 - `mpl/src/keystore/branch_key_store.rs`
@@ -651,12 +645,12 @@ keystore-id, ...}.toml`.
   credentials aren't present; a commented-out CI step reserves the slot
   for running them once OIDC-role plumbing lands. Coordinate with the
   Out-of-scope note on `library_rust_tests.yml`.
-- Converts PR 13's remaining `type=exception` annotations on operation
+- Converts PR 12's remaining `type=exception` annotations on operation
   methods to `type=implementation` + `type=test`.
 
 ---
 
-### PR 16 — `hkeyring-support`
+### PR 15 — `hkeyring-support`
 
 **Topic:** `aws_kms::branch_key_wrap` (branch-key wrap / unwrap AEAD
 crypto) and `aws_kms::cache_entry_identifier` (cache-key derivation for
@@ -667,7 +661,7 @@ hierarchical keyring). Both crate-internal, exposed via
 **Review branch:** `aws-crypto-rust/hkeyring-support-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-hkeyring-support`
 **Base branch (PR target):** `aws-crypto-rust/branch-key-store-review`
-**Depends on:** PR 9 (aws_kms module), PR 15 (branch-key-store types)
+**Depends on:** PR 8 (aws_kms module), PR 14 (branch-key-store types)
 
 **Source:**
 - `mpl/src/aws_kms/branch_key_wrap.rs`
@@ -675,7 +669,7 @@ hierarchical keyring). Both crate-internal, exposed via
 
 **Tests:** none direct — exposed via `#[doc(hidden)] pub mod
 __test_internals` and exercised by the hkeyring integration tests in
-PR 17.
+PR 16.
 
 **Compliance:** incremental annotations on
 `mpl/compliance/spec/framework/aws-kms/aws-kms-hierarchical-keyring/*.toml`
@@ -689,13 +683,13 @@ PR 17.
   pub(crate) mod cache_entry_identifier;`, and the
   `#[cfg(feature = "keystore")] #[doc(hidden)] pub mod __test_internals`
   re-export module).
-- Consider testing directly here instead of leaning entirely on PR 17's
+- Consider testing directly here instead of leaning entirely on PR 16's
   integration tests — reviewers to flag if additional unit coverage is
   wanted.
 
 ---
 
-### PR 17 — `hkeyring`
+### PR 16 — `hkeyring`
 
 **Topic:** `HierarchicalKeyring` — full `on_encrypt` / `on_decrypt`
 implementation, `CacheType` enum (default local + custom-sized + shared
@@ -704,8 +698,8 @@ CMC + storm-tracking), `BranchKeySupplier` trait.
 **Review branch:** `aws-crypto-rust/hkeyring-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-hkeyring`
 **Base branch (PR target):** `aws-crypto-rust/hkeyring-support-review`
-**Depends on:** PR 9 (mrk-match), PR 12 (CMC family), PR 15
-(BranchKeyStore), PR 16 (hkeyring-support)
+**Depends on:** PR 8 (mrk-match), PR 11 (CMC family), PR 14
+(BranchKeyStore), PR 15 (hkeyring-support)
 
 **Source:**
 - `mpl/src/aws_kms/hierarchical_keyring.rs`
@@ -717,7 +711,7 @@ CMC + storm-tracking), `BranchKeySupplier` trait.
 **Compliance:**
 - `mpl/compliance/spec/framework/aws-kms/aws-kms-hierarchical-keyring/*.toml`
   (remaining operation-level TOMLs; wrap/unwrap and cache-identifier
-  TOMLs are already annotated by PR 16)
+  TOMLs are already annotated by PR 15)
 
 **Notes:**
 - Shared-file modifications introduced by this PR: `aws_kms/mod.rs`
@@ -730,7 +724,7 @@ CMC + storm-tracking), `BranchKeySupplier` trait.
 
 ---
 
-### PR 18 — `client-factories`
+### PR 17 — `client-factories`
 
 **Topic:** `MaterialProviders` client factory methods —
 `create_cryptographic_materials_cache`, `create_branch_key_store`, and
@@ -739,7 +733,7 @@ CMC + storm-tracking), `BranchKeySupplier` trait.
 **Review branch:** `aws-crypto-rust/client-factories-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-client-factories`
 **Base branch (PR target):** `aws-crypto-rust/hkeyring-review`
-**Depends on:** PR 12 (CMC), PR 15 (BranchKeyStore), PR 17
+**Depends on:** PR 11 (CMC), PR 14 (BranchKeyStore), PR 16
 (HierarchicalKeyring)
 
 **Source:**
@@ -755,11 +749,11 @@ CMC + storm-tracking), `BranchKeySupplier` trait.
 **Notes:**
 - Every file in this slice is a shared file introduced by PR 1. This
   PR shows the incremental diff only.
-- No new deps; all runtime deps already in place from PR 15 / PR 16.
+- No new deps; all runtime deps already in place from PR 14 / PR 15.
 
 ---
 
-### PR 19 — `hkeyring-examples`
+### PR 18 — `hkeyring-examples`
 
 **Topic:** Runnable AWS KMS Hierarchical Keyring examples demonstrating
 single-tenant, multi-tenant, and cache-configuration composition patterns
@@ -768,7 +762,7 @@ against a real keystore.
 **Review branch:** `aws-crypto-rust/hkeyring-examples-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-hkeyring-examples`
 **Base branch (PR target):** `aws-crypto-rust/client-factories-review`
-**Depends on:** PR 15, PR 17, PR 18
+**Depends on:** PR 14, PR 16, PR 17
 
 **Source (examples):**
 - `mpl/examples/aws_kms_hierarchical/main.rs`
@@ -795,7 +789,7 @@ plumbing lands.
 **Compliance:** none.
 
 **Notes:**
-- Terminal slice — MUST land after PRs 15, 17, and 18 so the review
+- Terminal slice — MUST land after PRs 14, 17, and 18 so the review
   branch's `cargo build --examples` step resolves
   `HierarchicalKeyring`, `BranchKeyStore`, and the
   `MaterialProviders::create_*` factories. This "don't break CI"
@@ -824,22 +818,21 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 1. PR 1 — `client-scaffold` — ✅ merged
 2. PR 2 — `structures` — ✅ merged
 3. PR 3 — `algorithm-suite` — ✅ merged as [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16)
-4. PR 4 — `commitment-policy` — 🟢 open for review as [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) **(current)**
-5. PR 5 — `keyring-interface`
-6. PR 6 — `cmm-interface`
-7. PR 7 — `default-cmm`
-8. PR 8 — `structures-polish` *(diffs to PR-2 files; may fold into PR 2)*
-9. PR 9 — `mrk-match`
-10. PR 10 — `cmc-interface`
-11. PR 11 — `local-cmc`
-12. PR 12 — `storm-tracking-cmc`
-13. PR 13 — `keystore-interface`
-14. PR 14 — `keystore-support`
-15. PR 15 — `branch-key-store`
-16. PR 16 — `hkeyring-support`
-17. PR 17 — `hkeyring`
-18. PR 18 — `client-factories`
-19. PR 19 — `hkeyring-examples` *(terminal)*
+4. PR 4 — `commitment-policy` — ✅ merged as [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17)
+5. PR 5 — `keyring-and-cmm-interfaces` **(current)**
+6. PR 6 — `default-cmm`
+7. PR 7 — `structures-polish` *(diffs to PR-2 files; may fold into PR 2)*
+8. PR 8 — `mrk-match`
+9. PR 9 — `cmc-interface`
+10. PR 10 — `local-cmc`
+11. PR 11 — `storm-tracking-cmc`
+12. PR 12 — `keystore-interface`
+13. PR 13 — `keystore-support`
+14. PR 14 — `branch-key-store`
+15. PR 15 — `hkeyring-support`
+16. PR 16 — `hkeyring`
+17. PR 17 — `client-factories`
+18. PR 18 — `hkeyring-examples` *(terminal)*
 
 Each PR description should:
 
