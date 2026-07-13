@@ -72,8 +72,16 @@ async fn test_construct_frame_iv_is_padded_sequence_number() {
     for (i, f) in frames.iter().enumerate() {
         assert_eq!(f.iv.len(), IV_LEN, "frame {i}");
         let iv_seq = u32::from_be_bytes([f.iv[8], f.iv[9], f.iv[10], f.iv[11]]);
-        assert_eq!(iv_seq, f.seq_num, "frame {i}: IV low 4 bytes != seq {}", f.seq_num);
-        assert_eq!(&f.iv[0..8], &[0u8; 8], "frame {i}: IV high 8 bytes != zero pad");
+        assert_eq!(
+            iv_seq, f.seq_num,
+            "frame {i}: IV low 4 bytes != seq {}",
+            f.seq_num
+        );
+        assert_eq!(
+            &f.iv[0..8],
+            &[0u8; 8],
+            "frame {i}: IV high 8 bytes != zero pad"
+        );
     }
 }
 
@@ -228,7 +236,9 @@ async fn test_construct_frame_final_frame_field_serialization() {
     //= type=test
     //# - MUST serialize the [Sequence Number End](../data-format/message-body.md#sequence-number-end).
     assert_eq!(
-        final_frame.endframe_marker_bytes.expect("final frame has marker"),
+        final_frame
+            .endframe_marker_bytes
+            .expect("final frame has marker"),
         &ENDFRAME_MARKER
     );
 
@@ -289,8 +299,7 @@ async fn test_construct_frame_streaming_frame_released() {
     //# the serialized frame MUST be released.
     assert!(!output.is_empty());
 
-    let dec_input =
-        DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
     let decrypted = decrypt(&dec_input).await.unwrap();
     assert_eq!(decrypted.plaintext, plaintext);
 }

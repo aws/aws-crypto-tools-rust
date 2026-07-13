@@ -127,7 +127,10 @@ async fn test_v1_header_message_id() {
     //# While implementations cannot guarantee complete uniqueness,
     //# implementations MUST use a good source of randomness when generating message IDs in order to make
     //# the chance of duplicate IDs negligible.
-    assert_ne!(hdr1.message_id, hdr2.message_id, "Message IDs must be unique (random)");
+    assert_ne!(
+        hdr1.message_id, hdr2.message_id,
+        "Message IDs must be unique (random)"
+    );
     // Round-trip proves the message ID is correctly processed.
     let result = round_trip_v1(b"msg id test", EncryptionContext::new()).await;
     assert_eq!(result, b"msg id test");
@@ -169,8 +172,10 @@ async fn test_v1_header_aad() {
 
     let pt = b"aad required ec test";
     let mut enc_input = EncryptInput::with_legacy_cmm(pt, ec.clone(), req_cmm);
-    enc_input.algorithm_suite_id = Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    enc_input.algorithm_suite_id =
+        Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+    enc_input.commitment_policy =
+        aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // The AAD section of the header is at offset 20 (after Version+Type+AlgSuiteID+MessageID).
@@ -184,13 +189,17 @@ async fn test_v1_header_aad() {
 
     // The written key MUST be present in the AAD
     assert!(
-        aad_section.windows(written_key_bytes.len()).any(|w| w == written_key_bytes),
+        aad_section
+            .windows(written_key_bytes.len())
+            .any(|w| w == written_key_bytes),
         "written_key must appear in the header AAD"
     );
 
     // The required key MUST NOT be present in the AAD
     assert!(
-        !aad_section.windows(required_key_bytes.len()).any(|w| w == required_key_bytes),
+        !aad_section
+            .windows(required_key_bytes.len())
+            .any(|w| w == required_key_bytes),
         "required_key must NOT appear in the header AAD"
     );
 
@@ -200,9 +209,13 @@ async fn test_v1_header_aad() {
         std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())]),
         keyring,
     );
-    dec_input.commitment_policy = aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    dec_input.commitment_policy =
+        aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     let result = decrypt(&dec_input).await.unwrap();
-    assert_eq!(result.plaintext, pt, "round-trip with required EC proves correctness");
+    assert_eq!(
+        result.plaintext, pt,
+        "round-trip with required EC proves correctness"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -217,7 +230,10 @@ async fn test_v1_header_encrypted_data_keys() {
     //# The value MUST be the serialization of the
     //# [encrypted data keys](../framework/structures.md#encrypted-data-keys) in the [encryption materials](../framework/structures.md#encryption-materials).
     assert!(edk_section.edk_count >= 1, "must have at least one EDK");
-    assert!(!edk_section.edks[0].edk.is_empty(), "EDK ciphertext must be non-empty");
+    assert!(
+        !edk_section.edks[0].edk.is_empty(),
+        "EDK ciphertext must be non-empty"
+    );
     // Round-trip proves EDKs are correctly serialized (decrypt uses them to recover the data key)
     let result = round_trip_v1(pt, EncryptionContext::new()).await;
     assert_eq!(
@@ -321,7 +337,10 @@ async fn test_v1_header_frame_length() {
     //= type=test
     //# - MUST serialize the [Frame Length](../data-format/message-header.md#frame-length).
     //# The value MUST be the value of the frame size determined above.
-    assert_eq!(frame_length, 4096, "Frame Length must be the default 4096 (serialized as UInt32)");
+    assert_eq!(
+        frame_length, 4096,
+        "Frame Length must be the default 4096 (serialized as UInt32)"
+    );
     // Round-trip proves the frame length is correctly processed.
     let result = round_trip_v1(b"frame length test", EncryptionContext::new()).await;
     assert_eq!(result, b"frame length test");
@@ -353,22 +372,38 @@ async fn test_v1_header_serialization_order() {
     assert_eq!(hdr.version, 0x01, "offset 0: Version");
     assert_eq!(hdr.msg_type, 0x80, "offset 1: Type");
     assert_eq!(hdr.suite_id, 0x0178, "offset 2-3: Algorithm Suite ID");
-    assert_eq!(hdr.message_id.len(), 16, "offset 4-19: Message ID (16 bytes)");
+    assert_eq!(
+        hdr.message_id.len(),
+        16,
+        "offset 4-19: Message ID (16 bytes)"
+    );
     // Variable-length fields (AAD, EDKs) followed by trailing fixed fields
     let (ct_offset, reserved_offset, iv_length_offset, frame_length_offset) =
         parse_v1_trailing_offsets(&ct);
     // Verify trailing fields appear in order with correct sizes
     assert!(ct_offset > 20, "Content Type must follow AAD and EDKs");
     assert_eq!(ct[ct_offset], 0x02, "Content Type = 0x02 (framed)");
-    assert_eq!(reserved_offset, ct_offset + 1, "Reserved immediately follows Content Type");
+    assert_eq!(
+        reserved_offset,
+        ct_offset + 1,
+        "Reserved immediately follows Content Type"
+    );
     assert_eq!(
         &ct[reserved_offset..reserved_offset + 4],
         &[0x00, 0x00, 0x00, 0x00],
         "Reserved = 00 00 00 00"
     );
-    assert_eq!(iv_length_offset, reserved_offset + 4, "IV Length immediately follows Reserved");
+    assert_eq!(
+        iv_length_offset,
+        reserved_offset + 4,
+        "IV Length immediately follows Reserved"
+    );
     assert_eq!(ct[iv_length_offset], 12, "IV Length = 12");
-    assert_eq!(frame_length_offset, iv_length_offset + 1, "Frame Length immediately follows IV Length");
+    assert_eq!(
+        frame_length_offset,
+        iv_length_offset + 1,
+        "Frame Length immediately follows IV Length"
+    );
     let frame_length = u32::from_be_bytes([
         ct[frame_length_offset],
         ct[frame_length_offset + 1],
@@ -440,8 +475,7 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
     // Tamper: set reserved bytes to non-zero
     ct[reserved_offset] = 0x01;
 
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
+    let mut dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
     dec_input.commitment_policy =
         aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
 
@@ -456,7 +490,8 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
     assert!(
         matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
         "expected SerializationError, got: {} ({:?})",
-        err.message, err.kind
+        err.message,
+        err.kind
     );
 }
 
@@ -470,8 +505,7 @@ async fn test_v1_iv_length_mismatch_rejected() {
     assert_eq!(ct[iv_length_offset], 12, "baseline: IV length should be 12");
     ct[iv_length_offset] = 11;
 
-    let mut dec_input =
-        DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
+    let mut dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
     dec_input.commitment_policy =
         aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
 
@@ -486,6 +520,7 @@ async fn test_v1_iv_length_mismatch_rejected() {
     assert!(
         matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
         "expected SerializationError, got: {} ({:?})",
-        err.message, err.kind
+        err.message,
+        err.kind
     );
 }

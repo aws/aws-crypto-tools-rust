@@ -22,10 +22,7 @@ async fn test_encrypted_data_keys_ordering() {
     // Cover both the single-EDK case and the multi-EDK case so that the
     // "Count, then Entries" structure is exercised with the count field set
     // to both 1 and 3.
-    for (label, keyring, expected_count) in [
-        ("single", single, 1u16),
-        ("triple", triple, 3u16),
-    ] {
+    for (label, keyring, expected_count) in [("single", single, 1u16), ("triple", triple, 3u16)] {
         for version in VERSIONS {
             //= spec/data-format/message-header.md#encrypted-data-keys
             //= type=test
@@ -38,7 +35,10 @@ async fn test_encrypted_data_keys_ordering() {
 
             // 1. Encrypted Data Key Count (2 bytes)
             let count = u16::from_be_bytes([ct[edk_section_start], ct[edk_section_start + 1]]);
-            assert_eq!(count, expected_count, "{label} {version:?}: count field value");
+            assert_eq!(
+                count, expected_count,
+                "{label} {version:?}: count field value"
+            );
             assert_eq!(parsed.edk_count, count);
 
             // 2. Encrypted Data Key Entries (immediately after the count)
@@ -76,7 +76,8 @@ async fn test_edk_section_length_fields_are_big_endian_uint16() {
         let pinfo_len_offset = entries_start + 2 + edk.provider_id_len as usize;
         let edk_len_offset = pinfo_len_offset + 2 + edk.provider_info_len as usize;
 
-        let count_wire = u16::from_be_bytes([ct[parsed.edk_count_offset], ct[parsed.edk_count_offset + 1]]);
+        let count_wire =
+            u16::from_be_bytes([ct[parsed.edk_count_offset], ct[parsed.edk_count_offset + 1]]);
         let pid_len_wire = u16::from_be_bytes([ct[pid_len_offset], ct[pid_len_offset + 1]]);
         let pinfo_len_wire = u16::from_be_bytes([ct[pinfo_len_offset], ct[pinfo_len_offset + 1]]);
         let edk_len_wire = u16::from_be_bytes([ct[edk_len_offset], ct[edk_len_offset + 1]]);
@@ -90,8 +91,15 @@ async fn test_edk_section_length_fields_are_big_endian_uint16() {
         //= type=test
         //# The encrypted data key count MUST be interpreted as a UInt16.
         assert_eq!(count_wire, 2, "{version:?}: EDK count UInt16 value");
-        assert_eq!(ct[parsed.edk_count_offset], 0x00, "{version:?}: EDK count high byte");
-        assert_eq!(ct[parsed.edk_count_offset + 1], 0x02, "{version:?}: EDK count low byte");
+        assert_eq!(
+            ct[parsed.edk_count_offset], 0x00,
+            "{version:?}: EDK count high byte"
+        );
+        assert_eq!(
+            ct[parsed.edk_count_offset + 1],
+            0x02,
+            "{version:?}: EDK count low byte"
+        );
 
         // Key provider ID length: the UInt16 at this offset equals the known keyring namespace byte length.
         //= spec/data-format/message-header.md#key-provider-id-length
@@ -101,7 +109,10 @@ async fn test_edk_section_length_fields_are_big_endian_uint16() {
         //= spec/data-format/message-header.md#key-provider-id-length
         //= type=test
         //# The key provider ID length MUST be interpreted as a UInt16.
-        assert_eq!(pid_len_wire, expected_pid_len, "{version:?}: provider ID length UInt16 value");
+        assert_eq!(
+            pid_len_wire, expected_pid_len,
+            "{version:?}: provider ID length UInt16 value"
+        );
 
         // Key provider information length: the UInt16 at this offset must be positive for a raw AES keyring
         // (which packs key name + bit length + IV length + IV into provider info).
@@ -112,7 +123,10 @@ async fn test_edk_section_length_fields_are_big_endian_uint16() {
         //= spec/data-format/message-header.md#key-provider-information-length
         //= type=test
         //# The key provider information length MUST be interpreted as a UInt16.
-        assert!(pinfo_len_wire > 0, "{version:?}: provider info length UInt16 must be positive");
+        assert!(
+            pinfo_len_wire > 0,
+            "{version:?}: provider info length UInt16 must be positive"
+        );
 
         // Encrypted data key length: raw AES keyring stores IV in provider_info; the ciphertext field is
         // wrapped data key (32 bytes) + GCM tag (16 bytes) = 48.
@@ -123,7 +137,10 @@ async fn test_edk_section_length_fields_are_big_endian_uint16() {
         //= spec/data-format/message-header.md#encrypted-data-key-length
         //= type=test
         //# The encrypted data key length MUST be interpreted as a UInt16.
-        assert_eq!(edk_len_wire, 48, "{version:?}: EDK ciphertext length UInt16 value (wrapped 32B key + 16B tag)");
+        assert_eq!(
+            edk_len_wire, 48,
+            "{version:?}: EDK ciphertext length UInt16 value (wrapped 32B key + 16B tag)"
+        );
     }
 }
 
@@ -153,7 +170,8 @@ async fn test_edk_count_zero_rejected_on_decrypt() {
         assert!(
             matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
             "{version:?}: expected SerializationError, got: {} ({:?})",
-            err.message, err.kind
+            err.message,
+            err.kind
         );
     }
 }
@@ -168,7 +186,8 @@ async fn test_edk_count_max_enforcement() {
         assert!(
             err.message.contains("exceed") && err.message.contains("maximum"),
             "error must indicate EDK count exceeds maximum, got: {} ({:?})",
-            err.message, err.kind
+            err.message,
+            err.kind
         );
     };
 
@@ -177,19 +196,24 @@ async fn test_edk_count_max_enforcement() {
     //# This value MUST be less than or equal to the [maximum number of encrypted data keys](../client-apis/client.md#maximum-number-of-encrypted-data-keys) if the maximum number is configured.
 
     // Encrypt with 2 EDKs and max=1 → error.
-    let mut enc_over = EncryptInput::with_legacy_keyring(
-        b"max edk encrypt",
-        EncryptionContext::new(),
-        mk.clone(),
-    );
+    let mut enc_over =
+        EncryptInput::with_legacy_keyring(b"max edk encrypt", EncryptionContext::new(), mk.clone());
     enc_over.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
-    expect_exceed(&encrypt(&enc_over).await.expect_err("encrypt must fail when EDK count exceeds max"));
+    expect_exceed(
+        &encrypt(&enc_over)
+            .await
+            .expect_err("encrypt must fail when EDK count exceeds max"),
+    );
 
     // Decrypt a 2-EDK message with max=1 → error.
     let ct = encrypt_with_version(b"max edk decrypt", Version::V2, mk.clone()).await;
     let mut dec_over = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), mk.clone());
     dec_over.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
-    expect_exceed(&decrypt(&dec_over).await.expect_err("decrypt must fail when EDK count exceeds max"));
+    expect_exceed(
+        &decrypt(&dec_over)
+            .await
+            .expect_err("decrypt must fail when EDK count exceeds max"),
+    );
 
     // Encrypt with 2 EDKs and max=2 → ok (the "equal to" side of ≤).
     let mut enc_at = EncryptInput::with_legacy_keyring(b"at max", EncryptionContext::new(), mk);
@@ -222,7 +246,10 @@ async fn test_edk_entry_field_order() {
         // 1. Key Provider ID Length (2 bytes)
         let pid_len = u16::from_be_bytes([ct[pos], ct[pos + 1]]);
         pos += 2;
-        assert!(pid_len > 0, "{version:?}: provider ID length must be positive");
+        assert!(
+            pid_len > 0,
+            "{version:?}: provider ID length must be positive"
+        );
 
         // 2. Key Provider ID (pid_len bytes)
         let pid = &ct[pos..pos + pid_len as usize];
@@ -307,7 +334,8 @@ async fn test_edk_entry_lengths_match_fields() {
             //= type=test
             //# The length of the serialized key provider ID MUST be equal to the value of the [Key Provider ID Length](#key-provider-id-length) field.
             assert_eq!(
-                edk.provider_id.len(), edk.provider_id_len as usize,
+                edk.provider_id.len(),
+                edk.provider_id_len as usize,
                 "{version:?}: EDK {i}: provider ID byte length must equal the provider ID length field"
             );
 
@@ -315,7 +343,8 @@ async fn test_edk_entry_lengths_match_fields() {
             //= type=test
             //# The length of the serialized key provider information MUST be equal to the value of the [Key Provider Information Length](#key-provider-information-length) field.
             assert_eq!(
-                edk.provider_info.len(), edk.provider_info_len as usize,
+                edk.provider_info.len(),
+                edk.provider_info_len as usize,
                 "{version:?}: EDK {i}: provider info byte length must equal the provider info length field"
             );
 
@@ -323,7 +352,8 @@ async fn test_edk_entry_lengths_match_fields() {
             //= type=test
             //# The length of the serialized encrypted data key MUST be equal to the value of the [Encrypted Data Key Length](#encrypted-data-key-length) field.
             assert_eq!(
-                edk.edk.len(), edk.edk_len as usize,
+                edk.edk.len(),
+                edk.edk_len as usize,
                 "{version:?}: EDK {i}: encrypted data key byte length must equal the EDK length field"
             );
         }

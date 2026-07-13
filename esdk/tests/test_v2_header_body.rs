@@ -106,7 +106,10 @@ async fn test_v2_header_message_id() {
     //# While implementations cannot guarantee complete uniqueness,
     //# implementations MUST use a good source of randomness when generating message IDs in order to make
     //# the chance of duplicate IDs negligible.
-    assert_ne!(hdr1.message_id, hdr2.message_id, "V2 Message IDs must be unique (random)");
+    assert_ne!(
+        hdr1.message_id, hdr2.message_id,
+        "V2 Message IDs must be unique (random)"
+    );
     // Round-trip proves the message ID is correctly processed.
     let result = round_trip_v2(b"msg id v2 test", EncryptionContext::new()).await;
     assert_eq!(result, b"msg id v2 test");
@@ -159,13 +162,17 @@ async fn test_v2_header_aad() {
 
     // The written key MUST be present in the AAD
     assert!(
-        aad_section.windows(written_key_bytes.len()).any(|w| w == written_key_bytes),
+        aad_section
+            .windows(written_key_bytes.len())
+            .any(|w| w == written_key_bytes),
         "written_key must appear in the header AAD"
     );
 
     // The required key MUST NOT be present in the AAD
     assert!(
-        !aad_section.windows(required_key_bytes.len()).any(|w| w == required_key_bytes),
+        !aad_section
+            .windows(required_key_bytes.len())
+            .any(|w| w == required_key_bytes),
         "required_key must NOT appear in the header AAD"
     );
 
@@ -176,7 +183,10 @@ async fn test_v2_header_aad() {
         keyring,
     );
     let result = decrypt(&dec_input).await.unwrap();
-    assert_eq!(result.plaintext, pt, "round-trip with required EC proves correctness");
+    assert_eq!(
+        result.plaintext, pt,
+        "round-trip with required EC proves correctness"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -190,7 +200,10 @@ async fn test_v2_header_encrypted_data_keys() {
     //# The value MUST be the serialization of the
     //# [encrypted data keys](../framework/structures.md#encrypted-data-keys) in the [encryption materials](../framework/structures.md#encryption-materials).
     assert!(edk_section.edk_count >= 1, "must have at least one EDK");
-    assert!(!edk_section.edks[0].edk.is_empty(), "EDK ciphertext must be non-empty");
+    assert!(
+        !edk_section.edks[0].edk.is_empty(),
+        "EDK ciphertext must be non-empty"
+    );
     // Round-trip proves EDKs are correctly serialized (decrypt uses them to recover the data key)
     let result = round_trip_v2(pt, EncryptionContext::new()).await;
     assert_eq!(result, pt, "round-trip proves EDKs serialized correctly");
@@ -223,9 +236,15 @@ async fn test_v2_header_frame_length() {
     //= type=test
     //# The frame length MUST be interpreted as a UInt32.
     let frame_len = u32::from_be_bytes([
-        ct[fl_offset], ct[fl_offset + 1], ct[fl_offset + 2], ct[fl_offset + 3],
+        ct[fl_offset],
+        ct[fl_offset + 1],
+        ct[fl_offset + 2],
+        ct[fl_offset + 3],
     ]);
-    assert_eq!(frame_len, 4096, "Frame length must be the default 4096 (serialized as UInt32)");
+    assert_eq!(
+        frame_len, 4096,
+        "Frame length must be the default 4096 (serialized as UInt32)"
+    );
     // Round-trip proves the frame length is correctly processed.
     let result = round_trip_v2(b"frame length test", EncryptionContext::new()).await;
     assert_eq!(result, b"frame length test");
@@ -246,7 +265,11 @@ async fn test_v2_header_algorithm_suite_data() {
     //# - MUST serialize the [Algorithm Suite Data](../data-format/message-header.md#algorithm-suite-data).
     //# The value MUST be the value of the [commit key](../framework/algorithm-suites.md#commit-key)
     //# derived according to the [algorithm suites commit key derivation settings](../framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings).
-    assert_eq!(end - start, 32, "Algorithm Suite Data must be 32 bytes for committing suites");
+    assert_eq!(
+        end - start,
+        32,
+        "Algorithm Suite Data must be 32 bytes for committing suites"
+    );
     // Round-trip proves algorithm suite data (commit key) is correct.
     let result = round_trip_v2(b"suite data test", EncryptionContext::new()).await;
     assert_eq!(result, b"suite data test");
@@ -283,17 +306,27 @@ async fn test_v2_header_serialization_order() {
         "Algorithm Suite Data",
     ];
 
-    assert_eq!(fields.len(), expected_order.len(), "V2 header must have exactly 8 fields");
+    assert_eq!(
+        fields.len(),
+        expected_order.len(),
+        "V2 header must have exactly 8 fields"
+    );
 
     for (i, (name, start, end)) in fields.iter().enumerate() {
-        assert_eq!(*name, expected_order[i], "field {i} should be '{}'", expected_order[i]);
+        assert_eq!(
+            *name, expected_order[i],
+            "field {i} should be '{}'",
+            expected_order[i]
+        );
         assert!(start < end, "field '{}' has zero or negative length", name);
         if i > 0 {
             let (_, _, prev_end) = fields[i - 1];
             assert_eq!(
-                *start, prev_end,
+                *start,
+                prev_end,
                 "field '{}' does not immediately follow '{}'",
-                name, fields[i - 1].0
+                name,
+                fields[i - 1].0
             );
         }
     }

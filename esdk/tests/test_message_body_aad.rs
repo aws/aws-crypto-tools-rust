@@ -6,7 +6,7 @@
 mod test_helpers;
 
 use aws_esdk::__test_internals::{BodyAADContent, body_aad};
-use aws_esdk::{decrypt, DecryptInput, EncryptionContext, ErrorKind};
+use aws_esdk::{DecryptInput, EncryptionContext, ErrorKind, decrypt};
 use test_helpers::*;
 
 // Known literal values from the spec, repeated here verbatim so the tests
@@ -32,12 +32,20 @@ fn test_body_aad_structure_ordering() {
 
     let content_str = REGULAR_FRAME_STR;
     let expected_total = msg_id.len() + content_str.len() + 4 + 8;
-    assert_eq!(out.len(), expected_total, "total length must match structure");
+    assert_eq!(
+        out.len(),
+        expected_total,
+        "total length must match structure"
+    );
 
     let mut pos = 0;
 
     // Message ID first
-    assert_eq!(&out[pos..pos + msg_id.len()], &msg_id, "Message ID must come first");
+    assert_eq!(
+        &out[pos..pos + msg_id.len()],
+        &msg_id,
+        "Message ID must come first"
+    );
     pos += msg_id.len();
 
     // Body AAD Content second
@@ -80,7 +88,8 @@ fn test_body_aad_message_id_is_copied_verbatim() {
         //= type=test
         //# The length of the Message ID field MUST be equal to the length of the [Message ID](message-header.md#message-id) defined by the message header version.
         assert_eq!(
-            &out[..msg_id_len], msg_id.as_slice(),
+            &out[..msg_id_len],
+            msg_id.as_slice(),
             "{msg_id_len}-byte message ID must be copied verbatim"
         );
     }
@@ -181,9 +190,7 @@ fn test_body_aad_content_length_is_8_bytes_uint64_be() {
 async fn test_body_aad_sequence_number_nonframed_is_one() {
     for version in VERSIONS {
         let parsed = parse_external_nonframed_body(external_nonframed_ct(version), version);
-        let iv_seq = u32::from_be_bytes([
-            parsed.iv[8], parsed.iv[9], parsed.iv[10], parsed.iv[11],
-        ]);
+        let iv_seq = u32::from_be_bytes([parsed.iv[8], parsed.iv[9], parsed.iv[10], parsed.iv[11]]);
         // The message under test MUST have seq=1 already
         assert_eq!(iv_seq, 1, "{version:?}: body IV must encode seq=1");
 
@@ -193,7 +200,8 @@ async fn test_body_aad_sequence_number_nonframed_is_one() {
         //= reason=External vector's body IV encodes seq=1; decrypt succeeds, so AAD matched.
         //# For [nonframed data](message-body.md#nonframed-data), the value of this field MUST be `1`.
         assert_eq!(
-            pt, external_nonframed_pt(version),
+            pt,
+            external_nonframed_pt(version),
             "{version:?}: external nonframed vector decrypted to unexpected plaintext — our AAD reconstruction disagrees with the reference producer's"
         );
     }
@@ -216,7 +224,8 @@ async fn test_body_aad_content_length_nonframed_equals_plaintext_length() {
         //= reason=External vector's content-length field equals plaintext length; decrypt succeeds.
         //# - For [nonframed data](message-body.md#nonframed-data), this value MUST equal the length, in bytes, of the plaintext data provided to the algorithm for encryption.
         assert_eq!(
-            pt, external_nonframed_pt(version),
+            pt,
+            external_nonframed_pt(version),
             "{version:?}: decrypt output did not match plaintext — our AAD content_length disagrees with the reference producer's"
         );
     }
@@ -244,7 +253,8 @@ async fn test_body_aad_message_id_length_matches_header() {
         //= reason=V1 and V2 external vectors use 16- and 32-byte message IDs respectively; both decrypt.
         //# The length of the Message ID field MUST be equal to the length of the [Message ID](message-header.md#message-id) defined by the message header version.
         assert_eq!(
-            pt, external_nonframed_pt(version),
+            pt,
+            external_nonframed_pt(version),
             "{version:?}: decrypt output did not match plaintext — our AAD message ID length disagrees with the {expected_len}-byte header value"
         );
     }
@@ -262,7 +272,8 @@ async fn test_body_aad_content_length_nonframed_rejects_tampered_length() {
         // Baseline: the untampered vector decrypts.
         let baseline = decrypt_external_nonframed_vector(version).await;
         assert_eq!(
-            baseline, external_nonframed_pt(version),
+            baseline,
+            external_nonframed_pt(version),
             "{version:?} baseline: untampered external vector did not decrypt to expected plaintext"
         );
         // Tamper: change the u64 length field from its true value to (value - 1).
@@ -272,8 +283,7 @@ async fn test_body_aad_content_length_nonframed_rejects_tampered_length() {
         let mut tampered = external_nonframed_ct(version).to_vec();
         let true_len = parsed.encrypted_content_length;
         let tampered_len = true_len - 1;
-        tampered[len_offset..len_offset + 8]
-            .copy_from_slice(&tampered_len.to_be_bytes());
+        tampered[len_offset..len_offset + 8].copy_from_slice(&tampered_len.to_be_bytes());
         let err = try_decrypt_external_nonframed(version, &tampered)
             .await
             .expect_err(&format!(
@@ -337,7 +347,10 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
     // Frame 1 starts at body_start; its sequence number is the first 4 bytes.
     // Sanity: confirm it's 1 before tampering.
     let seq_bytes = &ct[body_start..body_start + 4];
-    assert_eq!(u32::from_be_bytes([seq_bytes[0], seq_bytes[1], seq_bytes[2], seq_bytes[3]]), 1);
+    assert_eq!(
+        u32::from_be_bytes([seq_bytes[0], seq_bytes[1], seq_bytes[2], seq_bytes[3]]),
+        1
+    );
 
     // Tamper: flip the low bit of frame 1's sequence number so the decryptor sees seq=0.
     let mut tampered = ct.clone();
@@ -352,8 +365,7 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
 
     // Attempt to decrypt the tampered ciphertext. Must fail.
     let keyring = test_keyring().await;
-    let dec_input =
-        DecryptInput::with_legacy_keyring(&tampered, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_legacy_keyring(&tampered, EncryptionContext::new(), keyring);
     let err = decrypt(&dec_input)
         .await
         .expect_err("tampering frame 1's sequence number must cause decrypt to fail");
@@ -387,7 +399,8 @@ async fn test_body_aad_content_length_regular_frame_equals_frame_length() {
             //= reason=Each regular frame's encrypted content is frame_length bytes; round-trip corroborates AAD.
             //# - For [regular frames](message-body.md#regular-frame), this value MUST equal the value of the [frame length](message-header.md#frame-length) field in the message header.
             assert_eq!(
-                frame.2.len() as u32, frame_length,
+                frame.2.len() as u32,
+                frame_length,
                 "regular frame {i}: encrypted content length must equal frame_length"
             );
         }
@@ -405,8 +418,8 @@ async fn test_body_aad_content_length_final_frame_bounded_by_frame_length() {
     let pt = vec![0xEEu8; 15];
     let frame_length = 10u32;
     let ct = encrypt_with_frame_length(&pt, frame_length).await;
-    let final_content_len = final_frame_content_length(&ct)
-        .expect("ciphertext must contain a final frame");
+    let final_content_len =
+        final_frame_content_length(&ct).expect("ciphertext must contain a final frame");
     //= spec/data-format/message-body-aad.md#content-length
     //= type=test
     //= reason=Final frame's content_length lies in [0, frame_length]; round-trip corroborates.
@@ -416,7 +429,10 @@ async fn test_body_aad_content_length_final_frame_bounded_by_frame_length() {
         "final frame content_length ({final_content_len}) must be <= frame_length ({frame_length})"
     );
     // 15 bytes with frame_length=10 -> one regular frame (10) + final frame (5).
-    assert_eq!(final_content_len, 5, "final frame should hold remaining 5 bytes");
+    assert_eq!(
+        final_content_len, 5,
+        "final frame should hold remaining 5 bytes"
+    );
     // Corroboration: mismatched AAD content_length would fail AES-GCM auth.
     let decrypted = round_trip_framed(&pt, frame_length).await;
     assert_eq!(
@@ -438,7 +454,8 @@ async fn test_body_aad_content_length_framed_equals_per_frame_plaintext() {
     //= reason=Per-frame content lengths sum to plaintext length; round-trip corroborates.
     //# - For [framed data](message-body.md#framed-data), this value MUST equal the length, in bytes, of the plaintext being encrypted in this frame.
     assert_eq!(
-        total, pt.len(),
+        total,
+        pt.len(),
         "sum of per-frame content lengths must equal plaintext length"
     );
     // Corroboration: mismatched per-frame AAD content_length would fail AES-GCM auth.

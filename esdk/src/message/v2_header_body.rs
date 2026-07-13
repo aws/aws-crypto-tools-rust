@@ -6,9 +6,8 @@
 use super::encrypted_data_keys::{read_edks, write_edks};
 use super::encryption_context::{read_canonical_ec, write_aad_section};
 use super::header_types::{
-    MessageFormatVersion, V2HeaderBody, read_content_type, write_content_type,
-    write_msg_format_version,
-    read_esdk_suite_id, read_message_id_v2, write_esdk_suite_id, write_message_id,
+    MessageFormatVersion, V2HeaderBody, read_content_type, read_esdk_suite_id, read_message_id_v2,
+    write_content_type, write_esdk_suite_id, write_message_id, write_msg_format_version,
 };
 use super::serialize_functions::{read_u32, read_vec, write_bytes, write_u32};
 use super::{Error, ser_err};

@@ -20,11 +20,19 @@ pub(crate) const fn from_dafny_esdk_suite_id(
         Old::AlgAes128GcmIv12Tag16HkdfSha256 => New::AlgAes128GcmIv12Tag16HkdfSha256,
         Old::AlgAes192GcmIv12Tag16HkdfSha256 => New::AlgAes192GcmIv12Tag16HkdfSha256,
         Old::AlgAes256GcmIv12Tag16HkdfSha256 => New::AlgAes256GcmIv12Tag16HkdfSha256,
-        Old::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => New::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-        Old::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => New::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-        Old::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => New::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+        Old::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
+            New::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+        }
+        Old::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            New::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        Old::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            New::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+        }
         Old::AlgAes256GcmHkdfSha512CommitKey => New::AlgAes256GcmHkdfSha512CommitKey,
-        Old::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => New::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        Old::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
+            New::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+        }
     }
 }
 

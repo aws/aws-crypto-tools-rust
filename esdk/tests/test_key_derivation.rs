@@ -7,10 +7,10 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::ErrorKind;
 use aws_esdk::__test_internals::{derive_key_v2, derive_keys};
+use aws_esdk::ErrorKind;
 use aws_mpl_legacy::primitives::{hkdf_expand, hkdf_extract};
-use aws_mpl_legacy::suites::{get_algorithm_suite_info, AlgorithmSuite};
+use aws_mpl_legacy::suites::{AlgorithmSuite, get_algorithm_suite_info};
 
 // AES-256 data key length, required by the `derive_keys` length precondition.
 const AES_256_KEY_LEN: usize = 32;
@@ -96,7 +96,10 @@ fn test_kdf_algorithm_is_selected_from_suite() {
     // This does not isolate the hash function (the suites also differ in binary ID,
     // which is part of the HKDF info); the hash-from-suite requirement is proven by
     // the known-answer vector in `test_hkdf_derivation_process`.
-    assert_ne!(hkdf_sha256.data_key.as_slice(), hkdf_sha384.data_key.as_slice());
+    assert_ne!(
+        hkdf_sha256.data_key.as_slice(),
+        hkdf_sha384.data_key.as_slice()
+    );
 }
 
 // Expected V1 HKDF-SHA256 derived key for the inputs in the test below, computed
@@ -178,7 +181,10 @@ fn test_hkdf_derivation_process() {
         b.data_key.as_slice(),
         "HKDF must bind the derived key to the message id"
     );
-    assert!(a1.commitment_key.is_none(), "V1 HKDF suites have no commitment key");
+    assert!(
+        a1.commitment_key.is_none(),
+        "V1 HKDF suites have no commitment key"
+    );
 }
 
 // V2 HKDF (suite 0x0478, AES-256-GCM-HKDF-SHA-512-COMMIT-KEY): the encryption key
@@ -306,7 +312,8 @@ fn test_kdf_input_length_validation() {
         "wrong-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
     );
     assert!(
-        err.to_string().contains("does not match KDF input key length"),
+        err.to_string()
+            .contains("does not match KDF input key length"),
         "error must name the KDF input length mismatch, got: {err}"
     );
 }
@@ -332,7 +339,8 @@ fn test_kdf_input_length_validation_too_long() {
         "over-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
     );
     assert!(
-        err.to_string().contains("does not match KDF input key length"),
+        err.to_string()
+            .contains("does not match KDF input key length"),
         "error must name the KDF input length mismatch, got: {err}"
     );
 }

@@ -5,7 +5,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind};
-use test_helpers::{kms_keyring, run_decrypt, run_encrypt, CallStyle};
+use test_helpers::{CallStyle, kms_keyring, run_decrypt, run_encrypt};
 
 // Round-trips plaintext via encrypt/decrypt. Iterates over CallStyle so both
 // the free `encrypt`/`decrypt` functions AND `Esdk::default().encrypt`/`decrypt`
@@ -69,8 +69,7 @@ async fn test_bad_decrypt_input() {
         //= spec/client-apis/decrypt.md#input
         //= type=test
         //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-        let err = bad_decrypt_output
-            .expect_err("decrypt must fail when source = None");
+        let err = bad_decrypt_output.expect_err("decrypt must fail when source = None");
         assert!(
             matches!(err.kind, ErrorKind::ValidationError),
             "expected ValidationError under {style:?}, got {:?}",
@@ -111,7 +110,8 @@ async fn test_encrypt_decrypt_short() {
             err.kind,
             ErrorKind::SerializationError,
             "truncated ciphertext must produce a SerializationError under {style:?}, got: {:?} ({})",
-            err.kind, err.message
+            err.kind,
+            err.message
         );
     }
 }
@@ -125,18 +125,14 @@ async fn test_encrypt_decrypt_ec() {
         let plaintext = b"hello esdk";
         let encryption_context =
             std::collections::HashMap::from([("stuff".to_string(), "junk".to_string())]);
-        let encrypt_input = EncryptInput::with_legacy_keyring(
-            plaintext,
-            encryption_context,
-            kms_keyring.clone(),
-        );
+        let encrypt_input =
+            EncryptInput::with_legacy_keyring(plaintext, encryption_context, kms_keyring.clone());
         let encrypt_output = run_encrypt(style, &encrypt_input)
             .await
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"));
         let esdk_ciphertext = encrypt_output.ciphertext;
         let ec = EncryptionContext::new();
-        let decrypt_input =
-            DecryptInput::with_legacy_keyring(&esdk_ciphertext, ec, kms_keyring);
+        let decrypt_input = DecryptInput::with_legacy_keyring(&esdk_ciphertext, ec, kms_keyring);
         let decrypt_output = run_decrypt(style, &decrypt_input)
             .await
             .unwrap_or_else(|e| panic!("decrypt failed under {style:?}: {e:?}"));
@@ -159,10 +155,8 @@ async fn test_encrypt_decrypt_bad_ec() {
     for style in CallStyle::ALL {
         let kms_keyring = kms_keyring().await;
         let plaintext = b"hello esdk";
-        let encryption_context = std::collections::HashMap::from([(
-            "aws-crypto-stuff".to_string(),
-            "junk".to_string(),
-        )]);
+        let encryption_context =
+            std::collections::HashMap::from([("aws-crypto-stuff".to_string(), "junk".to_string())]);
         let encrypt_input =
             EncryptInput::with_legacy_keyring(plaintext, encryption_context, kms_keyring);
         let encrypt_output = run_encrypt(style, &encrypt_input).await;
@@ -176,7 +170,8 @@ async fn test_encrypt_decrypt_bad_ec() {
             err.kind,
             ErrorKind::ValidationError,
             "expected ValidationError for reserved 'aws-crypto-' prefix under {style:?}, got: {:?} ({})",
-            err.kind, err.message
+            err.kind,
+            err.message
         );
     }
 }
@@ -227,7 +222,9 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
                     .unwrap();
             let encrypt_output = run_encrypt(style, &encrypt_input)
                 .await
-                .unwrap_or_else(|e| panic!("encrypt failed under {style:?} (frame_len={i}): {e:?}"));
+                .unwrap_or_else(|e| {
+                    panic!("encrypt failed under {style:?} (frame_len={i}): {e:?}")
+                });
             let esdk_ciphertext = encrypt_output.ciphertext;
             let decrypt_input = DecryptInput::with_legacy_keyring(
                 &esdk_ciphertext,
@@ -236,7 +233,9 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
             );
             let decrypt_output = run_decrypt(style, &decrypt_input)
                 .await
-                .unwrap_or_else(|e| panic!("decrypt failed under {style:?} (frame_len={i}): {e:?}"));
+                .unwrap_or_else(|e| {
+                    panic!("decrypt failed under {style:?} (frame_len={i}): {e:?}")
+                });
             assert_eq!(
                 decrypt_output.plaintext, plaintext,
                 "round-trip mismatch under {style:?} at frame_len={i}"

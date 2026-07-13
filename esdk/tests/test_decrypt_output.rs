@@ -113,11 +113,16 @@ async fn test_streaming_callers_must_discard_on_failure() {
     //# Additionally, if this operation fails, callers MUST discard the released plaintext and encryption context
     //# and MUST rollback any processing done due to the released plaintext or encryption context.
     assert!(
-        decrypt_stream(&mut valid_cursor, &mut valid_output, &stream_input).await.is_ok(),
+        decrypt_stream(&mut valid_cursor, &mut valid_output, &stream_input)
+            .await
+            .is_ok(),
         "valid ct must stream to Ok"
     );
     assert_eq!(
-        decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input).await.unwrap_err().kind,
+        decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
+            .await
+            .unwrap_err()
+            .kind,
         ErrorKind::Esdk,
         "tampered signature must produce Esdk error"
     );

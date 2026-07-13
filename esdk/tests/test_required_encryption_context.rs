@@ -110,8 +110,11 @@ async fn test_repr_encryption_context_with_same_ec_happy_case() {
     // Test supply same encryption context on encrypt and decrypt NO filtering
     let encryption_context = small_encryption_context(SmallEncryptionContextVariation::AB);
 
-    let encrypt_input =
-        EncryptInput::with_legacy_keyring(plaintext, encryption_context.clone(), multi_keyring.clone());
+    let encrypt_input = EncryptInput::with_legacy_keyring(
+        plaintext,
+        encryption_context.clone(),
+        multi_keyring.clone(),
+    );
     let encrypt_output = encrypt(&encrypt_input).await.unwrap();
     let esdk_ciphertext = encrypt_output.ciphertext;
 
