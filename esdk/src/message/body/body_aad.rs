@@ -4,6 +4,10 @@
 //! Message body AAD (additional authenticated data) construction.
 
 #[doc(hidden)]
+#[expect(
+    clippy::exhaustive_enums,
+    reason = "closed set fixed by the ESDK message-body-AAD spec"
+)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum BodyAADContent {
     /// Regular frame in framed data.

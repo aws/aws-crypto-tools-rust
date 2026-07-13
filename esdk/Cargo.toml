@@ -12,6 +12,14 @@ documentation = "https://docs.rs/crate/aws-esdk"
 readme = "README.md"
 autoexamples = false
 
+# Lint policy. The integration tests under `tests/` share helper files
+# (`fixtures.rs`, `test_helpers.rs`) that are pulled into multiple test crates
+# via `mod`, which trips `clippy::duplicate_mod`. Restructuring the shared
+# layout would touch every test file for no behavioral gain, and the duplicate
+# module load is harmless for test-harness code, so it is allowed package-wide.
+[lints.clippy]
+duplicate_mod = "allow"
+
 [dependencies]
 tokio = { version = "1.49.0", features = ["full"] }
 

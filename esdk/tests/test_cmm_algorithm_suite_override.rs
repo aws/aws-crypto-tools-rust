@@ -3,6 +3,9 @@
 
 //! Test: the algorithm suite in the retrieved encryption materials MAY be
 //! different from the input algorithm suite (encrypt.md#get-the-encryption-materials).
+// The spy CMM below implements MPL traits whose signatures return the large
+// `aws_mpl_legacy` error type by value, so the Err variant size is not ours to shrink.
+#![allow(clippy::result_large_err)]
 
 mod fixtures;
 mod test_helpers;
@@ -36,7 +39,7 @@ impl CryptographicMaterialsManager for SuiteOverrideCmm {
             tokio::runtime::Handle::current().block_on(async {
                 self.inner
                     .get_encryption_materials()
-                    .algorithm_suite_id(AlgorithmSuiteId::Esdk(self.suite.clone()))
+                    .algorithm_suite_id(AlgorithmSuiteId::Esdk(self.suite))
                     .commitment_policy(input.commitment_policy.unwrap())
                     .encryption_context(input.encryption_context.unwrap())
                     .max_plaintext_length(input.max_plaintext_length.unwrap())

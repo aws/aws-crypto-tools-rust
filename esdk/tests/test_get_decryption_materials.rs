@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for spec/client-apis/decrypt.md#get-the-decryption-materials
+// The spy CMM below implements MPL traits whose signatures return the large
+// `aws_mpl_legacy` error type by value, so the Err variant size is not ours to shrink.
+#![allow(clippy::result_large_err)]
 
 mod fixtures;
 mod test_helpers;

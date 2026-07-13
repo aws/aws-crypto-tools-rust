@@ -13,9 +13,9 @@ pub(crate) type ESDKEncryptionContextPair = (String, String);
 /// Sorted-by-key encryption context used for on-wire serialization.
 pub(crate) type ESDKCanonicalEncryptionContext = Vec<ESDKEncryptionContextPair>;
 
-/// Max total key-value-pairs body length: the outer UInt16 length field (2 bytes)
-/// plus the count UInt16 (2 bytes) must together still fit in a UInt16, leaving
-/// u16::MAX - 2 for the payload.
+/// Max total key-value-pairs body length: the outer `UInt16` length field (2 bytes)
+/// plus the count `UInt16` (2 bytes) must together still fit in a `UInt16`, leaving
+/// `u16::MAX` - 2 for the payload.
 const ESDK_CANONICAL_ENCRYPTION_CONTEXT_MAX_LENGTH: u64 = u16::MAX as u64 - 2;
 
 pub(crate) const fn get_iv_length(a: &AlgorithmSuite) -> u8 {
@@ -83,7 +83,7 @@ pub(crate) fn from_canonical_pairs(pairs: ESDKCanonicalEncryptionContext) -> ESD
 }
 
 /// True iff `ec` fits the on-wire encoding: pair count, each key/value length,
-/// and total serialized length all fit in a UInt16.
+/// and total serialized length all fit in a `UInt16`.
 pub(crate) fn is_esdk_encryption_context(ec: &EncryptionContext) -> bool {
     if ec.len() > usize::from(u16::MAX) {
         return false;
@@ -102,14 +102,14 @@ pub(crate) fn is_esdk_encryption_context(ec: &EncryptionContext) -> bool {
     true
 }
 
-/// True iff every EDK field length fits in a UInt16.
+/// True iff every EDK field length fits in a `UInt16`.
 pub(crate) fn is_esdk_encrypted_data_key(edk: &EncryptedDataKey) -> bool {
     u16::try_from(edk.key_provider_id.len()).is_ok()
         && u16::try_from(edk.key_provider_info.len()).is_ok()
         && u16::try_from(edk.ciphertext.len()).is_ok()
 }
 
-/// True iff the EDK count and each entry fit in UInt16.
+/// True iff the EDK count and each entry fit in `UInt16`.
 pub(crate) fn is_esdk_encrypted_data_keys(edks: &[EncryptedDataKey]) -> bool {
     if edks.len() > usize::from(u16::MAX) {
         return false;
