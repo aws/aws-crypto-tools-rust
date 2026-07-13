@@ -45,7 +45,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 2 | `structures` | [#15](https://github.com/aws/aws-crypto-tools-rust/pull/15) | **Merged** 2026-07-07 (merge commit `72b161e`) | retired after merge |
 | 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Merged** 2026-07-09 (merge commit `12ba944`) | retired after merge |
 | 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Merged** 2026-07-13 (merge commit `55d0e28`) | retired after merge |
-| 5 | `keyring-and-cmm-interfaces` | — | Not started | — |
+| 5 | `keyring-and-cmm-interfaces` | — | **Branch cut** 2026-07-13 | `aws-crypto-rust/keyring-and-cmm-interfaces-review` @ `f3294b6` (1 commit on top of `main`) |
 | 6 | `default-cmm` | — | Not started | — |
 | 7 | `structures-polish` | — | Not started | — |
 | 8 | `mrk-match` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** open PR 5 (`keyring-and-cmm-interfaces`) — combines the previously separate keyring-interface and cmm-interface slices into one review because the Keyring and Cmm traits share the `MaterialsError` extensions and follow the same dyn-trait pattern. Cut from `main` post PR #17 merge (merge commit `55d0e28`).
+**Next action:** open the PR for `aws-crypto-rust/keyring-and-cmm-interfaces-review` against `main` (branch cut 2026-07-13 from `main` at `55d0e28`, currently at `f3294b6`). Combines the previously separate keyring-interface and cmm-interface slices into one review because the Keyring and Cmm traits share the `MaterialsError` extensions and follow the same dyn-trait pattern.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -79,12 +79,16 @@ given slice's review branch is the snapshot of cumulative work through that
 stack level.
 
 - `mpl/Cargo.toml`, `mpl/Cargo.lock` — slice 1 introduces the scaffold (no
-  deps). Later slices add deps as needed: PR 5 adds `async-trait`; PR 14
-  adds `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-kms`, `base64`, `uuid`
-  (with `features = ["v4"]`), `tokio`; PR 15 adds `aws-lc-rs` (fips);
-  PR 18 adds the `[[example]] name = "aws_kms_hierarchical"` block with
-  `required-features = ["keystore"]`. PR 12 introduces the `[features]
-  keystore` flag. Each slice's PR shows the diff it introduces.
+  deps). Later slices add deps as needed: PR 5 adds `async-trait` under
+  `[dependencies]` and `tokio` (with just `["rt", "macros"]` features)
+  under `[dev-dependencies]` for `#[tokio::test]` on the contract
+  harnesses; PR 14 adds `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-kms`,
+  `base64`, `uuid` (with `features = ["v4"]`) and promotes `tokio` to
+  `[dependencies]` with the fuller feature set (`rt`, `macros`, `time`);
+  PR 15 adds `aws-lc-rs` (fips); PR 18 adds the `[[example]] name =
+  "aws_kms_hierarchical"` block with `required-features = ["keystore"]`.
+  PR 12 introduces the `[features] keystore` flag. Each slice's PR shows
+  the diff it introduces.
 - `mpl/src/lib.rs` — slice 1 introduces the scaffold (`mod client; pub use
   client::*;`). Slice 2 adds `pub mod structures;`. Slice 5 adds `pub mod
   keyring; pub use keyring::Keyring;` and `pub mod cmm; pub use
@@ -96,6 +100,9 @@ stack level.
   shows the lib.rs diff it introduces.
 - `mpl/src/structures/mod.rs` — slice 2 introduces it. Slices 3 and 4 add
   submodule + re-export lines for `algorithm_suite` and `commitment_policy`.
+  Slice 5 adds `MaterialsErrorKind` alongside `MaterialsError` in the
+  `error` re-export so tests and downstream code can name the kind
+  variant at the top-level `structures::` path.
 - `mpl/src/structures/error.rs` — slice 2 introduces `MaterialsError` /
   `MaterialsErrorKind`. Slice 5 (keyring + cmm) extends with new variants.
 - `mpl/src/structures/encryption_context.rs` and materials structs —
@@ -346,8 +353,13 @@ both interfaces.
   new error variants directly.
 - Shared-file modifications introduced by this PR: `lib.rs` (adds
   `pub mod keyring; pub use keyring::Keyring;` and `pub mod cmm; pub use
-  cmm::{...};`); `Cargo.toml` / `Cargo.lock` (adds `async-trait`);
-  `error.rs` (new variants).
+  cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};`);
+  `Cargo.toml` / `Cargo.lock` (adds `async-trait` under `[dependencies]`
+  and `tokio` with `["rt", "macros"]` features under `[dev-dependencies]`
+  for `#[tokio::test]` on the contract tests); `structures/mod.rs`
+  (re-exports `MaterialsErrorKind` alongside `MaterialsError`);
+  `error.rs` (new `MaterialsErrorKind` variants and matching
+  constructors).
 
 ---
 
