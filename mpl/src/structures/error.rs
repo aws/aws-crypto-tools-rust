@@ -75,9 +75,13 @@ pub struct MaterialsError {
 }
 
 impl MaterialsError {
-    /// Construct a `Validation` error. Backwards-compatible with the previous
-    /// constructor signature; every existing call site continues to compile
-    /// unchanged.
+    /// Shorthand for a `Validation` error — the kind produced by the
+    /// structure constructors (`EncryptionMaterials::new`,
+    /// `DecryptionMaterials::new`, `EncryptionContext::new`,
+    /// `BranchKeyMaterials::new`) when an invariant check fails. For other
+    /// categories, use the kind-specific constructors below
+    /// (`no_behavior_attempted`, `keyring_failed`, `no_matching_data_key`,
+    /// etc.).
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             kind: MaterialsErrorKind::Validation,
