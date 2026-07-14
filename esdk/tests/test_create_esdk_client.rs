@@ -270,9 +270,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     );
 }
 
-// Round-trip through a CMM (rather than a keyring) to prove encrypt() and
-// decrypt() accept an optional CMM input. Uses a default CMM built from a
-// raw-AES keyring so no KMS credentials are required.
+// encrypt/decrypt accept a CMM input; uses a default CMM from a raw-AES keyring.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_accepts_cmm() {
     let keyring = test_keyring().await;

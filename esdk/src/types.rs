@@ -40,10 +40,6 @@ pub enum Cmm {
 
 impl PartialEq for Keyring {
     fn eq(&self, other: &Self) -> bool {
-        // The modern variant wraps an `Arc<dyn _>`-backed handle whose contained
-        // type is not itself `PartialEq`; compare by Arc identity (pointer
-        // equality of the underlying allocation). The legacy variant wraps a type
-        // that already implements `PartialEq`, so delegate to it.
         match (self, other) {
             (Self::Modern(x), Self::Modern(y)) => {
                 std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
@@ -57,7 +53,6 @@ impl Eq for Keyring {}
 
 impl PartialEq for Cmm {
     fn eq(&self, other: &Self) -> bool {
-        // See `Keyring`'s `PartialEq`: modern by Arc identity, legacy delegated.
         match (self, other) {
             (Self::Modern(x), Self::Modern(y)) => {
                 std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
@@ -100,9 +95,8 @@ pub(crate) enum MaterialSource {
     Keyring(KeyringRef),
 }
 
-/// Resolve the caller-supplied `keyring` / `cmm` input fields into the internal
-/// [`MaterialSource`]. Returns `None` unless exactly one field is set, matching
-/// the validation each input performs before this is called.
+/// Resolve the caller-supplied `keyring` / `cmm` fields into the internal
+/// [`MaterialSource`], or `None` if not exactly one is set.
 pub(crate) fn resolve_material_source(
     keyring: Option<&Keyring>,
     cmm: Option<&Cmm>,
