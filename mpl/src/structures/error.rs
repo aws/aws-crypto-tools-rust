@@ -3,12 +3,20 @@
 
 //! Error types for materials structures.
 //!
+//! # Why one `MaterialsError` (with a `kind`) instead of per-module errors
+//!
 //! The shape `struct MaterialsError { kind: MaterialsErrorKind, message: String }`
 //! mirrors the AWS SDK for Rust's older operation-error convention — a public
 //! `kind` enum carrying a categorisation, plus a free-form human-readable
-//! message.
-//! This construction makes it easier for customers to catch just one error
-//! from the library and be able to filter further if they wish.
+//! message. See for example
+//! <https://github.com/awslabs/aws-sdk-rust/blob/v0.0.20-alpha/sdk/kms/src/error.rs>
+//! where each KMS operation error is a struct with a `kind` field whose enum
+//! variants enumerate the SDK-recognised failure categories. Customers
+//! consuming the MPL want a SINGLE error type to filter on at the call site
+//! (`match err.kind() { ... }` or `if matches!(err.kind(), ...)`), then drill
+//! into the message for diagnostics. A separate `KeyringError`, `CmmError`,
+//! `MaterialsValidationError` zoo would force the customer to either match on
+//! a sum-of-sums or convert each into their own application error.
 
 use std::fmt;
 
@@ -67,9 +75,13 @@ pub struct MaterialsError {
 }
 
 impl MaterialsError {
-    /// Construct a `Validation` error. Backwards-compatible with the previous
-    /// constructor signature; every existing call site continues to compile
-    /// unchanged.
+    /// Shorthand for a `Validation` error — the kind produced by the
+    /// structure constructors (`EncryptionMaterials::new`,
+    /// `DecryptionMaterials::new`, `EncryptionContext::new`,
+    /// `BranchKeyMaterials::new`) when an invariant check fails. For other
+    /// categories, use the kind-specific constructors below
+    /// (`no_behavior_attempted`, `keyring_failed`, `no_matching_data_key`,
+    /// etc.).
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             kind: MaterialsErrorKind::Validation,
