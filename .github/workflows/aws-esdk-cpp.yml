@@ -1,7 +1,7 @@
 # ============================================================================
 # aws-esdk-cpp — C++ shim CI
 # ----------------------------------------------------------------------------
-# Builds and tests the C++ shim crate (shims/aws-esdk-cpp), which exposes the
+# Builds and tests the C++ shim crate (esdk/shims/aws-esdk-cpp), which exposes the
 # native Rust ESDK to C++ callers via a `cxx` bridge. It is a SEPARATE workflow
 # from the library CI (pull.yml) because the shim is a `cdylib`/`staticlib` FFI
 # crate whose end-to-end coverage comes from credential-gated C++ tests, so it
@@ -18,11 +18,11 @@ name: aws-esdk-cpp shim (Rust)
 on:
   pull_request:
     paths:
-      - "shims/aws-esdk-cpp/**"
+      - "esdk/shims/aws-esdk-cpp/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   push:
     paths:
-      - "shims/aws-esdk-cpp/**"
+      - "esdk/shims/aws-esdk-cpp/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   workflow_dispatch:
 
@@ -43,7 +43,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: shims/aws-esdk-cpp
+        working-directory: esdk/shims/aws-esdk-cpp
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +63,7 @@ jobs:
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: shims/aws-esdk-cpp
+          workspaces: esdk/shims/aws-esdk-cpp
 
       - name: Format check
         run: cargo fmt --all -- --check
