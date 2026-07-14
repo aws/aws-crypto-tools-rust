@@ -534,6 +534,10 @@ async fn test_final_frame_serialization_order() {
         &[0x00, 0x00, 0x00, 0x01],
         "Field 2: seq num bytes BE"
     );
+    //= spec/data-format/message-body.md#final-frame-sequence-number
+    //= type=test
+    //# The Final Frame Sequence Number MUST be interpreted as the same type as the
+    //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
     assert_eq!(f.seq_num, 1, "Field 2: decoded seq num");
     assert_eq!(
         f.seq_num_offset,
@@ -574,6 +578,9 @@ async fn test_final_frame_serialization_order() {
     );
 
     // Field 5 of 6: Encrypted Content — exactly content_length bytes; must NOT equal plaintext.
+    //= spec/data-format/message-body.md#final-frame-encrypted-content
+    //= type=test
+    //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
     assert_eq!(
         f.content.len(),
         PT_LEN,
