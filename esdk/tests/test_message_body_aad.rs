@@ -87,6 +87,10 @@ fn test_body_aad_message_id_is_copied_verbatim() {
         //= spec/data-format/message-body-aad.md#message-id
         //= type=test
         //# The length of the Message ID field MUST be equal to the length of the [Message ID](message-header.md#message-id) defined by the message header version.
+        //
+        //= spec/data-format/message-header.md#message-id
+        //= type=test
+        //# The message ID MUST be interpreted as bytes.
         assert_eq!(
             &out[..msg_id_len],
             msg_id.as_slice(),
