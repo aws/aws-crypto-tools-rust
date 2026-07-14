@@ -263,6 +263,7 @@ async fn internal_encrypt(
             &header,
             &mat_result.materials,
             //= spec/client-apis/encrypt.md#construct-the-signature
+            //= type=implication
             //= reason=sig_digest was fed header in step 2 and body in step 3
             //# Note that the message header and message body MAY have already been input during previous steps.
             sig_digest,
@@ -310,6 +311,8 @@ async fn step_get_encryption_materials(
     //# The [algorithm suite](../framework/algorithm-suites.md) that MUST be used for encryption.
     //
     //= spec/client-apis/encrypt.md#algorithm-suite
+    //= type=implication
+    //= reason=EsdkAlgorithmSuiteId enum only contains ESDK-supported suites
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     let algorithm_suite_id = algorithm_suite_id.map(aws_mpl_legacy::suites::AlgorithmSuiteId::Esdk);
     if let Some(id) = algorithm_suite_id {
@@ -362,6 +365,7 @@ async fn step_get_encryption_materials(
     let algorithm_suite = &materials.algorithm_suite;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=implication
     //= reason=Guards against non-ESDK AlgorithmSuiteId from CMM
     //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
     //# encrypt MUST yield an error.
@@ -423,6 +427,7 @@ fn step_construct_header(
     )?;
 
     //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=implication
     //= reason=write_header flushes complete header before body begins
     //# If this operation is streaming the encrypted message and
     //# the entire message header has been serialized,
@@ -454,6 +459,7 @@ fn step_construct_body(
     //# to the message body calculated in this step.
     //
     //= spec/client-apis/encrypt.md#construct-the-body
+    //= type=implication
     //= reason=The body is written directly to the output buffer by encrypt_and_serialize_body, making inequality structurally impossible
     //# If the message bodies are not equal, the Encrypt operation MUST fail.
     body::encrypt_and_serialize_body(

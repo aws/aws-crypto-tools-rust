@@ -249,6 +249,8 @@ pub(crate) fn write_header(
     // Header Body
 
     //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=implication
+    //= reason=header bytes are written to sig_digest during write_header, before any body bytes
     //# If the algorithm suite contains a signature algorithm and
     //# this operation is [streaming](streaming.md) the encrypted message output to the caller,
     //# this operation MUST input the serialized header to the signature algorithm as soon as it is serialized,

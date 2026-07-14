@@ -54,6 +54,20 @@ async fn test_construct_frame_aead_inputs_authenticate_via_round_trip() {
     //# equal to the length of the plaintext being encrypted.
     let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
     let result = decrypt(&dec_input).await.unwrap().plaintext;
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= type=test
+    //= reason=multi-frame round-trip proves frames are AEAD-encrypted under the suite
+    //# To construct a regular or final frame that represents the next frame in the encrypted message's body,
+    //# the Encrypt operation MUST calculate the encrypted content and an authentication tag using the
+    //# [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
+    //# specified by the [algorithm suite](../framework/algorithm-suites.md),
+    //# with the following inputs:
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= type=test
+    //= reason=decrypt rebuilds the body AAD from the wire; round-trip proves encrypt used the spec AAD
+    //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
+    //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
     assert_eq!(result, pt);
 }
 
@@ -150,6 +164,11 @@ async fn test_construct_frame_final_frame_plaintext_at_most_frame_length() {
         //= type=test
         //# - For a final frame this MUST be the length of the remaining plaintext bytes
         //# which have not yet been encrypted,
+        //# whose length MUST be equal to or less than the frame length.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //= type=test
+        //# - For a final frame this MUST be the remaining plaintext bytes which have not yet been encrypted,
         //# whose length MUST be equal to or less than the frame length.
         let Ok(final_len) = u32::try_from(final_frame.content.len()) else {
             panic!("content length exceeds u32::MAX");

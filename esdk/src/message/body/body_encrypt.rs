@@ -143,6 +143,7 @@ pub(crate) fn construct_frame(
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= reason=write_u32 above serializes the sequence number for both regular and final frames in this shared code path
     //# - MUST serialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
+    //# The value MUST be the sequence number of this frame.
     //
     //= spec/data-format/message-body.md#final-frame-sequence-number
     //= reason=write_u32 serializes the sequence number as a UInt32, same type as the regular frame sequence number
@@ -264,6 +265,7 @@ pub(crate) fn construct_frame(
     write_bytes(ciphertext, frame_buf)?;
 
     //= spec/client-apis/encrypt.md#construct-a-frame
+    //= type=implication
     //= reason=DigestWriter feeds the serialized frame bytes to the signature algorithm
     //# If the algorithm suite contains a signature algorithm and
     //# the Encrypt operation is [streaming](streaming.md) the encrypted message output to the caller,

@@ -154,6 +154,12 @@ async fn test_obtain_materials_from_cmm() {
     // a bare encrypt-success here cannot distinguish a default CMM from any other CMM.
     // The output algorithm suite comes from encryption materials; verify it is a valid ESDK suite.
     // The default CMM selects AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 when no suite is specified.
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=test
+    //= reason=output algorithm suite is taken from the CMM-returned materials
+    //# To construct the [encrypted message](#encrypted-message),
+    //# some fields MUST be constructed using information obtained
+    //# from a set of valid [encryption materials](../framework/structures.md#encryption-materials).
     assert_eq!(
         output.algorithm_suite_id,
         EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
@@ -184,6 +190,12 @@ async fn test_cmm_used_must_be_input_cmm() {
     let enc_input = EncryptInput::with_legacy_cmm(pt, EncryptionContext::new(), spy);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=test
+    //= reason=spy CMM recorded its get_encryption_materials call
+    //# This operation MUST obtain this set of [encryption materials](../framework/structures.md#encryption-materials)
+    //# by calling [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials) on a [CMM](../framework/cmm-interface.md).
+    //
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //= reason=Spy wrapping the input CMM recorded its get_encryption_materials call, proving the input CMM was used
@@ -728,6 +740,11 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     let keyring = test_keyring().await;
     let mut stream_input =
         EncryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring.clone());
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //= reason=data_size supplies the optional Plaintext Length Bound for an unknown-length stream; round-trip succeeds
+    //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
+    //# [Plaintext Length Bound](#plaintext-length-bound).
     stream_input.data_size = Some(100);
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
@@ -738,6 +755,11 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
 
     let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
     let pt = decrypt(&dec_input).await.unwrap().plaintext;
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=test
+    //= reason=data_size=Some(100) is passed as max_plaintext_length for the unknown-length stream; round-trip succeeds
+    //# If the input [plaintext](#plaintext) has unknown length and a [Plaintext Length Bound](#plaintext-length-bound)
+    //# was provided, this MUST be the [Plaintext Length Bound](#plaintext-length-bound).
     assert_eq!(pt, plaintext);
 }
 
@@ -757,6 +779,10 @@ async fn test_no_plaintext_length_bound_field_not_included() {
 
     let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
     let pt = decrypt(&dec_input).await.unwrap().plaintext;
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=test
+    //= reason=data_size=None omits max_plaintext_length; encrypt succeeds and round-trips
+    //# If no Plaintext Length Bound is provided, this field MUST NOT be included.
     assert_eq!(pt, plaintext);
 }
 
