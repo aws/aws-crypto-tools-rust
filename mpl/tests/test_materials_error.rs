@@ -170,3 +170,65 @@ fn test_error_trait_implemented() {
     let err = MaterialsError::new("trait check");
     assert_error_trait(&err);
 }
+
+#[test]
+fn test_new_with_cause_constructor() {
+    let inner = std::io::Error::new(std::io::ErrorKind::InvalidData, "bad utf-8");
+    let err = MaterialsError::new_with_cause("failed to validate", inner);
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert_eq!(err.message, "failed to validate");
+    assert!(err.cause.is_some(), "cause should be populated");
+}
+
+#[test]
+fn test_keyring_failed_with_cause_constructor() {
+    let inner = std::io::Error::new(std::io::ErrorKind::TimedOut, "HSM timeout");
+    let err = MaterialsError::keyring_failed_with_cause("keyring on_encrypt failed", inner);
+    assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+    assert_eq!(err.message, "keyring on_encrypt failed");
+    assert!(err.cause.is_some(), "cause should be populated");
+}
+
+#[test]
+fn test_error_source_returns_none_when_no_cause() {
+    use std::error::Error;
+    let err = MaterialsError::new("no cause");
+    assert!(
+        err.source().is_none(),
+        "Error::source() must be None when cause is None"
+    );
+}
+
+#[test]
+fn test_error_source_returns_wrapped_cause() {
+    use std::error::Error;
+    let inner = std::io::Error::new(std::io::ErrorKind::TimedOut, "downstream timed out");
+    let err = MaterialsError::keyring_failed_with_cause("HSM call failed", inner);
+    let source = err.source().expect("source should be present");
+    assert!(
+        source.to_string().contains("downstream timed out"),
+        "source should expose the wrapped error's message; got: {source}"
+    );
+}
+
+#[test]
+fn test_partial_eq_ignores_cause() {
+    // Two errors with the same kind + message but differing causes MUST
+    // compare equal, matching esdk's contract: `dyn Error` is not `Eq`,
+    // so equality is defined over `kind` + `message` only.
+    let no_cause = MaterialsError::keyring_failed("rate-limited");
+    let with_cause = MaterialsError::keyring_failed_with_cause(
+        "rate-limited",
+        std::io::Error::other("throttled"),
+    );
+    assert_eq!(no_cause, with_cause);
+}
+
+#[test]
+fn test_partial_eq_distinguishes_kind_and_message() {
+    let a = MaterialsError::keyring_failed("boom");
+    let different_kind = MaterialsError::no_matching_data_key("boom");
+    let different_message = MaterialsError::keyring_failed("nope");
+    assert_ne!(a, different_kind);
+    assert_ne!(a, different_message);
+}
