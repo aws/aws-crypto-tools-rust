@@ -1,0 +1,124 @@
+# ============================================================================
+# ESDK TestServer — Rust Language_Server CI
+# ----------------------------------------------------------------------------
+# Builds and tests the Rust Language_Server against this repo's live aws-esdk
+# source (the "TestServer(live source code)" direction of the factoring design).
+# It is intentionally scoped to esdk-test-server/** and this file, and is a
+# SEPARATE workflow from the library CI (pull.yml) so it neither depends on nor
+# is blocked by the coverage-gated library jobs.
+#
+# The offline Raw-AES path currently stops at the keyring wall (the Rust ESDK
+# does not implement keyring construction yet); tests/keyring_wall.rs asserts the
+# server surfaces that as an ESDKClientError, so this workflow is GREEN on the
+# wall. The cross-repo Java Tests round trip is provided as a manual
+# (workflow_dispatch) job and becomes a PR gate once keyrings land.
+# ============================================================================
+name: ESDK TestServer (Rust)
+
+on:
+  pull_request:
+    paths:
+      - "esdk-test-server/**"
+      - ".github/workflows/esdk-test-server.yml"
+  push:
+    paths:
+      - "esdk-test-server/**"
+      - ".github/workflows/esdk-test-server.yml"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-language-server:
+    name: build + test (live aws-esdk)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: esdk-test-server
+    steps:
+      - uses: actions/checkout@v4
+
+      # aws-lc-sys (pulled in transitively by aws-esdk) builds native code; Go is
+      # required by the aws-lc build tooling on hosted runners, matching the
+      # library CI setup.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esdk-test-server
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test (rpcv2Cbor wire round trip + keyring wall)
+        run: cargo test --verbose
+
+  # ------------------------------------------------------------------------
+  # Cross-repo end-to-end: pull the commons TestServer at its integration branch,
+  # build the one Java Test_Client + Tests, start THIS repo's Rust server, and run
+  # the Tests against it. Manual-only for now: the offline Raw-AES round trip
+  # cannot pass until the Rust ESDK implements keyring construction. When it does,
+  # remove the workflow_dispatch gate to make this a PR gate.
+  # ------------------------------------------------------------------------
+  commons-e2e:
+    name: commons Java Tests vs Rust server (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Rust repo
+        uses: actions/checkout@v4
+        with:
+          path: rust
+
+      - name: Checkout commons TestServer (integration branch)
+        uses: actions/checkout@v4
+        with:
+          repository: aws/aws-crypto-tools-commons
+          ref: kessplas/esdk-test-server
+          path: commons
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Start the Rust language server
+        working-directory: rust/esdk-test-server
+        run: |
+          make start-server PORT=8092
+          make wait-for-server PORT=8092
+
+      - name: Run the commons Java Tests against the Rust server
+        working-directory: commons/esdk/test-server/tests
+        run: ./gradlew test -Desdk.testserver.endpoints=http://127.0.0.1:8092
+
+      - name: Stop the Rust language server
+        if: always()
+        working-directory: rust/esdk-test-server
+        run: make stop-server PORT=8092
