@@ -3,39 +3,9 @@
 
 //! The `Keyring` trait — the abstract contract every keyring MUST implement.
 //!
-//! # Why `async_trait` and not native AFIT
-//!
-//! Rust 1.75 stabilised `async fn` in traits ("AFIT"), but AFIT traits are NOT
-//! dyn-compatible on stable — `dyn_compatible_async` is still nightly-only as
-//! of Rust 1.85. The MPL needs `Box<dyn Keyring>` and `&dyn Keyring` plug-in
-//! shapes so that a CMM can hold an arbitrary, runtime-configured keyring
-//! (KMS endpoint, raw key bytes, multi-keyring composition, …). The
-//! [`async_trait`] proc-macro rewrites each `async fn` into a method
-//! returning `Pin<Box<dyn Future + Send>>`, which IS dyn-compatible. The one
-//! heap allocation per call is the price of the plug-in shape.
-//!
-//! # Concrete-keyring-deferred clauses (`type=exception`)
-//!
-//! This commit introduces the abstract `Keyring` trait scaffolding only — no
-//! concrete keyring (Raw AES, Raw RSA, AWS KMS, multi-keyring, …) is
-//! implemented yet. Two classes of spec clause are therefore annotated as
-//! `type=exception` here:
-//!
-//! 1. Configuration / value-selection / cryptographic-property clauses
-//!    (`#key-namespace`, `#key-name`, `#key-provider-id`,
-//!    `#security-considerations`, the CSPRNG randomness clause of
-//!    `#generate-data-key`) describe properties of CONCRETE keyrings — value
-//!    selection, configuration shape, cryptographic boundary, randomness
-//!    source — that the abstract trait cannot satisfy.
-//! 2. Behavioral MUSTs on `OnEncrypt` / `OnDecrypt` /
-//!    `Generate Data Key` / `Encrypt Data Key` / `Decrypt Data Key` describe
-//!    runtime conduct that only a concrete keyring can fulfill. These are
-//!    exercised TODAY by the mock-driven contract harness in
-//!    `tests/test_keyring_contract.rs`, but those tests intentionally carry
-//!    no `type=test` annotations: when each concrete keyring is added in a
-//!    future commit, the matching exception below will be replaced with
-//!    `type=implementation` on the concrete method, and `type=test` will be
-//!    placed on the contract test that proves it.
+//! Uses #[async_trait] so that the CMM can hold any runtime defined
+//! keyring. The macro makes this work by rewriting each `async fn`
+//! to return a boxed future.
 
 use async_trait::async_trait;
 
