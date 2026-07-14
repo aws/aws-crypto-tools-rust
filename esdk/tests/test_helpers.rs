@@ -523,19 +523,11 @@ pub fn count_frames(ct: &[u8], frame_length: u32) -> (usize, usize) {
     (regular, final_count)
 }
 
-/// Extract the content length from the final frame in the ciphertext.
-pub fn final_frame_content_length(ct: &[u8]) -> Option<u32> {
-    for i in 0..ct.len().saturating_sub(24) {
-        if ct[i..i + 4] == ENDFRAME_MARKER {
-            return Some(u32::from_be_bytes([
-                ct[i + 20],
-                ct[i + 21],
-                ct[i + 22],
-                ct[i + 23],
-            ]));
-        }
-    }
-    None
+/// The content length declared by the message's final frame.
+///
+/// Requires the `frame_length` used to encrypt.
+pub fn final_frame_content_length(ct: &[u8], frame_length: u32) -> Option<u32> {
+    Some(parse_final_frame(ct, frame_length).content_length)
 }
 
 /// Parse frames from ciphertext. Returns vec of (seq_num, iv, encrypted_content, auth_tag, is_final).

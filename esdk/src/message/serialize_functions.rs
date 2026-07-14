@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Low-level byte read/write primitives for message serialization.
 //!
-//! The `raw` SafeWrite parameter on every `read_*` function tees the consumed
+//! The `raw` `SafeWrite` parameter on every `read_*` function tees the consumed
 //! bytes into a mirror buffer so callers can reconstruct the exact raw header
 //! bytes used for authentication and signing.
 
@@ -154,7 +154,7 @@ pub(crate) fn read_u64(r: &mut dyn SafeRead, raw: &mut dyn SafeWrite) -> Result<
     Ok(u64::from_be_bytes(result))
 }
 
-/// Read a UInt16 length prefix followed by that many bytes.
+/// Read a `UInt16` length prefix followed by that many bytes.
 pub(crate) fn read_seq_u16(
     r: &mut dyn SafeRead,
     raw: &mut dyn SafeWrite,
@@ -163,7 +163,7 @@ pub(crate) fn read_seq_u16(
     read_vec(r, usize::from(len), raw)
 }
 
-/// Read a UInt32 length prefix followed by that many bytes into `data`,
+/// Read a `UInt32` length prefix followed by that many bytes into `data`,
 /// rejecting lengths above `bound`.
 pub(crate) fn read_seq_u32_bounded(
     r: &mut dyn SafeRead,
@@ -183,7 +183,7 @@ pub(crate) fn read_seq_u32_bounded(
     read_bytes(r, &mut data[..], raw)
 }
 
-/// Read a UInt64 length prefix followed by that many bytes, rejecting lengths
+/// Read a `UInt64` length prefix followed by that many bytes, rejecting lengths
 /// above `bound`.
 pub(crate) fn read_seq_u64_bounded(
     r: &mut dyn SafeRead,

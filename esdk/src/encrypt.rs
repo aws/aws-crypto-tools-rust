@@ -561,6 +561,10 @@ fn step_construct_signature(
 
 /// Extracts the ESDK algorithm suite id from a generic MPL algorithm suite id,
 /// returning an error if the suite is not an ESDK suite.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not an ESDK algorithm suite.
 pub fn get_esdk_algorithm_suite_id(
     id: aws_mpl_legacy::suites::AlgorithmSuiteId,
 ) -> Result<aws_mpl_legacy::suites::EsdkAlgorithmSuiteId, Error> {

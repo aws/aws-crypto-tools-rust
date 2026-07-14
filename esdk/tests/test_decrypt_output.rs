@@ -3,6 +3,7 @@
 
 //! Tests for decrypt.md sections: #output, #algorithm-suite, #authenticated-data, #security-considerations
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

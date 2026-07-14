@@ -50,6 +50,7 @@ impl std::io::Write for NoopWriter {
 }
 
 /// A writer that feeds all bytes into a cryptographic digest context.
+///
 /// Used during header serialization to simultaneously write the header bytes
 /// and accumulate them into the ECDSA signature digest, without buffering
 /// the entire header in memory.
