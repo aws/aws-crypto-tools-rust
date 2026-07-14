@@ -143,7 +143,7 @@ fn test_hkdf_derivation_process() {
     //= type=test
     //= reason=Derived key matches an independent OpenSSL HKDF-SHA256 computation over the same salt, ikm, and info
     //# - If the key derivation algorithm is [HKDF](../framework/algorithm-suites.md#hkdf),
-    //# the derivation process used MUST be the process described in [HKDF Encryption Key](./key-derivation.md#hkdf-encryption-key).
+    //# the derivation process used MUST be the process described in [HKDF Encryption Key](../transitive-requirements.md#hkdf-encryption-key).
     //
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //= type=test
