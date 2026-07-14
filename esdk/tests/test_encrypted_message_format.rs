@@ -3,6 +3,7 @@
 
 //! Tests for decrypt.md#encrypted-message-format — Base64 detection
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

@@ -151,6 +151,10 @@ pub struct V2HeaderBody {
 }
 
 /// The body of a message header, parameterized by message format version.
+#[expect(
+    clippy::exhaustive_enums,
+    reason = "closed set fixed by the ESDK message-format spec (V1/V2)"
+)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HeaderBody {
     /// A version 1.0 header body.
@@ -173,6 +177,7 @@ impl HeaderBody {
         }
     }
     /// Returns the message id bytes from the header body.
+    #[must_use]
     pub const fn message_id(&self) -> &[u8] {
         match self {
             Self::V1Body(body) => body.message_id.as_slice(),
@@ -192,6 +197,7 @@ impl HeaderBody {
         }
     }
     /// Returns the algorithm suite recorded in the header body.
+    #[must_use]
     pub const fn algorithm_suite(&self) -> &AlgorithmSuite {
         match self {
             Self::V1Body(body) => &body.algorithm_suite,

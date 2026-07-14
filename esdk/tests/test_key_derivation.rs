@@ -4,6 +4,7 @@
 //! Tests for spec/client-apis/encrypt.md#get-the-encryption-materials
 //! and spec/client-apis/key-derivation.md.
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
