@@ -10,8 +10,9 @@
 # The offline Raw-AES path currently stops at the keyring wall (the Rust ESDK
 # does not implement keyring construction yet); tests/keyring_wall.rs asserts the
 # server surfaces that as an ESDKClientError, so this workflow is GREEN on the
-# wall. The cross-repo Java Tests round trip is provided as a manual
-# (workflow_dispatch) job and becomes a PR gate once keyrings land.
+# wall. The hierarchical-interop job runs the commons HierarchicalBlobRoundTripTest
+# across a launched Rust + Java server pair in both directions; it needs the
+# CI_AWS_ROLE_ARN and COMMONS_REPO_TOKEN repo secrets and is red until they are set.
 # ============================================================================
 name: ESDK TestServer (Rust)
 
@@ -77,10 +78,20 @@ jobs:
   # cannot pass until the Rust ESDK implements keyring construction. When it does,
   # remove the workflow_dispatch gate to make this a PR gate.
   # ------------------------------------------------------------------------
-  commons-e2e:
-    name: commons Java Tests vs Rust server (manual)
-    if: github.event_name == 'workflow_dispatch'
+  hierarchical-interop:
+    name: Rust<->Java hierarchical keyring interop
     runs-on: ubuntu-latest
+    # Requires two repo secrets:
+    #   CI_AWS_ROLE_ARN     — OIDC role in the branch-key-store account
+    #                         (370957321024) with KMS decrypt/generate on the
+    #                         fixture key and DynamoDB read on KeyStoreDdbTable.
+    #   COMMONS_REPO_TOKEN  — read access to aws/aws-crypto-tools-commons.
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ESDK_TESTSERVER_AWS_INTEGRATION: "true"
     steps:
       - name: Checkout Rust repo
         uses: actions/checkout@v4
@@ -93,6 +104,7 @@ jobs:
           repository: aws/aws-crypto-tools-commons
           ref: kessplas/esdk-test-server
           path: commons
+          token: ${{ secrets.COMMONS_REPO_TOKEN }}
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -108,17 +120,68 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Start the Rust language server
+      - name: Configure AWS credentials (branch-key-store account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CI_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Build the Rust language server
         working-directory: rust/esdk-test-server
+        run: cargo build --release
+
+      - name: Bidirectional hierarchical round trip (Rust <-> Java)
         run: |
-          make start-server PORT=8092
-          make wait-for-server PORT=8092
+          set -euo pipefail
+          RUST_BIN="$GITHUB_WORKSPACE/rust/esdk-test-server/target/release/esdk-test-server"
+          JAVA_DIR="$GITHUB_WORKSPACE/commons/esdk/test-server/servers/java"
+          TESTS_DIR="$GITHUB_WORKSPACE/commons/esdk/test-server/tests"
 
-      - name: Run the commons Java Tests against the Rust server
-        working-directory: commons/esdk/test-server/tests
-        run: ./gradlew test -Desdk.testserver.endpoints=http://127.0.0.1:8092
+          # Both servers inherit the AWS credentials configured above; each builds
+          # a hierarchical keyring over the shared KeyStoreDdbTable branch key.
+          "$RUST_BIN" 8092 >"$GITHUB_WORKSPACE/rust-server.log" 2>&1 &
+          RUST_PID=$!
+          ( cd "$JAVA_DIR" && exec ./gradlew --console=plain -q runServer --args="8091" ) \
+            >"$GITHUB_WORKSPACE/java-server.log" 2>&1 &
+          JAVA_PID=$!
 
-      - name: Stop the Rust language server
+          cleanup() {
+            trap - EXIT INT TERM
+            kill "$RUST_PID" "$JAVA_PID" 2>/dev/null || true
+            for p in 8091 8092; do
+              pids=$(lsof -ti "tcp:$p" 2>/dev/null || true)
+              if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; fi
+            done
+          }
+          trap cleanup EXIT INT TERM
+
+          wait_for() {
+            for _ in $(seq 1 300); do
+              if nc -z 127.0.0.1 "$1" 2>/dev/null; then echo "port $1 up"; return 0; fi
+              if ! kill -0 "$2" 2>/dev/null && ! lsof -ti "tcp:$1" >/dev/null 2>&1; then
+                echo "server for port $1 exited early"; return 1
+              fi
+              sleep 1
+            done
+            echo "timed out waiting for port $1"; return 1
+          }
+          wait_for 8092 "$RUST_PID"
+          wait_for 8091 "$JAVA_PID"
+
+          cd "$TESTS_DIR"
+          echo "==> Rust encrypt -> Java decrypt"
+          ./gradlew --console=plain --rerun-tasks test --tests '*HierarchicalBlobRoundTripTest' \
+            -Desdk.testserver.endpoints=http://127.0.0.1:8092,http://127.0.0.1:8091
+          echo "==> Java encrypt -> Rust decrypt"
+          ./gradlew --console=plain --rerun-tasks test --tests '*HierarchicalBlobRoundTripTest' \
+            -Desdk.testserver.endpoints=http://127.0.0.1:8091,http://127.0.0.1:8092
+
+      - name: Upload server logs
         if: always()
-        working-directory: rust/esdk-test-server
-        run: make stop-server PORT=8092
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-server-logs
+          path: |
+            rust-server.log
+            java-server.log
+          if-no-files-found: ignore
