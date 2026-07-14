@@ -80,6 +80,10 @@ jobs:
   # ------------------------------------------------------------------------
   hierarchical-interop:
     name: Rust<->Java hierarchical keyring interop
+    # Manual-only until the required secrets exist and the Rust ESDK implements
+    # keyring construction; skipped (not failed) on pull_request/push so it does
+    # not gate the PR. Remove this guard to promote it to a PR gate.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     # Requires two repo secrets:
     #   CI_AWS_ROLE_ARN     — OIDC role in the branch-key-store account
