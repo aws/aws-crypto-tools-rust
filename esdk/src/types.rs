@@ -271,31 +271,6 @@ impl DecryptStreamOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Default, Hash)]
-/// Whether to allow the ESDK-NET v4.0.0 retry behavior on header authentication failure.
-///
-/// ESDK-NET v4.0.0 incorrectly serialized message headers in a way that
-/// older readers and other-language readers cannot parse. The retry
-/// behavior, when allowed, lets this implementation recover and decrypt
-/// such messages. Set to [`Self::ForbidRetry`] to opt out.
-#[non_exhaustive]
-pub enum NetV400RetryPolicy {
-    /// Do not retry on header authentication failure.
-    ForbidRetry,
-    /// Retry on header authentication failure (default).
-    #[default]
-    AllowRetry,
-}
-
-impl std::fmt::Display for NetV400RetryPolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ForbidRetry => write!(f, "FORBID_RETRY"),
-            Self::AllowRetry => write!(f, "ALLOW_RETRY"),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 #[non_exhaustive]
 /// Input for [`encrypt`](crate::encrypt).
@@ -551,8 +526,6 @@ pub struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
     pub source: Option<MaterialSource>,
-    /// Default is `NetV400RetryPolicy::AllowRetry`
-    pub net_v4_retry_policy: NetV400RetryPolicy,
     /// Default is no limit on the number of encrypted data keys.
     ///
     /// Leave as `None` when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
@@ -620,8 +593,6 @@ pub struct DecryptStreamInput {
     /// was produced by a holder of a specific private key, which is not required in
     /// most symmetric-trust architectures.
     pub unsafe_release_plaintext_before_verify: bool,
-    /// Default is `NetV400RetryPolicy::AllowRetry`
-    pub net_v4_retry_policy: NetV400RetryPolicy,
     /// Default is no limit on the number of encrypted data keys.
     ///
     /// Leave as `None` when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
