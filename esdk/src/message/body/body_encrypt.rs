@@ -359,21 +359,21 @@ pub(crate) fn encrypt_and_serialize_body(
         if total_data_size > MAX_DATA {
             return Err(val_err("Plaintext too large"));
         }
-        if let Some(max_plaintext_len) = max_plaintext_length {
-            if total_data_size > max_plaintext_len {
-                //= spec/client-apis/encrypt.md#plaintext-length-bound
-                //# If this input is provided, this operation MUST NOT encrypt a plaintext with length
-                //# greater than this value.
-                //
-                //= spec/client-apis/encrypt.md#construct-the-body
-                //# If [Plaintext Length Bound](#plaintext-length-bound) was specified on input
-                //# and this operation determines at any time that the plaintext being encrypted
-                //# has a length greater than this value,
-                //# this operation MUST immediately fail.
-                return Err(val_err(
-                    "Plaintext length exceeds configured Plaintext Length Bound",
-                ));
-            }
+        if let Some(max_plaintext_len) = max_plaintext_length
+            && total_data_size > max_plaintext_len
+        {
+            //= spec/client-apis/encrypt.md#plaintext-length-bound
+            //# If this input is provided, this operation MUST NOT encrypt a plaintext with length
+            //# greater than this value.
+            //
+            //= spec/client-apis/encrypt.md#construct-the-body
+            //# If [Plaintext Length Bound](#plaintext-length-bound) was specified on input
+            //# and this operation determines at any time that the plaintext being encrypted
+            //# has a length greater than this value,
+            //# this operation MUST immediately fail.
+            return Err(val_err(
+                "Plaintext length exceeds configured Plaintext Length Bound",
+            ));
         }
 
         //= spec/client-apis/encrypt.md#construct-a-frame
@@ -429,12 +429,12 @@ pub(crate) fn encrypt_and_serialize_body(
     if total_data_size > MAX_DATA {
         return Err(val_err("Plaintext too large"));
     }
-    if let Some(max_len) = max_plaintext_length {
-        if total_data_size > max_len {
-            return Err(val_err(
-                "Plaintext length exceeds specified Plaintext Length Bound",
-            ));
-        }
+    if let Some(max_len) = max_plaintext_length
+        && total_data_size > max_len
+    {
+        return Err(val_err(
+            "Plaintext length exceeds specified Plaintext Length Bound",
+        ));
     }
 
     //= spec/data-format/message-body.md#final-frame

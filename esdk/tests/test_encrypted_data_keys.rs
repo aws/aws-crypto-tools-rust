@@ -3,6 +3,7 @@
 
 //! Tests for the Encrypted Data Keys sections of spec/data-format/message-header.md
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
