@@ -110,7 +110,7 @@ pub async fn decrypt_stream(
     internal_decrypt(
         ciphertext,
         plaintext,
-        input.source.clone(),
+        input.material_source(),
         &input.encryption_context,
         input.net_v4_retry_policy,
         safety,
@@ -143,7 +143,7 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let out = internal_decrypt(
         &mut cursor,
         &mut plaintext,
-        input.source.clone(),
+        input.material_source(),
         &input.encryption_context,
         input.net_v4_retry_policy,
         ProtectionNeeded::No, // Customer cannot see any partial results
