@@ -104,9 +104,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let mut stream_input =
-        DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-    stream_input.unsafe_release_plaintext_before_verify = true;
+    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#security-considerations
     //= type=test

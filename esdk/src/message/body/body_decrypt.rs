@@ -282,7 +282,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
                 if expected_frame != START_SEQUENCE_NUMBER {
                     if fail_if_multi_frame {
                         return Err(esdk_err(
-                            "Streaming a multi-frame signed message would release plaintext before signature verification. Set `unsafe_release_plaintext_before_verify = true` in DecryptStreamInput to allow this.",
+                            "Streaming a multi-frame signed message would release plaintext before signature verification.",
                         ));
                     }
                     write_bytes(w, &result)?;
@@ -339,7 +339,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         if expected_frame != START_SEQUENCE_NUMBER {
             if fail_if_multi_frame {
                 return Err(esdk_err(
-                    "Streaming a multi-frame signed message would release plaintext before signature verification. Set `unsafe_release_plaintext_before_verify = true` in DecryptStreamInput to allow this.",
+                    "Streaming a multi-frame signed message would release plaintext before signature verification.",
                 ));
             }
             write_bytes(w, &result)?;

@@ -38,11 +38,6 @@ impl ProtectionNeeded {
             Self::No => false,
         }
     }
-
-    // if overridden set to true, no safety needed
-    const fn needs_protection(overridden: bool) -> Self {
-        if overridden { Self::No } else { Self::Yes }
-    }
 }
 
 //= spec/client-apis/decrypt.md#security-considerations
@@ -102,18 +97,16 @@ pub async fn decrypt_stream(
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
-    //= reason=unsafe_release_plaintext_before_verify gates multi-frame signed messages; single-frame is buffered until after verify
+    //= reason=multi-frame signed streaming always fails; single-frame signed is buffered until after verify
     //# - The ESDK MUST provide a configuration option that causes the decryption operation
     //# to fail immediately after parsing the header if a signed algorithm suite is used.
-    let safety = ProtectionNeeded::needs_protection(input.unsafe_release_plaintext_before_verify);
-
     internal_decrypt(
         ciphertext,
         plaintext,
         input.source.clone(),
         &input.encryption_context,
         input.net_v4_retry_policy,
-        safety,
+        ProtectionNeeded::Yes,
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
