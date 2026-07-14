@@ -23,6 +23,7 @@
 //! are not implemented in the modern MPL. These tests use the legacy keyring
 //! path (`MaterialSource::LegacyKeyring`).
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

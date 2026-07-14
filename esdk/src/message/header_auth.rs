@@ -102,6 +102,11 @@ pub(crate) fn write_header_auth_tag_v2(
 
 /// Deserializes the header authentication (IV and authentication tag) for the
 /// header, dispatching on the algorithm suite's message format version.
+///
+/// # Errors
+///
+/// Returns an error if the message format version is unsupported or if the
+/// stream ends before the IV and authentication tag are fully read.
 pub fn read_header_auth_tag(
     r: &mut dyn SafeRead,
     suite: &AlgorithmSuite,

@@ -5,6 +5,7 @@
 //! and spec/client-apis/decrypt.md#input,
 //! focusing on the Reproduced Encryption Context requirement.
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 use aws_esdk::*;

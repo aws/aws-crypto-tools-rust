@@ -68,6 +68,12 @@ pub(crate) fn write_header_body(w: &mut dyn SafeWrite, body: &HeaderBody) -> Res
 
 /// Deserializes a message header body from the ciphertext stream, writing the
 /// consumed raw header bytes to `raw_header` for later authentication.
+///
+/// # Errors
+///
+/// Returns an error if the bytes are malformed, specify an unsupported message
+/// format version or algorithm suite, or declare more encrypted data keys than
+/// `max_edks` permits.
 pub fn read_header_body(
     ciphertext: &mut dyn SafeRead,
     max_edks: Option<std::num::NonZeroUsize>,
@@ -133,9 +139,7 @@ pub(crate) fn header_version_supports_commitment(
 ) -> bool {
     match (suite.commitment, body) {
         (DerivationAlgorithm::Hkdf(header), HeaderBody::V2Body(body)) => {
-            usize::try_from(header.output_key_length)
-                .map(|n| body.suite_data.len() == n)
-                .unwrap_or(false)
+            usize::try_from(header.output_key_length).is_ok_and(|n| body.suite_data.len() == n)
         }
         (_, HeaderBody::V1Body(_)) => true,
         _ => false,
@@ -152,20 +156,25 @@ pub(crate) fn validate_max_encrypted_data_keys(
         return Err(val_err("Encrypted data key count must be greater than 0"));
     }
 
-    if let Some(max) = max_encrypted_data_keys {
-        if edks.len() > max.get() {
-            return Err(val_err(format!(
-                "Encrypted data key count {} exceeds configured maximum {}",
-                edks.len(),
-                max.get(),
-            )));
-        }
+    if let Some(max) = max_encrypted_data_keys
+        && edks.len() > max.get()
+    {
+        return Err(val_err(format!(
+            "Encrypted data key count {} exceeds configured maximum {}",
+            edks.len(),
+            max.get(),
+        )));
     }
     Ok(())
 }
 
 /// Generates a fresh message id of the size required by the algorithm suite's
 /// message format version.
+///
+/// # Errors
+///
+/// Returns an error if the message format version is unsupported or if the
+/// underlying source of randomness fails.
 pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
     // Defense-in-depth: in practice every supported suite has message_version 1 or 2
     // (suites are sourced from the static algorithm-suites table), but match explicitly

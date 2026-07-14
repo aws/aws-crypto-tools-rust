@@ -3,6 +3,7 @@
 
 //! Tests for spec/client-apis/decrypt.md#verify-the-header
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 

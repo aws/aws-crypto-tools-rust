@@ -3,6 +3,7 @@
 
 //! Tests for spec/client-apis/encrypt.md#construct-the-body
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
@@ -48,7 +49,7 @@ async fn test_end_of_input_processing() {
     //# this operation MUST perform the following until all consumable plaintext bytes are processed:
     assert_eq!(regular, 1);
     assert_eq!(final_count, 1);
-    assert_eq!(final_frame_content_length(&ct).unwrap(), 5);
+    assert_eq!(final_frame_content_length(&ct, 10).unwrap(), 5);
 
     let result = decrypt_with_keyring(&ct, &keyring).await;
     assert_eq!(result, pt);
@@ -69,7 +70,7 @@ async fn test_exact_frame_length_constructs_final_or_regular() {
     //# then this operation MUST [construct either a final frame or regular frame](#construct-a-frame)
     //# with the remaining plaintext.
     assert_eq!(regular + final_count, 1);
-    assert_eq!(final_frame_content_length(&ct).unwrap(), 10);
+    assert_eq!(final_frame_content_length(&ct, 10).unwrap(), 10);
 
     let result = decrypt_with_keyring(&ct, &keyring).await;
     assert_eq!(result, pt);
@@ -91,7 +92,7 @@ async fn test_enough_bytes_constructs_regular_frame() {
     //# using the consumable plaintext bytes.
     assert_eq!(regular, 2);
     assert_eq!(final_count, 1);
-    assert_eq!(final_frame_content_length(&ct).unwrap(), 5);
+    assert_eq!(final_frame_content_length(&ct, 10).unwrap(), 5);
 
     let result = decrypt_with_keyring(&ct, &keyring).await;
     assert_eq!(result, pt);
@@ -111,7 +112,7 @@ async fn test_not_enough_bytes_constructs_final_frame() {
     //# then this operation MUST [construct a final frame](#construct-a-frame)
     assert_eq!(regular, 0);
     assert_eq!(final_count, 1);
-    assert_eq!(final_frame_content_length(&ct).unwrap(), 7);
+    assert_eq!(final_frame_content_length(&ct, 10).unwrap(), 7);
 
     let result = decrypt_with_keyring(&ct, &keyring).await;
     assert_eq!(result, pt);
@@ -130,7 +131,7 @@ async fn test_empty_plaintext_constructs_empty_final_frame() {
     //# this operation MUST [construct an empty final frame](#construct-a-frame).
     assert_eq!(regular, 0);
     assert_eq!(final_count, 1);
-    assert_eq!(final_frame_content_length(&ct).unwrap(), 0);
+    assert_eq!(final_frame_content_length(&ct, 4096).unwrap(), 0);
 
     // Round-trip cross-check: empty plaintext must decrypt back to empty.
     // Regression: the decrypt path's preallocated `result` buffer would otherwise

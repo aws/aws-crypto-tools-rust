@@ -718,6 +718,10 @@ fn build_encryption_context_to_only_authenticate(
 
 /// Extracts the ECDSA signature algorithm from a generic MPL signature
 /// algorithm, returning an error if the algorithm is not ECDSA.
+///
+/// # Errors
+///
+/// Returns an error if `alg` is not an ECDSA signature algorithm.
 pub fn get_ecdsa_alg(
     alg: aws_mpl_legacy::suites::SignatureAlgorithm,
 ) -> Result<EcdsaSignatureAlgorithm, Error> {
@@ -744,7 +748,7 @@ fn verify_signature(
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
     //# to indicate an end to the encrypted message.
     let signature = footer::read_footer(r, sig_digest)?;
-    let ecdsa_params = get_ecdsa_alg(dec_mat.algorithm_suite.signature.clone())?;
+    let ecdsa_params = get_ecdsa_alg(dec_mat.algorithm_suite.signature)?;
 
     let valid = ecdsa_verify_context(
         ecdsa_params,

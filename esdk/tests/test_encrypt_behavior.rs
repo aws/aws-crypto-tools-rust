@@ -3,7 +3,11 @@
 
 //! Tests for encrypt.md#behavior, encrypt.md#get-the-encryption-materials,
 //! encrypt.md#construct-the-header, and encrypt.md#output.
+// The spy CMM below implements MPL traits whose signatures return the large
+// `aws_mpl_legacy` error type by value, so the Err variant size is not ours to shrink.
+#![allow(clippy::result_large_err)]
 
+#[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
@@ -680,7 +684,7 @@ async fn test_cmm_request_max_plaintext_length_equals_input() {
     encrypt(&enc_input).await.unwrap();
 
     // Verify spy observed max_plaintext_length == plaintext.len()
-    let observed = observed_len.lock().unwrap().clone();
+    let observed = *observed_len.lock().unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //= reason=Spy CMM observes max_plaintext_length equals input plaintext length

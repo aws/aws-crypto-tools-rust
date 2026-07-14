@@ -66,7 +66,7 @@ pub(crate) fn derive_key_v1(
 ) -> Result<ExpandedKeyMaterial, Error> {
     // `derive_keys` dispatches on the message version, so a non-V1 suite here is an
     // internal bug rather than bad input.
-    debug_assert!(suite.message_version == 1);
+    debug_assert_eq!(suite.message_version, 1);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The algorithm used to derive a data key from the plaintext data key MUST be
@@ -182,7 +182,7 @@ pub fn derive_key_v2(
 ) -> Result<ExpandedKeyMaterial, Error> {
     // `derive_keys` dispatches on the message version, so a non-V2 suite here is an
     // internal bug rather than bad input.
-    debug_assert!(suite.message_version == 2);
+    debug_assert_eq!(suite.message_version, 2);
 
     // For V2 algorithms the KDF can only be HKDF, and the encryption key length must
     // match the KDF output length.
@@ -324,7 +324,10 @@ pub fn derive_keys(
     on_net_v4_retry: bool,
 ) -> Result<ExpandedKeyMaterial, Error> {
     debug_assert!(!message_id.is_empty());
-    debug_assert!(usize::from(get_encrypt_key_length(suite)) == plaintext_data_key.len());
+    debug_assert_eq!(
+        usize::from(get_encrypt_key_length(suite)),
+        plaintext_data_key.len()
+    );
 
     match suite.message_version {
         1 => derive_key_v1(message_id, plaintext_data_key, suite, on_net_v4_retry),
