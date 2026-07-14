@@ -97,7 +97,7 @@ pub async fn decrypt_stream(
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
-    //= reason=multi-frame signed streaming always fails; single-frame signed is buffered until after verify
+    //= reason=No such configuration option is provided; multi-frame signed streaming unconditionally fails during body decode and single-frame signed is buffered until after signature verification, so unverified plaintext is never released early.
     //# - The ESDK MUST provide a configuration option that causes the decryption operation
     //# to fail immediately after parsing the header if a signed algorithm suite is used.
     internal_decrypt(
