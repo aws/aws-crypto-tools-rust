@@ -314,6 +314,93 @@ async fn test_encrypt_decrypt_accepts_cmm() {
     );
 }
 
+// encrypt() must reject an input that sets neither keyring nor cmm, and one
+// that sets both. Uses a raw-AES keyring and a default CMM built from it, so
+// no KMS credentials are required.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_encrypt_rejects_neither_and_both_sources() {
+    let keyring = test_keyring().await;
+    let cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .expect("default CMM construction must succeed for the test keyring");
+
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+    let mut neither = EncryptInput::new();
+    neither.plaintext = b"no source";
+    let err = encrypt(&neither)
+        .await
+        .expect_err("encrypt must fail when neither keyring nor cmm is set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+
+    let mut both = EncryptInput::new();
+    both.plaintext = b"two sources";
+    both.keyring = Some(Keyring::Legacy(keyring));
+    both.cmm = Some(Cmm::Legacy(cmm));
+    let err = encrypt(&both)
+        .await
+        .expect_err("encrypt must fail when both keyring and cmm are set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+}
+
+// decrypt() must reject an input that sets neither keyring nor cmm, and one
+// that sets both. Validation happens before any ciphertext parsing, so an
+// empty ciphertext is sufficient.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_neither_and_both_sources() {
+    let keyring = test_keyring().await;
+    let cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .expect("default CMM construction must succeed for the test keyring");
+
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+    let mut neither = DecryptInput::new();
+    let err = decrypt(&neither)
+        .await
+        .expect_err("decrypt must fail when neither keyring nor cmm is set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+
+    neither.keyring = Some(Keyring::Legacy(keyring));
+    neither.cmm = Some(Cmm::Legacy(cmm));
+    let err = decrypt(&neither)
+        .await
+        .expect_err("decrypt must fail when both keyring and cmm are set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+}
+
 // Esdk client tests
 
 use aws_esdk::{Esdk, EsdkConfig};
