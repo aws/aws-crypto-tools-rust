@@ -1,0 +1,87 @@
+# ============================================================================
+# aws-esdk-cpp — C++ shim CI
+# ----------------------------------------------------------------------------
+# Builds and tests the C++ shim crate (shims/aws-esdk-cpp), which exposes the
+# native Rust ESDK to C++ callers via a `cxx` bridge. It is a SEPARATE workflow
+# from the library CI (pull.yml) because the shim is a `cdylib`/`staticlib` FFI
+# crate whose end-to-end coverage comes from credential-gated C++ tests, so it
+# is not subject to the library workflow's 100% line-coverage gate.
+#
+# The Rust unit tests exercise the shim's own behavior (type translation, handle
+# validation, error propagation) with no AWS resources. The full round-trip
+# integration test (Rust `round_trip_integration` and the C++ `test_esdk`) skips
+# cleanly when the ESDK_TEST_* env vars are unset, so this workflow is GREEN
+# without credentials; it becomes an end-to-end gate once run with them.
+# ============================================================================
+name: aws-esdk-cpp shim (Rust)
+
+on:
+  pull_request:
+    paths:
+      - "shims/aws-esdk-cpp/**"
+      - ".github/workflows/aws-esdk-cpp.yml"
+  push:
+    paths:
+      - "shims/aws-esdk-cpp/**"
+      - ".github/workflows/aws-esdk-cpp.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shim:
+    name: build + test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: shims/aws-esdk-cpp
+    steps:
+      - uses: actions/checkout@v4
+
+      # aws-lc-sys (pulled in transitively via aws-esdk) builds native code; Go
+      # is required by the aws-lc build tooling on hosted runners, matching the
+      # library CI setup.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shims/aws-esdk-cpp
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test (Rust unit tests + credential-less integration skip)
+        run: cargo test --verbose
+
+      # Compile the idiomatic C++ facade, example, and integration test against
+      # the generated cxx bridge to catch facade/header regressions. Running
+      # them requires live AWS resources, so this step only compiles.
+      - name: Compile C++ facade, example, and test binary
+        if: runner.os == 'Linux'
+        run: |
+          make example
+          make test_esdk
