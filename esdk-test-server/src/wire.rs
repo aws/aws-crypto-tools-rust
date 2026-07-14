@@ -42,9 +42,13 @@ async fn dispatch(
     }
 
     let outcome = match operation.as_str() {
-        "CreateClient" => decode::<CreateClientRequest>(&body)
-            .and_then(|req| state.create_client(req))
-            .and_then(|resp| encode(&resp)),
+        "CreateClient" => match decode::<CreateClientRequest>(&body) {
+            Ok(req) => state
+                .create_client(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         "Encrypt" => match decode::<EncryptRequest>(&body) {
             Ok(req) => state.encrypt(req).await.and_then(|resp| encode(&resp)),
             Err(e) => Err(e),

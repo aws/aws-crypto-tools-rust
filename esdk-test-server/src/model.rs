@@ -215,6 +215,12 @@ pub struct Keyring {
     pub raw_aes: Option<RawAesKeyringConfig>,
     #[serde(rename = "RawRsa", default, skip_serializing_if = "Option::is_none")]
     pub raw_rsa: Option<RawRsaKeyringConfig>,
+    #[serde(
+        rename = "AwsKmsHierarchical",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aws_kms_hierarchical: Option<AwsKmsHierarchicalKeyringConfig>,
     #[serde(rename = "Multi", default, skip_serializing_if = "Option::is_none")]
     pub multi: Option<MultiKeyringConfig>,
 }
@@ -371,6 +377,22 @@ pub enum KmsRsaEncryptionAlgorithm {
     OaepSha1,
     #[serde(rename = "RSAES_OAEP_SHA_256")]
     OaepSha256,
+}
+
+/// Hierarchical keyring config: branch keys live in a DynamoDB key store and are
+/// wrapped by a KMS key. Built via the legacy (Dafny) MPL key store client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsKmsHierarchicalKeyringConfig {
+    #[serde(rename = "branchKeyId")]
+    pub branch_key_id: String,
+    #[serde(rename = "keyStoreTableName")]
+    pub key_store_table_name: String,
+    #[serde(rename = "logicalKeyStoreName")]
+    pub logical_key_store_name: String,
+    #[serde(rename = "kmsKeyArn")]
+    pub kms_key_arn: String,
+    #[serde(rename = "ttlSeconds")]
+    pub ttl_seconds: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
