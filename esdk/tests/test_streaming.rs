@@ -126,10 +126,6 @@ async fn test_decrypt_stream_multi_frame_signed_rejected_by_default() {
             err.kind
         );
 
-        //= spec/client-apis/streaming.md#release
-        //= type=test
-        //= reason=decrypt_stream rejects the multi-frame signed payload before any plaintext is written, honoring "specify when not to release"
-        //# The decrypt and encrypt operations specify when to release output bytes and when not to release output bytes.
         assert!(
             output.is_empty(),
             "no plaintext must be released before signature verification (style: {style:?})"
