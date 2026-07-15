@@ -8,10 +8,12 @@
 //! CMM. The macro makes this work by rewriting each `async fn`
 //! to return a boxed future.
 
+pub mod default_cmm;
 pub mod request;
 
 use async_trait::async_trait;
 
+pub use default_cmm::DefaultCmm;
 pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 
 use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
