@@ -92,7 +92,7 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
     //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
-    //= reason=decrypt re-derives the data key as the frame cipherkey; a wrong key fails AEAD, so the valid ct decrypting proves the derived key was used
+    //= reason=The derived data key is the frame AEAD key; the valid ct decrypts only under it, and the tampered tag below → CryptographicError
     //# - The cipherkey MUST be the derived data key
     //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -120,7 +120,7 @@ async fn test_frame_fields_deserialized_from_wire() {
     let f = &frames[0];
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
-    //= reason=regular frame fields parse at the Regular-Frame-spec offsets; round-trip succeeds
+    //= reason=each regular-frame field is asserted at its Regular-Frame-spec wire offset below
     //# Regular frame deserialization MUST conform to the [Regular Frame](../data-format/message-body.md#regular-frame) specification.
     //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -144,7 +144,7 @@ async fn test_frame_fields_deserialized_from_wire() {
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
-    //= reason=regular-frame content length equals the header frame length; round-trip succeeds
+    //= reason=the on-wire regular-frame content span equals the header frame length (asserted below)
     //# If this is a regular frame, this MUST be determined by using the [frame length](../data-format/message-header.md#frame-length)
     //# deserialized from the message header.
     //
@@ -183,14 +183,28 @@ async fn test_frame_fields_deserialized_from_wire() {
         "final frame content = remaining 10 bytes"
     );
 
-    // Round-trip corroboration: all fields consumed correctly
-    let result = decrypt_ciphertext(&ct).await.plaintext;
+    // The body AAD is an AES-GCM input, not on the wire: tamper a content byte so
+    // the AAD-bound frame tag no longer verifies, and confirm the valid ct decrypts.
+    let mut content_tampered = ct.clone();
+    content_tampered[f.content_offset] ^= 0xFF;
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
-    //= reason=decrypt reconstructs the body AAD; AEAD auth succeeds only when it matches encrypt's AAD
+    //= reason=The body AAD is bound into each frame's AEAD tag; tampering content → CryptographicError, and a wrong AAD would fail the valid decrypt
     //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
     //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
-    assert_eq!(result, pt);
+    assert_eq!(
+        decrypt_ciphertext(&ct).await.plaintext,
+        pt,
+        "valid ct must decrypt"
+    );
+    assert_eq!(
+        decrypt_ciphertext_result(&content_tampered)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::CryptographicError,
+        "tampering frame content must fail AEAD authentication"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -320,7 +334,7 @@ async fn test_sequence_number_end_value_is_0xffffffff() {
     // Byte-level check: the ENDFRAME marker is 0xFFFFFFFF at the frame start
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
-    //= reason=final frame fields parse at the Final-Frame-spec offsets; round-trip succeeds
+    //= reason=the final-frame marker and fields are asserted at their Final-Frame-spec wire offsets below
     //# Final frame deserialization MUST conform to the [Final Frame](../data-format/message-body.md#final-frame) specification.
     //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -552,7 +566,7 @@ async fn test_nonframed_body_fields_deserialized_from_wire() {
     //
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= type=test
-    //= reason=nonframed decrypt reconstructs the body AAD; external vector authenticates only when it matches
+    //= reason=the external nonframed vector (independent authority) decrypts only if our reconstructed body AAD matches its AAD
     //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
     //# constructed with:
     //

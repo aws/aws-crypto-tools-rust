@@ -385,12 +385,12 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let result = decrypt(&dec_input).await.unwrap();
     //= spec/client-apis/decrypt.md#cryptographic-materials-manager
     //= type=test
-    //= reason=decrypt succeeds only because the CMM returned valid decryption materials
+    //= reason=the spy CMM wraps a real CMM and was invoked during decrypt; its returned materials were used (spy call observed below)
     //# This CMM MUST obtain the [decryption materials](../framework/structures.md#decryption-materials) required for decryption.
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Decrypt succeeds only because the input spy CMM was called and returned valid materials
+    //= reason=the spy CMM recorded the Decrypt Materials call and returned the materials used (observations asserted below)
     //# This operation MUST obtain this set of [decryption materials](../framework/structures.md#decryption-materials),
     //# by calling [Decrypt Materials](../framework/cmm-interface.md#decrypt-materials) on a [CMM](../framework/cmm-interface.md).
     //

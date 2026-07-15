@@ -200,7 +200,7 @@ async fn test_body_aad_sequence_number_nonframed_is_one() {
         // The message under test MUST have seq=1 already
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= type=test
-        //= reason=the body IV encodes the sequence number padded to IV length; decrypt authenticates
+        //= reason=the external vector's body IV encodes seq=1 in its last 4 bytes, read from the wire below
         //# - The IV MUST be the [sequence number](../data-format/message-body-aad.md#sequence-number)
         //# used in the message body AAD above,
         //# padded to the [IV length](../data-format/message-header.md#iv-length) with 0.
@@ -233,7 +233,7 @@ async fn test_body_aad_content_length_nonframed_equals_plaintext_length() {
         let pt = decrypt_external_nonframed_vector(version).await;
         //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
         //= type=test
-        //= reason=external nonframed vector's content-length field equals plaintext length; decrypt succeeds
+        //= reason=the external vector's on-wire content-length field equals the known plaintext length (independent authority)
         //# - The [content length](../data-format/message-body-aad.md#content-length) MUST equal the length of the plaintext.
         //
         //= spec/data-format/message-body-aad.md#content-length
@@ -267,7 +267,7 @@ async fn test_body_aad_message_id_length_matches_header() {
         let pt = decrypt_external_nonframed_vector(version).await;
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //= type=test
-        //= reason=body AAD uses the header message ID; decrypt authenticates only with the matching ID
+        //= reason=V1 (16-byte) and V2 (32-byte) external vectors both decrypt, exercising the header→body-AAD message-ID copy for each ID length
         //# - The [message ID](../data-format/message-body-aad.md#message-id) MUST be the same as the
         //# [message ID](../data-format/message-header.md#message-id) deserialized from the header of this message.
         //
@@ -444,7 +444,7 @@ async fn test_body_aad_content_length_regular_frame_equals_frame_length() {
     let decrypted = round_trip_framed(&pt, frame_length).await;
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
-    //= reason=decrypt of a multi-frame message dispatches regular/final Body AAD Content; a wrong content string fails AEAD (nonframed covered by external-vector tests)
+    //= reason=regular and final frames in one message each need their own Body AAD Content string (byte-asserted in test_body_aad_content_values_match_spec_literals)
     //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be constructed
     //# according to [Message Body AAD](../data-format/message-body-aad.md) depending on
     //# whether the bytes being decrypted are a regular frame, final frame, or nonframed data.
