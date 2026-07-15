@@ -528,11 +528,11 @@ pub struct DecryptInput<'a> {
     pub source: Option<MaterialSource>,
     /// Default is no limit on the number of encrypted data keys.
     ///
-    /// Leave as `None` when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave as `None` when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     pub max_encrypted_data_keys: Option<NonZeroUsize>,
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave at the default when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     pub commitment_policy: EsdkCommitmentPolicy,
 }
 
@@ -595,11 +595,11 @@ pub struct DecryptStreamInput {
     pub unsafe_release_plaintext_before_verify: bool,
     /// Default is no limit on the number of encrypted data keys.
     ///
-    /// Leave as `None` when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave as `None` when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
     pub max_encrypted_data_keys: Option<NonZeroUsize>,
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave at the default when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
     pub commitment_policy: EsdkCommitmentPolicy,
 }
 
