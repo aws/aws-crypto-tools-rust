@@ -34,7 +34,7 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///   commitment policy's default).
 /// - For signing suites: generates an ECDSA key pair via `aws-lc-rs`, attaches
 ///   the private signing key to the materials, and inserts the
-///   base64-encoded SEC1-uncompressed public key into a copy of the request's
+///   base64-encoded SEC1-compressed public key into a copy of the request's
 ///   encryption context under the reserved `aws-crypto-public-key` key.
 /// - Calls the wrapped keyring's `on_encrypt` to populate the plaintext data
 ///   key and encrypted data keys.
@@ -112,13 +112,26 @@ impl Cmm for DefaultCmm {
                 .as_ref()
                 .to_vec();
 
-            // SEC1-uncompressed public point: 65 bytes for P-256, 97 for P-384.
-            let public_key_bytes = key_pair.public_key().as_ref();
+            // SEC1-compressed public point: tag byte (`0x02` when Y is even,
+            // `0x03` when Y is odd) followed by the X coordinate. 33 bytes
+            // for P-256, 49 for P-384. aws-lc-rs emits the SEC1-*uncompressed*
+            // form (`0x04 || X || Y`); the spec requires the compressed form
+            // in the encryption context per
+            // `spec/framework/transitive-requirements.md#ecdsa` (SEC 1 v2.0
+            // §2.3.3).
+            let uncompressed = key_pair.public_key().as_ref();
+            debug_assert_eq!(uncompressed[0], 0x04);
+            let coord_len = (uncompressed.len() - 1) / 2;
+            let y_lsb = uncompressed[uncompressed.len() - 1];
+            let tag = if y_lsb & 1 == 0 { 0x02 } else { 0x03 };
+            let mut public_key_bytes = Vec::with_capacity(1 + coord_len);
+            public_key_bytes.push(tag);
+            public_key_bytes.extend_from_slice(&uncompressed[1..=coord_len]);
 
             // Encode the verification key as base64 (standard alphabet, with
             // padding) and store the resulting ASCII bytes in the EC.
             let base64_public_key = base64::engine::general_purpose::STANDARD
-                .encode(public_key_bytes)
+                .encode(&public_key_bytes)
                 .into_bytes();
 
             ec.insert(RESERVED_AWS_CRYPTO_PUBLIC_KEY.to_vec(), base64_public_key);
