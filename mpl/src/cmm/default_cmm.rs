@@ -101,14 +101,21 @@ impl Cmm for DefaultCmm {
                 AsymmetricSignatureAlgorithm::EcdsaP384 => &ECDSA_P384_SHA384_ASN1_SIGNING,
             };
 
-            let key_pair = EcdsaKeyPair::generate(alg)
-                .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
+            let key_pair = EcdsaKeyPair::generate(alg).map_err(|e| {
+                MaterialsError::new(format!(
+                    "get_encryption_materials: ECDSA keypair generation failed: {e:?}"
+                ))
+            })?;
 
             // Extract the raw private scalar (32 bytes for P-256, 48 for P-384).
             let scalar_bytes = key_pair
                 .private_key()
                 .as_be_bytes()
-                .expect("ECDSA private scalar encoding cannot fail for valid keypair")
+                .map_err(|e| {
+                    MaterialsError::new(format!(
+                        "get_encryption_materials: ECDSA private-scalar encoding failed: {e:?}"
+                    ))
+                })?
                 .as_ref()
                 .to_vec();
 
@@ -156,7 +163,6 @@ impl Cmm for DefaultCmm {
         let materials = self.keyring.on_encrypt(empty_materials).await?;
 
         // on_encrypt populates PDK; returning materials passes it through unchanged.
-        //
         Ok(materials)
     }
 
@@ -172,6 +178,23 @@ impl Cmm for DefaultCmm {
             return Err(MaterialsError::new(format!(
                 "Algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
             )));
+        }
+
+        // Validate the reproduced encryption context against the message
+        // encryption context per `cmm-interface.md#decrypt-materials`:
+        // "For every key that exists in both Reproduced Encryption Context
+        // and Encryption Context, the values MUST be equal or the operation
+        // MUST fail."
+        if let Some(reproduced_ec) = request.reproduced_encryption_context() {
+            for (key, reproduced_value) in reproduced_ec.iter() {
+                if let Some(message_value) = ec.get(key)
+                    && message_value != reproduced_value
+                {
+                    return Err(MaterialsError::encryption_context_value_mismatch(format!(
+                        "decrypt_materials: reproduced encryption context value for key {key:?} does not match message encryption context value"
+                    )));
+                }
+            }
         }
 
         // For signing suites: extract the verification key from the EC under
@@ -220,35 +243,3 @@ impl Cmm for DefaultCmm {
         Ok(materials)
     }
 }
-
-// =====================================================================
-// Legacy MKP requirements — not implemented
-//
-// Per §Legacy of the Default CMM specification:
-//
-//     "Master key providers SHOULD NOT be included in any additional
-//     implementations."
-//
-// The Rust MPL has no master-key-provider interface and intentionally
-// omits one per that guidance. The 8 legacy `[[spec]]` entries below
-// are annotated `type=exception` with that sentence as their reason.
-// Each annotation block is anchored above a private zero-cost
-// `const _: () = ();` so duvet's "annotation immediately followed by
-// executable line" rule holds.
-// =====================================================================
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_LEGACY: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_LEGACY_BEHAVIOR: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_INIT_1: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_1: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_2: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_3: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_4: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_DM: () = ();

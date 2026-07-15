@@ -402,3 +402,65 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
         .expect_err("must fail on wrong VK length");
     assert_eq!(err.kind, MaterialsErrorKind::Validation);
 }
+
+#[tokio::test]
+async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
+    // cmm-interface.md#decrypt-materials: keys present in both the reproduced
+    // EC and the message EC with equal values MUST NOT fail.
+    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let cmm = DefaultCmm::new(keyring);
+    let mut message_ec = EncryptionContext::new();
+    message_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
+    message_ec.insert(b"message-only".to_vec(), b"m".to_vec());
+    let mut reproduced_ec = EncryptionContext::new();
+    reproduced_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
+            .with_reproduced_encryption_context(reproduced_ec);
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .expect("matching values must succeed");
+    assert!(materials.plaintext_data_key().is_some());
+}
+
+#[tokio::test]
+async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
+    // cmm-interface.md#decrypt-materials: "For every key that exists in both
+    // Reproduced Encryption Context and Encryption Context, the values MUST
+    // be equal or the operation MUST fail."
+    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let cmm = DefaultCmm::new(keyring);
+    let mut message_ec = EncryptionContext::new();
+    message_ec.insert(b"shared".to_vec(), b"message-value".to_vec());
+    let mut reproduced_ec = EncryptionContext::new();
+    reproduced_ec.insert(b"shared".to_vec(), b"reproduced-value".to_vec());
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
+            .with_reproduced_encryption_context(reproduced_ec);
+    let err = cmm
+        .decrypt_materials(request)
+        .await
+        .expect_err("mismatched reproduced-EC value must fail");
+    assert_eq!(err.kind, MaterialsErrorKind::EncryptionContextValueMismatch);
+}
+
+#[tokio::test]
+async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_succeeds() {
+    // A key present only in the reproduced EC (not in the message EC) is
+    // outside the "exists in both" clause and MUST NOT fail. The spec allows
+    // the CMM to MAY-fail here; we choose the permissive interpretation.
+    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let cmm = DefaultCmm::new(keyring);
+    let message_ec = EncryptionContext::new();
+    let mut reproduced_ec = EncryptionContext::new();
+    reproduced_ec.insert(b"only-in-reproduced".to_vec(), b"v".to_vec());
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
+            .with_reproduced_encryption_context(reproduced_ec);
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .expect("reproduced-only key must not fail");
+    assert!(materials.plaintext_data_key().is_some());
+}
