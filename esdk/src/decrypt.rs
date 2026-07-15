@@ -108,7 +108,6 @@ pub async fn decrypt_stream(
         plaintext,
         input.source.clone(),
         &input.encryption_context,
-        safety,
         DecryptMode::Streaming,
         input.max_encrypted_data_keys,
         input.commitment_policy,
