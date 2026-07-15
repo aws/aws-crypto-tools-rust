@@ -25,17 +25,20 @@ use aws_mpl_legacy::primitives::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum ProtectionNeeded {
-    /// Customer can see partial results, so multi-frame signed payloads forbidden
-    Yes,
-    /// Don't worry about multi-frame signed payloads
-    No,
+enum DecryptMode {
+    /// Plaintext is released to the caller as each frame is decrypted;
+    /// multi-frame signed messages are rejected because their frames would
+    /// reach the caller before the trailing signature is verified.
+    Streaming,
+    /// Plaintext is returned to the caller only after the whole message is
+    /// decrypted and verified; multi-frame signed messages decrypt normally.
+    Buffered,
 }
-impl ProtectionNeeded {
-    const fn yes(&self) -> bool {
+impl DecryptMode {
+    const fn is_streaming(&self) -> bool {
         match self {
-            Self::Yes => true,
-            Self::No => false,
+            Self::Streaming => true,
+            Self::Buffered => false,
         }
     }
 }
@@ -106,7 +109,7 @@ pub async fn decrypt_stream(
         input.source.clone(),
         &input.encryption_context,
         input.net_v4_retry_policy,
-        ProtectionNeeded::Yes,
+        DecryptMode::Streaming,
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
@@ -139,7 +142,7 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         input.source.clone(),
         &input.encryption_context,
         input.net_v4_retry_policy,
-        ProtectionNeeded::No, // Customer cannot see any partial results
+        DecryptMode::Buffered,
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
@@ -211,7 +214,7 @@ async fn internal_decrypt(
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     net_v4_retry_policy: NetV400RetryPolicy,
-    safety_needed: ProtectionNeeded,
+    mode: DecryptMode,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<DecryptStreamOutput, Error> {
@@ -268,7 +271,7 @@ async fn internal_decrypt(
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 4 MUST be [Decrypt the message body](#decrypt-the-message-body)
-    let last_frame = step_decrypt_body(ciphertext, plaintext, &mut state, &safety_needed)?;
+    let last_frame = step_decrypt_body(ciphertext, plaintext, &mut state, &mode)?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
@@ -594,7 +597,7 @@ fn step_decrypt_body(
     ciphertext: &mut dyn SafeRead,
     plaintext: &mut dyn SafeWrite,
     state: &mut DecryptState,
-    safety_needed: &ProtectionNeeded,
+    mode: &DecryptMode,
 ) -> Result<Vec<u8>, Error> {
     let key = state.derived_data_keys.data_key.clone();
 
@@ -638,7 +641,7 @@ fn step_decrypt_body(
         }
         ContentType::Framed => {
             let fail_if_multi_frame =
-                state.dec_mat.verification_key.is_some() && safety_needed.yes();
+                state.dec_mat.verification_key.is_some() && mode.is_streaming();
             body::read_and_decrypt_framed_message_body(
                 ciphertext,
                 plaintext,
