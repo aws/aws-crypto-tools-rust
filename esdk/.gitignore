@@ -2,3 +2,4 @@
 *.pem
 .duvet/reports/
 .duvet/requirements/
+.duvet/snapshot.txt
