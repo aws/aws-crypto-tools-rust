@@ -348,6 +348,7 @@ fn step_parse_header(
         header::read_header_body(ciphertext, max_encrypted_data_keys, &mut raw_header)?;
 
     //= spec/client-apis/decrypt.md#verify-the-header
+    //= type=implication
     //= reason=sig_digest is fed header bytes immediately; raw header not retained for later
     //# - The streamed Decrypt operation SHOULD input the serialized header to the signature algorithm as soon as it is deserialized,
     //# such that the serialized header isn't required to remain in memory to [verify the signature](#verify-the-signature).

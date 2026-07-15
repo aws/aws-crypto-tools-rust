@@ -89,6 +89,8 @@ pub fn read_header_body(
     //# deserializing those bytes according to the [message format](../data-format/message.md).
 
     //= spec/client-apis/decrypt.md#parse-the-header
+    //= type=implication
+    //= reason=read_msg_format_version reads the version from the cursor first; the match on its result dispatches the remaining field reads
     //# The [Version](../data-format/message-header.md#version) field MUST be deserialized first.
     let version = read_msg_format_version(ciphertext, raw_header)?;
 

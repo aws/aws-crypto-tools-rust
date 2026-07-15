@@ -79,6 +79,19 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
+    //= reason=tampered auth tag fails AEAD authentication; valid ct decrypts
+    //# Once at least a single frame is deserialized (or the entire body in the nonframed case),
+    //# the Decrypt operation MUST decrypt and authenticate the frame (or body) using the
+    //# [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
+    //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=tampering the frame's auth tag fails AEAD; valid ct decrypts
+    //# - The tag MUST be the authentication tag deserialized from the frame or body.
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
     //= reason=Untampered ct decrypts; tampered auth tag byte → CryptographicError
     //# If this decryption fails, this operation MUST immediately halt and fail.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
@@ -102,6 +115,16 @@ async fn test_frame_fields_deserialized_from_wire() {
     let f = &frames[0];
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
+    //= reason=regular frame fields parse at the Regular-Frame-spec offsets; round-trip succeeds
+    //# Regular frame deserialization MUST conform to the [Regular Frame](../data-format/message-body.md#regular-frame) specification.
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=each regular-frame field (seq, IV, content, tag) is parsed at its spec offset
+    //# For a regular frame, each field MUST be deserialized according to its specification:
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
     //= reason=On-wire seq_num at expected offset proves it was deserialized
     //# - MUST deserialize the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number).
     assert_eq!(f.seq_num, 1, "frame 1 seq_num must be 1");
@@ -114,6 +137,12 @@ async fn test_frame_fields_deserialized_from_wire() {
     assert_eq!(f.iv.len(), IV_LEN, "IV is 12 bytes on wire");
     assert_eq!(f.iv_offset, f.seq_num_offset + 4, "IV follows seq_num");
 
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=regular-frame content length equals the header frame length; round-trip succeeds
+    //# If this is a regular frame, this MUST be determined by using the [frame length](../data-format/message-header.md#frame-length)
+    //# deserialized from the message header.
+    //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=On-wire content at expected offset proves it was deserialized
@@ -151,6 +180,11 @@ async fn test_frame_fields_deserialized_from_wire() {
 
     // Round-trip corroboration: all fields consumed correctly
     let result = decrypt_ciphertext(&ct).await.plaintext;
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=decrypt reconstructs the body AAD; AEAD auth succeeds only when it matches encrypt's AAD
+    //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
+    //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
     assert_eq!(result, pt);
 }
 
@@ -172,6 +206,11 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
     let tampered_input =
         DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=tampering the frame's encrypted content fails AEAD; valid ct decrypts
+    //# - The ciphertext MUST be the encrypted content deserialized from the frame or body.
+    //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=Untampered body decrypts (Ok includes plaintext); tampered body returns Err with no DecryptOutput, so no plaintext released
@@ -232,6 +271,16 @@ async fn test_unframed_decrypt_fails_on_tampered_auth_tag() {
 
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= type=test
+    //= reason=nonframed encrypted content is the AEAD ciphertext; valid vector decrypts, tampered fails
+    //# - The ciphertext MUST be the [Encrypted Content](../data-format/message-body.md#nonframed-data-encrypted-content) deserialized from the message body.
+    //
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=tampering the nonframed auth tag fails AEAD; valid vector decrypts
+    //# - The tag MUST be the [Authentication Tag](../data-format/message-body.md#nonframed-data-authentication-tag) deserialized from the message body.
+    //
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
     //= reason=Untampered nonframed vector decrypts; tampered auth tag → CryptographicError, AEAD halts on failure
     //# If this decryption fails, this operation MUST immediately halt and fail.
     assert!(
@@ -260,6 +309,16 @@ async fn test_sequence_number_end_value_is_0xffffffff() {
     assert!(f.is_final, "frame must be a final frame");
 
     // Byte-level check: the ENDFRAME marker is 0xFFFFFFFF at the frame start
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=final frame fields parse at the Final-Frame-spec offsets; round-trip succeeds
+    //# Final frame deserialization MUST conform to the [Final Frame](../data-format/message-body.md#final-frame) specification.
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=each final-frame field (marker, seq, IV, content-length, content, tag) parses at its spec offset
+    //# For a final frame, each field MUST be deserialized according to its specification:
+    //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=On-wire bytes at frame start are exactly 0xFF 0xFF 0xFF 0xFF
@@ -395,6 +454,19 @@ async fn test_decrypt_sequence_numbers_increment() {
     // Verify final frame has endframe marker on wire
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
+    //= reason=parsed frames show 0xFFFFFFFF→final, otherwise regular
+    //# If deserializing [framed data](../data-format/message-body.md#framed-data),
+    //# the Decrypt operation MUST use the first 4 bytes of a frame to determine
+    //# whether the operation will deserialize the frame as a [final frame](../data-format/message-body.md#final-frame)
+    //# or [regular frame](../data-format/message-body.md#regular-frame).
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=each frame's first 4 bytes are parsed to classify the frame
+    //# The Decrypt operation MUST inspect the first 4 bytes of each frame.
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
     //= reason=Final frame's first 4 bytes are 0xFFFFFFFF on wire
     //# If the first 4 bytes have a value of 0xFFFFFFFF,
     //# the Decrypt operation MUST treat them as the [Sequence Number End](../data-format/message-body.md#sequence-number-end)
@@ -443,6 +515,11 @@ async fn test_nonframed_body_fields_deserialized_from_wire() {
         "encrypted content length must equal plaintext length"
     );
 
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=nonframed body AAD sequence number is 1 (IV encodes seq=1)
+    //# - The [sequence number](../data-format/message-body-aad.md#sequence-number) MUST be `1`.
+    //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=On-wire seq_num for nonframed is always 1 (checked via AAD construction)
@@ -451,6 +528,25 @@ async fn test_nonframed_body_fields_deserialized_from_wire() {
     let iv_seq = u32::from_be_bytes([body.iv[8], body.iv[9], body.iv[10], body.iv[11]]);
     assert_eq!(iv_seq, 1, "nonframed IV sequence number must be 1");
 
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=nonframed content type dispatches to the nonframed reader; framed dispatches to the framed reader
+    //# The Decrypt operation MUST use the [content type](../data-format/message-header.md#content-type) field parsed from the
+    //# message header to determine whether the operation will deserialize the message bytes as
+    //# [framed data](../data-format/message-body.md#framed-data) or
+    //# [nonframed data](../data-format/message-body.md#nonframed-data).
+    //
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=external nonframed vector parses per the Nonframed Data spec and decrypts
+    //# Nonframed data deserialization MUST conform to the [Nonframed Data](../data-format/message-body.md#nonframed-data) specification.
+    //
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=nonframed decrypt reconstructs the body AAD; external vector authenticates only when it matches
+    //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
+    //# constructed with:
+    //
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= type=test
     //= reason=External vector decrypts to known plaintext; proves all AES-GCM inputs correct
