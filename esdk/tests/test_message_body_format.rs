@@ -578,9 +578,6 @@ async fn test_final_frame_serialization_order() {
     );
 
     // Field 5 of 6: Encrypted Content — exactly content_length bytes; must NOT equal plaintext.
-    //= spec/data-format/message-body.md#final-frame-encrypted-content
-    //= type=test
-    //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
     assert_eq!(
         f.content.len(),
         PT_LEN,
@@ -895,9 +892,6 @@ async fn test_final_frame_auth_tag_authenticates_final_frame() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
-    //= spec/data-format/message-body.md#regular-frame-authentication-tag
-    //= type=test
-    //# The authentication tag MUST be interpreted as bytes.
     // Tampering with a regular frame's auth tag must cause decryption failure.
     // Use 25 bytes / frame_length=10 so the first frame is a regular frame.
     let pt = vec![0xCCu8; 25];
@@ -916,6 +910,10 @@ async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
     let err = decrypt(&dec_input)
         .await
         .expect_err("tampered regular frame auth tag must cause decryption failure");
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=tampering a regular frame's auth tag → AEAD failure, proving the deserialized tag authenticates the frame
+    //# - The tag MUST be the authentication tag deserialized from the frame or body.
     assert!(
         matches!(err.kind, ErrorKind::CryptographicError),
         "expected CryptographicError, got: {} ({:?})",

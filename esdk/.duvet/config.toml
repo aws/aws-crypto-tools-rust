@@ -6,9 +6,6 @@ pattern = "./src/**/*.rs"
 [[source]]
 pattern = "./tests/**/*.rs"
 
-[[source]]
-pattern = "./.duvet/compliance_exceptions/**/*.txt"
-
 [[specification]]
 source = "spec/data-format/message-header.md"
 

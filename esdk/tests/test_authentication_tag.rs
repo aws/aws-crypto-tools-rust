@@ -63,11 +63,6 @@ async fn test_v1_header_auth_has_iv_then_tag() {
         TAG_LEN,
         "V1 header auth tag must be {TAG_LEN} bytes"
     );
-    //= spec/client-apis/encrypt.md#authentication-tag
-    //= type=test
-    //= reason=tag is a real AEAD output over the header body
-    //# The value of this MUST be the output of the [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
-    //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
     assert!(
         tag_bytes.iter().any(|&b| b != 0),
         "V1 header auth tag must not be all zeros"
@@ -75,6 +70,12 @@ async fn test_v1_header_auth_has_iv_then_tag() {
 
     // Round-trip cross-check: decrypt the same ct whose bytes we inspected above.
     let result = decrypt_v1_with_keyring(&ct, &keyring).await;
+    //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=test
+    //= reason=decrypt's header-auth recomputes the tag over the header body; success proves encrypt wrote the AEAD output
+    //# The value of this MUST be the output of the [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
+    //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
+    //
     //= spec/client-apis/encrypt.md#authentication-tag
     //= type=test
     //= reason=decrypt re-derives the data key from EDKs; header-auth verify succeeds only if the same derived key was used

@@ -736,16 +736,31 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_plaintext_length_bound_used_for_unknown_length() {
-    // encrypt_stream with data_size=Some(100) passes the bound as max_plaintext_length.
+    // A spy CMM records the max_plaintext_length it receives. For an unknown-length
+    // stream with data_size=Some(100), the bound (100) must reach the CMM.
     let keyring = test_keyring().await;
-    let mut stream_input =
-        EncryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring.clone());
+    let inner_cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
+    let observed_suite = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let cmm_ref = aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef::from(SpyCmm {
+        inner: inner_cmm,
+        observed_algorithm_suite_id: observed_suite.clone(),
+        observed_max_plaintext_length: observed_len.clone(),
+    });
+    let mut stream_input = EncryptStreamInput::with_legacy_cmm(EncryptionContext::new(), cmm_ref);
+
     //= spec/client-apis/encrypt.md#input
     //= type=test
-    //= reason=data_size supplies the optional Plaintext Length Bound for an unknown-length stream; round-trip succeeds
+    //= reason=data_size sets the optional Plaintext Length Bound; the spy below confirms it reaches the CMM
     //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
     //# [Plaintext Length Bound](#plaintext-length-bound).
     stream_input.data_size = Some(100);
+
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
@@ -753,22 +768,38 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
         .await
         .unwrap();
 
-    let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
-    let pt = decrypt(&dec_input).await.unwrap().plaintext;
+    let observed = *observed_len.lock().unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
-    //= reason=data_size=Some(100) is passed as max_plaintext_length for the unknown-length stream; round-trip succeeds
+    //= reason=Spy CMM observes max_plaintext_length == 100, the Plaintext Length Bound for the unknown-length stream
     //# If the input [plaintext](#plaintext) has unknown length and a [Plaintext Length Bound](#plaintext-length-bound)
     //# was provided, this MUST be the [Plaintext Length Bound](#plaintext-length-bound).
-    assert_eq!(pt, plaintext);
+    assert_eq!(
+        observed,
+        Some(Some(100)),
+        "CMM must receive max_plaintext_length == the Plaintext Length Bound (100)"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_no_plaintext_length_bound_field_not_included() {
-    // encrypt_stream with data_size=None omits the max_plaintext_length field.
+    // A spy CMM records the max_plaintext_length it receives. For an unknown-length
+    // stream with data_size=None, no bound must reach the CMM (the field is omitted).
     let keyring = test_keyring().await;
-    let mut stream_input =
-        EncryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring.clone());
+    let inner_cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
+    let observed_suite = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let cmm_ref = aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef::from(SpyCmm {
+        inner: inner_cmm,
+        observed_algorithm_suite_id: observed_suite.clone(),
+        observed_max_plaintext_length: observed_len.clone(),
+    });
+    let mut stream_input = EncryptStreamInput::with_legacy_cmm(EncryptionContext::new(), cmm_ref);
     stream_input.data_size = None;
     let plaintext = vec![0xBBu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
@@ -777,13 +808,16 @@ async fn test_no_plaintext_length_bound_field_not_included() {
         .await
         .unwrap();
 
-    let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
-    let pt = decrypt(&dec_input).await.unwrap().plaintext;
+    let observed = *observed_len.lock().unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
-    //= reason=data_size=None omits max_plaintext_length; encrypt succeeds and round-trips
+    //= reason=Spy CMM observes max_plaintext_length is None when no Plaintext Length Bound is provided
     //# If no Plaintext Length Bound is provided, this field MUST NOT be included.
-    assert_eq!(pt, plaintext);
+    assert_eq!(
+        observed,
+        Some(None),
+        "CMM must receive max_plaintext_length=None when no bound is provided"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -954,4 +988,27 @@ async fn test_frame_fields_serialized_per_spec() {
     // Round-trip corroboration.
     let decrypted = decrypt_ciphertext(&ct).await.plaintext;
     assert_eq!(decrypted, pt, "round-trip must recover the plaintext");
+}
+
+#[test]
+fn test_non_esdk_materials_suite_yields_error() {
+    // The ESDK-support guard that encrypt applies to the retrieved materials suite
+    // (get_esdk_algorithm_suite_id) must reject a non-ESDK (DBE) algorithm suite.
+    use aws_esdk::__test_internals::get_esdk_algorithm_suite_id;
+
+    let non_esdk = aws_mpl_legacy::suites::AlgorithmSuiteId::Dbe(
+        aws_mpl_legacy::suites::DbeAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
+    );
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=test
+    //= reason=get_esdk_algorithm_suite_id is the guard encrypt applies to the materials suite; a non-ESDK (DBE) suite is rejected
+    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+    //# encrypt MUST yield an error.
+    let err = get_esdk_algorithm_suite_id(non_esdk)
+        .expect_err("non-ESDK materials suite must be rejected");
+    assert_eq!(
+        err.kind,
+        ErrorKind::Esdk,
+        "non-ESDK materials suite must yield an error, got: {err:?}"
+    );
 }

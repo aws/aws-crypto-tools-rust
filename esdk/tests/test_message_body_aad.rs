@@ -87,10 +87,6 @@ fn test_body_aad_message_id_is_copied_verbatim() {
         //= spec/data-format/message-body-aad.md#message-id
         //= type=test
         //# The length of the Message ID field MUST be equal to the length of the [Message ID](message-header.md#message-id) defined by the message header version.
-        //
-        //= spec/data-format/message-header.md#message-id
-        //= type=test
-        //# The message ID MUST be interpreted as bytes.
         assert_eq!(
             &out[..msg_id_len],
             msg_id.as_slice(),
@@ -106,13 +102,6 @@ fn test_body_aad_content_values_match_spec_literals() {
 
     let mut out = Vec::new();
     body_aad(&msg_id_16, BodyAADContent::RegularFrame, 1, 0, &mut out);
-    //= spec/client-apis/decrypt.md#decrypt-the-message-body
-    //= type=test
-    //= reason=regular/final/nonframed each select the matching Body AAD Content string
-    //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be constructed
-    //# according to [Message Body AAD](../data-format/message-body-aad.md) depending on
-    //# whether the bytes being decrypted are a regular frame, final frame, or nonframed data.
-    //
     //= spec/data-format/message-body-aad.md#body-aad-content
     //= type=test
     //# - The [regular frames](message-body.md#regular-frame) in [framed data](message-body.md#framed-data) MUST use the value `AWSKMSEncryptionClient Frame`.
@@ -453,6 +442,12 @@ async fn test_body_aad_content_length_regular_frame_equals_frame_length() {
     }
     // Corroboration: mismatched AAD content_length between encrypt and decrypt would fail AES-GCM auth.
     let decrypted = round_trip_framed(&pt, frame_length).await;
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=decrypt of a multi-frame message dispatches regular/final Body AAD Content; a wrong content string fails AEAD (nonframed covered by external-vector tests)
+    //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be constructed
+    //# according to [Message Body AAD](../data-format/message-body-aad.md) depending on
+    //# whether the bytes being decrypted are a regular frame, final frame, or nonframed data.
     assert_eq!(
         decrypted, pt,
         "decrypt output did not match plaintext — encrypt and decrypt disagree on regular-frame AAD content_length"

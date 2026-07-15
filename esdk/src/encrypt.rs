@@ -275,6 +275,10 @@ async fn internal_encrypt(
         //# the Encrypt operation MUST NOT construct a signature.
     }
 
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= reason=header.suite is the retrieved materials suite; get_esdk_algorithm_suite_id errors unless its id is an ESDK suite
+    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+    //# encrypt MUST yield an error.
     let suite_id = get_esdk_algorithm_suite_id(header.suite.id)?;
 
     //= spec/client-apis/encrypt.md#behavior
@@ -364,11 +368,6 @@ async fn step_get_encryption_materials(
     //# from the [input algorithm suite](#algorithm-suite).
     let algorithm_suite = &materials.algorithm_suite;
 
-    //= spec/client-apis/encrypt.md#get-the-encryption-materials
-    //= type=implication
-    //= reason=Guards against non-ESDK AlgorithmSuiteId from CMM
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# encrypt MUST yield an error.
     let message_id = header::generate_message_id(&materials.algorithm_suite)?;
 
     let derived_data_keys = key_derivation::derive_keys(
@@ -506,9 +505,6 @@ fn step_construct_signature(
             //# The encrypted message output by this operation MUST have a message footer equal
             //# to the message footer calculated in this step.
             //
-            //= spec/client-apis/encrypt.md#construct-the-signature
-            //# The order for message footer serialization MUST conform to the [Message Footer](../data-format/message-footer.md) specification.
-            //
             //= spec/data-format/message-footer.md#overview
             //# When an [algorithm suite](../framework/algorithm-suites.md) includes a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
             //# the [message](message.md) MUST contain a footer.
@@ -525,17 +521,6 @@ fn step_construct_signature(
                 //# This signature MUST be calculated over both the [message header](message-header.md) and the [message body](message-body.md),
                 //# in the order of serialization.
                 ciphertext,
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# - MUST serialize the [Signature Length](../data-format/message-footer.md#signature-length).
-                //
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# The value MUST be the length of the output of the signature calculation above.
-                //
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# - MUST serialize the [Signature](../data-format/message-footer.md#signature).
-                //
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# The value MUST be the output of the signature calculation above.
                 signature_bytes.as_ref(),
             )?;
         }
@@ -558,10 +543,6 @@ fn step_construct_signature(
     //# Once the entire message footer has been serialized,
     //# this operation MUST release any previously unreleased serialized bytes from previous steps
     //# and MUST release the message footer.
-    //
-    //= spec/client-apis/encrypt.md#construct-the-signature
-    //= reason=write_footer writes length then signature sequentially; Ok(()) is only reached after all writes complete
-    //# The above serialized bytes MUST NOT be released until the entire message footer has been serialized.
     Ok(())
 }
 

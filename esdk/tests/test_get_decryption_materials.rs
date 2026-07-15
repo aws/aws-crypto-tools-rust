@@ -41,16 +41,6 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     let invalid_input =
         DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), wrong_keyring);
 
-    //= spec/client-apis/decrypt.md#decrypt-the-message-body
-    //= type=test
-    //= reason=a wrong keyring yields a wrong derived data key; decrypt fails
-    //# - The cipherkey MUST be the derived data key
-    //
-    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
-    //= type=test
-    //= reason=a wrong derived key fails decrypt; the correct derived key decrypts the external nonframed vector elsewhere
-    //# - The cipherkey MUST be the derived data key.
-    //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=Right keyring → Ok; wrong keyring → default-CMM CollectionOfErrors, proving the input keyring constructs the default CMM

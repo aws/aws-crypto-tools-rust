@@ -92,6 +92,11 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
     //
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
+    //= reason=decrypt re-derives the data key as the frame cipherkey; a wrong key fails AEAD, so the valid ct decrypting proves the derived key was used
+    //# - The cipherkey MUST be the derived data key
+    //
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
     //= reason=Untampered ct decrypts; tampered auth tag byte → CryptographicError
     //# If this decryption fails, this operation MUST immediately halt and fail.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
@@ -271,24 +276,28 @@ async fn test_unframed_decrypt_fails_on_tampered_auth_tag() {
 
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= type=test
-    //= reason=nonframed encrypted content is the AEAD ciphertext; valid vector decrypts, tampered fails
+    //= reason=the external vector's deserialized encrypted content is used as the AEAD ciphertext; the valid vector decrypts
     //# - The ciphertext MUST be the [Encrypted Content](../data-format/message-body.md#nonframed-data-encrypted-content) deserialized from the message body.
     //
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
     //= type=test
-    //= reason=tampering the nonframed auth tag fails AEAD; valid vector decrypts
-    //# - The tag MUST be the [Authentication Tag](../data-format/message-body.md#nonframed-data-authentication-tag) deserialized from the message body.
-    //
-    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
-    //= type=test
-    //= reason=Untampered nonframed vector decrypts; tampered auth tag → CryptographicError, AEAD halts on failure
-    //# If this decryption fails, this operation MUST immediately halt and fail.
+    //= reason=the external vector decrypts only if the derived data key is used as the nonframed cipherkey; a wrong key fails AEAD
+    //# - The cipherkey MUST be the derived data key.
     assert!(
         try_decrypt_external_nonframed(Version::V2, &valid_ct)
             .await
             .is_ok(),
         "valid external vector must decrypt"
     );
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=tampering the nonframed auth tag → AEAD failure, proving the deserialized tag is used
+    //# - The tag MUST be the [Authentication Tag](../data-format/message-body.md#nonframed-data-authentication-tag) deserialized from the message body.
+    //
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=tampered auth tag → CryptographicError, so decryption halts on failure
+    //# If this decryption fails, this operation MUST immediately halt and fail.
     assert_eq!(
         try_decrypt_external_nonframed(Version::V2, &tampered_ct)
             .await
