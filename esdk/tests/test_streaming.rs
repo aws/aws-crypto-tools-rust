@@ -103,8 +103,8 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_stream_multi_frame_signed_rejected() {
     // multi_frame_signed_for_stream produces a 30-byte / frame_length=10 ECDSA-P384
-    // payload (3 frames: 2 regular + final). decrypt_stream must reject this up front
-    // rather than release plaintext before signature verification.
+    // payload (3 frames: 2 regular + final). decrypt_stream rejects it without
+    // releasing any plaintext.
     for style in CallStyle::ALL {
         let (_plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
 
