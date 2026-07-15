@@ -38,7 +38,11 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     let clen_off = final_frame
         .content_length_offset
         .expect("final content length");
-    content_length_tampered[clen_off + 2] ^= 0x01; // inflate declared content length by 256
+    assert_eq!(
+        final_frame.content_length, 1,
+        "final frame holds the 1 remaining byte"
+    );
+    content_length_tampered[clen_off + 3] ^= 0x01; // declared content length 1 → 0, still <= frame length
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
@@ -101,7 +105,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Inflating the final frame's declared content length past the serialized bytes → SerializationError
+    //= reason=The AAD content length is read from the wire; an in-bounds tamper of the declared length (1→0) breaks the AAD-bound AEAD tag → CryptographicError
     //# - The [content length](../data-format/message-body-aad.md#content-length) MUST have a value
     //# equal to the length of the plaintext being encrypted.
     assert_eq!(
@@ -109,8 +113,8 @@ async fn test_construct_frame_aead_inputs_authenticated() {
             .await
             .unwrap_err()
             .kind,
-        ErrorKind::SerializationError,
-        "tampered final-frame content length must be rejected"
+        ErrorKind::CryptographicError,
+        "tampered final-frame content length must fail AEAD authentication"
     );
 }
 
