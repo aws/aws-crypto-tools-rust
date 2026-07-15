@@ -162,7 +162,6 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //# The encrypted content length MUST be a UInt32.
             //
             //= spec/data-format/message-body.md#final-frame-encrypted-content
-            //= type=implication
             //= reason=read_seq_u32_bounded reads the content length field then exactly that many content bytes, so the serialized content length equals the field by construction
             //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
             //
