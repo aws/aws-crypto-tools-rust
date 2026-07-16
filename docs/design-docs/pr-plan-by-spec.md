@@ -49,7 +49,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 6 | `default-cmm` | [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) | **Merged** 2026-07-16 (merge commit `703322c`) | retired after merge |
 | 7 | `structures-polish` | — | **Folded into PR 8** (substance landed with PR 2; residual drift moves to PR 8) | — |
 | 8 | `mrk-match` | [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29) | **Merged** 2026-07-16 (merge commit `6214783`) | retired after merge |
-| 9 | `cmc-interface` | — | Not started | — |
+| 9 | `cmc-interface` | [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30) | **Open for review** 2026-07-16 | `aws-crypto-rust/cmc-interface-review` @ `HEAD` (1 commit on top of `main`) |
 | 10 | `local-cmc` | — | Not started | — |
 | 11 | `storm-tracking-cmc` | — | Not started | — |
 | 12 | `keystore-interface` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** cut PR 9 (`cmc-interface`) review branch from `main`.
+**Next action:** review and merge [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30) (`aws-crypto-rust/cmc-interface-review` against `main`).
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -830,7 +830,7 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 6. PR 6 — `default-cmm` — ✅ merged as [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28)
 7. PR 7 — `structures-polish` — 🗑️ folded into PR 8 *(substance landed via PR 2)*
 8. PR 8 — `mrk-match` — ✅ merged as [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29)
-9. PR 9 — `cmc-interface` — 🟡 next up
+9. PR 9 — `cmc-interface` — 🟢 open for review as [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30) **(current)**
 10. PR 10 — `local-cmc`
 11. PR 11 — `storm-tracking-cmc`
 12. PR 12 — `keystore-interface`
