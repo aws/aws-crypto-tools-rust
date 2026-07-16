@@ -532,8 +532,8 @@ fn test_signing_key_length_matches_spec_table() {
 
 #[test]
 fn test_verification_key_length_matches_spec_table() {
-    // SEC1 uncompressed public key: 1 byte tag + 2 * coord_len.
-    // P-256: 1 + 2*32 = 65 bytes. P-384: 1 + 2*48 = 97 bytes. Non-signing: None.
+    // SEC1 compressed public key: 1 byte tag + coord_len.
+    // P-256: 1 + 32 = 33 bytes. P-384: 1 + 48 = 49 bytes. Non-signing: None.
     let cases: [(AlgorithmSuiteId, Option<usize>); 11] = [
         (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
         (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
@@ -543,20 +543,20 @@ fn test_verification_key_length_matches_spec_table() {
         (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
         (
             AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-            Some(65),
+            Some(33),
         ),
         (
             AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-            Some(97),
+            Some(49),
         ),
         (
             AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-            Some(97),
+            Some(49),
         ),
         (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
         (
             AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-            Some(97),
+            Some(49),
         ),
     ];
     for (suite, expected) in cases {

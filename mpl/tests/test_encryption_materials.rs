@@ -10,8 +10,8 @@ use aws_crypto_mpl::structures::{
 
 // Standard ESDK suite IDs used throughout these tests:
 // - NO_KDF non-signing (00 78): non-signing baseline.
-// - HKDF-SHA256 + ECDSA-P256 (02 14): 32-byte signing key, 65-byte verify key.
-// - HKDF-SHA384 + ECDSA-P384 (03 78): 48-byte signing key, 97-byte verify key.
+// - HKDF-SHA256 + ECDSA-P256 (02 14): 32-byte signing key, 33-byte verify key.
+// - HKDF-SHA384 + ECDSA-P384 (03 78): 48-byte signing key, 49-byte verify key.
 const NO_SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
 const P256_SIGN_SUITE: AlgorithmSuiteId =
     AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256;
