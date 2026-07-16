@@ -101,25 +101,20 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_multi_frame_signed_rejected_by_default() {
+async fn test_decrypt_stream_multi_frame_signed_rejected() {
     // multi_frame_signed_for_stream produces a 30-byte / frame_length=10 ECDSA-P384
-    // payload (3 frames: 2 regular + final). With unsafe_release_plaintext_before_verify
-    // = false (default), decrypt_stream must reject this up front rather than release
-    // plaintext before signature verification.
+    // payload (3 frames: 2 regular + final). decrypt_stream rejects it without
+    // releasing any plaintext.
     for style in CallStyle::ALL {
         let (_plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
 
         let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-        assert!(
-            !dec_input.unsafe_release_plaintext_before_verify,
-            "unsafe_release_plaintext_before_verify must default to false"
-        );
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
         let err = run_decrypt_stream(style, &mut ct_cursor, &mut output, &dec_input)
             .await
-            .expect_err("multi-frame signed message must fail with default unsafe_release_plaintext_before_verify=false");
+            .expect_err("multi-frame signed message must fail in streaming mode");
         assert!(
             matches!(err.kind, ErrorKind::Esdk),
             "expected ErrorKind::Esdk under {style:?}, got {:?}",
@@ -137,43 +132,14 @@ async fn test_decrypt_stream_multi_frame_signed_rejected_by_default() {
     }
 }
 
-// Proves that unsafe_release_plaintext_before_verify=true allows a
-// multi-frame signed payload to round-trip via decrypt_stream. Doubles
-// as multi-frame streaming coverage for this PR.
+// Multi-frame unsigned payloads round-trip in streaming mode because each frame
+// is individually authenticated via AES-GCM (no trailing signature).
 #[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_multi_frame_signed_unsafe_flag_round_trip() {
-    // Same multi-frame signed payload as the default-rejection test. Setting
-    // unsafe_release_plaintext_before_verify=true opts in to early release;
-    // decrypt_stream now succeeds and the plaintext round-trips. Doubles as
-    // multi-frame streaming round-trip coverage for this PR.
-    for style in CallStyle::ALL {
-        let (plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
-
-        let mut dec_input =
-            DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-        dec_input.unsafe_release_plaintext_before_verify = true;
-
-        let mut ct_cursor = std::io::Cursor::new(&ct[..]);
-        let mut output: Vec<u8> = Vec::new();
-        run_decrypt_stream(style, &mut ct_cursor, &mut output, &dec_input)
-            .await
-            .unwrap_or_else(|e| panic!("decrypt_stream failed under {style:?}: {e:?}"));
-        assert_eq!(
-            output, plaintext,
-            "multi-frame signed round-trip mismatch under {style:?}"
-        );
-    }
-}
-
-// Multi-frame unsigned payloads don't require unsafe_release_plaintext_before_verify
-// because each frame is individually authenticated via AES-GCM (no trailing signature).
-#[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_multi_frame_unsigned_accepted_by_default() {
+async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     for style in CallStyle::ALL {
         let (plaintext, keyring, ct) = multi_frame_unsigned_for_stream().await;
 
         let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-        assert!(!dec_input.unsafe_release_plaintext_before_verify);
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
