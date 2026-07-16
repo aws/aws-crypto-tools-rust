@@ -48,7 +48,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 5 | `keyring-and-cmm-interfaces` | [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20) | **Merged** 2026-07-14 (merge commit `3e58ec3`) | retired after merge |
 | 6 | `default-cmm` | [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) | **Merged** 2026-07-16 (merge commit `703322c`) | retired after merge |
 | 7 | `structures-polish` | — | **Folded into PR 8** (substance landed with PR 2; residual drift moves to PR 8) | — |
-| 8 | `mrk-match` | — | Not started | — |
+| 8 | `mrk-match` | [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29) | **Open for review** 2026-07-16 | `aws-crypto-rust/mrk-match-review` @ `668c528` (1 commit on top of `main`) |
 | 9 | `cmc-interface` | — | Not started | — |
 | 10 | `local-cmc` | — | Not started | — |
 | 11 | `storm-tracking-cmc` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** cut PR 8 (`mrk-match`) review branch from `main`. PR 8's scope absorbs the residual `structures-polish` drift (a `derive(Clone)` + doc extension on `BranchKeyMaterials` and a `MaterialsErrorKind::Validation` comment update in the encryption-context test) since PR 7's original substance landed with PR 2's merge.
+**Next action:** review and merge [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29) (`aws-crypto-rust/mrk-match-review` against `main`). PR 8's scope absorbs the residual `structures-polish` drift (a `derive(Clone)` + doc extension on `BranchKeyMaterials` and a `MaterialsErrorKind::Validation` comment update in the encryption-context test) since PR 7's original substance landed with PR 2's merge.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -829,7 +829,7 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 5. PR 5 — `keyring-and-cmm-interfaces` — ✅ merged as [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20)
 6. PR 6 — `default-cmm` — ✅ merged as [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28)
 7. PR 7 — `structures-polish` — 🗑️ folded into PR 8 *(substance landed via PR 2)*
-8. PR 8 — `mrk-match` — 🟡 next up
+8. PR 8 — `mrk-match` — 🟢 open for review as [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29) **(current)**
 9. PR 9 — `cmc-interface`
 10. PR 10 — `local-cmc`
 11. PR 11 — `storm-tracking-cmc`
