@@ -47,7 +47,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Merged** 2026-07-13 (merge commit `55d0e28`) | retired after merge |
 | 5 | `keyring-and-cmm-interfaces` | [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20) | **Merged** 2026-07-14 (merge commit `3e58ec3`) | retired after merge |
 | 6 | `default-cmm` | [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) | **Merged** 2026-07-16 (merge commit `703322c`) | retired after merge |
-| 7 | `structures-polish` | — | Not started | — |
+| 7 | `structures-polish` | — | **Folded into PR 8** (substance landed with PR 2; residual drift moves to PR 8) | — |
 | 8 | `mrk-match` | — | Not started | — |
 | 9 | `cmc-interface` | — | Not started | — |
 | 10 | `local-cmc` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** cut PR 7 (`structures-polish`) review branch from `main`. Note: PR 6 review branch's `ed81592` fix (SEC1-compressed on-wire form) was carried into `unreviewed` on top of the prim-based `default_cmm.rs` during the post-PR-6 merge; both the compression step in `default_cmm.rs` and the compressed-length constants/tests are now consistent on `unreviewed`.
+**Next action:** cut PR 8 (`mrk-match`) review branch from `main`. PR 8's scope absorbs the residual `structures-polish` drift (a `derive(Clone)` + doc extension on `BranchKeyMaterials` and a `MaterialsErrorKind::Validation` comment update in the encryption-context test) since PR 7's original substance landed with PR 2's merge.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -106,11 +106,14 @@ stack level.
 - `mpl/src/structures/error.rs` — slice 2 introduces `MaterialsError` /
   `MaterialsErrorKind`. Slice 5 (keyring + cmm) extends with new variants.
 - `mpl/src/structures/encryption_context.rs` and materials structs —
-  slice 2 introduces them; slice 7 (`structures-polish`) applies the
-  reject-trailing-bytes fix, boundary / UTF-8 / known-vector tests,
-  BTreeMap-entry-API perf, materials `derive(Debug)`, and the
-  drop-redundant-duvet-annotation stance. Slice 7's PR shows its
-  incremental diff to these PR-2-owned files.
+  slice 2 introduces them; slice 7's originally-planned polish (reject-
+  trailing-bytes fix, boundary / UTF-8 / known-vector tests, BTreeMap-
+  entry-API perf, drop-redundant-duvet-annotation stance) landed with
+  PR 2's merge. The remaining drift on `unreviewed`
+  (`#[derive(Clone)]` + `uuid`-decode doc extension on
+  `BranchKeyMaterials`, and a `MaterialsErrorKind::Validation` comment
+  update in `test_encryption_context.rs`) is folded into PR 8's scope
+  so PR 7 does not ship as a standalone slice.
 - `mpl/src/client.rs` — slice 1 introduces it. Slice 17
   (`client-factories`) adds `create_cryptographic_materials_cache`,
   `create_branch_key_store`, and `create_aws_kms_hierarchical_keyring`
@@ -391,41 +394,20 @@ compliance directory yet.
 
 ---
 
-### PR 7 — `structures-polish`
+### PR 7 — `structures-polish` *(folded into PR 8)*
 
-**Topic:** Post-PR-2 refinements to structures files:
-`EncryptionContext` reject-trailing-bytes bugfix, u16::MAX boundary +
-multibyte-UTF-8 + known-vector tests, BTreeMap-entry-API perf, empty-key
-spec-gap doc; `derive(Debug)` on materials structs; drop-redundant-duvet-
-annotation stance from PR 2 files.
-**Spec:** none new — extends PR 2's `structures.md` coverage; annotations
-inline in source / tests.
-**Review branch:** `aws-crypto-rust/structures-polish-review`
-**Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-structures-polish`
-**Base branch (PR target):** `aws-crypto-rust/default-cmm-review`
-**Depends on:** PR 2
-
-**Source (diffs to PR-2-owned files):**
-- `mpl/src/structures/encryption_context.rs`
-- `mpl/src/structures/encryption_materials.rs`
-- `mpl/src/structures/decryption_materials.rs`
-- `mpl/src/structures/branch_key_materials.rs`
-- `mpl/src/structures/beacon_key_materials.rs`
-- `mpl/src/structures/encrypted_data_key.rs`
-
-**Tests:**
-- `mpl/tests/test_encryption_context.rs` (diffs — boundary / UTF-8 /
-  known-vector / API-surface additions)
-
-**Compliance:** none new.
-
-**Notes:**
-- Every file in this slice is a shared file introduced by PR 2. This PR
-  shows the incremental diff only.
-- Contributing commits: `730d6f6`, `40e215e`, `2471927`, `a07e760`,
-  `b3826b6`, `c8f620b`, `751bccd`, `619f561`, `251521c`. Reviewers may
-  prefer to fold these into PR 2's snapshot instead of cutting a
-  standalone slice; the decision is deferred to the review team.
+**Status:** folded. The originally-planned polish content
+(`EncryptionContext` reject-trailing-bytes bugfix, u16::MAX boundary,
+multibyte-UTF-8 and known-vector tests, BTreeMap-entry-API perf,
+`derive(Debug)` on materials structs, drop-redundant-duvet-annotation
+stance) all landed as part of PR 2's merge (#15). The two residual
+drift diffs on `unreviewed`
+(`#[derive(Clone)]` + `uuid`-decode doc extension on
+`BranchKeyMaterials`, and a `MaterialsErrorKind::Validation` comment
+update in `test_encryption_context.rs`) are absorbed into PR 8's
+`scope_files` and ship with `mrk-match`. This slot is retained for
+numbering stability; the review branch, sync worktree, and PR were
+never opened.
 
 ---
 
@@ -433,19 +415,29 @@ inline in source / tests.
 
 **Topic:** `aws_kms::mrk_match` shared utility — the MRK-match-for-decrypt
 algorithm used by hierarchical keyring and (future) MRK keyring decrypt
-paths.
+paths. Absorbs the residual `structures-polish` drift from the folded
+PR 7.
 **Spec:** [`spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md`](../../spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md)
 **Review branch:** `aws-crypto-rust/mrk-match-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-mrk-match`
-**Base branch (PR target):** `aws-crypto-rust/structures-polish-review`
+**Base branch (PR target):** `main` (PR 6 is merged; PR 7 is folded — stack is currently reset)
 **Depends on:** PR 1 (scaffold)
 
 **Source:**
 - `mpl/src/aws_kms/mod.rs` (introduces the module with `pub mod mrk_match;`)
 - `mpl/src/aws_kms/mrk_match.rs`
 
+**Source (folded from PR 7 — diffs to PR-2-owned files):**
+- `mpl/src/structures/branch_key_materials.rs` (`#[derive(Clone)]` and
+  `branch_key_version` doc extension referencing the `uuid`-decode
+  path)
+
 **Tests:**
 - `mpl/tests/test_aws_kms_mrk_match.rs`
+
+**Tests (folded from PR 7):**
+- `mpl/tests/test_encryption_context.rs` (comment update referencing
+  `MaterialsErrorKind::Validation`)
 
 **Compliance:**
 - `mpl/compliance/spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt/*.toml`
@@ -455,6 +447,9 @@ paths.
   mod aws_kms;`), `.duvet/config.toml` (registers the mrk-match spec).
 - Later slices (16, 17) extend `aws_kms/mod.rs` with feature-gated
   hkeyring modules.
+- The two files inherited from PR 7 are small non-substantive
+  cleanups; they are listed here so PR 8's review branch is a
+  buildable, spec-consistent snapshot of `main` plus this slice.
 
 ---
 
@@ -833,8 +828,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 4. PR 4 — `commitment-policy` — ✅ merged as [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17)
 5. PR 5 — `keyring-and-cmm-interfaces` — ✅ merged as [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20)
 6. PR 6 — `default-cmm` — ✅ merged as [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28)
-7. PR 7 — `structures-polish` — 🟡 next up *(diffs to PR-2 files)*
-8. PR 8 — `mrk-match`
+7. PR 7 — `structures-polish` — 🗑️ folded into PR 8 *(substance landed via PR 2)*
+8. PR 8 — `mrk-match` — 🟡 next up
 9. PR 9 — `cmc-interface`
 10. PR 10 — `local-cmc`
 11. PR 11 — `storm-tracking-cmc`
