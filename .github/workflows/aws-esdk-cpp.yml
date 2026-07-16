@@ -1,28 +1,16 @@
-# ============================================================================
-# aws-esdk-cpp — C++ shim CI
-# ----------------------------------------------------------------------------
-# Builds and tests the C++ shim crate (esdk/shims/aws-esdk-cpp), which exposes the
-# native Rust ESDK to C++ callers via a `cxx` bridge. It is a SEPARATE workflow
-# from the library CI (pull.yml) because the shim is a `cdylib`/`staticlib` FFI
-# crate whose end-to-end coverage comes from credential-gated C++ tests, so it
-# is not subject to the library workflow's 100% line-coverage gate.
-#
-# The Rust unit tests exercise the shim's own behavior (type translation, handle
-# validation, error propagation) with no AWS resources. The full round-trip
-# integration test (Rust `round_trip_integration` and the C++ `test_esdk`) skips
-# cleanly when the ESDK_TEST_* env vars are unset, so this workflow is GREEN
-# without credentials; it becomes an end-to-end gate once run with them.
-# ============================================================================
+# CI for the aws-esdk-cpp C++ shim: fmt, clippy, build, Rust unit + integration
+# tests, and the C++ facade/example/parity build. The round-trip integration
+# tests run against the ESDK test account via OIDC credentials.
 name: aws-esdk-cpp shim (Rust)
 
 on:
   pull_request:
     paths:
-      - "esdk/shims/aws-esdk-cpp/**"
+      - "esdk/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   push:
     paths:
-      - "esdk/shims/aws-esdk-cpp/**"
+      - "esdk/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   workflow_dispatch:
 
@@ -32,6 +20,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   shim:
@@ -41,11 +30,25 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
+      ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
+      ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
+      ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
+      ESDK_TEST_REGION: us-west-2
     defaults:
       run:
         working-directory: esdk/shims/aws-esdk-cpp
     steps:
       - uses: actions/checkout@v4
+
+      # OIDC credentials for the round-trip integration tests (KMS + DynamoDB in
+      # the ESDK test account); same role and region as the library CI.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
 
       # aws-lc-sys (pulled in transitively via aws-esdk) builds native code; Go
       # is required by the aws-lc build tooling on hosted runners, matching the
@@ -74,14 +77,15 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-      - name: Test (Rust unit tests + credential-less integration skip)
+      - name: Test (Rust unit + integration tests)
         run: cargo test --verbose
 
-      # Compile the idiomatic C++ facade, example, and integration test against
-      # the generated cxx bridge to catch facade/header regressions. Running
-      # them requires live AWS resources, so this step only compiles.
-      - name: Compile C++ facade, example, and test binary
+      # Build the C++ facade example, the compile-time enum-parity check, and the
+      # integration test, then run the integration test against live AWS resources.
+      - name: Build and run C++ facade, example, and integration test
         if: runner.os == 'Linux'
         run: |
           make example
+          make enum_parity
           make test_esdk
+          LD_LIBRARY_PATH="$PWD/target/debug" ./test_esdk

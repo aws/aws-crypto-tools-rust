@@ -214,6 +214,16 @@ public:
           }))) {}
 };
 
+// ---- Encrypt result ----------------------------------------------------------
+// encrypt returns the ciphertext plus the encryption context and algorithm suite
+// the core library actually used; a CMM may add context entries and the suite may
+// be defaulted, so both can differ from what the caller requested.
+struct EncryptResult {
+    std::vector<std::uint8_t> ciphertext;
+    std::map<std::string, std::string> encryption_context;
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
 // ---- Decrypt result ----------------------------------------------------------
 // decrypt returns not just the plaintext but the encryption context and algorithm
 // suite the core library reported, so the caller can inspect what was actually
@@ -227,12 +237,13 @@ struct DecryptResult {
 // ---- SDK facade --------------------------------------------------------------
 class EncryptionSDK {
 public:
-    std::vector<std::uint8_t> encrypt(
+    EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const HierarchicalKeyring& keyring,
         AlgorithmSuiteId alg = AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384,
         CommitmentPolicy policy = CommitmentPolicy::RequireEncryptRequireDecrypt,
-        const std::map<std::string, std::string>& encryption_context = {}) {
+        const std::map<std::string, std::string>& encryption_context = {},
+        std::uint32_t frame_length = 4096) {
         // Start from the Rust-defined defaults, then override — so we never
         // re-declare defaults in C++ and risk diverging from the Rust core.
         ::EncryptInput in = ::default_encrypt_input();
@@ -241,16 +252,23 @@ public:
         in.algorithm_suite_id = detail::to_ffi(alg);
         in.commitment_policy = detail::to_ffi(policy);
         in.encryption_context = detail::to_ec(encryption_context);
+        in.frame_length = frame_length;
         ::EncryptOutput out = detail::guard([&] { return ::encrypt(in); });
-        return std::vector<std::uint8_t>(out.ciphertext.begin(), out.ciphertext.end());
+        EncryptResult result;
+        result.ciphertext = std::vector<std::uint8_t>(out.ciphertext.begin(), out.ciphertext.end());
+        result.encryption_context = detail::from_ec(out.encryption_context);
+        result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
+        return result;
     }
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
-        const HierarchicalKeyring& keyring) {
+        const HierarchicalKeyring& keyring,
+        const std::map<std::string, std::string>& encryption_context = {}) {
         ::DecryptInput in = ::default_decrypt_input();
         in.keyring = keyring.ffi();
         in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext.data(), ciphertext.size());
+        in.encryption_context = detail::to_ec(encryption_context);
         ::DecryptOutput out = detail::guard([&] { return ::decrypt(in); });
         DecryptResult result;
         result.plaintext = std::vector<std::uint8_t>(out.plaintext.begin(), out.plaintext.end());

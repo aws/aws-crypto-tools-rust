@@ -1,4 +1,4 @@
-// test_esdk.cpp — integration tests for the idiomatic C++ facade (aws_esdk.hpp).
+// test_esdk.cpp — integration tests for the C++ facade (EncryptionSDK.h).
 //
 // These test the SHIM's own behavior through the public C++ API:
 //   * encrypt/decrypt round-trip fidelity,
@@ -92,7 +92,7 @@ void test_round_trip(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
     auto plaintext = to_bytes("Hello World");
-    auto ciphertext = sdk.encrypt(plaintext, keyring);
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
     CHECK(ciphertext != plaintext);
 
     //= spec/shim/shim.md#delegation
@@ -129,10 +129,17 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     Aws::Esdk::EncryptionSDK sdk;
     auto plaintext = to_bytes("context matters");
     std::map<std::string, std::string> ec = {{"purpose", "test"}, {"origin", "cxx"}};
-    auto ciphertext = sdk.encrypt(plaintext, keyring,
-                                  Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384,
-                                  Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ec);
-    auto decrypted = sdk.decrypt(ciphertext, keyring);
+    auto encrypted = sdk.encrypt(plaintext, keyring,
+                                 Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384,
+                                 Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ec);
+    // encrypt surfaces the used suite and the encryption context sent to the core library.
+    CHECK(encrypted.algorithm_suite_id ==
+          Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
+    for (const auto& kv : ec) {
+        CHECK(encrypted.encryption_context.count(kv.first) == 1);
+        CHECK(encrypted.encryption_context[kv.first] == kv.second);
+    }
+    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring, ec);
     CHECK(decrypted.plaintext == plaintext);
 
     //= spec/shim/esdk-shim.md#decrypt-outputs
@@ -183,7 +190,7 @@ void test_decrypt_garbage_throws(const TestConfig& cfg) {
 void test_tampered_ciphertext_throws(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
-    auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring);
+    auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext;
     CHECK(!ciphertext.empty());
     ciphertext[ciphertext.size() / 2] ^= 0xFF;  // flip a byte in the body
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring));
@@ -203,7 +210,7 @@ void test_lifetime_safety(const TestConfig& cfg) {
     //# - An owned interface that depends on another resource MUST retain ownership of
     //# that resource for its own lifetime, so that a handle passed across the boundary
     //# cannot outlive the resource it refers to.
-    auto ciphertext = sdk.encrypt(plaintext, keyring);
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
     auto decrypted = sdk.decrypt(ciphertext, keyring);
     CHECK(decrypted.plaintext == plaintext);
 }
