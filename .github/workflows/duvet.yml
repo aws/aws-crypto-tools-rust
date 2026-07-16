@@ -1,0 +1,53 @@
+# Reusable workflow that runs duvet for a single project (subdirectory) and
+# uploads the HTML compliance report as a build artifact. Callers pass the
+# project directory name via the `project` input (e.g. "esdk"). The project
+# must have a `.duvet/config.toml` and a `make duvet` target.
+name: Duvet Report
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to run duvet in (e.g. esdk)."
+        required: true
+        type: string
+
+jobs:
+  duvet:
+    name: duvet (${{ inputs.project }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.project }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # duvet is not prebuilt by taiki-e/install-action; cache the installed
+      # binary so the source build only happens when the cache misses.
+      - name: Cache duvet binary
+        id: cache-duvet
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/duvet
+          key: duvet-bin-${{ runner.os }}-v1
+
+      - name: Install duvet
+        if: steps.cache-duvet.outputs.cache-hit != 'true'
+        run: cargo install duvet --locked
+
+      - name: Run duvet
+        run: make duvet
+
+      - name: Upload duvet report
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.project }}-duvet-report
+          include-hidden-files: true
+          path: ${{ inputs.project }}/.duvet/reports/report.html
