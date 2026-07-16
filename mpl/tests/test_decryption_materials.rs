@@ -21,17 +21,17 @@ fn make_ec_with_keys(keys: &[&[u8]]) -> EncryptionContext {
     ec
 }
 
-// SEC1 uncompressed P-256 verification key: 1 byte tag (0x04) + 64 bytes (X||Y) = 65 bytes.
+// SEC1 compressed P-256 verification key: 1 byte tag (0x02) + 32 bytes X = 33 bytes.
 fn p256_verification_key() -> VerificationKey {
-    let mut bytes = vec![0u8; 65];
-    bytes[0] = 0x04;
+    let mut bytes = vec![0u8; 33];
+    bytes[0] = 0x02;
     VerificationKey::new(bytes)
 }
 
-// SEC1 uncompressed P-384 verification key: 1 byte tag (0x04) + 96 bytes (X||Y) = 97 bytes.
+// SEC1 compressed P-384 verification key: 1 byte tag (0x02) + 48 bytes X = 49 bytes.
 fn p384_verification_key() -> VerificationKey {
-    let mut bytes = vec![0u8; 97];
-    bytes[0] = 0x04;
+    let mut bytes = vec![0u8; 49];
+    bytes[0] = 0x02;
     VerificationKey::new(bytes)
 }
 
@@ -91,13 +91,13 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
 #[test]
 fn test_verification_key_length_must_match_algorithm_suite() {
     // Reject both too-short and too-long verification keys on both P-256
-    // (65-byte SEC1) and P-384 (97-byte SEC1) signing suites. The four
-    // (suite, actual_len) combinations catch one-sided length-check bugs
-    // (`>=`, `<=`) that would otherwise slip through.
+    // (33-byte SEC1-compressed) and P-384 (49-byte SEC1-compressed) signing
+    // suites. The four (suite, actual_len) combinations catch one-sided
+    // length-check bugs (`>=`, `<=`) that would otherwise slip through.
     let cases: [(AlgorithmSuiteId, usize); 4] = [
-        (P256_SIGN_SUITE, 32), // too short for P-256 (expects 65)
-        (P256_SIGN_SUITE, 97), // too long for P-256 (97 is P-384's length)
-        (SIGN_SUITE, 32),      // too short for P-384 (expects 97)
+        (P256_SIGN_SUITE, 32), // too short for P-256 (expects 33)
+        (P256_SIGN_SUITE, 49), // too long for P-256 (49 is P-384's length)
+        (SIGN_SUITE, 32),      // too short for P-384 (expects 49)
         (SIGN_SUITE, 200),     // too long for P-384
     ];
     for (suite_id, bad_len) in cases {
@@ -226,7 +226,7 @@ fn test_field_getters_return_constructed_values() {
     assert_eq!(*mat.encryption_context(), ec);
     assert_eq!(*mat.required_encryption_context_keys(), reck);
 
-    assert_eq!(mat.verification_key().unwrap().len(), 97);
+    assert_eq!(mat.verification_key().unwrap().len(), 49);
     assert!(mat.symmetric_signing_key().is_none());
 }
 
