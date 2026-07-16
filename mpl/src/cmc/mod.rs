@@ -9,10 +9,12 @@
 //! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
 
 pub mod entry;
+pub mod local;
 
 use async_trait::async_trait;
 
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+pub use local::LocalCmc;
 
 use std::fmt;
 use std::sync::Arc;
