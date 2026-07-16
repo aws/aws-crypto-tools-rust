@@ -473,11 +473,10 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
 // If the contract is ever tightened (e.g., an internal invariant added
 // alongside a broader EncryptionContext validation pass), these tests should
 // be flipped: each `assert! / assert_eq!` should become an assertion that
-// the entry point returns an `Err(MaterialsError { message, .. })` (this
-// slice's `MaterialsError` only carries a `message` string), and
-// `from_map`'s return type would change from `Self` to
-// `Result<Self, MaterialsError>` — a breaking API change deferred to a
-// future EncryptionContext-invariants pass.
+// the entry point returns an `Err(MaterialsError { kind:
+// MaterialsErrorKind::Validation, .. })`, and `from_map`'s return type
+// would change from `Self` to `Result<Self, MaterialsError>` — a breaking
+// API change deferred to a future EncryptionContext-invariants pass.
 // ============================================================================
 
 #[test]
