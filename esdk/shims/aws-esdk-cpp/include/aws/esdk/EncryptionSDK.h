@@ -1,4 +1,4 @@
-// aws_esdk.hpp — idiomatic C++ facade over the cxx-generated bindings.
+// EncryptionSDK.h — idiomatic C++ facade over the cxx-generated bindings.
 //
 // Design goals (learnings from the binding-strategy review):
 //   * Stable, GENERATOR-AGNOSTIC public API: no cxx type (rust::*, the generated

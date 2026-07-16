@@ -33,6 +33,12 @@ set(ESDK_BRIDGE_CC ${ESDK_TARGET_DIR}/cxxbridge/aws-esdk-cpp/src/lib.rs.cc)
 # The cxx runtime archive lives in a hashed build dir; locate it post-build.
 file(GLOB_RECURSE _esdk_cxxbridge_rt
      ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx-*/out/libcxxbridge1.a)
+if(NOT _esdk_cxxbridge_rt)
+    message(FATAL_ERROR
+        "cxx runtime archive libcxxbridge1.a not found under "
+        "${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx-*/out/. "
+        "Run `cargo build` in ${ESDK_ROOT} first.")
+endif()
 list(GET _esdk_cxxbridge_rt 0 ESDK_CXXBRIDGE_RT)
 
 # The public target: compiles the generated C++ bridge and links the Rust lib.

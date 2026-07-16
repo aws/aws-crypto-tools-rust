@@ -1,6 +1,6 @@
 # Simple Makefile - all C++ bridge code is compiled into the Rust static library.
 
-# Idiomatic example. Requires C++17 (the idiomatic header uses std::string_view).
+# Idiomatic example, compiled as C++17.
 # Needs live AWS resources / ESDK_TEST_* env vars to run; builds without them.
 example: examples/basic_hierarchical_keyring_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ examples/basic_hierarchical_keyring_example.cpp target/cxxbridge/aws-esdk-cpp/src/lib.rs.cc \
@@ -11,9 +11,8 @@ example: examples/basic_hierarchical_keyring_example.cpp include/aws/esdk/Encryp
 		-std=c++17 \
 		-o basic_hierarchical_keyring_example
 
-# Idiomatic-facade integration tests. Requires C++17 (the idiomatic header uses
-# std::string_view). Run ./test_esdk with ESDK_TEST_* env vars set (it skips
-# cleanly if they are unset).
+# Idiomatic-facade integration tests, compiled as C++17. Run ./test_esdk with
+# ESDK_TEST_* env vars set (it skips cleanly if they are unset).
 test_esdk: test_esdk.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ test_esdk.cpp target/cxxbridge/aws-esdk-cpp/src/lib.rs.cc \
 		$$(find target/debug/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1) \
