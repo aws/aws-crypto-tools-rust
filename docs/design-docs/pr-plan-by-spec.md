@@ -46,7 +46,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 3 | `algorithm-suite` | [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16) | **Merged** 2026-07-09 (merge commit `12ba944`) | retired after merge |
 | 4 | `commitment-policy` | [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17) | **Merged** 2026-07-13 (merge commit `55d0e28`) | retired after merge |
 | 5 | `keyring-and-cmm-interfaces` | [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20) | **Merged** 2026-07-14 (merge commit `3e58ec3`) | retired after merge |
-| 6 | `default-cmm` | [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) | **Open for review** 2026-07-15 | `aws-crypto-rust/default-cmm-review` @ `3056c20` (1 commit on top of `main`) |
+| 6 | `default-cmm` | [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) | **Merged** 2026-07-16 (merge commit `703322c`) | retired after merge |
 | 7 | `structures-polish` | — | Not started | — |
 | 8 | `mrk-match` | — | Not started | — |
 | 9 | `cmc-interface` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** review and merge [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) (`aws-crypto-rust/default-cmm-review` against `main`). Adds `mpl/src/cmm/default_cmm.rs`, `mpl/tests/test_default_cmm.rs`, and the incremental `mpl/src/cmm/mod.rs` / `mpl/src/lib.rs` / `mpl/Cargo.toml` diffs.
+**Next action:** cut PR 7 (`structures-polish`) review branch from `main`. Note: PR 6 review branch's `ed81592` fix (SEC1-compressed on-wire form) was carried into `unreviewed` on top of the prim-based `default_cmm.rs` during the post-PR-6 merge; both the compression step in `default_cmm.rs` and the compressed-length constants/tests are now consistent on `unreviewed`.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -832,8 +832,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 3. PR 3 — `algorithm-suite` — ✅ merged as [#16](https://github.com/aws/aws-crypto-tools-rust/pull/16)
 4. PR 4 — `commitment-policy` — ✅ merged as [#17](https://github.com/aws/aws-crypto-tools-rust/pull/17)
 5. PR 5 — `keyring-and-cmm-interfaces` — ✅ merged as [#20](https://github.com/aws/aws-crypto-tools-rust/pull/20)
-6. PR 6 — `default-cmm` — 🟢 open for review as [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28) **(current)**
-7. PR 7 — `structures-polish` *(diffs to PR-2 files; may fold into PR 2)*
+6. PR 6 — `default-cmm` — ✅ merged as [#28](https://github.com/aws/aws-crypto-tools-rust/pull/28)
+7. PR 7 — `structures-polish` — 🟡 next up *(diffs to PR-2 files)*
 8. PR 8 — `mrk-match`
 9. PR 9 — `cmc-interface`
 10. PR 10 — `local-cmc`

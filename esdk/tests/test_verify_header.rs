@@ -131,14 +131,16 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streamed_signed_output_not_signed_until_complete() {
-    // Encrypt a multi-frame message with a signing suite, then tamper with
-    // the signature (footer). decrypt_stream must return Err, proving that
-    // output released before completion cannot be considered signed.
+    // Encrypt a single-frame signed message, then tamper with the signature
+    // (footer). decrypt_stream must return Err, proving that output released
+    // before completion cannot be considered signed.
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
     let mut enc_input =
         EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.frame_length = FrameLength::new(10).unwrap();
+    // frame_length 4096 exceeds the 30-byte plaintext, keeping this a
+    // single-frame message so decrypt_stream exercises signature verification.
+    enc_input.frame_length = FrameLength::new(4096).unwrap();
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -151,9 +153,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let mut stream_input =
-        DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-    stream_input.unsafe_release_plaintext_before_verify = true;
+    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
@@ -191,9 +191,7 @@ async fn test_streamed_release_parsed_header_after_verification() {
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
-    let mut stream_input =
-        DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-    stream_input.unsafe_release_plaintext_before_verify = true;
+    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
     let result = decrypt_stream(&mut cursor, &mut output, &stream_input)
         .await
         .unwrap();

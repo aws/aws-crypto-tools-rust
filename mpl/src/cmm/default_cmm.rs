@@ -33,7 +33,7 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///   commitment policy's default).
 /// - For signing suites: generates an ECDSA key pair via `aws-mpl-primitives`, attaches
 ///   the private signing key to the materials, and inserts the
-///   base64-encoded SEC1-uncompressed public key into a copy of the request's
+///   base64-encoded SEC1-compressed public key into a copy of the request's
 ///   encryption context under the reserved `aws-crypto-public-key` key.
 /// - Calls the wrapped keyring's `on_encrypt` to populate the plaintext data
 ///   key and encrypted data keys.
@@ -101,10 +101,24 @@ impl Cmm for DefaultCmm {
             };
 
             // scalar_bytes: raw private scalar (32 bytes for P-256, 48 for P-384).
-            // public_key_bytes: SEC1-uncompressed public point
-            // (65 bytes for P-256, 97 for P-384).
-            let (scalar_bytes, public_key_bytes) = ecdsa_generate_keypair(alg)
+            // uncompressed: SEC1-uncompressed public point emitted by `prim`
+            // (`0x04 || X || Y`; 65 bytes for P-256, 97 for P-384).
+            let (scalar_bytes, uncompressed) = ecdsa_generate_keypair(alg)
                 .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
+
+            // Convert to SEC1-compressed form (`tag || X`, where `tag` is
+            // `0x02` when Y is even and `0x03` when Y is odd). 33 bytes for
+            // P-256, 49 for P-384. The spec requires the compressed form in
+            // the encryption context per
+            // `spec/framework/transitive-requirements.md#ecdsa` (SEC 1 v2.0
+            // §2.3.3).
+            debug_assert_eq!(uncompressed[0], 0x04);
+            let coord_len = (uncompressed.len() - 1) / 2;
+            let y_lsb = uncompressed[uncompressed.len() - 1];
+            let tag = if y_lsb & 1 == 0 { 0x02 } else { 0x03 };
+            let mut public_key_bytes = Vec::with_capacity(1 + coord_len);
+            public_key_bytes.push(tag);
+            public_key_bytes.extend_from_slice(&uncompressed[1..=coord_len]);
 
             // Encode the verification key as base64 (standard alphabet, with
             // padding) and store the resulting ASCII bytes in the EC.

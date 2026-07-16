@@ -214,7 +214,7 @@ async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_k
         .get(b"aws-crypto-public-key")
         .expect("must have aws-crypto-public-key");
     let vk_bytes = BASE64_STANDARD.decode(vk_b64).unwrap();
-    assert_eq!(vk_bytes.len(), 97); // P-384 uncompressed point
+    assert_eq!(vk_bytes.len(), 49); // P-384 compressed point
 }
 
 #[tokio::test]
@@ -258,7 +258,7 @@ async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
 async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
-    let vk_raw = vec![0x04; 97]; // 97 bytes for P-384 uncompressed
+    let vk_raw = vec![0x02; 49]; // 49 bytes for P-384 SEC1-compressed
     let vk_b64 = BASE64_STANDARD.encode(&vk_raw);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
@@ -358,8 +358,8 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
     let vk_bytes = BASE64_STANDARD.decode(vk_b64).unwrap();
     assert_eq!(
         vk_bytes.len(),
-        65,
-        "P-256 uncompressed point must be 65 bytes"
+        33,
+        "P-256 compressed point must be 33 bytes"
     );
 }
 
@@ -384,9 +384,9 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
 async fn test_decrypt_materials_wrong_verification_key_length_fails() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
-    // P-384 signing suite expects 97-byte verification key; provide a valid base64
+    // P-384 signing suite expects 49-byte verification key; provide a valid base64
     // that decodes to 10 bytes — wrong length.
-    let wrong_length_bytes = vec![0x04; 10];
+    let wrong_length_bytes = vec![0x02; 10];
     let vk_b64 = BASE64_STANDARD.encode(&wrong_length_bytes);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
