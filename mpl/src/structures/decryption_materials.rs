@@ -53,7 +53,7 @@ impl DecryptionMaterials {
         }
 
         // If asymmetric signing, the verification key (when present) MUST match
-        // the suite's asymmetric signature algorithm SEC1-uncompressed length.
+        // the suite's asymmetric signature algorithm SEC1-compressed length.
         if let Some(ref vk) = verification_key
             && let Some(expected_len) = suite.verification_key_length()
             && vk.len() != expected_len
