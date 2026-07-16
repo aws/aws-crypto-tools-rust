@@ -39,5 +39,7 @@ source = "spec/client-apis/key-derivation.md"
 [report.html]
 enabled = true
 
+# Snapshot checking requires a committed snapshot file; this repo does not
+# commit one, so the CI duvet run generates and uploads the HTML report only.
 [report.snapshot]
-enabled = true
+enabled = false
