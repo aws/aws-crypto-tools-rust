@@ -27,8 +27,13 @@ fn identical_non_mrk_arns_return_true() {
 }
 
 #[test]
-fn identical_aliases_return_true() {
-    assert!(aws_kms_mrk_match_for_decrypt(ALIAS, ALIAS));
+fn identical_aliases_return_false() {
+    // Alias ARNs are rejected up front — ESDK decrypt does not accept
+    // aliases (the wire EDK always carries a resolved key ARN), so an
+    // alias reaching this function is a caller bug. Byte-identical
+    // aliases still return `false` per the Rust-side deviation
+    // documented on `aws_kms_mrk_match_for_decrypt`.
+    assert!(!aws_kms_mrk_match_for_decrypt(ALIAS, ALIAS));
 }
 
 #[test]
@@ -67,6 +72,16 @@ fn non_mrk_arn_and_mrk_arn_return_false() {
 #[test]
 fn alias_and_mrk_arn_return_false() {
     assert!(!aws_kms_mrk_match_for_decrypt(ALIAS, MRK_EAST));
+}
+
+#[test]
+fn mrk_arn_and_alias_return_false() {
+    assert!(!aws_kms_mrk_match_for_decrypt(MRK_EAST, ALIAS));
+}
+
+#[test]
+fn alias_and_non_mrk_arn_return_false() {
+    assert!(!aws_kms_mrk_match_for_decrypt(ALIAS, NON_MRK_KEY));
 }
 
 #[test]
