@@ -4,23 +4,9 @@
 //! The `Cmc` trait — the abstract contract every Cryptographic Materials
 //! Cache MUST implement.
 //!
-//! # Why `async_trait` and not native AFIT
-//!
-//! The same dyn-compatibility rationale recorded in [`crate::keyring`] and
-//! [`crate::cmm`] applies here: AFIT traits are not stable-dyn-compatible,
-//! the MPL needs `dyn Cmc` and `Box<dyn Cmc>` for plug-in caches so that a
+//! The MPL needs `dyn Cmc` and `Box<dyn Cmc>` for plug-in caches so that a
 //! caching CMM can hold an arbitrary, runtime-configured cache.
-//! `async_trait` boxes the future to make `dyn Cmc` work today.
-//!
-//! # Concrete-CMC implementations
-//!
-//! No concrete implementation of `Cmc` ships in this slice — the trait is
-//! introduced as an abstract contract only. Later slices land `LocalCmc`
-//! (an in-memory least-recently-used cache with TTL-aware pruning) and
-//! `StormTrackingCmc` (a storm-suppression wrapper around `LocalCmc`);
-//! their PRs cover the trait-behavior MUSTs (TTL enforcement, "must create
-//! a new entry", "must include all usage metadata") and the
-//! `usage-metadata` SHOULD-be-atomic clause with concrete tests.
+//! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
 
 pub mod entry;
 
