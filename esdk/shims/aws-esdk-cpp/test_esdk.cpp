@@ -130,8 +130,10 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     auto plaintext = to_bytes("context matters");
     std::map<std::string, std::string> ec = {{"purpose", "test"}, {"origin", "cxx"}};
     auto encrypted = sdk.encrypt(plaintext, keyring,
-                                 Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384,
-                                 Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ec);
+                                 Aws::Esdk::EncryptOptions()
+                                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384)
+                                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
+                                     .with_encryption_context(ec));
     // encrypt surfaces the used suite and the encryption context sent to the core library.
     CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
@@ -139,7 +141,8 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
         CHECK(encrypted.encryption_context.count(kv.first) == 1);
         CHECK(encrypted.encryption_context[kv.first] == kv.second);
     }
-    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring, ec);
+    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring,
+                                 Aws::Esdk::DecryptOptions().with_encryption_context(ec));
     CHECK(decrypted.plaintext == plaintext);
 
     //= spec/shim/esdk-shim.md#decrypt-outputs

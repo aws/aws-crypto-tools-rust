@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -191,30 +192,85 @@ public:
           }))) {}
 };
 
-class HierarchicalKeyring {
-    KeyStore key_store_;  // owns the keystore (and transitively its clients)
+// Base type for every keyring encrypt/decrypt can accept. A concrete keyring
+// (e.g. HierarchicalKeyring) derives from it, creates the generated handle, and
+// keeps its own dependencies alive; the base owns the handle.
+class Keyring {
     std::shared_ptr<::rust::Box<::Keyring>> inner_;
     const ::Keyring* ffi() const { return &**inner_; }
     friend class EncryptionSDK;
+
+protected:
+    explicit Keyring(std::shared_ptr<::rust::Box<::Keyring>> inner)
+        : inner_(std::move(inner)) {}
+
+public:
+    virtual ~Keyring() = default;
+};
+
+class HierarchicalKeyring : public Keyring {
+    KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
                         std::uint32_t ttl_seconds,
                         std::uint32_t cache_capacity,
                         CacheKind cache = CacheKind::MultiThreaded)
-        : key_store_(std::move(key_store)),
-          inner_(std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
-              ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
-              in.branch_key_id = ::rust::String(branch_key_id);
-              in.key_store = key_store_.ffi();
-              in.ttl = ttl_seconds;
-              in.cache = detail::to_ffi(cache);
-              in.multi_threaded_cache.entryCapacity = cache_capacity;
-              return ::create_hierarchical_keyring(in);
-          }))) {}
+        : Keyring(create(key_store, branch_key_id, ttl_seconds, cache_capacity, cache)),
+          key_store_(std::move(key_store)) {}
+
+private:
+    static std::shared_ptr<::rust::Box<::Keyring>> create(const KeyStore& key_store,
+                                                          const std::string& branch_key_id,
+                                                          std::uint32_t ttl_seconds,
+                                                          std::uint32_t cache_capacity,
+                                                          CacheKind cache) {
+        return std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
+            ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
+            in.branch_key_id = ::rust::String(branch_key_id);
+            in.key_store = key_store.ffi();
+            in.ttl = ttl_seconds;
+            in.cache = detail::to_ffi(cache);
+            in.multi_threaded_cache.entryCapacity = cache_capacity;
+            return ::create_hierarchical_keyring(in);
+        }));
+    }
 };
 
-// ---- Encrypt result ----------------------------------------------------------
+// Optional encrypt parameters. A field left unset keeps the Rust-defined
+// default from default_encrypt_input(), so defaults live only in the Rust core.
+class EncryptOptions {
+    std::optional<AlgorithmSuiteId> algorithm_suite_;
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::map<std::string, std::string> encryption_context_;
+    std::optional<std::uint32_t> frame_length_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
+public:
+    EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
+    EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
+    EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
+    /// 0 means no limit.
+    EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
+// Optional decrypt parameters. A field left unset keeps the Rust-defined
+// default from default_decrypt_input().
+class DecryptOptions {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::map<std::string, std::string> encryption_context_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
+public:
+    DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
+    /// 0 means no limit.
+    DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
 // encrypt returns the ciphertext plus the encryption context and algorithm suite
 // the core library actually used; a CMM may add context entries and the suite may
 // be defaulted, so both can differ from what the caller requested.
@@ -239,20 +295,19 @@ class EncryptionSDK {
 public:
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
-        const HierarchicalKeyring& keyring,
-        AlgorithmSuiteId alg = AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384,
-        CommitmentPolicy policy = CommitmentPolicy::RequireEncryptRequireDecrypt,
-        const std::map<std::string, std::string>& encryption_context = {},
-        std::uint32_t frame_length = 4096) {
-        // Start from the Rust-defined defaults, then override — so we never
-        // re-declare defaults in C++ and risk diverging from the Rust core.
+        const Keyring& keyring,
+        const EncryptOptions& options = {}) {
+        // Start from the Rust-defined defaults, then override only the fields
+        // the caller set — so we never re-declare defaults in C++ and risk
+        // diverging from the Rust core.
         ::EncryptInput in = ::default_encrypt_input();
         in.keyring = keyring.ffi();
         in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext.data(), plaintext.size());
-        in.algorithm_suite_id = detail::to_ffi(alg);
-        in.commitment_policy = detail::to_ffi(policy);
-        in.encryption_context = detail::to_ec(encryption_context);
-        in.frame_length = frame_length;
+        in.encryption_context = detail::to_ec(options.encryption_context_);
+        if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
+        if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
+        if (options.frame_length_) in.frame_length = *options.frame_length_;
+        if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
         ::EncryptOutput out = detail::guard([&] { return ::encrypt(in); });
         EncryptResult result;
         result.ciphertext = std::vector<std::uint8_t>(out.ciphertext.begin(), out.ciphertext.end());
@@ -263,12 +318,14 @@ public:
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
-        const HierarchicalKeyring& keyring,
-        const std::map<std::string, std::string>& encryption_context = {}) {
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) {
         ::DecryptInput in = ::default_decrypt_input();
         in.keyring = keyring.ffi();
         in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext.data(), ciphertext.size());
-        in.encryption_context = detail::to_ec(encryption_context);
+        in.encryption_context = detail::to_ec(options.encryption_context_);
+        if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
+        if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
         ::DecryptOutput out = detail::guard([&] { return ::decrypt(in); });
         DecryptResult result;
         result.plaintext = std::vector<std::uint8_t>(out.plaintext.begin(), out.plaintext.end());
