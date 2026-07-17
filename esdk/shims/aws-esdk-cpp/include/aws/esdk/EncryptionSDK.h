@@ -212,12 +212,6 @@ public:
 // Base type for every keyring encrypt/decrypt can accept. A concrete keyring
 // (e.g. HierarchicalKeyring) derives from it, creates the generated handle, and
 // keeps its own dependencies alive; the base owns the handle.
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
-//= type=implication
-//= reason=Every keyring the shim exposes derives from this one Keyring type, so all implementations share a single owned-interface handle type.
-//# - For each core-library interface the shim exposes, the shim MUST represent
-//# every implementation of that interface as the same owned-interface handle
-//# type.
 class Keyring {
     std::shared_ptr<::rust::Box<::Keyring>> inner_;
     const ::Keyring* ffi() const { return &**inner_; }
@@ -246,18 +240,6 @@ public:
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
-//= type=exception
-//= reason=The shim exposes creation for only the hierarchical keyring — a subset of the MPL's keyrings; this MAY permits exposing only a subset.
-//# - The shim MAY expose creation operations for only a subset of the
-//# implementations the core library defines.
-//
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
-//= type=exception
-//= reason=The shim exposes no creation operation for additional keyring implementations; a consumer implements one in Rust and passes it in as a Keyring handle (see the custom_keyring example).
-//# - If the shim exposes a means of creating additional implementations, a handle
-//# to such an implementation MUST be usable wherever that interface's handle
-//# type is accepted.
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
@@ -359,12 +341,6 @@ struct DecryptResult {
 // ---- SDK facade --------------------------------------------------------------
 class EncryptionSDK {
 public:
-    //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
-    //= type=implication
-    //= reason=encrypt takes a const Keyring& — the interface handle type — so it accepts any keyring implementation, not a specific one.
-    //# - Each operation or resource-creation input that consumes an implementation of
-    //# a core-library interface MUST accept that interface's handle type and MUST
-    //# NOT be limited to a specific implementation.
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,

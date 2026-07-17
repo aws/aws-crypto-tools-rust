@@ -220,7 +220,6 @@ void test_lifetime_safety(const TestConfig& cfg) {
     CHECK(decrypted.plaintext == plaintext);
 }
 
-// Demonstration custom keyring: build one and round-trip through it.
 // With no EncryptOptions the shim keeps the core library's defaults.
 void test_default_options_defer(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
