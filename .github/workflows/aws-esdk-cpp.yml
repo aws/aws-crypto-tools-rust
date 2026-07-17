@@ -86,7 +86,6 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           make example
-          make custom_example
           make enum_parity
           make test_esdk
           LD_LIBRARY_PATH="$PWD/target/debug" ./test_esdk

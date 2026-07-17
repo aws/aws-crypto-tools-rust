@@ -4,7 +4,6 @@ Cargo.lock
 
 # Compiled demo / test binaries (built via the Makefile)
 /basic_hierarchical_keyring_example
-/custom_keyring_example
 /test_esdk
 
 # Object files / archives

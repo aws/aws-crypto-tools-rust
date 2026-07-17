@@ -253,7 +253,6 @@ mod ffi {
 
         type Keyring;
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
-        fn create_custom_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn delete_keyring(client: Box<Keyring>) -> Result<()>;
 
         type MplKmsClient;
@@ -800,17 +799,6 @@ fn create_hierarchical_keyring(
 
     let keyring = Keyring { client: keyring };
     Ok(Box::new(keyring))
-}
-
-//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
-//= reason=create_custom_keyring returns a Box<Keyring> — the same handle type encrypt and decrypt accept — so its keyring is usable wherever a keyring is.
-//# - If the shim exposes a means of creating additional implementations, a handle
-//# to such an implementation MUST be usable wherever that interface's handle
-//# type is accepted.
-fn create_custom_keyring(input: &ffi::HierarchicalKeyringInput) -> Result<Box<Keyring>, String> {
-    // Demonstration custom keyring: its entry point is here in the core library's
-    // language (Rust), delegating to the hierarchical keyring.
-    create_hierarchical_keyring(input)
 }
 
 //= spec/shim/esdk-shim.md#create-key-store

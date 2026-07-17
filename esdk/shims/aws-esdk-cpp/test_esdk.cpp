@@ -221,29 +221,11 @@ void test_lifetime_safety(const TestConfig& cfg) {
 }
 
 // Demonstration custom keyring: build one and round-trip through it.
-void test_custom_keyring(const TestConfig& cfg) {
-    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
-    if (!cfg.region.empty()) {
-        client_config.with_region(cfg.region);
-    }
-    Aws::Esdk::KmsClient kms(client_config);
-    Aws::Esdk::DdbClient ddb(client_config);
-    Aws::Esdk::KeyStore keystore(cfg.ddb_table, cfg.logical_keystore, cfg.kms_key_arn, kms, ddb);
-    Aws::Esdk::CustomKeyring keyring(std::move(keystore), cfg.branch_key_id, /*ttl_seconds*/ 600);
-
+// With no EncryptOptions the shim keeps the core library's defaults.
+void test_default_options_defer(const TestConfig& cfg) {
+    auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
-    auto plaintext = to_bytes("custom keyring works");
-    // No EncryptOptions: the shim keeps the core library's defaults.
-    auto encrypted = sdk.encrypt(plaintext, keyring);
-    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
-    //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
-    //= type=test
-    //= reason=A CustomKeyring round-trips through encrypt and decrypt back to the plaintext, proving the custom keyring handle is usable wherever the Keyring handle type is accepted.
-    //# - If the shim exposes a means of creating additional implementations, a handle
-    //# to such an implementation MUST be usable wherever that interface's handle
-    //# type is accepted.
-    CHECK(decrypted.plaintext == plaintext);
-
+    auto encrypted = sdk.encrypt(to_bytes("defer to defaults"), keyring);
     //= spec/shim/shim.md#operation-contracts
     //= type=test
     //= reason=Encrypt with default (empty) options yields the core default algorithm suite, proving the shim did not substitute its own default.
@@ -283,7 +265,7 @@ int main() {
         test_decrypt_garbage_throws(cfg);
         test_tampered_ciphertext_throws(cfg);
         test_lifetime_safety(cfg);
-        test_custom_keyring(cfg);
+        test_default_options_defer(cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

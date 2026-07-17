@@ -184,7 +184,6 @@ class KeyStore {
     std::shared_ptr<::rust::Box<::KeyStore>> inner_;
     const ::KeyStore* ffi() const { return &**inner_; }
     friend class HierarchicalKeyring;
-    friend class CustomKeyring;
 public:
     KeyStore(const std::string& table_name,
              const std::string& logical_key_store_name,
@@ -249,9 +248,16 @@ public:
 
 //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
 //= type=exception
-//= reason=The shim exposes creation for the hierarchical keyring and a demonstration custom keyring — a subset of the MPL's keyrings; this MAY permits exposing only a subset.
+//= reason=The shim exposes creation for only the hierarchical keyring — a subset of the MPL's keyrings; this MAY permits exposing only a subset.
 //# - The shim MAY expose creation operations for only a subset of the
 //# implementations the core library defines.
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=exception
+//= reason=The shim exposes no creation operation for additional keyring implementations; a consumer implements one in Rust and passes it in as a Keyring handle (see the custom_keyring example).
+//# - If the shim exposes a means of creating additional implementations, a handle
+//# to such an implementation MUST be usable wherever that interface's handle
+//# type is accepted.
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
@@ -276,31 +282,6 @@ private:
             if (options.cache_) in.cache = detail::to_ffi(*options.cache_);
             if (options.cache_capacity_) in.multi_threaded_cache.entryCapacity = *options.cache_capacity_;
             return ::create_hierarchical_keyring(in);
-        }));
-    }
-};
-
-// Demonstration custom keyring: a target-usable keyring type whose creation entry
-// point (create_custom_keyring) lives in the core library's language and delegates
-// to the hierarchical keyring. It is a Keyring, so encrypt/decrypt accept it like
-// any other keyring.
-class CustomKeyring : public Keyring {
-    KeyStore key_store_;  // owns the keystore (and transitively its clients)
-public:
-    CustomKeyring(KeyStore key_store, const std::string& branch_key_id, std::uint32_t ttl_seconds)
-        : Keyring(create(key_store, branch_key_id, ttl_seconds)),
-          key_store_(std::move(key_store)) {}
-
-private:
-    static std::shared_ptr<::rust::Box<::Keyring>> create(const KeyStore& key_store,
-                                                          const std::string& branch_key_id,
-                                                          std::uint32_t ttl_seconds) {
-        return std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
-            ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
-            in.branch_key_id = ::rust::String(branch_key_id);
-            in.key_store = key_store.ffi();
-            in.ttl = ttl_seconds;
-            return ::create_custom_keyring(in);
         }));
     }
 };
