@@ -439,19 +439,22 @@ fn user_agent_form_and_append() {
 }
 
 #[test]
-fn make_retry_config_applies_a_default() {
-    // With no explicit values the shim still produces a (default) retry config.
+fn create_sdk_config_defers_retry_when_unset() {
+    // No retry values supplied: the shim must not substitute its own; the assembled
+    // config keeps the SDK's loaded default retry configuration.
+    let default_ref = DAFNY_TOKIO_RUNTIME.block_on(aws_config::load_defaults(
+        aws_config::BehaviorVersion::latest(),
+    ));
+    let sdk = create_sdk_config(&default_client_config()).expect("build sdk config");
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
-    //= reason=make_retry_config always returns a standard/adaptive RetryConfig even when the target supplies no values.
-    //# - If the target does not supply a retry configuration, the shim MAY apply a
-    //# default retry configuration.
-    let cfg = default_retry_config();
-    let _ = make_retry_config(&cfg);
-    // With an explicit max_attempts the translation carries it through.
-    let mut with_attempts = default_retry_config();
-    with_attempts.max_attempts = 5;
-    assert_eq!(make_retry_config(&with_attempts).max_attempts(), 5);
+    //= reason=With no retry supplied, the assembled config's retry matches a reference load_defaults() rather than a substituted standard config.
+    //# - If the target does not supply a retry configuration, the shim MUST defer to
+    //# the core ESDK's default retry configuration and MUST NOT substitute its own.
+    assert_eq!(
+        sdk.retry_config().map(|r| r.max_attempts()),
+        default_ref.retry_config().map(|r| r.max_attempts())
+    );
 }
 
 // Service client SdkConfig assembly (builds config, no credentials used)
@@ -612,13 +615,13 @@ fn round_trip_integration() {
     assert_ne!(enc_out.ciphertext, plaintext);
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
-    //# - `encrypt` MUST return the used algorithm suite, converted as defined in
+    //# - MUST return the used algorithm suite, converted as defined in
     //# [Algorithm suite identifier](#algorithm-suite-identifier).
     //
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //= reason=The returned used-suite equals the suite set on the input, proving the target-supplied algorithm suite reached the core ESDK.
-    //# - `encrypt` MUST provide the target-supplied algorithm suite to the core ESDK,
+    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
     assert_eq!(
         enc_out.algorithm_suite_id.repr,
@@ -626,13 +629,13 @@ fn round_trip_integration() {
     );
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
-    //# - `encrypt` MUST return the result encryption context, converted as defined in
+    //# - MUST return the result encryption context, converted as defined in
     //# [Encryption context](#encryption-context).
     //
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //= reason=The result encryption context contains the target-supplied pair, proving the encryption context reached the core ESDK.
-    //# - `encrypt` MUST provide the target-supplied encryption context to the core ESDK,
+    //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     assert_eq!(
         encryption_context_target_to_core(&enc_out.encryption_context).get("purpose"),
@@ -650,7 +653,7 @@ fn round_trip_integration() {
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //= reason=decrypt supplies the same encryption-context pair used at encrypt time; a successful round-trip proves it was provided to the core ESDK.
-    //# - `decrypt` MUST provide the target-supplied encryption context to the core ESDK,
+    //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     dec_in.encryption_context = ec
         .iter()

@@ -253,6 +253,7 @@ mod ffi {
 
         type Keyring;
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
+        fn create_custom_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn delete_keyring(client: Box<Keyring>) -> Result<()>;
 
         type MplKmsClient;
@@ -525,10 +526,10 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
 
     let mut core_input = aws_esdk::EncryptInput::with_legacy_keyring(
         //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - `encrypt` MUST pass the target-supplied plaintext to the core ESDK unmodified.
+        //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
         input.plaintext,
         //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - `encrypt` MUST provide the target-supplied encryption context to the core ESDK,
+        //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
         encryption_context_target_to_core(&input.encryption_context),
         //= spec/shim/esdk-shim.md#materials-source
@@ -539,20 +540,20 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         unsafe { (*input.keyring).client.clone() },
     );
     //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - `encrypt` MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
     core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
     //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - `encrypt` MUST provide the target-supplied frame length to the core ESDK,
+    //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
     core_input.frame_length = make_frame_length(input.frame_length)?;
     //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - `encrypt` MUST provide the target-supplied commitment policy to the core ESDK,
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
     //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - `encrypt` MUST provide the target-supplied algorithm suite to the core ESDK,
+    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
     core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
     let output = DAFNY_TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
@@ -566,14 +567,14 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     let output = output.map_err(|e| format!("encrypt failed: {:?}", e))?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
-        //# - `encrypt` MUST return the used algorithm suite, converted as defined in
+        //# - MUST return the used algorithm suite, converted as defined in
         //# [Algorithm suite identifier](#algorithm-suite-identifier).
         algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
         //= spec/shim/esdk-shim.md#encrypt-outputs
-        //# - `encrypt` MUST return the core ESDK's ciphertext unmodified.
+        //# - MUST return the core ESDK's ciphertext unmodified.
         ciphertext: output.ciphertext,
         //= spec/shim/esdk-shim.md#encrypt-outputs
-        //# - `encrypt` MUST return the result encryption context, converted as defined in
+        //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
         encryption_context: encryption_context_core_to_target(output.encryption_context),
     })
@@ -588,43 +589,40 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
 
     let mut core_input = aws_esdk::DecryptInput::with_legacy_keyring(
         //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - `decrypt` MUST pass the target-supplied ciphertext to the core ESDK unmodified.
+        //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
         input.ciphertext,
         //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - `decrypt` MUST provide the target-supplied encryption context to the core ESDK,
+        //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
         encryption_context_target_to_core(&input.encryption_context),
         unsafe { (*input.keyring).client.clone() },
     );
     //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - `decrypt` MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
     core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
     //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - `decrypt` MUST provide the target-supplied commitment policy to the core ESDK,
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
     let output = DAFNY_TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
     let output = output.map_err(|e| format!("decrypt failed: {:?}", e))?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
-        //# - `decrypt` MUST return the used algorithm suite, converted as defined in
+        //# - MUST return the used algorithm suite, converted as defined in
         //# [Algorithm suite identifier](#algorithm-suite-identifier).
         algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
         //= spec/shim/esdk-shim.md#decrypt-outputs
-        //# - `decrypt` MUST return the core ESDK's plaintext unmodified.
+        //# - MUST return the core ESDK's plaintext unmodified.
         plaintext: output.plaintext,
         //= spec/shim/esdk-shim.md#decrypt-outputs
-        //# - `decrypt` MUST return the result encryption context, converted as defined in
+        //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
         encryption_context: encryption_context_core_to_target(output.encryption_context),
     })
 }
 
-//= spec/shim/esdk-shim.md#service-client-configuration
-//# - If the target does not supply a retry configuration, the shim MAY apply a
-//# default retry configuration.
 fn make_retry_config(config: &ffi::RetryConfig) -> aws_config::retry::RetryConfig {
     let mut out_config = if config.mode_adaptive {
         aws_config::retry::RetryConfig::adaptive()
@@ -804,6 +802,18 @@ fn create_hierarchical_keyring(
     Ok(Box::new(keyring))
 }
 
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= reason=create_custom_keyring returns a Box<Keyring> — the same handle type encrypt and decrypt accept — so its keyring is usable wherever a keyring is.
+//# - If the shim exposes a means of creating additional implementations, a handle
+//# to such an implementation MUST be usable wherever that interface's handle
+//# type is accepted.
+fn create_custom_keyring(input: &ffi::HierarchicalKeyringInput) -> Result<Box<Keyring>, String> {
+    // Demonstration custom keyring: its entry point is here in the core library's
+    // language (Rust), and it delegates to the hierarchical keyring. Richer custom
+    // logic would implement the core keyring interface here instead of delegating.
+    create_hierarchical_keyring(input)
+}
+
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core
 //# ESDK.
@@ -909,13 +919,24 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
         .unwrap_or_default();
     let new_app_name = merge_user_agent(&current_app_name, &user_agent_string);
     let app_name = AppName::new(new_app_name).map_err(|e| format!("invalid app name: {:?}", e))?;
+    let mut builder = shared_config.to_builder().app_name(app_name);
+    let retry = &input.retry;
     //= spec/shim/esdk-shim.md#service-client-configuration
-    //# - If the target supplies a retry configuration, the shim MUST apply it to each
-    //# service client.
-    let mut builder = shared_config
-        .to_builder()
-        .app_name(app_name)
-        .retry_config(make_retry_config(&input.retry));
+    //= reason=When no retry values are supplied the builder keeps load_defaults()'s retry config; the shim adds none.
+    //# - If the target does not supply a retry configuration, the shim MUST defer to
+    //# the core ESDK's default retry configuration and MUST NOT substitute its own.
+    if retry.mode_adaptive
+        || retry.max_attempts > 0
+        || retry.initial_backoff_milli > 0
+        || retry.max_backoff_milli > 0
+        || retry.reconnect_all
+        || retry.use_static_exponential_base
+    {
+        //= spec/shim/esdk-shim.md#service-client-configuration
+        //# - If the target supplies a retry configuration, the shim MUST apply it to each
+        //# service client.
+        builder = builder.retry_config(make_retry_config(retry));
+    }
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target supplies a region, the shim MUST apply it to each service client.
     if !input.region.is_empty() {

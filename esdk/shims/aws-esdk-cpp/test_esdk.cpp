@@ -106,22 +106,22 @@ void test_round_trip(const TestConfig& cfg) {
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //= reason=Round-tripping back to the original plaintext proves encrypt passed the target plaintext to the core library unmodified.
-    //# - `encrypt` MUST pass the target-supplied plaintext to the core ESDK unmodified.
+    //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
     //
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
     //= reason=Decrypting the returned ciphertext back to the original plaintext proves encrypt returned the core library's ciphertext unmodified.
-    //# - `encrypt` MUST return the core ESDK's ciphertext unmodified.
+    //# - MUST return the core ESDK's ciphertext unmodified.
     //
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //= reason=Decrypting this exact ciphertext back to the original plaintext proves it reached the core library unmodified; any modification would fail authentication.
-    //# - `decrypt` MUST pass the target-supplied ciphertext to the core ESDK unmodified.
+    //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
     //
     //= spec/shim/esdk-shim.md#decrypt-outputs
     //= type=test
     //= reason=The recovered plaintext equals the original, proving decrypt returned the core library's plaintext unmodified.
-    //# - `decrypt` MUST return the core ESDK's plaintext unmodified.
+    //# - MUST return the core ESDK's plaintext unmodified.
     auto decrypted = sdk.decrypt(ciphertext, keyring);
     CHECK(decrypted.plaintext == plaintext);
 }
@@ -150,7 +150,7 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     //= spec/shim/esdk-shim.md#decrypt-outputs
     //= type=test
     //= reason=The decrypt result exposes the encryption context the core library returned; it contains every pair supplied at encrypt time.
-    //# - `decrypt` MUST return the result encryption context, converted as defined in
+    //# - MUST return the result encryption context, converted as defined in
     //# [Encryption context](#encryption-context).
     for (const auto& kv : ec) {
         CHECK(decrypted.encryption_context.count(kv.first) == 1);
@@ -160,7 +160,7 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     //= spec/shim/esdk-shim.md#decrypt-outputs
     //= type=test
     //= reason=The decrypt result exposes the algorithm suite the core library used; it equals the suite selected at encrypt time.
-    //# - `decrypt` MUST return the used algorithm suite, converted as defined in
+    //# - MUST return the used algorithm suite, converted as defined in
     //# [Algorithm suite identifier](#algorithm-suite-identifier).
     CHECK(decrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
@@ -220,6 +220,39 @@ void test_lifetime_safety(const TestConfig& cfg) {
     CHECK(decrypted.plaintext == plaintext);
 }
 
+// Demonstration custom keyring: build one and round-trip through it.
+void test_custom_keyring(const TestConfig& cfg) {
+    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
+    if (!cfg.region.empty()) {
+        client_config.with_region(cfg.region);
+    }
+    Aws::Esdk::KmsClient kms(client_config);
+    Aws::Esdk::DdbClient ddb(client_config);
+    Aws::Esdk::KeyStore keystore(cfg.ddb_table, cfg.logical_keystore, cfg.kms_key_arn, kms, ddb);
+    Aws::Esdk::CustomKeyring keyring(std::move(keystore), cfg.branch_key_id, /*ttl_seconds*/ 600);
+
+    Aws::Esdk::EncryptionSDK sdk;
+    auto plaintext = to_bytes("custom keyring works");
+    // No EncryptOptions: the shim keeps the core library's defaults.
+    auto encrypted = sdk.encrypt(plaintext, keyring);
+    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+    //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+    //= type=test
+    //= reason=A CustomKeyring round-trips through encrypt and decrypt back to the plaintext, proving the custom keyring handle is usable wherever the Keyring handle type is accepted.
+    //# - If the shim exposes a means of creating additional implementations, a handle
+    //# to such an implementation MUST be usable wherever that interface's handle
+    //# type is accepted.
+    CHECK(decrypted.plaintext == plaintext);
+
+    //= spec/shim/shim.md#operation-contracts
+    //= type=test
+    //= reason=Encrypt with default (empty) options yields the core default algorithm suite, proving the shim did not substitute its own default.
+    //# - When the target does not supply an optional input, the shim MUST defer to
+    //# the core library's default and MUST NOT substitute its own.
+    CHECK(encrypted.algorithm_suite_id ==
+          Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
+}
+
 const char* env_or_null(const char* name) {
     const char* v = std::getenv(name);
     return (v && *v) ? v : nullptr;
@@ -250,6 +283,7 @@ int main() {
         test_decrypt_garbage_throws(cfg);
         test_tampered_ciphertext_throws(cfg);
         test_lifetime_safety(cfg);
+        test_custom_keyring(cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

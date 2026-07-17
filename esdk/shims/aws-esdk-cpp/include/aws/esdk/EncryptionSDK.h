@@ -184,6 +184,7 @@ class KeyStore {
     std::shared_ptr<::rust::Box<::KeyStore>> inner_;
     const ::KeyStore* ffi() const { return &**inner_; }
     friend class HierarchicalKeyring;
+    friend class CustomKeyring;
 public:
     KeyStore(const std::string& table_name,
              const std::string& logical_key_store_name,
@@ -212,6 +213,12 @@ public:
 // Base type for every keyring encrypt/decrypt can accept. A concrete keyring
 // (e.g. HierarchicalKeyring) derives from it, creates the generated handle, and
 // keeps its own dependencies alive; the base owns the handle.
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=implication
+//= reason=Every keyring the shim exposes derives from this one Keyring type, so all implementations share a single owned-interface handle type.
+//# - For each core-library interface the shim exposes, the shim MUST represent
+//# every implementation of that interface as the same owned-interface handle
+//# type.
 class Keyring {
     std::shared_ptr<::rust::Box<::Keyring>> inner_;
     const ::Keyring* ffi() const { return &**inner_; }
@@ -240,6 +247,11 @@ public:
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=exception
+//= reason=The shim exposes creation for the hierarchical keyring and a demonstration custom keyring — a subset of the MPL's keyrings; this MAY permits exposing only a subset.
+//# - The shim MAY expose creation operations for only a subset of the
+//# implementations the core library defines.
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
@@ -268,8 +280,50 @@ private:
     }
 };
 
+// Demonstration custom keyring: a target-usable keyring type whose creation entry
+// point (create_custom_keyring) lives in the core library's language and delegates
+// to the hierarchical keyring. It is a Keyring, so encrypt/decrypt accept it like
+// any other keyring.
+class CustomKeyring : public Keyring {
+    KeyStore key_store_;  // owns the keystore (and transitively its clients)
+public:
+    CustomKeyring(KeyStore key_store, const std::string& branch_key_id, std::uint32_t ttl_seconds)
+        : Keyring(create(key_store, branch_key_id, ttl_seconds)),
+          key_store_(std::move(key_store)) {}
+
+private:
+    static std::shared_ptr<::rust::Box<::Keyring>> create(const KeyStore& key_store,
+                                                          const std::string& branch_key_id,
+                                                          std::uint32_t ttl_seconds) {
+        return std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
+            ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
+            in.branch_key_id = ::rust::String(branch_key_id);
+            in.key_store = key_store.ffi();
+            in.ttl = ttl_seconds;
+            return ::create_custom_keyring(in);
+        }));
+    }
+};
+
 // Optional encrypt parameters. A field left unset keeps the Rust-defined
 // default from default_encrypt_input(), so defaults live only in the Rust core.
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=EncryptOptions provides a with_* setter for every optional encrypt input (suite, commitment policy, encryption context, frame length, max EDKs).
+//# - The shim MUST expose each optional input of the operations and resource
+//# creations it exposes.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=EncryptOptions is the idiomatic C++ options type this requirement names.
+//# - The shim MUST accept optional inputs through a mechanism idiomatic to the
+//# target language (e.g.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=New optional inputs are added as with_* methods; existing call sites that omit them keep compiling.
+//# - The shim MUST define its operation and resource-creation inputs such that
+//# an optional input can be added without breaking existing target code.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::optional<CommitmentPolicy> commitment_policy_;
@@ -324,6 +378,12 @@ struct DecryptResult {
 // ---- SDK facade --------------------------------------------------------------
 class EncryptionSDK {
 public:
+    //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+    //= type=implication
+    //= reason=encrypt takes a const Keyring& — the interface handle type — so it accepts any keyring implementation, not a specific one.
+    //# - Each operation or resource-creation input that consumes an implementation of
+    //# a core-library interface MUST accept that interface's handle type and MUST
+    //# NOT be limited to a specific implementation.
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
@@ -335,6 +395,10 @@ public:
         in.keyring = keyring.ffi();
         in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext.data(), plaintext.size());
         in.encryption_context = detail::to_ec(options.encryption_context_);
+        //= spec/shim/shim.md#operation-contracts
+        //= reason=Each optional field overrides default_encrypt_input()'s value only when the caller set it; otherwise the core default stands.
+        //# - When the target does not supply an optional input, the shim MUST defer to
+        //# the core library's default and MUST NOT substitute its own.
         if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
         if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
         if (options.frame_length_) in.frame_length = *options.frame_length_;
