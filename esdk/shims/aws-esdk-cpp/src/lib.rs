@@ -809,8 +809,7 @@ fn create_hierarchical_keyring(
 //# type is accepted.
 fn create_custom_keyring(input: &ffi::HierarchicalKeyringInput) -> Result<Box<Keyring>, String> {
     // Demonstration custom keyring: its entry point is here in the core library's
-    // language (Rust), and it delegates to the hierarchical keyring. Richer custom
-    // logic would implement the core keyring interface here instead of delegating.
+    // language (Rust), delegating to the hierarchical keyring.
     create_hierarchical_keyring(input)
 }
 
