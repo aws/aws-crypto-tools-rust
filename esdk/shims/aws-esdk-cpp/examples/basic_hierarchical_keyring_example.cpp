@@ -22,7 +22,8 @@ int main() {
             keystore,
             "3ce7656b-e166-40f3-8c9b-a920ce6596cd",  // branch_key_id
             4242,                                     // ttl_seconds
-            42                                        // cache_capacity
+            Aws::Esdk::HierarchicalKeyringOptions()
+                .with_cache_capacity(42)
         );
 
         Aws::Esdk::EncryptionSDK sdk;

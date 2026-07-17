@@ -163,6 +163,18 @@ public:
               detail::guard([&] { return ::create_ddb_client(cfg.raw()); }))) {}
 };
 
+// Optional key store parameters. A field left empty is omitted from the core
+// library's key store configuration.
+class KeyStoreOptions {
+    std::string key_store_id_;
+    std::vector<std::string> grant_tokens_;
+    friend class KeyStore;
+
+public:
+    KeyStoreOptions& with_key_store_id(const std::string& id) { key_store_id_ = id; return *this; }
+    KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
+};
+
 class KeyStore {
     // Declared before inner_ so they outlive it; shared_ptr keeps the Rust
     // clients alive for as long as this KeyStore exists -> the raw pointers the
@@ -177,7 +189,8 @@ public:
              const std::string& logical_key_store_name,
              const std::string& kms_arn,
              KmsClient kms,
-             DdbClient ddb)
+             DdbClient ddb,
+             const KeyStoreOptions& options = {})
         : kms_(std::move(kms)),
           ddb_(std::move(ddb)),
           inner_(std::make_shared<::rust::Box<::KeyStore>>(detail::guard([&] {
@@ -186,6 +199,10 @@ public:
               c.logical_key_store_name = ::rust::String(logical_key_store_name);
               c.kms_configuration_type = ::KmsConfigurationType::KmsKeyArn;
               c.kms_configuration_value = ::rust::String(kms_arn);
+              c.id = ::rust::String(options.key_store_id_);
+              for (const auto& token : options.grant_tokens_) {
+                  c.grant_tokens.push_back(::rust::String(token));
+              }
               c.kms_client = kms_.ffi();
               c.ddb_client = ddb_.ffi();
               return ::create_keystore(c);
@@ -208,30 +225,44 @@ public:
     virtual ~Keyring() = default;
 };
 
+// Optional hierarchical keyring parameters. A field left unset keeps the
+// Rust-defined default from default_hierarchical_keyring_input(); an empty
+// partition id is omitted from the core library's input.
+class HierarchicalKeyringOptions {
+    std::optional<CacheKind> cache_;
+    std::optional<std::uint32_t> cache_capacity_;
+    std::string partition_id_;
+    friend class HierarchicalKeyring;
+
+public:
+    HierarchicalKeyringOptions& with_cache(CacheKind kind) { cache_ = kind; return *this; }
+    HierarchicalKeyringOptions& with_cache_capacity(std::uint32_t entries) { cache_capacity_ = entries; return *this; }
+    HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
+};
+
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
                         std::uint32_t ttl_seconds,
-                        std::uint32_t cache_capacity,
-                        CacheKind cache = CacheKind::MultiThreaded)
-        : Keyring(create(key_store, branch_key_id, ttl_seconds, cache_capacity, cache)),
+                        const HierarchicalKeyringOptions& options = {})
+        : Keyring(create(key_store, branch_key_id, ttl_seconds, options)),
           key_store_(std::move(key_store)) {}
 
 private:
     static std::shared_ptr<::rust::Box<::Keyring>> create(const KeyStore& key_store,
                                                           const std::string& branch_key_id,
                                                           std::uint32_t ttl_seconds,
-                                                          std::uint32_t cache_capacity,
-                                                          CacheKind cache) {
+                                                          const HierarchicalKeyringOptions& options) {
         return std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
             ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
             in.branch_key_id = ::rust::String(branch_key_id);
             in.key_store = key_store.ffi();
             in.ttl = ttl_seconds;
-            in.cache = detail::to_ffi(cache);
-            in.multi_threaded_cache.entryCapacity = cache_capacity;
+            in.partition_id = ::rust::String(options.partition_id_);
+            if (options.cache_) in.cache = detail::to_ffi(*options.cache_);
+            if (options.cache_capacity_) in.multi_threaded_cache.entryCapacity = *options.cache_capacity_;
             return ::create_hierarchical_keyring(in);
         }));
     }

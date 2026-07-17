@@ -85,7 +85,9 @@ Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
     Aws::Esdk::KeyStore keystore(cfg.ddb_table, cfg.logical_keystore,
                                 cfg.kms_key_arn, kms, ddb);
     return Aws::Esdk::HierarchicalKeyring(std::move(keystore), cfg.branch_key_id,
-                                         /*ttl_seconds*/ 600, /*cache_capacity*/ 100);
+                                         /*ttl_seconds*/ 600,
+                                         Aws::Esdk::HierarchicalKeyringOptions()
+                                             .with_cache_capacity(100));
 }
 
 void test_round_trip(const TestConfig& cfg) {
