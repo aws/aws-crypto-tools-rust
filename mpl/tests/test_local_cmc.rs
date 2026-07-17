@@ -113,9 +113,30 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
         "post-put len MUST be 0 for a zero-capacity cache"
     );
 
-    // Maximum endpoint — implementation-defined max is `usize::MAX`.
-    let max_cap = LocalCmc::new(usize::MAX, 1).expect("usize::MAX capacity is accepted");
-    assert_eq!(max_cap.entry_capacity(), usize::MAX);
+    // Get on a zero-capacity cache returns Ok(None) — nothing was stored.
+    let got = zero_cap
+        .get_cache_entry(b"id")
+        .await
+        .expect("get on zero-capacity cache succeeds");
+    assert!(
+        got.is_none(),
+        "zero-capacity cache MUST NOT return an entry"
+    );
+
+    // Delete on a zero-capacity cache is a no-op that returns Ok.
+    zero_cap
+        .delete_cache_entry(b"id")
+        .await
+        .expect("delete on zero-capacity cache succeeds");
+
+    // Upper endpoint — a comfortably-large capacity is accepted. The
+    // underlying `lru::LruCache` pre-allocates its hashmap with the
+    // supplied capacity, so `usize::MAX` is not representable in practice;
+    // this bound exercises the config layer's lack of an artificial cap
+    // without asking the allocator for an impossible amount of memory.
+    const LARGE_CAP: usize = 1_000_000;
+    let large_cap = LocalCmc::new(LARGE_CAP, 1).expect("large capacity is accepted");
+    assert_eq!(large_cap.entry_capacity(), LARGE_CAP);
 }
 
 // Put + capacity invariants
@@ -501,4 +522,82 @@ async fn test_delete_missing_entry_returns_ok() {
     cmc.delete_cache_entry(b"never-inserted")
         .await
         .expect("delete on missing id MUST succeed");
+}
+
+#[tokio::test]
+async fn test_is_empty_reflects_stored_count() {
+    let now = anchor_now();
+    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+
+    // Fresh cache is empty.
+    assert!(cmc.is_empty().expect("is_empty succeeds"));
+
+    let creation = now;
+    let expiry = now + STANDARD_TTL;
+    cmc.put_cache_entry(b"id", make_entry_at(creation, expiry))
+        .await
+        .expect("put succeeds");
+    assert!(
+        !cmc.is_empty().expect("is_empty succeeds"),
+        "cache with a live entry MUST NOT report empty"
+    );
+
+    cmc.delete_cache_entry(b"id")
+        .await
+        .expect("delete succeeds");
+    assert!(
+        cmc.is_empty().expect("is_empty succeeds"),
+        "cache MUST report empty after deleting its only entry"
+    );
+}
+
+#[tokio::test]
+async fn test_get_evicts_expired_entry_outside_tail_window() {
+    // A TTL-expired entry sitting OUTSIDE the pruning tail window still
+    // MUST NOT be returned by a direct `get` on that id. The prune step
+    // will skip it (it's not in the tail window), so the get path itself
+    // is responsible for the eviction — this exercises the peek-then-pop
+    // branch that fires when peek reports an expired entry.
+    let creation = anchor_now();
+    let expired = creation + TTL_EXPIRED_OFFSET;
+    let fresh = creation + TTL_FRESH_OFFSET;
+    let frozen_now = creation + FROZEN_NOW_OFFSET;
+
+    let cmc = LocalCmc::with_clock(10, 1, move || frozen_now).expect("LocalCmc constructs");
+
+    // Put a fresh entry first — this becomes the LRU tail entry.
+    cmc.put_cache_entry(b"fresh-tail", make_entry_at(creation, fresh))
+        .await
+        .expect("put fresh-tail succeeds");
+    // Put a TTL-expired entry — this becomes MRU and lies OUTSIDE the
+    // 1-entry pruning tail window.
+    cmc.put_cache_entry(b"expired-mru", make_entry_at(creation, expired))
+        .await
+        .expect("put expired-mru succeeds");
+
+    // A direct get on the expired MRU entry MUST NOT return it, even
+    // though the tail-window prune would not have touched it.
+    let got = cmc
+        .get_cache_entry(b"expired-mru")
+        .await
+        .expect("get succeeds");
+    assert!(
+        got.is_none(),
+        "TTL-expired entry outside the tail window MUST NOT be returned by get"
+    );
+
+    // And it MUST have been evicted from the cache — a follow-up get
+    // remains a miss.
+    assert!(
+        cmc.get_cache_entry(b"expired-mru")
+            .await
+            .expect("get succeeds")
+            .is_none(),
+        "expired entry MUST be evicted by the get that observed it"
+    );
+    assert_eq!(
+        cmc.len().expect("len succeeds"),
+        1,
+        "only the fresh-tail entry remains"
+    );
 }

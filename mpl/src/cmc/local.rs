@@ -1,109 +1,49 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Local Cryptographic Materials Cache — concrete `Cmc` impl backed by an
-//! in-memory least-recently-used (LRU) store with TTL-aware pruning.
+//! Local Cryptographic Materials Cache — concrete `Cmc` impl backed by the
+//! [`lru`] crate with TTL-aware pruning.
 //!
 //! `LocalCmc` is the first concrete CMC in the MPL and satisfies the
 //! abstract `Cmc` trait contract in [`super`]. It implements the behaviors
 //! defined in `../spec/framework/local-cryptographic-materials-cache.md`:
 //!
 //! - **Entry capacity** — caller-provided maximum number of stored entries.
+//!   A capacity of `0` yields a no-store cache: `put` is a silent no-op and
+//!   `get` always returns `None`.
 //! - **Entry pruning tail size** — how many least-recently-used entries the
 //!   cache scans for TTL-expired evictees during pruning.
-//! - **Put** does not prune; MAY temporarily exceed capacity; MUST evict
-//!   LRU entries before returning so the post-condition is `len <= capacity`.
+//! - **Put** delegates to [`lru::LruCache::put`], which evicts the LRU
+//!   entry before insertion when the cache is at capacity so the
+//!   post-condition `len <= capacity` always holds when `put` returns.
 //! - **Get** prunes the tail window for TTL-expired entries first, then
 //!   returns the requested entry only if it has not itself TTL-expired.
 //! - **Pruning** evicts every TTL-expired entry among the `N` LRU entries.
 //!
 //! The cache holds entries by `Arc<CacheEntry>` so `get_cache_entry` can
 //! return `Some(Arc<CacheEntry>)` without cloning the underlying materials.
-//! All shared state lives behind a single `Mutex<LocalCmcInner>`; updates
-//! are therefore serialized at the cache layer.
+//! All shared state lives behind a single `Mutex<Option<LruCache<..>>>`;
+//! updates are therefore serialized at the cache layer. The `Option` wraps
+//! the cache so the zero-capacity case (`NonZeroUsize::new(0) == None`)
+//! degrades to a no-store cache without a separate code path.
 //!
 //! For deterministic TTL/pruning tests, [`LocalCmc::with_clock`] accepts an
 //! injected clock function. Production callers use [`LocalCmc::new`], which
 //! defaults to `SystemTime::now`.
 
-use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+use lru::LruCache;
 
 use super::{CacheEntry, Cmc, CmcError};
 
-/// Internal storage for `LocalCmc`. A `HashMap` provides O(1) lookup by
-/// cache identifier and a parallel `Vec` records the LRU ordering with
-/// `lru[0]` as the least-recently-used cache identifier and `lru.last()`
-/// as the most-recently-used one.
-struct LocalCmcInner {
-    /// Cache identifier → entry map. `Arc<CacheEntry>` lets `get` hand
-    /// out a reference-counted clone without copying the materials.
-    entries: HashMap<Vec<u8>, Arc<CacheEntry>>,
-    /// LRU ordering. Front = least recently used, back = most recently
-    /// used. The cache identifier strings are stored verbatim alongside
-    /// the keys in `entries`; the two collections are kept in sync.
-    lru: Vec<Vec<u8>>,
-}
-
-impl LocalCmcInner {
-    fn new() -> Self {
-        Self {
-            entries: HashMap::new(),
-            lru: Vec::new(),
-        }
-    }
-
-    /// Move the supplied cache identifier to the most-recently-used end of
-    /// the LRU vector. No-op if the identifier is not present.
-    fn touch(&mut self, cache_id: &[u8]) {
-        if let Some(pos) = self.lru.iter().position(|id| id.as_slice() == cache_id) {
-            let id = self.lru.remove(pos);
-            self.lru.push(id);
-        }
-    }
-
-    /// Insert (or replace) the entry for `cache_id`. The identifier is
-    /// placed at the most-recently-used end of the LRU vector. If an
-    /// entry already exists for this identifier its prior LRU position
-    /// is dropped before the new position is appended.
-    fn insert(&mut self, cache_id: Vec<u8>, entry: Arc<CacheEntry>) {
-        if self.entries.contains_key(&cache_id)
-            && let Some(pos) = self.lru.iter().position(|id| id == &cache_id)
-        {
-            self.lru.remove(pos);
-        }
-        self.entries.insert(cache_id.clone(), entry);
-        self.lru.push(cache_id);
-    }
-
-    /// Remove the entry and LRU slot for `cache_id`, if present.
-    fn remove(&mut self, cache_id: &[u8]) {
-        self.entries.remove(cache_id);
-        if let Some(pos) = self.lru.iter().position(|id| id.as_slice() == cache_id) {
-            self.lru.remove(pos);
-        }
-    }
-
-    /// Number of currently stored entries.
-    fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Pop the least-recently-used cache identifier off the LRU vector and
-    /// return it (or `None` if the cache is empty). The corresponding
-    /// entry in `entries` is also removed.
-    fn pop_lru(&mut self) -> Option<Vec<u8>> {
-        if self.lru.is_empty() {
-            return None;
-        }
-        let id = self.lru.remove(0);
-        self.entries.remove(&id);
-        Some(id)
-    }
-}
+/// Internal storage type — the `lru` crate's `LruCache` keyed by cache id
+/// with `Arc<CacheEntry>` values so `get` can hand out a reference-counted
+/// clone without copying the underlying materials.
+type Inner = LruCache<Vec<u8>, Arc<CacheEntry>>;
 
 /// Concrete in-memory LRU Cryptographic Materials Cache.
 ///
@@ -114,13 +54,14 @@ impl LocalCmcInner {
 /// abstract [`Cmc`] trait so callers can plug it into a caching CMM.
 pub struct LocalCmc {
     /// Configured maximum number of stored entries. The cache MUST NOT
-    /// exceed this value except temporarily while a put is in progress.
+    /// exceed this value once `put` has returned.
     entry_capacity: usize,
     /// Number of least-recently-used entries scanned during pruning.
     entry_pruning_tail_size: usize,
     /// All shared state lives behind a single `Mutex` so updates are
-    /// serialized at the cache layer.
-    inner: Mutex<LocalCmcInner>,
+    /// serialized at the cache layer. `None` when `entry_capacity == 0`
+    /// (no-store cache); `Some(LruCache)` otherwise.
+    inner: Mutex<Option<Inner>>,
     /// Clock seam — `SystemTime::now` in production, an injected closure
     /// in tests so TTL/pruning behavior can be exercised deterministically.
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
@@ -132,8 +73,11 @@ impl LocalCmc {
     /// clock; tests requiring deterministic TTL behavior should use
     /// [`LocalCmc::with_clock`] instead.
     ///
-    /// `entry_capacity` is accepted for any value in `[0, usize::MAX]`
-    /// (the implementation-defined maximum is `usize::MAX`).
+    /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
+    /// and `get` always returns `None`. Larger capacities are bounded in
+    /// practice by the underlying [`lru::LruCache`], which pre-allocates
+    /// its hashmap with `entry_capacity` slots — pathological values such
+    /// as `usize::MAX` are not representable and will fail to allocate.
     pub fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Result<Self, CmcError> {
         Self::with_clock(entry_capacity, entry_pruning_tail_size, SystemTime::now)
     }
@@ -149,10 +93,14 @@ impl LocalCmc {
     where
         F: Fn() -> SystemTime + Send + Sync + 'static,
     {
+        // `NonZeroUsize::new` returns `None` for `0`; the resulting
+        // `Option<LruCache>` is `None` for the no-store cache and
+        // `Some(LruCache::new(cap))` otherwise.
+        let inner = NonZeroUsize::new(entry_capacity).map(LruCache::new);
         Ok(Self {
             entry_capacity,
             entry_pruning_tail_size,
-            inner: Mutex::new(LocalCmcInner::new()),
+            inner: Mutex::new(inner),
             now: Arc::new(now),
         })
     }
@@ -174,7 +122,7 @@ impl LocalCmc {
             .inner
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
-        Ok(inner.len())
+        Ok(inner.as_ref().map_or(0, LruCache::len))
     }
 
     /// Whether the cache currently holds zero entries.
@@ -185,19 +133,25 @@ impl LocalCmc {
     /// Walk the `entry_pruning_tail_size` least-recently-used entries and
     /// drop any that have TTL-expired. Holds the inner Mutex for the
     /// duration of the walk.
-    fn prune_tail(&self, inner: &mut LocalCmcInner) {
-        let now = (self.now)();
-        let take_n = self.entry_pruning_tail_size.min(inner.lru.len());
-        let mut to_remove: Vec<Vec<u8>> = Vec::new();
-        for cache_id in inner.lru.iter().take(take_n) {
-            if let Some(entry) = inner.entries.get(cache_id)
-                && entry.expiry_time <= now
-            {
-                to_remove.push(cache_id.clone());
-            }
+    ///
+    /// [`LruCache::iter`] yields entries in most-recently-used-first order
+    /// and is a `DoubleEndedIterator`, so `iter().rev().take(N)` gives
+    /// the `N` least-recently-used entries.
+    fn prune_tail(&self, cache: &mut Inner) {
+        let take_n = self.entry_pruning_tail_size.min(cache.len());
+        if take_n == 0 {
+            return;
         }
-        for cache_id in to_remove {
-            inner.remove(&cache_id);
+        let now = (self.now)();
+        let to_remove: Vec<Vec<u8>> = cache
+            .iter()
+            .rev()
+            .take(take_n)
+            .filter(|(_, entry)| entry.expiry_time <= now)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for cache_id in &to_remove {
+            cache.pop(cache_id);
         }
     }
 }
@@ -209,18 +163,15 @@ impl Cmc for LocalCmc {
             .inner
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
-
-        //
-        //
-        //
-        inner.insert(cache_id.to_vec(), Arc::new(entry));
-
-        //
-        while inner.len() > self.entry_capacity {
-            if inner.pop_lru().is_none() {
-                break;
-            }
-        }
+        let Some(cache) = inner.as_mut() else {
+            // Zero-capacity cache: never store. Silently drop the entry so
+            // the post-condition `len == 0 <= entry_capacity` holds.
+            return Ok(());
+        };
+        // `LruCache::put` evicts the LRU entry before insertion when the
+        // cache is at capacity, keeping `len <= entry_capacity` at all
+        // observation points.
+        cache.put(cache_id.to_vec(), Arc::new(entry));
         Ok(())
     }
 
@@ -229,21 +180,25 @@ impl Cmc for LocalCmc {
             .inner
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+        let Some(cache) = inner.as_mut() else {
+            return Ok(None);
+        };
 
-        self.prune_tail(&mut inner);
+        self.prune_tail(cache);
 
         let now = (self.now)();
-        match inner.entries.get(cache_id).cloned() {
-            Some(entry) => {
-                if entry.expiry_time <= now {
-                    //
-                    //
-                    inner.remove(cache_id);
-                    Ok(None)
-                } else {
-                    inner.touch(cache_id);
-                    Ok(Some(entry))
-                }
+        // Peek first (no LRU promotion) so a TTL-expired entry is not
+        // promoted before being evicted.
+        let is_fresh = cache.peek(cache_id).map(|entry| entry.expiry_time > now);
+        match is_fresh {
+            // Fresh: promote to MRU via `get` and hand back an Arc clone.
+            Some(true) => Ok(cache.get(cache_id).cloned()),
+            // Expired: evict and report a miss. The prune step above may
+            // have already removed this entry if it was in the tail
+            // window; if so, `pop` is a no-op.
+            Some(false) => {
+                cache.pop(cache_id);
+                Ok(None)
             }
             None => Ok(None),
         }
@@ -254,7 +209,10 @@ impl Cmc for LocalCmc {
             .inner
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
-        inner.remove(cache_id);
+        let Some(cache) = inner.as_mut() else {
+            return Ok(());
+        };
+        cache.pop(cache_id);
         Ok(())
     }
 }
