@@ -11,65 +11,102 @@ use aws_mpl_legacy::dafny::types::cryptographic_materials_manager::Cryptographic
 use aws_mpl_legacy::dafny::types::keyring::KeyringRef as LegacyKeyring;
 use std::num::NonZeroUsize;
 
-/// Source of cryptographic materials for an encrypt or decrypt call.
+/// A keyring supplied to an encrypt or decrypt operation.
 ///
-/// Pick the variant matching what the caller already has constructed:
-/// the legacy variants accept the Dafny-generated MPL refs, while
-/// `Cmm` / `Keyring` accept the higher-level wrappers in the
-/// `aws_mpl_legacy` crate.
+/// Use [`Keyring::Modern`] for the higher-level `aws_mpl_legacy::KeyringRef`
+/// wrapper, or [`Keyring::Legacy`] for the Dafny-generated MPL keyring ref.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum MaterialSource {
-    /// Legacy CMM, i.e. `aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef`
-    LegacyCmm(LegacyCMM),
-    /// Legacy Keyring, i.e. `aws_mpl_legacy::dafny::types::keyring::KeyringRef`
-    LegacyKeyring(LegacyKeyring),
-    /// CMM
-    Cmm(CryptographicMaterialsManagerRef),
-    /// Keyring
-    Keyring(KeyringRef),
+pub enum Keyring {
+    /// Legacy keyring, i.e. `aws_mpl_legacy::dafny::types::keyring::KeyringRef`
+    Legacy(LegacyKeyring),
+    /// Keyring, i.e. `aws_mpl_legacy::KeyringRef`
+    Modern(KeyringRef),
 }
 
-impl PartialEq for MaterialSource {
+/// A cryptographic materials manager (CMM) supplied to an encrypt or decrypt operation.
+///
+/// Use [`Cmm::Modern`] for the higher-level
+/// `aws_mpl_legacy::CryptographicMaterialsManagerRef` wrapper, or
+/// [`Cmm::Legacy`] for the Dafny-generated MPL CMM ref.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum Cmm {
+    /// Legacy CMM, i.e. `aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef`
+    Legacy(LegacyCMM),
+    /// CMM, i.e. `aws_mpl_legacy::CryptographicMaterialsManagerRef`
+    Modern(CryptographicMaterialsManagerRef),
+}
+
+impl PartialEq for Keyring {
     fn eq(&self, other: &Self) -> bool {
-        // The non-legacy variants wrap `Arc<dyn _>`-backed handles whose
-        // contained types are not themselves `PartialEq`; we compare them by
-        // Arc identity (pointer equality of the underlying allocation). The
-        // legacy variants wrap types that already implement `PartialEq`, so
-        // we delegate to those.
         match (self, other) {
-            (Self::Cmm(x), Self::Cmm(y)) => {
+            (Self::Modern(x), Self::Modern(y)) => {
                 std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
             }
-            (Self::Keyring(x), Self::Keyring(y)) => {
-                std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
-            }
-            (Self::LegacyCmm(x), Self::LegacyCmm(y)) => x == y,
-            (Self::LegacyKeyring(x), Self::LegacyKeyring(y)) => x == y,
+            (Self::Legacy(x), Self::Legacy(y)) => x == y,
             _ => false,
         }
     }
 }
-impl Eq for MaterialSource {}
+impl Eq for Keyring {}
 
-impl From<LegacyCMM> for MaterialSource {
-    fn from(cmm: LegacyCMM) -> Self {
-        Self::LegacyCmm(cmm)
+impl PartialEq for Cmm {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Modern(x), Self::Modern(y)) => {
+                std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
+            }
+            (Self::Legacy(x), Self::Legacy(y)) => x == y,
+            _ => false,
+        }
     }
 }
-impl From<LegacyKeyring> for MaterialSource {
+impl Eq for Cmm {}
+
+impl From<LegacyKeyring> for Keyring {
     fn from(keyring: LegacyKeyring) -> Self {
-        Self::LegacyKeyring(keyring)
+        Self::Legacy(keyring)
     }
 }
-impl From<CryptographicMaterialsManagerRef> for MaterialSource {
-    fn from(cmm: CryptographicMaterialsManagerRef) -> Self {
-        Self::Cmm(cmm)
-    }
-}
-impl From<KeyringRef> for MaterialSource {
+impl From<KeyringRef> for Keyring {
     fn from(keyring: KeyringRef) -> Self {
-        Self::Keyring(keyring)
+        Self::Modern(keyring)
+    }
+}
+impl From<LegacyCMM> for Cmm {
+    fn from(cmm: LegacyCMM) -> Self {
+        Self::Legacy(cmm)
+    }
+}
+impl From<CryptographicMaterialsManagerRef> for Cmm {
+    fn from(cmm: CryptographicMaterialsManagerRef) -> Self {
+        Self::Modern(cmm)
+    }
+}
+
+/// Internal union of the four ways a caller can supply materials, resolved from
+/// the `keyring` / `cmm` input fields and consumed by `create_cmm_from_input`.
+#[derive(Debug, Clone)]
+pub(crate) enum MaterialSource {
+    LegacyCmm(LegacyCMM),
+    LegacyKeyring(LegacyKeyring),
+    Cmm(CryptographicMaterialsManagerRef),
+    Keyring(KeyringRef),
+}
+
+/// Resolve the caller-supplied `keyring` / `cmm` fields into the internal
+/// [`MaterialSource`], or `None` if not exactly one is set.
+pub(crate) fn resolve_material_source(
+    keyring: Option<&Keyring>,
+    cmm: Option<&Cmm>,
+) -> Option<MaterialSource> {
+    match (keyring, cmm) {
+        (Some(Keyring::Legacy(k)), None) => Some(MaterialSource::LegacyKeyring(k.clone())),
+        (Some(Keyring::Modern(k)), None) => Some(MaterialSource::Keyring(k.clone())),
+        (None, Some(Cmm::Legacy(c))) => Some(MaterialSource::LegacyCmm(c.clone())),
+        (None, Some(Cmm::Modern(c))) => Some(MaterialSource::Cmm(c.clone())),
+        _ => None,
     }
 }
 
@@ -325,14 +362,15 @@ pub struct EncryptInput<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [Frame Length](#frame-length) argument.
     pub frame_length: FrameLength,
-    /// The source of cryptographic materials
+    /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
+    //= spec/client-apis/encrypt.md#input
+    //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
+    pub keyring: Option<Keyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    /// Provide exactly one of `keyring` or `cmm`.
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    //
-    //= spec/client-apis/encrypt.md#input
-    //= reason=source is Option<MaterialSource>, making CMM/keyring optional by construction
-    //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
-    pub source: Option<MaterialSource>,
+    pub cmm: Option<Cmm>,
     /// data to be encrypted
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept a required [plaintext](#plaintext) argument.
@@ -388,7 +426,7 @@ impl<'a> EncryptInput<'a> {
         Self {
             plaintext,
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyCmm(cmm)),
+            cmm: Some(Cmm::Legacy(cmm)),
             ..Default::default()
         }
     }
@@ -402,7 +440,7 @@ impl<'a> EncryptInput<'a> {
         Self {
             plaintext,
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyKeyring(keyring)),
+            keyring: Some(Keyring::Legacy(keyring)),
             ..Default::default()
         }
     }
@@ -416,7 +454,7 @@ impl<'a> EncryptInput<'a> {
         Self {
             plaintext,
             encryption_context: ec,
-            source: Some(MaterialSource::Cmm(cmm)),
+            cmm: Some(Cmm::Modern(cmm)),
             ..Default::default()
         }
     }
@@ -426,20 +464,25 @@ impl<'a> EncryptInput<'a> {
         Self {
             plaintext,
             encryption_context: ec,
-            source: Some(MaterialSource::Keyring(keyring)),
+            keyring: Some(Keyring::Modern(keyring)),
             ..Default::default()
         }
     }
     pub(crate) fn validate(&self) -> Result<(), Error> {
         //= spec/client-apis/encrypt.md#input
         //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
-        if self.source.is_none() {
-            //= spec/client-apis/encrypt.md#input
-            //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-            Err(val_err("A materials source must be provided"))
-        } else {
-            Ok(())
+        match (self.keyring.is_some(), self.cmm.is_some()) {
+            (true, false) | (false, true) => Ok(()),
+            _ => {
+                //= spec/client-apis/encrypt.md#input
+                //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+                Err(val_err("Exactly one of a keyring or CMM must be provided"))
+            }
         }
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 }
 
@@ -453,8 +496,11 @@ pub struct EncryptStreamInput {
     pub encryption_context: EncryptionContext,
     /// Bytes of plaintext data per frame. Default 4096.
     pub frame_length: FrameLength,
-    /// The source of cryptographic materials
-    pub source: Option<MaterialSource>,
+    /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
+    pub keyring: Option<Keyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    /// Provide exactly one of `keyring` or `cmm`.
+    pub cmm: Option<Cmm>,
     /// Optional expected size of the input plaintext stream.
     ///
     /// Most CMMs and keyrings ignore this; provide it only when the configured
@@ -486,7 +532,7 @@ impl EncryptStreamInput {
     pub fn with_legacy_cmm(ec: EncryptionContext, cmm: LegacyCMM) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyCmm(cmm)),
+            cmm: Some(Cmm::Legacy(cmm)),
             ..Default::default()
         }
     }
@@ -495,7 +541,7 @@ impl EncryptStreamInput {
     pub fn with_legacy_keyring(ec: EncryptionContext, keyring: LegacyKeyring) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyKeyring(keyring)),
+            keyring: Some(Keyring::Legacy(keyring)),
             ..Default::default()
         }
     }
@@ -504,7 +550,7 @@ impl EncryptStreamInput {
     pub fn with_cmm(ec: EncryptionContext, cmm: CryptographicMaterialsManagerRef) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::Cmm(cmm)),
+            cmm: Some(Cmm::Modern(cmm)),
             ..Default::default()
         }
     }
@@ -513,16 +559,19 @@ impl EncryptStreamInput {
     pub fn with_keyring(ec: EncryptionContext, keyring: KeyringRef) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::Keyring(keyring)),
+            keyring: Some(Keyring::Modern(keyring)),
             ..Default::default()
         }
     }
     pub(crate) fn validate(&self) -> Result<(), Error> {
-        if self.source.is_none() {
-            Err(val_err("A materials source must be provided"))
-        } else {
-            Ok(())
+        match (self.keyring.is_some(), self.cmm.is_some()) {
+            (true, false) | (false, true) => Ok(()),
+            _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
         }
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 }
 
@@ -544,13 +593,15 @@ pub struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
     pub encryption_context: EncryptionContext,
-    /// The source of cryptographic materials
-    //= spec/client-apis/decrypt.md#input
-    //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    //
+    /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
-    pub source: Option<MaterialSource>,
+    pub keyring: Option<Keyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    /// Provide exactly one of `keyring` or `cmm`.
+    //= spec/client-apis/decrypt.md#input
+    //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
+    pub cmm: Option<Cmm>,
     /// Default is `NetV400RetryPolicy::AllowRetry`
     pub net_v4_retry_policy: NetV400RetryPolicy,
     /// Default is no limit on the number of encrypted data keys.
@@ -571,8 +622,11 @@ pub struct DecryptStreamInput {
     /// If non-empty, `decrypt_stream` requires every entry to be present in the
     /// message's encryption context (subset check).
     pub encryption_context: EncryptionContext,
-    /// The source of cryptographic materials
-    pub source: Option<MaterialSource>,
+    /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
+    pub keyring: Option<Keyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    /// Provide exactly one of `keyring` or `cmm`.
+    pub cmm: Option<Cmm>,
     /// Default is `NetV400RetryPolicy::AllowRetry`
     pub net_v4_retry_policy: NetV400RetryPolicy,
     /// Default is no limit on the number of encrypted data keys.
@@ -597,7 +651,7 @@ impl<'a> DecryptInput<'a> {
         Self {
             ciphertext,
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyCmm(cmm)),
+            cmm: Some(Cmm::Legacy(cmm)),
             ..Default::default()
         }
     }
@@ -611,7 +665,7 @@ impl<'a> DecryptInput<'a> {
         Self {
             ciphertext,
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyKeyring(keyring)),
+            keyring: Some(Keyring::Legacy(keyring)),
             ..Default::default()
         }
     }
@@ -625,7 +679,7 @@ impl<'a> DecryptInput<'a> {
         Self {
             ciphertext,
             encryption_context: ec,
-            source: Some(MaterialSource::Cmm(cmm)),
+            cmm: Some(Cmm::Modern(cmm)),
             ..Default::default()
         }
     }
@@ -635,7 +689,7 @@ impl<'a> DecryptInput<'a> {
         Self {
             ciphertext,
             encryption_context: ec,
-            source: Some(MaterialSource::Keyring(keyring)),
+            keyring: Some(Keyring::Modern(keyring)),
             ..Default::default()
         }
     }
@@ -646,7 +700,8 @@ impl<'a> DecryptInput<'a> {
         Self {
             ciphertext,
             encryption_context: e.encryption_context.clone(),
-            source: e.source.clone(),
+            keyring: e.keyring.clone(),
+            cmm: e.cmm.clone(),
             commitment_policy: e.commitment_policy,
             max_encrypted_data_keys: e.max_encrypted_data_keys,
             ..Default::default()
@@ -656,13 +711,18 @@ impl<'a> DecryptInput<'a> {
     pub(crate) fn validate(&self) -> Result<(), Error> {
         //= spec/client-apis/decrypt.md#input
         //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
-        if self.source.is_none() {
-            //= spec/client-apis/decrypt.md#input
-            //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-            Err(val_err("A materials source must be provided"))
-        } else {
-            Ok(())
+        match (self.keyring.is_some(), self.cmm.is_some()) {
+            (true, false) | (false, true) => Ok(()),
+            _ => {
+                //= spec/client-apis/decrypt.md#input
+                //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+                Err(val_err("Exactly one of a keyring or CMM must be provided"))
+            }
         }
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 }
 
@@ -677,7 +737,7 @@ impl DecryptStreamInput {
     pub fn with_legacy_cmm(ec: EncryptionContext, cmm: LegacyCMM) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyCmm(cmm)),
+            cmm: Some(Cmm::Legacy(cmm)),
             ..Default::default()
         }
     }
@@ -686,7 +746,7 @@ impl DecryptStreamInput {
     pub fn with_legacy_keyring(ec: EncryptionContext, keyring: LegacyKeyring) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::LegacyKeyring(keyring)),
+            keyring: Some(Keyring::Legacy(keyring)),
             ..Default::default()
         }
     }
@@ -695,7 +755,7 @@ impl DecryptStreamInput {
     pub fn with_cmm(ec: EncryptionContext, cmm: CryptographicMaterialsManagerRef) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::Cmm(cmm)),
+            cmm: Some(Cmm::Modern(cmm)),
             ..Default::default()
         }
     }
@@ -704,7 +764,7 @@ impl DecryptStreamInput {
     pub fn with_keyring(ec: EncryptionContext, keyring: KeyringRef) -> Self {
         Self {
             encryption_context: ec,
-            source: Some(MaterialSource::Keyring(keyring)),
+            keyring: Some(Keyring::Modern(keyring)),
             ..Default::default()
         }
     }
@@ -714,7 +774,8 @@ impl DecryptStreamInput {
     pub fn from_encrypt(e: &EncryptInput<'_>) -> Self {
         Self {
             encryption_context: e.encryption_context.clone(),
-            source: e.source.clone(),
+            keyring: e.keyring.clone(),
+            cmm: e.cmm.clone(),
             commitment_policy: e.commitment_policy,
             max_encrypted_data_keys: e.max_encrypted_data_keys,
             ..Default::default()
@@ -722,10 +783,13 @@ impl DecryptStreamInput {
     }
 
     pub(crate) fn validate(&self) -> Result<(), Error> {
-        if self.source.is_none() {
-            Err(val_err("A materials source must be provided"))
-        } else {
-            Ok(())
+        match (self.keyring.is_some(), self.cmm.is_some()) {
+            (true, false) | (false, true) => Ok(()),
+            _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
         }
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 }

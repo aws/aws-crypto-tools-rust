@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aws_esdk::{
-    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, NetV400RetryPolicy,
-    decrypt, encrypt, mpl,
+    Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring,
+    NetV400RetryPolicy, decrypt, encrypt, mpl,
 };
 
 #[allow(clippy::duplicate_mod)]
@@ -214,14 +214,9 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
-    //= reason=encrypt_input.source is Some(MaterialSource::LegacyKeyring(...)); encrypt() succeeds
-    //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    //
-    //= spec/client-apis/encrypt.md#input
-    //= type=test
-    //= reason=encrypt_input.source is Some(MaterialSource::LegacyKeyring(...)); encrypt() succeeds
+    //= reason=encrypt_input.keyring is Some(Keyring::Legacy(...)); encrypt() succeeds
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
-    encrypt_input.source = Some(aws_esdk::MaterialSource::LegacyKeyring(keyring.clone()));
+    encrypt_input.keyring = Some(Keyring::Legacy(keyring.clone()));
 
     let encrypt_output = encrypt(&encrypt_input)
         .await
@@ -249,14 +244,9 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
-    //= reason=decrypt_input.source is Some(MaterialSource::LegacyKeyring(...)); decrypt() succeeds
-    //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    //
-    //= spec/client-apis/decrypt.md#input
-    //= type=test
-    //= reason=decrypt_input.source is Some(MaterialSource::LegacyKeyring(...)); decrypt() succeeds
+    //= reason=decrypt_input.keyring is Some(Keyring::Legacy(...)); decrypt() succeeds
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
-    decrypt_input.source = Some(aws_esdk::MaterialSource::LegacyKeyring(keyring));
+    decrypt_input.keyring = Some(Keyring::Legacy(keyring));
 
     decrypt_input.commitment_policy =
         aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
@@ -277,6 +267,137 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
             .map(String::as_str),
         Some("hello"),
         "encrypt/decrypt must honor the encryption context input"
+    );
+}
+
+// encrypt/decrypt accept a CMM input; uses a default CMM from a raw-AES keyring.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_encrypt_decrypt_accepts_cmm() {
+    let keyring = test_keyring().await;
+    let cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring)
+        .send()
+        .await
+        .expect("default CMM construction must succeed for the test keyring");
+    let plaintext = b"cmm round-trip plaintext";
+
+    let mut encrypt_input = EncryptInput::new();
+    encrypt_input.plaintext = plaintext;
+
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //= reason=encrypt_input.cmm is Some(Cmm::Legacy(...)); encrypt() succeeds
+    //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
+    encrypt_input.cmm = Some(Cmm::Legacy(cmm.clone()));
+
+    let encrypt_output = encrypt(&encrypt_input)
+        .await
+        .expect("encrypt must accept a CMM input");
+
+    let mut decrypt_input = DecryptInput::new();
+    decrypt_input.ciphertext = &encrypt_output.ciphertext;
+
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //= reason=decrypt_input.cmm is Some(Cmm::Legacy(...)); decrypt() succeeds
+    //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
+    decrypt_input.cmm = Some(Cmm::Legacy(cmm));
+
+    let decrypt_output = decrypt(&decrypt_input)
+        .await
+        .expect("decrypt must accept a CMM input");
+
+    assert_eq!(
+        decrypt_output.plaintext, plaintext,
+        "round-trip plaintext must match when using a CMM"
+    );
+}
+
+// encrypt() must reject an input that sets neither keyring nor cmm, and one
+// that sets both. Uses a raw-AES keyring and a default CMM built from it, so
+// no KMS credentials are required.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_encrypt_rejects_neither_and_both_sources() {
+    let keyring = test_keyring().await;
+    let cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .expect("default CMM construction must succeed for the test keyring");
+
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+    let mut neither = EncryptInput::new();
+    neither.plaintext = b"no source";
+    let err = encrypt(&neither)
+        .await
+        .expect_err("encrypt must fail when neither keyring nor cmm is set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+
+    let mut both = EncryptInput::new();
+    both.plaintext = b"two sources";
+    both.keyring = Some(Keyring::Legacy(keyring));
+    both.cmm = Some(Cmm::Legacy(cmm));
+    let err = encrypt(&both)
+        .await
+        .expect_err("encrypt must fail when both keyring and cmm are set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+}
+
+// decrypt() must reject an input that sets neither keyring nor cmm, and one
+// that sets both. Validation happens before any ciphertext parsing, so an
+// empty ciphertext is sufficient.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_neither_and_both_sources() {
+    let keyring = test_keyring().await;
+    let cmm = mpl()
+        .create_default_cryptographic_materials_manager()
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .expect("default CMM construction must succeed for the test keyring");
+
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+    let mut neither = DecryptInput::new();
+    let err = decrypt(&neither)
+        .await
+        .expect_err("decrypt must fail when neither keyring nor cmm is set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+
+    neither.keyring = Some(Keyring::Legacy(keyring));
+    neither.cmm = Some(Cmm::Legacy(cmm));
+    let err = decrypt(&neither)
+        .await
+        .expect_err("decrypt must fail when both keyring and cmm are set");
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
     );
 }
 
