@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aws_esdk::{
-    Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring,
-    NetV400RetryPolicy, decrypt, encrypt, mpl,
+    Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring, decrypt,
+    encrypt, mpl,
 };
 
 #[allow(clippy::duplicate_mod)]
@@ -12,14 +12,8 @@ mod test_helpers;
 
 use test_helpers::{encrypt_with_suite, test_keyring};
 
-// THIS IS AN INCORRECTLY SERIALIZED CIPHERTEXT PRODUCED BY
-// THE ESDK .NET V4.0.0
-// This message was constructed with a zeroed 32 byte AES Key
-// using v4.0.0 of the Encryption SDK for .NET which incorrectly
-// serializes the message header making messages unreadable in
-// other implementations and making this version unable to
-// read other implementation's messages.
-
+// A ciphertext produced by ESDK-.NET v4.0.0, which serialized the message
+// header incorrectly. This SDK must not be able to decrypt it.
 const ESDK_NET_V400_MESSAGE: &[u8] = &[
     2, 5, 120, 238, 5, 239, 107, 129, 136, 211, 103, 75, 18, 140, 11, 74, 26, 191, 92, 27, 202,
     170, 33, 28, 9, 117, 252, 29, 29, 92, 213, 21, 231, 172, 234, 0, 95, 0, 1, 0, 21, 97, 119, 115,
@@ -45,47 +39,34 @@ const ESDK_NET_V400_MESSAGE: &[u8] = &[
     145, 95, 80, 61, 85, 143, 32, 0, 98, 20, 88, 251, 204, 5,
 ];
 
-// ESDK .NET v4.0.0 incorrectly serialized headers. This test proves our
-// retry logic: decrypting the v4.0.0 message fails without the retry flag
-// (CryptographicError from header auth mismatch) and succeeds with it.
+// Guards against regressing into the ESDK-.NET v4.0.0 header serialization:
+// the message must fail header authentication rather than decrypt.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_net_retry_flag() {
-    let key_namespace = "Some managed raw keys";
-    let key_name = "My 256-bit AES wrapping key";
-    let expected_message: &[u8] = &[
-        84, 104, 105, 115, 32, 105, 115, 32, 97, 32, 116, 101, 115, 116, 46,
-    ];
-
+async fn test_net_v400_message_is_not_readable() {
     let raw_aes_keyring = mpl()
         .create_raw_aes_keyring()
-        .key_namespace(key_namespace)
-        .key_name(key_name)
+        .key_namespace("Some managed raw keys")
+        .key_name("My 256-bit AES wrapping key")
         .wrapping_key(aws_smithy_types::Blob::new([0; 32]))
         .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
         .send()
         .await
         .unwrap();
 
-    // Attempt to decrypt the v4.0.0 message without the retry flag and expect
-    // decryption to fail
-    let ec = EncryptionContext::new();
-    let mut input = DecryptInput::with_legacy_keyring(ESDK_NET_V400_MESSAGE, ec, raw_aes_keyring);
-    input.net_v4_retry_policy = NetV400RetryPolicy::ForbidRetry;
+    let input = DecryptInput::with_legacy_keyring(
+        ESDK_NET_V400_MESSAGE,
+        EncryptionContext::new(),
+        raw_aes_keyring,
+    );
 
     let err = decrypt(&input)
         .await
-        .expect_err("Expected decryption to fail without retry flag");
+        .expect_err("v4.0.0 .NET message must not decrypt");
     assert!(
         matches!(err.kind, ErrorKind::CryptographicError),
         "expected CryptographicError, got {:?}",
         err.kind
     );
-
-    // Decrypt v4.0.0 message with the default configuration which is to retry
-    // and expect decryption to pass
-    input.net_v4_retry_policy = NetV400RetryPolicy::AllowRetry;
-    let expect_success = decrypt(&input).await.unwrap();
-    assert_eq!(expect_success.plaintext, expected_message);
 }
 
 #[test]
@@ -427,11 +408,6 @@ fn test_esdk_default_uses_default_config() {
         esdk.config().max_encrypted_data_keys.is_none(),
         "Esdk::default() must have no EDK cap"
     );
-    assert_eq!(
-        esdk.config().net_v4_retry_policy,
-        NetV400RetryPolicy::AllowRetry,
-        "Esdk::default() must use AllowRetry as the .NET v4.0.0 retry default"
-    );
 }
 
 #[test]
@@ -462,18 +438,6 @@ fn test_esdk_builder_sets_max_encrypted_data_keys() {
         esdk.config().max_encrypted_data_keys,
         Some(cap),
         "builder().max_encrypted_data_keys(...) must set it on the resulting Esdk's config"
-    );
-}
-
-#[test]
-fn test_esdk_builder_sets_net_v4_retry_policy() {
-    let esdk = Esdk::builder()
-        .net_v4_retry_policy(NetV400RetryPolicy::ForbidRetry)
-        .build();
-    assert_eq!(
-        esdk.config().net_v4_retry_policy,
-        NetV400RetryPolicy::ForbidRetry,
-        "builder().net_v4_retry_policy(...) must set it on the resulting Esdk's config"
     );
 }
 
@@ -560,23 +524,6 @@ async fn test_esdk_decrypt_rejects_input_with_max_encrypted_data_keys() {
         .decrypt(&input)
         .await
         .expect_err("Esdk::decrypt must reject input that sets max_encrypted_data_keys when the client also configures it");
-    assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_decrypt_rejects_input_with_non_default_net_v4_retry_policy() {
-    let esdk = Esdk::default();
-    let mut input = DecryptInput::new();
-    input.net_v4_retry_policy = NetV400RetryPolicy::ForbidRetry;
-
-    let err = esdk
-        .decrypt(&input)
-        .await
-        .expect_err("Esdk::decrypt must reject input that sets net_v4_retry_policy when the client also configures it");
     assert!(
         matches!(err.kind, ErrorKind::ValidationError),
         "expected ValidationError, got {:?}",

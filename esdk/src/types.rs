@@ -308,31 +308,6 @@ impl DecryptStreamOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Default, Hash)]
-/// Whether to allow the ESDK-NET v4.0.0 retry behavior on header authentication failure.
-///
-/// ESDK-NET v4.0.0 incorrectly serialized message headers in a way that
-/// older readers and other-language readers cannot parse. The retry
-/// behavior, when allowed, lets this implementation recover and decrypt
-/// such messages. Set to [`Self::ForbidRetry`] to opt out.
-#[non_exhaustive]
-pub enum NetV400RetryPolicy {
-    /// Do not retry on header authentication failure.
-    ForbidRetry,
-    /// Retry on header authentication failure (default).
-    #[default]
-    AllowRetry,
-}
-
-impl std::fmt::Display for NetV400RetryPolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ForbidRetry => write!(f, "FORBID_RETRY"),
-            Self::AllowRetry => write!(f, "ALLOW_RETRY"),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 #[non_exhaustive]
 /// Input for [`encrypt`](crate::encrypt).
@@ -602,15 +577,13 @@ pub struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     pub cmm: Option<Cmm>,
-    /// Default is `NetV400RetryPolicy::AllowRetry`
-    pub net_v4_retry_policy: NetV400RetryPolicy,
     /// Default is no limit on the number of encrypted data keys.
     ///
-    /// Leave as `None` when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave as `None` when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     pub max_encrypted_data_keys: Option<NonZeroUsize>,
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave at the default when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     pub commitment_policy: EsdkCommitmentPolicy,
 }
 
@@ -627,15 +600,13 @@ pub struct DecryptStreamInput {
     /// The cryptographic materials manager (CMM) to use for this operation.
     /// Provide exactly one of `keyring` or `cmm`.
     pub cmm: Option<Cmm>,
-    /// Default is `NetV400RetryPolicy::AllowRetry`
-    pub net_v4_retry_policy: NetV400RetryPolicy,
     /// Default is no limit on the number of encrypted data keys.
     ///
-    /// Leave as `None` when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave as `None` when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
     pub max_encrypted_data_keys: Option<NonZeroUsize>,
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// Leave at the default when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
     pub commitment_policy: EsdkCommitmentPolicy,
 }
 

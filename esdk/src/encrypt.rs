@@ -388,7 +388,6 @@ async fn step_get_encryption_materials(
             .ok_or_else(|| esdk_err("Encryption materials must contain a plaintext data key"))?
             .0,
         algorithm_suite,
-        false,
     )?;
 
     Ok(EncryptionMaterialsResult {
