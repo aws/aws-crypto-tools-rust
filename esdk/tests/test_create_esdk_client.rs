@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aws_esdk::{
-    Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring,
-    decrypt, encrypt, mpl,
+    Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring, decrypt,
+    encrypt, mpl,
 };
 
 #[allow(clippy::duplicate_mod)]
