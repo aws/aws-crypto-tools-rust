@@ -18,10 +18,10 @@
 //! construction in `materials.rs` — the legacy MPL doesn't expose a way to ask
 //! a `CryptographicMaterialsManagerRef` "are you the default CMM?" at runtime.
 //!
-//! Note: The modern `MaterialSource::Keyring` path is not yet testable because
+//! Note: The `Keyring::Modern` path is not yet testable because
 //! `create_raw_aes_keyring` and `create_default_cryptographic_materials_manager`
 //! are not implemented in the modern MPL. These tests use the legacy keyring
-//! path (`MaterialSource::LegacyKeyring`).
+//! path (`Keyring::Legacy`).
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -32,7 +32,7 @@ use test_helpers::*;
 
 /// Helper: independently construct a default CMM from a keyring via the MPL.
 /// Mirrors the call in `materials.rs::create_cmm_from_input` for the
-/// `MaterialSource::LegacyKeyring` arm.
+/// `Keyring::Legacy` arm.
 async fn default_cmm_from(
     keyring: aws_mpl_legacy::dafny::types::keyring::KeyringRef,
 ) -> aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef

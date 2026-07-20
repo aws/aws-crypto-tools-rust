@@ -62,7 +62,6 @@ pub(crate) fn derive_key_v1(
     message_id: &[u8],
     plaintext_data_key: &[u8],
     suite: &AlgorithmSuite,
-    on_net_v4_retry: bool,
 ) -> Result<ExpandedKeyMaterial, Error> {
     // `derive_keys` dispatches on the message version, so a non-V1 suite here is an
     // internal bug rather than bad input.
@@ -123,19 +122,11 @@ pub(crate) fn derive_key_v1(
             //# specified by the [algorithm suite encryption settings](#algorithm-suites-encryption-settings).
             let mut derived_key = Zeroizing::new(vec![0u8; output_len]);
 
-            // The .NET v4.0.0 retry path omits the suite's binary ID from the HKDF
-            // info; the standard path prefixes it.
-            let v4_info: [&[u8]; 1] = [message_id];
             //= spec/client-apis/key-derivation.md#hkdf-encryption-key
             //# - If [key commitment](#key-commitment) for the [algorithm suite encryption key derivation setting](#algorithm-suites-encryption-key-derivation-settings) is False,
             //# the the input info MUST be a concatenation of the [algorithm suite ID](#algorithm-suite-id)
             //# followed by the [message ID](../data-format/message-header.md#message-id).
-            let standard_info: [&[u8]; 2] = [&suite.binary_id[..], message_id];
-            let info: &[&[u8]] = if on_net_v4_retry {
-                &v4_info
-            } else {
-                &standard_info
-            };
+            let info: [&[u8]; 2] = [&suite.binary_id[..], message_id];
 
             //= spec/client-apis/key-derivation.md#hkdf-encryption-key
             //= type=implication
@@ -145,7 +136,7 @@ pub(crate) fn derive_key_v1(
                 alg,
                 &salt,
                 plaintext_data_key,
-                info,
+                &info,
                 &mut derived_key[..],
             )?;
 
@@ -321,7 +312,6 @@ pub fn derive_keys(
     message_id: &[u8],
     plaintext_data_key: &[u8],
     suite: &AlgorithmSuite,
-    on_net_v4_retry: bool,
 ) -> Result<ExpandedKeyMaterial, Error> {
     debug_assert!(!message_id.is_empty());
     debug_assert_eq!(
@@ -330,7 +320,7 @@ pub fn derive_keys(
     );
 
     match suite.message_version {
-        1 => derive_key_v1(message_id, plaintext_data_key, suite, on_net_v4_retry),
+        1 => derive_key_v1(message_id, plaintext_data_key, suite),
         2 => derive_key_v2(message_id, plaintext_data_key, suite),
         _ => Err(val_err(format!(
             "Unknown Message Version {}",

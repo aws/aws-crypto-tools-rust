@@ -5,7 +5,9 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind};
+use aws_esdk::{
+    Cmm, DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind, Keyring, mpl,
+};
 use test_helpers::{
     CallStyle, multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, run_decrypt_stream,
     run_encrypt_stream, test_keyring,
@@ -101,25 +103,20 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_multi_frame_signed_rejected_by_default() {
+async fn test_decrypt_stream_multi_frame_signed_rejected() {
     // multi_frame_signed_for_stream produces a 30-byte / frame_length=10 ECDSA-P384
-    // payload (3 frames: 2 regular + final). With unsafe_release_plaintext_before_verify
-    // = false (default), decrypt_stream must reject this up front rather than release
-    // plaintext before signature verification.
+    // payload (3 frames: 2 regular + final). decrypt_stream rejects it without
+    // releasing any plaintext.
     for style in CallStyle::ALL {
         let (_plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
 
         let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-        assert!(
-            !dec_input.unsafe_release_plaintext_before_verify,
-            "unsafe_release_plaintext_before_verify must default to false"
-        );
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
         let err = run_decrypt_stream(style, &mut ct_cursor, &mut output, &dec_input)
             .await
-            .expect_err("multi-frame signed message must fail with default unsafe_release_plaintext_before_verify=false");
+            .expect_err("multi-frame signed message must fail in streaming mode");
         assert!(
             matches!(err.kind, ErrorKind::Esdk),
             "expected ErrorKind::Esdk under {style:?}, got {:?}",
@@ -133,43 +130,14 @@ async fn test_decrypt_stream_multi_frame_signed_rejected_by_default() {
     }
 }
 
-// Proves that unsafe_release_plaintext_before_verify=true allows a
-// multi-frame signed payload to round-trip via decrypt_stream. Doubles
-// as multi-frame streaming coverage for this PR.
+// Multi-frame unsigned payloads round-trip in streaming mode because each frame
+// is individually authenticated via AES-GCM (no trailing signature).
 #[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_multi_frame_signed_unsafe_flag_round_trip() {
-    // Same multi-frame signed payload as the default-rejection test. Setting
-    // unsafe_release_plaintext_before_verify=true opts in to early release;
-    // decrypt_stream now succeeds and the plaintext round-trips. Doubles as
-    // multi-frame streaming round-trip coverage for this PR.
-    for style in CallStyle::ALL {
-        let (plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
-
-        let mut dec_input =
-            DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-        dec_input.unsafe_release_plaintext_before_verify = true;
-
-        let mut ct_cursor = std::io::Cursor::new(&ct[..]);
-        let mut output: Vec<u8> = Vec::new();
-        run_decrypt_stream(style, &mut ct_cursor, &mut output, &dec_input)
-            .await
-            .unwrap_or_else(|e| panic!("decrypt_stream failed under {style:?}: {e:?}"));
-        assert_eq!(
-            output, plaintext,
-            "multi-frame signed round-trip mismatch under {style:?}"
-        );
-    }
-}
-
-// Multi-frame unsigned payloads don't require unsafe_release_plaintext_before_verify
-// because each frame is individually authenticated via AES-GCM (no trailing signature).
-#[tokio::test(flavor = "multi_thread")]
-async fn test_decrypt_stream_multi_frame_unsigned_accepted_by_default() {
+async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     for style in CallStyle::ALL {
         let (plaintext, keyring, ct) = multi_frame_unsigned_for_stream().await;
 
         let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-        assert!(!dec_input.unsafe_release_plaintext_before_verify);
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
@@ -179,6 +147,89 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted_by_default() {
         assert_eq!(
             output, plaintext,
             "multi-frame unsigned round-trip mismatch under {style:?}"
+        );
+    }
+}
+
+// encrypt_stream and decrypt_stream must reject an input that sets neither
+// keyring nor cmm, and one that sets both. A raw-AES keyring and a default CMM
+// built from it keep this free of KMS credentials; validation runs before any
+// streaming IO, so empty buffers suffice.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_streaming_rejects_neither_and_both_sources() {
+    for style in CallStyle::ALL {
+        let keyring = test_keyring().await;
+        let cmm = mpl()
+            .create_default_cryptographic_materials_manager()
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .expect("default CMM construction must succeed for the test keyring");
+
+        //= spec/client-apis/encrypt.md#input
+        //= type=test
+        //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
+        //
+        //= spec/client-apis/encrypt.md#input
+        //= type=test
+        //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+        let neither = EncryptStreamInput::new();
+        let mut pt = std::io::Cursor::new(&b""[..]);
+        let mut ct: Vec<u8> = Vec::new();
+        let err = run_encrypt_stream(style, &mut pt, &mut ct, &neither)
+            .await
+            .expect_err("encrypt_stream must fail when neither keyring nor cmm is set");
+        assert!(
+            matches!(err.kind, ErrorKind::ValidationError),
+            "expected ValidationError under {style:?}, got {:?}",
+            err.kind
+        );
+
+        let mut both = EncryptStreamInput::new();
+        both.keyring = Some(Keyring::Legacy(keyring.clone()));
+        both.cmm = Some(Cmm::Legacy(cmm.clone()));
+        let mut pt = std::io::Cursor::new(&b""[..]);
+        let mut ct: Vec<u8> = Vec::new();
+        let err = run_encrypt_stream(style, &mut pt, &mut ct, &both)
+            .await
+            .expect_err("encrypt_stream must fail when both keyring and cmm are set");
+        assert!(
+            matches!(err.kind, ErrorKind::ValidationError),
+            "expected ValidationError under {style:?}, got {:?}",
+            err.kind
+        );
+
+        //= spec/client-apis/decrypt.md#input
+        //= type=test
+        //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
+        //
+        //= spec/client-apis/decrypt.md#input
+        //= type=test
+        //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+        let neither = DecryptStreamInput::new();
+        let mut ct = std::io::Cursor::new(&b""[..]);
+        let mut pt: Vec<u8> = Vec::new();
+        let err = run_decrypt_stream(style, &mut ct, &mut pt, &neither)
+            .await
+            .expect_err("decrypt_stream must fail when neither keyring nor cmm is set");
+        assert!(
+            matches!(err.kind, ErrorKind::ValidationError),
+            "expected ValidationError under {style:?}, got {:?}",
+            err.kind
+        );
+
+        let mut both = DecryptStreamInput::new();
+        both.keyring = Some(Keyring::Legacy(keyring));
+        both.cmm = Some(Cmm::Legacy(cmm));
+        let mut ct = std::io::Cursor::new(&b""[..]);
+        let mut pt: Vec<u8> = Vec::new();
+        let err = run_decrypt_stream(style, &mut ct, &mut pt, &both)
+            .await
+            .expect_err("decrypt_stream must fail when both keyring and cmm are set");
+        assert!(
+            matches!(err.kind, ErrorKind::ValidationError),
+            "expected ValidationError under {style:?}, got {:?}",
+            err.kind
         );
     }
 }

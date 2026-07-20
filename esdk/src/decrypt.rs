@@ -17,7 +17,7 @@ use crate::message::{
 };
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptionContext,
-    MaterialSource, NetV400RetryPolicy, SafeRead, SafeWrite,
+    MaterialSource, SafeRead, SafeWrite,
 };
 use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
 use aws_mpl_legacy::primitives::{
@@ -25,23 +25,21 @@ use aws_mpl_legacy::primitives::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum ProtectionNeeded {
-    /// Customer can see partial results, so multi-frame signed payloads forbidden
-    Yes,
-    /// Don't worry about multi-frame signed payloads
-    No,
+enum DecryptMode {
+    /// Plaintext is released to the caller as each frame is decrypted;
+    /// multi-frame signed messages are rejected because their frames would
+    /// reach the caller before the trailing signature is verified.
+    Streaming,
+    /// Plaintext is returned to the caller only after the whole message is
+    /// decrypted and verified; multi-frame signed messages decrypt normally.
+    Buffered,
 }
-impl ProtectionNeeded {
-    const fn yes(&self) -> bool {
+impl DecryptMode {
+    const fn is_streaming(&self) -> bool {
         match self {
-            Self::Yes => true,
-            Self::No => false,
+            Self::Streaming => true,
+            Self::Buffered => false,
         }
-    }
-
-    // if overridden set to true, no safety needed
-    const fn needs_protection(overridden: bool) -> Self {
-        if overridden { Self::No } else { Self::Yes }
     }
 }
 
@@ -102,18 +100,15 @@ pub async fn decrypt_stream(
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
-    //= reason=unsafe_release_plaintext_before_verify gates multi-frame signed messages; single-frame is buffered until after verify
+    //= reason=No such configuration option is provided; multi-frame signed streaming unconditionally fails during body decode and single-frame signed is buffered until after signature verification, so unverified plaintext is never released early.
     //# - The ESDK MUST provide a configuration option that causes the decryption operation
     //# to fail immediately after parsing the header if a signed algorithm suite is used.
-    let safety = ProtectionNeeded::needs_protection(input.unsafe_release_plaintext_before_verify);
-
     internal_decrypt(
         ciphertext,
         plaintext,
-        input.source.clone(),
+        input.material_source(),
         &input.encryption_context,
-        input.net_v4_retry_policy,
-        safety,
+        DecryptMode::Streaming,
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
@@ -143,10 +138,9 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let out = internal_decrypt(
         &mut cursor,
         &mut plaintext,
-        input.source.clone(),
+        input.material_source(),
         &input.encryption_context,
-        input.net_v4_retry_policy,
-        ProtectionNeeded::No, // Customer cannot see any partial results
+        DecryptMode::Buffered,
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
@@ -201,7 +195,6 @@ struct DecryptState {
     encryption_context_to_only_authenticate: EncryptionContext,
 }
 
-#[expect(clippy::too_many_arguments)]
 //= spec/client-apis/decrypt.md#behavior
 //= type=implication
 //= reason=SafeWrite receives output only after per-frame AEAD; last frame held until after signature verify
@@ -217,8 +210,7 @@ async fn internal_decrypt(
     plaintext: &mut dyn SafeWrite,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
-    net_v4_retry_policy: NetV400RetryPolicy,
-    safety_needed: ProtectionNeeded,
+    mode: DecryptMode,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<DecryptStreamOutput, Error> {
@@ -270,12 +262,12 @@ async fn internal_decrypt(
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 3 MUST be [Verify the header](#verify-the-header)
-    let mut state = step_verify_header(state, net_v4_retry_policy)?;
+    let mut state = step_verify_header(state)?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 4 MUST be [Decrypt the message body](#decrypt-the-message-body)
-    let last_frame = step_decrypt_body(ciphertext, plaintext, &mut state, &safety_needed)?;
+    let last_frame = step_decrypt_body(ciphertext, plaintext, &mut state, &mode)?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
@@ -443,7 +435,6 @@ async fn step_get_decryption_materials(
             .ok_or_else(|| val_err("Decryption materials must contain a plaintext data key"))?
             .as_bytes(),
         suite,
-        false,
     )?;
 
     if !header::header_version_supports_commitment(suite, header_body) {
@@ -488,10 +479,7 @@ async fn step_get_decryption_materials(
 }
 
 // Step 3: Verify the header
-fn step_verify_header(
-    mut state: DecryptState,
-    net_v4_retry_policy: NetV400RetryPolicy,
-) -> Result<DecryptState, Error> {
+fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
     //= spec/client-apis/decrypt.md#verify-the-header
     //# The encryption context to only authenticate MUST be the [encryption context](../framework/structures.md#encryption-context)
     //# in the [decryption materials](../framework/structures.md#decryption-materials)
@@ -512,7 +500,7 @@ fn step_verify_header(
     //# this operation MUST validate the [message header body](../data-format/message-header.md#header-body)
     //# by using the [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
     //# to decrypt with the following inputs:
-    let mut maybe_header_auth = aes_decrypt(
+    let maybe_header_auth = aes_decrypt(
         body::get_alg_suite(&state.header.suite)?,
         //= spec/client-apis/decrypt.md#verify-the-header
         //= type=implication
@@ -547,49 +535,6 @@ fn step_verify_header(
         &mut [],
     );
 
-    // ESDK-NET v4.0.0 Header Auth Catch
-    if maybe_header_auth.is_err() && net_v4_retry_policy == NetV400RetryPolicy::AllowRetry {
-        let derived_data_keys = key_derivation::derive_keys(
-            state.header.body.message_id(),
-            //= spec/client-apis/key-derivation.md#hkdf-encryption-key
-            //= type=implication
-            //= reason=state.dec_mat.plaintext_data_key is set by the keyring/CMM in the preceding decrypt-materials step; the IKM passed to derive_keys is that provider-supplied value by data dependency
-            //# - The input keying material MUST be the data key generated by the key provider.
-            //
-            //= spec/client-apis/key-derivation.md#hkdf-commit-key
-            //= type=implication
-            //= reason=state.dec_mat.plaintext_data_key is set by the keyring/CMM in the preceding decrypt-materials step; the IKM passed to derive_keys is that provider-supplied value by data dependency
-            //# - The input keying material MUST be the data key generated by the key provider.
-            state
-                .dec_mat
-                .plaintext_data_key
-                .as_ref()
-                .ok_or_else(|| val_err("Decryption materials must contain a plaintext data key"))?
-                .as_bytes(),
-            &state.header.suite,
-            true,
-        )?;
-        state.derived_data_keys = derived_data_keys;
-        let mut serialized_req_encryption_context_v4 = Vec::new();
-        encryption_context::write_aad(
-            &mut serialized_req_encryption_context_v4,
-            &canonical_req_encryption_context,
-        )?;
-        maybe_header_auth = aes_decrypt(
-            body::get_alg_suite(&state.header.suite)?,
-            &state.derived_data_keys.data_key,
-            &[],
-            state.header.header_auth.header_auth_tag(),
-            state.header.header_auth.header_iv(),
-            &[
-                &state.header.raw_header[..],
-                &serialized_req_encryption_context_v4[..],
-            ]
-            .concat(),
-            &mut [],
-        );
-    }
-
     //= spec/client-apis/decrypt.md#verify-the-header
     //# If this tag verification fails, this operation MUST immediately halt and fail.
     maybe_header_auth?;
@@ -602,7 +547,7 @@ fn step_decrypt_body(
     ciphertext: &mut dyn SafeRead,
     plaintext: &mut dyn SafeWrite,
     state: &mut DecryptState,
-    safety_needed: &ProtectionNeeded,
+    mode: &DecryptMode,
 ) -> Result<Vec<u8>, Error> {
     let key = state.derived_data_keys.data_key.clone();
 
@@ -646,7 +591,7 @@ fn step_decrypt_body(
         }
         ContentType::Framed => {
             let fail_if_multi_frame =
-                state.dec_mat.verification_key.is_some() && safety_needed.yes();
+                state.dec_mat.verification_key.is_some() && mode.is_streaming();
             body::read_and_decrypt_framed_message_body(
                 ciphertext,
                 plaintext,

@@ -101,13 +101,11 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     );
 }
 
-// Multi-frame signed messages: rejected by default, accepted when
-// unsafe_release_plaintext_before_verify=true. The "MUST fail immediately
-// after parsing the header" requirement is type=exception on the source
-// (decrypt.rs); we fail during body decode rather than at header parse,
-// so this test only covers the configuration-option-exists aspect.
+// Multi-frame signed messages are rejected in streaming mode. The "MUST fail
+// immediately after parsing the header" requirement is type=exception on the
+// source (decrypt.rs); we fail during body decode rather than at header parse.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_streaming_fails_for_multi_frame_signed_without_override() {
+async fn test_streaming_fails_for_multi_frame_signed() {
     let keyring = test_keyring().await;
     // 30 bytes with frame_length=10 → 3 frames (2 regular + 1 final)
     let plaintext = vec![0xAAu8; 30];
@@ -118,34 +116,23 @@ async fn test_streaming_fails_for_multi_frame_signed_without_override() {
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
-    // Two stream inputs differing only in unsafe_release_plaintext_before_verify.
-    let without_override =
-        DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring.clone());
-    assert!(!without_override.unsafe_release_plaintext_before_verify); // default
-    let mut with_override =
-        DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-    with_override.unsafe_release_plaintext_before_verify = true;
+    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
 
-    let mut without_cursor = std::io::Cursor::new(ct.as_slice());
-    let mut without_output = Vec::new();
-    let mut with_cursor = std::io::Cursor::new(ct.as_slice());
-    let mut with_output = Vec::new();
+    let mut cursor = std::io::Cursor::new(ct.as_slice());
+    let mut output = Vec::new();
 
     assert_eq!(
-        decrypt_stream(&mut without_cursor, &mut without_output, &without_override)
+        decrypt_stream(&mut cursor, &mut output, &stream_input)
             .await
             .unwrap_err()
             .kind,
         ErrorKind::Esdk,
-        "multi-frame signed without override must produce Esdk error"
+        "multi-frame signed streaming must produce Esdk error"
     );
     assert!(
-        decrypt_stream(&mut with_cursor, &mut with_output, &with_override)
-            .await
-            .is_ok(),
-        "multi-frame signed with override must succeed"
+        output.is_empty(),
+        "no plaintext must be released before signature verification"
     );
-    assert_eq!(with_output, plaintext);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -80,7 +80,7 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
         &mut cursor,
         &mut ciphertext,
         Some(input.plaintext.len()),
-        input.source.clone(),
+        input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
         input.frame_length,
@@ -151,7 +151,7 @@ pub async fn encrypt_stream(
         plaintext,
         ciphertext,
         input.data_size,
-        input.source.clone(),
+        input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
         input.frame_length,
@@ -391,7 +391,6 @@ async fn step_get_encryption_materials(
             .ok_or_else(|| esdk_err("Encryption materials must contain a plaintext data key"))?
             .0,
         algorithm_suite,
-        false,
     )?;
 
     Ok(EncryptionMaterialsResult {

@@ -91,6 +91,9 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let plaintext = b"discard on failure test";
     let mut enc_input =
         EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    // frame_length 4096 exceeds the plaintext, keeping this a single-frame
+    // message so decrypt_stream exercises signature verification.
+    enc_input.frame_length = FrameLength::new(4096).unwrap();
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -104,9 +107,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let mut stream_input =
-        DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
-    stream_input.unsafe_release_plaintext_before_verify = true;
+    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#security-considerations
     //= type=test
