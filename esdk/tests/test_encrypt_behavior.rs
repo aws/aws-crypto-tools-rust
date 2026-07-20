@@ -745,11 +745,10 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
         .send()
         .await
         .unwrap();
-    let observed_suite = std::sync::Arc::new(std::sync::Mutex::new(None));
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
     let cmm_ref = aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef::from(SpyCmm {
         inner: inner_cmm,
-        observed_algorithm_suite_id: observed_suite.clone(),
+        observed_algorithm_suite_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
         observed_max_plaintext_length: observed_len.clone(),
     });
     let mut stream_input = EncryptStreamInput::with_legacy_cmm(EncryptionContext::new(), cmm_ref);
@@ -792,11 +791,10 @@ async fn test_no_plaintext_length_bound_field_not_included() {
         .send()
         .await
         .unwrap();
-    let observed_suite = std::sync::Arc::new(std::sync::Mutex::new(None));
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
     let cmm_ref = aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef::from(SpyCmm {
         inner: inner_cmm,
-        observed_algorithm_suite_id: observed_suite.clone(),
+        observed_algorithm_suite_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
         observed_max_plaintext_length: observed_len.clone(),
     });
     let mut stream_input = EncryptStreamInput::with_legacy_cmm(EncryptionContext::new(), cmm_ref);
