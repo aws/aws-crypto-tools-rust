@@ -16,15 +16,12 @@
 //!
 //! ## Deterministic clock pattern
 //!
-//! Each test computes a fixed `SystemTime` value and hands `with_clock` a
-//! closure that returns it every time `LocalCmc` calls `(self.now)()`.
-//! The closure is written as `move || frozen_now`: the `move` keyword
-//! forces the closure to capture `frozen_now` **by value** rather than by
-//! reference. That's required because `with_clock` bounds the closure by
-//! `Fn() -> SystemTime + Send + Sync + 'static`, and only owned captures
-//! satisfy the `'static` bound. `SystemTime` is `Copy`, so `move` here is
-//! just a copy — the original `frozen_now` binding stays usable in the
-//! test after the closure is constructed.
+//! To test the cache eviction behavior without having to wait for the ttl
+//! to expire, the cache asks a function "what time is it?";
+//! the test controls that function.
+//! Freezing the clock means the function always returns the same value.
+//! The `move` keyword is Rust's way of making sure the frozen value
+//! stays alive as long as the cache does.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
