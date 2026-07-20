@@ -52,7 +52,7 @@ fn test_identity_kdf_derived_key_equals_plaintext_key() {
     let pdk = sample_key();
     let message_id = [0u8; 16];
 
-    let derived = derive_keys(&message_id, &pdk, suite(NO_KDF_AES_256), false).unwrap();
+    let derived = derive_keys(&message_id, &pdk, suite(NO_KDF_AES_256)).unwrap();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -79,10 +79,9 @@ fn test_kdf_algorithm_is_selected_from_suite() {
     let pdk = sample_key();
     let message_id = [7u8; 16];
 
-    let identity = derive_keys(&message_id, &pdk, suite(NO_KDF_AES_256), false).unwrap();
-    let hkdf_sha256 = derive_keys(&message_id, &pdk, suite(HKDF_SHA256_AES_256), false).unwrap();
-    let hkdf_sha384 =
-        derive_keys(&message_id, &pdk, suite(HKDF_SHA384_AES_256_SIG), false).unwrap();
+    let identity = derive_keys(&message_id, &pdk, suite(NO_KDF_AES_256)).unwrap();
+    let hkdf_sha256 = derive_keys(&message_id, &pdk, suite(HKDF_SHA256_AES_256)).unwrap();
+    let hkdf_sha384 = derive_keys(&message_id, &pdk, suite(HKDF_SHA384_AES_256_SIG)).unwrap();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -135,9 +134,9 @@ fn test_hkdf_derivation_process() {
     let message_id_a = [1u8; 16];
     let message_id_b = [2u8; 16];
 
-    let a1 = derive_keys(&message_id_a, &pdk, suite, false).unwrap();
-    let a2 = derive_keys(&message_id_a, &pdk, suite, false).unwrap();
-    let b = derive_keys(&message_id_b, &pdk, suite, false).unwrap();
+    let a1 = derive_keys(&message_id_a, &pdk, suite).unwrap();
+    let a2 = derive_keys(&message_id_a, &pdk, suite).unwrap();
+    let b = derive_keys(&message_id_b, &pdk, suite).unwrap();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -198,7 +197,7 @@ fn test_v2_hkdf_derivation_process() {
     let pdk = sample_key();
     let message_id = [0x42u8; V2_MESSAGE_ID_LEN];
 
-    let derived = derive_keys(&message_id, &pdk, alg_suite, false).unwrap();
+    let derived = derive_keys(&message_id, &pdk, alg_suite).unwrap();
 
     // Compute the expected encryption key using the same primitives the SDK uses.
     let prk = hkdf_extract(alg_suite.kdf_digest(), &message_id, &pdk);
@@ -250,7 +249,7 @@ fn test_v2_hkdf_commit_key_derivation_process() {
     let pdk = sample_key();
     let message_id = [0x42u8; V2_MESSAGE_ID_LEN];
 
-    let derived = derive_keys(&message_id, &pdk, alg_suite, false).unwrap();
+    let derived = derive_keys(&message_id, &pdk, alg_suite).unwrap();
     let commit_key = derived
         .commitment_key
         .as_ref()
@@ -392,8 +391,8 @@ fn test_message_id_binds_derived_keys_v2() {
     let message_id_a = [0x01u8; V2_MESSAGE_ID_LEN];
     let message_id_b = [0x02u8; V2_MESSAGE_ID_LEN];
 
-    let a = derive_keys(&message_id_a, &pdk, alg_suite, false).unwrap();
-    let b = derive_keys(&message_id_b, &pdk, alg_suite, false).unwrap();
+    let a = derive_keys(&message_id_a, &pdk, alg_suite).unwrap();
+    let b = derive_keys(&message_id_b, &pdk, alg_suite).unwrap();
 
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //= type=test

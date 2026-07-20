@@ -60,7 +60,7 @@ async fn test_bad_decrypt_input() {
         let mut decrypt_input =
             DecryptInput::with_legacy_keyring(&esdk_ciphertext, ec, kms_keyring);
 
-        decrypt_input.source = None;
+        decrypt_input.keyring = None;
         let bad_decrypt_output = run_decrypt(style, &decrypt_input).await;
 
         //= spec/client-apis/decrypt.md#input
@@ -184,7 +184,7 @@ async fn test_bad_encrypt_input() {
         let plaintext = b"hello esdk";
         let ec = EncryptionContext::new();
         let mut encrypt_input = EncryptInput::with_legacy_keyring(plaintext, ec, kms_keyring);
-        encrypt_input.source = None;
+        encrypt_input.keyring = None;
         let encrypt_output = run_encrypt(style, &encrypt_input).await;
 
         //= spec/client-apis/encrypt.md#input
