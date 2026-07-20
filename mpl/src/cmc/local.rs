@@ -1,35 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Local Cryptographic Materials Cache — concrete `Cmc` impl backed by the
-//! [`lru`] crate with TTL-aware pruning.
+//! Local Cryptographic Materials Cache — an in-memory, LRU-ordered `Cmc`
+//! implementation with TTL-aware pruning, backed by the [`lru`] crate.
 //!
-//! `LocalCmc` is the first concrete CMC in the MPL and satisfies the
-//! abstract `Cmc` trait contract in [`super`]. It implements the behaviors
-//! defined in `../spec/framework/local-cryptographic-materials-cache.md`:
-//!
-//! - **Entry capacity** — caller-provided maximum number of stored entries.
-//!   A capacity of `0` yields a no-store cache: `put` is a silent no-op and
-//!   `get` always returns `None`.
-//! - **Entry pruning tail size** — how many least-recently-used entries the
-//!   cache scans for TTL-expired evictees during pruning.
-//! - **Put** delegates to [`lru::LruCache::put`], which evicts the LRU
-//!   entry before insertion when the cache is at capacity so the
-//!   post-condition `len <= capacity` always holds when `put` returns.
-//! - **Get** prunes the tail window for TTL-expired entries first, then
-//!   returns the requested entry only if it has not itself TTL-expired.
-//! - **Pruning** evicts every TTL-expired entry among the `N` LRU entries.
-//!
-//! The cache holds entries by `Arc<CacheEntry>` so `get_cache_entry` can
-//! return `Some(Arc<CacheEntry>)` without cloning the underlying materials.
-//! All shared state lives behind a single `Mutex<Option<LruCache<..>>>`;
-//! updates are therefore serialized at the cache layer. The `Option` wraps
-//! the cache so the zero-capacity case (`NonZeroUsize::new(0) == None`)
-//! degrades to a no-store cache without a separate code path.
-//!
-//! For deterministic TTL/pruning tests, [`LocalCmc::with_clock`] accepts an
-//! injected clock function. Production callers use [`LocalCmc::new`], which
-//! defaults to `SystemTime::now`.
+//! See [`LocalCmc`] for the public API. Behavioral requirements are
+//! specified in `../spec/framework/local-cryptographic-materials-cache.md`.
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -68,16 +44,12 @@ pub struct LocalCmc {
 }
 
 impl LocalCmc {
-    /// Construct a `LocalCmc` configured with the supplied entry capacity
-    /// and entry pruning tail size. The cache uses `SystemTime::now` as its
-    /// clock; tests requiring deterministic TTL behavior should use
-    /// [`LocalCmc::with_clock`] instead.
+    /// Construct a `LocalCmc` with the supplied entry capacity and entry
+    /// pruning tail size. Uses `SystemTime::now` as its clock; for
+    /// deterministic TTL behavior in tests, use [`LocalCmc::with_clock`].
     ///
     /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
-    /// and `get` always returns `None`. Larger capacities are bounded in
-    /// practice by the underlying [`lru::LruCache`], which pre-allocates
-    /// its hashmap with `entry_capacity` slots — pathological values such
-    /// as `usize::MAX` are not representable and will fail to allocate.
+    /// and `get` always returns `None`.
     pub fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Result<Self, CmcError> {
         Self::with_clock(entry_capacity, entry_pruning_tail_size, SystemTime::now)
     }
