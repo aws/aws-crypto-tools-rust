@@ -13,15 +13,30 @@
 //!
 //! The cache's clock is injected via [`LocalCmc::with_clock`] so TTL and
 //! pruning tests advance time deterministically without sleeping.
+//!
+//! ## Deterministic clock pattern
+//!
+//! Each test computes a fixed `SystemTime` value and hands `with_clock` a
+//! closure that returns it every time `LocalCmc` calls `(self.now)()`.
+//! The closure is written as `move || frozen_now`: the `move` keyword
+//! forces the closure to capture `frozen_now` **by value** rather than by
+//! reference. That's required because `with_clock` bounds the closure by
+//! `Fn() -> SystemTime + Send + Sync + 'static`, and only owned captures
+//! satisfy the `'static` bound. `SystemTime` is `Copy`, so `move` here is
+//! just a copy — the original `frozen_now` binding stays usable in the
+//! test after the closure is constructed.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, MessageUsage, UsageMetadata,
 };
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, EncryptionContext, EncryptionMaterials};
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
+    EncryptionContext, EncryptionMaterials,
+};
 
 // Fixtures
 
@@ -57,6 +72,37 @@ fn make_encryption_materials() -> EncryptionMaterials {
         None,
     )
     .expect("constructing empty encryption materials")
+}
+
+fn make_decryption_materials() -> DecryptionMaterials {
+    DecryptionMaterials::new(
+        SUITE,
+        EncryptionContext::new(),
+        BTreeSet::new(),
+        None,
+        None,
+        None,
+    )
+    .expect("constructing empty decryption materials")
+}
+
+fn make_branch_key_materials() -> BranchKeyMaterials {
+    BranchKeyMaterials::new(
+        [0u8; 32],
+        "test-branch-key-id".to_string(),
+        "00000000-0000-4000-8000-000000000000".to_string(),
+        EncryptionContext::new(),
+    )
+    .expect("constructing branch key materials")
+}
+
+fn make_beacon_key_materials() -> BeaconKeyMaterials {
+    BeaconKeyMaterials::new(
+        "test-beacon-key-id".to_string(),
+        EncryptionContext::new(),
+        None,
+        Option::<BTreeMap<String, Vec<u8>>>::None,
+    )
 }
 
 fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
@@ -160,7 +206,7 @@ async fn test_put_within_capacity_does_not_evict() {
             .get_cache_entry(&[i])
             .await
             .expect("get succeeds")
-            .expect("id {i} survives within-capacity puts");
+            .unwrap_or_else(|| panic!("id {i} survives within-capacity puts"));
         assert_eq!(
             got.expiry_time, expiry,
             "id {i} returns the expiry_time it was put with",
@@ -227,8 +273,6 @@ async fn test_get_drops_ttl_expired_entry() {
         .await
         .expect("put succeeds");
 
-    //
-    //
     let got = cmc
         .get_cache_entry(b"expiring")
         .await
@@ -348,19 +392,11 @@ async fn test_pruning_evicts_all_ttl_expired_in_tail() {
 
 #[tokio::test]
 async fn test_pruning_does_not_evict_outside_tail() {
-    // Tail size 2; insert one TTL-expired entry FIRST (so it is the LRU
-    // tail entry), then insert 4 fresh entries (so the expired one is at
-    // position 0 of the LRU vec while positions 1..5 are fresh). The
-    // configured tail size is 2, so a prune scans only positions 0 and 1.
-    // Position 0 is expired → evicted. We then insert ANOTHER expired
-    // entry but place it at LRU position 4 by getting it last — we want
-    // to prove that an expired entry OUTSIDE the tail window survives.
-    //
-    // Easier construction: configure tail size 1 and put one fresh entry
-    // first (LRU tail), then put a TTL-expired entry that becomes MRU,
-    // then trigger prune via a get on a different id. The expired entry
-    // is at the MRU end (outside the 1-entry tail window) and must
-    // survive.
+    // Tail size 1. Put a fresh entry first — it becomes the LRU tail.
+    // Then put a TTL-expired entry — it becomes MRU, sitting OUTSIDE the
+    // 1-entry pruning tail window. Trigger a prune via a get on an
+    // unrelated id; the prune scans only the fresh LRU entry (kept), and
+    // the expired MRU entry MUST survive.
     let creation = anchor_now();
     let expired = creation + TTL_EXPIRED_OFFSET;
     let fresh = creation + TTL_FRESH_OFFSET;
@@ -421,22 +457,56 @@ async fn test_put_then_get_returns_inserted_entry() {
 #[tokio::test]
 async fn test_usage_metadata_round_trips_through_put_get() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
     let usage = UsageMetadata::new(MessageUsage(7), BytesUsage(2048));
 
-    cmc.put_cache_entry(b"id-usage", make_entry_with_usage(creation, expiry, usage))
-        .await
-        .expect("put succeeds");
+    // Exercise every `CachedMaterials` variant so this test discharges the
+    // abstract-trait "must include all usage metadata" requirement across
+    // the entire enum, not just the encryption variant.
+    for (label, materials) in [
+        (
+            "Encryption",
+            CachedMaterials::Encryption(make_encryption_materials()),
+        ),
+        (
+            "Decryption",
+            CachedMaterials::Decryption(make_decryption_materials()),
+        ),
+        (
+            "BranchKey",
+            CachedMaterials::BranchKey(make_branch_key_materials()),
+        ),
+        (
+            "BeaconKey",
+            CachedMaterials::BeaconKey(make_beacon_key_materials()),
+        ),
+    ] {
+        let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+        let entry = CacheEntry::new(materials, creation, expiry, usage);
+        cmc.put_cache_entry(b"id-usage", entry)
+            .await
+            .expect("put succeeds");
 
-    let got = cmc
-        .get_cache_entry(b"id-usage")
-        .await
-        .expect("get succeeds")
-        .expect("entry is present");
+        let got = cmc
+            .get_cache_entry(b"id-usage")
+            .await
+            .expect("get succeeds")
+            .unwrap_or_else(|| panic!("{label}: entry is present"));
 
-    assert_eq!(got.usage_metadata, usage);
+        assert_eq!(
+            got.usage_metadata, usage,
+            "{label}: usage metadata must round-trip through put/get"
+        );
+        assert_eq!(
+            got.creation_time, creation,
+            "{label}: creation_time must round-trip through put/get"
+        );
+        assert_eq!(
+            got.expiry_time, expiry,
+            "{label}: expiry_time must round-trip through put/get"
+        );
+    }
 }
 
 #[tokio::test]
