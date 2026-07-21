@@ -36,7 +36,7 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
 
 ## Status snapshot
 
-Snapshot as of 2026-07-15. Update this table whenever a slice's state
+Snapshot as of 2026-07-20. Update this table whenever a slice's state
 changes (branch cut, PR opened, PR merged, PR closed).
 
 | PR | Slug | GitHub PR | Status | Review branch |
@@ -50,8 +50,8 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 7 | `structures-polish` | — | **Folded into PR 8** (substance landed with PR 2; residual drift moves to PR 8) | — |
 | 8 | `mrk-match` | [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29) | **Merged** 2026-07-16 (merge commit `6214783`) | retired after merge |
 | 9 | `cmc-interface` | [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30) | **Merged** 2026-07-16 (merge commit `a917ccf`) | retired after merge |
-| 10 | `local-cmc` | [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31) | **Open for review** 2026-07-16 | `aws-crypto-rust/local-cmc-review` @ `HEAD` (1 commit on top of `main`) |
-| 11 | `storm-tracking-cmc` | — | Not started | — |
+| 10 | `local-cmc` | [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31) | **Merged** 2026-07-20 (merge commit `8a5ae90`) | retired after merge |
+| 11 | `storm-tracking-cmc` | — | Review branch cut from `main` @ `8a5ae90` | `aws-crypto-rust/storm-tracking-cmc-review` |
 | 12 | `keystore-interface` | — | Not started | — |
 | 13 | `keystore-support` | — | Not started | — |
 | 14 | `branch-key-store` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** review and merge [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31) (`aws-crypto-rust/local-cmc-review` against `main`).
+**Next action:** prepare PR 11 (`aws-crypto-rust/storm-tracking-cmc-review` against `main`).
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -521,7 +521,7 @@ that suppresses thundering-herd on cache misses.
 **Spec:** [`spec/framework/storm-tracking-cryptographic-materials-cache.md`](../../spec/framework/storm-tracking-cryptographic-materials-cache.md)
 **Review branch:** `aws-crypto-rust/storm-tracking-cmc-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-storm-tracking-cmc`
-**Base branch (PR target):** `aws-crypto-rust/local-cmc-review`
+**Base branch (PR target):** `main` (PR 10 is merged; the stack resets here)
 **Depends on:** PR 10
 
 **Source:**
@@ -831,8 +831,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 7. PR 7 — `structures-polish` — 🗑️ folded into PR 8 *(substance landed via PR 2)*
 8. PR 8 — `mrk-match` — ✅ merged as [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29)
 9. PR 9 — `cmc-interface` — ✅ merged as [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30)
-10. PR 10 — `local-cmc` — 🟢 open for review as [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31) **(current)**
-11. PR 11 — `storm-tracking-cmc`
+10. PR 10 — `local-cmc` — ✅ merged as [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31)
+11. PR 11 — `storm-tracking-cmc` **(current)**
 12. PR 12 — `keystore-interface`
 13. PR 13 — `keystore-support`
 14. PR 14 — `branch-key-store`
