@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Integration tests for `StormTrackingCmc`.
+//!
+//! Gated behind the `test-utils` feature because these tests rely on
+//! `StormTrackingCmc::with_clock` and the `#[doc(hidden)]` inflight-map
+//! test hooks (`inner`, `peek_inflight`, `inflight_count`, `mark_inflight`),
+//! all of which are only compiled in when `test-utils` is enabled.
+
+#![cfg(feature = "test-utils")]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
