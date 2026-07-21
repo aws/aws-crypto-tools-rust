@@ -38,16 +38,13 @@ pub struct LocalCmc {
     /// serialized at the cache layer. `None` when `entry_capacity == 0`
     /// (no-store cache); `Some(LruCache)` otherwise.
     inner: Mutex<Option<Inner>>,
-    /// Clock seam — `SystemTime::now` in production, an injected closure
-    /// in tests so TTL/pruning behavior can be exercised deterministically.
+    /// Clock seam — `SystemTime::now`.
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
 impl LocalCmc {
     /// Construct a `LocalCmc` with the supplied entry capacity and entry
-    /// pruning tail size. Uses `SystemTime::now` as its clock; for
-    /// deterministic TTL behavior in tests, enable the `test-utils`
-    /// feature and use [`LocalCmc::with_clock`].
+    /// pruning tail size.
     ///
     /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
     /// and `get` always returns `None`.

@@ -55,7 +55,6 @@ struct StormTrackingState {
 }
 
 /// The action to take after the lock-protected decision step.
-/// This allows us to drop the `MutexGuard` before performing any `.await`.
 enum GetDecision {
     /// Return the cached entry immediately.
     ReturnEntry(Arc<CacheEntry>),
@@ -169,7 +168,6 @@ impl StormTrackingCmc {
     {
         let units = time_units.unwrap_or_default();
         let to_duration = |v: u64| -> Duration {
-            //
             match units {
                 TimeUnits::Seconds => Duration::from_secs(v),
                 TimeUnits::Milliseconds => Duration::from_millis(v),
