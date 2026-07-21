@@ -3,6 +3,10 @@
 
 //! Integration tests for [`aws_crypto_mpl::cmc::LocalCmc`].
 //!
+//! Gated behind the `test-utils` feature because these tests rely on
+//! `LocalCmc::with_clock`, which is only compiled in when `test-utils`
+//! is enabled.
+//!
 //! These tests exercise the local CMC's public `Cmc` trait surface and the
 //! LocalCmc-specific behaviors defined in
 //! `../spec/framework/local-cryptographic-materials-cache.md`. They also
@@ -16,12 +20,17 @@
 //!
 //! ## Deterministic clock pattern
 //!
-//! To test the cache eviction behavior without having to wait for the ttl
-//! to expire, the cache asks a function "what time is it?";
-//! the test controls that function.
-//! Freezing the clock means the function always returns the same value.
-//! The `move` keyword is Rust's way of making sure the frozen value
-//! stays alive as long as the cache does.
+//! Each test computes a fixed `SystemTime` value and hands `with_clock` a
+//! closure that returns it every time `LocalCmc` calls `(self.now)()`.
+//! The closure is written as `move || frozen_now`: the `move` keyword
+//! forces the closure to capture `frozen_now` **by value** rather than by
+//! reference. That's required because `with_clock` bounds the closure by
+//! `Fn() -> SystemTime + Send + Sync + 'static`, and only owned captures
+//! satisfy the `'static` bound. `SystemTime` is `Copy`, so `move` here is
+//! just a copy — the original `frozen_now` binding stays usable in the
+//! test after the closure is constructed.
+
+#![cfg(feature = "test-utils")]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

@@ -200,9 +200,10 @@ impl StormTrackingCmc {
         let now_arc: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(now);
         let inner_clock = Arc::clone(&now_arc);
 
-        let inner = LocalCmc::with_clock(entry_capacity, entry_pruning_tail_size, move || {
-            inner_clock()
-        })?;
+        let inner =
+            LocalCmc::with_clock_impl(entry_capacity, entry_pruning_tail_size, move || {
+                inner_clock()
+            })?;
 
         let sleep_milli_dur = Duration::from_millis(sleep_milli);
 
