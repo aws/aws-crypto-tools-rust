@@ -18,8 +18,10 @@
 //! `LocalCmc` (which has its own separate `Mutex`, so there is no nested
 //! locking and no deadlock between the two caches); then (2) take the
 //! storm-tracking mutex just long enough to compute a `GetDecision` call.
-//! The blocking branches (`10.7`, `10.10`) re-acquire the mutex briefly on
-//! each poll to check `inflight.len() < fan_out` and release it before the next sleep,
+//! The two blocking branches (cache miss with saturated FanOut; cache miss
+//! with inflight key still within the grace interval) re-acquire the mutex
+//! briefly on each poll to check `inflight.len() < fan_out` and release it
+//! before the next sleep,
 //! so a thread waiting to refresh key A does not block a lookup for key B.
 //! Cached entries are handed out as clones,
 //! so no materials data is copied under the lock.
@@ -59,11 +61,13 @@ enum GetDecision {
     ReturnEntry(Arc<CacheEntry>),
     /// Return `NoSuchEntry` immediately (also records the inflight insert).
     ReturnNone,
-    /// Spin until a FanOut slot opens or the key appears (10.7 — miss, not inflight, saturated).
+    /// Spin until a FanOut slot opens or the key appears
+    /// (cache miss, key not inflight, FanOut saturated).
     BlockMissNotInflight,
     /// Return an error (inflight TTL exceeded).
     Fail(CmcError),
-    /// Spin until a FanOut slot opens or the key appears (10.10 — miss, inflight, within interval).
+    /// Spin until a FanOut slot opens or the key appears
+    /// (cache miss, key inflight, within grace interval).
     BlockMissInflight { inflight_t: SystemTime },
 }
 
