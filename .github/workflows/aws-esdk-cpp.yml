@@ -1,6 +1,3 @@
-# CI for the aws-esdk-cpp C++ shim: fmt, clippy, build, Rust unit + integration
-# tests, and the C++ facade/example/parity build. The round-trip integration
-# tests run against the ESDK test account via OIDC credentials.
 name: aws-esdk-cpp shim (Rust)
 
 on:
@@ -42,17 +39,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # OIDC credentials for the round-trip integration tests (KMS + DynamoDB in
-      # the ESDK test account); same role and region as the library CI.
+      # integration tests need real KMS + DynamoDB
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: us-west-2
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
 
-      # aws-lc-sys (pulled in transitively via aws-esdk) builds native code; Go
-      # is required by the aws-lc build tooling on hosted runners, matching the
-      # library CI setup.
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -80,8 +74,6 @@ jobs:
       - name: Test (Rust unit + integration tests)
         run: cargo test --verbose
 
-      # Build the C++ facade example, the compile-time enum-parity check, and the
-      # integration test, then run the integration test against live AWS resources.
       - name: Build and run C++ facade, example, and integration test
         if: runner.os == 'Linux'
         run: |
