@@ -133,17 +133,17 @@ async fn test_repr_encryption_context_with_same_ec_happy_case() {
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test KMS
-    decrypt_input.source = Some(MaterialSource::LegacyKeyring(kms_keyring.clone()));
+    decrypt_input.keyring = Some(Keyring::Legacy(kms_keyring.clone()));
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test AES
-    decrypt_input.source = Some(MaterialSource::LegacyKeyring(aes_keyring.clone()));
+    decrypt_input.keyring = Some(Keyring::Legacy(aes_keyring.clone()));
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test Hierarchy Keyring
-    decrypt_input.source = Some(MaterialSource::LegacyKeyring(h_keyring.clone()));
+    decrypt_input.keyring = Some(Keyring::Legacy(h_keyring.clone()));
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
     assert_eq!(decrypt_output.plaintext, plaintext);
 }
@@ -223,17 +223,17 @@ async fn test_remove_on_encrypt_and_supply_on_decrypt_happy_case() {
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test KMS
-    decrypt_input.source = Some(MaterialSource::LegacyKeyring(kms_keyring.clone()));
+    decrypt_input.keyring = Some(Keyring::Legacy(kms_keyring.clone()));
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test AES
-    decrypt_input.source = Some(MaterialSource::LegacyKeyring(aes_keyring.clone()));
+    decrypt_input.keyring = Some(Keyring::Legacy(aes_keyring.clone()));
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test Hierarchy Keyring
-    decrypt_input.source = Some(MaterialSource::LegacyKeyring(h_keyring.clone()));
+    decrypt_input.keyring = Some(Keyring::Legacy(h_keyring.clone()));
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
     assert_eq!(decrypt_output.plaintext, plaintext);
 }
