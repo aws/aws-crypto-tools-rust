@@ -148,11 +148,12 @@ impl StormTrackingCmc {
         )
     }
 
-    /// Internal constructor that accepts an arbitrary clock. Not part of
-    /// the public API; callers use `new` (production) or `with_clock`
-    /// (test-utils feature).
+    /// Internal constructor that accepts an arbitrary clock. `pub(crate)`
+    /// to mirror `LocalCmc::with_clock_impl`'s visibility for consistency
+    /// across the two cache implementations; not part of the public API.
+    /// Callers use `new` (production) or `with_clock` (test-utils feature).
     #[allow(clippy::too_many_arguments)]
-    fn with_clock_impl<F>(
+    pub(crate) fn with_clock_impl<F>(
         entry_capacity: usize,
         entry_pruning_tail_size: usize,
         grace_period: u64,
