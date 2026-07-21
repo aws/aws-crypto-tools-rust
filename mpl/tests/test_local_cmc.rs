@@ -3,6 +3,10 @@
 
 //! Integration tests for [`aws_crypto_mpl::cmc::LocalCmc`].
 //!
+//! Gated behind the `test-utils` feature because these tests rely on
+//! `LocalCmc::with_clock`, which is only compiled in when `test-utils`
+//! is enabled.
+//!
 //! These tests exercise the local CMC's public `Cmc` trait surface and the
 //! LocalCmc-specific behaviors defined in
 //! `../spec/framework/local-cryptographic-materials-cache.md`. They also
@@ -25,6 +29,8 @@
 //! satisfy the `'static` bound. `SystemTime` is `Copy`, so `move` here is
 //! just a copy — the original `frozen_now` binding stays usable in the
 //! test after the closure is constructed.
+
+#![cfg(feature = "test-utils")]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

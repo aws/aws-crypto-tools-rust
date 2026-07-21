@@ -46,18 +46,36 @@ pub struct LocalCmc {
 impl LocalCmc {
     /// Construct a `LocalCmc` with the supplied entry capacity and entry
     /// pruning tail size. Uses `SystemTime::now` as its clock; for
-    /// deterministic TTL behavior in tests, use [`LocalCmc::with_clock`].
+    /// deterministic TTL behavior in tests, enable the `test-utils`
+    /// feature and use [`LocalCmc::with_clock`].
     ///
     /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
     /// and `get` always returns `None`.
     pub fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Result<Self, CmcError> {
-        Self::with_clock(entry_capacity, entry_pruning_tail_size, SystemTime::now)
+        Self::with_clock_impl(entry_capacity, entry_pruning_tail_size, SystemTime::now)
     }
 
-    /// Construct a `LocalCmc` with an injected clock. Used by tests to
-    /// fast-forward past entry TTLs without sleeping. Production callers
-    /// should use [`LocalCmc::new`].
+    /// Test-only constructor with clock injection. Gated behind the
+    /// `test-utils` feature so it is not exposed to library consumers.
+    /// Tests use this to fast-forward past entry TTLs without sleeping.
+    #[cfg(feature = "test-utils")]
+    #[doc(hidden)]
     pub fn with_clock<F>(
+        entry_capacity: usize,
+        entry_pruning_tail_size: usize,
+        now: F,
+    ) -> Result<Self, CmcError>
+    where
+        F: Fn() -> SystemTime + Send + Sync + 'static,
+    {
+        Self::with_clock_impl(entry_capacity, entry_pruning_tail_size, now)
+    }
+
+    /// Internal constructor that accepts an arbitrary clock. `pub(crate)`
+    /// so `StormTrackingCmc` can construct its inner `LocalCmc` without
+    /// depending on the `test-utils`-gated public `with_clock`; not part
+    /// of the public API.
+    pub(crate) fn with_clock_impl<F>(
         entry_capacity: usize,
         entry_pruning_tail_size: usize,
         now: F,
