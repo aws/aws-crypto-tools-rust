@@ -10,21 +10,19 @@
 //! existing cached materials to all other threads within the grace interval.
 //! This prevents many threads from simultaneously refreshing the same key.
 //!
-//! Concurrency model: a single `std::sync::Mutex<StormTrackingState>` guards
-//! the inflight map (`HashMap<cache_id, SystemTime>`). The lock is
-//! coarse-grained — one mutex for the whole map, not per-key — but the
-//! critical section is always pure-CPU work (a hashmap lookup, at most one
-//! insert, and a branch decision), and the lock is never held across
-//! `.await`. `get_cache_entry` runs in two phases: (1) call the inner
+//! Concurrency model: a single Mutex lock guards the inflight map. 
+//! The lock is for the whole map, not per-key, and the lock
+//! is never held across `.await`. 
+//!
+//¡ `get_cache_entry` runs in two phases: (1) call the inner
 //! `LocalCmc` (which has its own separate `Mutex`, so there is no nested
 //! locking and no deadlock between the two caches); then (2) take the
-//! storm-tracking mutex just long enough to compute a `GetDecision`, drop
-//! it, and only then perform any `tokio::time::sleep`. The blocking
-//! branches (`10.7`, `10.10`) re-acquire the mutex briefly on each poll to
-//! check `inflight.len() < fan_out` and release it before the next sleep,
+//! storm-tracking mutex just long enough to compute a `GetDecision` call.
+//! The blocking branches (`10.7`, `10.10`) re-acquire the mutex briefly on 
+//! each poll to check `inflight.len() < fan_out` and release it before the next sleep,
 //! so a thread waiting to refresh key A does not block a lookup for key B.
-//! Cached entries are handed out as `Arc<CacheEntry>` clones, so no
-//! materials data is copied under the lock.
+//! Cached entries are handed out as clones, 
+//! so no materials data is copied under the lock.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
