@@ -528,9 +528,17 @@ that suppresses thundering-herd on cache misses.
 
 **Source:**
 - `mpl/src/cmc/storm_tracking.rs`
+- `mpl/src/cmc/local.rs` (retrofits `test-utils` feature gate onto PR 10's
+  `LocalCmc::with_clock`; splits `with_clock` into feature-gated public
+  wrapper + `pub(crate)` `with_clock_impl` so `StormTrackingCmc` can
+  still construct its inner cache without depending on the `test-utils`
+  feature)
 
 **Tests:**
 - `mpl/tests/test_storm_tracking_cmc.rs`
+- `mpl/tests/test_local_cmc.rs` (adds `#![cfg(feature = "test-utils")]`
+  crate-level gate matching the storm-tracking test file, because these
+  tests rely on `LocalCmc::with_clock`)
 
 **Compliance:**
 - `mpl/compliance/spec/framework/storm-tracking-cryptographic-materials-cache/*.toml`
@@ -541,8 +549,17 @@ that suppresses thundering-herd on cache misses.
   TimeUnits};`); `mpl/Cargo.toml` (promotes `tokio` to `[dependencies]`
   with features `["rt", "macros", "time"]` because
   `StormTrackingCmc::get_cache_entry` calls `tokio::time::sleep` in the
-  library body); `.duvet/config.toml` (registers the storm-tracking
-  spec).
+  library body; also adds `test-utils = []` under `[features]` to gate
+  the test-only constructor / observability hooks on both `LocalCmc`
+  and `StormTrackingCmc`); `.duvet/config.toml` (registers the
+  storm-tracking spec).
+- Scope note: PR 10 (`local-cmc`) is already merged as of `8a5ae90`,
+  but this PR retrofits the `test-utils` feature gate onto
+  `LocalCmc::with_clock` and the corresponding test file. That
+  expansion is intentional — the `test-utils` feature is introduced by
+  this PR, so applying it to `LocalCmc` in the same PR keeps the
+  visibility change coherent and avoids leaving `LocalCmc::with_clock`
+  as a publicly exposed test-only constructor after PR 11 merges.
 
 ---
 
