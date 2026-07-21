@@ -100,7 +100,7 @@ impl StormTrackingCmc {
         sleep_milli: u64,
         time_units: Option<TimeUnits>,
     ) -> Result<Self, CmcError> {
-        Self::with_clock(
+        Self::with_clock_impl(
             entry_capacity,
             entry_pruning_tail_size,
             grace_period,
@@ -113,10 +113,44 @@ impl StormTrackingCmc {
         )
     }
 
-    /// Construct a `StormTrackingCmc` with an injected clock. Tests use this
-    /// to advance time deterministically without sleeping.
+    /// Test-only constructor with clock injection. Gated behind the
+    /// `test-utils` feature so it is not exposed to library consumers.
+    /// Tests use this to advance time deterministically without sleeping.
+    #[cfg(feature = "test-utils")]
+    #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn with_clock<F>(
+        entry_capacity: usize,
+        entry_pruning_tail_size: usize,
+        grace_period: u64,
+        grace_interval: u64,
+        fan_out: usize,
+        inflight_ttl: u64,
+        sleep_milli: u64,
+        time_units: Option<TimeUnits>,
+        now: F,
+    ) -> Result<Self, CmcError>
+    where
+        F: Fn() -> SystemTime + Send + Sync + 'static,
+    {
+        Self::with_clock_impl(
+            entry_capacity,
+            entry_pruning_tail_size,
+            grace_period,
+            grace_interval,
+            fan_out,
+            inflight_ttl,
+            sleep_milli,
+            time_units,
+            now,
+        )
+    }
+
+    /// Internal constructor that accepts an arbitrary clock. Not part of
+    /// the public API; callers use `new` (production) or `with_clock`
+    /// (test-utils feature).
+    #[allow(clippy::too_many_arguments)]
+    fn with_clock_impl<F>(
         entry_capacity: usize,
         entry_pruning_tail_size: usize,
         grace_period: u64,
@@ -217,6 +251,7 @@ impl StormTrackingCmc {
 
     /// Borrow the inner `LocalCmc`. Useful in tests to verify that the
     /// wrapper delegates storage to the inner cache.
+    #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn inner(&self) -> &LocalCmc {
         &self.inner
@@ -225,6 +260,7 @@ impl StormTrackingCmc {
     /// Peek the inflight map for `cache_id`. Returns the most recent time
     /// a `NoSuchEntry` was returned for that key, or `None` if the key is
     /// not currently inflight. Exposed for test observability.
+    #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn peek_inflight(&self, cache_id: &[u8]) -> Option<SystemTime> {
         let state = self.state.lock().expect("StormTrackingCmc lock poisoned");
@@ -232,6 +268,7 @@ impl StormTrackingCmc {
     }
 
     /// Number of currently inflight keys. Exposed for test observability.
+    #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn inflight_count(&self) -> usize {
         let state = self.state.lock().expect("StormTrackingCmc lock poisoned");
@@ -240,6 +277,7 @@ impl StormTrackingCmc {
 
     /// Directly insert an inflight entry at a given time. Exposed for tests
     /// to pre-populate the inflight map without going through get_cache_entry.
+    #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn mark_inflight(&self, cache_id: &[u8], when: SystemTime) {
         let mut state = self.state.lock().expect("StormTrackingCmc lock poisoned");

@@ -21,6 +21,7 @@ uuid = { version = "=1.23.3", features = ["v4"] }
 [features]
 default = []
 keystore = []
+test-utils = []
 
 [[example]]
 name = "aws_kms_hierarchical"
