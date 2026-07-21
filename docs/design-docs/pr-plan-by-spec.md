@@ -82,9 +82,11 @@ stack level.
   deps). Later slices add deps as needed: PR 5 adds `async-trait` under
   `[dependencies]` and `tokio` (with just `["rt", "macros"]` features)
   under `[dev-dependencies]` for `#[tokio::test]` on the contract
-  harnesses; PR 14 adds `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-kms`,
-  `base64`, `uuid` (with `features = ["v4"]`) and promotes `tokio` to
-  `[dependencies]` with the fuller feature set (`rt`, `macros`, `time`);
+  harnesses; PR 11 promotes `tokio` to `[dependencies]` with features
+  `["rt", "macros", "time"]` because `StormTrackingCmc` calls
+  `tokio::time::sleep` in the library body; PR 14 adds `aws-config`,
+  `aws-sdk-dynamodb`, `aws-sdk-kms`, `base64`, `uuid` (with `features =
+  ["v4"]`);
   PR 15 adds `aws-lc-rs` (fips); PR 18 adds the `[[example]] name =
   "aws_kms_hierarchical"` block with `required-features = ["keystore"]`.
   PR 12 introduces the `[features] keystore` flag. Each slice's PR shows
@@ -536,7 +538,10 @@ that suppresses thundering-herd on cache misses.
 **Notes:**
 - Shared-file modifications introduced by this PR: `cmc/mod.rs` (adds
   `pub mod storm_tracking; pub use storm_tracking::{StormTrackingCmc,
-  TimeUnits};`); `.duvet/config.toml` (registers the storm-tracking
+  TimeUnits};`); `mpl/Cargo.toml` (promotes `tokio` to `[dependencies]`
+  with features `["rt", "macros", "time"]` because
+  `StormTrackingCmc::get_cache_entry` calls `tokio::time::sleep` in the
+  library body); `.duvet/config.toml` (registers the storm-tracking
   spec).
 
 ---
