@@ -3,7 +3,7 @@
 
 //! Integration tests for `StormTrackingCmc`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -11,7 +11,10 @@ use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcErrorKind, LocalCmc, MessageUsage,
     StormTrackingCmc, TimeUnits, UsageMetadata,
 };
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, EncryptionContext, EncryptionMaterials};
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
+    EncryptionContext, EncryptionMaterials,
+};
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +47,37 @@ fn make_encryption_materials() -> EncryptionMaterials {
         None,
     )
     .expect("constructing empty encryption materials")
+}
+
+fn make_decryption_materials() -> DecryptionMaterials {
+    DecryptionMaterials::new(
+        SUITE,
+        EncryptionContext::new(),
+        BTreeSet::new(),
+        None,
+        None,
+        None,
+    )
+    .expect("constructing empty decryption materials")
+}
+
+fn make_branch_key_materials() -> BranchKeyMaterials {
+    BranchKeyMaterials::new(
+        [0u8; 32],
+        "test-branch-key-id".to_string(),
+        "00000000-0000-4000-8000-000000000000".to_string(),
+        EncryptionContext::new(),
+    )
+    .expect("constructing branch key materials")
+}
+
+fn make_beacon_key_materials() -> BeaconKeyMaterials {
+    BeaconKeyMaterials::new(
+        "test-beacon-key-id".to_string(),
+        EncryptionContext::new(),
+        None,
+        Option::<BTreeMap<String, Vec<u8>>>::None,
+    )
 }
 
 fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
@@ -858,4 +892,69 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
         Some(now),
         "inflight time must be UPDATED to `now`, not the prior inflight_t"
     );
+}
+
+// ── Group 11 — Material Variant Coverage ─────────────────────────────────────
+
+#[tokio::test]
+async fn test_all_material_variants_round_trip() {
+    // The wrapper's storage path is variant-agnostic — this test asserts
+    // every `CachedMaterials` variant survives a put/get round-trip, not
+    // only the `Encryption` variant exercised by the rest of this file.
+    let now = anchor_now();
+    let expiry = now + Duration::from_secs(3600);
+    let usage = UsageMetadata::new(MessageUsage(0), BytesUsage(0));
+
+    for (label, materials) in [
+        (
+            "Encryption",
+            CachedMaterials::Encryption(make_encryption_materials()),
+        ),
+        (
+            "Decryption",
+            CachedMaterials::Decryption(make_decryption_materials()),
+        ),
+        (
+            "BranchKey",
+            CachedMaterials::BranchKey(make_branch_key_materials()),
+        ),
+        (
+            "BeaconKey",
+            CachedMaterials::BeaconKey(make_beacon_key_materials()),
+        ),
+    ] {
+        let cmc = make_storm_tracking(now);
+        cmc.put_cache_entry(b"id", CacheEntry::new(materials, now, expiry, usage))
+            .await
+            .expect("put succeeds");
+
+        let got = cmc
+            .get_cache_entry(b"id")
+            .await
+            .expect("get succeeds")
+            .unwrap_or_else(|| panic!("{label}: entry is present after put"));
+
+        let got_variant = match &got.materials {
+            CachedMaterials::Encryption(_) => "Encryption",
+            CachedMaterials::Decryption(_) => "Decryption",
+            CachedMaterials::BranchKey(_) => "BranchKey",
+            CachedMaterials::BeaconKey(_) => "BeaconKey",
+        };
+        assert_eq!(
+            got_variant, label,
+            "materials variant must be preserved through put/get"
+        );
+        assert_eq!(
+            got.creation_time, now,
+            "{label}: creation_time must round-trip"
+        );
+        assert_eq!(
+            got.expiry_time, expiry,
+            "{label}: expiry_time must round-trip"
+        );
+        assert_eq!(
+            got.usage_metadata, usage,
+            "{label}: usage_metadata must round-trip"
+        );
+    }
 }
