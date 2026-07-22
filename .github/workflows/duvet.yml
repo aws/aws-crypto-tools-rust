@@ -37,8 +37,9 @@ jobs:
       - name: Resolve duvet version
         id: duvet-version
         run: |
-          version=$(cargo search duvet --limit 1 | sed -n 's/^duvet = "\([^"]*\)".*/\1/p')
-          test -n "$version"
+          version=$(curl -sf --retry 3 -H "User-Agent: aws-crypto-tools-rust CI (duvet workflow)" \
+            https://crates.io/api/v1/crates/duvet | jq -r '.crate.max_stable_version')
+          test -n "$version" && test "$version" != "null"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "duvet $version"
 
