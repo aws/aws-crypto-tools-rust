@@ -533,15 +533,19 @@ pub fn within_grace_interval(
 #[async_trait]
 impl Cmc for StormTrackingCmc {
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
-        {
-            let mut state = self.state.lock().map_err(|e| {
-                CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
-            })?;
+        // Write to the inner cache FIRST, then clear inflight. Reversing
+        // this order opens a race window where a blocked getter can
+        // observe `cache miss + not inflight` between the two operations
+        // and start a redundant refresh — defeating storm-tracking
+        // coalescing. It also preserves inflight state if the inner put
+        // fails, so a failed refresh doesn't lose the leader signal.
+        self.inner.put_cache_entry(cache_id, entry).await?;
 
-            state.inflight.remove(cache_id);
-        }
-
-        self.inner.put_cache_entry(cache_id, entry).await
+        let mut state = self.state.lock().map_err(|e| {
+            CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
+        })?;
+        state.inflight.remove(cache_id);
+        Ok(())
     }
 
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
