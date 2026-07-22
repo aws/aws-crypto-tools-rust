@@ -1190,3 +1190,201 @@ async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
         "new-key must be marked inflight at the current (advanced) time"
     );
 }
+
+// What: the BlockMissInflight polling loop must keep waiting when the
+// target key is still inflight AND within its grace interval, even if
+// fan-out slots free up (because another key's put completed). Exiting
+// the loop on slot_open alone would let this getter steal leader status
+// from the current refresher and kick off a redundant refresh — defeating
+// per-key coalescing.
+//
+// Why: matches the Dafny reference (StormTracker.CheckNewEntry). The
+// classification for "key not found in cache, key inflight, within grace
+// interval" is EmptyWait, regardless of fan-out availability. Only once
+// the grace interval elapses OR the key exits inflight state should the
+// waiter become the next leader (return NoSuchEntry).
+#[tokio::test]
+async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_inflight() {
+    use std::sync::Mutex as StdMutex;
+
+    // grace_interval and inflight_ttl large so we have room to observe the
+    // "waiter should keep waiting when slot opens" behavior without other
+    // exit paths firing first.
+    const GI_SECS: u64 = 10;
+    const TTL_SECS: u64 = 20;
+    const GP_SECS: u64 = 30;
+
+    let start = anchor_now();
+    let clock = Arc::new(StdMutex::new(start));
+    let clock_reader = Arc::clone(&clock);
+
+    let cmc = Arc::new(
+        StormTrackingCmc::with_clock(
+            32,
+            4,
+            GP_SECS,
+            GI_SECS,
+            FAN_OUT,
+            TTL_SECS,
+            SLEEP_MILLI,
+            None,
+            move || *clock_reader.lock().expect("clock lock"),
+        )
+        .expect("constructs"),
+    );
+
+    // Saturate fan-out: target + 2 other keys, all inflight at start.
+    cmc.mark_inflight(b"target", start);
+    cmc.mark_inflight(&[1], start);
+    cmc.mark_inflight(&[2], start);
+    assert_eq!(cmc.inflight_count(), FAN_OUT);
+
+    let cmc_getter = Arc::clone(&cmc);
+    let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
+
+    // Let the getter enter the block loop.
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // Free two fan-out slots by putting the saturators. Under the fix,
+    // put clears their inflight after writing cache — either way, once
+    // both puts land the inflight map holds only `target`.
+    let entry_expiry = start + Duration::from_secs(3600);
+    cmc.put_cache_entry(&[1], make_entry_at(start, entry_expiry))
+        .await
+        .expect("put saturator 1");
+    cmc.put_cache_entry(&[2], make_entry_at(start, entry_expiry))
+        .await
+        .expect("put saturator 2");
+    assert_eq!(
+        cmc.inflight_count(),
+        1,
+        "only target should remain inflight"
+    );
+
+    // Give the loop iterations to observe the freed slots.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Under bug: getter's next iteration sees slot_open, breaks, marks
+    // itself inflight at ~start (clock still at start), returns Ok(None)
+    // — redundant refresh scenario.
+    //
+    // Under fix: getter re-classifies: fan_out has space, target is still
+    // inflight, still within grace interval (0s elapsed) → keep waiting.
+    // Now advance the clock past grace interval so the fix's next
+    // iteration transitions to "become leader" and returns Ok(None).
+    *clock.lock().expect("clock lock") = start + Duration::from_secs(GI_SECS + 1);
+
+    let result = tokio::time::timeout(Duration::from_millis(500), getter)
+        .await
+        .expect("getter must complete within 500ms after grace interval elapses")
+        .expect("task joins")
+        .expect("get_cache_entry Ok");
+    assert!(
+        result.is_none(),
+        "expected NoSuchEntry once getter becomes leader"
+    );
+
+    // Verify getter marked target inflight AFTER the grace interval
+    // elapsed, proving it waited rather than exiting early on slot_open.
+    let inflight_time = cmc.peek_inflight(b"target").expect("target inflight");
+    assert!(
+        inflight_time >= start + Duration::from_secs(GI_SECS),
+        "target must be marked inflight after grace interval elapsed \
+         (got {inflight_time:?}, expected >= start + {GI_SECS}s); \
+         this proves the getter kept waiting instead of exiting on slot_open"
+    );
+}
+
+// What: the BlockMissInflight loop's InFlightTTL check must fire based on
+// the WAITER's enter time + inflight_ttl (per-waiter deadline), not the
+// key's map inflight_t. A subsequent refresh of the map inflight_t must
+// NOT extend this waiter's TTL budget.
+//
+// Why: matches the Dafny reference extern (StormTrackingCMC.cs):
+//   `max_in_flight = DateTime.Now + inFlightTTL`
+// computed ONCE at loop entry, checked each iteration. The spec text
+// confirms per-waiter semantics: "If a thread has been sleeping [...] it
+// will give up and return an error after this amount of time."
+#[tokio::test]
+async fn test_block_miss_inflight_uses_per_waiter_deadline_not_per_key() {
+    use std::sync::Mutex as StdMutex;
+
+    const GI_SECS: u64 = 10;
+    const TTL_SECS: u64 = 10;
+    const GP_SECS: u64 = 30;
+
+    let start = anchor_now();
+    let clock = Arc::new(StdMutex::new(start));
+    let clock_reader = Arc::clone(&clock);
+
+    let cmc = Arc::new(
+        StormTrackingCmc::with_clock(
+            32,
+            4,
+            GP_SECS,
+            GI_SECS,
+            FAN_OUT,
+            TTL_SECS,
+            SLEEP_MILLI,
+            None,
+            move || *clock_reader.lock().expect("clock lock"),
+        )
+        .expect("constructs"),
+    );
+
+    // Mark target inflight at start; saturate fan-out with other keys.
+    cmc.mark_inflight(b"target", start);
+    cmc.mark_inflight(&[1], start);
+    cmc.mark_inflight(&[2], start);
+
+    // Advance clock 5s. Target has now been inflight (per map) for 5s
+    // (still within TTL=10s, so decide passes and returns BlockMissInflight).
+    *clock.lock().expect("clock lock") = start + Duration::from_secs(5);
+
+    // Spawn getter. decide reads captured inflight_t = start, elapsed=5.
+    // Getter's enter_time is start+5 → per-waiter deadline = start+15.
+    let cmc_getter = Arc::clone(&cmc);
+    let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
+
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // Refresh target's inflight_t to start+5 (simulating another thread
+    // noticing the key needs a refresh). This preserves the classification's
+    // "within grace interval" branch throughout the rest of the test — the
+    // grace interval now elapses at start+5+GI = start+15 (aligned with the
+    // per-waiter deadline). Without this refresh, target's grace interval
+    // would elapse at start+GI = start+10, and the getter would legitimately
+    // become the next leader at that point (no bug involved).
+    cmc.mark_inflight(b"target", start + Duration::from_secs(5));
+
+    // Advance clock to start+13.
+    // - Bug (captured/per-key logic): elapsed_loop = 13 - 0 = 13 > 10 →
+    //   fires TTL error prematurely.
+    // - Fix (per-waiter deadline start+15): 13 < 15 → keeps waiting.
+    *clock.lock().expect("clock lock") = start + Duration::from_secs(13);
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Put target. Under fix, getter is still waiting; the put unblocks it
+    // with Ok(Some). Under bug, getter already errored out at start+13.
+    let entry_expiry = start + Duration::from_secs(3600);
+    cmc.put_cache_entry(
+        b"target",
+        make_entry_at(start + Duration::from_secs(13), entry_expiry),
+    )
+    .await
+    .expect("put succeeds");
+
+    let result = tokio::time::timeout(Duration::from_millis(500), getter)
+        .await
+        .expect("getter must complete within 500ms after put")
+        .expect("task joins")
+        .expect(
+            "get_cache_entry must Ok — at clock=start+13 the per-waiter deadline \
+             (start+15) has NOT elapsed and the TTL check must not fire",
+        );
+    assert!(
+        result.is_some(),
+        "expected the entry once put unblocks the loop"
+    );
+}
