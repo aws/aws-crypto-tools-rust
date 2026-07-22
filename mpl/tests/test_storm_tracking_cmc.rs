@@ -1140,11 +1140,6 @@ async fn test_all_material_variants_round_trip() {
 // external traffic to unstick.
 #[tokio::test]
 async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
-    // Mechanics: advancing clock; saturate fan-out with FRESH inflight
-    // entries so the initial `decide` doesn't prune them; spawn getter
-    // (enters `BlockMissNotInflight`); advance clock past `inflight_ttl`;
-    // bound the getter with `tokio::time::timeout`. Bug ⇒ times out. Fix ⇒
-    // returns quickly.
     use std::sync::Mutex as StdMutex;
 
     let start = anchor_now();
@@ -1214,14 +1209,6 @@ async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
 // prevent.
 #[tokio::test]
 async fn test_block_miss_inflight_uses_current_timestamp_for_ttl() {
-    // Mechanics: advancing clock; target + 2 saturators inflight at
-    // `start` (getter decides BlockMissInflight { inflight_t: start });
-    // after getter enters block loop, refresh all three inflight
-    // timestamps to `start + 4s` and advance clock to `start + 6s`. Now
-    // captured elapsed = 6s > TTL, but current elapsed = 2s < TTL. Bug ⇒
-    // loop uses captured value and returns InFlightTTL. Fix ⇒ loop
-    // re-reads current value, keeps blocking, then `put_cache_entry`
-    // resolves it with `Ok(Some(_))`.
     use std::sync::Mutex as StdMutex;
 
     let start = anchor_now();
