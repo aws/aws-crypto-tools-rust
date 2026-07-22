@@ -488,6 +488,129 @@ async fn test_fan_out_zero_is_rejected() {
     );
 }
 
+// What: `grace_period == 0` must be rejected at construction.
+//
+// Why: the spec states `Grace Period: A number of seconds (at least 1,
+// default 10)`. Beyond the spec, `within_grace_period(expiry, now, 0)`
+// reduces to `expiry <= now`, i.e., every already-expired entry is
+// trivially "within the grace period." Storm tracking would then kick in
+// only for already-expired entries — the opposite of its intended
+// pre-expiry refresh behavior.
+#[tokio::test]
+async fn test_grace_period_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        0, // grace_period = 0
+        0,
+        FAN_OUT,
+        0,
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "grace_period = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
+// What: `grace_interval == 0` must be rejected at construction.
+//
+// Why: the spec states `Grace Interval: A number of seconds (at least 1,
+// default 1)`. `within_grace_interval(inflight, now, 0)` is `now <
+// inflight + 0`, which is always false for `now >= inflight`. That means
+// no thread would ever be served the cached entry during the grace
+// interval — every getter would be told the key is inflight but never
+// benefit from the fan-out coalescing that the grace interval enables.
+#[tokio::test]
+async fn test_grace_interval_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        0, // grace_interval = 0
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "grace_interval = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
+// What: `inflight_ttl == 0` must be rejected at construction.
+//
+// Why: the spec states `Inflight TTL: A number (at least 1, default 20)`.
+// With `inflight_ttl == 0`, any inflight key with `elapsed > 0`
+// immediately exceeds the TTL, so `decide` returns `InFlightTTL exceeded`
+// for essentially every subsequent get on an inflight key. The
+// storm-tracking mechanism becomes a synchronous error-generator instead
+// of a refresh coordinator.
+//
+// Note: this test also sets `grace_interval = 0` because the existing
+// ordering check requires `grace_interval <= inflight_ttl`. Without that,
+// the ordering check would fire first and mask the missing lower-bound
+// validation we're actually exercising here. Either the
+// `grace_interval >= 1` or `inflight_ttl >= 1` check fires under the fix
+// — both are correct outcomes for a config with both at 0.
+#[tokio::test]
+async fn test_inflight_ttl_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        0, // grace_interval = 0 (required to bypass ordering check)
+        FAN_OUT,
+        0, // inflight_ttl = 0 — the field under test
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "inflight_ttl = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
+// What: `sleep_milli == 0` must be rejected at construction.
+//
+// Why: the spec states `SleepMilli: A number of milliseconds (at least 1,
+// default 20)`. `sleep_milli == 0` turns the block loops into a hot spin:
+// `tokio::time::sleep(Duration::ZERO)` yields but returns immediately, so
+// blocked getters would burn a CPU core repeatedly re-acquiring the
+// storm-tracking mutex and hammering the inner cache. Any non-zero value
+// gives the runtime a chance to schedule other work between polls.
+#[tokio::test]
+async fn test_sleep_milli_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        0, // sleep_milli = 0
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "sleep_milli = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
 // ── Group 5 — Behaviors ───────────────────────────────────────────────────────
 
 #[tokio::test]
