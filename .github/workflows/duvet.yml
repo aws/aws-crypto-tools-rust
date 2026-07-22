@@ -26,38 +26,18 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      # duvet is not prebuilt by taiki-e/install-action, so it is installed
-      # from source. Resolve the latest published version and key the binary
-      # cache on it: each run tracks the newest release, the cache key and the
-      # installed binary always agree, and the source build only happens when
-      # a new duvet version is published.
-      - name: Resolve duvet version
-        id: duvet-version
-        run: |
-          version=$(curl -sf --retry 3 -H "User-Agent: aws-crypto-tools-rust CI (duvet workflow)" \
-            https://crates.io/api/v1/crates/duvet | jq -r '.crate.max_stable_version')
-          test -n "$version" && test "$version" != "null"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "duvet $version"
-
-      - name: Cache duvet binary
-        id: cache-duvet
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/duvet
-          key: duvet-bin-${{ runner.os }}-${{ steps.duvet-version.outputs.version }}
-
+      # Install duvet at its latest published release, matching the duvet
+      # workflow in aws-cryptographic-material-providers-library. duvet has no
+      # prebuilt binary, so it builds from source; cargo/rustup are
+      # preinstalled on the runner.
       - name: Install duvet
-        if: steps.cache-duvet.outputs.cache-hit != 'true'
-        run: cargo install duvet --version ${{ steps.duvet-version.outputs.version }} --locked
+        run: cargo +stable install duvet
 
       - name: Run duvet
         run: make duvet
 
       - name: Upload duvet report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.project }}-duvet-report
