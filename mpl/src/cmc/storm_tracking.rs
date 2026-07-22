@@ -444,7 +444,8 @@ impl StormTrackingCmc {
                     }
                 }
 
-                // Slot opened — insert inflight and return NoSuchEntry.
+                // Slot opened — mark this key inflight and return `Ok(None)`
+                // (the CMC-spec "NoSuchEntry" outcome).
                 let now2 = (self.now)();
                 let mut state2 = self.state.lock().map_err(|e| {
                     CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
@@ -499,6 +500,8 @@ impl StormTrackingCmc {
                     }
                 }
 
+                // Slot opened — mark this key inflight and return `Ok(None)`
+                // (the CMC-spec "NoSuchEntry" outcome).
                 let now2 = (self.now)();
                 let mut state2 = self.state.lock().map_err(|e| {
                     CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
