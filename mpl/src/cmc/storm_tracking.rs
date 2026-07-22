@@ -70,8 +70,12 @@ enum GetDecision {
     BlockMissNotInflight,
     /// Return an error (inflight TTL exceeded).
     Fail(CmcError),
-    /// Spin until a FanOut slot opens or the key appears
-    /// (cache miss, key inflight, within grace interval).
+    /// Spin per the Dafny `CheckNewEntry` classification until either
+    /// the entry appears in the cache, the waiter becomes the leader
+    /// (fan-out has space AND either the key is no longer inflight OR its
+    /// grace interval has elapsed), or the waiter's per-waiter deadline
+    /// (`enter_time + inflight_ttl`) elapses. The block loop computes the
+    /// deadline once at entry and re-runs classification on each iteration.
     BlockMissInflight,
 }
 
@@ -450,6 +454,13 @@ impl StormTrackingCmc {
             }
 
             GetDecision::BlockMissInflight => {
+                // Per-waiter deadline: this waiter has until enter_time +
+                // inflight_ttl before it gives up, mirroring the Dafny
+                // reference extern (StormTrackingCMC.cs):
+                //     `max_in_flight = DateTime.Now + inFlightTTL`
+                // computed ONCE at loop entry, checked each iteration.
+                let deadline = (self.now)() + self.inflight_ttl;
+
                 loop {
                     tokio::time::sleep(self.sleep_milli).await;
 
@@ -460,42 +471,55 @@ impl StormTrackingCmc {
 
                     let now_loop = (self.now)();
 
-                    // Prune stale inflight, then read the CURRENT inflight
-                    // timestamp for `cache_id` and check slot availability —
-                    // all under one lock acquisition. The TTL check uses the
-                    // current value (not one captured at decide time), so a
-                    // concurrent refresh by another thread correctly extends
-                    // this getter's TTL budget. See
-                    // `test_block_miss_inflight_uses_current_timestamp_for_ttl`.
-                    let (current_inflight, slot_open) = {
+                    // Per-waiter TTL check: fires if this getter has been
+                    // in the block loop for longer than inflight_ttl,
+                    // regardless of the map's current inflight_t.
+                    if now_loop >= deadline {
+                        return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                    }
+
+                    // Re-classify per Dafny `CheckNewEntry`:
+                    //   fan_out reached                        → keep waiting
+                    //   key inflight AND within grace interval → keep waiting
+                    //   otherwise                              → become leader
+                    // Prune stale inflight first so the fan_out check
+                    // reflects live state.
+                    let become_leader = {
                         let mut s = self.state.lock().map_err(|e| {
                             CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
                         })?;
                         self.prune_stale_inflight(&mut s, now_loop, cache_id);
-                        let current = s.inflight.get(cache_id).copied();
-                        let slot_open = s.inflight.len() < self.fan_out;
-                        (current, slot_open)
+
+                        if s.inflight.len() >= self.fan_out {
+                            false // fan_out reached — keep waiting
+                        } else {
+                            match s.inflight.get(cache_id).copied() {
+                                Some(t)
+                                    if within_grace_interval(t, now_loop, self.grace_interval) =>
+                                {
+                                    // Key still inflight AND within grace
+                                    // interval — keep waiting so the
+                                    // current refresher isn't preempted.
+                                    false
+                                }
+                                _ => {
+                                    // Key no longer inflight, or its grace
+                                    // interval has elapsed — become the
+                                    // next leader.
+                                    true
+                                }
+                            }
+                        }
                     };
 
-                    // If the key is still inflight, apply the TTL check
-                    // against its CURRENT timestamp. If it's no longer
-                    // inflight (cleared by a concurrent `put_cache_entry`),
-                    // skip the TTL check — the next iteration's
-                    // `cached_now` will pick up the newly-put entry.
-                    if let Some(current_t) = current_inflight {
-                        let elapsed = now_loop.duration_since(current_t).unwrap_or(Duration::ZERO);
-                        if elapsed > self.inflight_ttl {
-                            return Err(CmcError::storage_failed("InFlightTTL exceeded"));
-                        }
-                    }
-
-                    if slot_open {
+                    if become_leader {
                         break;
                     }
                 }
 
-                // Slot opened — mark this key inflight and return `Ok(None)`
-                // (the CMC-spec "NoSuchEntry" outcome).
+                // Loop exited via become-leader — mark this key inflight
+                // and return `Ok(None)` (the CMC-spec "NoSuchEntry"
+                // outcome).
                 let now2 = (self.now)();
                 let mut state2 = self.state.lock().map_err(|e| {
                     CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
