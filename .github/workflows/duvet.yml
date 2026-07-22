@@ -29,20 +29,29 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # duvet is not prebuilt by taiki-e/install-action; cache the installed
-      # binary so the source build only happens when the cache misses. The
-      # version is pinned so the cache key and the installed binary always
-      # agree; bump both together to upgrade.
+      # duvet is not prebuilt by taiki-e/install-action, so it is installed
+      # from source. Resolve the latest published version and key the binary
+      # cache on it: each run tracks the newest release, the cache key and the
+      # installed binary always agree, and the source build only happens when
+      # a new duvet version is published.
+      - name: Resolve duvet version
+        id: duvet-version
+        run: |
+          version=$(cargo search duvet --limit 1 | sed -n 's/^duvet = "\([^"]*\)".*/\1/p')
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "duvet $version"
+
       - name: Cache duvet binary
         id: cache-duvet
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/duvet
-          key: duvet-bin-${{ runner.os }}-0.4.2
+          key: duvet-bin-${{ runner.os }}-${{ steps.duvet-version.outputs.version }}
 
       - name: Install duvet
         if: steps.cache-duvet.outputs.cache-hit != 'true'
-        run: cargo install duvet --version 0.4.2 --locked
+        run: cargo install duvet --version ${{ steps.duvet-version.outputs.version }} --locked
 
       - name: Run duvet
         run: make duvet
