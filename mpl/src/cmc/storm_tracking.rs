@@ -25,6 +25,11 @@
 //! so a thread waiting to refresh key A does not block a lookup for key B.
 //! Cached entries are handed out as clones,
 //! so no materials data is copied under the lock.
+//!
+//! Runtime requirement: `get_cache_entry` calls `tokio::time::sleep` in its
+//! blocking branches, which requires an active Tokio runtime. Callers using
+//! a different async runtime (e.g. `async-std`, `smol`) will hit a runtime
+//! panic when a get triggers the blocking path.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
