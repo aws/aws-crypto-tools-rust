@@ -67,7 +67,11 @@ enum GetDecision {
     Fail(CmcError),
     /// Spin until a FanOut slot opens or the key appears
     /// (cache miss, key inflight, within grace interval).
-    BlockMissInflight { inflight_t: SystemTime },
+    ///
+    /// The block loop re-reads the current inflight_t from the map on each
+    /// iteration for the TTL check; the timestamp is not captured at
+    /// decide time.
+    BlockMissInflight,
 }
 
 /// Storm-tracking Cryptographic Materials Cache.
@@ -173,6 +177,30 @@ impl StormTrackingCmc {
                 TimeUnits::Milliseconds => Duration::from_millis(v),
             }
         };
+
+        // Spec: `grace_period`, `grace_interval`, `inflight_ttl`,
+        // `sleep_milli`, and `fan_out` all MUST be at least 1. Enforcing
+        // these lower bounds up front turns silent runtime pathologies
+        // (deadlocks, hot spins, spurious InFlightTTL errors, storm
+        // tracking that never engages) into caller-visible validation
+        // errors. Checked before the ordering constraints below so a
+        // naked zero surfaces as a "must be at least 1" error rather than
+        // masquerading as an ordering violation.
+        if grace_period == 0 {
+            return Err(CmcError::invalid_entry("grace_period must be at least 1"));
+        }
+        if grace_interval == 0 {
+            return Err(CmcError::invalid_entry("grace_interval must be at least 1"));
+        }
+        if inflight_ttl == 0 {
+            return Err(CmcError::invalid_entry("inflight_ttl must be at least 1"));
+        }
+        if fan_out == 0 {
+            return Err(CmcError::invalid_entry("fan_out must be at least 1"));
+        }
+        if sleep_milli == 0 {
+            return Err(CmcError::invalid_entry("sleep_milli must be at least 1"));
+        }
 
         let grace_period_dur = to_duration(grace_period);
         let grace_interval_dur = to_duration(grace_interval);
@@ -364,7 +392,7 @@ impl StormTrackingCmc {
                         }
 
                         if within_grace_interval(inflight_t, now, self.grace_interval) {
-                            Ok(GetDecision::BlockMissInflight { inflight_t })
+                            Ok(GetDecision::BlockMissInflight)
                         } else {
                             state.inflight.insert(cache_id.to_vec(), now);
                             Ok(GetDecision::ReturnNone)
@@ -394,10 +422,16 @@ impl StormTrackingCmc {
                     if cached_now.is_some() {
                         return Ok(cached_now);
                     }
+                    // Prune stale inflight entries before checking whether
+                    // a fan-out slot has opened. Without this, a getter can
+                    // block indefinitely on a saturated-but-stale map (see
+                    // `test_block_miss_not_inflight_prunes_stale_entries_in_loop`).
                     let slot_open = {
-                        let s = self.state.lock().map_err(|e| {
+                        let now_loop = (self.now)();
+                        let mut s = self.state.lock().map_err(|e| {
                             CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
                         })?;
+                        self.prune_stale_inflight(&mut s, now_loop, cache_id);
                         s.inflight.len() < self.fan_out
                     };
                     if slot_open {
@@ -415,7 +449,7 @@ impl StormTrackingCmc {
                 Ok(None)
             }
 
-            GetDecision::BlockMissInflight { inflight_t } => {
+            GetDecision::BlockMissInflight => {
                 loop {
                     tokio::time::sleep(self.sleep_milli).await;
 
@@ -425,20 +459,36 @@ impl StormTrackingCmc {
                     }
 
                     let now_loop = (self.now)();
-                    let elapsed_loop = now_loop
-                        .duration_since(inflight_t)
-                        .unwrap_or(Duration::ZERO);
 
-                    if elapsed_loop > self.inflight_ttl {
-                        return Err(CmcError::storage_failed("InFlightTTL exceeded"));
-                    }
-
-                    let slot_open = {
-                        let s = self.state.lock().map_err(|e| {
+                    // Prune stale inflight, then read the CURRENT inflight
+                    // timestamp for `cache_id` and check slot availability —
+                    // all under one lock acquisition. The TTL check uses the
+                    // current value (not one captured at decide time), so a
+                    // concurrent refresh by another thread correctly extends
+                    // this getter's TTL budget. See
+                    // `test_block_miss_inflight_uses_current_timestamp_for_ttl`.
+                    let (current_inflight, slot_open) = {
+                        let mut s = self.state.lock().map_err(|e| {
                             CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
                         })?;
-                        s.inflight.len() < self.fan_out
+                        self.prune_stale_inflight(&mut s, now_loop, cache_id);
+                        let current = s.inflight.get(cache_id).copied();
+                        let slot_open = s.inflight.len() < self.fan_out;
+                        (current, slot_open)
                     };
+
+                    // If the key is still inflight, apply the TTL check
+                    // against its CURRENT timestamp. If it's no longer
+                    // inflight (cleared by a concurrent `put_cache_entry`),
+                    // skip the TTL check — the next iteration's
+                    // `cached_now` will pick up the newly-put entry.
+                    if let Some(current_t) = current_inflight {
+                        let elapsed = now_loop.duration_since(current_t).unwrap_or(Duration::ZERO);
+                        if elapsed > self.inflight_ttl {
+                            return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                        }
+                    }
+
                     if slot_open {
                         break;
                     }

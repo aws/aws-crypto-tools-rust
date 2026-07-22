@@ -454,6 +454,163 @@ async fn test_grace_interval_must_not_exceed_inflight_ttl() {
     );
 }
 
+// What: `StormTrackingCmc::with_clock_impl` must reject `fan_out == 0` at
+// construction time by returning `InvalidEntry`.
+//
+// Why: the spec states `FanOut: A number (at least 1, default 20)`. Beyond
+// the spec, the value drives internal control flow — the block loops check
+// `inflight.len() < fan_out` to decide when a slot has opened, and that
+// comparison is `usize < 0` when `fan_out == 0`, which is impossible for
+// `usize`. So a `fan_out == 0` cache would deadlock any `get_cache_entry`
+// that misses on a saturated map. Rejecting at construction turns a silent
+// runtime deadlock into a caller-visible validation error.
+#[tokio::test]
+async fn test_fan_out_zero_is_rejected() {
+    let now = anchor_now();
+
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        0, // fan_out = 0 — must be rejected
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "fan_out = 0 must be rejected");
+    let err = result.err().expect("error value");
+    assert_eq!(
+        err.kind,
+        CmcErrorKind::InvalidEntry,
+        "expected InvalidEntry, got {err:?}"
+    );
+}
+
+// What: `grace_period == 0` must be rejected at construction.
+//
+// Why: the spec states `Grace Period: A number of seconds (at least 1,
+// default 10)`. Beyond the spec, `within_grace_period(expiry, now, 0)`
+// reduces to `expiry <= now`, i.e., every already-expired entry is
+// trivially "within the grace period." Storm tracking would then kick in
+// only for already-expired entries — the opposite of its intended
+// pre-expiry refresh behavior.
+#[tokio::test]
+async fn test_grace_period_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        0, // grace_period = 0
+        0,
+        FAN_OUT,
+        0,
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "grace_period = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
+// What: `grace_interval == 0` must be rejected at construction.
+//
+// Why: the spec states `Grace Interval: A number of seconds (at least 1,
+// default 1)`. `within_grace_interval(inflight, now, 0)` is `now <
+// inflight + 0`, which is always false for `now >= inflight`. That means
+// no thread would ever be served the cached entry during the grace
+// interval — every getter would be told the key is inflight but never
+// benefit from the fan-out coalescing that the grace interval enables.
+#[tokio::test]
+async fn test_grace_interval_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        0, // grace_interval = 0
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "grace_interval = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
+// What: `inflight_ttl == 0` must be rejected at construction.
+//
+// Why: the spec states `Inflight TTL: A number (at least 1, default 20)`.
+// With `inflight_ttl == 0`, any inflight key with `elapsed > 0`
+// immediately exceeds the TTL, so `decide` returns `InFlightTTL exceeded`
+// for essentially every subsequent get on an inflight key. The
+// storm-tracking mechanism becomes a synchronous error-generator instead
+// of a refresh coordinator.
+//
+// Note: this test also sets `grace_interval = 0` because the existing
+// ordering check requires `grace_interval <= inflight_ttl`. Without that,
+// the ordering check would fire first and mask the missing lower-bound
+// validation we're actually exercising here. Either the
+// `grace_interval >= 1` or `inflight_ttl >= 1` check fires under the fix
+// — both are correct outcomes for a config with both at 0.
+#[tokio::test]
+async fn test_inflight_ttl_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        0, // grace_interval = 0 (required to bypass ordering check)
+        FAN_OUT,
+        0, // inflight_ttl = 0 — the field under test
+        SLEEP_MILLI,
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "inflight_ttl = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
+// What: `sleep_milli == 0` must be rejected at construction.
+//
+// Why: the spec states `SleepMilli: A number of milliseconds (at least 1,
+// default 20)`. `sleep_milli == 0` turns the block loops into a hot spin:
+// `tokio::time::sleep(Duration::ZERO)` yields but returns immediately, so
+// blocked getters would burn a CPU core repeatedly re-acquiring the
+// storm-tracking mutex and hammering the inner cache. Any non-zero value
+// gives the runtime a chance to schedule other work between polls.
+#[tokio::test]
+async fn test_sleep_milli_zero_is_rejected() {
+    let now = anchor_now();
+    let result = StormTrackingCmc::with_clock(
+        8,
+        2,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        0, // sleep_milli = 0
+        None,
+        move || now,
+    );
+    assert!(result.is_err(), "sleep_milli = 0 must be rejected");
+    assert_eq!(
+        result.err().expect("error").kind,
+        CmcErrorKind::InvalidEntry
+    );
+}
+
 // ── Group 5 — Behaviors ───────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -964,4 +1121,169 @@ async fn test_all_material_variants_round_trip() {
             "{label}: usage_metadata must round-trip"
         );
     }
+}
+
+// ── Group 12 — Bug Reproduction Tests (Copilot PR #33 review) ────────────────
+
+// What: when every inflight entry in the fan-out map exceeds `inflight_ttl`
+// while a thread is blocked in `BlockMissNotInflight`, the block loop must
+// prune the stale entries, observe the freed fan-out slots, and return
+// `NoSuchEntry` after marking its own key inflight at the current time.
+//
+// Why: without an in-loop prune, the only path that removes stale inflight
+// entries is the `prune_stale_inflight` call at the top of the next
+// `get_cache_entry`. If every inflight slot is held by a thread that has
+// already returned (or errored) and no new caller enters `get_cache_entry`,
+// the blocked getter has no way to observe the staleness — it spins on
+// `inflight.len() < fan_out` (always false) until its caller times out.
+// This turns a self-healing storm-tracking cache into one that requires
+// external traffic to unstick.
+#[tokio::test]
+async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
+    // Mechanics: advancing clock; saturate fan-out with FRESH inflight
+    // entries so the initial `decide` doesn't prune them; spawn getter
+    // (enters `BlockMissNotInflight`); advance clock past `inflight_ttl`;
+    // bound the getter with `tokio::time::timeout`. Bug ⇒ times out. Fix ⇒
+    // returns quickly.
+    use std::sync::Mutex as StdMutex;
+
+    let start = anchor_now();
+    let clock = Arc::new(StdMutex::new(start));
+    let clock_reader = Arc::clone(&clock);
+
+    let cmc = Arc::new(
+        StormTrackingCmc::with_clock(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            None,
+            move || *clock_reader.lock().expect("clock lock"),
+        )
+        .expect("constructs"),
+    );
+
+    for i in 0..FAN_OUT {
+        cmc.mark_inflight(&[i as u8], start);
+    }
+    assert_eq!(cmc.inflight_count(), FAN_OUT);
+
+    let cmc_getter = Arc::clone(&cmc);
+    let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"new-key").await });
+
+    // Let the getter enter the block loop.
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // Every pre-marked entry is now stale relative to the advanced clock.
+    *clock.lock().expect("clock lock") = start + Duration::from_secs(INFLIGHT_TTL_SECS + 10);
+
+    let result = tokio::time::timeout(Duration::from_millis(500), getter)
+        .await
+        .expect("getter must complete after stale inflight entries expire")
+        .expect("task joins")
+        .expect("get_cache_entry Ok");
+    assert!(
+        result.is_none(),
+        "expected NoSuchEntry once fan-out slot opens via prune"
+    );
+    assert_eq!(
+        cmc.peek_inflight(b"new-key"),
+        Some(start + Duration::from_secs(INFLIGHT_TTL_SECS + 10)),
+        "new-key must be marked inflight at the current (advanced) time"
+    );
+}
+
+// What: the `BlockMissInflight` polling loop must compute the TTL check
+// against the CURRENT `inflight_t` stored in the map, not against the
+// timestamp captured at decide time. If another thread refreshes the map
+// while this thread is blocked, the loop must observe the fresh value and
+// keep blocking rather than firing "InFlightTTL exceeded" against the
+// stale captured value.
+//
+// Why: the spec defines the inflight map as per-key state tracking "the
+// most recent time that NoSuchEntry was returned". The TTL check should
+// therefore reflect the current per-key state, not a snapshot from
+// whenever this thread first observed the key. Under a thundering-herd
+// scenario (many concurrent misses on the same key), using stale
+// captured timestamps would cause some threads to fail spuriously with
+// InFlightTTL errors even while the key is being actively refreshed by
+// another thread — the exact opposite of what storm tracking is meant to
+// prevent.
+#[tokio::test]
+async fn test_block_miss_inflight_uses_current_timestamp_for_ttl() {
+    // Mechanics: advancing clock; target + 2 saturators inflight at
+    // `start` (getter decides BlockMissInflight { inflight_t: start });
+    // after getter enters block loop, refresh all three inflight
+    // timestamps to `start + 4s` and advance clock to `start + 6s`. Now
+    // captured elapsed = 6s > TTL, but current elapsed = 2s < TTL. Bug ⇒
+    // loop uses captured value and returns InFlightTTL. Fix ⇒ loop
+    // re-reads current value, keeps blocking, then `put_cache_entry`
+    // resolves it with `Ok(Some(_))`.
+    use std::sync::Mutex as StdMutex;
+
+    let start = anchor_now();
+    let clock = Arc::new(StdMutex::new(start));
+    let clock_reader = Arc::clone(&clock);
+
+    let cmc = Arc::new(
+        StormTrackingCmc::with_clock(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            None,
+            move || *clock_reader.lock().expect("clock lock"),
+        )
+        .expect("constructs"),
+    );
+
+    cmc.mark_inflight(b"target", start);
+    cmc.mark_inflight(&[1], start);
+    cmc.mark_inflight(&[2], start);
+    assert_eq!(cmc.inflight_count(), FAN_OUT);
+
+    let cmc_getter = Arc::clone(&cmc);
+    let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
+
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // Refresh keeps all three entries 2s < 5s TTL fresh after the clock
+    // advance, so a #1-style prune wouldn't remove any and `slot_open`
+    // stays false throughout the test — only the correct-TTL check can
+    // let the loop exit before the `put` below.
+    let refresh = start + Duration::from_secs(4);
+    cmc.mark_inflight(b"target", refresh);
+    cmc.mark_inflight(&[1], refresh);
+    cmc.mark_inflight(&[2], refresh);
+
+    *clock.lock().expect("clock lock") = start + Duration::from_secs(6);
+
+    // Give the buggy path time to fire before the `put` below (which
+    // could otherwise rescue it and yield a false pass).
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let put_now = start + Duration::from_secs(6);
+    let expiry = put_now + Duration::from_secs(3600);
+    cmc.put_cache_entry(b"target", make_entry_at(put_now, expiry))
+        .await
+        .expect("put succeeds");
+
+    let result = tokio::time::timeout(Duration::from_millis(500), getter)
+        .await
+        .expect("getter must complete within 500ms after put")
+        .expect("task joins")
+        .expect(
+            "get_cache_entry must Ok — the block loop must not fire the TTL check \
+             against the stale captured inflight_t",
+        );
+    assert!(
+        result.is_some(),
+        "expected the entry to be returned once put resolves the block loop"
+    );
 }
