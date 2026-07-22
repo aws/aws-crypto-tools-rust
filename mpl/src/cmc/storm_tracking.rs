@@ -72,10 +72,6 @@ enum GetDecision {
     Fail(CmcError),
     /// Spin until a FanOut slot opens or the key appears
     /// (cache miss, key inflight, within grace interval).
-    ///
-    /// The block loop re-reads the current inflight_t from the map on each
-    /// iteration for the TTL check; the timestamp is not captured at
-    /// decide time.
     BlockMissInflight,
 }
 
@@ -188,9 +184,7 @@ impl StormTrackingCmc {
         // these lower bounds up front turns silent runtime pathologies
         // (deadlocks, hot spins, spurious InFlightTTL errors, storm
         // tracking that never engages) into caller-visible validation
-        // errors. Checked before the ordering constraints below so a
-        // naked zero surfaces as a "must be at least 1" error rather than
-        // masquerading as an ordering violation.
+        // errors.
         if grace_period == 0 {
             return Err(CmcError::invalid_entry("grace_period must be at least 1"));
         }
