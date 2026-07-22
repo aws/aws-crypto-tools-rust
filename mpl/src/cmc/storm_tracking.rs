@@ -72,7 +72,7 @@ enum GetDecision {
     Fail(CmcError),
     /// Spin until a FanOut slot opens or the key appears
     /// (cache miss, key inflight, within grace interval).
-    BlockMissInflight,
+    BlockMissInflight { inflight_t: SystemTime },
 }
 
 /// Storm-tracking Cryptographic Materials Cache.
@@ -391,7 +391,7 @@ impl StormTrackingCmc {
                         }
 
                         if within_grace_interval(inflight_t, now, self.grace_interval) {
-                            Ok(GetDecision::BlockMissInflight)
+                            Ok(GetDecision::BlockMissInflight { inflight_t })
                         } else {
                             state.inflight.insert(cache_id.to_vec(), now);
                             Ok(GetDecision::ReturnNone)
@@ -449,7 +449,7 @@ impl StormTrackingCmc {
                 Ok(None)
             }
 
-            GetDecision::BlockMissInflight => {
+            GetDecision::BlockMissInflight { inflight_t } => {
                 loop {
                     tokio::time::sleep(self.sleep_milli).await;
 
@@ -459,36 +459,26 @@ impl StormTrackingCmc {
                     }
 
                     let now_loop = (self.now)();
+                    let elapsed_loop = now_loop
+                        .duration_since(inflight_t)
+                        .unwrap_or(Duration::ZERO);
 
-                    // Prune stale inflight, then read the CURRENT inflight
-                    // timestamp for `cache_id` and check slot availability —
-                    // all under one lock acquisition. The TTL check uses the
-                    // current value (not one captured at decide time), so a
-                    // concurrent refresh by another thread correctly extends
-                    // this getter's TTL budget. See
-                    // `test_block_miss_inflight_uses_current_timestamp_for_ttl`.
-                    let (current_inflight, slot_open) = {
+                    if elapsed_loop > self.inflight_ttl {
+                        return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                    }
+
+                    // Prune stale inflight before the slot check — matches
+                    // the pattern in BlockMissNotInflight. Kept from the
+                    // earlier fix; the reverted piece is only the
+                    // TTL-check-against-current-inflight_t logic. The next
+                    // commit reworks this loop to be Dafny-consistent.
+                    let slot_open = {
                         let mut s = self.state.lock().map_err(|e| {
                             CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
                         })?;
                         self.prune_stale_inflight(&mut s, now_loop, cache_id);
-                        let current = s.inflight.get(cache_id).copied();
-                        let slot_open = s.inflight.len() < self.fan_out;
-                        (current, slot_open)
+                        s.inflight.len() < self.fan_out
                     };
-
-                    // If the key is still inflight, apply the TTL check
-                    // against its CURRENT timestamp. If it's no longer
-                    // inflight (cleared by a concurrent `put_cache_entry`),
-                    // skip the TTL check — the next iteration's
-                    // `cached_now` will pick up the newly-put entry.
-                    if let Some(current_t) = current_inflight {
-                        let elapsed = now_loop.duration_since(current_t).unwrap_or(Duration::ZERO);
-                        if elapsed > self.inflight_ttl {
-                            return Err(CmcError::storage_failed("InFlightTTL exceeded"));
-                        }
-                    }
-
                     if slot_open {
                         break;
                     }
