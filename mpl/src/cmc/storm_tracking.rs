@@ -178,6 +178,30 @@ impl StormTrackingCmc {
             }
         };
 
+        // Spec: `grace_period`, `grace_interval`, `inflight_ttl`,
+        // `sleep_milli`, and `fan_out` all MUST be at least 1. Enforcing
+        // these lower bounds up front turns silent runtime pathologies
+        // (deadlocks, hot spins, spurious InFlightTTL errors, storm
+        // tracking that never engages) into caller-visible validation
+        // errors. Checked before the ordering constraints below so a
+        // naked zero surfaces as a "must be at least 1" error rather than
+        // masquerading as an ordering violation.
+        if grace_period == 0 {
+            return Err(CmcError::invalid_entry("grace_period must be at least 1"));
+        }
+        if grace_interval == 0 {
+            return Err(CmcError::invalid_entry("grace_interval must be at least 1"));
+        }
+        if inflight_ttl == 0 {
+            return Err(CmcError::invalid_entry("inflight_ttl must be at least 1"));
+        }
+        if fan_out == 0 {
+            return Err(CmcError::invalid_entry("fan_out must be at least 1"));
+        }
+        if sleep_milli == 0 {
+            return Err(CmcError::invalid_entry("sleep_milli must be at least 1"));
+        }
+
         let grace_period_dur = to_duration(grace_period);
         let grace_interval_dur = to_duration(grace_interval);
         let inflight_ttl_dur = to_duration(inflight_ttl);
