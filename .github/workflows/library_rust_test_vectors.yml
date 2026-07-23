@@ -1,0 +1,15 @@
+# This workflow performs interoperability tests across the supported runtimes of the MPL
+# using pre-built artifacts.
+name: Library Interoperability Tests
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to build and test (e.g. mpl, esdk)."
+        required: true
+        type: string
+
+jobs:
+  buildInterop:
+    uses: ./.github/workflows/dafny_library_interop_build.yml

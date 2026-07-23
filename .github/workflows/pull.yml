@@ -131,6 +131,17 @@ jobs:
     with:
       project: ${{ matrix.project }}
 
+  pr-test-vectors:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.projects != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect-changes.outputs.projects) }}
+    uses: ./.github/workflows/library_rust_test_vectors.yml
+    with:
+      project: ${{ matrix.project }}
+
   # Single stable required status check for branch protection. It passes when
   # every needed job either succeeded or was legitimately skipped. `pr-ci-rust`
   # is allowed to skip so that PRs touching no project still pass this gate.
@@ -139,6 +150,7 @@ jobs:
     needs:
       - detect-changes
       - pr-ci-rust
+      - pr-test-vectors
     runs-on: ubuntu-22.04
     steps:
       - name: Verify all required jobs passed
