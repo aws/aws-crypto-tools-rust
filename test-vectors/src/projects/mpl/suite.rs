@@ -51,6 +51,17 @@ pub fn supported_suite_hex_ids() -> Vec<&'static str> {
     SUPPORTED_SUITES.iter().map(|(h, _)| *h).collect()
 }
 
+/// True iff `hex` names a suite in [`SUPPORTED_SUITES`]. Used by the runner
+/// to skip manifest vectors whose suite ID the Rust `mpl` crate can't
+/// exercise yet (e.g. DBE `6700`) without aborting the whole run.
+///
+/// Comparison is case-insensitive, matching [`suite_id_from_hex`].
+pub fn is_supported_suite_hex(hex: &str) -> bool {
+    SUPPORTED_SUITES
+        .iter()
+        .any(|(h, _)| h.eq_ignore_ascii_case(hex))
+}
+
 /// Resolve a manifest hex-string suite ID to an [`AlgorithmSuiteId`].
 ///
 /// Comparison is case-insensitive (`"0478"` and `"0478"` — the manifest is
@@ -153,5 +164,23 @@ mod tests {
         let hex: Vec<&str> = supported_suite_hex_ids();
         let expected: Vec<&str> = SUPPORTED_SUITES.iter().map(|(h, _)| *h).collect();
         assert_eq!(hex, expected);
+    }
+
+    #[test]
+    fn is_supported_suite_hex_true_for_every_supported_id() {
+        for (hex, _) in SUPPORTED_SUITES {
+            assert!(
+                is_supported_suite_hex(hex),
+                "expected '{hex}' to be reported as supported",
+            );
+        }
+    }
+
+    #[test]
+    fn is_supported_suite_hex_false_for_unknown_id() {
+        // `6700` is a DBE suite the Rust mpl crate does not implement yet;
+        // it must be reported as unsupported so the runner can skip it.
+        assert!(!is_supported_suite_hex("6700"));
+        assert!(!is_supported_suite_hex("ffff"));
     }
 }

@@ -11,9 +11,13 @@
 //!   `positive-keyring` vector under the same conditions, verifies the CMM
 //!   returns the expected plaintext data key.
 //!
-//! Non-hierarchy key descriptions and negative vectors are skipped
-//! (`skipped_count` in the summary printed to stdout); adding coverage for
-//! them is a matter of extending [`build_cmm_for_description`].
+//! Non-hierarchy key descriptions, negative vectors, and vectors whose
+//! `algorithmSuiteId` isn't in [`suite::SUPPORTED_SUITES`] are skipped
+//! (`skipped_count` in the summary printed to stdout); each unsupported-suite
+//! skip also prints a per-vector line so the operator sees which vectors were
+//! passed over. Adding coverage for non-hierarchy keyrings is a matter of
+//! extending [`build_cmm_for_description`]; adding new suites is a matter of
+//! extending [`suite::SUPPORTED_SUITES`].
 
 use std::fs;
 use std::path::Path;
@@ -96,6 +100,16 @@ pub fn run_encrypt(
             continue;
         }
 
+        if !suite::is_supported_suite_hex(&encrypt_vector.algorithm_suite_id) {
+            println!(
+                "run_encrypt: skipping vector {uuid}: algorithm suite '{}' \
+                 is not supported by the Rust mpl crate yet",
+                encrypt_vector.algorithm_suite_id,
+            );
+            summary.skipped += 1;
+            continue;
+        }
+
         let decrypt_vector =
             rt.block_on(run_positive_encrypt(&mpl, &key_manifest, encrypt_vector))?;
         decrypt_manifest
@@ -144,6 +158,16 @@ pub fn run_decrypt(manifest_dir: &Path, test_name: Option<&str>) -> Result<()> {
         };
 
         if !is_hierarchy_key_description(&decrypt_vector.key_description) {
+            summary.skipped += 1;
+            continue;
+        }
+
+        if !suite::is_supported_suite_hex(&decrypt_vector.algorithm_suite_id) {
+            println!(
+                "run_decrypt: skipping vector {uuid}: algorithm suite '{}' \
+                 is not supported by the Rust mpl crate yet",
+                decrypt_vector.algorithm_suite_id,
+            );
             summary.skipped += 1;
             continue;
         }
@@ -638,5 +662,99 @@ mod tests {
         let src = fs::read(keys_path(encrypt_dir.path())).unwrap();
         let dst = fs::read(keys_path(decrypt_dir.path())).unwrap();
         assert_eq!(src, dst);
+    }
+
+    #[test]
+    fn run_encrypt_skips_vectors_with_unsupported_algorithm_suite() {
+        // A hierarchy-shaped encrypt vector whose suite is DBE (`6700`)
+        // must be skipped cleanly rather than aborting the run. The
+        // resulting decrypt manifest carries only the supported vectors.
+        let encrypt_dir = tempdir().unwrap();
+        let decrypt_dir = tempdir().unwrap();
+
+        MplProject.generate_manifest(encrypt_dir.path()).unwrap();
+
+        // Inject one unsupported-suite vector into the generated manifest.
+        let mut encrypt_manifest: EncryptManifest =
+            read_json(&manifest_path(encrypt_dir.path())).unwrap();
+        let injected_uuid = encrypt_manifest.add_vector(EncryptTestVector::PositiveKeyring(
+            PositiveEncryptVector {
+                description: "Injected DBE vector 6700".into(),
+                algorithm_suite_id: "6700".into(),
+                encrypt_key_description: serde_json::json!({
+                    "type": "aws-kms-hierarchy",
+                    "key": "static-branch-key-1",
+                }),
+                decrypt_key_description: serde_json::json!({
+                    "type": "aws-kms-hierarchy",
+                    "key": "static-branch-key-1",
+                }),
+                encryption_context: IndexMap::new(),
+                max_plaintext_length: None,
+                required_encryption_context_keys: None,
+                reproduced_encryption_context: None,
+            },
+        ));
+        write_json(&manifest_path(encrypt_dir.path()), &encrypt_manifest).unwrap();
+
+        // Run must succeed even though the injected vector is unsupported.
+        MplProject
+            .run_encrypt(encrypt_dir.path(), decrypt_dir.path(), None)
+            .unwrap();
+
+        let decrypt_manifest: DecryptManifest =
+            read_json(&manifest_path(decrypt_dir.path())).unwrap();
+        // Injected vector was skipped, but every supported-suite vector
+        // still made it into the decrypt manifest.
+        assert!(
+            !decrypt_manifest.tests.contains_key(&injected_uuid),
+            "unsupported-suite vector should not appear in decrypt manifest",
+        );
+        assert_eq!(
+            decrypt_manifest.tests.len(),
+            suite::SUPPORTED_SUITES.len(),
+            "one decrypt vector per supported ESDK suite",
+        );
+    }
+
+    #[test]
+    fn run_decrypt_skips_vectors_with_unsupported_algorithm_suite() {
+        // A decrypt manifest containing an unsupported-suite vector must
+        // verify cleanly; the runner skips the vector without erroring.
+        let encrypt_dir = tempdir().unwrap();
+        let decrypt_dir = tempdir().unwrap();
+
+        MplProject.generate_manifest(encrypt_dir.path()).unwrap();
+        MplProject
+            .run_encrypt(encrypt_dir.path(), decrypt_dir.path(), None)
+            .unwrap();
+
+        // Inject an unsupported-suite decrypt vector alongside the good
+        // ones. The vector's ciphertext doesn't matter — the runner must
+        // skip before ever touching the crypto layer.
+        let mut decrypt_manifest: DecryptManifest =
+            read_json(&manifest_path(decrypt_dir.path())).unwrap();
+        decrypt_manifest.tests.insert(
+            "injected-6700".into(),
+            DecryptTestVector::Positive(PositiveDecryptVector {
+                description: "Injected DBE vector->Decryption 6700".into(),
+                algorithm_suite_id: "6700".into(),
+                key_description: serde_json::json!({
+                    "type": "aws-kms-hierarchy",
+                    "key": "static-branch-key-1",
+                }),
+                encrypted_data_keys: Vec::new(),
+                encryption_context: IndexMap::new(),
+                result: DecryptResult {
+                    plaintext_data_key: Some(String::new()),
+                    symmetric_signing_key: None,
+                    required_encryption_context_keys: Vec::new(),
+                },
+                reproduced_encryption_context: None,
+            }),
+        );
+        write_json(&manifest_path(decrypt_dir.path()), &decrypt_manifest).unwrap();
+
+        MplProject.run_decrypt(decrypt_dir.path(), None).unwrap();
     }
 }
