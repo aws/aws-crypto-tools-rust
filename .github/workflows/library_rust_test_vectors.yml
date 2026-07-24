@@ -162,7 +162,7 @@ jobs:
       - name: Upload Encrypt Manifest and keys.json files
         uses: actions/upload-artifact@v7
         with:
-          name: ${{matrix.os}}_vector_artifact_native_rust-${{ github.sha }}
+          name: macos-latest_vector_artifact_native_rust-${{ github.sha }}
           path: ./test-vectors/vectors/mpl-decrypt/*.json
 
   testDafnyInterop:
@@ -307,7 +307,7 @@ jobs:
       - name: Download Encrypt Manifest Artifact Java
         uses: actions/download-artifact@v8
         with:
-          name: ${{matrix.os}}_vector_artifact_java-${{ github.sha }}
+          name: macos-latest_vector_artifact_java-${{ github.sha }}
           path: ./test-vectors/vectors/mpl-decrypt/
       
       - name: Decrypt Java Encrypt Manifests
@@ -320,7 +320,7 @@ jobs:
       - name: Download Encrypt Manifest Artifact Dafny Rust
         uses: actions/download-artifact@v8
         with:
-          name: ${{matrix.os}}_vector_artifact_rust-${{ github.sha }}
+          name: macos-latest_vector_artifact_rust-${{ github.sha }}
           path: ./test-vectors/vectors/mpl-decrypt/
 
       - name: Decrypt Dafny Rust Encrypt Manifests
@@ -333,7 +333,7 @@ jobs:
       - name: Download Encrypt Manifest Artifact Native Rust
         uses: actions/download-artifact@v8
         with:
-          name: ${{matrix.os}}_vector_artifact_native_rust-${{ github.sha }}
+          name: macos-latest_vector_artifact_native_rust-${{ github.sha }}
           path: ./test-vectors/vectors/mpl-decrypt/
 
       - name: Decrypt Rust Encrypt Manifests
