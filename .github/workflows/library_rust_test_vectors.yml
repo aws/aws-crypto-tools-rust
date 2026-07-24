@@ -163,4 +163,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: vector_artifact_native_rust-${{ github.sha }}
-          path: ./test-vectors/mpl-decrypt/*.json
+          path: ./test-vectors/vectors/mpl-decrypt/*.json
