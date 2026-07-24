@@ -108,20 +108,6 @@ jobs:
         run: |
           go install golang.org/x/tools/cmd/goimports@v0.36.0
 
-      # --- Download pre-built artifacts ---
-      - name: Download pre-built artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: interop-${{ matrix.language }}-${{ matrix.os }}
-          path: ./dafny-mpl
-
-      - name: Download Maven local (Java)
-        if: matrix.language == 'java'
-        uses: actions/download-artifact@v8
-        with:
-          name: interop-java-maven-${{ matrix.os }}
-          path: ~/.m2/repository/software/amazon/
-
       # --- Generate and encrypt vectors ---
       - name: Create Manifests
         working-directory: ./dafny-mpl/${{ matrix.library }}
@@ -208,14 +194,21 @@ jobs:
         run: |
           git config --global core.longpaths true
 
-      - name: Configure AWS Credentials for Tests
+      # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
+      # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
+      # test keys in us-west-2, so CI must have AWS credentials. Assume the
+      # shared public ESDK CI role via GitHub OIDC (the job already requests
+      # `id-token: write`). This is the same role and pattern the existing
+      # aws/aws-encryption-sdk `library_rust_tests.yml` uses. The role ARN is
+      # public (no repo secret needed); access is gated by the role's OIDC
+      # trust policy, which must permit `repo:aws/aws-crypto-tools-rust:*`.
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: us-west-2
-          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-MPL-Dafny-Role-us-west-2
-          role-session-name: DafnyInteropTests 
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustTests
           special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
-          role-duration-seconds: 7200
 
       - name: Checkout Dafny MPL
         uses: actions/checkout@v6
