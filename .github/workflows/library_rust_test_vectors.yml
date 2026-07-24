@@ -280,7 +280,7 @@ jobs:
           path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.decrypting_language}}
 
       - name: Decrypt Encrypt Manifest Java
-        working-directory: ./${{ matrix.library }}
+        working-directory: ./dafny-mpl/${{ matrix.library }}
         run: make test_decrypt_encrypt_vectors_${{matrix.decrypting_language}}
 
       - name: Download Encrypt Manifest Artifact Rust
@@ -290,7 +290,7 @@ jobs:
           path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.decrypting_language}}
 
       - name: Decrypt Encrypt Manifest Rust
-        working-directory: ./${{ matrix.library }}
+        working-directory: ./dafny-mpl/${{ matrix.library }}
         run: make test_decrypt_encrypt_vectors_${{matrix.decrypting_language}}
 
       - name: Download Encrypt Manifest Artifact Native Rust
@@ -300,7 +300,7 @@ jobs:
           path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.decrypting_language}}
           
       - name: Decrypt Encrypt Manifest Native Rust
-        working-directory: ./${{ matrix.library }}
+        working-directory: ./dafny-mpl/${{ matrix.library }}
         run: make test_decrypt_encrypt_vectors_${{matrix.decrypting_language}}
 
   testNativeInterop:
