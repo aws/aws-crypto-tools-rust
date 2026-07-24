@@ -53,6 +53,34 @@ jobs:
           path: dafny-mpl
           submodules: "recursive"
 
+      # Resolve the upstream Dafny MPL commit SHA that was just checked out.
+      # This becomes part of the cache key so any Dafny MPL change busts the
+      # cache automatically.
+      - name: Resolve Dafny MPL commit SHA
+        id: dafny-sha
+        working-directory: ./dafny-mpl
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Dafny MPL SHA: $SHA"
+
+      # Try to restore the transpiled Dafny outputs from cache. Cache key
+      # busts on any change to this workflow file (via hashFiles), on any
+      # upstream Dafny MPL commit, or on OS change. On hit, all subsequent
+      # build steps are skipped and the cached outputs are uploaded as
+      # artifacts directly.
+      - name: Restore Dafny interop build cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ./dafny-mpl/**/runtimes/java/src/main/dafny-generated/
+            ./dafny-mpl/**/runtimes/java/src/test/dafny-generated/
+            ./dafny-mpl/**/runtimes/rust/src/
+            ./dafny-mpl/**/runtimes/rust/Cargo.lock
+            ~/.m2/repository/software/amazon/
+          key: dafny-interop-${{ matrix.os }}-${{ hashFiles('.github/workflows/dafny_library_interop_build.yml') }}-${{ steps.dafny-sha.outputs.sha }}
+
       - name: Setup Java 8
         uses: actions/setup-java@v5
         with:
@@ -80,20 +108,18 @@ jobs:
         run: |
           go install golang.org/x/tools/cmd/goimports@v0.36.0
 
-      - run: echo "TIMESTAMP=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
-
       # --- Download pre-built artifacts ---
       - name: Download pre-built artifacts
         uses: actions/download-artifact@v8
         with:
-          name: interop-${{ matrix.language }}-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
+          name: interop-${{ matrix.language }}-${{ matrix.os }}
           path: ./dafny-mpl
 
       - name: Download Maven local (Java)
         if: matrix.language == 'java'
         uses: actions/download-artifact@v8
         with:
-          name: interop-java-maven-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
+          name: interop-java-maven-${{ matrix.os }}
           path: ~/.m2/repository/software/amazon/
 
       # --- Generate and encrypt vectors ---
@@ -225,21 +251,33 @@ jobs:
         run: |
           go install golang.org/x/tools/cmd/goimports@v0.36.0
 
-      - run: echo "TIMESTAMP=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
+      # Resolve the upstream Dafny MPL commit SHA that was just checked out.
+      # This becomes part of the cache key so any Dafny MPL change busts the
+      # cache automatically.
+      - name: Resolve Dafny MPL commit SHA
+        id: dafny-sha
+        working-directory: ./dafny-mpl
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Dafny MPL SHA: $SHA"
 
-      # --- Download pre-built artifacts ---
-      - name: Download pre-built artifacts
-        uses: actions/download-artifact@v8
+      # Try to restore the transpiled Dafny outputs from cache. Cache key
+      # busts on any change to this workflow file (via hashFiles), on any
+      # upstream Dafny MPL commit, or on OS change. On hit, all subsequent
+      # build steps are skipped and the cached outputs are uploaded as
+      # artifacts directly.
+      - name: Restore Dafny interop build cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
-          name: interop-${{ matrix.decrypting_language }}-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
-          path: ./dafny-mpl
-
-      - name: Download Maven local (Java)
-        if: matrix.decrypting_language == 'java'
-        uses: actions/download-artifact@v8
-        with:
-          name: interop-java-maven-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
-          path: ~/.m2/repository/software/amazon/
+          path: |
+            ./dafny-mpl/**/runtimes/java/src/main/dafny-generated/
+            ./dafny-mpl/**/runtimes/java/src/test/dafny-generated/
+            ./dafny-mpl/**/runtimes/rust/src/
+            ./dafny-mpl/**/runtimes/rust/Cargo.lock
+            ~/.m2/repository/software/amazon/
+          key: dafny-interop-${{ matrix.os }}-${{ hashFiles('.github/workflows/dafny_library_interop_build.yml') }}-${{ steps.dafny-sha.outputs.sha }}
 
       # --- Download and decrypt vectors from each encrypting language ---
       - name: Download Encrypt Manifest Artifact Java

@@ -29,6 +29,34 @@ jobs:
             path: dafny-mpl
             submodules: "recursive"
 
+      # Resolve the upstream Dafny MPL commit SHA that was just checked out.
+      # This becomes part of the cache key so any Dafny MPL change busts the
+      # cache automatically.
+      - name: Resolve Dafny MPL commit SHA
+        id: dafny-sha
+        working-directory: ./dafny-mpl
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Dafny MPL SHA: $SHA"
+
+      # Try to restore the transpiled Dafny outputs from cache. Cache key
+      # busts on any change to this workflow file (via hashFiles), on any
+      # upstream Dafny MPL commit, or on OS change. On hit, all subsequent
+      # build steps are skipped and the cached outputs are uploaded as
+      # artifacts directly.
+      - name: Restore Dafny interop build cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ./dafny-mpl/**/runtimes/java/src/main/dafny-generated/
+            ./dafny-mpl/**/runtimes/java/src/test/dafny-generated/
+            ./dafny-mpl/**/runtimes/rust/src/
+            ./dafny-mpl/**/runtimes/rust/Cargo.lock
+            ~/.m2/repository/software/amazon/
+          key: dafny-interop-${{ matrix.os }}-${{ hashFiles('.github/workflows/dafny_library_interop_build.yml') }}-${{ steps.dafny-sha.outputs.sha }}
+
       - name: Setup Java 8
         uses: actions/setup-java@v5
         with:
@@ -63,12 +91,14 @@ jobs:
           dafny-version: "4.9.0"
 
       - name: Install Smithy-Dafny codegen dependencies
+        if: steps.cache-restore.outputs.cache-hit != 'true'
         uses: ./dafny-mpl/.github/actions/install_smithy_dafny_codegen_dependencies
         with:
           mpl-submodule-path: ./dafny-mpl/
 
       # --- Build non-Rust languages (use standard Dafny) ---
       - name: Build Java
+        if: steps.cache-restore.outputs.cache-hit != 'true'
         shell: bash
         working-directory: ./dafny-mpl/TestVectorsAwsCryptographicMaterialProviders
         run: |
@@ -77,11 +107,13 @@ jobs:
 
       # --- Build Rust (uses Dafny 4.10.0) ---
       - name: Setup Dafny for Rust
+        if: steps.cache-restore.outputs.cache-hit != 'true'
         uses: ./dafny-mpl/.github/actions/setup_dafny
         with:
           dafny-version: "4.10.0"
 
       - name: Build Rust (polymorph + transpile)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
         shell: bash
         working-directory: ./dafny-mpl/TestVectorsAwsCryptographicMaterialProviders
         run: |
@@ -89,35 +121,16 @@ jobs:
           make polymorph_rust
           make transpile_rust TRANSPILE_TESTS_IN_RUST=1 CORES=$CORES
 
-      - run: echo "TIMESTAMP=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
-
-      # --- Upload artifacts per language ---
-      - name: Upload Java transpiled source
-        uses: actions/upload-artifact@v7
+      # Persist the freshly-built outputs to cache. Only runs on cache miss;
+      # on hit the entry already exists under this key.
+      - name: Save Dafny interop build cache
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
-          name: interop-java-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
           path: |
             ./dafny-mpl/**/runtimes/java/src/main/dafny-generated/
             ./dafny-mpl/**/runtimes/java/src/test/dafny-generated/
-            !node_modules/**/
-            !smithy-dafny/**/
-          retention-days: 1
-
-      - name: Upload Java Maven local
-        uses: actions/upload-artifact@v7
-        with:
-          name: interop-java-maven-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
-          path: ~/.m2/repository/software/amazon/
-          retention-days: 1
-
-      - name: Upload Rust artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: interop-rust-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
-          path: |
             ./dafny-mpl/**/runtimes/rust/src/
             ./dafny-mpl/**/runtimes/rust/Cargo.lock
-            !**/runtimes/rust/target/
-            !node_modules/**/
-            !smithy-dafny/**/
-          retention-days: 1
+            ~/.m2/repository/software/amazon/
+          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
