@@ -14,7 +14,7 @@ jobs:
   buildInterop:
     uses: ./.github/workflows/dafny_library_interop_build.yml
     
-  generateEncryptVectors:
+  generateDafnyEncryptVectors:
     needs: buildInterop
     strategy:
       matrix:
@@ -111,3 +111,56 @@ jobs:
         with:
           name: ${{matrix.os}}_vector_artifact_${{matrix.language}}-${{ github.sha }}
           path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.language}}/*.json
+
+  generateNativeTestVectors:
+    runs-on: macos-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Support longpaths on Git checkout
+        run: |
+          git config --global core.longpaths true
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
+      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
+      # for this workflow by default.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt, llvm-tools-preview
+
+      - name: Build test-vectors
+        working-directory: test-vectors 
+        run: cargo build --verbose
+
+      # --- Generate and encrypt vectors ---
+      - name: Create Manifests
+        working-directory: ./test-vectors
+        run: |
+          cargo run --bin test-vectors -- encrypt-manifest \
+            --project mpl \
+            --output ./vectors/mpl-encrypt/
+
+      - name: Create Encrypt Manifests
+        working-directory: ./test-vectors
+        run: |
+          cargo run --bin test-vectors -- encrypt \
+            --project mpl \
+            --manifest-path ./vectors/mpl-encrypt/ \
+            --decrypt-manifest-output ./vectors/mpl-decrypt/
+
+      - name: Upload Encrypt Manifest and keys.json files
+        uses: actions/upload-artifact@v7
+        with:
+          name: vector_artifact_native_rust-${{ github.sha }}
+          path: ./test-vectors/mpl-decrypt/*.json
