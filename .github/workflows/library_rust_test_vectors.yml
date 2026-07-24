@@ -162,5 +162,183 @@ jobs:
       - name: Upload Encrypt Manifest and keys.json files
         uses: actions/upload-artifact@v7
         with:
-          name: vector_artifact_native_rust-${{ github.sha }}
+          name: ${{matrix.os}}_vector_artifact_native_rust-${{ github.sha }}
           path: ./test-vectors/vectors/mpl-decrypt/*.json
+
+  testDafnyInterop:
+    needs: [generateNativeTestVectors, generateDafnyEncryptVectors]
+    strategy:
+      fail-fast: false
+      matrix:
+        library: [TestVectorsAwsCryptographicMaterialProviders]
+        os: [macos-latest]
+        decrypting_language: [java, rust]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Support longpaths on Git checkout
+        run: |
+          git config --global core.longpaths true
+
+      - name: Configure AWS Credentials for Tests
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-MPL-Dafny-Role-us-west-2
+          role-session-name: InterOpTests
+          special-characters-workaround: "true" # Some environments (example: windowsOS) cannot tolerate special characters in a secret key.
+          role-duration-seconds: 7200
+
+      - name: Checkout Dafny MPL
+        uses: actions/checkout@v6
+        with:
+          repository: aws/aws-cryptographic-material-providers-library
+          path: dafny-mpl
+          submodules: "recursive"
+
+      - name: Setup Java 8
+        uses: actions/setup-java@v5
+        with:
+          distribution: "corretto"
+          java-version: 8
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: "corretto"
+          java-version: 17
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+          cache: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+
+      - name: Install Go imports
+        run: |
+          go install golang.org/x/tools/cmd/goimports@v0.36.0
+
+      - run: echo "TIMESTAMP=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      # --- Download pre-built artifacts ---
+      - name: Download pre-built artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: interop-${{ matrix.decrypting_language }}-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
+          path: ./dafny-mpl
+
+      - name: Download Maven local (Java)
+        if: matrix.decrypting_language == 'java'
+        uses: actions/download-artifact@v8
+        with:
+          name: interop-java-maven-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
+          path: ~/.m2/repository/software/amazon/
+
+      # --- Download and decrypt vectors from each encrypting language ---
+      - name: Download Encrypt Manifest Artifact Java
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{matrix.os}}_vector_artifact_java-${{ github.sha }}
+          path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.decrypting_language}}
+
+      - name: Decrypt Encrypt Manifest Java
+        working-directory: ./${{ matrix.library }}
+        run: make test_decrypt_encrypt_vectors_${{matrix.decrypting_language}}
+
+      - name: Download Encrypt Manifest Artifact Rust
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{matrix.os}}_vector_artifact_rust-${{ github.sha }}
+          path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.decrypting_language}}
+
+      - name: Decrypt Encrypt Manifest Rust
+        working-directory: ./${{ matrix.library }}
+        run: make test_decrypt_encrypt_vectors_${{matrix.decrypting_language}}
+
+      - name: Download Encrypt Manifest Artifact Native Rust
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{matrix.os}}_vector_artifact_native_rust-${{ github.sha }}
+          path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.decrypting_language}}
+          
+      - name: Decrypt Encrypt Manifest Native Rust
+        working-directory: ./${{ matrix.library }}
+        run: make test_decrypt_encrypt_vectors_${{matrix.decrypting_language}}
+
+  testNativeInterop:
+    needs: [generateNativeTestVectors, generateDafnyEncryptVectors]
+    runs-on: macos-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Support longpaths on Git checkout
+        run: |
+          git config --global core.longpaths true
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
+      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
+      # for this workflow by default.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt, llvm-tools-preview
+
+      - name: Build test-vectors
+        working-directory: test-vectors 
+        run: cargo build --verbose
+
+      - name: Download Encrypt Manifest Artifact Java
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{matrix.os}}_vector_artifact_java-${{ github.sha }}
+          path: ./test-vectors/vectors/mpl-decrypt/
+      
+      - name: Decrypt Java Encrypt Manifests
+        working-directory: ./test-vectors
+        run: |
+          cargo run --bin test-vectors -- decrypt \
+            --project mpl \
+            --manifest-path ./vectors/mpl-decrypt/
+
+      - name: Download Encrypt Manifest Artifact Dafny Rust
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{matrix.os}}_vector_artifact_rust-${{ github.sha }}
+          path: ./test-vectors/vectors/mpl-decrypt/
+
+      - name: Decrypt Dafny Rust Encrypt Manifests
+        working-directory: ./test-vectors
+        run: |
+          cargo run --bin test-vectors -- decrypt \
+            --project mpl \
+            --manifest-path ./vectors/mpl-decrypt/
+
+      - name: Download Encrypt Manifest Artifact Native Rust
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{matrix.os}}_vector_artifact_native_rust-${{ github.sha }}
+          path: ./test-vectors/vectors/mpl-decrypt/
+
+      - name: Decrypt Rust Encrypt Manifests
+        working-directory: ./test-vectors
+        run: |
+          cargo run --bin test-vectors -- decrypt \
+            --project mpl \
+            --manifest-path ./vectors/mpl-decrypt/
