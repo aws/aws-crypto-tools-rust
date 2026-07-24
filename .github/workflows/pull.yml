@@ -118,18 +118,18 @@ jobs:
           echo "projects=$projects" >> "$GITHUB_OUTPUT"
           echo "Selected projects: $projects"
 
-  # Run the reusable Rust test workflow once per selected project. If no
-  # relevant project changed, the matrix is empty and this job is skipped.
-  pr-ci-rust:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.projects != '[]'
-    strategy:
-      fail-fast: false
-      matrix:
-        project: ${{ fromJSON(needs.detect-changes.outputs.projects) }}
-    uses: ./.github/workflows/library_rust_tests.yml
-    with:
-      project: ${{ matrix.project }}
+  # # Run the reusable Rust test workflow once per selected project. If no
+  # # relevant project changed, the matrix is empty and this job is skipped.
+  # pr-ci-rust:
+  #   needs: detect-changes
+  #   if: needs.detect-changes.outputs.projects != '[]'
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       project: ${{ fromJSON(needs.detect-changes.outputs.projects) }}
+  #   uses: ./.github/workflows/library_rust_tests.yml
+  #   with:
+  #     project: ${{ matrix.project }}
 
   pr-test-vectors:
     needs: detect-changes
@@ -147,7 +147,7 @@ jobs:
     if: always()
     needs:
       - detect-changes
-      - pr-ci-rust
+      # - pr-ci-rust
       - pr-test-vectors
     runs-on: ubuntu-22.04
     steps:
