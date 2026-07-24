@@ -13,3 +13,85 @@ on:
 jobs:
   buildInterop:
     uses: ./.github/workflows/dafny_library_interop_build.yml
+    
+  generateEncryptVectors:
+    needs: buildInterop
+    strategy:
+      matrix:
+        library: [TestVectorsAwsCryptographicMaterialProviders]
+        os: [macos-latest]
+        language: [java, rust]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Support longpaths on Git checkout
+        run: |
+          git config --global core.longpaths true
+
+      - name: Checkout Dafny MPL
+        uses: actions/checkout@v4
+        with:
+          repository: aws/aws-cryptographic-material-providers-library
+          path: dafny-mpl
+          submodules: "recursive"
+
+      - name: Setup Java 8
+        uses: actions/setup-java@v5
+        with:
+          distribution: "corretto"
+          java-version: 8
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: "corretto"
+          java-version: 17
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+          cache: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+
+      - name: Install Go imports
+        run: |
+          go install golang.org/x/tools/cmd/goimports@v0.36.0
+
+      - run: echo "TIMESTAMP=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      # --- Download pre-built artifacts ---
+      - name: Download pre-built artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: interop-${{ matrix.language }}-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
+          path: ./dafny-mpl
+
+      - name: Download Maven local (Java)
+        if: matrix.language == 'java'
+        uses: actions/download-artifact@v8
+        with:
+          name: interop-java-maven-${{ env.TIMESTAMP }}-${{ matrix.os }}-${{ github.sha }}
+          path: ~/.m2/repository/software/amazon/
+
+      # --- Generate and encrypt vectors ---
+      - name: Create Manifests
+        working-directory: ./dafny-mpl/${{ matrix.library }}
+        run: |
+          make test_generate_vectors_${{ matrix.language }}
+
+      - name: Create Encrypt Manifests
+        working-directory: ./${{ matrix.library }}
+        run: make test_encrypt_vectors_${{ matrix.language }}
+
+      - name: Upload Encrypt Manifest and keys.json files
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{matrix.os}}_vector_artifact_${{matrix.language}}-${{ github.sha }}
+          path: ./dafny-mpl/${{matrix.library}}/runtimes/${{matrix.language}}/*.json
