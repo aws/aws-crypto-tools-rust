@@ -6,6 +6,8 @@ mod client;
 pub mod cmc;
 pub mod cmm;
 pub mod keyring;
+#[cfg(feature = "keystore")]
+pub mod keystore;
 pub mod structures;
 
 pub use client::*;
