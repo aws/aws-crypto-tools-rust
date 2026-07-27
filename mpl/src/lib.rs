@@ -6,6 +6,7 @@ mod client;
 pub mod cmc;
 pub mod cmm;
 pub mod keyring;
+pub mod keystore;
 pub mod structures;
 
 pub use client::*;
