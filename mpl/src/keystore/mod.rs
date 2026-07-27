@@ -9,8 +9,7 @@
 //! here: AFIT traits are not stable-dyn-compatible, the MPL needs `dyn Keystore`
 //! and `Box<dyn Keystore>` for plug-in keystore backends (DynamoDB-backed
 //! branch key store today, potentially other backends later), and `async_trait`
-//! boxes the future to make `dyn Keystore` work today. See `src/keyring/mod.rs`
-//! for the full discussion.
+//! boxes the future to make `dyn Keystore` work today.
 //!
 
 pub mod config;
