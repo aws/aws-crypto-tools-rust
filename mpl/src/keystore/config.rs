@@ -7,15 +7,15 @@
 #[derive(Debug, Clone)]
 pub struct KeyStoreConfig {
     /// The DynamoDB table name backing this keystore.
-    pub table_name: String,
+    pub ddb_table_name: String,
     /// The KMS key configuration governing encryption/decryption.
     pub kms_configuration: KmsConfiguration,
     /// Logical name cryptographically bound to all keys in this table.
     pub logical_keystore_name: String,
-    /// Optional keystore identifier; Phase 4 will default to UUID v4.
-    pub keystore_id: Option<String>,
+    /// Optional keystore identifier.
+    pub id: Option<String>,
     /// Optional AWS KMS grant tokens.
-    pub aws_kms_grant_tokens: Option<Vec<String>>,
+    pub grant_tokens: Option<Vec<String>>,
 }
 
 /// Information about a configured keystore, returned by
