@@ -36,7 +36,7 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
 
 ## Status snapshot
 
-Snapshot as of 2026-07-20. Update this table whenever a slice's state
+Snapshot as of 2026-07-27. Update this table whenever a slice's state
 changes (branch cut, PR opened, PR merged, PR closed).
 
 | PR | Slug | GitHub PR | Status | Review branch |
@@ -51,8 +51,8 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 8 | `mrk-match` | [#29](https://github.com/aws/aws-crypto-tools-rust/pull/29) | **Merged** 2026-07-16 (merge commit `6214783`) | retired after merge |
 | 9 | `cmc-interface` | [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30) | **Merged** 2026-07-16 (merge commit `a917ccf`) | retired after merge |
 | 10 | `local-cmc` | [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31) | **Merged** 2026-07-20 (merge commit `8a5ae90`) | retired after merge |
-| 11 | `storm-tracking-cmc` | — | Review branch cut from `main` @ `8a5ae90` | `aws-crypto-rust/storm-tracking-cmc-review` |
-| 12 | `keystore-interface` | — | Not started | — |
+| 11 | `storm-tracking-cmc` | [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33) | Open for review | `aws-crypto-rust/storm-tracking-cmc-review` |
+| 12 | `keystore-interface` | — | Not started (can proceed in parallel with PR 11 — see PR 12 notes) | — |
 | 13 | `keystore-support` | — | Not started | — |
 | 14 | `branch-key-store` | — | Not started | — |
 | 15 | `hkeyring-support` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** prepare PR 11 (`aws-crypto-rust/storm-tracking-cmc-review` against `main`).
+**Next action:** PR 11 is open as [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33); PR 12 (`aws-crypto-rust/keystore-interface-review` against `main`) can be cut in parallel.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -573,7 +573,7 @@ fulfil it.
 **Spec:** [`spec/framework/branch-key-store.md`](../../spec/framework/branch-key-store.md) (interface-level requirements)
 **Review branch:** `aws-crypto-rust/keystore-interface-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-keystore-interface`
-**Base branch (PR target):** `aws-crypto-rust/storm-tracking-cmc-review`
+**Base branch (PR target):** `main`
 **Depends on:** PR 2 (materials), PR 3 (algorithm suite)
 
 **Source:**
@@ -592,6 +592,15 @@ fulfil it.
   concrete annotations in slices 13 and 15)
 
 **Notes:**
+- Base is `main`, not the previous slice's review branch — PR 12 has no
+  code dependency on PR 11 (`storm-tracking-cmc`), so the two can be
+  opened and reviewed in parallel. Shared-file diffs to `Cargo.toml`
+  and `lib.rs` overlap in the `[features]` block and module list
+  respectively but their content is disjoint (PR 11 adds `test-utils` +
+  the tokio promotion; PR 12 adds `keystore` + the keystore mod line).
+  When PR 11 merges, PR 12 rebases onto the new `main` and its diff is
+  unchanged. When PR 12 merges first, PR 11 rebases its shared-file
+  diffs on top of PR 12's.
 - Introduces the `[features] keystore` flag in `Cargo.toml` and the
   `#[cfg(feature = "keystore")] pub mod keystore;` line in `lib.rs`.
 - Registers `branch-key-store.md` in `.duvet/config.toml`.
