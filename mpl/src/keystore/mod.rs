@@ -5,27 +5,26 @@
 //!
 //! # Why `async_trait` and not native AFIT
 //!
-//! Same dyn-compatibility rationale recorded in [`crate::keyring`] and
-//! [`crate::cmm`]. The MPL needs `Box<dyn Keystore>` and `&dyn Keystore`
-//! for plug-in keystore backends (DynamoDB-backed in this crate today,
-//! potentially other backends later). `async_trait` boxes the future to
-//! make `dyn Keystore` work on stable Rust.
+//! The same dyn-compatibility rationale recorded in [`crate::keyring`] applies
+//! here: AFIT traits are not stable-dyn-compatible, the MPL needs `dyn Keystore`
+//! and `Box<dyn Keystore>` for plug-in keystore backends (DynamoDB-backed
+//! branch key store today, potentially other backends later), and `async_trait`
+//! boxes the future to make `dyn Keystore` work today. See `src/keyring/mod.rs`
+//! for the full discussion.
 //!
 //! # Concrete-keystore-deferred clauses (`type=exception`)
 //!
-//! This commit (Phase 1 of the branch-key-store master plan) introduces
-//! the abstract `Keystore` trait scaffolding plus the configuration types
-//! and error type only — no concrete keystore is implemented yet. Behaviors
-//! on every operation method (CreateKey, VersionKey, GetActiveBranchKey,
-//! GetBranchKeyVersion, GetBeaconKey, CreateKeyStore, GetKeyStoreInfo)
-//! plus the encryption-context construction, record format, and
-//! AWS-KMS-backed authentication / decryption are all annotated as
-//! `type=exception` here, with `reason=` lines naming the future master
-//! plan phase that will fulfill each requirement. The mock-driven contract
-//! harness in `tests/test_keystore_contract.rs` exercises the trait shape
-//! today; per-phase work will replace the exceptions with
-//! `type=implementation` on concrete methods and `type=test` on contract
-//! tests that prove them.
+//! This commit introduces the abstract `Keystore` trait scaffolding plus the
+//! configuration and error types only — no concrete keystore (DynamoDB-backed
+//! branch key store, …) is implemented yet. Behavioral MUSTs on
+//! `create_key_store`, `create_key`, `version_key`, `get_active_branch_key`,
+//! `get_branch_key_version`, `get_beacon_key`, and `get_key_store_info`
+//! (encryption-context construction, record format, AWS-KMS-backed
+//! authentication / decryption) are therefore annotated `type=exception`
+//! here. When each concrete keystore is added in a future commit, the
+//! matching exception below will be replaced with `type=implementation` on
+//! the concrete method, and `type=test` will be placed on the contract test
+//! that proves it.
 
 pub mod config;
 pub mod error;
