@@ -30,16 +30,6 @@ pub enum KeystoreErrorKind {
 }
 
 /// Error type for keystore operations.
-///
-/// Carries a categorisation ([`KeystoreErrorKind`]), a human-readable
-/// message, and an optional causal error chain — the underlying error
-/// (e.g. an AWS SDK error, an I/O failure) that produced this
-/// `KeystoreError`. The cause is surfaced through
-/// [`std::error::Error::source`], so downstream loggers / reporters that
-/// walk the source chain (`anyhow`, `tracing`, `eyre`, etc.) print the
-/// full context without callers having to string-concatenate it into
-/// `message`.
-///
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct KeystoreError {
