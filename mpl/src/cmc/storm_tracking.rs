@@ -66,9 +66,7 @@ enum GetDecision {
     /// inflight if the classifier decided a new refresh leader was needed).
     Ready(Option<Arc<CacheEntry>>),
     /// Enter the polling loop. `deadline = Some(_)` gives this waiter a
-    /// per-waiter TTL, mirroring the Dafny reference extern
-    /// `StormTrackingCMC.cs` (`max_in_flight = DateTime.Now + inFlightTTL`
-    /// computed once at loop entry). `deadline = None` is the "cache miss,
+    /// per-waiter TTL. `deadline = None` is the "cache miss,
     /// key not inflight, fan-out saturated" case — the waiter holds no
     /// leader slot, so it has no per-waiter TTL and gives up only when the
     /// caller times out.
@@ -89,10 +87,7 @@ impl ValidatedConfig {
     /// Validate raw config values and produce the interpreted `Duration`s.
     ///
     /// Spec: `grace_period`, `grace_interval`, `inflight_ttl`, `sleep_milli`,
-    /// and `fan_out` all MUST be at least 1. Enforcing these lower bounds
-    /// up front turns silent runtime pathologies (deadlocks, hot spins,
-    /// spurious InFlightTTL errors, storm tracking that never engages) into
-    /// caller-visible validation errors.
+    /// and `fan_out` all MUST be at least 1.
     fn from_raw(
         grace_period: u64,
         grace_interval: u64,
@@ -286,32 +281,26 @@ impl StormTrackingCmc {
         })
     }
 
-    /// The configured grace period as a `Duration`.
     pub fn grace_period(&self) -> Duration {
         self.grace_period
     }
 
-    /// The configured grace interval as a `Duration`.
     pub fn grace_interval(&self) -> Duration {
         self.grace_interval
     }
 
-    /// The configured fan-out limit.
     pub fn fan_out(&self) -> usize {
         self.fan_out
     }
 
-    /// The configured inflight TTL as a `Duration`.
     pub fn inflight_ttl(&self) -> Duration {
         self.inflight_ttl
     }
 
-    /// The configured sleep-between-polls duration (always milliseconds).
     pub fn sleep_milli(&self) -> Duration {
         self.sleep_milli
     }
 
-    /// The configured time units.
     pub fn time_units(&self) -> TimeUnits {
         self.time_units
     }
