@@ -651,10 +651,9 @@ async fn test_inflight_records_most_recent_nosuchentry_time() {
     // First get at t1 — key not inflight → NoSuchEntry, marked at t1.
     let _ = cmc.get_cache_entry(b"k").await.expect("first get");
 
-    // Advance clock to t2 and get again — key is inflight but NOT within grace interval
-    // (grace_interval = 2s, t2 - t1 = 1s < 2s → actually still within interval).
-    // Use t1 + 3s to be outside the grace interval.
-    let t3 = t1 + Duration::from_secs(3); // > grace_interval=2s
+    // Advance clock to t2, past grace_interval, and get again.
+    // grace_interval = 2s, so use t1 + 3s to be outside the grace interval.
+    let t2 = t1 + Duration::from_secs(3); // > grace_interval=2s
     let cmc2 = StormTrackingCmc::with_clock(
         32,
         4,
@@ -664,7 +663,7 @@ async fn test_inflight_records_most_recent_nosuchentry_time() {
         INFLIGHT_TTL_SECS,
         SLEEP_MILLI,
         None,
-        move || t3,
+        move || t2,
     )
     .expect("constructs");
     cmc2.put_cache_entry(b"k", make_entry_at(t1, expiry))
@@ -677,7 +676,7 @@ async fn test_inflight_records_most_recent_nosuchentry_time() {
 
     let recorded = cmc2.peek_inflight(b"k").expect("key must be inflight");
     assert_eq!(
-        recorded, t3,
+        recorded, t2,
         "inflight time must be updated to the most recent NoSuchEntry time"
     );
 }
