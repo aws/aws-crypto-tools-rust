@@ -40,9 +40,6 @@ pub enum KeystoreErrorKind {
 /// full context without callers having to string-concatenate it into
 /// `message`.
 ///
-/// [`PartialEq`] and [`Eq`] compare `kind` and `message` only; the
-/// `cause` chain is intentionally not part of equality because the
-/// wrapped underlying errors are often not themselves `Eq`.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct KeystoreError {
@@ -79,17 +76,14 @@ impl KeystoreError {
         }
     }
 
-    /// Borrow the categorisation of this error.
     pub const fn kind(&self) -> &KeystoreErrorKind {
         &self.kind
     }
 
-    /// Borrow the message of this error.
     pub fn message(&self) -> &str {
         &self.message
     }
 
-    /// Borrow the causal error chain, if any.
     pub fn cause(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
         self.cause.as_deref()
     }

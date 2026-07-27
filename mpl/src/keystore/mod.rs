@@ -12,19 +12,6 @@
 //! boxes the future to make `dyn Keystore` work today. See `src/keyring/mod.rs`
 //! for the full discussion.
 //!
-//! # Concrete-keystore-deferred clauses (`type=exception`)
-//!
-//! This commit introduces the abstract `Keystore` trait scaffolding plus the
-//! configuration and error types only — no concrete keystore (DynamoDB-backed
-//! branch key store, …) is implemented yet. Behavioral MUSTs on
-//! `create_key_store`, `create_key`, `version_key`, `get_active_branch_key`,
-//! `get_branch_key_version`, `get_beacon_key`, and `get_key_store_info`
-//! (encryption-context construction, record format, AWS-KMS-backed
-//! authentication / decryption) are therefore annotated `type=exception`
-//! here. When each concrete keystore is added in a future commit, the
-//! matching exception below will be replaced with `type=implementation` on
-//! the concrete method, and `type=test` will be placed on the contract test
-//! that proves it.
 
 pub mod config;
 pub mod error;

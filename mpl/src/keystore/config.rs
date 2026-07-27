@@ -3,8 +3,6 @@
 
 //! Configuration types for the [`Keystore`](super::Keystore) trait.
 
-//
-//
 /// Configuration for constructing a [`Keystore`](super::Keystore).
 #[derive(Debug, Clone)]
 pub struct KeyStoreConfig {
@@ -36,8 +34,6 @@ pub struct KeyStoreInfo {
     pub aws_kms_configuration: KmsConfiguration,
 }
 
-//
-//
 /// The KMS key configuration for a keystore.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
