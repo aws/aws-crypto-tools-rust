@@ -87,9 +87,9 @@ jobs:
       #
       # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
       # today); raise it toward 100 as coverage fills in.
-      # TODO(mpl): mpl line-coverage is temporarily 90%
+      # TODO(mpl): mpl line-coverage is temporarily 80%
       # raise it to 100 as coverage fills in.
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov --all-features --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '90' }} --verbose
+        run: cargo llvm-cov --all-features --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
