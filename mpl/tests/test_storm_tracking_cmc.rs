@@ -1462,3 +1462,111 @@ async fn test_block_miss_inflight_uses_per_waiter_deadline_not_per_key() {
         "expected the entry once put unblocks the loop"
     );
 }
+
+// ── Group 13 — Storm Coalescing ──────────────────────────────────────────────
+
+// What: when N concurrent tasks all miss on the same cache key
+// simultaneously, exactly one becomes the refresh leader (`Ok(None)`)
+// and the remaining N-1 waiters are served the entry the leader
+// installs (`Ok(Some(_))`).
+//
+// Why: this is the storm-suppression property the whole cache exists
+// to provide, and none of the existing concurrent tests exercise it
+// directly — each of them spawns a single blocked getter. This test
+// closes that gap by running a real "storm" of concurrent callers.
+//
+// Mechanism:
+//   - Each task calls `get_cache_entry` on an empty cache. The
+//     classifier serializes on the state mutex, so exactly one task
+//     wins the "cache miss, key not inflight, fan-out slot open"
+//     branch and returns `Ok(None)`; the rest fall into the "inflight
+//     within grace interval" branch and enter `wait_for_leader`.
+//   - The elected leader sleeps briefly to simulate fetch latency,
+//     then puts the entry. `put_cache_entry` writes to the inner
+//     cache and clears the inflight bit, unblocking the waiters on
+//     their next poll.
+//   - `fan_out = 20` is chosen so the fan-out limit is not a
+//     constraint here (the fan-out-saturated behavior is already
+//     covered by `test_get_miss_blocks_when_fanout_saturated_...`);
+//     this test isolates the per-key coalescing property.
+//   - The leader's 100ms fetch delay is well within the 2s grace
+//     interval, so subsequent tasks classify as "inflight, wait" and
+//     do NOT independently become leaders.
+#[tokio::test]
+async fn test_concurrent_gets_on_same_key_coalesce_to_one_refresh() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const N_TASKS: usize = 50;
+    const LEADER_FETCH_DELAY_MS: u64 = 100;
+    const STORM_FAN_OUT: usize = 20;
+
+    let cmc = Arc::new(
+        StormTrackingCmc::new(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            STORM_FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            None,
+        )
+        .expect("constructs"),
+    );
+
+    let leader_count = Arc::new(AtomicUsize::new(0));
+    let waiter_count = Arc::new(AtomicUsize::new(0));
+
+    let mut handles = Vec::with_capacity(N_TASKS);
+    for _ in 0..N_TASKS {
+        let cmc = Arc::clone(&cmc);
+        let leader_count = Arc::clone(&leader_count);
+        let waiter_count = Arc::clone(&waiter_count);
+        handles.push(tokio::spawn(async move {
+            match cmc
+                .get_cache_entry(b"target")
+                .await
+                .expect("get_cache_entry Ok")
+            {
+                None => {
+                    // Elected leader: simulate the "go fetch" latency
+                    // callers would incur in production, then publish
+                    // the fresh entry.
+                    leader_count.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(LEADER_FETCH_DELAY_MS)).await;
+                    let now = SystemTime::now();
+                    let expiry = now + Duration::from_secs(3600);
+                    cmc.put_cache_entry(b"target", make_entry_at(now, expiry))
+                        .await
+                        .expect("leader puts");
+                }
+                Some(_) => {
+                    waiter_count.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        }));
+    }
+
+    let joined = tokio::time::timeout(Duration::from_secs(10), async {
+        for h in handles {
+            h.await.expect("task joins");
+        }
+    })
+    .await;
+    joined.expect("all storm tasks complete within 10s");
+
+    let leaders = leader_count.load(Ordering::SeqCst);
+    let waiters = waiter_count.load(Ordering::SeqCst);
+    assert_eq!(
+        leaders, 1,
+        "exactly one task must be elected refresh leader (got {leaders} leaders, \
+         {waiters} waiters)"
+    );
+    assert_eq!(
+        waiters,
+        N_TASKS - 1,
+        "every non-leader task must be served the entry the leader put \
+         (got {leaders} leaders, {waiters} waiters, expected {} waiters)",
+        N_TASKS - 1
+    );
+}
