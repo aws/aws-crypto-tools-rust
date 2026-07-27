@@ -3,8 +3,6 @@
 
 //! Tests for KMS configuration ARN parsing, validation, and compatibility.
 
-#![cfg(feature = "keystore")]
-
 use aws_crypto_mpl::keystore::kms_config::{is_arn_compatible, parse_arn, validate_kms_key_arn};
 use aws_crypto_mpl::keystore::{KeystoreErrorKind, KmsConfiguration};
 

@@ -18,7 +18,7 @@
 //! ## Running
 //!
 //! ```text
-//! cargo run --features keystore --example aws_kms_hierarchical
+//! cargo run --example aws_kms_hierarchical
 //! ```
 //!
 //! Required environment:

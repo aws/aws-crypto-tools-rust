@@ -15,7 +15,7 @@
 //! Run with:
 //!
 //! ```text
-//! cargo test --features keystore \
+//! cargo test \
 //!     --test test_keystore_branch_key_store_integ -- --ignored
 //! ```
 //!
@@ -27,8 +27,6 @@
 //! `TestGetKeys.dfy`. Slice 1b ports the read-path tests only;
 //! `TestGetBeaconKey`, `TestGetActiveKeyWithNoClients`, and the
 //! `VersionKey`/`CreateKey` suites land in later slices.
-
-#![cfg(feature = "keystore")]
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;

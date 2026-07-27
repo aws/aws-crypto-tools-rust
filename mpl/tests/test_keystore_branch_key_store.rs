@@ -8,8 +8,6 @@
 //! require KMS or DDB IO live in subsequent slices and have separate
 //! `tests/test_keystore_branch_key_store_integ.rs` (real-AWS) coverage.
 
-#![cfg(feature = "keystore")]
-
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;

@@ -31,7 +31,6 @@ fn test_mpl_builder_with_config() {
 
 // ─── create_cryptographic_materials_cache ───────────────────────────────────
 
-#[cfg(feature = "keystore")]
 mod cache_factory {
     use std::sync::Arc;
 
@@ -258,7 +257,6 @@ mod cache_factory {
 
 // ─── create_branch_key_store ────────────────────────────────────────────────
 
-#[cfg(feature = "keystore")]
 mod keystore_factory {
     use aws_config::{BehaviorVersion, SdkConfig};
     use aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -374,7 +372,6 @@ mod keystore_factory {
 
 // ─── create_aws_kms_hierarchical_keyring ────────────────────────────────────
 
-#[cfg(feature = "keystore")]
 mod keyring_factory {
     use std::sync::Arc;
 

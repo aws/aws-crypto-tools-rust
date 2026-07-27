@@ -136,7 +136,7 @@ jobs:
       #
       # - name: Integ tests — keystore read path (real AWS)
       #   if: inputs.project == 'mpl'
-      #   run: cargo test --features keystore --test test_keystore_branch_key_store_integ -- --ignored
+      #   run: cargo test --test test_keystore_branch_key_store_integ -- --ignored
 
       # TODO(examples-creds): Wire up AWS credentials before uncommenting
       # the steps below.
@@ -168,4 +168,4 @@ jobs:
       #     MPL_EXAMPLE_LOGICAL_KEY_STORE_NAME: ${{ vars.MPL_EXAMPLE_LOGICAL_KEY_STORE_NAME }}
       #     MPL_EXAMPLE_KMS_KEY_ARN: ${{ vars.MPL_EXAMPLE_KMS_KEY_ARN }}
       #     MPL_EXAMPLE_BRANCH_KEY_ID: ${{ vars.MPL_EXAMPLE_BRANCH_KEY_ID }}
-      #   run: cargo run --features keystore --example aws_kms_hierarchical
+      #   run: cargo run --example aws_kms_hierarchical

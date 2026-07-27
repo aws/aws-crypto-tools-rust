@@ -3,8 +3,6 @@
 
 //! Tests for `keystore::record` module.
 
-#![cfg(feature = "keystore")]
-
 use std::collections::BTreeMap;
 
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;

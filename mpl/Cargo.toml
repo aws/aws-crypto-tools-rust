@@ -20,13 +20,11 @@ uuid = { version = "=1.23.3", features = ["v4"] }
 
 [features]
 default = []
-keystore = []
 test-utils = []
 
 [[example]]
 name = "aws_kms_hierarchical"
 path = "examples/aws_kms_hierarchical/main.rs"
-required-features = ["keystore"]
 
 [dev-dependencies]
 tokio = { version = "=1.41.1", features = ["rt", "macros", "test-util", "time"], default-features = false }

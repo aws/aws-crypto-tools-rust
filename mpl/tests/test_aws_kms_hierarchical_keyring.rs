@@ -9,8 +9,6 @@
 //! - UTF-8 partition-id round-trip (regression coverage for the
 //!   `If provided, it MUST be interpreted as UTF8 bytes` implication)
 
-#![cfg(feature = "keystore")]
-
 use std::sync::Arc;
 
 use async_trait::async_trait;

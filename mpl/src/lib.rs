@@ -6,7 +6,6 @@ mod client;
 pub mod cmc;
 pub mod cmm;
 pub mod keyring;
-#[cfg(feature = "keystore")]
 pub mod keystore;
 pub mod structures;
 
@@ -17,7 +16,6 @@ pub use cmc::{
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::Keyring;
-#[cfg(feature = "keystore")]
 pub use keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
     encryption_context, kms_config, record,

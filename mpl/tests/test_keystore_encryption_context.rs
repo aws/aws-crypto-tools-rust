@@ -3,8 +3,6 @@
 
 //! Tests for keystore encryption context construction.
 
-#![cfg(feature = "keystore")]
-
 use aws_crypto_mpl::keystore::encryption_context::{
     CUSTOM_EC_PREFIX, EncryptionContextInput, KEY_BRANCH_KEY_ID, KEY_CREATE_TIME, KEY_ENC,
     KEY_HIERARCHY_VERSION, KEY_KMS_ARN, KEY_TABLENAME, KEY_TYPE, KEY_VERSION, TYPE_BEACON_ACTIVE,

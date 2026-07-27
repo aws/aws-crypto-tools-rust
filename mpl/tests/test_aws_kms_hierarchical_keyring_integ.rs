@@ -9,7 +9,7 @@
 //! accounts `370957321024` and `658956600833`).
 //!
 //! ```text
-//! cargo test --features keystore \
+//! cargo test \
 //!     --test test_aws_kms_hierarchical_keyring_integ -- --ignored
 //! ```
 //!
@@ -38,8 +38,6 @@
 //!   `*_uses_branch_key_supplier_when_configured`,
 //!   `*_skips_edks_with_wrong_branch_key_id`, and `*_collects_per_edk_errors_*`
 //!   tests).
-
-#![cfg(feature = "keystore")]
 
 use std::sync::Arc;
 

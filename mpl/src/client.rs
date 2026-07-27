@@ -10,11 +10,10 @@
 //! - [`MaterialProviders::create_cryptographic_materials_cache`] →
 //!   `Arc<dyn Cmc>` for use as a [`CacheType::Shared`] across keyrings.
 //! - [`MaterialProviders::create_branch_key_store`] → `Arc<BranchKeyStore>`
-//!   wired to the supplied AWS clients (gated on `feature = "keystore"`).
+//!   wired to the supplied AWS clients.
 //! - [`MaterialProviders::create_aws_kms_hierarchical_keyring`] →
 //!   [`HierarchicalKeyring`] composed of a keystore, a TTL, a branch-key
-//!   identifier or supplier, and an optional cache (gated on
-//!   `feature = "keystore"`).
+//!   identifier or supplier, and an optional cache.
 //!
 //! Every fluent builder's `.send()` is **synchronous and infallible
 //! w.r.t. I/O** — none of these factories perform AWS calls. The blueprint
@@ -24,23 +23,16 @@
 //! `BranchKeyStore::new`, `LocalCmc::new`, `StormTrackingCmc::new`)
 //! remain public and behave identically.
 
-#[cfg(feature = "keystore")]
 use std::sync::Arc;
 
-#[cfg(feature = "keystore")]
 use aws_sdk_dynamodb::Client as DynamoDbClient;
-#[cfg(feature = "keystore")]
 use aws_sdk_kms::Client as KmsClient;
 
-#[cfg(feature = "keystore")]
 use crate::aws_kms::hierarchical_keyring::{
     BranchKeySource, BranchKeySupplier, CacheType, HierarchicalKeyring,
 };
-#[cfg(feature = "keystore")]
 use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc};
-#[cfg(feature = "keystore")]
 use crate::keystore::{BranchKeyStore, KeyStoreConfig, Keystore, KeystoreError};
-#[cfg(feature = "keystore")]
 use crate::structures::MaterialsError;
 
 /// Configuration carried by a [`MaterialProviders`] client.
@@ -88,7 +80,6 @@ impl MaterialProviders {
     ///
     /// Requires the `keystore` Cargo feature (the [`CacheType`] enum
     /// itself lives behind that flag).
-    #[cfg(feature = "keystore")]
     #[must_use]
     pub fn create_cryptographic_materials_cache(
         &self,
@@ -100,7 +91,6 @@ impl MaterialProviders {
     /// See [`CreateBranchKeyStoreFluentBuilder`].
     ///
     /// Requires the `keystore` Cargo feature.
-    #[cfg(feature = "keystore")]
     #[must_use]
     pub fn create_branch_key_store(&self) -> CreateBranchKeyStoreFluentBuilder {
         CreateBranchKeyStoreFluentBuilder::default()
@@ -110,7 +100,6 @@ impl MaterialProviders {
     /// See [`CreateAwsKmsHierarchicalKeyringFluentBuilder`].
     ///
     /// Requires the `keystore` Cargo feature.
-    #[cfg(feature = "keystore")]
     #[must_use]
     pub fn create_aws_kms_hierarchical_keyring(
         &self,
@@ -152,13 +141,11 @@ impl MaterialProvidersBuilder {
 /// Set the desired backing cache via [`Self::cache`], then call
 /// [`Self::send`]. The returned `Arc<dyn Cmc>` is suitable for sharing
 /// across multiple keyrings via [`CacheType::Shared`].
-#[cfg(feature = "keystore")]
 #[derive(Default)]
 pub struct CreateCryptographicMaterialsCacheFluentBuilder {
     cache: Option<CacheType>,
 }
 
-#[cfg(feature = "keystore")]
 impl CreateCryptographicMaterialsCacheFluentBuilder {
     /// Set the [`CacheType`] backing for the constructed cache.
     #[must_use]
@@ -225,7 +212,6 @@ impl CreateCryptographicMaterialsCacheFluentBuilder {
 /// All three setters ([`Self::key_store_config`], [`Self::kms_client`],
 /// [`Self::ddb_client`]) are required; [`Self::send`] returns an error
 /// naming the first missing one.
-#[cfg(feature = "keystore")]
 #[derive(Default)]
 pub struct CreateBranchKeyStoreFluentBuilder {
     key_store_config: Option<KeyStoreConfig>,
@@ -233,7 +219,6 @@ pub struct CreateBranchKeyStoreFluentBuilder {
     ddb_client: Option<DynamoDbClient>,
 }
 
-#[cfg(feature = "keystore")]
 impl CreateBranchKeyStoreFluentBuilder {
     /// Set the [`KeyStoreConfig`].
     #[must_use]
@@ -302,7 +287,6 @@ impl CreateBranchKeyStoreFluentBuilder {
 /// [`Self::branch_key_id_supplier`]. Optional setters: [`Self::cache`]
 /// (defaults to [`CacheType::Default`] with spec defaults) and
 /// [`Self::partition_id`] (defaults to a fresh v4 UUID).
-#[cfg(feature = "keystore")]
 #[derive(Default)]
 pub struct CreateAwsKmsHierarchicalKeyringFluentBuilder {
     key_store: Option<Arc<dyn Keystore>>,
@@ -313,7 +297,6 @@ pub struct CreateAwsKmsHierarchicalKeyringFluentBuilder {
     partition_id: Option<String>,
 }
 
-#[cfg(feature = "keystore")]
 impl CreateAwsKmsHierarchicalKeyringFluentBuilder {
     /// Set the keystore the keyring will resolve branch keys against.
     #[must_use]
