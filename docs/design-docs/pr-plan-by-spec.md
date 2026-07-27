@@ -52,7 +52,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 9 | `cmc-interface` | [#30](https://github.com/aws/aws-crypto-tools-rust/pull/30) | **Merged** 2026-07-16 (merge commit `a917ccf`) | retired after merge |
 | 10 | `local-cmc` | [#31](https://github.com/aws/aws-crypto-tools-rust/pull/31) | **Merged** 2026-07-20 (merge commit `8a5ae90`) | retired after merge |
 | 11 | `storm-tracking-cmc` | [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33) | Open for review | `aws-crypto-rust/storm-tracking-cmc-review` |
-| 12 | `keystore-interface` | — | Not started (can proceed in parallel with PR 11 — see PR 12 notes) | — |
+| 12 | `keystore-interface` | [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35) | Open for review (in parallel with PR 11, base `main`) | `aws-crypto-rust/keystore-interface-review` |
 | 13 | `keystore-support` | — | Not started | — |
 | 14 | `branch-key-store` | — | Not started | — |
 | 15 | `hkeyring-support` | — | Not started | — |
@@ -60,7 +60,7 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** PR 11 is open as [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33); PR 12 (`aws-crypto-rust/keystore-interface-review` against `main`) can be cut in parallel.
+**Next action:** PR 11 ([#33](https://github.com/aws/aws-crypto-tools-rust/pull/33)) and PR 12 ([#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)) are open in parallel and awaiting review.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
