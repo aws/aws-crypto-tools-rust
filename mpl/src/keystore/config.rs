@@ -29,9 +29,9 @@ pub struct KeyStoreInfo {
     /// The logical keystore name.
     pub logical_keystore_name: String,
     /// The configured AWS KMS grant tokens.
-    pub aws_kms_grant_tokens: Vec<String>,
+    pub grant_tokens: Vec<String>,
     /// The KMS configuration for this keystore.
-    pub aws_kms_configuration: KmsConfiguration,
+    pub kms_configuration: KmsConfiguration,
 }
 
 /// The KMS key configuration for a keystore.
