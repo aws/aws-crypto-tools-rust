@@ -555,12 +555,9 @@ async fn test_grace_interval_zero_is_rejected() {
 // storm-tracking mechanism becomes a synchronous error-generator instead
 // of a refresh coordinator.
 //
-// Note: this test also sets `grace_interval = 0` because the existing
-// ordering check requires `grace_interval <= inflight_ttl`. Without that,
-// the ordering check would fire first and mask the missing lower-bound
-// validation we're actually exercising here. Either the
-// `grace_interval >= 1` or `inflight_ttl >= 1` check fires under the fix
-// — both are correct outcomes for a config with both at 0.
+// Uses `grace_interval = 1` so the `inflight_ttl >= 1` lower-bound check
+// fires directly — the earlier `grace_interval >= 1` check would mask it
+// if both were zero.
 #[tokio::test]
 async fn test_inflight_ttl_zero_is_rejected() {
     let now = anchor_now();
@@ -568,7 +565,7 @@ async fn test_inflight_ttl_zero_is_rejected() {
         8,
         2,
         GRACE_PERIOD_SECS,
-        0, // grace_interval = 0 (required to bypass ordering check)
+        1, // grace_interval = 1 (valid, so it doesn't mask the field under test)
         FAN_OUT,
         0, // inflight_ttl = 0 — the field under test
         SLEEP_MILLI,
@@ -1055,6 +1052,83 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
         cmc.peek_inflight(b"k"),
         Some(now),
         "inflight time must be UPDATED to `now`, not the prior inflight_t"
+    );
+}
+
+// What: when a waiter is in `BlockMissInflight` and its per-waiter
+// deadline (`enter_time + inflight_ttl`) elapses without the entry
+// appearing or a leader slot opening, the wait loop must return
+// `StorageFailed("InFlightTTL exceeded")`.
+//
+// Why: the initial classifier's `elapsed > inflight_ttl` check only
+// fires when `get_cache_entry` is called AFTER the map-level TTL has
+// already been exceeded. A waiter that entered while the key was still
+// within its TTL, then got stuck (fan-out saturated, key still inflight
+// within grace interval), needs its own path to give up. Without a
+// deadline-firing test the per-waiter TTL branch is unreachable at
+// runtime and its error path is silently unverified.
+#[tokio::test]
+async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
+    use std::sync::Mutex as StdMutex;
+
+    let start = anchor_now();
+    let clock = Arc::new(StdMutex::new(start));
+    let clock_reader = Arc::clone(&clock);
+
+    let cmc = Arc::new(
+        StormTrackingCmc::with_clock(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            None,
+            move || *clock_reader.lock().expect("clock lock"),
+        )
+        .expect("constructs"),
+    );
+
+    // Saturate fan-out with target + two other keys, all inflight at start.
+    // With fan-out saturated AND target within grace interval, the waiter
+    // is stuck: cannot become leader (saturated), cannot serve cached
+    // entry (nothing in cache), cannot fall through to insert (still in
+    // grace interval).
+    cmc.mark_inflight(b"target", start);
+    cmc.mark_inflight(&[1], start);
+    cmc.mark_inflight(&[2], start);
+    assert_eq!(cmc.inflight_count(), FAN_OUT);
+
+    // Getter enters classify at start: cache miss, target inflight,
+    // elapsed=0 (< TTL), within grace interval → Wait { deadline =
+    // start + INFLIGHT_TTL_SECS = start + 5s }.
+    let cmc_getter = Arc::clone(&cmc);
+    let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
+
+    // Let the getter reach the wait loop.
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // Advance the clock past the per-waiter deadline. The mark_inflight
+    // times stay at `start`, so the map-level state is unchanged; only
+    // wall-clock advanced. Next iteration: sleep, cache miss, now >=
+    // deadline → return Err.
+    *clock.lock().expect("clock lock") = start + Duration::from_secs(INFLIGHT_TTL_SECS + 1);
+
+    let result = tokio::time::timeout(Duration::from_millis(500), getter)
+        .await
+        .expect("getter must complete after per-waiter deadline elapses")
+        .expect("task joins");
+    let err = result.expect_err("must be an error once the deadline fires");
+    assert_eq!(
+        err.kind,
+        CmcErrorKind::StorageFailed,
+        "expected StorageFailed, got {err:?}"
+    );
+    assert!(
+        err.message.contains("InFlightTTL"),
+        "error message must contain 'InFlightTTL', got: {}",
+        err.message
     );
 }
 
