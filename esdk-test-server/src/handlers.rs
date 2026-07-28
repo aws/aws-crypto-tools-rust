@@ -63,7 +63,9 @@ fn map_algorithm_suite(id: EsdkAlgorithmSuiteId) -> MplAlgorithmSuiteId {
         EsdkAlgorithmSuiteId::Alg256GcmHkdfEcdsa => {
             MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
         }
-        EsdkAlgorithmSuiteId::Alg256GcmCommit => MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        EsdkAlgorithmSuiteId::Alg256GcmCommit => {
+            MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        }
         EsdkAlgorithmSuiteId::Alg256GcmCommitEcdsa => {
             MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
         }
