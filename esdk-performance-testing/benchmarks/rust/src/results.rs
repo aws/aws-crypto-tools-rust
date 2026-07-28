@@ -100,7 +100,7 @@ pub fn save_results(
             language: "rust".to_string(),
             keyring: "hierarchical".to_string(),
             timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            rust_version: std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()),
+            rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count,
             total_memory_gb,
             total_tests: results.len(),
@@ -113,4 +113,44 @@ pub fn save_results(
     file.write_all(json_data.as_bytes())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{average, percentile};
+
+    #[test]
+    fn average_of_empty_is_zero() {
+        assert_eq!(average(&[]), 0.0);
+    }
+
+    #[test]
+    fn average_computes_mean() {
+        assert_eq!(average(&[2.0, 4.0, 6.0]), 4.0);
+    }
+
+    #[test]
+    fn percentile_of_empty_is_zero() {
+        assert_eq!(percentile(&[], 50.0), 0.0);
+    }
+
+    #[test]
+    fn percentile_clamps_to_bounds() {
+        let sorted = [10.0, 20.0, 30.0];
+        assert_eq!(percentile(&sorted, 0.0), 10.0);
+        assert_eq!(percentile(&sorted, 100.0), 30.0);
+    }
+
+    #[test]
+    fn percentile_on_sample_boundaries() {
+        let sorted = [0.0, 10.0, 20.0, 30.0, 40.0];
+        assert_eq!(percentile(&sorted, 25.0), 10.0);
+        assert_eq!(percentile(&sorted, 50.0), 20.0);
+        assert_eq!(percentile(&sorted, 75.0), 30.0);
+    }
+
+    #[test]
+    fn percentile_interpolates_between_samples() {
+        assert_eq!(percentile(&[10.0, 20.0], 50.0), 15.0);
+    }
 }

@@ -79,6 +79,13 @@ async fn run_benchmark() -> Result<()> {
     // Run benchmarks
     bench.run_all_benchmarks(quick).await?;
 
+    // Every scenario failing leaves no data. Fail the run so this surfaces as a
+    // clear error; an empty result set also cannot be consumed by the
+    // downstream CloudWatch upload step.
+    if bench.results.is_empty() {
+        anyhow::bail!("benchmark produced no results; all scenarios failed");
+    }
+
     // Save results
     bench.save_results(output_path)?;
 

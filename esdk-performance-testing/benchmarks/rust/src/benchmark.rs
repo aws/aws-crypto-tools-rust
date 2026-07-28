@@ -19,6 +19,7 @@ pub const MEMORY_TEST_ITERATIONS: usize = 5;
 // Shared AWS Crypto Tools test resources in the public ESDK CI account
 // (us-west-2, account 370957321024). The performance-benchmarks workflow
 // assumes the public ESDK CI role, which can read this branch key store.
+// These values mirror esdk/tests/fixtures.rs; keep the two in sync.
 const HIERARCHY_KEY_ARN: &str =
     "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126";
 const BRANCH_KEY_STORE_NAME: &str = "KeyStoreDdbTable";

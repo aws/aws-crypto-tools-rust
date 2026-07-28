@@ -141,7 +141,7 @@ impl EsdkBenchmark {
         pb.finish_and_clear();
 
         // Calculate metrics
-        end_to_end_latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        end_to_end_latencies.sort_by(|a, b| a.total_cmp(b));
         let result = BenchmarkResult {
             test_name: "throughput".to_string(),
             language: "rust".to_string(),
@@ -158,7 +158,7 @@ impl EsdkBenchmark {
             peak_memory_mb: 0.0,
             memory_efficiency_ratio: 0.0,
             timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            rust_version: std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()),
+            rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count: self.cpu_count,
             total_memory_gb: self.total_memory_gb,
             alloc: alloc.get_results(),
@@ -299,7 +299,7 @@ impl EsdkBenchmark {
             p95_latency: 0.0,
             p99_latency: 0.0,
             timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            rust_version: std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()),
+            rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count: self.cpu_count,
             total_memory_gb: self.total_memory_gb,
             alloc: alloc.get_results(),
@@ -365,7 +365,7 @@ impl EsdkBenchmark {
         let total_ops = concurrency * iterations_per_worker;
         let total_bytes = total_ops * data_size;
 
-        all_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        all_times.sort_by(|a, b| a.total_cmp(b));
         let result = BenchmarkResult {
             test_name: "concurrent".to_string(),
             language: "rust".to_string(),
@@ -382,7 +382,7 @@ impl EsdkBenchmark {
             peak_memory_mb: 0.0,
             memory_efficiency_ratio: 0.0,
             timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            rust_version: std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()),
+            rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count: self.cpu_count,
             total_memory_gb: self.total_memory_gb,
             alloc: alloc.get_results(),
