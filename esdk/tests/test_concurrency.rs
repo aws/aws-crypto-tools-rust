@@ -1,12 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Concurrency correctness: encrypt/decrypt round trips succeed under
-//! concurrent load, and every concurrently produced message ID (the sole
-//! per-message randomness that AEAD nonce uniqueness rests on) is unique.
-//!
-//! Legacy `KeyringRef` is `Rc`-based and cannot cross threads, so each
-//! thread builds its own keyring and runtime.
+//! Encrypt/decrypt round trips run concurrently across threads; every message
+//! ID produced must be unique.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -33,9 +29,8 @@ fn v1_message_id(ct: &[u8]) -> Vec<u8> {
     ct[4..20].to_vec()
 }
 
-/// Run `THREADS` OS threads, each performing `ITERS_PER_THREAD` encrypt +
-/// decrypt round trips on its own runtime and keyring. Returns every message
-/// ID produced across all threads.
+/// Run `THREADS` OS threads, each doing `ITERS_PER_THREAD` encrypt + decrypt
+/// round trips. Returns every message ID produced across all threads.
 fn concurrent_round_trips(
     suite: Option<EsdkAlgorithmSuiteId>,
     policy: EsdkCommitmentPolicy,
@@ -43,6 +38,7 @@ fn concurrent_round_trips(
 ) -> Vec<Vec<u8>> {
     let ids: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
 
+    // Each thread runs its own runtime and keyring.
     let handles: Vec<_> = (0..THREADS)
         .map(|t| {
             let ids = Arc::clone(&ids);
@@ -55,6 +51,7 @@ fn concurrent_round_trips(
                 rt.block_on(async {
                     let keyring = test_helpers::test_keyring().await;
                     for i in 0..ITERS_PER_THREAD {
+                        // Encrypt and record the message ID from the header.
                         let plaintext = format!("thread {t} message {i}").into_bytes();
                         let mut enc_input = EncryptInput::with_legacy_keyring(
                             &plaintext,
@@ -64,9 +61,9 @@ fn concurrent_round_trips(
                         enc_input.algorithm_suite_id = suite;
                         enc_input.commitment_policy = policy;
                         let out = encrypt(&enc_input).await.unwrap();
-
                         ids.lock().unwrap().push(extract_id(&out.ciphertext));
 
+                        // Decrypt and verify the round trip.
                         let mut dec_input = DecryptInput::with_legacy_keyring(
                             &out.ciphertext,
                             EncryptionContext::new(),
@@ -93,11 +90,13 @@ fn concurrent_round_trips(
 
 #[test]
 fn concurrent_v2_round_trips_and_unique_message_ids() {
+    // Default committing suite produces V2 messages.
     let ids = concurrent_round_trips(
         None,
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
         v2_message_id,
     );
+
     assert_eq!(ids.len(), THREADS * ITERS_PER_THREAD);
     for id in &ids {
         assert_eq!(id.len(), 32, "V2 message ID must be 32 bytes");
@@ -112,11 +111,13 @@ fn concurrent_v2_round_trips_and_unique_message_ids() {
 
 #[test]
 fn concurrent_v1_round_trips_and_unique_message_ids() {
+    // A non-committing suite produces V1 messages.
     let ids = concurrent_round_trips(
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256),
         EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
         v1_message_id,
     );
+
     assert_eq!(ids.len(), THREADS * ITERS_PER_THREAD);
     for id in &ids {
         assert_eq!(id.len(), 16, "V1 message ID must be 16 bytes");

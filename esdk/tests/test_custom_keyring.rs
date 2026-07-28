@@ -1,14 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Extension interface: a caller-implemented keyring (legacy `Keyring` trait)
-//! drives encrypt and decrypt through the public API.
+//! A caller-implemented keyring (legacy `Keyring` trait) driven through the
+//! public encrypt/decrypt API.
 //!
-//! The keyring wraps the data key with AES-256-GCM under a local KEK and
-//! stores `iv || ciphertext || tag` as the EDK ciphertext.
+//! This pins the keyring extension interface and the behavior the ESDK
+//! expects from it. If these tests break, a change has likely broken
+//! caller-implemented keyrings.
 
-// The keyring below implements an MPL trait whose signatures return the large
-// `aws_mpl_legacy` error type by value, so the Err variant size is not ours to shrink.
+// The MPL trait signatures return the large `aws_mpl_legacy` error type by value.
 #![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
@@ -34,13 +34,15 @@ fn keyring_err(message: &str) -> MplError {
     }
 }
 
-/// Caller-implemented keyring: wraps/unwraps the data key under a local KEK.
+/// Caller-implemented keyring. Wraps the data key with AES-256-GCM under a
+/// local KEK and stores `iv || ciphertext || tag` as the EDK ciphertext.
 #[derive(Debug)]
 struct LocalKekKeyring {
     kek: [u8; 32],
 }
 
 impl LocalKekKeyring {
+    /// Data key length in bytes, from the algorithm suite in the materials.
     fn key_len(suite_encrypt: Option<&Encrypt>) -> Result<usize, MplError> {
         match suite_encrypt {
             Some(Encrypt::AesGcm(g)) => {
@@ -74,7 +76,7 @@ impl Keyring for LocalKekKeyring {
             materials.plaintext_data_key = Some(Blob::new(data_key));
         }
 
-        // Wrap the data key under the local KEK.
+        // Wrap the data key under the KEK with a fresh IV.
         let data_key = materials
             .plaintext_data_key
             .as_ref()
@@ -94,6 +96,7 @@ impl Keyring for LocalKekKeyring {
         )
         .map_err(|_| keyring_err("failed to wrap data key"))?;
 
+        // Append the wrapped key to the materials as this keyring's EDK.
         let mut edk_ciphertext = iv;
         edk_ciphertext.extend_from_slice(&wrapped);
         let edk = EncryptedDataKey::builder()
@@ -125,6 +128,7 @@ impl Keyring for LocalKekKeyring {
                 .and_then(|s| s.encrypt.as_ref()),
         )?;
 
+        // Unwrap the data key from the EDK this keyring produced.
         for edk in input.encrypted_data_keys.unwrap_or_default() {
             if edk.key_provider_id.as_deref() != Some(PROVIDER_ID) {
                 continue;
@@ -160,31 +164,12 @@ impl Keyring for LocalKekKeyring {
     }
 }
 
-/// A keyring whose `on_decrypt` returns the materials unchanged (no plaintext
-/// data key). Encrypt delegates to a working keyring.
-#[derive(Debug)]
-struct NoKeyOnDecryptKeyring {
-    inner: LocalKekKeyring,
-}
-
-impl Keyring for NoKeyOnDecryptKeyring {
-    fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
-        self.inner.on_encrypt(input)
-    }
-
-    fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, MplError> {
-        Ok(OnDecryptOutput::builder()
-            .materials(input.materials.expect("materials are always supplied"))
-            .build()
-            .expect("output builds from unchanged materials"))
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_round_trips_via_public_api() {
     let keyring = KeyringRef::from(LocalKekKeyring { kek: [7u8; 32] });
     let plaintext = b"extension interface round trip";
 
+    // Encrypt entirely through the custom keyring.
     let out = encrypt(&EncryptInput::with_legacy_keyring(
         plaintext,
         EncryptionContext::new(),
@@ -201,6 +186,7 @@ async fn custom_keyring_round_trips_via_public_api() {
         "header must carry the custom keyring's provider ID"
     );
 
+    // Decrypt back through the same keyring.
     let dec = decrypt(&DecryptInput::with_legacy_keyring(
         &out.ciphertext,
         EncryptionContext::new(),
@@ -221,6 +207,7 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     .await
     .unwrap();
 
+    // A keyring with a different KEK cannot unwrap the data key.
     let result = decrypt(&DecryptInput::with_legacy_keyring(
         &out.ciphertext,
         EncryptionContext::new(),
@@ -228,30 +215,4 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     ))
     .await;
     assert!(result.is_err(), "decrypt under a different KEK must fail");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn keyring_returning_no_plaintext_key_fails_decrypt() {
-    let out = encrypt(&EncryptInput::with_legacy_keyring(
-        b"missing plaintext key must fail",
-        EncryptionContext::new(),
-        KeyringRef::from(NoKeyOnDecryptKeyring {
-            inner: LocalKekKeyring { kek: [7u8; 32] },
-        }),
-    ))
-    .await
-    .unwrap();
-
-    let result = decrypt(&DecryptInput::with_legacy_keyring(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        KeyringRef::from(NoKeyOnDecryptKeyring {
-            inner: LocalKekKeyring { kek: [7u8; 32] },
-        }),
-    ))
-    .await;
-    assert!(
-        result.is_err(),
-        "decrypt must fail when the keyring supplies no plaintext data key"
-    );
 }

@@ -1,10 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Resource behavior: repeated encrypt/decrypt round trips (including keyring
-//! construction) must not grow live heap memory. A counting global allocator
-//! tracks live bytes; this file is its own test binary so the allocator is
-//! scoped to this test.
+//! Repeated encrypt/decrypt round trips must not grow live heap memory,
+//! measured by a counting global allocator.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -58,14 +56,15 @@ unsafe impl GlobalAlloc for CountingAllocator {
     }
 }
 
+// Each file under tests/ builds as its own binary, so this allocator serves
+// only this test.
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 const WARMUP_ITERS: usize = 20;
 const MEASURED_ITERS: usize = 200;
-/// Bound on live-heap growth over the measured iterations. A leak of even one
-/// 64 KiB plaintext or ciphertext buffer per iteration would exceed this by
-/// more than an order of magnitude.
+/// A leak of one 64 KiB buffer per iteration would exceed this bound by more
+/// than an order of magnitude.
 const MAX_GROWTH_BYTES: isize = 512 * 1024;
 
 async fn round_trip(plaintext: &[u8]) {
@@ -97,6 +96,7 @@ fn no_live_memory_growth_over_repeated_round_trips() {
         .unwrap();
     let plaintext = vec![0xA5u8; 64 * 1024];
 
+    // Warm up so one-time allocations are counted before the baseline.
     for _ in 0..WARMUP_ITERS {
         rt.block_on(round_trip(&plaintext));
     }
@@ -106,6 +106,7 @@ fn no_live_memory_growth_over_repeated_round_trips() {
         "counting allocator must observe live allocations"
     );
 
+    // Live bytes after the measured iterations must stay near the baseline.
     for _ in 0..MEASURED_ITERS {
         rt.block_on(round_trip(&plaintext));
     }
