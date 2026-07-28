@@ -9,10 +9,11 @@ use crate::error::ServerError;
 use crate::keyring::source_for_cmm;
 use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
-    EncryptResponse, EsdkClientConfig, EsdkCommitmentPolicy,
+    EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
 };
 use aws_esdk::{DecryptInput, EncryptInput, MaterialSource};
 use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as MplCommitmentPolicy;
+use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_mpl_legacy::EncryptionContext;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -41,6 +42,30 @@ fn map_commitment(policy: EsdkCommitmentPolicy) -> MplCommitmentPolicy {
         }
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => {
             MplCommitmentPolicy::RequireEncryptRequireDecrypt
+        }
+    }
+}
+
+fn map_algorithm_suite(id: EsdkAlgorithmSuiteId) -> MplAlgorithmSuiteId {
+    match id {
+        EsdkAlgorithmSuiteId::Alg128GcmNoKdf => MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::Alg192GcmNoKdf => MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::Alg256GcmNoKdf => MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::Alg128GcmHkdf => MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
+        EsdkAlgorithmSuiteId::Alg192GcmHkdf => MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
+        EsdkAlgorithmSuiteId::Alg256GcmHkdf => MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        EsdkAlgorithmSuiteId::Alg128GcmHkdfEcdsa => {
+            MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+        }
+        EsdkAlgorithmSuiteId::Alg192GcmHkdfEcdsa => {
+            MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        EsdkAlgorithmSuiteId::Alg256GcmHkdfEcdsa => {
+            MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        EsdkAlgorithmSuiteId::Alg256GcmCommit => MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        EsdkAlgorithmSuiteId::Alg256GcmCommitEcdsa => {
+            MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
         }
     }
 }
@@ -91,6 +116,9 @@ impl AppState {
         input.source = Some(source);
         input.commitment_policy = commitment_policy;
         input.max_encrypted_data_keys = max;
+        if let Some(suite) = req.algorithm_suite_id {
+            input.algorithm_suite_id = Some(map_algorithm_suite(suite));
+        }
         if let Some(frame) = req.frame_length {
             if let Ok(frame) = u32::try_from(frame) {
                 if let Ok(frame_length) = aws_esdk::FrameLength::new(frame) {
