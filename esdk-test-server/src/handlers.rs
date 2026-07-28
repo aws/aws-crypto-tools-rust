@@ -11,7 +11,7 @@ use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
     EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
 };
-use aws_esdk::{DecryptInput, EncryptInput, MaterialSource};
+use aws_esdk::{DecryptInput, EncryptInput, Keyring as EsdkKeyring};
 use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as MplCommitmentPolicy;
 use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_mpl_legacy::EncryptionContext;
@@ -21,7 +21,7 @@ use std::sync::Mutex;
 
 /// The materials a registered client encrypts/decrypts with.
 struct ClientEntry {
-    source: MaterialSource,
+    keyring: EsdkKeyring,
     commitment_policy: MplCommitmentPolicy,
     max_encrypted_data_keys: Option<NonZeroUsize>,
 }
@@ -95,9 +95,9 @@ impl AppState {
         &self,
         req: CreateClientRequest,
     ) -> Result<CreateClientResponse, ServerError> {
-        let source = source_for_cmm(&req.config.cmm).await?;
+        let keyring = source_for_cmm(&req.config.cmm).await?;
         let entry = ClientEntry {
-            source,
+            keyring,
             commitment_policy: map_commitment(req.config.commitment_policy),
             max_encrypted_data_keys: max_edks(&req.config),
         };
@@ -110,12 +110,12 @@ impl AppState {
     }
 
     pub async fn encrypt(&self, req: EncryptRequest) -> Result<EncryptResponse, ServerError> {
-        let (source, commitment_policy, max) = self.materials(&req.client_id)?;
+        let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
         let mut input = EncryptInput::new();
         input.plaintext = &req.plaintext;
         input.encryption_context = ec;
-        input.source = Some(source);
+        input.keyring = Some(keyring);
         input.commitment_policy = commitment_policy;
         input.max_encrypted_data_keys = max;
         if let Some(suite) = req.algorithm_suite_id {
@@ -137,12 +137,12 @@ impl AppState {
     }
 
     pub async fn decrypt(&self, req: DecryptRequest) -> Result<DecryptResponse, ServerError> {
-        let (source, commitment_policy, max) = self.materials(&req.client_id)?;
+        let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
         let mut input = DecryptInput::new();
         input.ciphertext = &req.ciphertext;
         input.encryption_context = ec;
-        input.source = Some(source);
+        input.keyring = Some(keyring);
         input.commitment_policy = commitment_policy;
         input.max_encrypted_data_keys = max;
         let output = aws_esdk::decrypt(&input)
@@ -153,11 +153,11 @@ impl AppState {
         })
     }
 
-    /// Look up registered materials by id, cloning the shared source handle.
+    /// Look up registered materials by id, cloning the shared keyring handle.
     fn materials(
         &self,
         client_id: &str,
-    ) -> Result<(MaterialSource, MplCommitmentPolicy, Option<NonZeroUsize>), ServerError> {
+    ) -> Result<(EsdkKeyring, MplCommitmentPolicy, Option<NonZeroUsize>), ServerError> {
         if client_id.is_empty() {
             return Err(ServerError::generic("clientId must be non-empty"));
         }
@@ -166,7 +166,7 @@ impl AppState {
             .get(client_id)
             .ok_or_else(|| ServerError::generic(format!("unknown clientId: {client_id}")))?;
         Ok((
-            entry.source.clone(),
+            entry.keyring.clone(),
             entry.commitment_policy,
             entry.max_encrypted_data_keys,
         ))
