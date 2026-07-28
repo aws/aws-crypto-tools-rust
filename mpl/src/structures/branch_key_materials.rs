@@ -8,6 +8,7 @@ use super::error::MaterialsError;
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
+#[derive(Clone)]
 pub struct BranchKeyMaterials {
     branch_key: [u8; 32],
     branch_key_id: String,
@@ -17,9 +18,11 @@ pub struct BranchKeyMaterials {
 
 impl BranchKeyMaterials {
     /// Construct branch key materials. Callers are responsible for supplying
-    /// a well-formed `branch_key_version` string (typically a canonical
-    /// hyphenated UUIDv4 produced by the `uuid` crate at generation time —
-    /// see the branch-key-store slice); this constructor does not re-validate.
+    /// a well-formed `branch_key_version` string (a canonical hyphenated
+    /// UUIDv4 produced by the `uuid` crate at generation time in the branch-
+    /// key-store slice, or converted from raw bytes via
+    /// `uuid::Uuid::from_bytes(...).hyphenated().to_string()` on decrypt);
+    /// this constructor does not re-validate.
     pub fn new(
         branch_key: [u8; 32],
         branch_key_id: String,

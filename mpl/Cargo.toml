@@ -7,3 +7,10 @@ description = "aws-cryptographic-material-providers-library is a low level libra
 authors = ["AWS-CryptoTools"]
 
 [dependencies]
+async-trait = "=0.1.83"
+aws-lc-rs = { version = "=1.17.0" }
+base64 = "=0.22.1"
+lru = "=0.18.1"
+
+[dev-dependencies]
+tokio = { version = "=1.41.1", features = ["rt", "macros"], default-features = false }

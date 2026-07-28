@@ -330,9 +330,9 @@ impl AlgorithmSuite {
         }
     }
 
-    /// Required length of a verification key (public point, SEC1 uncompressed
-    /// `0x04 || X || Y`) for this suite, in bytes. Returns `None` for
-    /// non-signing suites.
+    /// Required length of a verification key (public point, SEC1 compressed
+    /// `tag || X` where `tag` is `0x02` when Y is even and `0x03` when Y is
+    /// odd) for this suite, in bytes. Returns `None` for non-signing suites.
     pub const fn verification_key_length(&self) -> Option<usize> {
         match self.asymmetric_signature_algorithm {
             Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Some(VERIFICATION_KEY_LEN_P256),
@@ -346,9 +346,9 @@ impl AlgorithmSuite {
 const SIGNING_KEY_LEN_P256: usize = 32;
 const SIGNING_KEY_LEN_P384: usize = 48;
 
-// SEC1-uncompressed public key lengths: 1 byte tag + 2 * coord_len
-const VERIFICATION_KEY_LEN_P256: usize = 65;
-const VERIFICATION_KEY_LEN_P384: usize = 97;
+// SEC1-compressed public key lengths: 1 byte tag + coord_len
+const VERIFICATION_KEY_LEN_P256: usize = 33;
+const VERIFICATION_KEY_LEN_P384: usize = 49;
 
 // ============================================================================
 // Encryption / KDF / signature algorithm enums
