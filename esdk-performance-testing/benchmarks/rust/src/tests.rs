@@ -212,10 +212,9 @@ impl EsdkBenchmark {
             let esdk_client = self.esdk_client;
             let keyring = self.keyring.clone();
 
-            let operation_task =
-                tokio::spawn(
-                    async move { Self::encrypt_decrypt(&esdk_client, &keyring, &data_clone).await },
-                );
+            let operation_task = tokio::spawn(async move {
+                Self::encrypt_decrypt(&esdk_client, &keyring, &data_clone).await
+            });
 
             // Sample memory during operation
             let mut sample_count = 0;
@@ -422,7 +421,10 @@ impl EsdkBenchmark {
         for &data_size in data_sizes {
             match self.run_memory_test(data_size).await {
                 Ok(result) => {
-                    info!("Memory test completed: {:.2} MB peak", result.peak_memory_mb);
+                    info!(
+                        "Memory test completed: {:.2} MB peak",
+                        result.peak_memory_mb
+                    );
                     self.results.push(result);
                 }
                 Err(e) => {
