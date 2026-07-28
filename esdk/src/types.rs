@@ -110,6 +110,14 @@ pub(crate) fn resolve_material_source(
     }
 }
 
+/// Shared input validation: exactly one of `keyring` or `cmm` must be set.
+fn validate_material_source(keyring: Option<&Keyring>, cmm: Option<&Cmm>) -> Result<(), Error> {
+    match (keyring.is_some(), cmm.is_some()) {
+        (true, false) | (false, true) => Ok(()),
+        _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// The length of one frame, must be non-zero, defaults to 4096.
 //= spec/data-format/message-body.md#framed-data
@@ -446,14 +454,10 @@ impl<'a> EncryptInput<'a> {
     pub(crate) fn validate(&self) -> Result<(), Error> {
         //= spec/client-apis/encrypt.md#input
         //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
-        match (self.keyring.is_some(), self.cmm.is_some()) {
-            (true, false) | (false, true) => Ok(()),
-            _ => {
-                //= spec/client-apis/encrypt.md#input
-                //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-                Err(val_err("Exactly one of a keyring or CMM must be provided"))
-            }
-        }
+        //
+        //= spec/client-apis/encrypt.md#input
+        //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
@@ -539,10 +543,7 @@ impl EncryptStreamInput {
         }
     }
     pub(crate) fn validate(&self) -> Result<(), Error> {
-        match (self.keyring.is_some(), self.cmm.is_some()) {
-            (true, false) | (false, true) => Ok(()),
-            _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
-        }
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
@@ -682,14 +683,10 @@ impl<'a> DecryptInput<'a> {
     pub(crate) fn validate(&self) -> Result<(), Error> {
         //= spec/client-apis/decrypt.md#input
         //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
-        match (self.keyring.is_some(), self.cmm.is_some()) {
-            (true, false) | (false, true) => Ok(()),
-            _ => {
-                //= spec/client-apis/decrypt.md#input
-                //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-                Err(val_err("Exactly one of a keyring or CMM must be provided"))
-            }
-        }
+        //
+        //= spec/client-apis/decrypt.md#input
+        //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
@@ -754,10 +751,7 @@ impl DecryptStreamInput {
     }
 
     pub(crate) fn validate(&self) -> Result<(), Error> {
-        match (self.keyring.is_some(), self.cmm.is_some()) {
-            (true, false) | (false, true) => Ok(()),
-            _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
-        }
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {

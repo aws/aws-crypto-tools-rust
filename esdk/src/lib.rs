@@ -115,6 +115,8 @@ mod encrypt;
 pub use encrypt::*;
 mod decrypt;
 pub use decrypt::*;
+mod suites;
+pub use suites::*;
 mod types;
 pub use types::*;
 mod client;
@@ -133,12 +135,11 @@ pub(crate) mod message;
 /// changed, renamed, or removed at any time.
 #[doc(hidden)]
 pub mod __test_internals {
-    pub use crate::decrypt::get_ecdsa_alg;
-    pub use crate::encrypt::get_esdk_algorithm_suite_id;
     pub use crate::key_derivation::{ExpandedKeyMaterial, derive_key_v2, derive_keys};
     pub use crate::message::DigestWriter;
     pub use crate::message::body::body_aad::{BodyAADContent, body_aad};
     pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
     pub use crate::message::header_auth::read_header_auth_tag;
     pub use crate::message::header_types::HeaderBody;
+    pub use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
 }
