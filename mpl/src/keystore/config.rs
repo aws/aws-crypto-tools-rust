@@ -1,52 +1,71 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Configuration types for the [`Keystore`](super::Keystore) trait.
+//! Configuration types for the [`KeyStore`](super::KeyStore) trait.
 
-/// Configuration for constructing a [`Keystore`](super::Keystore).
+/// Configuration for constructing a [`KeyStore`](super::KeyStore).
 #[derive(Debug, Clone)]
 pub struct KeyStoreConfig {
-    /// The DynamoDB table name backing this keystore.
+    /// The DynamoDB table name that backs this Key Store.
     pub ddb_table_name: String,
-    /// The KMS key configuration governing encryption/decryption.
+    /// Configures Key Store's KMS Key ARN restrictions.
     pub kms_configuration: KmsConfiguration,
-    /// Logical name cryptographically bound to all keys in this table.
-    pub logical_keystore_name: String,
-    /// Optional keystore identifier.
+    /// The logical name for this Key Store, which is cryptographically bound to
+    /// the keys it holds. This appears in the Encryption Context of KMS requests
+    /// as `tablename`.
+    pub logical_key_store_name: String,
+    /// An identifier for this Key Store.
     pub id: Option<String>,
-    /// Optional AWS KMS grant tokens.
+    /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
     pub grant_tokens: Option<Vec<String>>,
 }
 
-/// Information about a configured keystore, returned by
-/// [`Keystore::get_key_store_info`](super::Keystore::get_key_store_info).
+/// The configuration information for a Key Store, returned by
+/// [`KeyStore::get_key_store_info`](super::KeyStore::get_key_store_info).
 #[derive(Debug, Clone)]
 pub struct KeyStoreInfo {
-    /// The keystore identifier.
-    pub keystore_id: String,
-    /// The DynamoDB table name.
-    pub keystore_name: String,
-    /// The logical keystore name.
-    pub logical_keystore_name: String,
-    /// The configured AWS KMS grant tokens.
+    /// An identifier for this Key Store.
+    pub key_store_id: String,
+    /// The DynamoDB table name that backs this Key Store.
+    pub key_store_name: String,
+    /// The logical name for this Key Store, which is cryptographically bound to
+    /// the keys it holds.
+    pub logical_key_store_name: String,
+    /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
     pub grant_tokens: Vec<String>,
-    /// The KMS configuration for this keystore.
+    /// Configures Key Store's KMS Key ARN restrictions.
     pub kms_configuration: KmsConfiguration,
 }
 
-/// The KMS key configuration for a keystore.
+/// Configures Key Store's KMS Key ARN restrictions.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum KmsConfiguration {
-    /// Single-region KMS Key ARN compatibility. ARN may be MRK or non-MRK.
+    /// Key Store is restricted to only this KMS Key ARN. If a different KMS Key
+    /// ARN is encountered when creating, versioning, or getting a Branch Key or
+    /// Beacon Key, KMS is never called and an exception is thrown. While a
+    /// Multi-Region Key (MKR) may be provided, the whole ARN, including the
+    /// Region, is persisted in Branch Keys and MUST strictly equal this value to
+    /// be considered valid.
     KmsKeyArn(String),
-    /// MRK ARN compatibility. ARN may be MRK or non-MRK.
+    /// If an MRK ARN is provided, and the Key Store table holds an MRK ARN, then
+    /// those two ARNs may differ in region, although they must be otherwise
+    /// equal. If either ARN is not an MRK ARN, then mrkKmsKeyArn behaves exactly
+    /// as kmsKeyArn.
     KmsMrKeyArn(String),
-    /// Discovery configuration; KMS Key ARN is read from each DDB record.
+    /// The Key Store can use the KMS Key ARNs already persisted in the Backing
+    /// Table. The VersionKey and CreateKey Operations are NOT supported and will
+    /// fail with a runtime exception. There is no Multi-Region logic with this
+    /// configuration; if a Multi-Region Key is encountered, and the region in the
+    /// ARN is not the region of the KMS Client, requests will Fail with KMS
+    /// Exceptions.
     Discovery,
-    /// MRDiscovery configuration with required region argument.
+    /// The Key Store can use the KMS Key ARNs already persisted in the Backing
+    /// Table. The VersionKey and CreateKey Operations are NOT supported and will
+    /// fail with a runtime exception. If a Multi-Region Key is encountered, the
+    /// region in the ARN is changed to the configured region.
     MrDiscovery {
-        /// The region to use for MRK ARN rewrites.
+        /// Any MRK ARN discovered will have its region replaced with this.
         region: String,
     },
 }

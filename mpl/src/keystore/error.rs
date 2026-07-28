@@ -1,16 +1,16 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Error types for the [`Keystore`](super::Keystore) trait.
+//! Error types for the [`KeyStore`](super::KeyStore) trait.
 
 use std::fmt;
 use std::sync::Arc;
 
-/// Categorisation of a [`KeystoreError`]. New kinds may be added in minor
+/// Categorisation of a [`KeyStoreError`]. New kinds may be added in minor
 /// releases, hence `#[non_exhaustive]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum KeystoreErrorKind {
+pub enum KeyStoreErrorKind {
     /// Invalid configuration combination or missing required field.
     Configuration,
     /// Wrapped AWS KMS error.
@@ -32,19 +32,19 @@ pub enum KeystoreErrorKind {
 /// Error type for keystore operations.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct KeystoreError {
+pub struct KeyStoreError {
     /// Categorisation of this error.
-    pub kind: KeystoreErrorKind,
+    pub kind: KeyStoreErrorKind,
     /// Free-form human-readable message.
     pub message: String,
-    /// The underlying error that produced this `KeystoreError`, if any.
+    /// The underlying error that produced this `KeyStoreError`, if any.
     /// Surfaced by [`std::error::Error::source`].
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
 }
 
-impl KeystoreError {
-    /// Construct a new `KeystoreError` with no underlying cause.
-    pub fn new(kind: KeystoreErrorKind, message: impl Into<String>) -> Self {
+impl KeyStoreError {
+    /// Construct a new `KeyStoreError` with no underlying cause.
+    pub fn new(kind: KeyStoreErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -52,10 +52,10 @@ impl KeystoreError {
         }
     }
 
-    /// Construct a new `KeystoreError` wrapping an underlying cause.
+    /// Construct a new `KeyStoreError` wrapping an underlying cause.
     /// The cause is surfaced through [`std::error::Error::source`].
     pub fn with_cause(
-        kind: KeystoreErrorKind,
+        kind: KeyStoreErrorKind,
         message: impl Into<String>,
         cause: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
@@ -66,7 +66,7 @@ impl KeystoreError {
         }
     }
 
-    pub const fn kind(&self) -> &KeystoreErrorKind {
+    pub const fn kind(&self) -> &KeyStoreErrorKind {
         &self.kind
     }
 
@@ -79,21 +79,21 @@ impl KeystoreError {
     }
 }
 
-impl PartialEq for KeystoreError {
+impl PartialEq for KeyStoreError {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind && self.message == other.message
     }
 }
 
-impl Eq for KeystoreError {}
+impl Eq for KeyStoreError {}
 
-impl fmt::Display for KeystoreError {
+impl fmt::Display for KeyStoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "KeystoreError({:?}): {}", self.kind, self.message)
+        write!(f, "KeyStoreError({:?}): {}", self.kind, self.message)
     }
 }
 
-impl std::error::Error for KeystoreError {
+impl std::error::Error for KeyStoreError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.cause
             .as_ref()
