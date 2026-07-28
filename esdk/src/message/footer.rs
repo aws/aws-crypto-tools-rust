@@ -12,6 +12,9 @@ use crate::types::{SafeRead, SafeWrite};
 /// The caller is responsible for ensuring this is only called when the algorithm suite
 /// includes a signature algorithm.
 pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<(), Error> {
+    //= specification/client-apis/encrypt.md#construct-the-signature
+    //# The order for message footer serialization MUST conform to the [Message Footer](../data-format/message-footer.md) specification.
+    //
     //= spec/data-format/message-footer.md#structure
     //# The message footer MUST consist of, in order,
     //# Signature Length,
@@ -19,6 +22,8 @@ pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<()
 
     // Signature Length
 
+    //= specification/client-apis/encrypt.md#construct-the-signature
+    //# The value MUST be the length of the output of the signature calculation above.
     let Ok(len) = u16::try_from(signature.len()) else {
         return ser_err(&format!(
             "Signature length {} exceeds u16::MAX",
@@ -26,6 +31,9 @@ pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<()
         ));
     };
 
+    //= specification/client-apis/encrypt.md#construct-the-signature
+    //# - MUST serialize the [Signature Length](../data-format/message-footer.md#signature-length).
+    //
     //= spec/data-format/message-footer.md#signature-length
     //# The length of the signature length field MUST be 2 bytes.
     //
@@ -35,11 +43,20 @@ pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<()
 
     // Signature
 
+    //= specification/client-apis/encrypt.md#construct-the-signature
+    //# - MUST serialize the [Signature](../data-format/message-footer.md#signature).
+    //
+    //= specification/client-apis/encrypt.md#construct-the-signature
+    //# The value MUST be the output of the signature calculation above.
+    //
     //= spec/data-format/message-footer.md#signature
     //= type=implication
     //# The signature MUST be interpreted as bytes.
     write_bytes(w, signature)?;
 
+    //= specification/client-apis/encrypt.md#construct-the-signature
+    //= reason=write_footer writes length then signature sequentially; Ok(()) is only reached after all writes complete
+    //# The above serialized bytes MUST NOT be released until the entire message footer has been serialized.
     Ok(())
 }
 

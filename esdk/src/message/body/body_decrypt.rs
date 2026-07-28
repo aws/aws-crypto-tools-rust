@@ -14,9 +14,7 @@ use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::types::{SafeRead, SafeWrite};
 use aws_mpl_legacy::primitives::aes_decrypt;
 
-/// Release the previous frame's buffered plaintext once the next frame proves
-/// there is more than one frame. Fails instead when streaming a signed message,
-/// which must not release plaintext before signature verification.
+/// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 fn release_previous_frame(
     w: &mut dyn SafeWrite,
     result: &[u8],
