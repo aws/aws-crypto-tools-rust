@@ -1,0 +1,95 @@
+# Runs the ESDK hierarchical-keyring performance benchmark and publishes the
+# results to CloudWatch Logs. Runs on a daily schedule, on demand, and on pull
+# requests that touch the benchmark.
+name: Performance Benchmarks
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "00 09 * * *"
+  pull_request:
+    paths:
+      - "esdk-performance-testing/**"
+      - ".github/workflows/performance-benchmarks.yml"
+
+jobs:
+  benchmark:
+    # Skip the scheduled run on forks.
+    if: github.event_name != 'schedule' || github.repository_owner == 'aws'
+    name: hierarchical (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: esdk-performance-testing/benchmarks/rust
+    steps:
+      - name: Support longpaths on Git checkout
+        run: git config --global core.longpaths true
+        working-directory: .
+
+      - uses: actions/checkout@v6
+
+      # aws-lc-sys builds native code; Go is required for the FIPS variant and
+      # is cheap to install, matching the library test workflow.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # The Hierarchical Keyring reads the shared test key store (KMS + DynamoDB)
+      # in us-west-2 (account 370957321024). Assume the public ESDK CI role via
+      # GitHub OIDC — the same role and region the library test workflow uses.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustPerformanceBenchmarks
+          special-characters-workaround: "true" # Some environments cannot tolerate special characters in a secret key.
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esdk-performance-testing/benchmarks/rust
+
+      - name: Run performance benchmarks - Quick Mode
+        run: cargo run --release -- --quick
+
+      - name: Parse and Format Logs
+        working-directory: esdk-performance-testing/results/raw-data
+        run: |
+          LOG_FILE="rust_results.json"
+          UPLOAD_FILE="cloudwatch_logs.json"
+          jq -c --arg ts "$(date +%s)000" '[.results[] as $result | .metadata as $meta | {timestamp: ($ts | tonumber), message: ({metadata: $meta, result: $result} | tostring)}]' "$LOG_FILE" > "$UPLOAD_FILE"
+
+      - name: Upload logs to CloudWatch
+        working-directory: esdk-performance-testing/results/raw-data
+        run: |
+          LOG_FILE="cloudwatch_logs.json"
+          LOG_GROUP="aws-esdk-performance-benchmarks"
+          # Distinct stream so the hierarchical-keyring series is separate from
+          # other keyrings' series in the same log group.
+          LOG_STREAM="rust-hierarchical/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
+
+          # Create log stream (ignore if exists)
+          aws logs create-log-stream \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" 2>/dev/null || true
+
+          aws logs put-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" \
+            --log-events file://"$LOG_FILE"
