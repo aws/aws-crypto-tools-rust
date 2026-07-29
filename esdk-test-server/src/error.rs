@@ -1,7 +1,4 @@
 //! The two modeled TestServer errors and their rpcv2Cbor wire form.
-//!
-//! On the wire an error is a CBOR map carrying `__type` (the error shape id, by
-//! which the generated client resolves the error) and the `message` member.
 
 /// A modeled TestServer error.
 #[derive(Debug, Clone)]

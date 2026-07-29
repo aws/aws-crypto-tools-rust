@@ -55,11 +55,12 @@ jobs:
       - name: Test
         run: cargo test --verbose
 
-  # Cross-repo end-to-end: build the commons Java Test_Client + Tests, start this
-  # repo's Rust server and the commons Java server, and run the hierarchical
-  # round trip in both directions.
-  hierarchical-interop:
-    name: Rust<->Java hierarchical keyring interop
+  # The complete cross-language TestServer run, delegated to the commons
+  # orchestrator: `make test-server` clones commons and the core builds and
+  # launches every configured Language_Server (this working tree is the live
+  # Rust source), runs the full Tests matrix, and tears down.
+  test-server:
+    name: Cross-language TestServer run
     # Manual-only until the two repo secrets below exist; skips (not fails) on
     # pull_request/push. Remove the guard to make this a PR gate.
     if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -74,21 +75,10 @@ jobs:
       contents: read
     env:
       AWS_REGION: us-west-2
-      ESDK_TESTSERVER_AWS_INTEGRATION: "true"
     steps:
-      - name: Checkout Rust repo
-        uses: actions/checkout@v4
-        with:
-          path: rust
+      - uses: actions/checkout@v4
 
-      - name: Checkout commons TestServer (integration branch)
-        uses: actions/checkout@v4
-        with:
-          repository: aws/aws-crypto-tools-commons
-          ref: kessplas/esdk-test-server
-          path: commons
-          token: ${{ secrets.COMMONS_REPO_TOKEN }}
-
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -97,6 +87,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # The commons orchestrator (smithy-java) needs a JDK 21+
       - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
@@ -109,61 +100,11 @@ jobs:
           role-to-assume: ${{ secrets.CI_AWS_ROLE_ARN }}
           aws-region: us-west-2
 
-      - name: Build the Rust language server
-        working-directory: rust/esdk-test-server
-        run: cargo build --release
+      # The bootstrap's plain `git clone` of the private commons repo picks up
+      # this SSH -> HTTPS+token mapping.
+      - name: Authenticate the commons clone
+        run: git config --global url."https://x-access-token:${{ secrets.COMMONS_REPO_TOKEN }}@github.com/".insteadOf "git@github.com:"
 
-      - name: Bidirectional hierarchical round trip (Rust <-> Java)
-        run: |
-          set -euo pipefail
-          RUST_BIN="$GITHUB_WORKSPACE/rust/esdk-test-server/target/release/esdk-test-server"
-          JAVA_DIR="$GITHUB_WORKSPACE/commons/esdk/test-server/servers/java"
-          TESTS_DIR="$GITHUB_WORKSPACE/commons/esdk/test-server/tests"
-
-          # Both servers inherit the job's AWS credentials for the shared key store.
-          "$RUST_BIN" 8092 >"$GITHUB_WORKSPACE/rust-server.log" 2>&1 &
-          RUST_PID=$!
-          ( cd "$JAVA_DIR" && exec ./gradlew --console=plain -q runServer --args="8091" ) \
-            >"$GITHUB_WORKSPACE/java-server.log" 2>&1 &
-          JAVA_PID=$!
-
-          cleanup() {
-            trap - EXIT INT TERM
-            kill "$RUST_PID" "$JAVA_PID" 2>/dev/null || true
-            for p in 8091 8092; do
-              pids=$(lsof -ti "tcp:$p" 2>/dev/null || true)
-              if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; fi
-            done
-          }
-          trap cleanup EXIT INT TERM
-
-          wait_for() {
-            for _ in $(seq 1 300); do
-              if nc -z 127.0.0.1 "$1" 2>/dev/null; then echo "port $1 up"; return 0; fi
-              if ! kill -0 "$2" 2>/dev/null && ! lsof -ti "tcp:$1" >/dev/null 2>&1; then
-                echo "server for port $1 exited early"; return 1
-              fi
-              sleep 1
-            done
-            echo "timed out waiting for port $1"; return 1
-          }
-          wait_for 8092 "$RUST_PID"
-          wait_for 8091 "$JAVA_PID"
-
-          cd "$TESTS_DIR"
-          echo "==> Rust encrypt -> Java decrypt"
-          ./gradlew --console=plain --rerun-tasks test --tests '*HierarchicalBlobRoundTripTest' \
-            -Desdk.testserver.endpoints=http://127.0.0.1:8092,http://127.0.0.1:8091
-          echo "==> Java encrypt -> Rust decrypt"
-          ./gradlew --console=plain --rerun-tasks test --tests '*HierarchicalBlobRoundTripTest' \
-            -Desdk.testserver.endpoints=http://127.0.0.1:8091,http://127.0.0.1:8092
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: interop-server-logs
-          path: |
-            rust-server.log
-            java-server.log
-          if-no-files-found: ignore
+      - name: Run the orchestrated TestServer
+        working-directory: esdk-test-server
+        run: make test-server

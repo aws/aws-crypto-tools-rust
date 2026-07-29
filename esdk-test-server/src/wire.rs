@@ -27,10 +27,15 @@ pub fn app(state: Arc<AppState>) -> Router {
 
 async fn dispatch(
     State(state): State<Arc<AppState>>,
-    Path((_service, operation)): Path<(String, String)>,
+    Path((service, operation)): Path<(String, String)>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    if service != "ESDKTestServer" {
+        return error_response(&ServerError::generic(format!(
+            "unknown service: {service}; expected ESDKTestServer"
+        )));
+    }
     let protocol_ok = headers
         .get("smithy-protocol")
         .and_then(|value| value.to_str().ok())
@@ -38,6 +43,15 @@ async fn dispatch(
     if !protocol_ok {
         return error_response(&ServerError::generic(
             "missing or invalid smithy-protocol header; expected rpc-v2-cbor",
+        ));
+    }
+    let content_type_ok = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        == Some("application/cbor");
+    if !content_type_ok {
+        return error_response(&ServerError::generic(
+            "missing or invalid content-type; expected application/cbor",
         ));
     }
 

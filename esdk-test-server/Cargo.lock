@@ -108,7 +108,6 @@ dependencies = [
  "aws-mpl-native",
  "axum",
  "ciborium",
- "http-body-util",
  "serde",
  "serde_bytes",
  "tokio",
