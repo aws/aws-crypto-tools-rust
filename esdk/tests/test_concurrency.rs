@@ -8,7 +8,8 @@
 //! pair breaks it: plaintext can be recovered and messages forged. So the
 //! test asserts IDs stay unique even when many threads encrypt at once.
 //!
-//! Local to exercise the native client's RNG under real threads.
+//! Local to exercise the native client's RNG under real threads (though this
+//! could probably move to the test server eventually).
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
