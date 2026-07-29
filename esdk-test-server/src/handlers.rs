@@ -1,12 +1,12 @@
 //! Operation handlers and the `clientId` registry.
 //!
-//! `CreateClient` builds the materials source from the modeled config
-//! (delegating to the MPL), registers it under a fresh UUID, and returns the id.
-//! `Encrypt` and `Decrypt` look the registered materials up by `clientId` and
-//! forward to the real `aws-esdk` free functions.
+//! `CreateClient` builds the keyring from the modeled config (delegating to the
+//! MPL), registers it under a fresh UUID, and returns the id. `Encrypt` and
+//! `Decrypt` look the registered keyring up by `clientId` and forward to the
+//! real `aws-esdk` free functions.
 
 use crate::error::ServerError;
-use crate::keyring::source_for_cmm;
+use crate::keyring::keyring_for_cmm;
 use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
     EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
@@ -72,11 +72,17 @@ fn map_algorithm_suite(id: EsdkAlgorithmSuiteId) -> MplAlgorithmSuiteId {
     }
 }
 
-fn max_edks(config: &EsdkClientConfig) -> Option<NonZeroUsize> {
-    config
-        .max_encrypted_data_keys
-        .and_then(|v| usize::try_from(v).ok())
+fn max_edks(config: &EsdkClientConfig) -> Result<Option<NonZeroUsize>, ServerError> {
+    let Some(v) = config.max_encrypted_data_keys else {
+        return Ok(None);
+    };
+    usize::try_from(v)
+        .ok()
         .and_then(NonZeroUsize::new)
+        .map(Some)
+        .ok_or_else(|| {
+            ServerError::generic(format!("maxEncryptedDataKeys must be positive, got {v}"))
+        })
 }
 
 fn encryption_context(
@@ -95,11 +101,11 @@ impl AppState {
         &self,
         req: CreateClientRequest,
     ) -> Result<CreateClientResponse, ServerError> {
-        let keyring = source_for_cmm(&req.config.cmm).await?;
+        let keyring = keyring_for_cmm(&req.config.cmm).await?;
         let entry = ClientEntry {
             keyring,
             commitment_policy: map_commitment(req.config.commitment_policy),
-            max_encrypted_data_keys: max_edks(&req.config),
+            max_encrypted_data_keys: max_edks(&req.config)?,
         };
         let client_id = uuid::Uuid::new_v4().to_string();
         self.clients
@@ -122,11 +128,14 @@ impl AppState {
             input.algorithm_suite_id = Some(map_algorithm_suite(suite));
         }
         if let Some(frame) = req.frame_length {
-            if let Ok(frame) = u32::try_from(frame) {
-                if let Ok(frame_length) = aws_esdk::FrameLength::new(frame) {
-                    input.frame_length = frame_length;
-                }
-            }
+            input.frame_length = u32::try_from(frame)
+                .ok()
+                .and_then(|f| aws_esdk::FrameLength::new(f).ok())
+                .ok_or_else(|| {
+                    ServerError::generic(format!(
+                        "frameLength must be in 1..=u32::MAX, got {frame}"
+                    ))
+                })?;
         }
         let output = aws_esdk::encrypt(&input)
             .await

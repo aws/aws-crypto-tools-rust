@@ -1,9 +1,4 @@
-# The ESDK TestServer Rust Language_Server. A hand-rolled rpcv2Cbor HTTP server
-# that speaks the single source-of-truth Smithy model owned by
-# aws-crypto-tools-commons (esdk/test-server/model) and delegates each operation
-# to the real AWS Encryption SDK for Rust (aws-esdk) built from this repo's head.
-#
-# It lives at the repo top level (not under esdk/) so it is not swept into the
+# Lives at the repo top level (not under esdk/) so it is not swept into the
 # esdk library's coverage-gated CI; it has its own workflow.
 [package]
 name = "aws-esdk-test-server"

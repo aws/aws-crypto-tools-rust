@@ -10,9 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-// ===========================================================================
 // Operation request / response shapes
-// ===========================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateClientRequest {
@@ -77,9 +75,7 @@ pub struct DecryptResponse {
     pub plaintext: Vec<u8>,
 }
 
-// ===========================================================================
 // Client configuration
-// ===========================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EsdkClientConfig {
@@ -130,9 +126,7 @@ pub enum EsdkAlgorithmSuiteId {
     Alg256GcmCommitEcdsa,
 }
 
-// ---------------------------------------------------------------------------
 // CMMs (tagged union via optional members)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CryptographicMaterialsManager {
@@ -187,9 +181,7 @@ pub struct CachingCmmConfig {
     pub limit_messages: Option<i64>,
 }
 
-// ---------------------------------------------------------------------------
 // Keyrings (tagged union via optional members)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Keyring {

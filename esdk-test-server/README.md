@@ -50,10 +50,7 @@ Because keyring construction is not yet available, the commons Configuration_Set
 entry for `rust` is marked `skip: true`; the cross-repo Java Tests round trip is
 enabled (flip `skip` to `false`) once the Rust ESDK implements keyrings.
 
-## How it was built
+## Layout
 
-Following the `smithy-to-handrolled-server` skill: read the model, translate each
-shape via the Smithy→Rust type table, hand-roll the rpcv2Cbor codec, route by
-operation name, and delegate to the real SDK. See `src/model.rs` (shapes),
-`src/wire.rs` (protocol), `src/keyring.rs` (config→MPL mapping), and
-`src/handlers.rs` (delegation + client registry).
+`src/model.rs` (shapes), `src/wire.rs` (protocol), `src/keyring.rs`
+(config→MPL mapping), `src/handlers.rs` (delegation + client registry).

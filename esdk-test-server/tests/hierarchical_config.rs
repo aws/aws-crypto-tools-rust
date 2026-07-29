@@ -1,44 +1,51 @@
-//! The hierarchical keyring config decodes from the rpcv2Cbor wire model using
+//! The hierarchical keyring config decodes from CBOR built with the model's
+//! literal wire names (as a generated rpcv2Cbor Test_Client sends them), using
 //! the canonical branch-key-store fixtures shared across the ESDK/MPL test
-//! suites. This is the offline half of hierarchical support: the actual
-//! encrypt/decrypt round trip reaches KMS + DynamoDB and runs only with AWS
-//! credentials and a provisioned key store.
+//! suites. Offline only: the encrypt/decrypt round trip reaches KMS + DynamoDB
+//! and runs elsewhere with AWS credentials.
 
-use aws_esdk_test_server::model::{
-    AwsKmsHierarchicalKeyringConfig, CreateClientRequest, CryptographicMaterialsManager,
-    DefaultCmmConfig, EsdkClientConfig, EsdkCommitmentPolicy, Keyring,
-};
+use aws_esdk_test_server::model::CreateClientRequest;
+use ciborium::value::Value;
 
-fn hierarchical_create_client() -> CreateClientRequest {
-    CreateClientRequest {
-        config: EsdkClientConfig {
-            commitment_policy: EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
-            max_encrypted_data_keys: None,
-            cmm: CryptographicMaterialsManager {
-                default_cmm: Some(DefaultCmmConfig {
-                    keyring: Keyring {
-                        aws_kms_hierarchical: Some(AwsKmsHierarchicalKeyringConfig {
-                            branch_key_id: "3f43a9af-08c5-4317-b694-3d3e883dcaef".to_owned(),
-                            key_store_table_name: "KeyStoreDdbTable".to_owned(),
-                            logical_key_store_name: "KeyStoreDdbTable".to_owned(),
-                            kms_key_arn:
-                                "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
-                                    .to_owned(),
-                            ttl_seconds: 600,
-                        }),
-                        ..Default::default()
-                    },
-                }),
-                ..Default::default()
-            },
-        },
-    }
+fn text_entry(key: &str, value: &str) -> (Value, Value) {
+    (Value::Text(key.to_owned()), Value::Text(value.to_owned()))
+}
+
+/// A `CreateClient` request body as it appears on the wire, keyed by the Smithy
+/// member names. Changing any serde rename in the model breaks decoding here.
+fn wire_create_client() -> Value {
+    let hierarchical = Value::Map(vec![
+        text_entry("branchKeyId", "3f43a9af-08c5-4317-b694-3d3e883dcaef"),
+        text_entry("keyStoreTableName", "KeyStoreDdbTable"),
+        text_entry("logicalKeyStoreName", "KeyStoreDdbTable"),
+        text_entry(
+            "kmsKeyArn",
+            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",
+        ),
+        (
+            Value::Text("ttlSeconds".to_owned()),
+            Value::Integer(600.into()),
+        ),
+    ]);
+    let keyring = Value::Map(vec![(
+        Value::Text("AwsKmsHierarchical".to_owned()),
+        hierarchical,
+    )]);
+    let cmm = Value::Map(vec![(
+        Value::Text("Default".to_owned()),
+        Value::Map(vec![(Value::Text("keyring".to_owned()), keyring)]),
+    )]);
+    let config = Value::Map(vec![
+        text_entry("commitmentPolicy", "REQUIRE_ENCRYPT_REQUIRE_DECRYPT"),
+        (Value::Text("cmm".to_owned()), cmm),
+    ]);
+    Value::Map(vec![(Value::Text("config".to_owned()), config)])
 }
 
 #[test]
-fn hierarchical_config_round_trips_through_cbor() {
+fn hierarchical_config_decodes_from_wire_names() {
     let mut bytes = Vec::new();
-    ciborium::into_writer(&hierarchical_create_client(), &mut bytes).expect("encode");
+    ciborium::into_writer(&wire_create_client(), &mut bytes).expect("encode");
 
     let decoded: CreateClientRequest = ciborium::from_reader(&bytes[..]).expect("decode");
     let hierarchical = decoded

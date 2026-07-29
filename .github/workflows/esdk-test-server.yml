@@ -1,19 +1,5 @@
-# ============================================================================
-# ESDK TestServer — Rust Language_Server CI
-# ----------------------------------------------------------------------------
-# Builds and tests the Rust Language_Server against this repo's live aws-esdk
-# source (the "TestServer(live source code)" direction of the factoring design).
-# It is intentionally scoped to esdk-test-server/** and this file, and is a
-# SEPARATE workflow from the library CI (pull.yml) so it neither depends on nor
-# is blocked by the coverage-gated library jobs.
-#
-# The offline Raw-AES path currently stops at the keyring wall (the Rust ESDK
-# does not implement keyring construction yet); tests/keyring_wall.rs asserts the
-# server surfaces that as an ESDKClientError, so this workflow is GREEN on the
-# wall. The hierarchical-interop job runs the commons HierarchicalBlobRoundTripTest
-# across a launched Rust + Java server pair in both directions; it needs the
-# CI_AWS_ROLE_ARN and COMMONS_REPO_TOKEN repo secrets and is red until they are set.
-# ============================================================================
+# Separate from the library CI (pull.yml) so this crate is not swept into the
+# coverage-gated library jobs.
 name: ESDK TestServer (Rust)
 
 on:
@@ -41,9 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # aws-lc-sys (pulled in transitively by aws-esdk) builds native code; Go is
-      # required by the aws-lc build tooling on hosted runners, matching the
-      # library CI setup.
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -68,21 +52,16 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-      - name: Test (rpcv2Cbor wire round trip + keyring wall)
+      - name: Test
         run: cargo test --verbose
 
-  # ------------------------------------------------------------------------
-  # Cross-repo end-to-end: pull the commons TestServer at its integration branch,
-  # build the one Java Test_Client + Tests, start THIS repo's Rust server, and run
-  # the Tests against it. Manual-only for now: the offline Raw-AES round trip
-  # cannot pass until the Rust ESDK implements keyring construction. When it does,
-  # remove the workflow_dispatch gate to make this a PR gate.
-  # ------------------------------------------------------------------------
+  # Cross-repo end-to-end: build the commons Java Test_Client + Tests, start this
+  # repo's Rust server and the commons Java server, and run the hierarchical
+  # round trip in both directions.
   hierarchical-interop:
     name: Rust<->Java hierarchical keyring interop
-    # Manual-only until the required secrets exist and the Rust ESDK implements
-    # keyring construction; skipped (not failed) on pull_request/push so it does
-    # not gate the PR. Remove this guard to promote it to a PR gate.
+    # Manual-only until the two repo secrets below exist; skips (not fails) on
+    # pull_request/push. Remove the guard to make this a PR gate.
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     # Requires two repo secrets:
@@ -141,8 +120,7 @@ jobs:
           JAVA_DIR="$GITHUB_WORKSPACE/commons/esdk/test-server/servers/java"
           TESTS_DIR="$GITHUB_WORKSPACE/commons/esdk/test-server/tests"
 
-          # Both servers inherit the AWS credentials configured above; each builds
-          # a hierarchical keyring over the shared KeyStoreDdbTable branch key.
+          # Both servers inherit the job's AWS credentials for the shared key store.
           "$RUST_BIN" 8092 >"$GITHUB_WORKSPACE/rust-server.log" 2>&1 &
           RUST_PID=$!
           ( cd "$JAVA_DIR" && exec ./gradlew --console=plain -q runServer --args="8091" ) \

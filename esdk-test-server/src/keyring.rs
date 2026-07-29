@@ -26,7 +26,7 @@ use aws_mpl_legacy::keyring::{AesWrappingAlg as MplAesWrappingAlg, CreateRawAesK
 ///
 /// A `Default` CMM resolves to its inner keyring (the ESDK wraps a keyring in a
 /// default CMM).
-pub async fn source_for_cmm(
+pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
 ) -> Result<EsdkKeyring, ServerError> {
     let set = [
@@ -44,7 +44,7 @@ pub async fn source_for_cmm(
     }
 
     if let Some(default_cmm) = &cmm.default_cmm {
-        return source_for_keyring(&default_cmm.keyring).await;
+        return keyring_for_config(&default_cmm.keyring).await;
     }
     Err(ServerError::generic(
         "only the Default CMM is wired in the Rust language server",
@@ -52,7 +52,7 @@ pub async fn source_for_cmm(
 }
 
 /// Build an `aws-esdk` [`Keyring`](aws_esdk::Keyring) from a modeled `Keyring`.
-pub async fn source_for_keyring(keyring: &Keyring) -> Result<EsdkKeyring, ServerError> {
+pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, ServerError> {
     let set = [
         keyring.aws_kms.is_some(),
         keyring.aws_kms_mrk.is_some(),

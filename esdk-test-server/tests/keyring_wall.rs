@@ -1,12 +1,7 @@
-//! Wire-level proof of the current stopping point: a real rpcv2Cbor
-//! `CreateClient` with the offline Raw-AES / Default-CMM config (identical to the
-//! commons `BlobRoundTrip` config) drives the server to the vendored MPL, which
-//! does not yet implement keyring construction. The server MUST surface this as
-//! an `ESDKClientError` whose message names the unimplemented constructor.
-//!
-//! This test PASSES on the wall: it is the falsifiable evidence that the wire,
-//! decode, dispatch, keyring mapping, and error encoding are all wired correctly
-//! up to the one missing piece (keyring construction in the Rust ESDK).
+//! A real rpcv2Cbor `CreateClient` with the offline Raw-AES / Default-CMM config
+//! (identical to the commons `BlobRoundTrip` config) drives the server to the
+//! vendored MPL, which does not implement keyring construction. The server MUST
+//! surface this as an `ESDKClientError` naming the unimplemented constructor.
 
 use std::sync::Arc;
 

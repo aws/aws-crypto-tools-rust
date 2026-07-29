@@ -1,11 +1,6 @@
-# ESDK TestServer — Rust Language_Server convenience Makefile.
-#
-# Mirrors the per-server target vocabulary the S3EC TestServer orchestration uses
-# (build-server / start-server / wait-for-server / stop-server) so a commons
-# orchestrator can drive this server over HTTP the same way it drives the others.
-#
-# Written for both the GNU Make on Linux CI and the 3.81 Make that ships with
-# macOS: every multi-step recipe runs as a single shell line.
+# Target vocabulary (build-server / start-server / wait-for-server / stop-server)
+# matches the commons TestServer orchestration. Recipes are single shell lines
+# for the 3.81 Make that ships with macOS.
 
 SHELL := bash
 
