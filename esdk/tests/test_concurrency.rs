@@ -3,9 +3,10 @@
 
 //! Encrypt/decrypt round trips run concurrently across threads.
 //!
-//! A duplicate message ID is AES-GCM nonce reuse: the ID derives the data key
-//! and frame IVs are fixed counters, so two messages sharing an ID reuse a
-//! (key, nonce) pair. Hence the uniqueness assertion.
+//! Two messages with the same message ID get the same data key and the same
+//! frame IVs. Repeating an AES-GCM key+IV pair breaks it: plaintext can be
+//! recovered and messages forged. So the test asserts IDs stay unique even
+//! when many threads encrypt at once.
 //!
 //! Local to exercise the native client's RNG under real threads.
 
