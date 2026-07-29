@@ -4,9 +4,7 @@
 //! Repeated encrypt/decrypt round trips must not grow live heap memory,
 //! measured by a counting global allocator.
 //!
-//! Local because it measures this process's live heap through a global
-//! allocator — an implementation-internal property that never appears on the
-//! wire, so the cross-language interop vectors cannot observe it.
+//! Local because live-heap growth is in-process and never appears on the wire.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;

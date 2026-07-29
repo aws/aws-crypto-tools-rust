@@ -8,9 +8,8 @@
 //! from it. If these tests break, a change has likely broken
 //! caller-implemented CMMs.
 //!
-//! Local because the extension point is a native Rust trait — a caller's own
-//! CMM impl exists only in-process and isn't reachable from the cross-language
-//! interop vectors.
+//! Local because a caller's CMM impl is a native trait, unreachable from the
+//! cross-language interop vectors.
 
 // The MPL trait signatures return the large `aws_mpl_legacy` error type by value.
 #![allow(clippy::result_large_err)]

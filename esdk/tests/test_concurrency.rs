@@ -4,14 +4,9 @@
 //! Encrypt/decrypt round trips run concurrently across threads; every message
 //! ID produced must be unique.
 //!
-//! The message ID is the per-message random value mixed into key derivation,
-//! so a unique ID gives each message a distinct data key. Frame IVs are
-//! deterministic counters, so two messages sharing a message ID would reuse an
-//! AES-GCM (key, nonce) pair — the one failure GCM cannot tolerate — and
-//! concurrency is where a non-thread-safe RNG would surface such a collision.
-//!
-//! Local because it drives the native client under real threads and checks
-//! bulk ID uniqueness, neither of which the cross-language interop vectors do.
+//! The message ID derives the per-message data key while frame IVs are fixed
+//! counters, so a duplicate ID reuses an AES-GCM (key, nonce) pair. Local to
+//! exercise the native client's RNG under real threads.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
