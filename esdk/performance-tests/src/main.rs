@@ -1,8 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::collapsible_if)]
-
 mod alloc;
 mod benchmark;
 mod config;
@@ -15,10 +13,10 @@ use clap::{Arg, ArgAction, Command};
 use benchmark::EsdkBenchmark;
 
 fn main() -> Result<()> {
-    // Set larger stack size for tokio runtime
+    // Default worker stacks overflow decrypting 50 MiB payloads.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
-        .thread_stack_size(8 * 1024 * 1024) // 8MB stack size
+        .thread_stack_size(8 * 1024 * 1024)
         .enable_all()
         .build()?;
 
@@ -31,7 +29,7 @@ async fn run_benchmark() -> Result<()> {
         .init();
 
     let matches = Command::new("ESDK Rust Hierarchical Keyring Benchmark")
-        .version("1.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .about("AWS Encryption SDK performance benchmark — Rust, hierarchical keyring")
         .arg(
             Arg::new("config")
@@ -59,10 +57,8 @@ async fn run_benchmark() -> Result<()> {
     let output_path = matches.get_one::<String>("output").unwrap();
     let quick = matches.get_flag("quick");
 
-    // Initialize benchmark
     let mut bench = EsdkBenchmark::new(config_path).await?;
 
-    // Adjust config for quick test
     if quick {
         let quick_config = bench.config.quick_config.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Quick mode requested but no quick_config found in config file")
@@ -76,34 +72,28 @@ async fn run_benchmark() -> Result<()> {
         bench.config.concurrency_levels = quick_config.concurrency_levels.clone();
     }
 
-    // Run benchmarks
     bench.run_all_benchmarks(quick).await?;
 
-    // Every scenario failing leaves no data. Fail the run so this surfaces as a
-    // clear error; an empty result set also cannot be consumed by the
-    // downstream CloudWatch upload step.
+    // Exit non-zero when every scenario failed; the CloudWatch upload step
+    // cannot consume an empty result set.
     if bench.results.is_empty() {
         anyhow::bail!("benchmark produced no results; all scenarios failed");
     }
 
-    // Save results
     bench.save_results(output_path)?;
 
-    // Print summary
     println!("\n=== ESDK Rust Hierarchical Keyring Benchmark Summary ===");
     println!("Total tests completed: {}", bench.results.len());
     println!("Results saved to: {}", output_path);
 
-    if !bench.results.is_empty() {
-        let mut max_throughput = 0.0;
-        for result in &bench.results {
-            if result.test_name == "throughput" && result.ops_per_second > max_throughput {
-                max_throughput = result.ops_per_second;
-            }
-        }
-        if max_throughput > 0.0 {
-            println!("Maximum throughput: {:.2} ops/sec", max_throughput);
-        }
+    let max_throughput = bench
+        .results
+        .iter()
+        .filter(|r| r.test_name == "throughput")
+        .map(|r| r.ops_per_second)
+        .fold(0.0, f64::max);
+    if max_throughput > 0.0 {
+        println!("Maximum throughput: {:.2} ops/sec", max_throughput);
     }
 
     Ok(())

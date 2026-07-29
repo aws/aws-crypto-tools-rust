@@ -13,7 +13,6 @@ use sysinfo::System;
 use crate::config::{TestConfig, load_config};
 use crate::results::BenchmarkResult;
 
-// Constants for memory testing
 pub const MEMORY_TEST_ITERATIONS: usize = 5;
 
 // Shared AWS Crypto Tools test resources in the public ESDK CI account
@@ -37,16 +36,13 @@ pub struct EsdkBenchmark {
 
 impl EsdkBenchmark {
     pub async fn new(config_path: &str) -> Result<Self> {
-        // Get system info
         let mut system = System::new_all();
         system.refresh_all();
         let cpu_count = system.cpus().len();
         let total_memory_gb = system.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0);
 
-        // Load configuration
         let config = load_config(config_path)?;
 
-        // Setup ESDK
         let (esdk_client, keyring) = Self::setup_esdk().await?;
 
         info!(
@@ -96,7 +92,6 @@ impl EsdkBenchmark {
             .await
             .map_err(|e| anyhow::anyhow!("failed to create hierarchical keyring: {e:?}"))?;
 
-        info!("ESDK client and hierarchical keyring initialized successfully");
         Ok((esdk_client, keyring))
     }
 

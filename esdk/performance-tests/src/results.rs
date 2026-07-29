@@ -51,8 +51,6 @@ struct BenchmarkMetadata {
     total_tests: usize,
 }
 
-// === Utility Functions ===
-
 pub fn average(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
@@ -82,8 +80,6 @@ pub fn percentile(sorted_values: &[f64], p: f64) -> f64 {
     let weight = index - lower as f64;
     sorted_values[lower] * (1.0 - weight) + sorted_values[upper] * weight
 }
-
-// === Results Saving ===
 
 pub fn save_results(
     results: &[BenchmarkResult],

@@ -17,8 +17,6 @@ use crate::benchmark::{EsdkBenchmark, MEMORY_TEST_ITERATIONS};
 use crate::results::{BenchmarkResult, average, percentile};
 
 impl EsdkBenchmark {
-    // === Helper Functions ===
-
     fn benchmark_encryption_context(data_len: usize) -> EncryptionContext {
         let mut ec = EncryptionContext::new();
         ec.insert("purpose".to_string(), "performance-test".to_string());
@@ -68,17 +66,14 @@ impl EsdkBenchmark {
     }
 
     fn should_run_test_type(&self, test_type: &str, is_quick_mode: bool) -> bool {
-        if is_quick_mode {
-            if let Some(quick_config) = &self.config.quick_config {
-                if !quick_config.test_types.is_empty() {
-                    return quick_config.test_types.contains(&test_type.to_string());
-                }
-            }
+        if is_quick_mode
+            && let Some(quick_config) = &self.config.quick_config
+            && !quick_config.test_types.is_empty()
+        {
+            return quick_config.test_types.contains(&test_type.to_string());
         }
         true
     }
-
-    // === Throughput Test Implementation ===
 
     /// Runs throughput test measuring operations per second and data processing rate
     async fn run_throughput_test(
@@ -91,7 +86,7 @@ impl EsdkBenchmark {
             data_size, iterations
         );
 
-        // Generate test data on heap to avoid stack overflow
+        // Boxed: 50 MiB on the stack would overflow.
         let data = {
             let mut data = vec![0u8; data_size];
             rand::rng().fill(&mut data[..]);
@@ -105,7 +100,6 @@ impl EsdkBenchmark {
             }
         }
 
-        // Measurement runs
         let mut encrypt_latencies = Vec::new();
         let mut decrypt_latencies = Vec::new();
         let mut end_to_end_latencies = Vec::new();
@@ -140,7 +134,6 @@ impl EsdkBenchmark {
         let total_duration = start_time.elapsed().as_secs_f64();
         pb.finish_and_clear();
 
-        // Calculate metrics
         end_to_end_latencies.sort_by(|a, b| a.total_cmp(b));
         let result = BenchmarkResult {
             test_name: "throughput".to_string(),
@@ -173,8 +166,6 @@ impl EsdkBenchmark {
         Ok(result)
     }
 
-    // === Memory Test Implementation ===
-
     /// Runs memory usage test by measuring memory delta during ESDK operations
     async fn run_memory_test(&mut self, data_size: usize) -> Result<BenchmarkResult> {
         info!(
@@ -182,7 +173,7 @@ impl EsdkBenchmark {
             data_size, MEMORY_TEST_ITERATIONS
         );
 
-        // Generate test data on heap to avoid stack overflow
+        // Boxed: 50 MiB on the stack would overflow.
         let data = {
             let mut data = vec![0u8; data_size];
             rand::rng().fill(&mut data[..]);
@@ -194,7 +185,6 @@ impl EsdkBenchmark {
         let alloc = alloc::ResourceTracker::new();
 
         for i in 0..MEMORY_TEST_ITERATIONS {
-            std::hint::black_box(&data); // Prevent optimization
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
             let baseline_memory = if let Some(stats) = memory_stats() {
@@ -216,7 +206,6 @@ impl EsdkBenchmark {
                 Self::encrypt_decrypt(&esdk_client, &keyring, &data_clone).await
             });
 
-            // Sample memory during operation
             let mut sample_count = 0;
             while !operation_task.is_finished() {
                 if let Some(stats) = memory_stats() {
@@ -308,8 +297,6 @@ impl EsdkBenchmark {
         Ok(result)
     }
 
-    // === Concurrent Test Implementation ===
-
     /// Runs concurrent test with multiple workers to measure parallel performance
     async fn run_concurrent_test(
         &mut self,
@@ -330,7 +317,7 @@ impl EsdkBenchmark {
             let task = tokio::spawn(async move {
                 let mut worker_times = Vec::new();
                 for j in 0..iterations_per_worker {
-                    // Generate data per worker on heap to avoid stack overflow
+                    // Per-worker data; heap to avoid stack overflow.
                     let worker_data = {
                         let mut data = vec![0u8; data_size];
                         rand::rng().fill(&mut data[..]);
@@ -355,7 +342,6 @@ impl EsdkBenchmark {
         let results = join_all(tasks).await;
         let total_duration = start_time.elapsed().as_secs_f64();
 
-        // Collect all times
         let mut all_times = Vec::new();
         for result in results {
             let worker_times = result??;
@@ -395,8 +381,6 @@ impl EsdkBenchmark {
 
         Ok(result)
     }
-
-    // === Test Orchestration ===
 
     async fn run_throughput_tests(&mut self, data_sizes: &[usize], iterations: usize) {
         info!("Running throughput tests...");
@@ -459,7 +443,6 @@ impl EsdkBenchmark {
     pub async fn run_all_benchmarks(&mut self, is_quick_mode: bool) -> Result<()> {
         info!("Starting ESDK hierarchical keyring benchmark suite");
 
-        // Combine all configured data sizes
         let mut data_sizes = Vec::new();
         data_sizes.extend(&self.config.data_sizes.small);
         data_sizes.extend(&self.config.data_sizes.medium);

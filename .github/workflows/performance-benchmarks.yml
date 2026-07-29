@@ -1,6 +1,5 @@
-# Runs the ESDK hierarchical-keyring performance benchmark and publishes the
-# results to CloudWatch Logs. Runs on a daily schedule, on demand, and on pull
-# requests that touch the benchmark.
+# Runs the ESDK hierarchical-keyring benchmark and publishes results to
+# CloudWatch Logs.
 name: Performance Benchmarks
 
 permissions:
@@ -39,19 +38,11 @@ jobs:
 
       - uses: actions/checkout@v6
 
-      # aws-lc-sys builds native code; Go is required for the FIPS variant and
-      # is cheap to install, matching the library test workflow.
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "stable"
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # The Hierarchical Keyring reads the shared test key store (KMS + DynamoDB)
-      # in us-west-2 (account 370957321024). Assume the public ESDK CI role via
-      # GitHub OIDC — the same role and region the library test workflow uses.
+      # The hierarchical keyring reads the shared test key store (KMS + DynamoDB,
+      # account 370957321024, us-west-2); same OIDC role as library_rust_tests.yml.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -80,11 +71,9 @@ jobs:
         run: |
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"
-          # Distinct stream so the hierarchical-keyring series is separate from
-          # other keyrings' series in the same log group.
+          # Distinct stream per keyring so series don't mix in the shared log group.
           LOG_STREAM="rust-hierarchical/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
 
-          # Create log stream (ignore if exists)
           aws logs create-log-stream \
             --log-group-name "$LOG_GROUP" \
             --log-stream-name "$LOG_STREAM" 2>/dev/null || true

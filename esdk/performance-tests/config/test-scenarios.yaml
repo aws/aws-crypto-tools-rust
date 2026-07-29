@@ -1,26 +1,23 @@
 # ESDK Rust hierarchical-keyring performance test scenarios.
-#
-# The size under test is a single configurable list. Add elements to `small`
-# to benchmark more sizes; the harness runs every size in small + medium + large.
+# The harness runs every size in small + medium + large.
 
-# Data sizes to test (in bytes).
+# Data sizes in bytes.
 data_sizes:
   small:
     - 52428800 # 50 MiB
   medium: []
   large: []
 
-# Iterations for statistical significance.
 iterations:
-  warmup: 5 # Warmup iterations (not counted)
-  measurement: 10 # Measurement iterations
+  warmup: 5 # not measured; primes the branch-key cache
+  measurement: 10
 
-# Concurrency levels to test (levels > 1 run the concurrent test).
+# Levels > 1 run the concurrent test.
 concurrency_levels:
   - 1
   - 2
 
-# Quick test configuration (reduced iterations for CI).
+# Reduced iterations; what CI runs (--quick).
 quick_config:
   data_sizes:
     small:

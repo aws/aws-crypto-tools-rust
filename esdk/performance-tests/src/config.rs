@@ -46,10 +46,6 @@ pub struct QuickIterationConfig {
 }
 
 pub fn load_config(config_path: &str) -> Result<TestConfig> {
-    if !std::path::Path::new(config_path).exists() {
-        return Err(anyhow::anyhow!("Config file not found: {}", config_path));
-    }
-
     let config_content = fs::read_to_string(config_path)
         .with_context(|| format!("Failed to read config file: {}", config_path))?;
 
