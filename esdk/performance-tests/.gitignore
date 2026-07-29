@@ -1,2 +1,2 @@
-benchmarks/rust/target/
+/target/
 results/raw-data/*.json

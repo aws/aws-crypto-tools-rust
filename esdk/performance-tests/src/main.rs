@@ -38,14 +38,14 @@ async fn run_benchmark() -> Result<()> {
                 .long("config")
                 .value_name("FILE")
                 .help("Path to test configuration file")
-                .default_value("../../config/test-scenarios.yaml"),
+                .default_value("config/test-scenarios.yaml"),
         )
         .arg(
             Arg::new("output")
                 .long("output")
                 .value_name("FILE")
                 .help("Path to output results file")
-                .default_value("../../results/raw-data/rust_results.json"),
+                .default_value("results/raw-data/rust_results.json"),
         )
         .arg(
             Arg::new("quick")

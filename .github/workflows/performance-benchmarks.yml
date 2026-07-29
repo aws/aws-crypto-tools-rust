@@ -13,7 +13,7 @@ on:
     - cron: "00 09 * * *"
   pull_request:
     paths:
-      - "esdk-performance-testing/**"
+      - "esdk/performance-tests/**"
       - ".github/workflows/performance-benchmarks.yml"
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
       contents: read
     defaults:
       run:
-        working-directory: esdk-performance-testing/benchmarks/rust
+        working-directory: esdk/performance-tests
     steps:
       - name: Support longpaths on Git checkout
         run: git config --global core.longpaths true
@@ -63,20 +63,20 @@ jobs:
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: esdk-performance-testing/benchmarks/rust
+          workspaces: esdk/performance-tests
 
       - name: Run performance benchmarks - Quick Mode
         run: cargo run --release -- --quick
 
       - name: Parse and Format Logs
-        working-directory: esdk-performance-testing/results/raw-data
+        working-directory: esdk/performance-tests/results/raw-data
         run: |
           LOG_FILE="rust_results.json"
           UPLOAD_FILE="cloudwatch_logs.json"
           jq -c --arg ts "$(date +%s)000" '[.results[] as $result | .metadata as $meta | {timestamp: ($ts | tonumber), message: ({metadata: $meta, result: $result} | tostring)}]' "$LOG_FILE" > "$UPLOAD_FILE"
 
       - name: Upload logs to CloudWatch
-        working-directory: esdk-performance-testing/results/raw-data
+        working-directory: esdk/performance-tests/results/raw-data
         run: |
           LOG_FILE="cloudwatch_logs.json"
           LOG_GROUP="aws-esdk-performance-benchmarks"

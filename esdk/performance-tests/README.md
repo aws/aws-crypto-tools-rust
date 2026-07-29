@@ -10,7 +10,7 @@ exercising encrypt/decrypt through an AWS KMS Hierarchical Keyring.
 - **Concurrency**: parallel throughput across multiple workers.
 
 The single payload size under test is configured in
-[`../../config/test-scenarios.yaml`](../../config/test-scenarios.yaml). It is a
+[`config/test-scenarios.yaml`](config/test-scenarios.yaml). It is a
 list, so additional sizes can be added; it defaults to one 50 MiB entry.
 
 ## Keyring
@@ -30,19 +30,19 @@ than the initial KMS/DynamoDB round trip.
 
 ```bash
 # Full run
-cargo run --release -- --config ../../config/test-scenarios.yaml
+cargo run --release
 
 # Quick run (reduced iterations; used by CI)
 cargo run --release -- --quick
 ```
 
-Results are written to `../../results/raw-data/rust_results.json`. In CI they
+Results are written to `results/raw-data/rust_results.json`. In CI they
 are also published to CloudWatch Logs.
 
 ## Command line
 
-- `--config`: path to the YAML config (default `../../config/test-scenarios.yaml`).
-- `--output`: results output path (default `../../results/raw-data/rust_results.json`).
+- `--config`: path to the YAML config (default `config/test-scenarios.yaml`).
+- `--output`: results output path (default `results/raw-data/rust_results.json`).
 - `--quick`: quick mode (requires a `quick_config` section in the YAML).
 
 Set `RUST_LOG=debug` for verbose logging.
