@@ -208,11 +208,16 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     .unwrap();
 
     // A keyring with a different KEK cannot unwrap the data key.
-    let result = decrypt(&DecryptInput::with_legacy_keyring(
+    let err = decrypt(&DecryptInput::with_legacy_keyring(
         &out.ciphertext,
         EncryptionContext::new(),
         KeyringRef::from(LocalKekKeyring { kek: [8u8; 32] }),
     ))
-    .await;
-    assert!(result.is_err(), "decrypt under a different KEK must fail");
+    .await
+    .expect_err("decrypt under a different KEK must fail");
+    assert!(
+        matches!(err.kind, ErrorKind::LegacyError(_)),
+        "expected the keyring's unwrap failure, got {:?}",
+        err.kind
+    );
 }

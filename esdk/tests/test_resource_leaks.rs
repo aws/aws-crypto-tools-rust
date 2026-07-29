@@ -21,6 +21,9 @@ fn layout_size(layout: Layout) -> isize {
     isize::try_from(layout.size()).unwrap_or(isize::MAX)
 }
 
+// Only `alloc` and `dealloc` are instrumented. The default `GlobalAlloc`
+// `alloc_zeroed` and `realloc` are defined in terms of these two, so every
+// allocation the binary makes is counted and balanced through them.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { System.alloc(layout) };
@@ -30,29 +33,9 @@ unsafe impl GlobalAlloc for CountingAllocator {
         ptr
     }
 
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = unsafe { System.alloc_zeroed(layout) };
-        if !ptr.is_null() {
-            LIVE_BYTES.fetch_add(layout_size(layout), Ordering::Relaxed);
-        }
-        ptr
-    }
-
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { System.dealloc(ptr, layout) };
         LIVE_BYTES.fetch_sub(layout_size(layout), Ordering::Relaxed);
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let new_ptr = unsafe { System.realloc(ptr, layout, new_size) };
-        if !new_ptr.is_null() {
-            LIVE_BYTES.fetch_sub(layout_size(layout), Ordering::Relaxed);
-            LIVE_BYTES.fetch_add(
-                isize::try_from(new_size).unwrap_or(isize::MAX),
-                Ordering::Relaxed,
-            );
-        }
-        new_ptr
     }
 }
 
@@ -89,8 +72,10 @@ async fn round_trip(plaintext: &[u8]) {
 
 #[test]
 fn no_live_memory_growth_over_repeated_round_trips() {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
+    // A current-thread runtime keeps every allocation on this thread, so the
+    // live-byte counter is read at a quiescent point with no worker-thread
+    // allocations racing the measurement.
+    let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
