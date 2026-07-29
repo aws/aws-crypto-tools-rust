@@ -32,6 +32,8 @@ pub fn get_ecdsa_alg(
 ) -> Result<EcdsaSignatureAlgorithm, Error> {
     match alg {
         aws_mpl_legacy::suites::SignatureAlgorithm::Ecdsa(x) => Ok(x),
-        _ => Err(val_err("Unsupported signature algorithm")),
+        other => Err(val_err(format!(
+            "Unsupported signature algorithm: {other:?}"
+        ))),
     }
 }
