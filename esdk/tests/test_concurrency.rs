@@ -1,12 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Encrypt/decrypt round trips run concurrently across threads; every message
-//! ID produced must be unique.
+//! Encrypt/decrypt round trips run concurrently across threads.
 //!
-//! The message ID derives the per-message data key while frame IVs are fixed
-//! counters, so a duplicate ID reuses an AES-GCM (key, nonce) pair. Local to
-//! exercise the native client's RNG under real threads.
+//! A duplicate message ID is AES-GCM nonce reuse: the ID derives the data key
+//! and frame IVs are fixed counters, so two messages sharing an ID reuse a
+//! (key, nonce) pair. Hence the uniqueness assertion.
+//!
+//! Local to exercise the native client's RNG under real threads.
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
