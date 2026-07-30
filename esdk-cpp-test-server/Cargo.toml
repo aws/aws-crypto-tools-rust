@@ -1,0 +1,31 @@
+[package]
+name = "aws-esdk-cpp-test-server"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "rpcv2Cbor Language_Server for the ESDK TestServer, delegating to the aws-esdk-cpp C++ shim."
+
+[[bin]]
+name = "esdk-cpp-test-server"
+path = "src/main.rs"
+
+[dependencies]
+# The Rust Language_Server crate, reused for its rpcv2Cbor wire model and errors.
+aws-esdk-test-server = { path = "../esdk-test-server" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = "0.7"
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[build-dependencies]
+cc = "1"
+
+# Own workspace root so cargo builds it standalone; the test-server crate and the
+# aws-esdk-cpp shim are consumed as a path dependency and a prebuilt cdylib.
+[workspace]
