@@ -234,9 +234,6 @@ async fn internal_decrypt(
     )
     .await?;
 
-    //= spec/client-apis/decrypt.md#get-the-decryption-materials
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# decrypt MUST yield an error.
     get_esdk_algorithm_suite_id(state.header.suite.id)?;
 
     //= spec/client-apis/decrypt.md#behavior
@@ -312,8 +309,6 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        //= spec/client-apis/decrypt.md#algorithm-suite
-        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
         algorithm_suite_id: get_esdk_algorithm_suite_id(state.header.suite.id)?,
     })
 }
@@ -340,6 +335,7 @@ fn step_parse_header(
         header::read_header_body(ciphertext, max_encrypted_data_keys, &mut raw_header)?;
 
     //= spec/client-apis/decrypt.md#verify-the-header
+    //= type=implication
     //= reason=sig_digest is fed header bytes immediately; raw header not retained for later
     //# - The streamed Decrypt operation SHOULD input the serialized header to the signature algorithm as soon as it is deserialized,
     //# such that the serialized header isn't required to remain in memory to [verify the signature](#verify-the-signature).

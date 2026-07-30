@@ -124,6 +124,7 @@ pub(crate) fn write_v1_header_body(
 
     // IV Length
 
+    //= spec/client-apis/encrypt.md#v1-header
     //# The value MUST match the [IV length](../framework/algorithm-suites.md#iv-length)
     //# specified by the [algorithm suite](../framework/algorithm-suites.md).
     let iv_length = get_iv_length(&body.algorithm_suite);
