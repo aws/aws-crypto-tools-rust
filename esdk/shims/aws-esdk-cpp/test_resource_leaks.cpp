@@ -79,12 +79,19 @@ int main() {
             all_round_trips_ok &= round_trip(sdk, keyring, plaintext);
         }
         long baseline = read_rss_bytes();
+        if (baseline == 0) {
+            std::cout << "SKIP: /proc/self/statm became unavailable during the resource-leak test.\n";
+            return 0;
+        }
 
         for (int i = 0; i < MEASURED_ITERS; ++i) {
             all_round_trips_ok &= round_trip(sdk, keyring, plaintext);
         }
         long after = read_rss_bytes();
-
+        if (after == 0) {
+            std::cout << "SKIP: /proc/self/statm became unavailable during the resource-leak test.\n";
+            return 0;
+        }
         ESDK_CHECK(all_round_trips_ok);
 
         long growth = after - baseline;
