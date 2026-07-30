@@ -62,8 +62,15 @@ if(APPLE)
 endif()
 add_library(AWS::esdk ALIAS aws_esdk_cpp)
 
-# Build the integration test only when this is the top-level project.
+# Build the integration and local-correctness tests only when this is the
+# top-level project.
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_executable(esdk_integration_test test_esdk.cpp)
     target_link_libraries(esdk_integration_test PRIVATE AWS::esdk)
+
+    add_executable(esdk_concurrency_test test_concurrency.cpp)
+    target_link_libraries(esdk_concurrency_test PRIVATE AWS::esdk)
+
+    add_executable(esdk_resource_leaks_test test_resource_leaks.cpp)
+    target_link_libraries(esdk_resource_leaks_test PRIVATE AWS::esdk)
 endif()
