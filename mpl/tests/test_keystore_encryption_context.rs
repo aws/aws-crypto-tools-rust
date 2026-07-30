@@ -209,3 +209,56 @@ fn encryption_context_additional_attributes_via_custom_ec() {
     assert!(ec.contains_key(&format!("{CUSTOM_EC_PREFIX}extra-field")));
     assert_eq!(ec[&format!("{CUSTOM_EC_PREFIX}extra-field")], "extra-value");
 }
+
+// The custom encryption context is a map of arbitrary bytes, but
+// `branch-key-store.md` states it "is stored as map of UTF8 Encoded bytes" and
+// that reconstruction uses "the UTF8 decode of this key". Non-UTF-8 input is
+// therefore not representable in the KMS encryption context and MUST be
+// rejected rather than silently substituted.
+
+fn input_with_custom_ec(custom: &EncryptionContext) -> EncryptionContextInput<'_> {
+    EncryptionContextInput {
+        branch_key_id: "b3c7f8a1-4d2e-4f6b-9a8c-1e2d3f4a5b6c",
+        create_time: "2024-01-15T10:30:00.123456Z",
+        logical_keystore_name: "my-keystore-table",
+        kms_arn: "arn:aws:kms:us-east-1:123456789012:key/mrk-12345678-1234-1234-1234-123456789012",
+        hierarchy_version: 1,
+        custom_ec: Some(custom),
+    }
+}
+
+#[test]
+fn non_utf8_custom_ec_key_is_rejected() {
+    let mut custom = EncryptionContext::new();
+    // 0xFF is not a valid UTF-8 byte sequence.
+    custom.insert(vec![0xFF], b"value".to_vec());
+
+    let err = active_encryption_context(&input_with_custom_ec(&custom), "v1")
+        .expect_err("non-UTF-8 custom encryption context key must be rejected");
+
+    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+}
+
+#[test]
+fn non_utf8_custom_ec_value_is_rejected() {
+    let mut custom = EncryptionContext::new();
+    custom.insert(b"key".to_vec(), vec![0xFF]);
+
+    let err = active_encryption_context(&input_with_custom_ec(&custom), "v1")
+        .expect_err("non-UTF-8 custom encryption context value must be rejected");
+
+    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+}
+
+#[test]
+fn distinct_non_utf8_custom_ec_keys_do_not_collapse() {
+    let mut custom = EncryptionContext::new();
+    // Two distinct invalid keys. Lossy decoding maps both to U+FFFD, which
+    // collides and silently drops one entry.
+    custom.insert(vec![0xFF], b"first".to_vec());
+    custom.insert(vec![0xFE], b"second".to_vec());
+    assert_eq!(custom.len(), 2);
+
+    active_encryption_context(&input_with_custom_ec(&custom), "v1")
+        .expect_err("distinct non-UTF-8 keys must not be silently merged");
+}
