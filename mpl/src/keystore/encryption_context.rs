@@ -5,35 +5,13 @@
 
 use std::collections::BTreeMap;
 
+use super::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
+    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
+    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+};
 use super::error::{KeystoreError, KeystoreErrorKind};
 use crate::structures::EncryptionContext;
-
-/// Key for the branch-key-id attribute.
-pub const KEY_BRANCH_KEY_ID: &str = "branch-key-id";
-/// Key for the type attribute.
-pub const KEY_TYPE: &str = "type";
-/// Key for the create-time attribute.
-pub const KEY_CREATE_TIME: &str = "create-time";
-/// Key for the tablename attribute (stores logicalKeyStoreName).
-pub const KEY_TABLENAME: &str = "tablename";
-/// Key for the kms-arn attribute.
-pub const KEY_KMS_ARN: &str = "kms-arn";
-/// Key for the hierarchy-version attribute.
-pub const KEY_HIERARCHY_VERSION: &str = "hierarchy-version";
-/// Key for the version attribute (ACTIVE only).
-pub const KEY_VERSION: &str = "version";
-/// Key for the enc attribute (MUST NOT be present in constructed EC).
-pub const KEY_ENC: &str = "enc";
-
-/// Type value for ACTIVE branch keys.
-pub const TYPE_BRANCH_ACTIVE: &str = "branch:ACTIVE";
-/// Type value for ACTIVE beacon keys.
-pub const TYPE_BEACON_ACTIVE: &str = "beacon:ACTIVE";
-/// Prefix for branch key version strings.
-pub const TYPE_BRANCH_VERSION_PREFIX: &str = "branch:version:";
-
-/// Prefix added to custom encryption context keys for namespace isolation.
-pub const CUSTOM_EC_PREFIX: &str = "aws-crypto-ec:";
 
 /// Inputs required to construct any flavor of keystore encryption context.
 #[derive(Debug, Clone)]
@@ -48,7 +26,12 @@ pub struct EncryptionContextInput<'a> {
     pub kms_arn: &'a str,
     /// Hierarchy version (becomes string representation).
     pub hierarchy_version: u32,
-    /// Optional custom encryption context.
+    /// Custom encryption context supplied by the user, if any. Each key is
+    /// added to the context prefixed with `aws-crypto-ec:`, so callers pass
+    /// keys unprefixed. This is only for user-supplied custom encryption
+    /// context; attributes already present on a stored DynamoDB item are a
+    /// read-path concern (see [`super::record::encryption_context_from_item`])
+    /// and are not passed here.
     pub custom_ec: Option<&'a EncryptionContext>,
 }
 
@@ -74,44 +57,71 @@ fn build_base(
     let mut ec = BTreeMap::new();
 
     ec.insert(
-        KEY_BRANCH_KEY_ID.to_string(),
+        ATTR_BRANCH_KEY_ID.to_string(),
         input.branch_key_id.to_string(),
     );
 
-    ec.insert(KEY_TYPE.to_string(), type_value.to_string());
+    ec.insert(ATTR_TYPE.to_string(), type_value.to_string());
 
-    ec.insert(KEY_CREATE_TIME.to_string(), input.create_time.to_string());
+    ec.insert(ATTR_CREATE_TIME.to_string(), input.create_time.to_string());
 
     ec.insert(
-        KEY_TABLENAME.to_string(),
+        ATTR_TABLENAME.to_string(),
         input.logical_keystore_name.to_string(),
     );
 
-    ec.insert(KEY_KMS_ARN.to_string(), input.kms_arn.to_string());
+    ec.insert(ATTR_KMS_ARN.to_string(), input.kms_arn.to_string());
 
     ec.insert(
-        KEY_HIERARCHY_VERSION.to_string(),
+        ATTR_HIERARCHY_VERSION.to_string(),
         input.hierarchy_version.to_string(),
     );
 
     debug_assert!(
-        !ec.contains_key(KEY_ENC),
+        !ec.contains_key(ATTR_ENC),
         "constructed encryption context must not contain 'enc'"
     );
 
     // Custom encryption context
     if let Some(custom) = input.custom_ec {
         for (k, v) in custom.iter() {
-            let key_str = String::from_utf8_lossy(k);
-            let val_str = String::from_utf8_lossy(v);
-            ec.insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.into_owned());
+            // The custom encryption context becomes part of the authenticated
+            // AWS KMS encryption context, so a byte sequence that is not valid
+            // UTF-8 cannot be represented and MUST be rejected. Decoding it
+            // lossily would substitute U+FFFD, producing an encryption context
+            // that other implementations cannot reproduce.
+            let Ok(key_str) = str::from_utf8(k) else {
+                return Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    "custom encryption context key MUST be valid UTF-8",
+                ));
+            };
+
+            let Ok(val_str) = str::from_utf8(v) else {
+                return Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    format!(
+                        "custom encryption context value for key '{key_str}' MUST be valid UTF-8"
+                    ),
+                ));
+            };
+
+            // A custom key that already carries the prefix, or a duplicate
+            // after prefixing, would otherwise overwrite a previous entry.
+            if ec
+                .insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.to_string())
+                .is_some()
+            {
+                return Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    format!(
+                        "custom encryption context key '{key_str}' collides with an existing \
+                         encryption context entry after prefixing with '{CUSTOM_EC_PREFIX}'"
+                    ),
+                ));
+            }
         }
     }
-
-    // NOTE: Additional DDB attributes beyond the standard keys are handled
-    // by the caller (record-format module) which passes them via custom_ec.
-    // This function constructs the base; the caller is responsible for
-    // merging any extra DDB attributes before calling KMS.
 
     Ok(ec)
 }
@@ -119,15 +129,22 @@ fn build_base(
 /// Builds the ACTIVE branch-key encryption context.
 ///
 /// `version` MUST be the branch key version (without the "branch:version:" prefix).
+///
+/// The ACTIVE context is the DECRYPT_ONLY context with the `type` attribute
+/// set to "branch:ACTIVE" and the branch key version moved into the `version`
+/// attribute, so it is derived from [`decrypt_only_encryption_context`] rather
+/// than built independently.
 pub fn active_encryption_context(
     input: &EncryptionContextInput<'_>,
     version: &str,
 ) -> Result<BTreeMap<String, String>, KeystoreError> {
-    let mut ec = build_base(input, TYPE_BRANCH_ACTIVE)?;
+    let mut ec = decrypt_only_encryption_context(input, version)?;
 
-    //
+    // In DECRYPT_ONLY the branch key version lives in `type`; ACTIVE moves it
+    // to `version` and sets `type` to "branch:ACTIVE".
+    ec.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
     ec.insert(
-        KEY_VERSION.to_string(),
+        ATTR_VERSION.to_string(),
         format!("{TYPE_BRANCH_VERSION_PREFIX}{version}"),
     );
 
@@ -141,11 +158,18 @@ pub fn decrypt_only_encryption_context(
     input: &EncryptionContextInput<'_>,
     version: &str,
 ) -> Result<BTreeMap<String, String>, KeystoreError> {
+    if version.is_empty() {
+        return Err(KeystoreError::new(
+            KeystoreErrorKind::Configuration,
+            "branch key version MUST not be an empty string",
+        ));
+    }
+
     let type_value = format!("{TYPE_BRANCH_VERSION_PREFIX}{version}");
     let ec = build_base(input, &type_value)?;
 
     debug_assert!(
-        !ec.contains_key(KEY_VERSION),
+        !ec.contains_key(ATTR_VERSION),
         "DECRYPT_ONLY encryption context must not have a version attribute"
     );
 
@@ -159,7 +183,7 @@ pub fn beacon_key_encryption_context(
     let ec = build_base(input, TYPE_BEACON_ACTIVE)?;
 
     debug_assert!(
-        !ec.contains_key(KEY_VERSION),
+        !ec.contains_key(ATTR_VERSION),
         "Beacon key encryption context must not have a version attribute"
     );
 

@@ -27,8 +27,9 @@ use aws_sdk_kms::primitives::Blob;
 
 use crate::keystore::config::KmsConfiguration;
 use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
+use crate::keystore::attributes::{ATTR_ENC, ATTR_KMS_ARN};
 use crate::keystore::kms_config::{is_arn_compatible, parse_arn};
-use crate::keystore::record::{EncryptedRecord, FIELD_ENC, FIELD_KMS_ARN};
+use crate::keystore::record::EncryptedRecord;
 
 /// Encryption-context key under which the logical keystore name is
 /// bound. Per `branch-key-store.md#encryption-context` this key is the
@@ -76,7 +77,7 @@ pub(crate) fn build_authenticated_encryption_context(
     // — `enc` is the binary `EncryptedRecord::enc` field — so the EC built
     // above cannot contain an `enc` key.
     debug_assert!(
-        !ec.contains_key(FIELD_ENC),
+        !ec.contains_key(ATTR_ENC),
         "constructed EC must not contain 'enc'"
     );
 
@@ -174,10 +175,10 @@ pub(crate) async fn authenticate_keystore_item(
 ) -> Result<Vec<u8>, KeystoreError> {
     let ec = build_authenticated_encryption_context(&record.attributes, logical_keystore_name);
 
-    let record_kms_arn = record.attributes.get(FIELD_KMS_ARN).ok_or_else(|| {
+    let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
-            format!("Record is missing the '{FIELD_KMS_ARN}' attribute"),
+            format!("Record is missing the '{ATTR_KMS_ARN}' attribute"),
         )
     })?;
 
@@ -222,10 +223,10 @@ pub(crate) async fn decrypt_branch_key(
 ) -> Result<Vec<u8>, KeystoreError> {
     let ec = build_authenticated_encryption_context(&record.attributes, logical_keystore_name);
 
-    let record_kms_arn = record.attributes.get(FIELD_KMS_ARN).ok_or_else(|| {
+    let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
-            format!("Record is missing the '{FIELD_KMS_ARN}' attribute"),
+            format!("Record is missing the '{ATTR_KMS_ARN}' attribute"),
         )
     })?;
 

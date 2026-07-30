@@ -26,6 +26,7 @@
 //! the concrete method, and `type=test` will be placed on the contract test
 //! that proves it.
 
+pub mod attributes;
 pub mod branch_key_store;
 pub mod config;
 pub mod encryption_context;

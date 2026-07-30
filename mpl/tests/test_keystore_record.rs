@@ -5,12 +5,16 @@
 
 use std::collections::BTreeMap;
 
+use aws_crypto_mpl::keystore::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
+    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
+    TYPE_BRANCH_VERSION_PREFIX,
+};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::record::{
-    CUSTOM_EC_PREFIX, EncryptedRecord, FIELD_BRANCH_KEY_ID, FIELD_CREATE_TIME,
-    FIELD_HIERARCHY_VERSION, FIELD_KMS_ARN, FIELD_TYPE, FIELD_VERSION, TYPE_BRANCH_ACTIVE,
-    TYPE_BRANCH_VERSION_PREFIX, branch_key_materials_from_authenticated_encryption_context,
-    custom_encryption_context_from_authenticated_encryption_context,
+    EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
+    custom_encryption_context_from_authenticated_encryption_context, encryption_context_from_item,
+    to_attribute_map,
 };
 
 /// Build a minimal authenticated EC that satisfies all record-format required fields.
@@ -20,19 +24,19 @@ fn make_authenticated_ec(
     version: Option<&str>,
 ) -> BTreeMap<String, String> {
     let mut ec = BTreeMap::new();
-    ec.insert(FIELD_BRANCH_KEY_ID.to_string(), branch_key_id.to_string());
-    ec.insert(FIELD_TYPE.to_string(), type_val.to_string());
+    ec.insert(ATTR_BRANCH_KEY_ID.to_string(), branch_key_id.to_string());
+    ec.insert(ATTR_TYPE.to_string(), type_val.to_string());
     ec.insert(
-        FIELD_KMS_ARN.to_string(),
+        ATTR_KMS_ARN.to_string(),
         "arn:aws:kms:us-east-1:123456789012:key/test-key-id".to_string(),
     );
     ec.insert(
-        FIELD_CREATE_TIME.to_string(),
+        ATTR_CREATE_TIME.to_string(),
         "2024-01-01T00:00:00.000000Z".to_string(),
     );
-    ec.insert(FIELD_HIERARCHY_VERSION.to_string(), "1".to_string());
+    ec.insert(ATTR_HIERARCHY_VERSION.to_string(), "1".to_string());
     if let Some(v) = version {
-        ec.insert(FIELD_VERSION.to_string(), v.to_string());
+        ec.insert(ATTR_VERSION.to_string(), v.to_string());
     }
     ec
 }
@@ -48,21 +52,21 @@ const TEST_VERSION_UUID: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 #[test]
 fn record_format_struct_has_all_required_fields() {
     let mut attributes = BTreeMap::new();
-    attributes.insert(FIELD_BRANCH_KEY_ID.to_string(), "test-id".to_string());
-    attributes.insert(FIELD_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
+    attributes.insert(ATTR_BRANCH_KEY_ID.to_string(), "test-id".to_string());
+    attributes.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
     attributes.insert(
-        FIELD_VERSION.to_string(),
+        ATTR_VERSION.to_string(),
         format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID),
     );
     attributes.insert(
-        FIELD_KMS_ARN.to_string(),
+        ATTR_KMS_ARN.to_string(),
         "arn:aws:kms:us-east-1:123456789012:key/k".to_string(),
     );
     attributes.insert(
-        FIELD_CREATE_TIME.to_string(),
+        ATTR_CREATE_TIME.to_string(),
         "2024-01-01T00:00:00.000000Z".to_string(),
     );
-    attributes.insert(FIELD_HIERARCHY_VERSION.to_string(), "1".to_string());
+    attributes.insert(ATTR_HIERARCHY_VERSION.to_string(), "1".to_string());
 
     let record = EncryptedRecord {
         attributes,
@@ -70,11 +74,11 @@ fn record_format_struct_has_all_required_fields() {
     };
 
     assert_eq!(
-        record.attributes.get(FIELD_BRANCH_KEY_ID).unwrap(),
+        record.attributes.get(ATTR_BRANCH_KEY_ID).unwrap(),
         "test-id"
     );
     assert_eq!(
-        record.attributes.get(FIELD_TYPE).unwrap(),
+        record.attributes.get(ATTR_TYPE).unwrap(),
         TYPE_BRANCH_ACTIVE
     );
     assert!(!record.enc.is_empty());
@@ -198,7 +202,7 @@ fn materials_version_rejects_invalid_prefix() {
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid version prefix");
     assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
-    assert!(err.message.contains("does not start with"));
+    assert!(err.message.contains("MUST be"));
 }
 
 #[test]
@@ -272,4 +276,88 @@ fn custom_ec_extraction_ignores_non_prefixed_keys() {
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
     assert_eq!(result.len(), 1);
     assert!(result.contains_key(b"included"));
+}
+
+#[test]
+fn materials_reconstruction_rejects_bare_version_prefix_type() {
+    // `type` is exactly "branch:version:" with no version following it.
+    let ec = make_authenticated_ec(TYPE_BRANCH_VERSION_PREFIX, "test-id", None);
+    let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
+        .expect_err("bare 'branch:version:' with no version must be rejected");
+    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
+}
+
+#[test]
+fn materials_reconstruction_rejects_active_with_bare_version_attribute() {
+    let ec = make_authenticated_ec(
+        TYPE_BRANCH_ACTIVE,
+        "test-id",
+        Some(TYPE_BRANCH_VERSION_PREFIX),
+    );
+    let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
+        .expect_err("ACTIVE with bare 'branch:version:' version must be rejected");
+    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
+}
+
+// to_attribute_map and encryption_context_from_item are inverses: projecting a
+// constructed encryption context to a stored item and back reproduces the
+// context exactly (the property the Dafny reference proves via
+// `ToBranchKeyContext(ToAttributeMap(ec), ec[tablename]) == ec`).
+#[test]
+fn item_encryption_context_round_trips() {
+    let version_str = format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID);
+    let mut ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
+    ec.insert(ATTR_TABLENAME.to_string(), "logical-name".to_string());
+    ec.insert(format!("{}dept", CUSTOM_EC_PREFIX), "eng".to_string());
+
+    let logical = ec[ATTR_TABLENAME].clone();
+    let record = to_attribute_map(&ec, vec![0xAB; 48]);
+    let recovered = encryption_context_from_item(&record, &logical);
+
+    assert_eq!(recovered, ec);
+    // `enc` is carried separately, never in the stored string attributes.
+    assert!(!record.attributes.contains_key(ATTR_ENC));
+    assert_eq!(record.enc, vec![0xAB; 48]);
+    // `tablename` exists only in the context, not among the stored attributes.
+    assert!(!record.attributes.contains_key(ATTR_TABLENAME));
+}
+
+#[test]
+fn encryption_context_from_item_adds_tablename_and_ignores_enc_attribute() {
+    let mut attributes = BTreeMap::new();
+    attributes.insert(ATTR_BRANCH_KEY_ID.to_string(), "id".to_string());
+    attributes.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
+    // A stray `enc` among the string attributes must not leak into the context.
+    attributes.insert(ATTR_ENC.to_string(), "should-be-dropped".to_string());
+
+    let record = EncryptedRecord {
+        attributes,
+        enc: vec![0x01; 32],
+    };
+    let ec = encryption_context_from_item(&record, "logical-name");
+
+    assert_eq!(ec[ATTR_TABLENAME], "logical-name");
+    assert!(!ec.contains_key(ATTR_ENC));
+}
+
+// Attributes the SDK did not write are authenticated verbatim, and custom
+// encryption context entries already stored with the prefix are not prefixed
+// a second time.
+#[test]
+fn additional_item_attributes_are_carried_verbatim() {
+    let mut attributes = BTreeMap::new();
+    attributes.insert(ATTR_BRANCH_KEY_ID.to_string(), "id".to_string());
+    attributes.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
+    attributes.insert("custom-column".to_string(), "value".to_string());
+    attributes.insert(format!("{}dept", CUSTOM_EC_PREFIX), "eng".to_string());
+
+    let record = EncryptedRecord {
+        attributes,
+        enc: Vec::new(),
+    };
+    let ec = encryption_context_from_item(&record, "logical-name");
+
+    assert_eq!(ec["custom-column"], "value");
+    assert_eq!(ec[&format!("{}dept", CUSTOM_EC_PREFIX)], "eng");
+    assert!(!ec.contains_key(&format!("{0}{0}dept", CUSTOM_EC_PREFIX)));
 }

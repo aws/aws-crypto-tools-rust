@@ -35,10 +35,12 @@ use uuid::Uuid;
 use crate::keystore::Keystore;
 use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo};
 use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
+use crate::keystore::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TYPE, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+};
 use crate::keystore::kms_ops::decrypt_branch_key;
 use crate::keystore::record::{
-    EncryptedRecord, FIELD_BRANCH_KEY_ID, FIELD_ENC, FIELD_TYPE, TYPE_BRANCH_ACTIVE,
-    TYPE_BRANCH_VERSION_PREFIX, branch_key_materials_from_authenticated_encryption_context,
+    EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
 };
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
@@ -142,10 +144,10 @@ impl BranchKeyStore {
             .get_item()
             .table_name(&self.config.table_name)
             .key(
-                FIELD_BRANCH_KEY_ID,
+                ATTR_BRANCH_KEY_ID,
                 AttributeValue::S(branch_key_id.to_string()),
             )
-            .key(FIELD_TYPE, AttributeValue::S(sort_key.to_string()))
+            .key(ATTR_TYPE, AttributeValue::S(sort_key.to_string()))
             .send()
             .await
             .map_err(|e| {
@@ -266,11 +268,11 @@ fn record_from_ddb_item(
     mut item: std::collections::HashMap<String, AttributeValue>,
 ) -> Result<EncryptedRecord, KeystoreError> {
     //
-    let enc_attr = item.remove(FIELD_ENC).ok_or_else(|| {
+    let enc_attr = item.remove(ATTR_ENC).ok_or_else(|| {
         //
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
-            format!("Record is missing the '{FIELD_ENC}' attribute"),
+            format!("Record is missing the '{ATTR_ENC}' attribute"),
         )
     })?;
 
@@ -279,7 +281,7 @@ fn record_from_ddb_item(
         other => {
             return Err(KeystoreError::new(
                 KeystoreErrorKind::RecordMalformed,
-                format!("Record '{FIELD_ENC}' attribute must be Binary, got {other:?}",),
+                format!("Record '{ATTR_ENC}' attribute must be Binary, got {other:?}",),
             ));
         }
     };
