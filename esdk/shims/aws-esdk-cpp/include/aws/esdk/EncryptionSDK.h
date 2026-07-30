@@ -77,7 +77,12 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 2,
 };
 
-enum class CacheKind : std::uint8_t { None = 0, MultiThreaded = 1 };
+enum class CacheKind : std::uint8_t {
+    /// Nothing should ever be cached.
+    None = 0,
+    /// A cache that is safe for use in a multi threaded environment, but no extra functionality.
+    MultiThreaded = 1,
+};
 
 namespace detail {
 
@@ -143,6 +148,7 @@ public:
 };
 
 // ---- Handle wrappers: copyable (shared_ptr), so they can be owned as deps -----
+/// The KMS client this Key Store uses to call AWS KMS.
 class KmsClient {
     std::shared_ptr<::rust::Box<::MplKmsClient>> inner_;
     const ::MplKmsClient* ffi() const { return &**inner_; }
@@ -153,6 +159,7 @@ public:
               detail::guard([&] { return ::create_kms_client(cfg.raw()); }))) {}
 };
 
+/// The DynamoDB client this Key Store uses to call Amazon DynamoDB.
 class DdbClient {
     std::shared_ptr<::rust::Box<::MplDdbClient>> inner_;
     const ::MplDdbClient* ffi() const { return &**inner_; }
@@ -171,7 +178,9 @@ class KeyStoreOptions {
     friend class KeyStore;
 
 public:
+    /// An identifier for this Key Store.
     KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
+    /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
     KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
 };
 
@@ -185,6 +194,17 @@ class KeyStore {
     const ::KeyStore* ffi() const { return &**inner_; }
     friend class HierarchicalKeyring;
 public:
+    /// Creates a Key Store backed by a DynamoDB table and protected by AWS KMS.
+    /// \param table_name The DynamoDB table name that backs this Key Store.
+    /// \param logical_key_store_name The logical name for this Key Store, which is
+    ///        cryptographically bound to the keys it holds. This appears in the
+    ///        Encryption Context of KMS requests as `tablename`.
+    /// \param kms_arn Key Store is restricted to only this KMS Key ARN. If a different
+    ///        KMS Key ARN is encountered when creating, versioning, or getting a Branch
+    ///        Key or Beacon Key, KMS is never called and an exception is thrown.
+    /// \param kms The KMS client this Key Store uses to call AWS KMS.
+    /// \param ddb The DynamoDB client this Key Store uses to call Amazon DynamoDB.
+    /// \param options Optional Key Store parameters.
     KeyStore(const std::string& table_name,
              const std::string& logical_key_store_name,
              const std::string& kms_arn,
@@ -235,14 +255,30 @@ class HierarchicalKeyringOptions {
     friend class HierarchicalKeyring;
 
 public:
+    /// Sets the type of cache for this Hierarchical Keyring.
     HierarchicalKeyringOptions& with_cache(CacheKind kind) { cache_ = kind; return *this; }
+    /// Maximum number of entries cached.
     HierarchicalKeyringOptions& with_cache_capacity(std::uint32_t entries) { cache_capacity_ = entries; return *this; }
+    /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing
+    /// to a cache. If the Partition ID is the same for two Hierarchical Keyrings (or another
+    /// Material Provider), they can share the same cache entries in the cache.
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
+    /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
+    /// using Branch Keys persisted in DynamoDB and protected by a symmetric AWS KMS Key or
+    /// AWS KMS Multi-Region Key.
+    /// \param key_store The Key Store which contains the Branch Key(s) responsible for
+    ///        wrapping and unwrapping data keys.
+    /// \param branch_key_id The identifier for the single Branch Key responsible for
+    ///        wrapping and unwrapping the data key.
+    /// \param ttl_seconds How many seconds the Branch Key material is allowed to be reused
+    ///        within the local cache before it is re-retrieved from Amazon DynamoDB and
+    ///        re-authenticated with AWS KMS.
+    /// \param options Optional Hierarchical Keyring parameters.
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
                         std::uint32_t ttl_seconds,
