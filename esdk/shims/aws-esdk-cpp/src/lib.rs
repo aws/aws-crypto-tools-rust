@@ -236,7 +236,7 @@ mod ffi {
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
-        ttl: u32,
+        ttl_seconds: u32,
         cache: CacheType,
         multi_threaded_cache: MultiThreadedCacheConfig,
         partition_id: String,
@@ -333,7 +333,7 @@ fn default_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::default(),
         key_store: std::ptr::null(),
-        ttl: 300,
+        ttl_seconds: 300,
         cache: ffi::CacheType::MultiThreadedCache,
         multi_threaded_cache: ffi::MultiThreadedCacheConfig {
             entryCapacity: 1000,
@@ -772,7 +772,7 @@ fn create_hierarchical_keyring(
         .create_aws_kms_hierarchical_keyring()
         .cache(make_cache_type(input)?)
         .branch_key_id(input.branch_key_id.clone())
-        .ttl_seconds(input.ttl);
+        .ttl_seconds(input.ttl_seconds);
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST require a key store handle, checked as
     //# defined in

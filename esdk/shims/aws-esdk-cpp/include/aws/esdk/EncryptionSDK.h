@@ -5,7 +5,7 @@
 //     enums/structs) appears in any public signature. Swapping the binding
 //     backend later touches only this file's internals, not consumer code.
 //   * RAII + exceptions: cxx throws rust::Error on failure; we translate that
-//     into Aws::Esdk::EsdkException so callers never see a cxx type.
+//     into Aws::Esdk::AwsEncryptionSdkException so callers never see a cxx type.
 //   * Memory safety at the handle seam: the bridge passes handles as raw
 //     `*const` pointers inside config structs, which can dangle if a C++ caller
 //     drops a client before it is used. Each wrapper here OWNS its dependencies
@@ -49,26 +49,26 @@ namespace Esdk {
 // ---- Public exception: hides cxx's rust::Error ------------------------------
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=EsdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
+//= reason=AwsEncryptionSdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
 //# - The shim MUST define its own error type for its public surface.
-class EsdkException : public std::runtime_error {
+class AwsEncryptionSdkException : public std::runtime_error {
 public:
-    explicit EsdkException(const std::string& msg) : std::runtime_error(msg) {}
+    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
 };
 
 // ---- Public enums: our own, so the generated enums never leak ----------------
 enum class AlgorithmSuiteId : std::uint16_t {
-    AesGcm128                      = 0x0014,
-    AesGcm192                      = 0x0046,
-    AesGcm256                      = 0x0078,
-    AesGcm128Hkdf256               = 0x0114,
-    AesGcm192Hkdf256               = 0x0146,
-    AesGcm256Hkdf256               = 0x0178,
-    AesGcm128Hkdf256Ecdsa256       = 0x0214,
-    AesGcm192Hkdf384Ecdsa384       = 0x0346,
-    AesGcm256Hkdf384Ecdsa384       = 0x0378,
-    AesGcm256Hkdf512Commit         = 0x0478,
-    AesGcm256Hkdf512CommitEcdsa384 = 0x0578,
+    AlgAes128GcmIv12Tag16NoKdf               = 0x0014,
+    AlgAes192GcmIv12Tag16NoKdf               = 0x0046,
+    AlgAes256GcmIv12Tag16NoKdf               = 0x0078,
+    AlgAes128GcmIv12Tag16HkdfSha256          = 0x0114,
+    AlgAes192GcmIv12Tag16HkdfSha256          = 0x0146,
+    AlgAes256GcmIv12Tag16HkdfSha256          = 0x0178,
+    AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 = 0x0214,
+    AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0346,
+    AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0378,
+    AlgAes256GcmHkdfSha512CommitKey          = 0x0478,
+    AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 = 0x0578,
 };
 
 enum class CommitmentPolicy : std::uint8_t {
@@ -81,14 +81,14 @@ enum class CacheKind : std::uint8_t { None = 0, MultiThreaded = 1 };
 
 namespace detail {
 
-// Run a cxx call, translating rust::Error -> EsdkException so no cxx exception
-// type escapes this header.
+// Run a cxx call, translating rust::Error -> AwsEncryptionSdkException so no cxx
+// exception type escapes this header.
 template <typename F>
 inline auto guard(F&& f) -> decltype(f()) {
     try {
         return f();
     } catch (const ::rust::Error& e) {
-        throw EsdkException(e.what());
+        throw AwsEncryptionSdkException(e.what());
     }
 }
 
@@ -171,7 +171,7 @@ class KeyStoreOptions {
     friend class KeyStore;
 
 public:
-    KeyStoreOptions& with_key_store_id(const std::string& id) { key_store_id_ = id; return *this; }
+    KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
     KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
 };
 
@@ -259,7 +259,7 @@ private:
             ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
             in.branch_key_id = ::rust::String(branch_key_id);
             in.key_store = key_store.ffi();
-            in.ttl = ttl_seconds;
+            in.ttl_seconds = ttl_seconds;
             in.partition_id = ::rust::String(options.partition_id_);
             if (options.cache_) in.cache = detail::to_ffi(*options.cache_);
             if (options.cache_capacity_) in.multi_threaded_cache.entryCapacity = *options.cache_capacity_;
