@@ -3,7 +3,7 @@
 // These test the SHIM's own behavior through the public C++ API:
 //   * encrypt/decrypt round-trip fidelity,
 //   * encryption-context handling,
-//   * failures surface as Aws::Esdk::EsdkException (not a crash),
+//   * failures surface as Aws::Esdk::AwsEncryptionSdkException (not a crash),
 //   * tampered ciphertext is rejected,
 //   * handle lifetime safety (a keyring keeps its clients/keystore alive even
 //     after the local wrappers go out of scope).
@@ -48,13 +48,13 @@ static int g_failures = 0;
         bool threw = false;                                                    \
         try {                                                                  \
             expr;                                                              \
-        } catch (const Aws::Esdk::EsdkException&) {                             \
+        } catch (const Aws::Esdk::AwsEncryptionSdkException&) {                             \
             threw = true;                                                      \
         } catch (...) {                                                        \
         }                                                                      \
         if (!threw) {                                                          \
             ++g_failures;                                                      \
-            std::cerr << "FAIL: expected EsdkException from " << #expr << "\n"; \
+            std::cerr << "FAIL: expected AwsEncryptionSdkException from " << #expr << "\n"; \
         }                                                                      \
     } while (0)
 
@@ -133,12 +133,12 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     std::map<std::string, std::string> ec = {{"purpose", "test"}, {"origin", "cxx"}};
     auto encrypted = sdk.encrypt(plaintext, keyring,
                                  Aws::Esdk::EncryptOptions()
-                                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384)
+                                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
                                      .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
                                      .with_encryption_context(ec));
     // encrypt surfaces the used suite and the encryption context sent to the core library.
     CHECK(encrypted.algorithm_suite_id ==
-          Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
+          Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     for (const auto& kv : ec) {
         CHECK(encrypted.encryption_context.count(kv.first) == 1);
         CHECK(encrypted.encryption_context[kv.first] == kv.second);
@@ -163,7 +163,7 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     //# - MUST return the used algorithm suite, converted as defined in
     //# [Algorithm suite identifier](#algorithm-suite-identifier).
     CHECK(decrypted.algorithm_suite_id ==
-          Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
+          Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
 }
 
 void test_decrypt_garbage_throws(const TestConfig& cfg) {
@@ -178,11 +178,11 @@ void test_decrypt_garbage_throws(const TestConfig& cfg) {
     CHECK_THROWS_ESDK(sdk.decrypt(garbage, keyring));
 
     // The surfaced error identifies which operation failed (SHOULD context):
-    // EsdkException carries the core error string, which is prefixed "decrypt failed".
+    // AwsEncryptionSdkException carries the core error string, which is prefixed "decrypt failed".
     std::string msg;
     try {
         sdk.decrypt(garbage, keyring);
-    } catch (const Aws::Esdk::EsdkException& e) {
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
         msg = e.what();
     }
     //= spec/shim/shim.md#delegation
@@ -231,7 +231,7 @@ void test_default_options_defer(const TestConfig& cfg) {
     //# - When the target does not supply an optional input, the shim MUST defer to
     //# the core library's default and MUST NOT substitute its own.
     CHECK(encrypted.algorithm_suite_id ==
-          Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf512CommitEcdsa384);
+          Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
 }
 
 const char* env_or_null(const char* name) {

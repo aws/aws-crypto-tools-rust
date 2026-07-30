@@ -5,7 +5,7 @@
 //     enums/structs) appears in any public signature. Swapping the binding
 //     backend later touches only this file's internals, not consumer code.
 //   * RAII + exceptions: cxx throws rust::Error on failure; we translate that
-//     into Aws::Esdk::EsdkException so callers never see a cxx type.
+//     into Aws::Esdk::AwsEncryptionSdkException so callers never see a cxx type.
 //   * Memory safety at the handle seam: the bridge passes handles as raw
 //     `*const` pointers inside config structs, which can dangle if a C++ caller
 //     drops a client before it is used. Each wrapper here OWNS its dependencies
@@ -49,26 +49,26 @@ namespace Esdk {
 // ---- Public exception: hides cxx's rust::Error ------------------------------
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=EsdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
+//= reason=AwsEncryptionSdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
 //# - The shim MUST define its own error type for its public surface.
-class EsdkException : public std::runtime_error {
+class AwsEncryptionSdkException : public std::runtime_error {
 public:
-    explicit EsdkException(const std::string& msg) : std::runtime_error(msg) {}
+    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
 };
 
 // ---- Public enums: our own, so the generated enums never leak ----------------
 enum class AlgorithmSuiteId : std::uint16_t {
-    AesGcm128                      = 0x0014,
-    AesGcm192                      = 0x0046,
-    AesGcm256                      = 0x0078,
-    AesGcm128Hkdf256               = 0x0114,
-    AesGcm192Hkdf256               = 0x0146,
-    AesGcm256Hkdf256               = 0x0178,
-    AesGcm128Hkdf256Ecdsa256       = 0x0214,
-    AesGcm192Hkdf384Ecdsa384       = 0x0346,
-    AesGcm256Hkdf384Ecdsa384       = 0x0378,
-    AesGcm256Hkdf512Commit         = 0x0478,
-    AesGcm256Hkdf512CommitEcdsa384 = 0x0578,
+    AlgAes128GcmIv12Tag16NoKdf               = 0x0014,
+    AlgAes192GcmIv12Tag16NoKdf               = 0x0046,
+    AlgAes256GcmIv12Tag16NoKdf               = 0x0078,
+    AlgAes128GcmIv12Tag16HkdfSha256          = 0x0114,
+    AlgAes192GcmIv12Tag16HkdfSha256          = 0x0146,
+    AlgAes256GcmIv12Tag16HkdfSha256          = 0x0178,
+    AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 = 0x0214,
+    AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0346,
+    AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0378,
+    AlgAes256GcmHkdfSha512CommitKey          = 0x0478,
+    AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 = 0x0578,
 };
 
 enum class CommitmentPolicy : std::uint8_t {
@@ -77,18 +77,23 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 2,
 };
 
-enum class CacheKind : std::uint8_t { None = 0, MultiThreaded = 1 };
+enum class CacheKind : std::uint8_t {
+    /// Nothing should ever be cached.
+    None = 0,
+    /// A cache that is safe for use in a multi threaded environment, but no extra functionality.
+    MultiThreaded = 1,
+};
 
 namespace detail {
 
-// Run a cxx call, translating rust::Error -> EsdkException so no cxx exception
-// type escapes this header.
+// Run a cxx call, translating rust::Error -> AwsEncryptionSdkException so no cxx
+// exception type escapes this header.
 template <typename F>
 inline auto guard(F&& f) -> decltype(f()) {
     try {
         return f();
     } catch (const ::rust::Error& e) {
-        throw EsdkException(e.what());
+        throw AwsEncryptionSdkException(e.what());
     }
 }
 
@@ -143,6 +148,7 @@ public:
 };
 
 // ---- Handle wrappers: copyable (shared_ptr), so they can be owned as deps -----
+/// The KMS client this Key Store uses to call AWS KMS.
 class KmsClient {
     std::shared_ptr<::rust::Box<::MplKmsClient>> inner_;
     const ::MplKmsClient* ffi() const { return &**inner_; }
@@ -153,6 +159,7 @@ public:
               detail::guard([&] { return ::create_kms_client(cfg.raw()); }))) {}
 };
 
+/// The DynamoDB client this Key Store uses to call Amazon DynamoDB.
 class DdbClient {
     std::shared_ptr<::rust::Box<::MplDdbClient>> inner_;
     const ::MplDdbClient* ffi() const { return &**inner_; }
@@ -171,7 +178,9 @@ class KeyStoreOptions {
     friend class KeyStore;
 
 public:
-    KeyStoreOptions& with_key_store_id(const std::string& id) { key_store_id_ = id; return *this; }
+    /// An identifier for this Key Store.
+    KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
+    /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
     KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
 };
 
@@ -185,6 +194,17 @@ class KeyStore {
     const ::KeyStore* ffi() const { return &**inner_; }
     friend class HierarchicalKeyring;
 public:
+    /// Creates a Key Store backed by a DynamoDB table and protected by AWS KMS.
+    /// \param table_name The DynamoDB table name that backs this Key Store.
+    /// \param logical_key_store_name The logical name for this Key Store, which is
+    ///        cryptographically bound to the keys it holds. This appears in the
+    ///        Encryption Context of KMS requests as `tablename`.
+    /// \param kms_arn Key Store is restricted to only this KMS Key ARN. If a different
+    ///        KMS Key ARN is encountered when creating, versioning, or getting a Branch
+    ///        Key or Beacon Key, KMS is never called and an exception is thrown.
+    /// \param kms The KMS client this Key Store uses to call AWS KMS.
+    /// \param ddb The DynamoDB client this Key Store uses to call Amazon DynamoDB.
+    /// \param options Optional Key Store parameters.
     KeyStore(const std::string& table_name,
              const std::string& logical_key_store_name,
              const std::string& kms_arn,
@@ -235,14 +255,30 @@ class HierarchicalKeyringOptions {
     friend class HierarchicalKeyring;
 
 public:
+    /// Sets the type of cache for this Hierarchical Keyring.
     HierarchicalKeyringOptions& with_cache(CacheKind kind) { cache_ = kind; return *this; }
+    /// Maximum number of entries cached.
     HierarchicalKeyringOptions& with_cache_capacity(std::uint32_t entries) { cache_capacity_ = entries; return *this; }
+    /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing
+    /// to a cache. If the Partition ID is the same for two Hierarchical Keyrings (or another
+    /// Material Provider), they can share the same cache entries in the cache.
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
+    /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
+    /// using Branch Keys persisted in DynamoDB and protected by a symmetric AWS KMS Key or
+    /// AWS KMS Multi-Region Key.
+    /// \param key_store The Key Store which contains the Branch Key(s) responsible for
+    ///        wrapping and unwrapping data keys.
+    /// \param branch_key_id The identifier for the single Branch Key responsible for
+    ///        wrapping and unwrapping the data key.
+    /// \param ttl_seconds How many seconds the Branch Key material is allowed to be reused
+    ///        within the local cache before it is re-retrieved from Amazon DynamoDB and
+    ///        re-authenticated with AWS KMS.
+    /// \param options Optional Hierarchical Keyring parameters.
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
                         std::uint32_t ttl_seconds,
@@ -259,7 +295,7 @@ private:
             ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
             in.branch_key_id = ::rust::String(branch_key_id);
             in.key_store = key_store.ffi();
-            in.ttl = ttl_seconds;
+            in.ttl_seconds = ttl_seconds;
             in.partition_id = ::rust::String(options.partition_id_);
             if (options.cache_) in.cache = detail::to_ffi(*options.cache_);
             if (options.cache_capacity_) in.multi_threaded_cache.entryCapacity = *options.cache_capacity_;
