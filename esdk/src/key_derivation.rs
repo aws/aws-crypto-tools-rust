@@ -96,7 +96,7 @@ pub(crate) fn derive_key_v1(
         }
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# - If the key derivation algorithm is [HKDF](../framework/algorithm-suites.md#hkdf),
-        //# the derivation process used MUST be the process described in [HKDF Encryption Key](./key-derivation.md#hkdf-encryption-key).
+        //# the derivation process used MUST be the process described in [HKDF Encryption Key](../transitive-requirements.md#hkdf-encryption-key).
         //
         //= spec/client-apis/key-derivation.md#hkdf-encryption-key
         //# If an algorithm suite uses HKDF to derive the encryption key
