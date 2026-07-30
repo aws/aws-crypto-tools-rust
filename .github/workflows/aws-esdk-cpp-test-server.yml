@@ -1,0 +1,119 @@
+name: ESDK TestServer (C++ shim)
+
+on:
+  pull_request:
+    paths:
+      - "esdk-cpp-test-server/**"
+      - "esdk/shims/aws-esdk-cpp/**"
+      - ".github/workflows/aws-esdk-cpp-test-server.yml"
+  push:
+    paths:
+      - "esdk-cpp-test-server/**"
+      - "esdk/shims/aws-esdk-cpp/**"
+      - ".github/workflows/aws-esdk-cpp-test-server.yml"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  cpp-shim-language-server:
+    name: build + test (C++ facade)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: esdk-cpp-test-server
+    steps:
+      - uses: actions/checkout@v4
+
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            esdk-cpp-test-server
+            esdk/shims/aws-esdk-cpp
+
+      # The server links the shim's cdylib, so build the shim first (a separate
+      # step keeps the two heavy Rust builds from running at once).
+      - name: Build the aws-esdk-cpp shim
+        run: cd ../esdk/shims/aws-esdk-cpp && cargo build
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      # The live hierarchical round trip SKIPs without ESDK_TEST_* credentials.
+      - name: Test
+        run: cargo test --verbose
+
+  # The complete cross-language TestServer run, delegated to the commons
+  # orchestrator with this working tree as the live C++-shim server source.
+  # Manual-only until the two repo secrets below exist and the commons C++-shim
+  # configuration is merged; skips (not fails) on pull_request/push.
+  test-server:
+    name: Cross-language TestServer run
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    # Requires two repo secrets:
+    #   CI_AWS_ROLE_ARN     — OIDC role in the branch-key-store account with KMS
+    #                         and DynamoDB access to the fixture key store.
+    #   COMMONS_REPO_TOKEN  — read access to aws/aws-crypto-tools-commons.
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v4
+
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # The commons orchestrator (smithy-java) needs a JDK 21+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Configure AWS credentials (branch-key-store account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CI_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      # The bootstrap's plain `git clone` of the private commons repo picks up
+      # this SSH -> HTTPS+token mapping.
+      - name: Authenticate the commons clone
+        run: git config --global url."https://x-access-token:${{ secrets.COMMONS_REPO_TOKEN }}@github.com/".insteadOf "git@github.com:"
+
+      - name: Run the orchestrated TestServer
+        working-directory: esdk-cpp-test-server
+        run: make test-server
