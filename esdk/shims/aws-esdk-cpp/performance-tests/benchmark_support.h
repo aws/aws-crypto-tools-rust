@@ -101,7 +101,7 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
 }
 
 // Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read
-// (non-Linux, or /proc not mounted) so the memory test can skip.
+// (non-Linux, or /proc not mounted).
 inline long read_rss_bytes() {
     std::FILE* statm = std::fopen("/proc/self/statm", "r");
     if (!statm) {
