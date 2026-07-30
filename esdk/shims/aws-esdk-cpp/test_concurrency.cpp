@@ -10,8 +10,7 @@
 // test asserts message IDs stay unique even when many threads encrypt at once.
 //
 // Local because it drives the shim from real OS threads through the shared Tokio
-// runtime inside the bindings, which the cross-language test vectors do not
-// reach.
+// runtime inside the bindings.
 
 #include <cstddef>
 #include <cstdint>

@@ -4,11 +4,11 @@
 // Shared setup for the local-correctness tests (test_concurrency.cpp and
 // test_resource_leaks.cpp).
 //
-// The hierarchical keyring is the only materials source the shim exposes, so
-// these tests drive the real crypto path and need live AWS resources. Provide
-// them through the same environment variables test_esdk.cpp uses; when any
-// required var is unset, load_test_config() returns std::nullopt so the caller
-// can print SKIP and exit 0 (it never fails credential-less CI):
+// These tests use the hierarchical keyring, so they drive the real crypto path
+// and need live AWS resources. Provide them through the same environment
+// variables test_esdk.cpp uses; when any required var is unset,
+// load_test_config() returns std::nullopt so the caller can print SKIP and
+// exit 0 (it never fails credential-less CI):
 //
 //   ESDK_TEST_KMS_KEY_ARN       KMS key ARN backing the key store
 //   ESDK_TEST_DDB_TABLE         DynamoDB table name of the key store
@@ -28,8 +28,8 @@
 
 namespace esdk_test {
 
-// Assertion harness. Call only from the main thread; worker threads report
-// results back through their own synchronized state, not these counters.
+// Assertion harness. Call only from the main thread; not synchronized for
+// concurrent use.
 inline int g_checks = 0;
 inline int g_failures = 0;
 

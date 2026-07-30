@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Repeated encrypt/decrypt round trips must not grow the process's resident
-// memory, measured through /proc/self/statm.
+// memory, measured through /proc/self/statm (Linux only).
 //
 // Local because live-memory growth is in-process and never appears on the wire.
-// The measurement is process-level (Linux only) because the crypto runs inside
-// the Rust bindings, whose allocations a C++ allocator hook would not observe.
 
 #include <cstddef>
 #include <cstdint>
@@ -35,11 +33,10 @@ long read_rss_bytes() {
     if (!statm) {
         return 0;
     }
-    long total_pages = 0;
     long resident_pages = 0;
-    int fields = std::fscanf(statm, "%ld %ld", &total_pages, &resident_pages);
+    int fields = std::fscanf(statm, "%*d %ld", &resident_pages);
     std::fclose(statm);
-    if (fields != 2) {
+    if (fields != 1) {
         return 0;
     }
     return resident_pages * sysconf(_SC_PAGESIZE);
