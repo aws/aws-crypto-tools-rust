@@ -1,0 +1,45 @@
+# Reusable workflow that runs duvet for a single project (subdirectory) and
+# uploads the HTML compliance report as a build artifact. Callers pass the
+# project directory name via the `project` input (e.g. "esdk"). The project
+# must have a `.duvet/config.toml` and a `make duvet` target.
+name: Duvet Report
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to run duvet in (e.g. esdk)."
+        required: true
+        type: string
+
+jobs:
+  duvet:
+    name: duvet (${{ inputs.project }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.project }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      # Install duvet at its latest published release, matching the duvet
+      # workflow in aws-cryptographic-material-providers-library. duvet has no
+      # prebuilt binary, so it builds from source; cargo/rustup are
+      # preinstalled on the runner.
+      - name: Install duvet
+        run: cargo +stable install duvet
+
+      - name: Run duvet
+        run: make duvet
+
+      - name: Upload duvet report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.project }}-duvet-report
+          include-hidden-files: true
+          path: ${{ inputs.project }}/.duvet/reports/report.html

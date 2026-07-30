@@ -176,6 +176,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //# The encrypted content length MUST be a UInt32.
             //
             //= spec/data-format/message-body.md#final-frame-encrypted-content
+            //= reason=read_seq_u32_bounded reads the content length field then exactly that many content bytes, so the serialized content length equals the field by construction
             //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
             //
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -335,11 +336,15 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         }
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=implication
+        //= reason=regular-frame plaintext is written to the sink as each frame's tag verifies
         //# - If the streamed Decrypt operation is using an algorithm suite with a signature algorithm,
         //# all plaintext decrypted from regular frames SHOULD be released as soon as the above calculation,
         //# including tag verification, succeeds.
         //
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=implication
+        //= reason=each frame's plaintext is written to the output sink as its tag verifies, before the next frame is read
         //# - If the streamed Decrypt operation is using an algorithm suite without a signature algorithm,
         //# plaintext SHOULD be released as soon as the above calculation, including tag verification,
         //# succeeds.
@@ -365,6 +370,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //# The IV MUST be interpreted as bytes.
         //
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=implication
         //= reason=sig_digest is threaded through each read_bytes call, feeding the serialized frame to the signature algorithm as it is deserialized
         //# - The streamed Decrypt operation SHOULD input the serialized frame to the signature algorithm as soon as it is deserialized,
         //# such that the serialized frame isn't required to remain in memory to complete

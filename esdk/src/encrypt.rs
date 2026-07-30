@@ -264,6 +264,7 @@ async fn internal_encrypt(
             &header,
             &mat_result.materials,
             //= spec/client-apis/encrypt.md#construct-the-signature
+            //= type=implication
             //= reason=sig_digest was fed header in step 2 and body in step 3
             //# Note that the message header and message body MAY have already been input during previous steps.
             sig_digest,
@@ -311,6 +312,8 @@ async fn step_get_encryption_materials(
     //# The [algorithm suite](../framework/algorithm-suites.md) that MUST be used for encryption.
     //
     //= spec/client-apis/encrypt.md#algorithm-suite
+    //= type=implication
+    //= reason=EsdkAlgorithmSuiteId enum only contains ESDK-supported suites
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     let algorithm_suite_id = algorithm_suite_id.map(aws_mpl_legacy::suites::AlgorithmSuiteId::Esdk);
     if let Some(id) = algorithm_suite_id {
@@ -362,10 +365,6 @@ async fn step_get_encryption_materials(
     //# from the [input algorithm suite](#algorithm-suite).
     let algorithm_suite = &materials.algorithm_suite;
 
-    //= spec/client-apis/encrypt.md#get-the-encryption-materials
-    //= reason=Guards against non-ESDK AlgorithmSuiteId from CMM
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# encrypt MUST yield an error.
     let message_id = header::generate_message_id(&materials.algorithm_suite)?;
 
     let derived_data_keys = key_derivation::derive_keys(
@@ -423,6 +422,7 @@ fn step_construct_header(
     )?;
 
     //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=implication
     //= reason=write_header flushes complete header before body begins
     //# If this operation is streaming the encrypted message and
     //# the entire message header has been serialized,
@@ -454,6 +454,7 @@ fn step_construct_body(
     //# to the message body calculated in this step.
     //
     //= spec/client-apis/encrypt.md#construct-the-body
+    //= type=implication
     //= reason=The body is written directly to the output buffer by encrypt_and_serialize_body, making inequality structurally impossible
     //# If the message bodies are not equal, the Encrypt operation MUST fail.
     body::encrypt_and_serialize_body(
@@ -500,9 +501,6 @@ fn step_construct_signature(
             //# The encrypted message output by this operation MUST have a message footer equal
             //# to the message footer calculated in this step.
             //
-            //= spec/client-apis/encrypt.md#construct-the-signature
-            //# The order for message footer serialization MUST conform to the [Message Footer](../data-format/message-footer.md) specification.
-            //
             //= spec/data-format/message-footer.md#overview
             //# When an [algorithm suite](../framework/algorithm-suites.md) includes a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
             //# the [message](message.md) MUST contain a footer.
@@ -519,17 +517,6 @@ fn step_construct_signature(
                 //# This signature MUST be calculated over both the [message header](message-header.md) and the [message body](message-body.md),
                 //# in the order of serialization.
                 ciphertext,
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# - MUST serialize the [Signature Length](../data-format/message-footer.md#signature-length).
-                //
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# The value MUST be the length of the output of the signature calculation above.
-                //
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# - MUST serialize the [Signature](../data-format/message-footer.md#signature).
-                //
-                //= spec/client-apis/encrypt.md#construct-the-signature
-                //# The value MUST be the output of the signature calculation above.
                 signature_bytes.as_ref(),
             )?;
         }
@@ -552,11 +539,32 @@ fn step_construct_signature(
     //# Once the entire message footer has been serialized,
     //# this operation MUST release any previously unreleased serialized bytes from previous steps
     //# and MUST release the message footer.
-    //
-    //= spec/client-apis/encrypt.md#construct-the-signature
-    //= reason=write_footer writes length then signature sequentially; Ok(()) is only reached after all writes complete
-    //# The above serialized bytes MUST NOT be released until the entire message footer has been serialized.
     Ok(())
+}
+
+/// Extracts the ESDK algorithm suite id from a generic MPL algorithm suite id,
+/// returning an error if the suite is not an ESDK suite.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not an ESDK algorithm suite.
+pub fn get_esdk_algorithm_suite_id(
+    id: aws_mpl_legacy::suites::AlgorithmSuiteId,
+) -> Result<aws_mpl_legacy::suites::EsdkAlgorithmSuiteId, Error> {
+    match id {
+        aws_mpl_legacy::suites::AlgorithmSuiteId::Esdk(x) => Ok(x),
+        //= spec/client-apis/encrypt.md#get-the-encryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# encrypt MUST yield an error.
+        //
+        //= spec/client-apis/decrypt.md#get-the-decryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# decrypt MUST yield an error.
+        //
+        //= spec/client-apis/decrypt.md#algorithm-suite
+        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
+        other => Err(esdk_err(format!("Unsupported algorithm suite: {other:?}"))),
+    }
 }
 
 const RESERVED_ENCRYPTION_CONTEXT: &str = "aws-crypto-";
