@@ -629,9 +629,6 @@ fn round_trip_integration() {
     let mut dec_in = default_decrypt_input();
     dec_in.keyring = &*keyring as *const Keyring;
     dec_in.ciphertext = enc_out.ciphertext.as_slice();
-    // commitment policy and max-EDKs are forwarded plumbing (plain source-side
-    // `implementation`); values here equal the ESDK defaults, so asserting on
-    // them would not falsify the forwarding — no `type=test` here.
     dec_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     dec_in.max_encrypted_data_keys = 3;
     //= spec/shim/esdk-shim.md#decrypt-inputs
@@ -657,4 +654,71 @@ fn round_trip_integration() {
         encryption_context_target_to_core(&dec_out.encryption_context).get("purpose"),
         Some(&"integration-test".to_string())
     );
+}
+
+// Operation-input forwarding: encrypt/decrypt provide every target-supplied
+// optional input to the core ESDK input, converted per its Type-translation
+// rule. Asserted on the core input directly — no live materials needed. Each
+// value differs from the core default, so a dropped assignment fails the test.
+
+#[test]
+fn apply_encrypt_options_forwards_every_optional_input() {
+    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    let input = ffi::EncryptInput {
+        algorithm_suite_id: F { repr: 0x0578 },
+        encryption_context: Vec::new(),
+        frame_length: 1024,
+        keyring: std::ptr::null(),
+        plaintext: &[],
+        max_encrypted_data_keys: 5,
+        commitment_policy: P::ForbidEncryptAllowDecrypt,
+    };
+    let mut core = aws_esdk::EncryptInput::default();
+    apply_encrypt_options(&mut core, &input).expect("options apply");
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(5));
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied frame length to the core ESDK,
+    //# converted as defined in [Frame length](#frame-length).
+    assert_eq!(core.frame_length.0.get(), 1024);
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    assert_eq!(core.commitment_policy, C::ForbidEncryptAllowDecrypt);
+}
+
+#[test]
+fn apply_decrypt_options_forwards_every_optional_input() {
+    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    let input = ffi::DecryptInput {
+        ciphertext: &[],
+        encryption_context: Vec::new(),
+        keyring: std::ptr::null(),
+        max_encrypted_data_keys: 7,
+        commitment_policy: P::RequireEncryptAllowDecrypt,
+    };
+    let mut core = aws_esdk::DecryptInput::default();
+    apply_decrypt_options(&mut core, &input).expect("options apply");
+
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(7));
+
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
 }
