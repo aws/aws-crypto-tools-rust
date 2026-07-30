@@ -304,7 +304,13 @@ inline void write_results_json(const std::string& path,
 
     ensure_parent_dir(path);
     std::ofstream file(path);
+    if (!file.is_open()) {
+        throw std::ios_base::failure("failed to open results output file: " + path);
+    }
     file << os.str();
+    if (!file) {
+        throw std::ios_base::failure("failed to write results to: " + path);
+    }
 }
 
 }  // namespace esdk_bench
