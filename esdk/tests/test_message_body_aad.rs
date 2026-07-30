@@ -127,6 +127,12 @@ fn test_body_aad_content_values_match_spec_literals() {
 
     let mut out = Vec::new();
     body_aad(&msg_id_32, BodyAADContent::SingleBlock, 1, 0, &mut out);
+    //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+    //= type=test
+    //= reason=nonframed selects the "Single Block" Body AAD Content value
+    //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST use the value for
+    //# [nonframed data](../data-format/message-body-aad.md#body-aad-content).
+    //
     //= spec/data-format/message-body-aad.md#body-aad-content
     //= type=test
     //# - [Nonframed data](message-body.md#nonframed-data) MUST use the value `AWSKMSEncryptionClient Single Block`.
@@ -192,6 +198,12 @@ async fn test_body_aad_sequence_number_nonframed_is_one() {
         let parsed = parse_external_nonframed_body(external_nonframed_ct(version), version);
         let iv_seq = u32::from_be_bytes([parsed.iv[8], parsed.iv[9], parsed.iv[10], parsed.iv[11]]);
         // The message under test MUST have seq=1 already
+        //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=test
+        //= reason=the external vector's body IV encodes seq=1 in its last 4 bytes, read from the wire below
+        //# - The IV MUST be the [sequence number](../data-format/message-body-aad.md#sequence-number)
+        //# used in the message body AAD above,
+        //# padded to the [IV length](../data-format/message-header.md#iv-length) with 0.
         assert_eq!(iv_seq, 1, "{version:?}: body IV must encode seq=1");
 
         let pt = decrypt_external_nonframed_vector(version).await;
@@ -219,6 +231,11 @@ async fn test_body_aad_content_length_nonframed_equals_plaintext_length() {
         );
 
         let pt = decrypt_external_nonframed_vector(version).await;
+        //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
+        //= type=test
+        //= reason=the external vector's on-wire content-length field equals the known plaintext length (independent authority)
+        //# - The [content length](../data-format/message-body-aad.md#content-length) MUST equal the length of the plaintext.
+        //
         //= spec/data-format/message-body-aad.md#content-length
         //= type=test
         //= reason=External vector's content-length field equals plaintext length; decrypt succeeds.
@@ -248,6 +265,12 @@ async fn test_body_aad_message_id_length_matches_header() {
         );
 
         let pt = decrypt_external_nonframed_vector(version).await;
+        //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=test
+        //= reason=V1 (16-byte) and V2 (32-byte) external vectors both decrypt, exercising the header→body-AAD message-ID copy for each ID length
+        //# - The [message ID](../data-format/message-body-aad.md#message-id) MUST be the same as the
+        //# [message ID](../data-format/message-header.md#message-id) deserialized from the header of this message.
+        //
         //= spec/data-format/message-body-aad.md#message-id
         //= type=test
         //= reason=V1 and V2 external vectors use 16- and 32-byte message IDs respectively; both decrypt.
@@ -289,6 +312,12 @@ async fn test_body_aad_content_length_nonframed_rejects_tampered_length() {
             .expect_err(&format!(
                 "{version:?}: decrypt must fail after tampering the nonframed encrypted_content_length field"
             ));
+        //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=test
+        //= reason=a tampered nonframed content length breaks AAD auth; untampered decrypts
+        //# - The [content length](../data-format/message-body-aad.md#content-length) MUST have a value
+        //# equal to the length of the plaintext that was encrypted.
+        //
         //= spec/data-format/message-body-aad.md#content-length
         //= type=test
         //= reason=Tampered content_length causes AES-GCM auth failure.
@@ -369,6 +398,12 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
     let err = decrypt(&dec_input)
         .await
         .expect_err("tampering frame 1's sequence number must cause decrypt to fail");
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=the decryptor uses each frame's deserialized sequence number; tampering it is rejected
+    //# - The [sequence number](../data-format/message-body-aad.md#sequence-number) MUST be the sequence
+    //# number deserialized from the frame being decrypted.
+    //
     //= spec/data-format/message-body-aad.md#sequence-number
     //= type=test
     //= reason=Tampered frame sequence number is rejected by the decryptor.
@@ -407,6 +442,12 @@ async fn test_body_aad_content_length_regular_frame_equals_frame_length() {
     }
     // Corroboration: mismatched AAD content_length between encrypt and decrypt would fail AES-GCM auth.
     let decrypted = round_trip_framed(&pt, frame_length).await;
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=regular and final frames in one message each need their own Body AAD Content string (byte-asserted in test_body_aad_content_values_match_spec_literals)
+    //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be constructed
+    //# according to [Message Body AAD](../data-format/message-body-aad.md) depending on
+    //# whether the bytes being decrypted are a regular frame, final frame, or nonframed data.
     assert_eq!(
         decrypted, pt,
         "decrypt output did not match plaintext — encrypt and decrypt disagree on regular-frame AAD content_length"
