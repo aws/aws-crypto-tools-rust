@@ -5,22 +5,12 @@
 
 use std::collections::BTreeMap;
 
+use crate::keystore::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
+    TYPE_BRANCH_VERSION_PREFIX,
+};
 use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
 use crate::structures::{BranchKeyMaterials, EncryptionContext};
-
-/// Field name constants from the keystore record format spec.
-pub const FIELD_BRANCH_KEY_ID: &str = "branch-key-id";
-pub const FIELD_TYPE: &str = "type";
-pub const FIELD_VERSION: &str = "version";
-pub const FIELD_ENC: &str = "enc";
-pub const FIELD_KMS_ARN: &str = "kms-arn";
-pub const FIELD_CREATE_TIME: &str = "create-time";
-pub const FIELD_HIERARCHY_VERSION: &str = "hierarchy-version";
-
-pub const TYPE_BRANCH_ACTIVE: &str = "branch:ACTIVE";
-pub const TYPE_BEACON_ACTIVE: &str = "beacon:ACTIVE";
-pub const TYPE_BRANCH_VERSION_PREFIX: &str = "branch:version:";
-pub const CUSTOM_EC_PREFIX: &str = "aws-crypto-ec:";
 
 /// A DDB record at the string-keyed abstraction level.
 #[derive(Debug, Clone)]
@@ -55,7 +45,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     authenticated_ec: &BTreeMap<String, String>,
     plaintext_branch_key: Vec<u8>,
 ) -> Result<BranchKeyMaterials, KeystoreError> {
-    let type_attr = authenticated_ec.get(FIELD_TYPE).ok_or_else(|| {
+    let type_attr = authenticated_ec.get(ATTR_TYPE).ok_or_else(|| {
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
             "Missing 'type' attribute in authenticated encryption context",
@@ -75,7 +65,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     // Resolve version string based on type attribute value.
     let version_string = if type_attr == TYPE_BRANCH_ACTIVE {
         authenticated_ec
-            .get(FIELD_VERSION)
+            .get(ATTR_VERSION)
             .ok_or_else(|| {
                 KeystoreError::new(
                     KeystoreErrorKind::RecordMalformed,
@@ -100,7 +90,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     let branch_key_version = version_string[TYPE_BRANCH_VERSION_PREFIX.len()..].to_string();
 
     let branch_key_id = authenticated_ec
-        .get(FIELD_BRANCH_KEY_ID)
+        .get(ATTR_BRANCH_KEY_ID)
         .ok_or_else(|| {
             KeystoreError::new(
                 KeystoreErrorKind::RecordMalformed,

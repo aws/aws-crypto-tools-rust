@@ -5,35 +5,13 @@
 
 use std::collections::BTreeMap;
 
+use super::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
+    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
+    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+};
 use super::error::{KeystoreError, KeystoreErrorKind};
 use crate::structures::EncryptionContext;
-
-/// Key for the branch-key-id attribute.
-pub const KEY_BRANCH_KEY_ID: &str = "branch-key-id";
-/// Key for the type attribute.
-pub const KEY_TYPE: &str = "type";
-/// Key for the create-time attribute.
-pub const KEY_CREATE_TIME: &str = "create-time";
-/// Key for the tablename attribute (stores logicalKeyStoreName).
-pub const KEY_TABLENAME: &str = "tablename";
-/// Key for the kms-arn attribute.
-pub const KEY_KMS_ARN: &str = "kms-arn";
-/// Key for the hierarchy-version attribute.
-pub const KEY_HIERARCHY_VERSION: &str = "hierarchy-version";
-/// Key for the version attribute (ACTIVE only).
-pub const KEY_VERSION: &str = "version";
-/// Key for the enc attribute (MUST NOT be present in constructed EC).
-pub const KEY_ENC: &str = "enc";
-
-/// Type value for ACTIVE branch keys.
-pub const TYPE_BRANCH_ACTIVE: &str = "branch:ACTIVE";
-/// Type value for ACTIVE beacon keys.
-pub const TYPE_BEACON_ACTIVE: &str = "beacon:ACTIVE";
-/// Prefix for branch key version strings.
-pub const TYPE_BRANCH_VERSION_PREFIX: &str = "branch:version:";
-
-/// Prefix added to custom encryption context keys for namespace isolation.
-pub const CUSTOM_EC_PREFIX: &str = "aws-crypto-ec:";
 
 /// Inputs required to construct any flavor of keystore encryption context.
 #[derive(Debug, Clone)]
@@ -74,28 +52,28 @@ fn build_base(
     let mut ec = BTreeMap::new();
 
     ec.insert(
-        KEY_BRANCH_KEY_ID.to_string(),
+        ATTR_BRANCH_KEY_ID.to_string(),
         input.branch_key_id.to_string(),
     );
 
-    ec.insert(KEY_TYPE.to_string(), type_value.to_string());
+    ec.insert(ATTR_TYPE.to_string(), type_value.to_string());
 
-    ec.insert(KEY_CREATE_TIME.to_string(), input.create_time.to_string());
+    ec.insert(ATTR_CREATE_TIME.to_string(), input.create_time.to_string());
 
     ec.insert(
-        KEY_TABLENAME.to_string(),
+        ATTR_TABLENAME.to_string(),
         input.logical_keystore_name.to_string(),
     );
 
-    ec.insert(KEY_KMS_ARN.to_string(), input.kms_arn.to_string());
+    ec.insert(ATTR_KMS_ARN.to_string(), input.kms_arn.to_string());
 
     ec.insert(
-        KEY_HIERARCHY_VERSION.to_string(),
+        ATTR_HIERARCHY_VERSION.to_string(),
         input.hierarchy_version.to_string(),
     );
 
     debug_assert!(
-        !ec.contains_key(KEY_ENC),
+        !ec.contains_key(ATTR_ENC),
         "constructed encryption context must not contain 'enc'"
     );
 
@@ -159,7 +137,7 @@ pub fn active_encryption_context(
 
     //
     ec.insert(
-        KEY_VERSION.to_string(),
+        ATTR_VERSION.to_string(),
         format!("{TYPE_BRANCH_VERSION_PREFIX}{version}"),
     );
 
@@ -177,7 +155,7 @@ pub fn decrypt_only_encryption_context(
     let ec = build_base(input, &type_value)?;
 
     debug_assert!(
-        !ec.contains_key(KEY_VERSION),
+        !ec.contains_key(ATTR_VERSION),
         "DECRYPT_ONLY encryption context must not have a version attribute"
     );
 
@@ -191,7 +169,7 @@ pub fn beacon_key_encryption_context(
     let ec = build_base(input, TYPE_BEACON_ACTIVE)?;
 
     debug_assert!(
-        !ec.contains_key(KEY_VERSION),
+        !ec.contains_key(ATTR_VERSION),
         "Beacon key encryption context must not have a version attribute"
     );
 

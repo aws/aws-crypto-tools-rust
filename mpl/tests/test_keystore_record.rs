@@ -5,11 +5,13 @@
 
 use std::collections::BTreeMap;
 
+use aws_crypto_mpl::keystore::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN, ATTR_TYPE,
+    ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::record::{
-    CUSTOM_EC_PREFIX, EncryptedRecord, FIELD_BRANCH_KEY_ID, FIELD_CREATE_TIME,
-    FIELD_HIERARCHY_VERSION, FIELD_KMS_ARN, FIELD_TYPE, FIELD_VERSION, TYPE_BRANCH_ACTIVE,
-    TYPE_BRANCH_VERSION_PREFIX, branch_key_materials_from_authenticated_encryption_context,
+    EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
     custom_encryption_context_from_authenticated_encryption_context,
 };
 
@@ -20,19 +22,19 @@ fn make_authenticated_ec(
     version: Option<&str>,
 ) -> BTreeMap<String, String> {
     let mut ec = BTreeMap::new();
-    ec.insert(FIELD_BRANCH_KEY_ID.to_string(), branch_key_id.to_string());
-    ec.insert(FIELD_TYPE.to_string(), type_val.to_string());
+    ec.insert(ATTR_BRANCH_KEY_ID.to_string(), branch_key_id.to_string());
+    ec.insert(ATTR_TYPE.to_string(), type_val.to_string());
     ec.insert(
-        FIELD_KMS_ARN.to_string(),
+        ATTR_KMS_ARN.to_string(),
         "arn:aws:kms:us-east-1:123456789012:key/test-key-id".to_string(),
     );
     ec.insert(
-        FIELD_CREATE_TIME.to_string(),
+        ATTR_CREATE_TIME.to_string(),
         "2024-01-01T00:00:00.000000Z".to_string(),
     );
-    ec.insert(FIELD_HIERARCHY_VERSION.to_string(), "1".to_string());
+    ec.insert(ATTR_HIERARCHY_VERSION.to_string(), "1".to_string());
     if let Some(v) = version {
-        ec.insert(FIELD_VERSION.to_string(), v.to_string());
+        ec.insert(ATTR_VERSION.to_string(), v.to_string());
     }
     ec
 }
@@ -48,21 +50,21 @@ const TEST_VERSION_UUID: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 #[test]
 fn record_format_struct_has_all_required_fields() {
     let mut attributes = BTreeMap::new();
-    attributes.insert(FIELD_BRANCH_KEY_ID.to_string(), "test-id".to_string());
-    attributes.insert(FIELD_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
+    attributes.insert(ATTR_BRANCH_KEY_ID.to_string(), "test-id".to_string());
+    attributes.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
     attributes.insert(
-        FIELD_VERSION.to_string(),
+        ATTR_VERSION.to_string(),
         format!("{}{}", TYPE_BRANCH_VERSION_PREFIX, TEST_VERSION_UUID),
     );
     attributes.insert(
-        FIELD_KMS_ARN.to_string(),
+        ATTR_KMS_ARN.to_string(),
         "arn:aws:kms:us-east-1:123456789012:key/k".to_string(),
     );
     attributes.insert(
-        FIELD_CREATE_TIME.to_string(),
+        ATTR_CREATE_TIME.to_string(),
         "2024-01-01T00:00:00.000000Z".to_string(),
     );
-    attributes.insert(FIELD_HIERARCHY_VERSION.to_string(), "1".to_string());
+    attributes.insert(ATTR_HIERARCHY_VERSION.to_string(), "1".to_string());
 
     let record = EncryptedRecord {
         attributes,
@@ -70,11 +72,11 @@ fn record_format_struct_has_all_required_fields() {
     };
 
     assert_eq!(
-        record.attributes.get(FIELD_BRANCH_KEY_ID).unwrap(),
+        record.attributes.get(ATTR_BRANCH_KEY_ID).unwrap(),
         "test-id"
     );
     assert_eq!(
-        record.attributes.get(FIELD_TYPE).unwrap(),
+        record.attributes.get(ATTR_TYPE).unwrap(),
         TYPE_BRANCH_ACTIVE
     );
     assert!(!record.enc.is_empty());

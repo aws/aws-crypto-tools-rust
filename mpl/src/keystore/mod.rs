@@ -12,6 +12,7 @@
 // boxes the future to make `dyn Keystore` work today.
 //
 
+pub mod attributes;
 pub mod config;
 pub mod encryption_context;
 pub mod error;

@@ -3,11 +3,14 @@
 
 //! Tests for keystore encryption context construction.
 
+use aws_crypto_mpl::keystore::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
+    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
+    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+};
 use aws_crypto_mpl::keystore::encryption_context::{
-    CUSTOM_EC_PREFIX, EncryptionContextInput, KEY_BRANCH_KEY_ID, KEY_CREATE_TIME, KEY_ENC,
-    KEY_HIERARCHY_VERSION, KEY_KMS_ARN, KEY_TABLENAME, KEY_TYPE, KEY_VERSION, TYPE_BEACON_ACTIVE,
-    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX, active_encryption_context,
-    beacon_key_encryption_context, decrypt_only_encryption_context,
+    EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
+    decrypt_only_encryption_context,
 };
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::structures::EncryptionContext;
@@ -28,17 +31,17 @@ fn active_encryption_context_contains_required_keys() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1-uuid").unwrap();
 
-    assert!(ec.contains_key(KEY_BRANCH_KEY_ID));
+    assert!(ec.contains_key(ATTR_BRANCH_KEY_ID));
 
-    assert!(ec.contains_key(KEY_TYPE));
+    assert!(ec.contains_key(ATTR_TYPE));
 
-    assert!(ec.contains_key(KEY_CREATE_TIME));
+    assert!(ec.contains_key(ATTR_CREATE_TIME));
 
-    assert!(ec.contains_key(KEY_TABLENAME));
+    assert!(ec.contains_key(ATTR_TABLENAME));
 
-    assert!(ec.contains_key(KEY_KMS_ARN));
+    assert!(ec.contains_key(ATTR_KMS_ARN));
 
-    assert!(ec.contains_key(KEY_HIERARCHY_VERSION));
+    assert!(ec.contains_key(ATTR_HIERARCHY_VERSION));
 }
 
 #[test]
@@ -46,7 +49,7 @@ fn active_encryption_context_type_is_branch_active() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1-uuid").unwrap();
 
-    assert_eq!(ec[KEY_TYPE], TYPE_BRANCH_ACTIVE);
+    assert_eq!(ec[ATTR_TYPE], TYPE_BRANCH_ACTIVE);
 }
 
 #[test]
@@ -55,10 +58,10 @@ fn active_encryption_context_version_is_prefixed() {
     let version = "a1b2c3d4-5678-90ab-cdef-111213141516";
     let ec = active_encryption_context(&input, version).unwrap();
 
-    assert!(ec.contains_key(KEY_VERSION));
+    assert!(ec.contains_key(ATTR_VERSION));
 
     let expected = format!("{TYPE_BRANCH_VERSION_PREFIX}{version}");
-    assert_eq!(ec[KEY_VERSION], expected);
+    assert_eq!(ec[ATTR_VERSION], expected);
 }
 
 #[test]
@@ -66,7 +69,7 @@ fn decrypt_only_encryption_context_omits_version_attribute() {
     let input = sample_input();
     let ec = decrypt_only_encryption_context(&input, "v1-uuid").unwrap();
 
-    assert!(!ec.contains_key(KEY_VERSION));
+    assert!(!ec.contains_key(ATTR_VERSION));
 }
 
 #[test]
@@ -76,7 +79,7 @@ fn decrypt_only_encryption_context_type_is_branch_version_prefix() {
     let ec = decrypt_only_encryption_context(&input, version).unwrap();
 
     let expected = format!("{TYPE_BRANCH_VERSION_PREFIX}{version}");
-    assert_eq!(ec[KEY_TYPE], expected);
+    assert_eq!(ec[ATTR_TYPE], expected);
 }
 
 #[test]
@@ -84,7 +87,7 @@ fn beacon_key_encryption_context_type_is_beacon_active() {
     let input = sample_input();
     let ec = beacon_key_encryption_context(&input).unwrap();
 
-    assert_eq!(ec[KEY_TYPE], TYPE_BEACON_ACTIVE);
+    assert_eq!(ec[ATTR_TYPE], TYPE_BEACON_ACTIVE);
 }
 
 #[test]
@@ -92,7 +95,7 @@ fn beacon_key_encryption_context_omits_version_attribute() {
     let input = sample_input();
     let ec = beacon_key_encryption_context(&input).unwrap();
 
-    assert!(!ec.contains_key(KEY_VERSION));
+    assert!(!ec.contains_key(ATTR_VERSION));
 }
 
 #[test]
@@ -100,7 +103,7 @@ fn encryption_context_includes_tablename_from_logical_keystore_name() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
-    assert_eq!(ec[KEY_TABLENAME], "my-keystore-table");
+    assert_eq!(ec[ATTR_TABLENAME], "my-keystore-table");
 }
 
 #[test]
@@ -108,7 +111,7 @@ fn encryption_context_includes_hierarchy_version_as_string() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
-    assert_eq!(ec[KEY_HIERARCHY_VERSION], "1");
+    assert_eq!(ec[ATTR_HIERARCHY_VERSION], "1");
 }
 
 #[test]
@@ -116,7 +119,7 @@ fn encryption_context_omits_enc_attribute() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
-    assert!(!ec.contains_key(KEY_ENC));
+    assert!(!ec.contains_key(ATTR_ENC));
 }
 
 #[test]
@@ -184,7 +187,7 @@ fn type_field_is_never_empty_in_active() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
-    assert!(!ec[KEY_TYPE].is_empty());
+    assert!(!ec[ATTR_TYPE].is_empty());
 }
 
 #[test]
