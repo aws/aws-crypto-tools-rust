@@ -140,4 +140,5 @@ pub mod __test_internals {
     pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
     pub use crate::message::header_auth::read_header_auth_tag;
     pub use crate::message::header_types::HeaderBody;
+    pub use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
 }

@@ -17,6 +17,16 @@ pub(crate) fn get_esdk_algorithm_suite_id(
 ) -> Result<aws_mpl_legacy::suites::EsdkAlgorithmSuiteId, Error> {
     match id {
         aws_mpl_legacy::suites::AlgorithmSuiteId::Esdk(x) => Ok(x),
+        //= spec/client-apis/encrypt.md#get-the-encryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# encrypt MUST yield an error.
+        //
+        //= spec/client-apis/decrypt.md#get-the-decryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# decrypt MUST yield an error.
+        //
+        //= spec/client-apis/decrypt.md#algorithm-suite
+        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
         other => Err(esdk_err(format!("Unsupported algorithm suite: {other:?}"))),
     }
 }
