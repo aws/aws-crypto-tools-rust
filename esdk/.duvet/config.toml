@@ -1,0 +1,45 @@
+'$schema' = "https://awslabs.github.io/duvet/config/v0.4.0.json"
+
+[[source]]
+pattern = "./src/**/*.rs"
+
+[[source]]
+pattern = "./tests/**/*.rs"
+
+[[specification]]
+source = "spec/data-format/message-header.md"
+
+[[specification]]
+source = "spec/data-format/message-footer.md"
+
+[[specification]]
+source = "spec/data-format/message-body.md"
+
+[[specification]]
+source = "spec/data-format/message-body-aad.md"
+
+[[specification]]
+source = "spec/data-format/message.md"
+
+[[specification]]
+source = "spec/client-apis/client.md"
+
+[[specification]]
+source = "spec/client-apis/decrypt.md"
+
+[[specification]]
+source = "spec/client-apis/encrypt.md"
+
+[[specification]]
+source = "spec/client-apis/streaming.md"
+
+[[specification]]
+source = "spec/client-apis/key-derivation.md"
+
+[report.html]
+enabled = true
+
+# Snapshot checking requires a committed snapshot file; this repo does not
+# commit one, so the CI duvet run generates and uploads the HTML report only.
+[report.snapshot]
+enabled = false

@@ -383,9 +383,14 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
 
     let dec_input = DecryptInput::with_legacy_cmm(&ct, EncryptionContext::new(), spy_cmm);
     let result = decrypt(&dec_input).await.unwrap();
+    //= spec/client-apis/decrypt.md#cryptographic-materials-manager
+    //= type=test
+    //= reason=the spy CMM wraps a real CMM and was invoked during decrypt; its returned materials were used (spy call observed below)
+    //# This CMM MUST obtain the [decryption materials](../framework/structures.md#decryption-materials) required for decryption.
+    //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Decrypt succeeds only because the input spy CMM was called and returned valid materials
+    //= reason=the spy CMM recorded the Decrypt Materials call and returned the materials used (observations asserted below)
     //# This operation MUST obtain this set of [decryption materials](../framework/structures.md#decryption-materials),
     //# by calling [Decrypt Materials](../framework/cmm-interface.md#decrypt-materials) on a [CMM](../framework/cmm-interface.md).
     //
@@ -395,6 +400,12 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     //# The CMM used MUST be the input CMM, if supplied.
     assert_eq!(result.plaintext, pt);
 
+    //= spec/client-apis/decrypt.md#get-the-decryption-materials
+    //= type=test
+    //= reason=spy CMM observes the constructed DecryptMaterialsInput carrying parsed EDKs and encryption context
+    //# The call to the CMM's [Decrypt Materials](../framework/cmm-interface.md#decrypt-materials) operation
+    //# MUST be constructed as follows:
+    //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=Spy CMM observes EDK count matches header (1 EDK from single keyring)
