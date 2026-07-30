@@ -26,7 +26,12 @@ pub struct EncryptionContextInput<'a> {
     pub kms_arn: &'a str,
     /// Hierarchy version (becomes string representation).
     pub hierarchy_version: u32,
-    /// Optional custom encryption context.
+    /// Custom encryption context supplied by the user, if any. Each key is
+    /// added to the context prefixed with `aws-crypto-ec:`, so callers pass
+    /// keys unprefixed. This is only for user-supplied custom encryption
+    /// context; attributes already present on a stored DynamoDB item are a
+    /// read-path concern (see [`super::record::encryption_context_from_item`])
+    /// and are not passed here.
     pub custom_ec: Option<&'a EncryptionContext>,
 }
 
@@ -118,24 +123,26 @@ fn build_base(
         }
     }
 
-    // NOTE: Additional DDB attributes beyond the standard keys are handled
-    // by the caller (record-format module) which passes them via custom_ec.
-    // This function constructs the base; the caller is responsible for
-    // merging any extra DDB attributes before calling KMS.
-
     Ok(ec)
 }
 
 /// Builds the ACTIVE branch-key encryption context.
 ///
 /// `version` MUST be the branch key version (without the "branch:version:" prefix).
+///
+/// The ACTIVE context is the DECRYPT_ONLY context with the `type` attribute
+/// set to "branch:ACTIVE" and the branch key version moved into the `version`
+/// attribute, so it is derived from [`decrypt_only_encryption_context`] rather
+/// than built independently.
 pub fn active_encryption_context(
     input: &EncryptionContextInput<'_>,
     version: &str,
 ) -> Result<BTreeMap<String, String>, KeystoreError> {
-    let mut ec = build_base(input, TYPE_BRANCH_ACTIVE)?;
+    let mut ec = decrypt_only_encryption_context(input, version)?;
 
-    //
+    // In DECRYPT_ONLY the branch key version lives in `type`; ACTIVE moves it
+    // to `version` and sets `type` to "branch:ACTIVE".
+    ec.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
     ec.insert(
         ATTR_VERSION.to_string(),
         format!("{TYPE_BRANCH_VERSION_PREFIX}{version}"),
@@ -151,6 +158,13 @@ pub fn decrypt_only_encryption_context(
     input: &EncryptionContextInput<'_>,
     version: &str,
 ) -> Result<BTreeMap<String, String>, KeystoreError> {
+    if version.is_empty() {
+        return Err(KeystoreError::new(
+            KeystoreErrorKind::Configuration,
+            "branch key version MUST not be an empty string",
+        ));
+    }
+
     let type_value = format!("{TYPE_BRANCH_VERSION_PREFIX}{version}");
     let ec = build_base(input, &type_value)?;
 

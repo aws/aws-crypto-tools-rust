@@ -190,29 +190,6 @@ fn type_field_is_never_empty_in_active() {
     assert!(!ec[ATTR_TYPE].is_empty());
 }
 
-#[test]
-fn encryption_context_additional_attributes_via_custom_ec() {
-    // "Any additionally attributes on the DynamoDB item MUST be added to the encryption context"
-    // This is realized via the custom_ec mechanism — additional DDB attributes
-    // are passed through custom_ec by the record-format layer.
-    let mut custom = EncryptionContext::new();
-    custom.insert(b"extra-field".to_vec(), b"extra-value".to_vec());
-
-    let input = EncryptionContextInput {
-        branch_key_id: "b3c7f8a1-4d2e-4f6b-9a8c-1e2d3f4a5b6c",
-        create_time: "2024-01-15T10:30:00.123456Z",
-        logical_keystore_name: "my-keystore-table",
-        kms_arn: "arn:aws:kms:us-east-1:123456789012:key/mrk-12345678-1234-1234-1234-123456789012",
-        hierarchy_version: 1,
-        custom_ec: Some(&custom),
-    };
-
-    let ec = active_encryption_context(&input, "v1").unwrap();
-
-    assert!(ec.contains_key(&format!("{CUSTOM_EC_PREFIX}extra-field")));
-    assert_eq!(ec[&format!("{CUSTOM_EC_PREFIX}extra-field")], "extra-value");
-}
-
 // The custom encryption context is a map of arbitrary bytes, but
 // `branch-key-store.md` states it "is stored as map of UTF8 Encoded bytes" and
 // that reconstruction uses "the UTF8 decode of this key". Non-UTF-8 input is
@@ -264,4 +241,44 @@ fn distinct_non_utf8_custom_ec_keys_do_not_collapse() {
 
     active_encryption_context(&input_with_custom_ec(&custom), "v1")
         .expect_err("distinct non-UTF-8 keys must not be silently merged");
+}
+
+#[test]
+fn empty_version_is_rejected_for_decrypt_only() {
+    let input = sample_input();
+    let err = decrypt_only_encryption_context(&input, "")
+        .expect_err("empty branch key version must be rejected");
+    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+}
+
+#[test]
+fn empty_version_is_rejected_for_active() {
+    let input = sample_input();
+    let err = active_encryption_context(&input, "")
+        .expect_err("empty branch key version must be rejected");
+    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+}
+
+// The ACTIVE context MUST be the DECRYPT_ONLY context with `type` set to
+// "branch:ACTIVE" and the branch key version moved into the `version`
+// attribute; every other entry MUST match.
+#[test]
+fn active_is_decrypt_only_with_type_and_version_overrides() {
+    let input = sample_input();
+    let version = "a1b2c3d4-5678-90ab-cdef-111213141516";
+
+    let decrypt_only = decrypt_only_encryption_context(&input, version).unwrap();
+    let active = active_encryption_context(&input, version).unwrap();
+
+    // The DECRYPT_ONLY `type` becomes the ACTIVE `version`.
+    assert_eq!(active[ATTR_VERSION], decrypt_only[ATTR_TYPE]);
+    assert_eq!(active[ATTR_TYPE], TYPE_BRANCH_ACTIVE);
+
+    // Every other entry is identical to DECRYPT_ONLY.
+    for (key, value) in &decrypt_only {
+        if key == ATTR_TYPE {
+            continue;
+        }
+        assert_eq!(active.get(key), Some(value));
+    }
 }
