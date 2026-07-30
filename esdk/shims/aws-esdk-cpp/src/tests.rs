@@ -207,6 +207,14 @@ fn encryption_context_empty() {
 // functions, which all return before any network call. They exercise the
 // error-handling lines without credentials, so they run in ordinary CI.
 
+/// Returns the error message from a shim call that must fail.
+fn expect_err<T>(result: Result<T, String>) -> String {
+    match result {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => e,
+    }
+}
+
 #[test]
 fn encrypt_rejects_null_keyring() {
     // default_encrypt_input() has a null keyring pointer.
@@ -214,10 +222,7 @@ fn encrypt_rejects_null_keyring() {
     //= type=test
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
     //# materials source is supplied.
-    let err = match encrypt(&default_encrypt_input()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(encrypt(&default_encrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
@@ -226,20 +231,14 @@ fn decrypt_rejects_null_keyring() {
     // Regression coverage for the symmetric decrypt null-check. The
     // materials-source requirement is annotated once (on encrypt) to avoid a
     // duplicate citation.
-    let err = match decrypt(&default_decrypt_input()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(decrypt(&default_decrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn create_keystore_rejects_null_kms_client() {
     // default config has null kms_client / ddb_client pointers.
-    let err = match create_keystore(&default_keystore_config()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(create_keystore(&default_keystore_config()));
     //= spec/shim/shim.md#handles-and-lifetimes
     //= type=test
     //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
@@ -267,22 +266,19 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     //# defined in
     //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
     //# and MUST provide it to the core ESDK.
-    let err = match create_hierarchical_keyring(&default_hierarchical_keyring_input()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(create_hierarchical_keyring(
+        &default_hierarchical_keyring_input(),
+    ));
     assert!(err.contains("key_store is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn make_kms_config_rejects_unknown_type() {
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType { repr: 99 };
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST return an error when the target KMS configuration type is not a
     //# supported value.
-    let err = make_kms_config(&cfg).unwrap_err();
+    let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
         err.contains("Invalid KmsConfigurationType"),
         "unexpected error: {err}"
@@ -291,41 +287,36 @@ fn make_kms_config_rejects_unknown_type() {
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    // default type is KmsKeyArn -> exercises the happy arm (local, no AWS).
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
     assert!(matches!(
-        make_kms_config(&default_keystore_config()).unwrap(),
-        KmsConfiguration::KmsKeyArn(_)
+        make_kms_config(ffi::KmsConfigurationType::KmsKeyArn, "arn:test-key").unwrap(),
+        KmsConfiguration::KmsKeyArn(v) if v == "arn:test-key"
     ));
 }
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsMrKeyArn;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
     assert!(matches!(
-        make_kms_config(&cfg).unwrap(),
-        KmsConfiguration::KmsMrKeyArn(_)
+        make_kms_config(ffi::KmsConfigurationType::KmsMrKeyArn, "arn:test-mr-key").unwrap(),
+        KmsConfiguration::KmsMrKeyArn(v) if v == "arn:test-mr-key"
     ));
 }
 
 #[test]
 fn make_kms_config_accepts_discovery() {
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::Discovery;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
     assert!(matches!(
-        make_kms_config(&cfg).unwrap(),
+        make_kms_config(ffi::KmsConfigurationType::Discovery, "").unwrap(),
         KmsConfiguration::Discovery(_)
     ));
 }
@@ -333,38 +324,35 @@ fn make_kms_config_accepts_discovery() {
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::MrDiscovery;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.
     assert!(matches!(
-        make_kms_config(&cfg).unwrap(),
+        make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "").unwrap(),
         KmsConfiguration::MrDiscovery(_)
     ));
 }
 
 #[test]
 fn make_cache_type_rejects_unknown() {
-    let mut input = default_hierarchical_keyring_input();
-    input.cache = ffi::CacheType { repr: 99 };
+    let cache_cfg = default_hierarchical_keyring_input().multi_threaded_cache;
     //= spec/shim/esdk-shim.md#cache-configuration
     //= type=test
     //# - The shim MUST return an error when the target cache type is not a supported
     //# value.
-    let err = make_cache_type(&input).unwrap_err();
+    let err = make_cache_type(ffi::CacheType { repr: 99 }, &cache_cfg).unwrap_err();
     assert!(err.contains("Invalid CacheType"), "unexpected error: {err}");
 }
 
 #[test]
 fn make_cache_type_builds_multi_threaded() {
-    // default cache is MultiThreaded -> exercises that arm (local, no AWS).
     use aws_mpl_legacy::dafny::types::CacheType;
+    let cache_cfg = default_hierarchical_keyring_input().multi_threaded_cache;
     //= spec/shim/esdk-shim.md#cache-configuration
     //= type=test
     //# - The shim MUST translate a multi-threaded cache selection.
     assert!(matches!(
-        make_cache_type(&default_hierarchical_keyring_input()).unwrap(),
+        make_cache_type(ffi::CacheType::MultiThreadedCache, &cache_cfg).unwrap(),
         CacheType::MultiThreaded(_)
     ));
 }
@@ -372,12 +360,14 @@ fn make_cache_type_builds_multi_threaded() {
 #[test]
 fn make_cache_type_builds_no_cache() {
     use aws_mpl_legacy::dafny::types::CacheType;
-    let mut input = default_hierarchical_keyring_input();
-    input.cache = ffi::CacheType::NoCache;
+    let cache_cfg = default_hierarchical_keyring_input().multi_threaded_cache;
     //= spec/shim/esdk-shim.md#cache-configuration
     //= type=test
     //# - The shim MUST translate a no-cache selection.
-    assert!(matches!(make_cache_type(&input).unwrap(), CacheType::No(_)));
+    assert!(matches!(
+        make_cache_type(ffi::CacheType::NoCache, &cache_cfg).unwrap(),
+        CacheType::No(_)
+    ));
 }
 
 // Frame length + max-encrypted-data-keys translation (pure, no AWS)
@@ -442,7 +432,7 @@ fn user_agent_form_and_append() {
 fn create_sdk_config_defers_retry_when_unset() {
     // No retry values supplied: the shim must not substitute its own; the assembled
     // config keeps the SDK's loaded default retry configuration.
-    let default_ref = DAFNY_TOKIO_RUNTIME.block_on(aws_config::load_defaults(
+    let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
     let sdk = create_sdk_config(&default_client_config()).expect("build sdk config");
@@ -594,13 +584,7 @@ fn round_trip_integration() {
     let mut enc_in = default_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = plaintext.as_slice();
-    enc_in.encryption_context = ec
-        .iter()
-        .map(|(k, v)| ffi::EncryptionContextItem {
-            key: k.clone(),
-            value: v.clone(),
-        })
-        .collect();
+    enc_in.encryption_context = encryption_context_core_to_target(ec.clone());
     enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
     // commitment policy, frame length, and max-EDKs are forwarded plumbing
     // (plain source-side `implementation`); values here equal the ESDK defaults, so
@@ -655,13 +639,7 @@ fn round_trip_integration() {
     //= reason=decrypt supplies the same encryption-context pair used at encrypt time; a successful round-trip proves it was provided to the core ESDK.
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
-    dec_in.encryption_context = ec
-        .iter()
-        .map(|(k, v)| ffi::EncryptionContextItem {
-            key: k.clone(),
-            value: v.clone(),
-        })
-        .collect();
+    dec_in.encryption_context = encryption_context_core_to_target(ec.clone());
 
     let dec_out = decrypt(&dec_in).expect("decrypt");
     // Round-trip fidelity — plaintext/ciphertext passed and returned unmodified,
