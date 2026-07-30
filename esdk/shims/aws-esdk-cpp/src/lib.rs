@@ -647,9 +647,7 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
 // Operations (see spec/shim/esdk-shim.md#operation-contracts).
 
 // Applies the target-supplied optional encrypt inputs to the core ESDK input,
-// each converted per its Type-translation rule. A standalone helper so the
-// forwarding is verifiable without live materials: the core input carries these
-// options with no keyring.
+// each converted per its Type-translation rule.
 fn apply_encrypt_options(
     core_input: &mut aws_esdk::EncryptInput<'_>,
     input: &ffi::EncryptInput<'_>,
@@ -675,8 +673,7 @@ fn apply_encrypt_options(
 }
 
 // Applies the target-supplied optional decrypt inputs to the core ESDK input,
-// each converted per its Type-translation rule. A standalone helper for the same
-// reason as `apply_encrypt_options`.
+// each converted per its Type-translation rule.
 fn apply_decrypt_options(
     core_input: &mut aws_esdk::DecryptInput<'_>,
     input: &ffi::DecryptInput<'_>,
