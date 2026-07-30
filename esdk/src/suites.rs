@@ -12,7 +12,7 @@ use aws_mpl_legacy::primitives::EcdsaSignatureAlgorithm;
 /// # Errors
 ///
 /// Returns an error if `id` is not an ESDK algorithm suite.
-pub(crate) fn get_esdk_algorithm_suite_id(
+pub fn get_esdk_algorithm_suite_id(
     id: aws_mpl_legacy::suites::AlgorithmSuiteId,
 ) -> Result<aws_mpl_legacy::suites::EsdkAlgorithmSuiteId, Error> {
     match id {
@@ -37,7 +37,7 @@ pub(crate) fn get_esdk_algorithm_suite_id(
 /// # Errors
 ///
 /// Returns an error if `alg` is not an ECDSA signature algorithm.
-pub(crate) fn get_ecdsa_alg(
+pub fn get_ecdsa_alg(
     alg: aws_mpl_legacy::suites::SignatureAlgorithm,
 ) -> Result<EcdsaSignatureAlgorithm, Error> {
     match alg {
