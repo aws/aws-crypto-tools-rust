@@ -102,9 +102,41 @@ fn build_base(
     // Custom encryption context
     if let Some(custom) = input.custom_ec {
         for (k, v) in custom.iter() {
-            let key_str = String::from_utf8_lossy(k);
-            let val_str = String::from_utf8_lossy(v);
-            ec.insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.into_owned());
+            // The custom encryption context becomes part of the authenticated
+            // AWS KMS encryption context, so a byte sequence that is not valid
+            // UTF-8 cannot be represented and MUST be rejected. Decoding it
+            // lossily would substitute U+FFFD, producing an encryption context
+            // that other implementations cannot reproduce.
+            let Ok(key_str) = str::from_utf8(k) else {
+                return Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    "custom encryption context key MUST be valid UTF-8",
+                ));
+            };
+
+            let Ok(val_str) = str::from_utf8(v) else {
+                return Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    format!(
+                        "custom encryption context value for key '{key_str}' MUST be valid UTF-8"
+                    ),
+                ));
+            };
+
+            // A custom key that already carries the prefix, or a duplicate
+            // after prefixing, would otherwise overwrite a previous entry.
+            if ec
+                .insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.to_string())
+                .is_some()
+            {
+                return Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    format!(
+                        "custom encryption context key '{key_str}' collides with an existing \
+                         encryption context entry after prefixing with '{CUSTOM_EC_PREFIX}'"
+                    ),
+                ));
+            }
         }
     }
 
