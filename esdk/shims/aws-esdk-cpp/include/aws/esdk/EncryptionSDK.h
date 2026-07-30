@@ -266,6 +266,10 @@ public:
 };
 
 class HierarchicalKeyring : public Keyring {
+    //= spec/shim/shim.md#handles-and-lifetimes
+    //# - An owned interface that depends on another resource MUST retain ownership of
+    //# that resource for its own lifetime, so that a handle passed across the boundary
+    //# cannot outlive the resource it refers to.
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
     /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys

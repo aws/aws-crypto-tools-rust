@@ -30,6 +30,20 @@
 //# - A shim MUST conform to this specification in addition to its core-library-specific
 //# shim specification.
 //
+//= spec/shim/esdk-shim.md#conformance-and-testing
+//= type=implication
+//= reason=This crate's test suite covers translation, handle validation, error propagation, and lifetime safety — not the core ESDK's cryptography.
+//# - The ESDK shim MUST be tested for the behavior it owns — translation, handle
+//# validation, error propagation, and lifetime safety — rather than by re-testing
+//# the core ESDK's cryptographic behavior.
+//
+//= spec/shim/shim.md#conformance-and-testing
+//= type=implication
+//= reason=This crate's test suite covers translation, handle validation, error propagation, and lifetime safety — not the core library's own behavior.
+//# - The shim SHOULD be tested for the behavior it owns — translation, handle
+//# validation, error propagation, and lifetime safety — rather than by re-testing
+//# the core library's own behavior.
+//
 //= spec/shim/shim.md#type-translation
 //= type=implication
 //= reason=Every concrete translation in this crate returns a Result and follows the convert-or-error rules.
@@ -52,6 +66,12 @@
 //= reason=Every core-to-target conversion returns Err for a core-library value the shim does not define.
 //# - When the core library produces a value the shim does not define, the
 //# translation MUST return an error.
+//
+//= spec/shim/shim.md#type-translation
+//= type=implication
+//= reason=Every conversion is a total match returning Ok or Err; none contains a panicking operation.
+//# - A translation reports failure by returning an error; it MUST NOT panic,
+//# abort, or otherwise terminate the target process.
 //
 //= spec/shim/shim.md#delegation
 //= type=implication
@@ -626,6 +646,53 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
 
 // Operations (see spec/shim/esdk-shim.md#operation-contracts).
 
+// Applies the target-supplied optional encrypt inputs to the core ESDK input,
+// each converted per its Type-translation rule. A standalone helper so the
+// forwarding is verifiable without live materials: the core input carries these
+// options with no keyring.
+fn apply_encrypt_options(
+    core_input: &mut aws_esdk::EncryptInput<'_>,
+    input: &ffi::EncryptInput<'_>,
+) -> Result<(), String> {
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied frame length to the core ESDK,
+    //# converted as defined in [Frame length](#frame-length).
+    core_input.frame_length = make_frame_length(input.frame_length)?;
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
+    //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
+    core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    Ok(())
+}
+
+// Applies the target-supplied optional decrypt inputs to the core ESDK input,
+// each converted per its Type-translation rule. A standalone helper for the same
+// reason as `apply_encrypt_options`.
+fn apply_decrypt_options(
+    core_input: &mut aws_esdk::DecryptInput<'_>,
+    input: &ffi::DecryptInput<'_>,
+) -> Result<(), String> {
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    Ok(())
+}
+
 fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     //= spec/shim/esdk-shim.md#materials-source
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
@@ -647,23 +714,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //# source (see [Resources](#resources)).
         keyring.client.clone(),
     );
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-    //# the core ESDK, converted as defined in
-    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied frame length to the core ESDK,
-    //# converted as defined in [Frame length](#frame-length).
-    core_input.frame_length = make_frame_length(input.frame_length)?;
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied commitment policy to the core ESDK,
-    //# converted as defined in [Commitment policy](#commitment-policy).
-    core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
-    //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
-    core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    apply_encrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
     //= spec/shim/shim.md#delegation
     //# - When a core-library operation returns an error, the shim MUST return an error to
@@ -704,15 +755,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         encryption_context_target_to_core(&input.encryption_context),
         keyring.client.clone(),
     );
-    //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-    //# the core ESDK, converted as defined in
-    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
-    //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - MUST provide the target-supplied commitment policy to the core ESDK,
-    //# converted as defined in [Commitment policy](#commitment-policy).
-    core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    apply_decrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
     let output = output.map_err(|e| format!("decrypt failed: {:?}", e))?;
     Ok(ffi::DecryptOutput {
