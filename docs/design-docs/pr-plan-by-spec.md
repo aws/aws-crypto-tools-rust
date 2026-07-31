@@ -59,8 +59,9 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 16 | `hkeyring` | — | Not started | — |
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
+| 19 | `branch-key-store-write` | — | Not started — **next up** (sequenced before PR 15 to complete the keystore) | — |
 
-**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) is open for review (base `main`). Next slice to start is PR 15 (`hkeyring-support`).
+**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) is open for review (base `main`). Next slice to start is PR 19 (`branch-key-store-write`), sequenced before the keyring work so the keystore is functionally complete first.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -644,13 +645,14 @@ custom-encryption-context, ...}.toml`.
 ### PR 14 — `branch-key-store`
 
 **Topic:** Concrete `BranchKeyStore` — construction, `GetKeyStoreInfo`,
-`GetActiveBranchKey`, `GetBranchKeyVersion`, plus KMS auth / decrypt
-helpers. Real DDB-backed keystore behind the `keystore` feature flag.
+and the read path (`GetActiveBranchKey`, `GetBranchKeyVersion`) plus the
+KMS decrypt helper. Real DDB-backed keystore behind the `keystore`
+feature flag. The write operations are deferred to PR 19.
 **Spec:** `spec/framework/branch-key-store.md` (operation-level
 requirements)
 **Review branch:** `aws-crypto-rust/branch-key-store-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-branch-key-store`
-**Base branch (PR target):** `aws-crypto-rust/keystore-support-review`
+**Base branch (PR target):** `main` (PR 13 merged; stack reset)
 **Depends on:** PR 12, PR 13
 
 **Source:**
@@ -662,13 +664,18 @@ requirements)
 - `mpl/tests/test_keystore_branch_key_store_integ.rs`
 
 **Compliance:** incremental annotations on
-`mpl/compliance/spec/framework/branch-key-store/{createkey,
-versionkey, getactivebranchkey, getbranchkeyversion, getbeaconkey,
-getkeystoreinfo, aws-kms-branch-key-decryption,
-authenticating-a-keystore-item, dynamodb-client, kms-client,
-keystore-id, ...}.toml`.
+`mpl/compliance/spec/framework/branch-key-store/{getactivebranchkey,
+getbranchkeyversion, getkeystoreinfo, aws-kms-branch-key-decryption,
+dynamodb-client, kms-client, keystore-id, ...}.toml`. The `createkey`,
+`versionkey`, `createkeystore`, `getbeaconkey`, and
+`authenticating-a-keystore-item` operation TOMLs are owned by PR 19.
 
 **Notes:**
+- Delivers construction + `GetKeyStoreInfo` + the read path only. The
+  write operations (`CreateKeyStore`, `CreateKey`, `VersionKey`) and
+  `GetBeaconKey` are stubbed here (return `KeystoreError::Internal`
+  "not yet implemented") and implemented in PR 19
+  (`branch-key-store-write`).
 - Shared-file modifications introduced by this PR: `Cargo.toml` /
   `Cargo.lock` (adds `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-kms`,
   `base64`, `uuid`, `tokio`); `keystore/mod.rs` (adds `pub mod
@@ -688,6 +695,58 @@ keystore-id, ...}.toml`.
 
 ---
 
+### PR 19 — `branch-key-store-write`
+
+**Topic:** The remaining concrete `BranchKeyStore` operations —
+`CreateKeyStore`, `CreateKey`, `VersionKey`, and `GetBeaconKey` —
+completing the DDB-backed keystore. Adds the KMS `ReEncrypt`-based
+"authenticating a keystore item" helper, the KMS
+`GenerateDataKeyWithoutPlaintext` create/version paths, and the DDB
+`CreateTable` / `TransactWriteItems` write paths. Replaces the
+`not_implemented_yet` stubs left by PR 14.
+**Spec:** `spec/framework/branch-key-store.md` (`createkey`,
+`versionkey`, `createkeystore`, `getbeaconkey`, and
+`authenticating-a-keystore-item` operation-level requirements)
+**Review branch:** `aws-crypto-rust/branch-key-store-write-review`
+**Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-branch-key-store-write`
+**Base branch (PR target):** `aws-crypto-rust/branch-key-store-review`
+**Depends on:** PR 12, PR 13, PR 14
+
+**Sequencing:** slotted here (before PR 15) so a functionally complete
+keystore lands before the hierarchical-keyring work builds on it. The
+higher PR number preserves stable identifiers (numbers are IDs, not
+ordering — see the PR 7 precedent); the review order is what governs
+sequencing.
+
+**Source:**
+- `mpl/src/keystore/branch_key_store.rs` (implements the four stubbed
+  operations)
+- `mpl/src/keystore/kms_ops.rs` (restores the `authenticate_keystore_item`
+  `ReEncrypt` helper removed as dead code in PR 14, plus the
+  `GenerateDataKeyWithoutPlaintext` helper)
+
+**Tests:**
+- `mpl/tests/test_keystore_branch_key_store.rs` (input validation +
+  record construction for the new operations)
+- `mpl/tests/test_keystore_branch_key_store_integ.rs` (real-AWS
+  create / version / beacon round trips)
+
+**Compliance:** incremental annotations on
+`mpl/compliance/spec/framework/branch-key-store/{createkey, versionkey,
+createkeystore, getbeaconkey, authenticating-a-keystore-item, ...}.toml`.
+
+**Notes:**
+- No new runtime deps: `CreateKey` / `VersionKey` use
+  `aws-sdk-kms` (`GenerateDataKeyWithoutPlaintext`, `Decrypt`,
+  `ReEncrypt`) and `aws-sdk-dynamodb` (`TransactWriteItems`);
+  `CreateKeyStore` uses `aws-sdk-dynamodb` `CreateTable` — all already
+  carried from PR 14.
+- No new shared-file changes: `keystore/mod.rs` already declares
+  `branch_key_store` / `kms_ops` (PR 14). This slice's diff is confined
+  to the two source files, the two test files, and the compliance TOMLs.
+
+---
+
 ### PR 15 — `hkeyring-support`
 
 **Topic:** `aws_kms::branch_key_wrap` (branch-key wrap / unwrap AEAD
@@ -698,8 +757,8 @@ hierarchical keyring). Both crate-internal, exposed via
 (wrap/unwrap and cache-identifier sub-requirements)
 **Review branch:** `aws-crypto-rust/hkeyring-support-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-hkeyring-support`
-**Base branch (PR target):** `aws-crypto-rust/branch-key-store-review`
-**Depends on:** PR 8 (aws_kms module), PR 14 (branch-key-store types)
+**Base branch (PR target):** `aws-crypto-rust/branch-key-store-write-review`
+**Depends on:** PR 8 (aws_kms module), PR 14 (branch-key-store types), PR 19 (sequencing — stacked on the complete keystore)
 
 **Source:**
 - `mpl/src/aws_kms/branch_key_wrap.rs`
@@ -867,7 +926,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 12. PR 12 — `keystore-interface` — ✅ merged as [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)
 13. PR 13 — `keystore-support` — ✅ merged as [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36)
 14. PR 14 — `branch-key-store` — 🔎 open for review as [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)
-15. PR 15 — `hkeyring-support` **(current)**
+    - **Then PR 19 — `branch-key-store-write` (next)** — completes the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work begins. Higher number, but sequenced here.
+15. PR 15 — `hkeyring-support` *(stacks on PR 19)*
 16. PR 16 — `hkeyring`
 17. PR 17 — `client-factories`
 18. PR 18 — `hkeyring-examples` *(terminal)*
