@@ -32,22 +32,22 @@ fn dummy_clients() -> (KmsClient, DynamoDbClient) {
 /// `KmsConfiguration::KmsKeyArn` variant, and no grant tokens.
 fn fixture_config_with_id(id: &str) -> KeyStoreConfig {
     KeyStoreConfig {
-        table_name: "test-table".to_string(),
+        ddb_table_name: "test-table".to_string(),
         kms_configuration: KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
                 .to_string(),
         ),
         logical_keystore_name: "test-logical".to_string(),
-        keystore_id: Some(id.to_string()),
-        aws_kms_grant_tokens: None,
+        id: Some(id.to_string()),
+        grant_tokens: None,
     }
 }
 
-/// Same as [`fixture_config_with_id`] but with `keystore_id: None`, so
+/// Same as [`fixture_config_with_id`] but with `id: None`, so
 /// `BranchKeyStore::new` exercises the v4-UUID fallback.
 fn fixture_config_no_id() -> KeyStoreConfig {
     let mut cfg = fixture_config_with_id("placeholder");
-    cfg.keystore_id = None;
+    cfg.id = None;
     cfg
 }
 
@@ -155,14 +155,14 @@ fn new_with_mr_discovery_config_succeeds() {
 async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
     let cfg = KeyStoreConfig {
-        table_name: "my-table".to_string(),
+        ddb_table_name: "my-table".to_string(),
         kms_configuration: KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
                 .to_string(),
         ),
         logical_keystore_name: "my-logical".to_string(),
-        keystore_id: Some("my-id".to_string()),
-        aws_kms_grant_tokens: Some(vec!["grant-1".to_string(), "grant-2".to_string()]),
+        id: Some("my-id".to_string()),
+        grant_tokens: Some(vec!["grant-1".to_string(), "grant-2".to_string()]),
     };
     let store = BranchKeyStore::new(cfg, kms, ddb).unwrap();
 
@@ -170,9 +170,9 @@ async fn get_key_store_info_returns_configured_values() {
     assert_eq!(info.keystore_id, "my-id");
     assert_eq!(info.keystore_name, "my-table");
     assert_eq!(info.logical_keystore_name, "my-logical");
-    assert_eq!(info.aws_kms_grant_tokens, vec!["grant-1", "grant-2"]);
+    assert_eq!(info.grant_tokens, vec!["grant-1", "grant-2"]);
     assert!(matches!(
-        info.aws_kms_configuration,
+        info.kms_configuration,
         KmsConfiguration::KmsKeyArn(_)
     ));
 }
@@ -182,7 +182,7 @@ async fn get_key_store_info_returns_empty_grant_tokens_when_none() {
     let (kms, ddb) = dummy_clients();
     let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
     let info = store.get_key_store_info().await.unwrap();
-    assert!(info.aws_kms_grant_tokens.is_empty());
+    assert!(info.grant_tokens.is_empty());
 }
 
 #[tokio::test]

@@ -94,11 +94,11 @@ pub async fn build_keystore(
 ) -> Result<Arc<dyn Keystore>, Box<dyn std::error::Error>> {
     let (kms_client, ddb_client) = build_clients(&config.region).await;
     let key_store_config = KeyStoreConfig {
-        table_name: config.table_name.clone(),
+        ddb_table_name: config.table_name.clone(),
         kms_configuration: KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()),
         logical_keystore_name: config.logical_keystore_name.clone(),
-        keystore_id: None,
-        aws_kms_grant_tokens: None,
+        id: None,
+        grant_tokens: None,
     };
     // The factory returns Arc<BranchKeyStore>; the unsized coercion to
     // Arc<dyn Keystore> happens implicitly when we type-annotate.

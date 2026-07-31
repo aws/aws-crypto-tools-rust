@@ -30,19 +30,6 @@ pub enum KeystoreErrorKind {
 }
 
 /// Error type for keystore operations.
-///
-/// Carries a categorisation ([`KeystoreErrorKind`]), a human-readable
-/// message, and an optional causal error chain — the underlying error
-/// (e.g. an AWS SDK error, an I/O failure) that produced this
-/// `KeystoreError`. The cause is surfaced through
-/// [`std::error::Error::source`], so downstream loggers / reporters that
-/// walk the source chain (`anyhow`, `tracing`, `eyre`, etc.) print the
-/// full context without callers having to string-concatenate it into
-/// `message`.
-///
-/// [`PartialEq`] and [`Eq`] compare `kind` and `message` only; the
-/// `cause` chain is intentionally not part of equality because the
-/// wrapped underlying errors are often not themselves `Eq`.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct KeystoreError {
@@ -79,17 +66,14 @@ impl KeystoreError {
         }
     }
 
-    /// Borrow the categorisation of this error.
     pub const fn kind(&self) -> &KeystoreErrorKind {
         &self.kind
     }
 
-    /// Borrow the message of this error.
     pub fn message(&self) -> &str {
         &self.message
     }
 
-    /// Borrow the causal error chain, if any.
     pub fn cause(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
         self.cause.as_deref()
     }

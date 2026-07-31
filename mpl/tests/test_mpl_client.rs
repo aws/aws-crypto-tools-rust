@@ -275,14 +275,14 @@ mod keystore_factory {
 
     fn fixture_config() -> KeyStoreConfig {
         KeyStoreConfig {
-            table_name: "test-table".to_string(),
+            ddb_table_name: "test-table".to_string(),
             kms_configuration: KmsConfiguration::KmsKeyArn(
                 "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
                     .to_string(),
             ),
             logical_keystore_name: "test-logical".to_string(),
-            keystore_id: Some("kid".to_string()),
-            aws_kms_grant_tokens: None,
+            id: Some("kid".to_string()),
+            grant_tokens: None,
         }
     }
 

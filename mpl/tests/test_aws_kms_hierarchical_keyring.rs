@@ -1114,8 +1114,8 @@ mod onencrypt {
                 keystore_id: "test-id".to_string(),
                 keystore_name: "test-table".to_string(),
                 logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
-                aws_kms_grant_tokens: Vec::new(),
-                aws_kms_configuration: KmsConfiguration::Discovery,
+                grant_tokens: Vec::new(),
+                kms_configuration: KmsConfiguration::Discovery,
             })
         }
 
@@ -1328,8 +1328,8 @@ mod onencrypt {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
                     logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
-                    aws_kms_grant_tokens: Vec::new(),
-                    aws_kms_configuration: KmsConfiguration::Discovery,
+                    grant_tokens: Vec::new(),
+                    kms_configuration: KmsConfiguration::Discovery,
                 })
             }
             async fn create_key_store(&self) -> Result<String, KeystoreError> {
@@ -1493,8 +1493,8 @@ mod ondecrypt {
                 keystore_id: "test-id".to_string(),
                 keystore_name: "test-table".to_string(),
                 logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
-                aws_kms_grant_tokens: Vec::new(),
-                aws_kms_configuration: KmsConfiguration::Discovery,
+                grant_tokens: Vec::new(),
+                kms_configuration: KmsConfiguration::Discovery,
             })
         }
 
@@ -1863,8 +1863,8 @@ mod ondecrypt {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
                     logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
-                    aws_kms_grant_tokens: Vec::new(),
-                    aws_kms_configuration: KmsConfiguration::Discovery,
+                    grant_tokens: Vec::new(),
+                    kms_configuration: KmsConfiguration::Discovery,
                 })
             }
             async fn create_key_store(&self) -> Result<String, KeystoreError> {

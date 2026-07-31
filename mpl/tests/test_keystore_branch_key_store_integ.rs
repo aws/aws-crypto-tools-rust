@@ -91,11 +91,11 @@ fn keystore_config(
     logical_keystore_name: &str,
 ) -> KeyStoreConfig {
     KeyStoreConfig {
-        table_name: BRANCH_KEY_STORE_NAME.to_string(),
+        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
         kms_configuration,
         logical_keystore_name: logical_keystore_name.to_string(),
-        keystore_id: None,
-        aws_kms_grant_tokens: None,
+        id: None,
+        grant_tokens: None,
     }
 }
 

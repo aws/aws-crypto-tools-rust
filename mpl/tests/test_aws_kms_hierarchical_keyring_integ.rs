@@ -77,11 +77,11 @@ async fn build_keystore() -> Arc<dyn Keystore> {
     Arc::new(
         BranchKeyStore::new(
             KeyStoreConfig {
-                table_name: BRANCH_KEY_STORE_NAME.to_string(),
+                ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
                 kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
                 logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-                keystore_id: None,
-                aws_kms_grant_tokens: None,
+                id: None,
+                grant_tokens: None,
             },
             kms,
             ddb,
@@ -339,11 +339,11 @@ async fn build_keystore_with_kms_and_logical_name(
     Arc::new(
         BranchKeyStore::new(
             KeyStoreConfig {
-                table_name: BRANCH_KEY_STORE_NAME.to_string(),
+                ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
                 kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
                 logical_keystore_name: logical_keystore_name.to_string(),
-                keystore_id: None,
-                aws_kms_grant_tokens: None,
+                id: None,
+                grant_tokens: None,
             },
             kms,
             ddb_client_us_west_2().await,

@@ -60,10 +60,10 @@ pub struct BranchKeyStore {
     /// `GenerateDataKeyWithoutPlaintext` calls.
     kms_client: KmsClient,
     /// Amazon DynamoDB client used by `GetItem` and `TransactWriteItems`
-    /// calls against the configured `table_name`.
+    /// calls against the configured `ddb_table_name`.
     ddb_client: DynamoDbClient,
     /// Resolved keystore identifier — either the caller-supplied value
-    /// from `config.keystore_id`, or a freshly-generated v4 UUID when the
+    /// from `config.id`, or a freshly-generated v4 UUID when the
     /// caller passed `None`.
     keystore_id: String,
 }
@@ -87,7 +87,7 @@ impl BranchKeyStore {
         // malformed ARN fails before any operation is dispatched.
         config.kms_configuration.validate()?;
 
-        let keystore_id = match config.keystore_id.clone() {
+        let keystore_id = match config.id.clone() {
             Some(id) => id,
             None => Uuid::new_v4().to_string(),
         };
@@ -108,7 +108,7 @@ impl BranchKeyStore {
 
     /// Borrow the configured grant tokens (or an empty slice if `None`).
     fn grant_tokens(&self) -> &[String] {
-        self.config.aws_kms_grant_tokens.as_deref().unwrap_or(&[])
+        self.config.grant_tokens.as_deref().unwrap_or(&[])
     }
 
     /// Build the authenticated encryption context for a fetched record.
@@ -142,7 +142,7 @@ impl BranchKeyStore {
         let response = self
             .ddb_client
             .get_item()
-            .table_name(&self.config.table_name)
+            .table_name(&self.config.ddb_table_name)
             .key(
                 ATTR_BRANCH_KEY_ID,
                 AttributeValue::S(branch_key_id.to_string()),
@@ -173,10 +173,10 @@ impl Keystore for BranchKeyStore {
     async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
         Ok(KeyStoreInfo {
             keystore_id: self.keystore_id.clone(),
-            keystore_name: self.config.table_name.clone(),
+            keystore_name: self.config.ddb_table_name.clone(),
             logical_keystore_name: self.config.logical_keystore_name.clone(),
-            aws_kms_grant_tokens: self.config.aws_kms_grant_tokens.clone().unwrap_or_default(),
-            aws_kms_configuration: self.config.kms_configuration.clone(),
+            grant_tokens: self.config.grant_tokens.clone().unwrap_or_default(),
+            kms_configuration: self.config.kms_configuration.clone(),
         })
     }
 

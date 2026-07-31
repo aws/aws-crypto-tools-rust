@@ -11,50 +11,111 @@ use aws_esdk::*;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_construct_frame_aead_inputs_authenticate_via_round_trip() {
-    // Cipherkey, message ID, body-AAD-content tag, sequence number, and content
-    // length are all AAD inputs to AES-GCM (not on the wire); round-trip across
-    // multiple frames is the cross-module check that encrypt and decrypt agree.
-    // Use a multi-frame plaintext so both regular and final body-AAD content
-    // tags are exercised, and so seq num + content length vary across frames.
+async fn test_construct_frame_aead_inputs_authenticated() {
+    // Cipherkey and message ID are AAD/key inputs to AES-GCM that never appear on
+    // the wire, so they are proven by the valid decrypt (a wrong value fails the
+    // authenticated decrypt). Sequence number, content, auth tag, and content
+    // length ARE on the wire, so they are proven by tampering each field and
+    // asserting the specific rejection. Multi-frame, non-signing suite so the
+    // frame auth tag is the integrity layer under test.
     let keyring = test_keyring().await;
-    let pt: Vec<u8> = (0u8..=200).collect();
+    let pt: Vec<u8> = (0u8..=200).collect(); // 201 bytes / frame_length 50 → 4 regular + 1 final
     let mut enc_input =
         EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
     enc_input.frame_length = FrameLength::new(50).unwrap();
+    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+
+    let frames = parse_all_frames(&ct, 50);
+    let first = &frames[0];
+    let final_frame = frames.last().expect("final frame");
+
+    let mut content_tampered = ct.clone();
+    content_tampered[first.content_offset] ^= 0xFF;
+    let mut seq_tampered = ct.clone();
+    seq_tampered[first.seq_num_offset + 3] ^= 0x02; // frame 1 seq 1 → 3
+    let mut content_length_tampered = ct.clone();
+    let clen_off = final_frame
+        .content_length_offset
+        .expect("final content length");
+    content_length_tampered[clen_off + 3] ^= 0x01; // declared content length 1 → 0, still <= frame length
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=decrypt re-derives the data key from EDKs; round-trip success proves agreement
+    //= reason=The frame AEAD key is the EDK-derived data key; decrypt with any other key fails this valid AEAD decrypt
     //# - The cipherkey MUST be the derived data key
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=decrypt reads the header message ID and inserts it into the AAD
+    //= reason=decrypt inserts the header message ID into each frame's body AAD; a mismatched ID fails this valid AEAD decrypt
     //# - The [message ID](../data-format/message-body-aad.md#message-id) MUST be the same as the
     //# [message ID](../data-format/message-header.md#message-id) serialized in the header of this message.
+    assert_eq!(
+        decrypt_with_keyring(&ct, &keyring).await,
+        pt,
+        "valid multi-frame ct must decrypt"
+    );
+
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= type=test
+    //= reason=Flipping one encrypted-content byte → CryptographicError, so each frame carries the AEAD ciphertext+tag
+    //# To construct a regular or final frame that represents the next frame in the encrypted message's body,
+    //# the Encrypt operation MUST calculate the encrypted content and an authentication tag using the
+    //# [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
+    //# specified by the [algorithm suite](../framework/algorithm-suites.md),
+    //# with the following inputs:
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=multi-frame ciphertext exercises both regular and final body-AAD content tags
+    //= reason=Tampering the encrypted content breaks the body-AAD-bound AEAD tag → CryptographicError
+    //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
+    //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= type=test
+    //= reason=The body AAD content string is bound into the AEAD tag; tampering content → CryptographicError
     //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be the structure defined in
     //# [Message Body AAD](../data-format/message-body-aad.md).
-    //
+    assert_eq!(
+        try_decrypt_with_keyring(&content_tampered, &keyring)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::CryptographicError,
+        "tampered frame content must fail AEAD authentication"
+    );
+
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=decrypt rebuilds AAD from the wire seq num; round-trip pins encrypt to use that same seq num for the AAD
+    //= reason=Changing frame 1's on-wire sequence number from 1 → SerializationError, so the serialized value is the frame's sequence number
     //# - The [sequence number](../data-format/message-body-aad.md#sequence-number) MUST be the sequence
     //# number of the frame being encrypted.
-    //
+    assert_eq!(
+        try_decrypt_with_keyring(&seq_tampered, &keyring)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::SerializationError,
+        "tampered frame sequence number must be rejected"
+    );
+
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=decrypt rebuilds AAD from the wire content length; round-trip pins encrypt to use that same length for the AAD
+    //= reason=On-wire declared length equals the 1 remaining plaintext byte; in-bounds tamper (1→0) breaks the AAD-bound AEAD tag → CryptographicError
     //# - The [content length](../data-format/message-body-aad.md#content-length) MUST have a value
     //# equal to the length of the plaintext being encrypted.
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    let result = decrypt(&dec_input).await.unwrap().plaintext;
-    assert_eq!(result, pt);
+    assert_eq!(
+        final_frame.content_length, 1,
+        "final frame's declared content length must equal the 1 remaining plaintext byte"
+    );
+    assert_eq!(
+        try_decrypt_with_keyring(&content_length_tampered, &keyring)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::CryptographicError,
+        "tampered final-frame content length must fail AEAD authentication"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -150,6 +211,11 @@ async fn test_construct_frame_final_frame_plaintext_at_most_frame_length() {
         //= type=test
         //# - For a final frame this MUST be the length of the remaining plaintext bytes
         //# which have not yet been encrypted,
+        //# whose length MUST be equal to or less than the frame length.
+        //
+        //= spec/client-apis/encrypt.md#construct-a-frame
+        //= type=test
+        //# - For a final frame this MUST be the remaining plaintext bytes which have not yet been encrypted,
         //# whose length MUST be equal to or less than the frame length.
         let Ok(final_len) = u32::try_from(final_frame.content.len()) else {
             panic!("content length exceeds u32::MAX");
