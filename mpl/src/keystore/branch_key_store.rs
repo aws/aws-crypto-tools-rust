@@ -9,7 +9,7 @@
 //! default client is built using the Region parsed from the configured KMS
 //! ARN, per `branch-key-store.md`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
@@ -17,20 +17,27 @@ use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::{
-    AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType,
-    ScalarAttributeType, TableDescription,
+    AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType, Put,
+    ScalarAttributeType, TableDescription, TransactWriteItem,
 };
 use aws_sdk_kms::Client as KmsClient;
+use time::OffsetDateTime;
+use time::macros::format_description;
 use uuid::Uuid;
 
 use crate::keystore::Keystore;
 use crate::keystore::attributes::{
-    ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TYPE, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+    ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_TABLENAME, ATTR_TYPE,
+    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
 use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
+use crate::keystore::encryption_context::{
+    EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
+    decrypt_only_encryption_context,
+};
 use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
 use crate::keystore::kms_config::parse_arn;
-use crate::keystore::kms_ops::decrypt_branch_key;
+use crate::keystore::kms_ops::{decrypt_branch_key, generate_wrapped_key, reencrypt_wrapped_key};
 use crate::keystore::record::{
     EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
 };
@@ -113,6 +120,22 @@ impl BranchKeyStore {
             .ddb_client
             .as_ref()
             .expect("ddb_client is resolved during construction")
+    }
+
+    /// The single configured KMS Key ARN. `CreateKey` / `VersionKey`
+    /// require a single-key configuration; `Discovery` / `MRDiscovery`
+    /// have no single ARN to wrap under and are rejected.
+    fn configured_kms_key_arn(&self) -> Result<&str, KeystoreError> {
+        match &self.config.kms_configuration {
+            KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn),
+            KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => {
+                Err(KeystoreError::new(
+                    KeystoreErrorKind::Configuration,
+                    "operation requires a single-key KMS configuration (KmsKeyArn or \
+                     KmsMrKeyArn); Discovery and MRDiscovery are not supported",
+                ))
+            }
+        }
     }
 
     /// Returns the resolved keystore identifier — either caller-supplied
@@ -267,10 +290,89 @@ impl Keystore for BranchKeyStore {
 
     async fn create_key(
         &self,
-        _branch_key_id: Option<String>,
-        _encryption_context: Option<EncryptionContext>,
+        branch_key_id: Option<String>,
+        encryption_context: Option<EncryptionContext>,
     ) -> Result<String, KeystoreError> {
-        Err(not_implemented_yet("create_key"))
+        // A caller-supplied branch key id requires an explicit encryption
+        // context (branch-key-store.md#createkey).
+        if branch_key_id.is_some() && encryption_context.is_none() {
+            return Err(KeystoreError::new(
+                KeystoreErrorKind::Configuration,
+                "CreateKey with a caller-supplied branch key id requires an encryption context",
+            ));
+        }
+
+        // CreateKey requires a single-key KMS configuration.
+        let key_arn = self.configured_kms_key_arn()?.to_string();
+
+        let branch_key_id = branch_key_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let version = Uuid::new_v4().to_string();
+        let timestamp = now_iso8601_micros()?;
+
+        let ec_input = EncryptionContextInput {
+            branch_key_id: &branch_key_id,
+            create_time: &timestamp,
+            logical_keystore_name: &self.config.logical_keystore_name,
+            kms_arn: &key_arn,
+            hierarchy_version: 1,
+            custom_ec: encryption_context.as_ref(),
+        };
+
+        let decrypt_only_ec = decrypt_only_encryption_context(&ec_input, &version)?;
+        let active_ec = active_encryption_context(&ec_input, &version)?;
+        let beacon_ec = beacon_key_encryption_context(&ec_input)?;
+
+        let grant_tokens = self.grant_tokens();
+        let kms = self.kms_client();
+
+        // Wrapped DECRYPT_ONLY branch key.
+        let decrypt_only_blob =
+            generate_wrapped_key(kms, &key_arn, &decrypt_only_ec, grant_tokens).await?;
+        // Wrapped ACTIVE branch key: ReEncrypt DECRYPT_ONLY -> ACTIVE.
+        let active_blob = reencrypt_wrapped_key(
+            kms,
+            &key_arn,
+            &decrypt_only_blob,
+            &decrypt_only_ec,
+            &active_ec,
+            grant_tokens,
+        )
+        .await?;
+        // Wrapped beacon key.
+        let beacon_blob = generate_wrapped_key(kms, &key_arn, &beacon_ec, grant_tokens).await?;
+
+        // Write all three items atomically, each guarded so it cannot
+        // clobber an existing branch key id.
+        let items = [
+            item_from_ec_and_enc(&decrypt_only_ec, decrypt_only_blob),
+            item_from_ec_and_enc(&active_ec, active_blob),
+            item_from_ec_and_enc(&beacon_ec, beacon_blob),
+        ];
+        let mut transact_items = Vec::with_capacity(items.len());
+        for item in items {
+            let put = Put::builder()
+                .table_name(&self.config.ddb_table_name)
+                .set_item(Some(item))
+                .condition_expression("attribute_not_exists(#branch_key_id)")
+                .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
+                .build()
+                .map_err(ddb_build_err)?;
+            transact_items.push(TransactWriteItem::builder().put(put).build());
+        }
+
+        self.ddb_client()
+            .transact_write_items()
+            .set_transact_items(Some(transact_items))
+            .send()
+            .await
+            .map_err(|e| {
+                KeystoreError::new(
+                    KeystoreErrorKind::Dynamodb,
+                    format!("DynamoDB TransactWriteItems failed: {e}"),
+                )
+            })?;
+
+        Ok(branch_key_id)
     }
 
     async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
@@ -410,6 +512,45 @@ fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
         KeystoreErrorKind::Internal,
         format!("failed to build a DynamoDB request: {e}"),
     )
+}
+
+/// Current UTC time as an ISO 8601 timestamp to microsecond precision
+/// (`YYYY-MM-DDTHH:mm:ss.ssssssZ`), per branch-key-store.md#createkey.
+fn now_iso8601_micros() -> Result<String, KeystoreError> {
+    const FORMAT: &[time::format_description::FormatItem<'_>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:6]Z");
+    OffsetDateTime::now_utc().format(FORMAT).map_err(|e| {
+        KeystoreError::new(
+            KeystoreErrorKind::Internal,
+            format!("failed to format a keystore timestamp: {e}"),
+        )
+    })
+}
+
+/// Build the DynamoDB item for a keystore record from its encryption
+/// context and wrapped-key ciphertext, mirroring the reference
+/// `Structure.ToAttributeMap`: every EC entry is carried as a String
+/// attribute except `hierarchy-version` (Number) and `tablename` (dropped
+/// — it is reconstructed from config on read); the wrapped key is added as
+/// the binary `enc` attribute.
+fn item_from_ec_and_enc(
+    encryption_context: &BTreeMap<String, String>,
+    enc: Vec<u8>,
+) -> HashMap<String, AttributeValue> {
+    let mut item: HashMap<String, AttributeValue> = HashMap::new();
+    for (key, value) in encryption_context {
+        if key == ATTR_TABLENAME {
+            continue;
+        }
+        let attr = if key == ATTR_HIERARCHY_VERSION {
+            AttributeValue::N(value.clone())
+        } else {
+            AttributeValue::S(value.clone())
+        };
+        item.insert(key.clone(), attr);
+    }
+    item.insert(ATTR_ENC.to_string(), AttributeValue::B(Blob::new(enc)));
+    item
 }
 
 /// Determine the Region for a default client from the KMS configuration:

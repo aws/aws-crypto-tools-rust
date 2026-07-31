@@ -248,3 +248,42 @@ async fn create_key_store_dispatches_to_dynamodb() {
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
 }
+
+#[tokio::test]
+async fn create_key_with_branch_key_id_but_no_ec_fails() {
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.create_key(Some("bk-1".to_string()), None).await {
+        Ok(_) => panic!("create_key with a branch key id and no EC must fail"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+}
+
+#[tokio::test]
+async fn create_key_with_discovery_config_fails() {
+    let mut cfg = fixture_config_with_id("id-x");
+    cfg.kms_configuration = KmsConfiguration::Discovery;
+    let store = BranchKeyStore::new(cfg).await.unwrap();
+    let err = match store.create_key(None, None).await {
+        Ok(_) => panic!("create_key under a Discovery configuration must fail"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+}
+
+#[tokio::test]
+async fn create_key_dispatches_to_kms() {
+    // With no AWS configured, CreateKey reaches the first KMS
+    // GenerateDataKeyWithoutPlaintext call, which fails at dispatch and is
+    // surfaced as a Kms-kind error.
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.create_key(None, None).await {
+        Ok(_) => panic!("create_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+}
