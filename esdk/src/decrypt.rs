@@ -131,9 +131,12 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     //= reason=decrypt() returns Result; caller cannot access output until Ok
     //# If the input encrypted message is not being [streamed](streaming.md) to this operation,
     //# all output MUST NOT be released until after these steps complete successfully.
-    // Plaintext is always smaller than the ciphertext and grows as frames decrypt;
-    // pre-sizing to ciphertext.len() would over-allocate (badly so for small frames).
-    let mut plaintext: Vec<u8> = Vec::new();
+    // The plaintext is never longer than the ciphertext (which carries the header,
+    // per-frame overhead, and footer on top of the encrypted content), so the
+    // ciphertext length is an upper bound that lets the buffer grow without
+    // reallocating while frames decrypt. Capacity beyond the final plaintext
+    // length is returned when the Vec shrinks below.
+    let mut plaintext: Vec<u8> = Vec::with_capacity(input.ciphertext.len());
 
     let out = internal_decrypt(
         &mut cursor,
@@ -155,6 +158,13 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         //# but there are consumable bytes which are intended to be decrypted,
         //# this operation MUST fail.
         return Err(esdk_err("Data after message footer"));
+    }
+
+    // Return excess capacity when the upper-bound reservation greatly exceeds
+    // the decrypted plaintext (e.g. messages built from tiny frames, where
+    // per-frame overhead dominates the ciphertext length).
+    if plaintext.capacity() / 2 > plaintext.len() {
+        plaintext.shrink_to_fit();
     }
 
     Ok(DecryptOutput {

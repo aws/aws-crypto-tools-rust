@@ -1,0 +1,84 @@
+# Runs the ESDK hierarchical-keyring benchmark and publishes results to
+# CloudWatch Logs.
+name: Performance Benchmarks
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "00 09 * * *"
+  pull_request:
+    paths:
+      - "esdk/performance-tests/**"
+      - ".github/workflows/performance-benchmarks.yml"
+
+jobs:
+  benchmark:
+    # Skip the scheduled run on forks.
+    if: github.event_name != 'schedule' || github.repository_owner == 'aws'
+    name: hierarchical (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: esdk/performance-tests
+    steps:
+      - name: Support longpaths on Git checkout
+        run: git config --global core.longpaths true
+        working-directory: .
+
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # The hierarchical keyring reads the shared test key store (KMS + DynamoDB,
+      # account 370957321024, us-west-2); same OIDC role as library_rust_tests.yml.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustPerformanceBenchmarks
+          special-characters-workaround: "true" # Some environments cannot tolerate special characters in a secret key.
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esdk/performance-tests
+
+      - name: Run performance benchmarks - Quick Mode
+        run: cargo run --release -- --quick
+
+      - name: Parse and Format Logs
+        working-directory: esdk/performance-tests/results/raw-data
+        run: |
+          LOG_FILE="rust_results.json"
+          UPLOAD_FILE="cloudwatch_logs.json"
+          jq -c --arg ts "$(date +%s)000" '[.results[] as $result | .metadata as $meta | {timestamp: ($ts | tonumber), message: ({metadata: $meta, result: $result} | tostring)}]' "$LOG_FILE" > "$UPLOAD_FILE"
+
+      - name: Upload logs to CloudWatch
+        working-directory: esdk/performance-tests/results/raw-data
+        run: |
+          LOG_FILE="cloudwatch_logs.json"
+          LOG_GROUP="aws-esdk-performance-benchmarks"
+          # Distinct stream per keyring so series don't mix in the shared log group.
+          LOG_STREAM="rust-hierarchical/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
+
+          aws logs create-log-stream \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" 2>/dev/null || true
+
+          aws logs put-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" \
+            --log-events file://"$LOG_FILE"
