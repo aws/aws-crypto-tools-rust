@@ -232,3 +232,19 @@ async fn get_branch_key_version_dispatches_to_dynamodb() {
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
 }
+
+#[tokio::test]
+async fn create_key_store_dispatches_to_dynamodb() {
+    // With no AWS configured, CreateKeyStore's initial DescribeTable call
+    // fails at dispatch (not a modeled ResourceNotFoundException), so the
+    // operation surfaces a Dynamodb-kind error rather than the old
+    // not-implemented stub.
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.create_key_store().await {
+        Ok(_) => panic!("create_key_store unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+}

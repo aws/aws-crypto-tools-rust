@@ -14,8 +14,12 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::primitives::Blob;
-use aws_sdk_dynamodb::types::AttributeValue;
+use aws_sdk_dynamodb::types::{
+    AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType,
+    ScalarAttributeType, TableDescription,
+};
 use aws_sdk_kms::Client as KmsClient;
 use uuid::Uuid;
 
@@ -192,7 +196,73 @@ impl Keystore for BranchKeyStore {
     }
 
     async fn create_key_store(&self) -> Result<String, KeystoreError> {
-        Err(not_implemented_yet("create_key_store"))
+        let table_name = &self.config.ddb_table_name;
+
+        // Per branch-key-store.md#createkeystore: first DescribeTable.
+        match self
+            .ddb_client()
+            .describe_table()
+            .table_name(table_name)
+            .send()
+            .await
+        {
+            // Table exists: validate it has the expected KeySchema, then
+            // return its ARN.
+            Ok(resp) => {
+                let table = resp.table().ok_or_else(|| {
+                    KeystoreError::new(
+                        KeystoreErrorKind::Dynamodb,
+                        "DescribeTable succeeded but returned no table description",
+                    )
+                })?;
+                if !table_has_expected_schema(table) {
+                    return Err(KeystoreError::new(
+                        KeystoreErrorKind::Configuration,
+                        format!(
+                            "Table '{table_name}' does not conform to the expected Key Store KeySchema"
+                        ),
+                    ));
+                }
+                table_arn(table, table_name)
+            }
+            // ResourceNotFoundException: create the table with the expected
+            // schema. Any other error is surfaced as a DynamoDB error.
+            Err(err) => {
+                let is_not_found = err
+                    .as_service_error()
+                    .is_some_and(DescribeTableError::is_resource_not_found_exception);
+                if !is_not_found {
+                    return Err(KeystoreError::new(
+                        KeystoreErrorKind::Dynamodb,
+                        format!("DynamoDB DescribeTable failed: {err}"),
+                    ));
+                }
+
+                let resp = self
+                    .ddb_client()
+                    .create_table()
+                    .table_name(table_name)
+                    .set_attribute_definitions(Some(expected_attribute_definitions()?))
+                    .set_key_schema(Some(expected_key_schema()?))
+                    .billing_mode(BillingMode::PayPerRequest)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        KeystoreError::new(
+                            KeystoreErrorKind::Dynamodb,
+                            format!("DynamoDB CreateTable failed: {e}"),
+                        )
+                    })?;
+
+                let table = resp.table_description().ok_or_else(|| {
+                    KeystoreError::new(
+                        KeystoreErrorKind::Dynamodb,
+                        "CreateTable succeeded but returned no table description",
+                    )
+                })?;
+                table_arn(table, table_name)
+            }
+        }
     }
 
     async fn create_key(
@@ -265,6 +335,80 @@ fn not_implemented_yet(op: &str) -> KeystoreError {
     KeystoreError::new(
         KeystoreErrorKind::Internal,
         format!("BranchKeyStore::{op} is not yet implemented"),
+    )
+}
+
+/// The `AttributeDefinitions` a branch-key-store table MUST have:
+/// `branch-key-id` (S) and `type` (S). See
+/// `branch-key-store.md#keyschema`.
+fn expected_attribute_definitions() -> Result<Vec<AttributeDefinition>, KeystoreError> {
+    let branch_key_id = AttributeDefinition::builder()
+        .attribute_name(ATTR_BRANCH_KEY_ID)
+        .attribute_type(ScalarAttributeType::S)
+        .build()
+        .map_err(ddb_build_err)?;
+    let type_attr = AttributeDefinition::builder()
+        .attribute_name(ATTR_TYPE)
+        .attribute_type(ScalarAttributeType::S)
+        .build()
+        .map_err(ddb_build_err)?;
+    Ok(vec![branch_key_id, type_attr])
+}
+
+/// The `KeySchema` a branch-key-store table MUST have: `branch-key-id`
+/// as the partition (HASH) key and `type` as the sort (RANGE) key.
+fn expected_key_schema() -> Result<Vec<KeySchemaElement>, KeystoreError> {
+    let hash = KeySchemaElement::builder()
+        .attribute_name(ATTR_BRANCH_KEY_ID)
+        .key_type(KeyType::Hash)
+        .build()
+        .map_err(ddb_build_err)?;
+    let range = KeySchemaElement::builder()
+        .attribute_name(ATTR_TYPE)
+        .key_type(KeyType::Range)
+        .build()
+        .map_err(ddb_build_err)?;
+    Ok(vec![hash, range])
+}
+
+/// Returns true if `table` carries at least the expected branch-key-store
+/// KeySchema and attribute definitions. The table MAY carry additional
+/// attributes / indexes (per the spec), so this is a superset check.
+fn table_has_expected_schema(table: &TableDescription) -> bool {
+    let key_schema = table.key_schema();
+    let has_hash = key_schema
+        .iter()
+        .any(|e| e.attribute_name() == ATTR_BRANCH_KEY_ID && *e.key_type() == KeyType::Hash);
+    let has_range = key_schema
+        .iter()
+        .any(|e| e.attribute_name() == ATTR_TYPE && *e.key_type() == KeyType::Range);
+
+    let attrs = table.attribute_definitions();
+    let has_bkid_attr = attrs.iter().any(|a| {
+        a.attribute_name() == ATTR_BRANCH_KEY_ID && *a.attribute_type() == ScalarAttributeType::S
+    });
+    let has_type_attr = attrs
+        .iter()
+        .any(|a| a.attribute_name() == ATTR_TYPE && *a.attribute_type() == ScalarAttributeType::S);
+
+    has_hash && has_range && has_bkid_attr && has_type_attr
+}
+
+/// Extract the `TableArn` from a table description, erroring if absent.
+fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, KeystoreError> {
+    table.table_arn().map(String::from).ok_or_else(|| {
+        KeystoreError::new(
+            KeystoreErrorKind::Dynamodb,
+            format!("Table '{table_name}' description is missing a TableArn"),
+        )
+    })
+}
+
+/// Map a DynamoDB request-builder `BuildError` into a `KeystoreError`.
+fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
+    KeystoreError::new(
+        KeystoreErrorKind::Internal,
+        format!("failed to build a DynamoDB request: {e}"),
     )
 }
 
