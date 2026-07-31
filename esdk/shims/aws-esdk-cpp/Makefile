@@ -68,4 +68,9 @@ test:
 	make test_concurrency
 	make test_resource_leaks
 
-.PHONY: all clean test clippy
+duvet:
+	@test -e spec || ln -s ../../spec spec
+	rm -rf .duvet/reports .duvet/requirements
+	duvet report
+
+.PHONY: all clean duvet test clippy
