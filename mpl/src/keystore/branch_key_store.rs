@@ -42,15 +42,10 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 /// `id` against a freshly-generated v4 UUID per
 /// `branch-key-store.md#keystore-id`.
 pub struct BranchKeyStore {
-    /// Caller-supplied configuration. Recorded once at construction; the
-    /// keystore never mutates this field.
+    /// Caller-supplied configuration, with the KMS and DynamoDB clients
+    /// resolved to concrete instances at construction (any `None` client
+    /// is replaced with a default built from the KMS ARN region).
     config: KeyStoreConfig,
-    /// Resolved AWS KMS client used by `Decrypt`, `ReEncrypt`, and
-    /// `GenerateDataKeyWithoutPlaintext` calls.
-    kms_client: KmsClient,
-    /// Resolved Amazon DynamoDB client used by `GetItem` and
-    /// `TransactWriteItems` calls against the configured `ddb_table_name`.
-    ddb_client: DynamoDbClient,
     /// Resolved keystore identifier — either the caller-supplied value
     /// from `config.id`, or a freshly-generated v4 UUID when the
     /// caller passed `None`.
@@ -65,11 +60,12 @@ impl BranchKeyStore {
     /// For each of the KMS and DynamoDB clients, the caller-supplied client
     /// in the config is used when present; otherwise a default client is
     /// built using the Region parsed from the configured KMS ARN (the SDK's
-    /// default region provider chain is used for `Discovery`).
+    /// default region provider chain is used for `Discovery`) and stored
+    /// back into the config.
     ///
     /// Returns `KeystoreError::Configuration` if the KMS configuration is
     /// invalid (malformed ARN, alias, non-`kms` service).
-    pub async fn new(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
+    pub async fn new(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
         // Validate the KMS configuration's ARN at construction time so a
         // malformed ARN fails before any operation is dispatched.
         config.kms_configuration.validate()?;
@@ -79,25 +75,40 @@ impl BranchKeyStore {
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        // Resolve clients: caller-supplied where present, otherwise a
-        // default client built from the Region in the KMS ARN.
-        let (kms_client, ddb_client) = match (config.kms_client.clone(), config.ddb_client.clone())
-        {
-            (Some(kms), Some(ddb)) => (kms, ddb),
-            (maybe_kms, maybe_ddb) => {
-                let sdk_config = default_sdk_config(&config.kms_configuration).await;
-                let kms = maybe_kms.unwrap_or_else(|| KmsClient::new(&sdk_config));
-                let ddb = maybe_ddb.unwrap_or_else(|| DynamoDbClient::new(&sdk_config));
-                (kms, ddb)
+        // Resolve any absent client to a default built from the Region in
+        // the KMS ARN, storing it back into the config so the config always
+        // holds concrete clients after construction.
+        if config.kms_client.is_none() || config.ddb_client.is_none() {
+            let sdk_config = default_sdk_config(&config.kms_configuration).await;
+            if config.kms_client.is_none() {
+                config.kms_client = Some(KmsClient::new(&sdk_config));
             }
-        };
+            if config.ddb_client.is_none() {
+                config.ddb_client = Some(DynamoDbClient::new(&sdk_config));
+            }
+        }
 
         Ok(Self {
             config,
-            kms_client,
-            ddb_client,
             keystore_id,
         })
+    }
+
+    /// The resolved AWS KMS client. Guaranteed present after construction.
+    fn kms_client(&self) -> &KmsClient {
+        self.config
+            .kms_client
+            .as_ref()
+            .expect("kms_client is resolved during construction")
+    }
+
+    /// The resolved Amazon DynamoDB client. Guaranteed present after
+    /// construction.
+    fn ddb_client(&self) -> &DynamoDbClient {
+        self.config
+            .ddb_client
+            .as_ref()
+            .expect("ddb_client is resolved during construction")
     }
 
     /// Returns the resolved keystore identifier — either caller-supplied
@@ -140,7 +151,7 @@ impl BranchKeyStore {
         sort_key: &str,
     ) -> Result<EncryptedRecord, KeystoreError> {
         let response = self
-            .ddb_client
+            .ddb_client()
             .get_item()
             .table_name(&self.config.ddb_table_name)
             .key(
@@ -205,7 +216,7 @@ impl Keystore for BranchKeyStore {
             .await?;
 
         let plaintext = decrypt_branch_key(
-            &self.kms_client,
+            self.kms_client(),
             &self.config.kms_configuration,
             &record,
             &self.config.logical_keystore_name,
@@ -227,7 +238,7 @@ impl Keystore for BranchKeyStore {
         let record = self.fetch_record(&branch_key_id, &sort_key).await?;
 
         let plaintext = decrypt_branch_key(
-            &self.kms_client,
+            self.kms_client(),
             &self.config.kms_configuration,
             &record,
             &self.config.logical_keystore_name,
