@@ -28,7 +28,8 @@ use uuid::Uuid;
 use crate::keystore::Keystore;
 use crate::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
-    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, TYPE_BEACON_ACTIVE, TYPE_BRANCH_ACTIVE,
+    TYPE_BRANCH_VERSION_PREFIX,
 };
 use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
 use crate::keystore::encryption_context::{
@@ -42,6 +43,7 @@ use crate::keystore::kms_ops::{
 };
 use crate::keystore::record::{
     EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
+    custom_encryption_context_from_authenticated_encryption_context,
 };
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
@@ -556,19 +558,36 @@ impl Keystore for BranchKeyStore {
 
     async fn get_beacon_key(
         &self,
-        _branch_key_id: String,
+        branch_key_id: String,
     ) -> Result<BeaconKeyMaterials, KeystoreError> {
-        Err(not_implemented_yet("get_beacon_key"))
-    }
-}
+        let record = self
+            .fetch_record(&branch_key_id, TYPE_BEACON_ACTIVE)
+            .await?;
 
-/// Build the "operation not yet implemented" error returned by the
-/// keystore operations that are not yet implemented.
-fn not_implemented_yet(op: &str) -> KeystoreError {
-    KeystoreError::new(
-        KeystoreErrorKind::Internal,
-        format!("BranchKeyStore::{op} is not yet implemented"),
-    )
+        let plaintext = decrypt_branch_key(
+            self.kms_client(),
+            &self.config.kms_configuration,
+            &record,
+            &self.config.logical_keystore_name,
+            self.grant_tokens(),
+        )
+        .await?;
+
+        let auth_ec = self.build_auth_ec(&record);
+        let custom_ec = custom_encryption_context_from_authenticated_encryption_context(&auth_ec)?;
+        // The beacon key id is the `branch-key-id` field on the record.
+        let beacon_key_id = auth_ec
+            .get(ATTR_BRANCH_KEY_ID)
+            .cloned()
+            .unwrap_or(branch_key_id);
+
+        Ok(BeaconKeyMaterials::new(
+            beacon_key_id,
+            custom_ec,
+            Some(plaintext),
+            None,
+        ))
+    }
 }
 
 /// The `AttributeDefinitions` a branch-key-store table MUST have:

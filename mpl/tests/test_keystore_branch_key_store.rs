@@ -313,3 +313,17 @@ async fn version_key_dispatches_to_dynamodb() {
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
 }
+
+#[tokio::test]
+async fn get_beacon_key_dispatches_to_dynamodb() {
+    // GetBeaconKey reads the beacon:ACTIVE record; with no AWS configured
+    // that GetItem fails at dispatch and surfaces a Dynamodb-kind error.
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.get_beacon_key("bk-1".to_string()).await {
+        Ok(_) => panic!("get_beacon_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+}
