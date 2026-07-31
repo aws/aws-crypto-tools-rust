@@ -54,13 +54,13 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 11 | `storm-tracking-cmc` | [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33) | **Merged** 2026-07-31 (merge commit `81aa540`) | retired after merge |
 | 12 | `keystore-interface` | [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35) | **Merged** 2026-07-31 (merge commit `3ae7b4e`) | retired after merge |
 | 13 | `keystore-support` | [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36) | **Merged** 2026-07-31 (merge commit `538dbd9`) | retired after merge |
-| 14 | `branch-key-store` | — | Not started | — |
+| 14 | `branch-key-store` | [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48) | Open for review | `aws-crypto-rust/branch-key-store-review` |
 | 15 | `hkeyring-support` | — | Not started | — |
 | 16 | `hkeyring` | — | Not started | — |
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
 
-**Next action:** PRs 11 ([#33](https://github.com/aws/aws-crypto-tools-rust/pull/33)), 12 ([#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)), and 13 ([#36](https://github.com/aws/aws-crypto-tools-rust/pull/36)) are merged to `main`. Next slice to start is PR 14 (`branch-key-store`).
+**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) is open for review (base `main`). Next slice to start is PR 15 (`hkeyring-support`).
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -866,8 +866,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 11. PR 11 — `storm-tracking-cmc` — ✅ merged as [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33)
 12. PR 12 — `keystore-interface` — ✅ merged as [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)
 13. PR 13 — `keystore-support` — ✅ merged as [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36)
-14. PR 14 — `branch-key-store` **(current)**
-15. PR 15 — `hkeyring-support`
+14. PR 14 — `branch-key-store` — 🔎 open for review as [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)
+15. PR 15 — `hkeyring-support` **(current)**
 16. PR 16 — `hkeyring`
 17. PR 17 — `client-factories`
 18. PR 18 — `hkeyring-examples` *(terminal)*
