@@ -1,0 +1,96 @@
+# Runs the C++ hierarchical-keyring benchmark and publishes results to
+# CloudWatch Logs, alongside the Rust benchmark (language "rust-cpp").
+name: Performance Benchmarks (C++)
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 09 * * *"
+  pull_request:
+    paths:
+      - "esdk/shims/aws-esdk-cpp/**"
+      - ".github/workflows/performance-benchmarks-cpp.yml"
+
+jobs:
+  benchmark:
+    # Skip the scheduled run on forks.
+    if: github.event_name != 'schedule' || github.repository_owner == 'aws'
+    name: hierarchical cpp (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
+      ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
+      ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
+      ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
+      ESDK_TEST_REGION: us-west-2
+    defaults:
+      run:
+        working-directory: esdk/shims/aws-esdk-cpp/performance-tests
+    steps:
+      - name: Support longpaths on Git checkout
+        run: git config --global core.longpaths true
+        working-directory: .
+
+      - uses: actions/checkout@v4
+
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # The hierarchical keyring reads the shared test key store (KMS + DynamoDB,
+      # account 370957321024, us-west-2); same OIDC role as aws-esdk-cpp.yml.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustCppPerformanceBenchmarks
+          special-characters-workaround: "true" # Some environments cannot tolerate special characters in a secret key.
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esdk/shims/aws-esdk-cpp
+
+      - name: Build and run performance benchmark - Quick Mode
+        run: make run ARGS="--quick"
+
+      - name: Parse and Format Logs
+        working-directory: esdk/shims/aws-esdk-cpp/performance-tests/results/raw-data
+        run: |
+          LOG_FILE="cpp_results.json"
+          UPLOAD_FILE="cloudwatch_logs.json"
+          jq -c --arg ts "$(date +%s)000" '[.results[] as $result | .metadata as $meta | {timestamp: ($ts | tonumber), message: ({metadata: $meta, result: $result} | tostring)}]' "$LOG_FILE" > "$UPLOAD_FILE"
+
+      - name: Upload logs to CloudWatch
+        working-directory: esdk/shims/aws-esdk-cpp/performance-tests/results/raw-data
+        run: |
+          LOG_FILE="cloudwatch_logs.json"
+          LOG_GROUP="aws-esdk-performance-benchmarks"
+          # Distinct stream per keyring so series don't mix in the shared log group.
+          LOG_STREAM="rust-cpp-hierarchical/${{ matrix.os }}/quick_benchmarks/${{ github.workflow }}"
+
+          aws logs create-log-stream \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" 2>/dev/null || true
+
+          aws logs put-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$LOG_STREAM" \
+            --log-events file://"$LOG_FILE"
