@@ -14,12 +14,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(ESDK_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-set(ESDK_PROFILE debug)
 set(ESDK_TARGET_DIR ${ESDK_ROOT}/target)
+
+# Pick the Cargo profile from CMAKE_BUILD_TYPE; default to the optimized core so
+# a consumer that sets no build type does not link a debug Rust core.
+set(ESDK_CARGO_ARGS build)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(ESDK_PROFILE debug)
+else()
+    set(ESDK_PROFILE release)
+    list(APPEND ESDK_CARGO_ARGS --release)
+endif()
 
 # Build the Rust staticlib + cxx-generated sources before we reference them.
 execute_process(
-    COMMAND cargo build
+    COMMAND cargo ${ESDK_CARGO_ARGS}
     WORKING_DIRECTORY ${ESDK_ROOT}
     RESULT_VARIABLE _esdk_cargo_result
 )
