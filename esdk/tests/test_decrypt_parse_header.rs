@@ -277,6 +277,12 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
+    //= reason=V1 header authentication (IV + tag) is deserialized and verified during decrypt
+    //# The Decrypt operation MUST then deserialize the
+    //# [Header Authentication Version 1.0](../data-format/message-header.md#header-authentication-version-10):
+    //
+    //= spec/client-apis/decrypt.md#v1-header-deserialization
+    //= type=test
     //= reason=Untampered V1 message decrypts; tampered V1 auth tag byte → CryptographicError, proving the tag was deserialized and used
     //# - MUST deserialize the [Authentication Tag](../data-format/message-header.md#authentication-tag).
     assert!(
@@ -348,6 +354,7 @@ async fn test_v1_header_body_fields_parsed_from_wire() {
     let mut raw = Vec::new();
     let header_body =
         read_header_body(&mut cursor, None, &mut raw).expect("V1 header body must parse");
+    // A V1 message parses to a V1 header body (message format version 1).
     assert_eq!(
         header_body.algorithm_suite().message_version,
         1,
@@ -358,6 +365,20 @@ async fn test_v1_header_body_fields_parsed_from_wire() {
     let (content_type_offset, reserved_offset, iv_length_offset, frame_length_offset) =
         parse_v1_trailing_offsets(&ct);
 
+    //= spec/client-apis/decrypt.md#parse-the-header
+    //= type=test
+    //= reason=the V1 message's fields parse at V1.0-spec offsets, proving the order followed the Version field
+    //# The header deserialization order MUST follow the [Header Body Version 1.0](../data-format/message-header.md#header-body-version-10)
+    //# or [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification,
+    //# depending on the [Version](../data-format/message-header.md#version) field in the message header.
+    //
+    //= spec/client-apis/decrypt.md#v1-header-deserialization
+    //= type=test
+    //= reason=Type at wire byte 1 begins the V1.0 header-body field order verified below
+    //# If the value of the deserialized version field is [1.0](../data-format/message-header.md#supported-versions),
+    //# the remaining header fields MUST be deserialized according to the
+    //# [Header Body Version 1.0](../data-format/message-header.md#header-body-version-10) specification:
+    //
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
     //= reason=Wire byte 1 = 0x80 (Customer AED); read_header_body consumed it as Type
@@ -474,6 +495,7 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let mut raw = Vec::new();
     let header_body =
         read_header_body(&mut cursor, None, &mut raw).expect("V2 header body must parse");
+    // A V2 message parses to a V2 header body (message format version 2).
     assert_eq!(
         header_body.algorithm_suite().message_version,
         2,
@@ -490,6 +512,13 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
         (*s, *e)
     };
 
+    //= spec/client-apis/decrypt.md#v2-header-deserialization
+    //= type=test
+    //= reason=Algorithm Suite ID is deserialized at the first V2.0 header-body offset, beginning the V2.0 field order
+    //# If the value of the deserialized version field is [2.0](../data-format/message-header.md#supported-versions),
+    //# the remaining header fields MUST be deserialized according to the
+    //# [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification:
+    //
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
     //= reason=Parsed alg suite binary_id equals on-wire bytes; read_header_body consumed them
@@ -584,6 +613,12 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let tampered_input =
         DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
+    //= spec/client-apis/decrypt.md#v2-header-deserialization
+    //= type=test
+    //= reason=V2 header authentication (tag only) is deserialized and verified during decrypt
+    //# The Decrypt operation MUST then deserialize the
+    //# [Header Authentication Version 2.0](../data-format/message-header.md#header-authentication-version-20):
+    //
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
     //= reason=Untampered ct decrypts; tampered V2 auth tag byte → CryptographicError, proving the auth tag was deserialized and used

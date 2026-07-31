@@ -131,9 +131,12 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     //= reason=decrypt() returns Result; caller cannot access output until Ok
     //# If the input encrypted message is not being [streamed](streaming.md) to this operation,
     //# all output MUST NOT be released until after these steps complete successfully.
-    // Plaintext is always smaller than the ciphertext and grows as frames decrypt;
-    // pre-sizing to ciphertext.len() would over-allocate (badly so for small frames).
-    let mut plaintext: Vec<u8> = Vec::new();
+    // The plaintext is never longer than the ciphertext (which carries the header,
+    // per-frame overhead, and footer on top of the encrypted content), so the
+    // ciphertext length is an upper bound that lets the buffer grow without
+    // reallocating while frames decrypt. Capacity beyond the final plaintext
+    // length is returned when the Vec shrinks below.
+    let mut plaintext: Vec<u8> = Vec::with_capacity(input.ciphertext.len());
 
     let out = internal_decrypt(
         &mut cursor,
@@ -155,6 +158,13 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         //# but there are consumable bytes which are intended to be decrypted,
         //# this operation MUST fail.
         return Err(esdk_err("Data after message footer"));
+    }
+
+    // Return excess capacity when the upper-bound reservation greatly exceeds
+    // the decrypted plaintext (e.g. messages built from tiny frames, where
+    // per-frame overhead dominates the ciphertext length).
+    if plaintext.capacity() / 2 > plaintext.len() {
+        plaintext.shrink_to_fit();
     }
 
     Ok(DecryptOutput {
@@ -234,9 +244,6 @@ async fn internal_decrypt(
     )
     .await?;
 
-    //= spec/client-apis/decrypt.md#get-the-decryption-materials
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# decrypt MUST yield an error.
     get_esdk_algorithm_suite_id(state.header.suite.id)?;
 
     //= spec/client-apis/decrypt.md#behavior
@@ -312,8 +319,6 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        //= spec/client-apis/decrypt.md#algorithm-suite
-        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
         algorithm_suite_id: get_esdk_algorithm_suite_id(state.header.suite.id)?,
     })
 }
@@ -340,6 +345,7 @@ fn step_parse_header(
         header::read_header_body(ciphertext, max_encrypted_data_keys, &mut raw_header)?;
 
     //= spec/client-apis/decrypt.md#verify-the-header
+    //= type=implication
     //= reason=sig_digest is fed header bytes immediately; raw header not retained for later
     //# - The streamed Decrypt operation SHOULD input the serialized header to the signature algorithm as soon as it is deserialized,
     //# such that the serialized header isn't required to remain in memory to [verify the signature](#verify-the-signature).
