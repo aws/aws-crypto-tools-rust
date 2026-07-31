@@ -209,9 +209,10 @@ impl CreateCryptographicMaterialsCacheFluentBuilder {
 
 /// Fluent builder produced by [`MaterialProviders::create_branch_key_store`].
 ///
-/// All three setters ([`Self::key_store_config`], [`Self::kms_client`],
-/// [`Self::ddb_client`]) are required; [`Self::send`] returns an error
-/// naming the first missing one.
+/// [`Self::key_store_config`] is required; [`Self::kms_client`] and
+/// [`Self::ddb_client`] are optional and, when set, populate the config's
+/// client fields. When a client is left unset, [`BranchKeyStore::new`]
+/// builds a default client from the Region in the configured KMS ARN.
 #[derive(Default)]
 pub struct CreateBranchKeyStoreFluentBuilder {
     key_store_config: Option<KeyStoreConfig>,
@@ -246,34 +247,27 @@ impl CreateBranchKeyStoreFluentBuilder {
     /// Build the [`BranchKeyStore`] and wrap it in an `Arc` for direct
     /// use as `Arc<dyn Keystore>` via unsized coercion.
     ///
-    /// Returns [`KeystoreError`] when any of the three required setters
-    /// were not invoked, or when the underlying [`BranchKeyStore::new`]
-    /// rejects the configuration (e.g., malformed KMS ARN).
-    pub fn send(self) -> Result<Arc<BranchKeyStore>, KeystoreError> {
+    /// Returns [`KeystoreError`] when [`Self::key_store_config`] was not
+    /// invoked, or when the underlying [`BranchKeyStore::new`] rejects the
+    /// configuration (e.g., malformed KMS ARN).
+    pub async fn send(self) -> Result<Arc<BranchKeyStore>, KeystoreError> {
         use crate::keystore::error::KeystoreErrorKind;
-        let key_store_config = self.key_store_config.ok_or_else(|| {
+        let mut key_store_config = self.key_store_config.ok_or_else(|| {
             KeystoreError::new(
                 KeystoreErrorKind::Configuration,
                 "create_branch_key_store: key_store_config is required (call .key_store_config(...))",
             )
         })?;
-        let kms_client = self.kms_client.ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::Configuration,
-                "create_branch_key_store: kms_client is required (call .kms_client(...))",
-            )
-        })?;
-        let ddb_client = self.ddb_client.ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::Configuration,
-                "create_branch_key_store: ddb_client is required (call .ddb_client(...))",
-            )
-        })?;
-        Ok(Arc::new(BranchKeyStore::new(
-            key_store_config,
-            kms_client,
-            ddb_client,
-        )?))
+        // Builder-level client setters override the config's clients when
+        // provided; otherwise the config's own (possibly `None`) clients
+        // stand, and `BranchKeyStore::new` defaults any `None`.
+        if self.kms_client.is_some() {
+            key_store_config.kms_client = self.kms_client;
+        }
+        if self.ddb_client.is_some() {
+            key_store_config.ddb_client = self.ddb_client;
+        }
+        Ok(Arc::new(BranchKeyStore::new(key_store_config).await?))
     }
 }
 

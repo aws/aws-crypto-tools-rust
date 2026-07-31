@@ -1,20 +1,21 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Integration tests for the concrete [`BranchKeyStore`] — slice 1a
-//! (construction surface + `GetKeyStoreInfo`).
+//! Tests for the concrete [`BranchKeyStore`] — construction surface,
+//! `GetKeyStoreInfo`, and read-path dispatch.
 //!
-//! No real AWS calls are made in this file. Operations that would
-//! require KMS or DDB IO live in subsequent slices and have separate
-//! `tests/test_keystore_branch_key_store_integ.rs` (real-AWS) coverage.
+//! No real AWS calls are made in this file: the fixtures supply zero-config
+//! SDK clients so construction never triggers default-client creation, and
+//! the read-path tests only assert that the operation dispatches into the
+//! SDK. Happy-path read coverage lives in the real-AWS integration tests in
+//! `tests/test_keystore_branch_key_store_integ.rs`.
 
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::{
-    BranchKeyStore, KeyStoreConfig, Keystore, KeystoreError, KmsConfiguration,
-    keystore::KeystoreErrorKind,
+    BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
 };
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests
@@ -29,8 +30,10 @@ fn dummy_clients() -> (KmsClient, DynamoDbClient) {
 }
 
 /// A `KeyStoreConfig` with a caller-supplied keystore-id, the simplest
-/// `KmsConfiguration::KmsKeyArn` variant, and no grant tokens.
+/// `KmsConfiguration::KmsKeyArn` variant, no grant tokens, and the dummy
+/// clients supplied so construction never builds a default client.
 fn fixture_config_with_id(id: &str) -> KeyStoreConfig {
+    let (kms, ddb) = dummy_clients();
     KeyStoreConfig {
         ddb_table_name: "test-table".to_string(),
         kms_configuration: KmsConfiguration::KmsKeyArn(
@@ -40,6 +43,8 @@ fn fixture_config_with_id(id: &str) -> KeyStoreConfig {
         logical_keystore_name: "test-logical".to_string(),
         id: Some(id.to_string()),
         grant_tokens: None,
+        ddb_client: Some(ddb),
+        kms_client: Some(kms),
     }
 }
 
@@ -51,18 +56,18 @@ fn fixture_config_no_id() -> KeyStoreConfig {
     cfg
 }
 
-#[test]
-fn new_with_caller_supplied_keystore_id_records_it_verbatim() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("caller-id"), kms, ddb)
+#[tokio::test]
+async fn new_with_caller_supplied_keystore_id_records_it_verbatim() {
+    let store = BranchKeyStore::new(fixture_config_with_id("caller-id"))
+        .await
         .expect("construction with valid config must succeed");
     assert_eq!(store.keystore_id(), "caller-id");
 }
 
-#[test]
-fn new_without_keystore_id_generates_v4_uuid() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_no_id(), kms, ddb)
+#[tokio::test]
+async fn new_without_keystore_id_generates_v4_uuid() {
+    let store = BranchKeyStore::new(fixture_config_no_id())
+        .await
         .expect("construction with valid config must succeed");
 
     let id = store.keystore_id();
@@ -93,12 +98,10 @@ fn new_without_keystore_id_generates_v4_uuid() {
     }
 }
 
-#[test]
-fn new_without_keystore_id_two_calls_produce_distinct_uuids() {
-    let (kms1, ddb1) = dummy_clients();
-    let store1 = BranchKeyStore::new(fixture_config_no_id(), kms1, ddb1).unwrap();
-    let (kms2, ddb2) = dummy_clients();
-    let store2 = BranchKeyStore::new(fixture_config_no_id(), kms2, ddb2).unwrap();
+#[tokio::test]
+async fn new_without_keystore_id_two_calls_produce_distinct_uuids() {
+    let store1 = BranchKeyStore::new(fixture_config_no_id()).await.unwrap();
+    let store2 = BranchKeyStore::new(fixture_config_no_id()).await.unwrap();
     assert_ne!(
         store1.keystore_id(),
         store2.keystore_id(),
@@ -106,48 +109,47 @@ fn new_without_keystore_id_two_calls_produce_distinct_uuids() {
     );
 }
 
-#[test]
-fn new_with_malformed_kms_arn_returns_configuration_error() {
-    let (kms, ddb) = dummy_clients();
+#[tokio::test]
+async fn new_with_malformed_kms_arn_returns_configuration_error() {
     let mut cfg = fixture_config_with_id("caller-id");
     cfg.kms_configuration = KmsConfiguration::KmsKeyArn("not-an-arn".to_string());
-    let err = match BranchKeyStore::new(cfg, kms, ddb) {
+    let err = match BranchKeyStore::new(cfg).await {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
 }
 
-#[test]
-fn new_with_alias_kms_arn_returns_configuration_error() {
-    let (kms, ddb) = dummy_clients();
+#[tokio::test]
+async fn new_with_alias_kms_arn_returns_configuration_error() {
     let mut cfg = fixture_config_with_id("caller-id");
     cfg.kms_configuration = KmsConfiguration::KmsKeyArn(
         "arn:aws:kms:us-west-2:111122223333:alias/my-alias".to_string(),
     );
-    let err = match BranchKeyStore::new(cfg, kms, ddb) {
+    let err = match BranchKeyStore::new(cfg).await {
         Ok(_) => panic!("construction with alias ARN must fail"),
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
 }
 
-#[test]
-fn new_with_discovery_config_succeeds_without_arn() {
-    let (kms, ddb) = dummy_clients();
+#[tokio::test]
+async fn new_with_discovery_config_succeeds_without_arn() {
     let mut cfg = fixture_config_with_id("caller-id");
     cfg.kms_configuration = KmsConfiguration::Discovery;
-    BranchKeyStore::new(cfg, kms, ddb).expect("Discovery config requires no ARN and must succeed");
+    BranchKeyStore::new(cfg)
+        .await
+        .expect("Discovery config requires no ARN and must succeed");
 }
 
-#[test]
-fn new_with_mr_discovery_config_succeeds() {
-    let (kms, ddb) = dummy_clients();
+#[tokio::test]
+async fn new_with_mr_discovery_config_succeeds() {
     let mut cfg = fixture_config_with_id("caller-id");
     cfg.kms_configuration = KmsConfiguration::MrDiscovery {
         region: "us-west-2".to_string(),
     };
-    BranchKeyStore::new(cfg, kms, ddb)
+    BranchKeyStore::new(cfg)
+        .await
         .expect("MrDiscovery config requires no ARN and must succeed");
 }
 
@@ -163,8 +165,10 @@ async fn get_key_store_info_returns_configured_values() {
         logical_keystore_name: "my-logical".to_string(),
         id: Some("my-id".to_string()),
         grant_tokens: Some(vec!["grant-1".to_string(), "grant-2".to_string()]),
+        ddb_client: Some(ddb),
+        kms_client: Some(kms),
     };
-    let store = BranchKeyStore::new(cfg, kms, ddb).unwrap();
+    let store = BranchKeyStore::new(cfg).await.unwrap();
 
     let info = store.get_key_store_info().await.unwrap();
     assert_eq!(info.keystore_id, "my-id");
@@ -179,16 +183,16 @@ async fn get_key_store_info_returns_configured_values() {
 
 #[tokio::test]
 async fn get_key_store_info_returns_empty_grant_tokens_when_none() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
     let info = store.get_key_store_info().await.unwrap();
     assert!(info.grant_tokens.is_empty());
 }
 
 #[tokio::test]
 async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_no_id(), kms, ddb).unwrap();
+    let store = BranchKeyStore::new(fixture_config_no_id()).await.unwrap();
     let info = store.get_key_store_info().await.unwrap();
     assert_eq!(info.keystore_id.len(), 36);
     assert_eq!(info.keystore_id, store.keystore_id());
@@ -197,15 +201,16 @@ async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
 // ─── Read-path APIs ─────────────────────────────────────────────────────────
 //
 // Without real AWS credentials and a real DynamoDB table, the read path
-// fails at the SDK call. These tests assert the methods now dispatch
-// into the SDK (rather than returning the slice-1a `Internal` stub) by
-// observing a `Dynamodb`-kind error. Happy-path coverage lands in
-// real-AWS integration tests in a later slice.
+// fails at the SDK call. These tests assert the methods dispatch into the
+// SDK (rather than returning an `Internal` stub) by observing a
+// `Dynamodb`-kind error. Happy-path coverage lands in the real-AWS
+// integration tests.
 
 #[tokio::test]
 async fn get_active_branch_key_dispatches_to_dynamodb() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
     let err = match store.get_active_branch_key("bk-1".to_string()).await {
         Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
@@ -215,8 +220,9 @@ async fn get_active_branch_key_dispatches_to_dynamodb() {
 
 #[tokio::test]
 async fn get_branch_key_version_dispatches_to_dynamodb() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
     let err = match store
         .get_branch_key_version("bk-1".to_string(), "v-1".to_string())
         .await
@@ -225,60 +231,4 @@ async fn get_branch_key_version_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
-}
-
-// ─── Slice 1a stubs: deferred operations return errors ──────────────────────
-//
-// These tests pin the contract that operations beyond `get_key_store_info`
-// and the read-path methods return an explicit "not yet implemented in
-// this slice" error rather than panicking. They will be replaced (or
-// deleted) when the corresponding slice lands a real implementation.
-
-#[tokio::test]
-async fn create_key_store_is_not_implemented_in_slice_1a() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
-    assert_not_implemented(store.create_key_store().await, "create_key_store");
-}
-
-#[tokio::test]
-async fn create_key_is_not_implemented_in_slice_1a() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
-    assert_not_implemented(store.create_key(None, None).await, "create_key");
-}
-
-#[tokio::test]
-async fn version_key_is_not_implemented_in_slice_1a() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
-    assert_not_implemented(store.version_key("bk-1".to_string()).await, "version_key");
-}
-
-#[tokio::test]
-async fn get_beacon_key_is_not_implemented_in_slice_1a() {
-    let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(fixture_config_with_id("id-x"), kms, ddb).unwrap();
-    assert_not_implemented(
-        store.get_beacon_key("bk-1".to_string()).await,
-        "get_beacon_key",
-    );
-}
-
-fn assert_not_implemented<T>(result: Result<T, KeystoreError>, op_name: &str) {
-    let err = match result {
-        Ok(_) => panic!("{op_name} unexpectedly succeeded — slice 1a should return an error"),
-        Err(e) => e,
-    };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Internal);
-    assert!(
-        err.message().contains(op_name),
-        "error message must mention the op name '{op_name}', got: {}",
-        err.message()
-    );
-    assert!(
-        err.message().contains("not yet implemented"),
-        "error message must mention 'not yet implemented', got: {}",
-        err.message()
-    );
 }

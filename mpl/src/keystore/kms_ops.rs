@@ -12,22 +12,15 @@
 //! `branch_key_store.rs` so the trait impl stays focused on op routing.
 //! Callers pass references — neither helper takes ownership of the KMS
 //! client or the record.
-//!
-//! Slice 1b lands these helpers and their pure-logic unit tests; slice
-//! 1c wires them into `get_active_branch_key` / `get_branch_key_version`
-//! / `version_key`. Until that wiring lands the helpers compile but are
-//! not called from anywhere in the library — `#[allow(dead_code)]` keeps
-//! the build clean.
-#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 
 use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::primitives::Blob;
 
+use crate::keystore::attributes::{ATTR_ENC, ATTR_KMS_ARN};
 use crate::keystore::config::KmsConfiguration;
 use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
-use crate::keystore::attributes::{ATTR_ENC, ATTR_KMS_ARN};
 use crate::keystore::kms_config::{is_arn_compatible, parse_arn};
 use crate::keystore::record::EncryptedRecord;
 
@@ -160,57 +153,6 @@ fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, KeystoreErr
     ))
 }
 
-/// Authenticate a DDB-fetched keystore item by re-encrypting its `enc`
-/// blob through KMS with the constructed encryption context as both
-/// the source and destination EC. A successful `ReEncrypt` proves the
-/// item's attributes have not been tampered with.
-///
-/// Returns the new ciphertext blob from the `ReEncrypt` response.
-pub(crate) async fn authenticate_keystore_item(
-    kms_client: &KmsClient,
-    kms_config: &KmsConfiguration,
-    record: &EncryptedRecord,
-    logical_keystore_name: &str,
-    grant_tokens: &[String],
-) -> Result<Vec<u8>, KeystoreError> {
-    let ec = build_authenticated_encryption_context(&record.attributes, logical_keystore_name);
-
-    let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            format!("Record is missing the '{ATTR_KMS_ARN}' attribute"),
-        )
-    })?;
-
-    let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
-
-    //
-    let response = kms_client
-        .re_encrypt()
-        .set_source_encryption_context(Some(
-            ec.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        ))
-        .source_key_id(resolved_key_id.clone())
-        .ciphertext_blob(Blob::new(record.enc.clone()))
-        .set_grant_tokens(Some(grant_tokens.to_vec()))
-        .destination_key_id(resolved_key_id)
-        .set_destination_encryption_context(Some(ec.into_iter().collect()))
-        .send()
-        .await
-        .map_err(map_kms_error)?;
-
-    let new_ciphertext = response
-        .ciphertext_blob
-        .ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::Kms,
-                "KMS ReEncrypt response is missing CiphertextBlob",
-            )
-        })?
-        .into_inner();
-    Ok(new_ciphertext)
-}
-
 /// Decrypt a branch-key record's `enc` blob through KMS, with the
 /// constructed encryption context bound as the AAD. Returns the
 /// plaintext branch key bytes.
@@ -230,11 +172,8 @@ pub(crate) async fn decrypt_branch_key(
         )
     })?;
 
-    //
-    //
     let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
 
-    //
     let response = kms_client
         .decrypt()
         .key_id(resolved_key_id)

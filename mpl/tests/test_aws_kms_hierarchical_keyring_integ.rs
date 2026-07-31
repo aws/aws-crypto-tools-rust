@@ -75,17 +75,16 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
 async fn build_keystore() -> Arc<dyn Keystore> {
     let (kms, ddb) = build_clients().await;
     Arc::new(
-        BranchKeyStore::new(
-            KeyStoreConfig {
-                ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-                kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-                logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-                id: None,
-                grant_tokens: None,
-            },
-            kms,
-            ddb,
-        )
+        BranchKeyStore::new(KeyStoreConfig {
+            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
+            kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+            logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
+            id: None,
+            grant_tokens: None,
+            ddb_client: Some(ddb),
+            kms_client: Some(kms),
+        })
+        .await
         .unwrap(),
     )
 }
@@ -337,17 +336,16 @@ async fn build_keystore_with_kms_and_logical_name(
     logical_keystore_name: &str,
 ) -> Arc<dyn Keystore> {
     Arc::new(
-        BranchKeyStore::new(
-            KeyStoreConfig {
-                ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-                kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-                logical_keystore_name: logical_keystore_name.to_string(),
-                id: None,
-                grant_tokens: None,
-            },
-            kms,
-            ddb_client_us_west_2().await,
-        )
+        BranchKeyStore::new(KeyStoreConfig {
+            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
+            kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+            logical_keystore_name: logical_keystore_name.to_string(),
+            id: None,
+            grant_tokens: None,
+            ddb_client: Some(ddb_client_us_west_2().await),
+            kms_client: Some(kms),
+        })
+        .await
         .unwrap(),
     )
 }

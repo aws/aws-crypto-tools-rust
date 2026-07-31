@@ -4,28 +4,15 @@
 //! `BranchKeyStore` — concrete [`Keystore`] implementation backed by AWS KMS
 //! and Amazon DynamoDB.
 //!
-//! This is slice 1a of the master keystore plan: construction surface and
-//! the pure (no-IO) `GetKeyStoreInfo` operation only. `CreateKeyStore`,
-//! `CreateKey`, `VersionKey`, `GetActiveBranchKey`, `GetBranchKeyVersion`,
-//! and `GetBeaconKey` return an explicit "not yet implemented in this
-//! slice" `KeystoreError` and will be filled in by subsequent slices in
-//! the order:
-//!
-//! - 1b: `authenticating-a-keystore-item` helper (KMS `ReEncrypt`) +
-//!   `aws-kms-branch-key-decryption` helper (KMS `Decrypt`).
-//! - 1c: `get_active_branch_key` and `get_branch_key_version` (DDB
-//!   `GetItem` + the helpers from 1b).
-//! - 1d: real-SDK adapters / default-client constructors (the spec's
-//!   "If no DynamoDb/KMS Client is provided, a new client MUST be
-//!   created with region X" clauses).
-//! - 1e: `create_key` (KMS `GenerateDataKeyWithoutPlaintext` + DDB
-//!   `TransactWriteItems`).
-//! - 1f: `version_key` (KMS `Decrypt` + `ReEncrypt` of ACTIVE under a
-//!   fresh version + DDB `TransactWriteItems`).
+//! Construct with [`BranchKeyStore::new`], which takes a [`KeyStoreConfig`].
+//! The KMS and DynamoDB clients are optional config inputs; when omitted, a
+//! default client is built using the Region parsed from the configured KMS
+//! ARN, per `branch-key-store.md`.
 
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
+use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -33,11 +20,12 @@ use aws_sdk_kms::Client as KmsClient;
 use uuid::Uuid;
 
 use crate::keystore::Keystore;
-use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo};
-use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
 use crate::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TYPE, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
+use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
+use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
+use crate::keystore::kms_config::parse_arn;
 use crate::keystore::kms_ops::decrypt_branch_key;
 use crate::keystore::record::{
     EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
@@ -46,21 +34,22 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 
 /// Concrete `Keystore` implementation backed by AWS KMS + Amazon DynamoDB.
 ///
-/// Construct with [`BranchKeyStore::new`], passing an already-configured
-/// pair of `aws_sdk_kms::Client` and `aws_sdk_dynamodb::Client`. The
+/// Construct with [`BranchKeyStore::new`] from a [`KeyStoreConfig`]. The KMS
+/// and DynamoDB clients are optional config inputs; when omitted, a default
+/// client is built from the Region parsed from the configured KMS ARN. The
 /// keystore validates the [`KmsConfiguration`](crate::keystore::config::KmsConfiguration)
 /// at construction time and resolves the optional caller-supplied
-/// `keystore_id` against a freshly-generated v4 UUID per
+/// `id` against a freshly-generated v4 UUID per
 /// `branch-key-store.md#keystore-id`.
 pub struct BranchKeyStore {
     /// Caller-supplied configuration. Recorded once at construction; the
     /// keystore never mutates this field.
     config: KeyStoreConfig,
-    /// AWS KMS client used by `Decrypt`, `ReEncrypt`, and
+    /// Resolved AWS KMS client used by `Decrypt`, `ReEncrypt`, and
     /// `GenerateDataKeyWithoutPlaintext` calls.
     kms_client: KmsClient,
-    /// Amazon DynamoDB client used by `GetItem` and `TransactWriteItems`
-    /// calls against the configured `ddb_table_name`.
+    /// Resolved Amazon DynamoDB client used by `GetItem` and
+    /// `TransactWriteItems` calls against the configured `ddb_table_name`.
     ddb_client: DynamoDbClient,
     /// Resolved keystore identifier — either the caller-supplied value
     /// from `config.id`, or a freshly-generated v4 UUID when the
@@ -69,27 +58,38 @@ pub struct BranchKeyStore {
 }
 
 impl BranchKeyStore {
-    /// Construct a new `BranchKeyStore`.
+    /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`].
     ///
     /// Validates the KMS configuration ARN (when applicable) and resolves
-    /// the keystore id. Both AWS clients are taken by value and stored
-    /// verbatim — callers are responsible for any user-agent customization
-    /// or region pinning before passing the clients in.
+    /// the keystore id (caller-supplied `config.id`, else a fresh v4 UUID).
+    /// For each of the KMS and DynamoDB clients, the caller-supplied client
+    /// in the config is used when present; otherwise a default client is
+    /// built using the Region parsed from the configured KMS ARN (the SDK's
+    /// default region provider chain is used for `Discovery`).
     ///
     /// Returns `KeystoreError::Configuration` if the KMS configuration is
     /// invalid (malformed ARN, alias, non-`kms` service).
-    pub fn new(
-        config: KeyStoreConfig,
-        kms_client: KmsClient,
-        ddb_client: DynamoDbClient,
-    ) -> Result<Self, KeystoreError> {
+    pub async fn new(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
         // Validate the KMS configuration's ARN at construction time so a
         // malformed ARN fails before any operation is dispatched.
         config.kms_configuration.validate()?;
 
-        let keystore_id = match config.id.clone() {
-            Some(id) => id,
-            None => Uuid::new_v4().to_string(),
+        let keystore_id = config
+            .id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        // Resolve clients: caller-supplied where present, otherwise a
+        // default client built from the Region in the KMS ARN.
+        let (kms_client, ddb_client) = match (config.kms_client.clone(), config.ddb_client.clone())
+        {
+            (Some(kms), Some(ddb)) => (kms, ddb),
+            (maybe_kms, maybe_ddb) => {
+                let sdk_config = default_sdk_config(&config.kms_configuration).await;
+                let kms = maybe_kms.unwrap_or_else(|| KmsClient::new(&sdk_config));
+                let ddb = maybe_ddb.unwrap_or_else(|| DynamoDbClient::new(&sdk_config));
+                (kms, ddb)
+            }
         };
 
         Ok(Self {
@@ -215,7 +215,6 @@ impl Keystore for BranchKeyStore {
 
         let auth_ec = self.build_auth_ec(&record);
 
-        //
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
@@ -238,7 +237,6 @@ impl Keystore for BranchKeyStore {
 
         let auth_ec = self.build_auth_ec(&record);
 
-        //
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
@@ -250,13 +248,38 @@ impl Keystore for BranchKeyStore {
     }
 }
 
-/// Build the slice-1a "operation not yet implemented" error. Replaced
-/// with real implementations by the slice that owns each operation.
+/// Build the "operation not yet implemented" error returned by the
+/// keystore operations that are not yet implemented.
 fn not_implemented_yet(op: &str) -> KeystoreError {
     KeystoreError::new(
         KeystoreErrorKind::Internal,
-        format!("BranchKeyStore::{op} is not yet implemented in this slice"),
+        format!("BranchKeyStore::{op} is not yet implemented"),
     )
+}
+
+/// Determine the Region for a default client from the KMS configuration:
+/// the Region in the KMS ARN for the ARN-based variants, the explicit
+/// region for `MrDiscovery`, and `None` for `Discovery` (in which case the
+/// SDK's default region provider chain is used).
+fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
+    match config {
+        KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => {
+            parse_arn(arn).ok().map(|parts| parts.region)
+        }
+        KmsConfiguration::MrDiscovery { region } => Some(region.clone()),
+        KmsConfiguration::Discovery => None,
+    }
+}
+
+/// Build a default [`aws_config::SdkConfig`] for constructing KMS / DynamoDB
+/// clients, pinning the Region parsed from the KMS configuration when
+/// available.
+async fn default_sdk_config(config: &KmsConfiguration) -> aws_config::SdkConfig {
+    let loader = aws_config::defaults(BehaviorVersion::latest());
+    match region_from_kms_config(config) {
+        Some(region) => loader.region(Region::new(region)).load().await,
+        None => loader.load().await,
+    }
 }
 
 /// Convert a DynamoDB GetItem response item into an [`EncryptedRecord`].
@@ -267,9 +290,7 @@ fn not_implemented_yet(op: &str) -> KeystoreError {
 fn record_from_ddb_item(
     mut item: std::collections::HashMap<String, AttributeValue>,
 ) -> Result<EncryptedRecord, KeystoreError> {
-    //
     let enc_attr = item.remove(ATTR_ENC).ok_or_else(|| {
-        //
         KeystoreError::new(
             KeystoreErrorKind::RecordMalformed,
             format!("Record is missing the '{ATTR_ENC}' attribute"),

@@ -283,11 +283,13 @@ mod keystore_factory {
             logical_keystore_name: "test-logical".to_string(),
             id: Some("kid".to_string()),
             grant_tokens: None,
+            ddb_client: None,
+            kms_client: None,
         }
     }
 
-    #[test]
-    fn happy_path_builds_branch_key_store() {
+    #[tokio::test]
+    async fn happy_path_builds_branch_key_store() {
         let (kms, ddb) = dummy_clients();
         let mpl = MaterialProviders::default();
         let _ks = mpl
@@ -296,11 +298,12 @@ mod keystore_factory {
             .kms_client(kms)
             .ddb_client(ddb)
             .send()
+            .await
             .expect("happy path must build");
     }
 
-    #[test]
-    fn missing_key_store_config_errors() {
+    #[tokio::test]
+    async fn missing_key_store_config_errors() {
         let (kms, ddb) = dummy_clients();
         let mpl = MaterialProviders::default();
         let err = match mpl
@@ -308,6 +311,7 @@ mod keystore_factory {
             .kms_client(kms)
             .ddb_client(ddb)
             .send()
+            .await
         {
             Ok(_) => panic!("missing config must error"),
             Err(e) => e,
@@ -316,42 +320,8 @@ mod keystore_factory {
         assert!(err.message.contains("key_store_config is required"));
     }
 
-    #[test]
-    fn missing_kms_client_errors() {
-        let (_, ddb) = dummy_clients();
-        let mpl = MaterialProviders::default();
-        let err = match mpl
-            .create_branch_key_store()
-            .key_store_config(fixture_config())
-            .ddb_client(ddb)
-            .send()
-        {
-            Ok(_) => panic!("missing kms_client must error"),
-            Err(e) => e,
-        };
-        assert_eq!(err.kind, KeystoreErrorKind::Configuration);
-        assert!(err.message.contains("kms_client is required"));
-    }
-
-    #[test]
-    fn missing_ddb_client_errors() {
-        let (kms, _) = dummy_clients();
-        let mpl = MaterialProviders::default();
-        let err = match mpl
-            .create_branch_key_store()
-            .key_store_config(fixture_config())
-            .kms_client(kms)
-            .send()
-        {
-            Ok(_) => panic!("missing ddb_client must error"),
-            Err(e) => e,
-        };
-        assert_eq!(err.kind, KeystoreErrorKind::Configuration);
-        assert!(err.message.contains("ddb_client is required"));
-    }
-
-    #[test]
-    fn malformed_kms_arn_propagates_branch_key_store_error() {
+    #[tokio::test]
+    async fn malformed_kms_arn_propagates_branch_key_store_error() {
         let (kms, ddb) = dummy_clients();
         let mpl = MaterialProviders::default();
         let mut bad = fixture_config();
@@ -362,6 +332,7 @@ mod keystore_factory {
             .kms_client(kms)
             .ddb_client(ddb)
             .send()
+            .await
         {
             Ok(_) => panic!("malformed ARN must surface"),
             Err(e) => e,

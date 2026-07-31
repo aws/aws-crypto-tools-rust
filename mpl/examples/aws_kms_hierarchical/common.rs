@@ -99,6 +99,8 @@ pub async fn build_keystore(
         logical_keystore_name: config.logical_keystore_name.clone(),
         id: None,
         grant_tokens: None,
+        ddb_client: None,
+        kms_client: None,
     };
     // The factory returns Arc<BranchKeyStore>; the unsized coercion to
     // Arc<dyn Keystore> happens implicitly when we type-annotate.
@@ -107,7 +109,8 @@ pub async fn build_keystore(
         .key_store_config(key_store_config)
         .kms_client(kms_client)
         .ddb_client(ddb_client)
-        .send()?;
+        .send()
+        .await?;
     Ok(store)
 }
 

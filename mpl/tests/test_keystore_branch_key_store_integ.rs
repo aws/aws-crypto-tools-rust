@@ -3,30 +3,17 @@
 
 //! Real-AWS integration tests for the [`BranchKeyStore`] read path.
 //!
-//! All tests in this file are marked `#[ignore]` and therefore skipped
-//! by `cargo test`. To run them you need:
-//!
-//! 1. AWS credentials with read access to the test resources (DDB
-//!    `KeyStoreDdbTable` in account `370957321024`, KMS keys in
-//!    accounts `370957321024` and `658956600833`).
-//! 2. A region default of `us-west-2` (where the DDB table lives). The
-//!    multi-region MRK tests build per-region KMS clients explicitly.
-//!
-//! Run with:
-//!
-//! ```text
-//! cargo test \
-//!     --test test_keystore_branch_key_store_integ -- --ignored
-//! ```
+//! These tests call real AWS and run in CI via the OIDC-assumed role.
+//! They require read access to the test resources (DDB `KeyStoreDdbTable`
+//! in account `370957321024`, KMS keys in accounts `370957321024` and
+//! `658956600833`). The DDB table lives in `us-west-2`; the multi-region
+//! MRK tests build per-region KMS clients explicitly.
 //!
 //! The fixtures, branch-key ids, KMS ARNs and assertions are ported
 //! from the Dafny test suite at
 //! `aws-cryptographic-material-providers-library` /
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
-//! (commit `09e485a3...`), specifically `Fixtures.dfy` and
-//! `TestGetKeys.dfy`. Slice 1b ports the read-path tests only;
-//! `TestGetBeaconKey`, `TestGetActiveKeyWithNoClients`, and the
-//! `VersionKey`/`CreateKey` suites land in later slices.
+//! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -66,7 +53,7 @@ const INCORRECT_LOGICAL_NAME: &str = "MySuperAwesomeTableName";
 // ─── Client construction ────────────────────────────────────────────────────
 
 /// Build a DynamoDB client pinned to `us-west-2` (where the test table
-/// lives). The user's environment supplies credentials.
+/// lives). Credentials come from the CI OIDC role / the caller's env.
 async fn ddb_client_us_west_2() -> DynamoDbClient {
     let cfg = aws_config::defaults(BehaviorVersion::latest())
         .region(Region::new("us-west-2"))
@@ -84,37 +71,39 @@ async fn kms_client_for_region(region: &'static str) -> KmsClient {
     KmsClient::new(&cfg)
 }
 
-/// Common config builder. Slice-1b tests vary `kms_configuration` and
-/// `logical_keystore_name`; everything else is constant.
-fn keystore_config(
+/// Build a `BranchKeyStore` for the given KMS configuration, logical
+/// keystore name, and explicit region-pinned clients. The clients are
+/// supplied via the config so no default client is constructed.
+async fn build_store(
     kms_configuration: KmsConfiguration,
     logical_keystore_name: &str,
-) -> KeyStoreConfig {
-    KeyStoreConfig {
+    kms_client: KmsClient,
+    ddb_client: DynamoDbClient,
+) -> BranchKeyStore {
+    BranchKeyStore::new(KeyStoreConfig {
         ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
         kms_configuration,
         logical_keystore_name: logical_keystore_name.to_string(),
         id: None,
         grant_tokens: None,
-    }
+        ddb_client: Some(ddb_client),
+        kms_client: Some(kms_client),
+    })
+    .await
+    .expect("construction with valid config must succeed")
 }
 
 // ─── TestGetActiveKey ───────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_branch_key_returns_expected_materials() {
-    let kms = kms_client_for_region("us-west-2").await;
-    let ddb = ddb_client_us_west_2().await;
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
-        kms,
-        ddb,
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
 
     let materials = store
         .get_active_branch_key(BRANCH_KEY_ID.to_string())
@@ -129,19 +118,14 @@ async fn integ_get_active_branch_key_returns_expected_materials() {
 // ─── TestGetBranchKeyVersion ────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_branch_key_version_returns_expected_materials() {
-    let kms = kms_client_for_region("us-west-2").await;
-    let ddb = ddb_client_us_west_2().await;
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
-        kms,
-        ddb,
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
 
     let materials = store
         .get_branch_key_version(
@@ -159,17 +143,14 @@ async fn integ_get_branch_key_version_returns_expected_materials() {
 // ─── TestGetActiveMrkKey: same-region happy paths ───────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_west_kmskeyarn_west_branch() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(MRK_ARN_WEST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(MRK_ARN_WEST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let materials = store
         .get_active_branch_key(WEST_BRANCH_KEY.to_string())
         .await
@@ -179,17 +160,14 @@ async fn integ_get_active_mrk_key_west_kmskeyarn_west_branch() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_east_kmskeyarn_east_branch() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(MRK_ARN_EAST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(MRK_ARN_EAST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let materials = store
         .get_active_branch_key(EAST_BRANCH_KEY.to_string())
         .await
@@ -199,17 +177,14 @@ async fn integ_get_active_mrk_key_east_kmskeyarn_east_branch() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_west_mrk_west_branch() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsMrKeyArn(MRK_ARN_WEST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsMrKeyArn(MRK_ARN_WEST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let materials = store
         .get_active_branch_key(WEST_BRANCH_KEY.to_string())
         .await
@@ -219,17 +194,14 @@ async fn integ_get_active_mrk_key_west_mrk_west_branch() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_east_mrk_east_branch() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsMrKeyArn(MRK_ARN_EAST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsMrKeyArn(MRK_ARN_EAST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let materials = store
         .get_active_branch_key(EAST_BRANCH_KEY.to_string())
         .await
@@ -241,17 +213,14 @@ async fn integ_get_active_mrk_key_east_mrk_east_branch() {
 // ─── TestGetActiveMrkKey: MRK cross-region success ──────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_west_mrk_fetches_east_branch() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsMrKeyArn(MRK_ARN_WEST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsMrKeyArn(MRK_ARN_WEST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let materials = store
         .get_active_branch_key(EAST_BRANCH_KEY.to_string())
         .await
@@ -261,17 +230,14 @@ async fn integ_get_active_mrk_key_west_mrk_fetches_east_branch() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_east_mrk_fetches_west_branch() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsMrKeyArn(MRK_ARN_EAST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsMrKeyArn(MRK_ARN_EAST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let materials = store
         .get_active_branch_key(WEST_BRANCH_KEY.to_string())
         .await
@@ -283,17 +249,14 @@ async fn integ_get_active_mrk_key_east_mrk_fetches_west_branch() {
 // ─── TestGetActiveMrkKey: KmsKeyArn cross-region disagreement ──────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(MRK_ARN_WEST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(MRK_ARN_WEST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let err = match store
         .get_active_branch_key(EAST_BRANCH_KEY.to_string())
         .await
@@ -305,17 +268,14 @@ async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(MRK_ARN_EAST.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(MRK_ARN_EAST.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-east-1").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let err = match store
         .get_active_branch_key(WEST_BRANCH_KEY.to_string())
         .await
@@ -329,17 +289,14 @@ async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
 // ─── TestGetActiveMrkKey: AP MRK config (key absent in region) ──────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsMrKeyArn(MRK_ARN_AP.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsMrKeyArn(MRK_ARN_AP.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("ap-south-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let err = match store
         .get_active_branch_key(WEST_BRANCH_KEY.to_string())
         .await
@@ -355,20 +312,17 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
 // ─── TestGetActiveKeyWithIncorrectKmsKeyArn ────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_key_with_arn_disagreement_fails() {
     // KEY_ARN is configured but POSTAL_HORN_BRANCH_KEY_ID's record was
     // created with a different KMS ARN — the kms-arn-compat check in
     // resolve_keystore_arn rejects with Authentication errkind.
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let err = match store
         .get_active_branch_key(POSTAL_HORN_BRANCH_KEY_ID.to_string())
         .await
@@ -382,20 +336,17 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
 // ─── TestGetActiveKeyWrongLogicalKeyStoreName ──────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     // A wrong logical name binds a different `tablename` value into the
     // EC, so KMS Decrypt fails to authenticate and returns
     // InvalidCiphertextException — mapped to KeystoreErrorKind::Kms.
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            INCORRECT_LOGICAL_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        INCORRECT_LOGICAL_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let err = match store.get_active_branch_key(BRANCH_KEY_ID.to_string()).await {
         Ok(_) => panic!("Wrong logical name MUST fail at KMS"),
         Err(e) => e,
@@ -406,17 +357,14 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
 // ─── TestGetActiveKeyDoesNotExistFails ─────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_get_active_key_does_not_exist() {
-    let store = BranchKeyStore::new(
-        keystore_config(
-            KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            LOGICAL_KEY_STORE_NAME,
-        ),
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
         kms_client_for_region("us-west-2").await,
         ddb_client_us_west_2().await,
     )
-    .unwrap();
+    .await;
     let err = match store.get_active_branch_key("Robbie".to_string()).await {
         Ok(_) => panic!("nonexistent branch key MUST fail with RecordNotFound"),
         Err(e) => e,
