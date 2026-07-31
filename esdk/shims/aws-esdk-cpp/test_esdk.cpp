@@ -195,7 +195,7 @@ void test_decrypt_garbage_throws(const TestConfig& cfg) {
 void test_tampered_ciphertext_throws(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
-    auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext;
+    auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext.to_vector();
     CHECK(!ciphertext.empty());
     ciphertext[ciphertext.size() / 2] ^= 0xFF;  // flip a byte in the body
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring));

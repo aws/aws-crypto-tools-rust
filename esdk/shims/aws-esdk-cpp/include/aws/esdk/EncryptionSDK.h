@@ -13,6 +13,7 @@
 //     so a dependency can never be destroyed while something references it.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -359,11 +360,50 @@ public:
     DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
+/// Owned, read-only byte buffer returned by encrypt and decrypt.
+///
+/// It owns the core library's output buffer, so obtaining it and reading it —
+/// data()/size(), indexing, iteration, comparison — never copy. to_vector() is
+/// the only accessor that copies. Move-only, so the buffer is never duplicated
+/// implicitly; call to_vector() when an owning std::vector is required.
+class Bytes {
+    ::rust::Vec<std::uint8_t> buf_;
+    friend class EncryptionSDK;
+    explicit Bytes(::rust::Vec<std::uint8_t> buf) : buf_(std::move(buf)) {}
+
+public:
+    Bytes() = default;
+    Bytes(Bytes&&) = default;
+    Bytes& operator=(Bytes&&) = default;
+    Bytes(const Bytes&) = delete;
+    Bytes& operator=(const Bytes&) = delete;
+
+    const std::uint8_t* data() const { return buf_.data(); }
+    std::size_t size() const { return buf_.size(); }
+    bool empty() const { return buf_.empty(); }
+
+    const std::uint8_t* begin() const { return buf_.data(); }
+    const std::uint8_t* end() const { return buf_.data() + buf_.size(); }
+    std::uint8_t operator[](std::size_t index) const { return buf_[index]; }
+
+    /// Copies the bytes into an owning std::vector.
+    std::vector<std::uint8_t> to_vector() const {
+        return std::vector<std::uint8_t>(begin(), end());
+    }
+};
+
+inline bool operator==(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) {
+    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+}
+inline bool operator==(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return rhs == lhs; }
+inline bool operator!=(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) { return !(lhs == rhs); }
+inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return !(rhs == lhs); }
+
 // encrypt returns the ciphertext plus the encryption context and algorithm suite
 // the core library actually used; a CMM may add context entries and the suite may
 // be defaulted, so both can differ from what the caller requested.
 struct EncryptResult {
-    std::vector<std::uint8_t> ciphertext;
+    Bytes ciphertext;
     std::map<std::string, std::string> encryption_context;
     AlgorithmSuiteId algorithm_suite_id;
 };
@@ -373,7 +413,7 @@ struct EncryptResult {
 // suite the core library reported, so the caller can inspect what was actually
 // used and authenticated (for example, to make access-control decisions).
 struct DecryptResult {
-    std::vector<std::uint8_t> plaintext;
+    Bytes plaintext;
     std::map<std::string, std::string> encryption_context;
     AlgorithmSuiteId algorithm_suite_id;
 };
@@ -402,7 +442,7 @@ public:
         if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
         ::EncryptOutput out = detail::guard([&] { return ::encrypt(in); });
         EncryptResult result;
-        result.ciphertext = std::vector<std::uint8_t>(out.ciphertext.begin(), out.ciphertext.end());
+        result.ciphertext = Bytes(std::move(out.ciphertext));
         result.encryption_context = detail::from_ec(out.encryption_context);
         result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
         return result;
@@ -412,15 +452,33 @@ public:
         const std::vector<std::uint8_t>& ciphertext,
         const Keyring& keyring,
         const DecryptOptions& options = {}) {
+        return decrypt_bytes(ciphertext.data(), ciphertext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext held in a Bytes — e.g. an EncryptResult's
+    /// ciphertext fed straight back in — without copying it.
+    DecryptResult decrypt(
+        const Bytes& ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) {
+        return decrypt_bytes(ciphertext.data(), ciphertext.size(), keyring, options);
+    }
+
+private:
+    DecryptResult decrypt_bytes(
+        const std::uint8_t* ciphertext,
+        std::size_t ciphertext_len,
+        const Keyring& keyring,
+        const DecryptOptions& options) {
         ::DecryptInput in = ::default_decrypt_input();
         in.keyring = keyring.ffi();
-        in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext.data(), ciphertext.size());
+        in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
         in.encryption_context = detail::to_ec(options.encryption_context_);
         if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
         if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
         ::DecryptOutput out = detail::guard([&] { return ::decrypt(in); });
         DecryptResult result;
-        result.plaintext = std::vector<std::uint8_t>(out.plaintext.begin(), out.plaintext.end());
+        result.plaintext = Bytes(std::move(out.plaintext));
         result.encryption_context = detail::from_ec(out.encryption_context);
         result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
         return result;
