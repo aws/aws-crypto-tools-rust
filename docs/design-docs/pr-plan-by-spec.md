@@ -59,9 +59,9 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 16 | `hkeyring` | — | Not started | — |
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
-| 19 | `branch-key-store-write` | — | Not started — **next up** (sequenced before PR 15 to complete the keystore) | — |
+| 19 | `branch-key-store-write` | [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) | Open for review (base PR 14) | `aws-crypto-rust/branch-key-store-write-review` |
 
-**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) is open for review (base `main`). Next slice to start is PR 19 (`branch-key-store-write`), sequenced before the keyring work so the keystore is functionally complete first.
+**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) and PR 19 ([#49](https://github.com/aws/aws-crypto-tools-rust/pull/49)) are open for review (PR 19 stacked on PR 14). Once they merge, the next slice to start is PR 15 (`hkeyring-support`).
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -926,7 +926,7 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 12. PR 12 — `keystore-interface` — ✅ merged as [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)
 13. PR 13 — `keystore-support` — ✅ merged as [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36)
 14. PR 14 — `branch-key-store` — 🔎 open for review as [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)
-    - **Then PR 19 — `branch-key-store-write` (next)** — completes the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work begins. Higher number, but sequenced here.
+    - **Then PR 19 — `branch-key-store-write`** — 🔎 open for review as [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) (stacked on PR 14); completes the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work.
 15. PR 15 — `hkeyring-support` *(stacks on PR 19)*
 16. PR 16 — `hkeyring`
 17. PR 17 — `client-factories`
