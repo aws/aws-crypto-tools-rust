@@ -27,8 +27,8 @@ use uuid::Uuid;
 
 use crate::keystore::Keystore;
 use crate::keystore::attributes::{
-    ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_TABLENAME, ATTR_TYPE,
-    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+    ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
+    ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
 use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
 use crate::keystore::encryption_context::{
@@ -37,7 +37,9 @@ use crate::keystore::encryption_context::{
 };
 use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
 use crate::keystore::kms_config::parse_arn;
-use crate::keystore::kms_ops::{decrypt_branch_key, generate_wrapped_key, reencrypt_wrapped_key};
+use crate::keystore::kms_ops::{
+    decrypt_branch_key, generate_wrapped_key, reencrypt_wrapped_key, resolve_keystore_arn,
+};
 use crate::keystore::record::{
     EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
 };
@@ -375,8 +377,137 @@ impl Keystore for BranchKeyStore {
         Ok(branch_key_id)
     }
 
-    async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
-        Err(not_implemented_yet("version_key"))
+    async fn version_key(&self, branch_key_id: String) -> Result<(), KeystoreError> {
+        // VersionKey requires a single-key KMS configuration.
+        let configured_arn = self.configured_kms_key_arn()?.to_string();
+
+        // Fetch the current ACTIVE record.
+        let record = self
+            .fetch_record(&branch_key_id, TYPE_BRANCH_ACTIVE)
+            .await?;
+
+        // The stored kms-arn MUST be compatible with the configured KMS
+        // configuration, and MUST be preserved across the version bump.
+        let stored_kms_arn = record
+            .attributes
+            .get(ATTR_KMS_ARN)
+            .ok_or_else(|| {
+                KeystoreError::new(
+                    KeystoreErrorKind::RecordMalformed,
+                    format!(
+                        "ACTIVE record for '{branch_key_id}' is missing the 'kms-arn' attribute"
+                    ),
+                )
+            })?
+            .clone();
+        let resolved_arn = resolve_keystore_arn(&self.config.kms_configuration, &stored_kms_arn)?;
+
+        // The encryption context reconstructed from the stored item (the
+        // logical keystore name is bound as `tablename`).
+        let old_active_ec = self.build_auth_ec(&record);
+        let grant_tokens = self.grant_tokens();
+        let kms = self.kms_client();
+
+        // Authenticate the stored item: a successful ReEncrypt with the
+        // reconstructed EC as both source and destination proves the item
+        // has not been tampered with. The result ciphertext is discarded.
+        reencrypt_wrapped_key(
+            kms,
+            &resolved_arn,
+            &record.enc,
+            &old_active_ec,
+            &old_active_ec,
+            grant_tokens,
+        )
+        .await
+        .map_err(|e| {
+            KeystoreError::with_cause(
+                KeystoreErrorKind::Authentication,
+                format!("failed to authenticate ACTIVE record for '{branch_key_id}'"),
+                e,
+            )
+        })?;
+
+        // Build the new version's encryption contexts from the old ACTIVE
+        // EC, preserving branch-key-id, kms-arn, hierarchy-version, and the
+        // custom encryption context (which MUST be equal across versions).
+        let version = Uuid::new_v4().to_string();
+        let timestamp = now_iso8601_micros()?;
+
+        let mut new_decrypt_only_ec = old_active_ec;
+        new_decrypt_only_ec.insert(
+            ATTR_TYPE.to_string(),
+            format!("{TYPE_BRANCH_VERSION_PREFIX}{version}"),
+        );
+        new_decrypt_only_ec.insert(ATTR_CREATE_TIME.to_string(), timestamp);
+        new_decrypt_only_ec.remove(ATTR_VERSION);
+
+        let mut new_active_ec = new_decrypt_only_ec.clone();
+        // ACTIVE moves the `branch:version:<v>` value into `version` and
+        // sets `type` to `branch:ACTIVE`.
+        new_active_ec.insert(
+            ATTR_VERSION.to_string(),
+            new_decrypt_only_ec[ATTR_TYPE].clone(),
+        );
+        new_active_ec.insert(ATTR_TYPE.to_string(), TYPE_BRANCH_ACTIVE.to_string());
+
+        // Wrap a fresh branch key for the new version (DECRYPT_ONLY, then
+        // ReEncrypt to ACTIVE) under the configured KMS key.
+        let wrapped_decrypt_only =
+            generate_wrapped_key(kms, &configured_arn, &new_decrypt_only_ec, grant_tokens).await?;
+        let wrapped_active = reencrypt_wrapped_key(
+            kms,
+            &configured_arn,
+            &wrapped_decrypt_only,
+            &new_decrypt_only_ec,
+            &new_active_ec,
+            grant_tokens,
+        )
+        .await?;
+
+        // Write the new DECRYPT_ONLY (must not already exist) and overwrite
+        // ACTIVE only if it is unchanged since the read (optimistic lock).
+        let decrypt_only_item = item_from_ec_and_enc(&new_decrypt_only_ec, wrapped_decrypt_only);
+        let decrypt_only_put = Put::builder()
+            .table_name(&self.config.ddb_table_name)
+            .set_item(Some(decrypt_only_item))
+            .condition_expression("attribute_not_exists(#branch_key_id)")
+            .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
+            .build()
+            .map_err(ddb_build_err)?;
+
+        let active_item = item_from_ec_and_enc(&new_active_ec, wrapped_active);
+        let active_put = Put::builder()
+            .table_name(&self.config.ddb_table_name)
+            .set_item(Some(active_item))
+            .condition_expression("attribute_exists(#branch_key_id) AND #enc = :encOld")
+            .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
+            .expression_attribute_names("#enc", ATTR_ENC)
+            .expression_attribute_values(
+                ":encOld",
+                AttributeValue::B(Blob::new(record.enc.clone())),
+            )
+            .build()
+            .map_err(ddb_build_err)?;
+
+        let transact_items = vec![
+            TransactWriteItem::builder().put(decrypt_only_put).build(),
+            TransactWriteItem::builder().put(active_put).build(),
+        ];
+
+        self.ddb_client()
+            .transact_write_items()
+            .set_transact_items(Some(transact_items))
+            .send()
+            .await
+            .map_err(|e| {
+                KeystoreError::new(
+                    KeystoreErrorKind::Dynamodb,
+                    format!("DynamoDB TransactWriteItems failed: {e}"),
+                )
+            })?;
+
+        Ok(())
     }
 
     async fn get_active_branch_key(

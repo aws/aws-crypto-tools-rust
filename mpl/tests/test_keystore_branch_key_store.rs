@@ -287,3 +287,29 @@ async fn create_key_dispatches_to_kms() {
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
 }
+
+#[tokio::test]
+async fn version_key_with_discovery_config_fails() {
+    let mut cfg = fixture_config_with_id("id-x");
+    cfg.kms_configuration = KmsConfiguration::Discovery;
+    let store = BranchKeyStore::new(cfg).await.unwrap();
+    let err = match store.version_key("bk-1".to_string()).await {
+        Ok(_) => panic!("version_key under a Discovery configuration must fail"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+}
+
+#[tokio::test]
+async fn version_key_dispatches_to_dynamodb() {
+    // VersionKey first reads the ACTIVE record; with no AWS configured that
+    // GetItem fails at dispatch and surfaces a Dynamodb-kind error.
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.version_key("bk-1".to_string()).await {
+        Ok(_) => panic!("version_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+}
