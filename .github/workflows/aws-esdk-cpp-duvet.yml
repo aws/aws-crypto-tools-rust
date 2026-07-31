@@ -3,6 +3,9 @@
 # project directory and giving the artifact a slash-free name.
 name: aws-esdk-cpp duvet
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
