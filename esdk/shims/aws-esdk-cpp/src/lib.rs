@@ -927,3 +927,11 @@ fn default_retry_config() -> ffi::RetryConfig {
         max_attempts: 0,
     }
 }
+
+//= spec/shim/esdk-shim.md#conformance-and-testing
+//= type=exception
+//= reason=Cross-implementation message interoperability is exercised by the shared ESDK test-vector suite maintained outside this shim crate, not within it.
+//# - The ESDK shim SHOULD demonstrate message interoperability with other ESDK
+//# implementations (for example via a shared test-vector suite).
+#[cfg(test)]
+mod tests;

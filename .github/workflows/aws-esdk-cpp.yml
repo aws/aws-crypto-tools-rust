@@ -27,11 +27,24 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
+      ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
+      ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
+      ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
+      ESDK_TEST_REGION: us-west-2
     defaults:
       run:
         working-directory: esdk/shims/aws-esdk-cpp
     steps:
       - uses: actions/checkout@v4
+
+      # integration tests need real KMS + DynamoDB
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
 
       # aws-lc-sys (via aws-esdk) needs Go to build its native code
       - name: Install Go
@@ -60,3 +73,11 @@ jobs:
 
       - name: Test (Rust unit + integration tests)
         run: cargo test --verbose
+
+      - name: Build and run C++ facade, example, and integration test
+        if: runner.os == 'Linux'
+        run: |
+          make example
+          make enum_parity
+          make test_esdk
+          LD_LIBRARY_PATH="$PWD/target/debug" ./test_esdk
