@@ -10,11 +10,13 @@
 
 pub mod entry;
 pub mod local;
+pub mod storm_tracking;
 
 use async_trait::async_trait;
 
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use local::LocalCmc;
+pub use storm_tracking::{StormTrackingCmc, TimeUnits};
 
 use std::fmt;
 use std::sync::Arc;

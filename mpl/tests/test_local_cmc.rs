@@ -3,6 +3,10 @@
 
 //! Integration tests for [`aws_crypto_mpl::cmc::LocalCmc`].
 //!
+//! Gated behind the `test-utils` feature because these tests rely on
+//! `LocalCmc::with_clock`, which is only compiled in when `test-utils`
+//! is enabled.
+//!
 //! These tests exercise the local CMC's public `Cmc` trait surface and the
 //! LocalCmc-specific behaviors defined in
 //! `../spec/framework/local-cryptographic-materials-cache.md`. They also
@@ -22,6 +26,8 @@
 //! Freezing the clock means the function always returns the same value.
 //! The `move` keyword is Rust's way of making sure the frozen value
 //! stays alive as long as the cache does.
+
+#![cfg(feature = "test-utils")]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
