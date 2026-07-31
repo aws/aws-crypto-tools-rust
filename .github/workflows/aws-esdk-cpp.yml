@@ -1,0 +1,62 @@
+name: aws-esdk-cpp shim (Rust)
+
+on:
+  pull_request:
+    paths:
+      - "esdk/**"
+      - ".github/workflows/aws-esdk-cpp.yml"
+  push:
+    paths:
+      - "esdk/**"
+      - ".github/workflows/aws-esdk-cpp.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  shim:
+    name: build + test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: esdk/shims/aws-esdk-cpp
+    steps:
+      - uses: actions/checkout@v4
+
+      # aws-lc-sys (via aws-esdk) needs Go to build its native code
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esdk/shims/aws-esdk-cpp
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test (Rust unit + integration tests)
+        run: cargo test --verbose
