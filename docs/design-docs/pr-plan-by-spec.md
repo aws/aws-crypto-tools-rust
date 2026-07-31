@@ -54,14 +54,14 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 11 | `storm-tracking-cmc` | [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33) | **Merged** 2026-07-31 (merge commit `81aa540`) | retired after merge |
 | 12 | `keystore-interface` | [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35) | **Merged** 2026-07-31 (merge commit `3ae7b4e`) | retired after merge |
 | 13 | `keystore-support` | [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36) | **Merged** 2026-07-31 (merge commit `538dbd9`) | retired after merge |
-| 14 | `branch-key-store` | [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48) | Open for review | `aws-crypto-rust/branch-key-store-review` |
+| 14 | `branch-key-store` | [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48) | **Merged** 2026-07-31 (merge commit `3d0d3f7`) | retired after merge |
 | 15 | `hkeyring-support` | — | Not started | — |
 | 16 | `hkeyring` | — | Not started | — |
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
-| 19 | `branch-key-store-write` | [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) | Open for review (base PR 14) | `aws-crypto-rust/branch-key-store-write-review` |
+| 19 | `branch-key-store-write` | [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) | Open for review (base `main`; rebased after PR 14 merge) | `aws-crypto-rust/branch-key-store-write-review` |
 
-**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) and PR 19 ([#49](https://github.com/aws/aws-crypto-tools-rust/pull/49)) are open for review (PR 19 stacked on PR 14). Once they merge, the next slice to start is PR 15 (`hkeyring-support`).
+**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) merged; PR 19 ([#49](https://github.com/aws/aws-crypto-tools-rust/pull/49)) is open for review, rebased onto `main` (the stack reset after PR 14 merged). Once PR 19 merges, the next slice to start is PR 15 (`hkeyring-support`).
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -709,7 +709,7 @@ completing the DDB-backed keystore. Adds the KMS `ReEncrypt`-based
 `authenticating-a-keystore-item` operation-level requirements)
 **Review branch:** `aws-crypto-rust/branch-key-store-write-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-branch-key-store-write`
-**Base branch (PR target):** `aws-crypto-rust/branch-key-store-review`
+**Base branch (PR target):** `main` (rebased onto `main` after PR 14 merged; the stack reset)
 **Depends on:** PR 12, PR 13, PR 14
 
 **Sequencing:** slotted here (before PR 15) so a functionally complete
@@ -925,8 +925,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 11. PR 11 — `storm-tracking-cmc` — ✅ merged as [#33](https://github.com/aws/aws-crypto-tools-rust/pull/33)
 12. PR 12 — `keystore-interface` — ✅ merged as [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)
 13. PR 13 — `keystore-support` — ✅ merged as [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36)
-14. PR 14 — `branch-key-store` — 🔎 open for review as [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)
-    - **Then PR 19 — `branch-key-store-write`** — 🔎 open for review as [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) (stacked on PR 14); completes the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work.
+14. PR 14 — `branch-key-store` — ✅ merged as [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)
+    - **Then PR 19 — `branch-key-store-write`** — 🔎 open for review as [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) (rebased onto `main` after PR 14 merged); completes the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work.
 15. PR 15 — `hkeyring-support` *(stacks on PR 19)*
 16. PR 16 — `hkeyring`
 17. PR 17 — `client-factories`
