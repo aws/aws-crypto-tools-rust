@@ -42,16 +42,12 @@ const EC_KEY_TABLENAME: &str = "tablename";
 /// note that `enc` is not part of `attributes` (it lives in the
 /// separate [`EncryptedRecord::enc`] field), so the "MUST NOT contain
 /// `enc`" rule is satisfied by the input shape.
-//
 pub(crate) fn build_authenticated_encryption_context(
     record_attributes: &BTreeMap<String, String>,
     logical_keystore_name: &str,
 ) -> BTreeMap<String, String> {
     let mut ec = BTreeMap::new();
 
-    //
-    //
-    //
     for (k, v) in record_attributes {
         ec.insert(k.clone(), v.clone());
     }
@@ -64,8 +60,6 @@ pub(crate) fn build_authenticated_encryption_context(
         logical_keystore_name.to_string(),
     );
 
-    //
-    //
     // `EncryptedRecord::attributes` does not contain `enc` by construction
     // — `enc` is the binary `EncryptedRecord::enc` field — so the EC built
     // above cannot contain an `enc` key.
