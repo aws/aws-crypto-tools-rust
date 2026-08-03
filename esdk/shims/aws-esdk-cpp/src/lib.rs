@@ -9,8 +9,7 @@
 //! 1. This bridge (`#[cxx::bridge] mod ffi`) + the Rust glue below it.
 //! 2. The cxx-generated bindings (`lib.rs.h` / `lib.rs.cc`).
 //! 3. A hand-written idiomatic facade, `include/aws/esdk/EncryptionSDK.h`, which
-//!    is what consumers use (`test_esdk.cpp` and the examples go through it;
-//!    `enum_parity_test.cpp` checks the facade's enums against the bridge).
+//!    is what consumers use.
 
 #![allow(clippy::boxed_local, reason = "need to pass Box<T> to destructors")]
 
@@ -131,10 +130,9 @@ use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore as dafny_key_store;
 use std::sync::LazyLock;
 
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    // Building a multi-thread Tokio runtime only fails if the OS cannot spawn a
-    // thread or install the I/O/timer drivers — an environment failure with no
-    // meaningful library-level recovery. We surface it as a panic at first use
-    // rather than threading a `Result` through every bridge entry point.
+    // Building the runtime fails only if the OS cannot spawn a thread or install
+    // the I/O/timer drivers — an environment failure with no library-level
+    // recovery, surfaced as a panic at first use.
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -187,7 +185,7 @@ mod ffi {
     struct EncryptOutput {
         /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
         pub algorithm_suite_id: EsdkAlgorithmSuiteId,
-        /// data to be decrypted
+        /// The encrypted message
         pub ciphertext: Vec<u8>,
         /// Key-Value pairs to associate with the encrypted data
         pub encryption_context: Vec<EncryptionContextItem>,
@@ -216,14 +214,9 @@ mod ffi {
     struct RetryConfig {
         mode_adaptive: bool,
         max_attempts: u32,
-        initial_backoff_milli: u64,
-        max_backoff_milli: u64,
-        reconnect_all: bool,
-        use_static_exponential_base: bool,
     }
 
     struct MplAwsClientConfig {
-        env: bool,
         region: String,
         retry: RetryConfig,
     }
@@ -543,13 +536,7 @@ fn make_cache_type(
 /// Translates the bridge retry configuration; `None` when the target set no
 /// retry field, so the caller keeps the loaded default retry configuration.
 fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
-    let supplied = config.mode_adaptive
-        || config.max_attempts > 0
-        || config.initial_backoff_milli > 0
-        || config.max_backoff_milli > 0
-        || config.reconnect_all
-        || config.use_static_exponential_base;
-    if !supplied {
+    if !config.mode_adaptive && config.max_attempts == 0 {
         return None;
     }
     let mut out_config = if config.mode_adaptive {
@@ -560,29 +547,11 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
     if config.max_attempts > 0 {
         out_config = out_config.with_max_attempts(config.max_attempts);
     }
-    if config.initial_backoff_milli > 0 {
-        out_config = out_config.with_initial_backoff(std::time::Duration::from_millis(
-            config.initial_backoff_milli,
-        ));
-    }
-    if config.max_backoff_milli > 0 {
-        out_config =
-            out_config.with_max_backoff(std::time::Duration::from_millis(config.max_backoff_milli));
-    }
-    if config.reconnect_all {
-        out_config = out_config
-            .with_reconnect_mode(aws_sdk_kms::config::retry::ReconnectMode::ReuseAllConnections);
-    }
-    if config.use_static_exponential_base {
-        out_config = out_config.with_use_static_exponential_base(true);
-    }
     Some(out_config)
 }
 
 // Service client configuration (see spec/shim/esdk-shim.md#service-client-configuration).
 
-/// The user-agent this shim publishes: target language (C++), core language
-/// (Rust), and the crate's published version.
 fn shim_user_agent() -> String {
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - The shim MUST set a user-agent on each service client of the form
@@ -595,8 +564,6 @@ fn shim_user_agent() -> String {
     )
 }
 
-/// Merge the shim's user-agent with any user-agent already present in the loaded
-/// configuration.
 fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
     if current_app_name.is_empty() {
         shim_ua.to_string()
@@ -646,8 +613,6 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
 
 // Operations (see spec/shim/esdk-shim.md#operation-contracts).
 
-// Applies the target-supplied optional encrypt inputs to the core ESDK input,
-// each converted per its Type-translation rule.
 fn apply_encrypt_options(
     core_input: &mut aws_esdk::EncryptInput<'_>,
     input: &ffi::EncryptInput<'_>,
@@ -672,8 +637,6 @@ fn apply_encrypt_options(
     Ok(())
 }
 
-// Applies the target-supplied optional decrypt inputs to the core ESDK input,
-// each converted per its Type-translation rule.
 fn apply_decrypt_options(
     core_input: &mut aws_esdk::DecryptInput<'_>,
     input: &ffi::DecryptInput<'_>,
@@ -809,8 +772,6 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     let mut builder = dafny_key_store::types::key_store_config::KeyStoreConfig::builder()
         .kms_client(kms_client.client.clone())
         .ddb_client(ddb_client.client.clone());
-    // Input values are translated and passed through; the core ESDK validates
-    // them (the shim does not short-circuit on empty/invalid values).
     //= spec/shim/esdk-shim.md#create-key-store
     //# - Creating a key store MUST provide the target-supplied table name and logical key
     //# store name to the core ESDK.
@@ -826,11 +787,6 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     //= spec/shim/esdk-shim.md#create-key-store
     //# - Creating a key store MUST provide the target-supplied key store id and grant
     //# tokens to the core ESDK when present; an unset value is omitted.
-    // The "when present" branch is exercised by `round_trip_integration` (id and
-    // grant tokens set). The "unset ⇒ omitted" branch simply skips the builder
-    // call, so whether the core received the value is only observable through a
-    // real key store; the omission is a construction guarantee, not separately
-    // testable without AWS.
     if !input.id.is_empty() {
         builder = builder.id(input.id.clone());
     }
@@ -881,9 +837,6 @@ fn create_hierarchical_keyring(
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
     //# the core ESDK when present; an unset value is omitted.
-    // The "when present" branch is exercised by `round_trip_integration` (partition
-    // id set). The "unset ⇒ omitted" branch simply skips the builder call; the
-    // omission is a construction guarantee, not separately testable without AWS.
     if !input.partition_id.is_empty() {
         builder = builder.partition_id(input.partition_id.clone());
     }
@@ -963,7 +916,6 @@ fn default_keystore_config() -> ffi::KeyStoreConfig {
 
 fn default_client_config() -> ffi::MplAwsClientConfig {
     ffi::MplAwsClientConfig {
-        env: true,
         region: String::default(),
         retry: default_retry_config(),
     }
@@ -973,9 +925,5 @@ fn default_retry_config() -> ffi::RetryConfig {
     ffi::RetryConfig {
         mode_adaptive: false,
         max_attempts: 0,
-        initial_backoff_milli: 0,
-        max_backoff_milli: 0,
-        reconnect_all: false,
-        use_static_exponential_base: false,
     }
 }

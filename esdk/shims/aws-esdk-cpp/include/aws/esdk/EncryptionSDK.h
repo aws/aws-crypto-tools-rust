@@ -1,9 +1,9 @@
 // EncryptionSDK.h — idiomatic C++ facade over the cxx-generated bindings.
 //
-// Design goals (learnings from the binding-strategy review):
+// Design invariants:
 //   * Stable, GENERATOR-AGNOSTIC public API: no cxx type (rust::*, the generated
-//     enums/structs) appears in any public signature. Swapping the binding
-//     backend later touches only this file's internals, not consumer code.
+//     enums/structs) appears in any public signature, so swapping the binding
+//     backend touches only this file's internals, not consumer code.
 //   * RAII + exceptions: cxx throws rust::Error on failure; we translate that
 //     into Aws::Esdk::AwsEncryptionSdkException so callers never see a cxx type.
 //   * Memory safety at the handle seam: the bridge passes handles as raw
@@ -28,7 +28,11 @@
 namespace Aws {
 namespace Esdk {
 
-// ---- File-wide owned-interface / lifetime invariants (see spec/shim/shim.md) -
+// File-wide invariants (see spec/shim/shim.md): each requirement below holds
+// for every wrapper, options type, and operation in this facade, so it is
+// recorded once here. Optional inputs are options objects with chained with_*
+// setters over std::optional fields; only fields the caller set override the
+// bridge's default_*_input() values.
 //= spec/shim/shim.md#owned-interface
 //= type=implication
 //= reason=The facade defines its own Aws::Esdk:: enum for every core-library enumeration it exposes (AlgorithmSuiteId, CommitmentPolicy, CacheKind).
@@ -46,8 +50,35 @@ namespace Esdk {
 //= reason=Every wrapper stores its generated handle in a private member and exposes it only through the internal ffi() accessor.
 //# - Each owned interface that represents a core-library resource MUST hold the
 //# generated handle privately and MUST NOT expose it in its public API.
+//
+//= spec/shim/shim.md#handles-and-lifetimes
+//# - An owned interface that depends on another resource MUST retain ownership of
+//# that resource for its own lifetime, so that a handle passed across the boundary
+//# cannot outlive the resource it refers to.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=Every optional input is a with_* setter on the operation's or resource's options object.
+//# - The shim MUST expose each optional input of the operations and resource
+//# creations it exposes.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=Options objects with chained with_* setters are the idiomatic C++ optional-input mechanism.
+//# - The shim MUST accept optional inputs through a mechanism idiomatic to the
+//# target language (e.g.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=A new optional input is a new with_* setter and defaulted field on an options object; existing call sites keep compiling.
+//# - The shim MUST define its operation and resource-creation inputs such that
+//# an optional input can be added without breaking existing target code.
+//
+//= spec/shim/shim.md#operation-contracts
+//= reason=Options fields are std::optional (or empty); an operation overrides a default_*_input() value only when the caller set the field.
+//# - When the target does not supply an optional input, the shim MUST defer to
+//# the core library's default and MUST NOT substitute its own.
 
-// ---- Public exception: hides cxx's rust::Error ------------------------------
 //= spec/shim/shim.md#owned-interface
 //= type=implication
 //= reason=AwsEncryptionSdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
@@ -57,7 +88,6 @@ public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
 };
 
-// ---- Public enums: our own, so the generated enums never leak ----------------
 enum class AlgorithmSuiteId : std::uint16_t {
     AlgAes128GcmIv12Tag16NoKdf               = 0x0014,
     AlgAes192GcmIv12Tag16NoKdf               = 0x0046,
@@ -79,9 +109,9 @@ enum class CommitmentPolicy : std::uint8_t {
 };
 
 enum class CacheKind : std::uint8_t {
-    /// Nothing should ever be cached.
+    /// No caching: branch key material is fetched on every use.
     None = 0,
-    /// A cache that is safe for use in a multi threaded environment, but no extra functionality.
+    /// Cache safe for concurrent use from multiple threads.
     MultiThreaded = 1,
 };
 
@@ -122,7 +152,6 @@ inline ::rust::Vec<::EncryptionContextItem> to_ec(
     return out;
 }
 
-// Reverse translations, for values the core library returns to the target.
 inline AlgorithmSuiteId alg_from_ffi(::EsdkAlgorithmSuiteId a) {
     return static_cast<AlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
@@ -138,17 +167,17 @@ inline std::map<std::string, std::string> from_ec(
 
 }  // namespace detail
 
-// ---- Fluent client config ----------------------------------------------------
 class ClientConfig {
     ::MplAwsClientConfig cfg_ = ::default_client_config();
+    const ::MplAwsClientConfig& raw() const { return cfg_; }
+    friend class KmsClient;
+    friend class DdbClient;
 public:
     ClientConfig& with_max_retry_attempts(std::uint32_t n) { cfg_.retry.max_attempts = n; return *this; }
     ClientConfig& with_adaptive_retry(bool a)              { cfg_.retry.mode_adaptive = a; return *this; }
     ClientConfig& with_region(const std::string& r)        { cfg_.region = ::rust::String(r); return *this; }
-    const ::MplAwsClientConfig& raw() const { return cfg_; }   // internal; POD-ish, low leak risk
 };
 
-// ---- Handle wrappers: copyable (shared_ptr), so they can be owned as deps -----
 /// The KMS client this Key Store uses to call AWS KMS.
 class KmsClient {
     std::shared_ptr<::rust::Box<::MplKmsClient>> inner_;
@@ -171,8 +200,8 @@ public:
               detail::guard([&] { return ::create_ddb_client(cfg.raw()); }))) {}
 };
 
-// Optional key store parameters. A field left empty is omitted from the core
-// library's key store configuration.
+/// Optional key store parameters. A field left empty is omitted from the core
+/// library's key store configuration.
 class KeyStoreOptions {
     std::string key_store_id_;
     std::vector<std::string> grant_tokens_;
@@ -230,9 +259,9 @@ public:
           }))) {}
 };
 
-// Base type for every keyring encrypt/decrypt can accept. A concrete keyring
-// (e.g. HierarchicalKeyring) derives from it, creates the generated handle, and
-// keeps its own dependencies alive; the base owns the handle.
+/// Base type for every keyring encrypt/decrypt can accept. A concrete keyring
+/// derives from it, supplies the created handle, and keeps its own dependencies
+/// alive for its lifetime.
 class Keyring {
     std::shared_ptr<::rust::Box<::Keyring>> inner_;
     const ::Keyring* ffi() const { return &**inner_; }
@@ -246,9 +275,8 @@ public:
     virtual ~Keyring() = default;
 };
 
-// Optional hierarchical keyring parameters. A field left unset keeps the
-// Rust-defined default from default_hierarchical_keyring_input(); an empty
-// partition id is omitted from the core library's input.
+/// Optional hierarchical keyring parameters. A field left unset keeps the core
+/// library's default; an empty partition id is omitted.
 class HierarchicalKeyringOptions {
     std::optional<CacheKind> cache_;
     std::optional<std::uint32_t> cache_capacity_;
@@ -267,10 +295,6 @@ public:
 };
 
 class HierarchicalKeyring : public Keyring {
-    //= spec/shim/shim.md#handles-and-lifetimes
-    //# - An owned interface that depends on another resource MUST retain ownership of
-    //# that resource for its own lifetime, so that a handle passed across the boundary
-    //# cannot outlive the resource it refers to.
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
 public:
     /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
@@ -309,25 +333,8 @@ private:
     }
 };
 
-// Optional encrypt parameters. A field left unset keeps the Rust-defined
-// default from default_encrypt_input(), so defaults live only in the Rust core.
-//= spec/shim/shim.md#operation-contracts
-//= type=implication
-//= reason=EncryptOptions provides a with_* setter for every optional encrypt input (suite, commitment policy, encryption context, frame length, max EDKs).
-//# - The shim MUST expose each optional input of the operations and resource
-//# creations it exposes.
-//
-//= spec/shim/shim.md#operation-contracts
-//= type=implication
-//= reason=EncryptOptions is the idiomatic C++ options type this requirement names.
-//# - The shim MUST accept optional inputs through a mechanism idiomatic to the
-//# target language (e.g.
-//
-//= spec/shim/shim.md#operation-contracts
-//= type=implication
-//= reason=New optional inputs are added as with_* methods; existing call sites that omit them keep compiling.
-//# - The shim MUST define its operation and resource-creation inputs such that
-//# an optional input can be added without breaking existing target code.
+/// Optional encrypt parameters. A field left unset keeps the core library's
+/// default.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::optional<CommitmentPolicy> commitment_policy_;
@@ -345,8 +352,8 @@ public:
     EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
-// Optional decrypt parameters. A field left unset keeps the Rust-defined
-// default from default_decrypt_input().
+/// Optional decrypt parameters. A field left unset keeps the core library's
+/// default.
 class DecryptOptions {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
@@ -399,43 +406,35 @@ inline bool operator==(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) {
 inline bool operator!=(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) { return !(lhs == rhs); }
 inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return !(rhs == lhs); }
 
-// encrypt returns the ciphertext plus the encryption context and algorithm suite
-// the core library actually used; a CMM may add context entries and the suite may
-// be defaulted, so both can differ from what the caller requested.
+/// Result of encrypt: the ciphertext plus the encryption context and algorithm
+/// suite the core library actually used. A CMM may add context entries and the
+/// suite may be defaulted, so both can differ from what was requested.
 struct EncryptResult {
     Bytes ciphertext;
     std::map<std::string, std::string> encryption_context;
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-// ---- Decrypt result ----------------------------------------------------------
-// decrypt returns not just the plaintext but the encryption context and algorithm
-// suite the core library reported, so the caller can inspect what was actually
-// used and authenticated (for example, to make access-control decisions).
+/// Result of decrypt: the plaintext plus the encryption context and algorithm
+/// suite that were authenticated during decryption.
 struct DecryptResult {
     Bytes plaintext;
     std::map<std::string, std::string> encryption_context;
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-// ---- SDK facade --------------------------------------------------------------
 class EncryptionSDK {
 public:
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
         const EncryptOptions& options = {}) {
-        // Start from the Rust-defined defaults, then override only the fields
-        // the caller set — so we never re-declare defaults in C++ and risk
-        // diverging from the Rust core.
+        // Overrides only the fields the caller set, so defaults are never
+        // re-declared in C++ and cannot diverge from the Rust core.
         ::EncryptInput in = ::default_encrypt_input();
         in.keyring = keyring.ffi();
         in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext.data(), plaintext.size());
         in.encryption_context = detail::to_ec(options.encryption_context_);
-        //= spec/shim/shim.md#operation-contracts
-        //= reason=Each optional field overrides default_encrypt_input()'s value only when the caller set it; otherwise the core default stands.
-        //# - When the target does not supply an optional input, the shim MUST defer to
-        //# the core library's default and MUST NOT substitute its own.
         if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
         if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
         if (options.frame_length_) in.frame_length = *options.frame_length_;
