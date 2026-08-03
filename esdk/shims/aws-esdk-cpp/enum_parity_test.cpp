@@ -1,7 +1,5 @@
-// Compile-time parity between the facade's re-declared enums and the generated
-// cxx bridge enums. detail::to_ffi() converts one to the other with a plain
-// static_cast, so their underlying values must match exactly; any drift here is
-// a build error rather than a silent miscast at runtime.
+// detail::to_ffi() converts the facade enums to the bridge enums with a plain
+// static_cast, so their values must match; drift fails this compile.
 #include <cstdint>
 
 #include <aws/esdk/EncryptionSDK.h>

@@ -1,10 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Repeated encrypt/decrypt round trips must not grow the process's resident
-// memory, measured through /proc/self/statm (Linux only).
-//
-// Local because live-memory growth is in-process and never appears on the wire.
+// Repeated round trips must not grow resident memory (/proc/self/statm, Linux only).
 
 #include <cstddef>
 #include <cstdint>
@@ -21,13 +18,10 @@ namespace {
 constexpr int WARMUP_ITERS = 50;
 constexpr int MEASURED_ITERS = 500;
 constexpr std::size_t PAYLOAD_BYTES = 64 * 1024;
-// A per-iteration leak of the plaintext buffer would add MEASURED_ITERS * 64 KiB
-// (~31 MiB), several times this bound; benign allocator drift after warmup stays
-// well under it.
+// A leaked 64 KiB payload per iteration would add ~31 MiB; allocator drift stays under this.
 constexpr long MAX_GROWTH_BYTES = 12L * 1024 * 1024;
 
-// Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read
-// (non-Linux, or /proc not mounted) so the caller can skip.
+// 0 when /proc/self/statm is unreadable, so the caller can skip.
 long read_rss_bytes() {
     std::FILE* statm = std::fopen("/proc/self/statm", "r");
     if (!statm) {
@@ -42,7 +36,6 @@ long read_rss_bytes() {
     return resident_pages * sysconf(_SC_PAGESIZE);
 }
 
-// One encrypt/decrypt round trip; returns whether the plaintext survived.
 bool round_trip(Aws::Esdk::EncryptionSDK& sdk,
                 const Aws::Esdk::HierarchicalKeyring& keyring,
                 const std::vector<std::uint8_t>& plaintext) {
@@ -73,8 +66,7 @@ int main() {
         std::vector<std::uint8_t> plaintext(PAYLOAD_BYTES, 0xA5);
 
         bool all_round_trips_ok = true;
-        // Warm up so one-time allocations (keyring cache, connection pools) are
-        // counted before the baseline.
+        // One-time allocations (keyring cache, connection pools) land before the baseline.
         for (int i = 0; i < WARMUP_ITERS; ++i) {
             all_round_trips_ok &= round_trip(sdk, keyring, plaintext);
         }
