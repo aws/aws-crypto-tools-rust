@@ -23,7 +23,6 @@ pub(crate) enum Cmm {
     Modern(aws_mpl_legacy::cmm::CryptographicMaterialsManagerRef),
 }
 
-#[allow(clippy::unused_async)]
 pub(crate) async fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
 ) -> Result<Cmm, Error> {
@@ -133,7 +132,7 @@ pub(crate) async fn get_encryption_materials(
     Ok(materials)
 }
 
-pub(crate) async fn get_modern_decryption_materials(
+async fn get_modern_decryption_materials(
     cmm: aws_mpl_legacy::cmm::CryptographicMaterialsManagerRef,
     algorithm_suite_id: aws_mpl_legacy::suites::AlgorithmSuiteId,
     header_body: &HeaderBody,
@@ -198,7 +197,7 @@ pub(crate) async fn get_modern_decryption_materials(
     Ok(materials)
 }
 
-pub(crate) async fn get_legacy_decryption_materials(
+async fn get_legacy_decryption_materials(
     cmm: aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef,
     algorithm_suite_id: aws_mpl_legacy::suites::AlgorithmSuiteId,
     header_body: &HeaderBody,
@@ -250,7 +249,7 @@ pub(crate) async fn get_legacy_decryption_materials(
     from_legacy_dm(return_materials)
 }
 
-pub(crate) async fn get_modern_encryption_materials(
+async fn get_modern_encryption_materials(
     cmm: aws_mpl_legacy::cmm::CryptographicMaterialsManagerRef,
     algorithm_suite_id: Option<aws_mpl_legacy::suites::AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
@@ -305,7 +304,7 @@ pub(crate) async fn get_modern_encryption_materials(
     Ok(materials)
 }
 
-pub(crate) async fn get_legacy_encryption_materials(
+async fn get_legacy_encryption_materials(
     cmm: aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef,
     algorithm_suite_id: Option<aws_mpl_legacy::suites::AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
