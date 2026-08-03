@@ -136,7 +136,7 @@ fn encryption_context_round_trips() {
     let mut m = HashMap::new();
     m.insert("k1".to_string(), "v1".to_string());
     m.insert("k2".to_string(), "v2".to_string());
-    let list = encryption_context_core_to_target(m.clone());
+    let list = encryption_context_core_to_target(m.clone()).unwrap();
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
@@ -150,15 +150,15 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the core ESDK's encryption context, given as a
     //# key-value map, to the target's list of key-value pairs, preserving every pair
     //# and the exact key and value of each.
-    assert_eq!(encryption_context_target_to_core(&list), m);
+    assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
 }
 
 #[test]
 fn encryption_context_empty() {
     use std::collections::HashMap;
     let empty: HashMap<String, String> = HashMap::new();
-    assert!(encryption_context_core_to_target(empty).is_empty());
-    assert!(encryption_context_target_to_core(&[]).is_empty());
+    assert!(encryption_context_core_to_target(empty).unwrap().is_empty());
+    assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
 }
 
 // The null-handle and enum checks fire before any network call, so these run
@@ -525,7 +525,7 @@ fn round_trip_integration() {
     let mut enc_in = default_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = plaintext.as_slice();
-    enc_in.encryption_context = encryption_context_core_to_target(ec.clone());
+    enc_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
     enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
     enc_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     enc_in.frame_length = 4096;
@@ -558,7 +558,9 @@ fn round_trip_integration() {
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     assert_eq!(
-        encryption_context_target_to_core(&enc_out.encryption_context).get("purpose"),
+        encryption_context_target_to_core(&enc_out.encryption_context)
+            .unwrap()
+            .get("purpose"),
         Some(&"integration-test".to_string())
     );
 
@@ -572,7 +574,7 @@ fn round_trip_integration() {
     //= reason=decrypt supplies the same encryption-context pair used at encrypt time; a successful round-trip proves it was provided to the core ESDK.
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
-    dec_in.encryption_context = encryption_context_core_to_target(ec.clone());
+    dec_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
 
     let dec_out = decrypt(&dec_in).expect("decrypt");
     assert_eq!(dec_out.plaintext, plaintext);
@@ -581,7 +583,9 @@ fn round_trip_integration() {
         enc_in.algorithm_suite_id.repr
     );
     assert_eq!(
-        encryption_context_target_to_core(&dec_out.encryption_context).get("purpose"),
+        encryption_context_target_to_core(&dec_out.encryption_context)
+            .unwrap()
+            .get("purpose"),
         Some(&"integration-test".to_string())
     );
 }
