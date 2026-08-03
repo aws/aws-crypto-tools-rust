@@ -389,6 +389,7 @@ async fn cleanup_branch_key(ddb: &DynamoDbClient, table: &str, branch_key_id: &s
     let response = ddb
         .query()
         .table_name(table)
+        .consistent_read(true)
         .key_condition_expression("#bk = :bk")
         .expression_attribute_names("#bk", "branch-key-id")
         .expression_attribute_values(":bk", AttributeValue::S(branch_key_id.to_string()))
