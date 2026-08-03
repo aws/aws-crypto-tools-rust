@@ -16,6 +16,24 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, Esdk, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
+use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify};
+
+/// Assert the CMM's signing key composes with the signer, and that the
+/// verification key it publishes in the encryption context verifies the result.
+///
+/// This is stronger than asserting a byte length. The CMM previously stored a
+/// raw private scalar, which `ecdsa_sign` cannot consume, so nothing signed
+/// with the key the CMM produced. `aws-mpl-primitives` now emits the signing
+/// key DER-encoded, matching the Dafny MPL's `ExternKeyGen`.
+fn assert_signing_key_composes(alg: EcdsaSignatureAlgorithm, sk: &[u8], vk_compressed: &[u8]) {
+    assert_eq!(sk[0], 0x30, "signing key must be a DER SEQUENCE");
+    let sig =
+        ecdsa_sign(alg, sk, b"message").expect("CMM signing key must be usable by the signer");
+    assert!(
+        ecdsa_verify(alg, vk_compressed, b"message", &sig).expect("verify must not error"),
+        "the published verification key must verify a signature made with the signing key"
+    );
+}
 
 // ===== Mock Keyring =====
 
@@ -199,7 +217,13 @@ async fn test_get_encryption_materials_signing_suite_attaches_generated_signing_
     let sk = materials
         .signing_key()
         .expect("signing key must be present");
-    assert_eq!(sk.len(), 48);
+    let vk_b64 = materials
+        .encryption_context()
+        .get(b"aws-crypto-public-key")
+        .expect("must have aws-crypto-public-key")
+        .clone();
+    let vk = BASE64_STANDARD.decode(&vk_b64).unwrap();
+    assert_signing_key_composes(EcdsaSignatureAlgorithm::EcdsaP384, sk.as_bytes(), &vk);
 }
 
 #[tokio::test]
@@ -355,7 +379,6 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
     let sk = materials
         .signing_key()
         .expect("signing key must be present for P-256 suite");
-    assert_eq!(sk.len(), 32, "P-256 signing key must be 32 bytes");
     let ec = materials.encryption_context();
     let vk_b64 = ec
         .get(b"aws-crypto-public-key")
@@ -366,6 +389,7 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
         33,
         "P-256 compressed point must be 33 bytes"
     );
+    assert_signing_key_composes(EcdsaSignatureAlgorithm::EcdsaP256, sk.as_bytes(), &vk_bytes);
 }
 
 #[tokio::test]

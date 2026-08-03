@@ -493,44 +493,6 @@ fn test_algorithm_suite_data_length_may_be_zero() {
 }
 
 #[test]
-fn test_signing_key_length_matches_spec_table() {
-    // P-256 private scalar: 32 bytes. P-384: 48 bytes. Non-signing: None.
-    let cases: [(AlgorithmSuiteId, Option<usize>); 11] = [
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf, None),
-        (AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256, None),
-        (AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256, None),
-        (AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256, None),
-        (
-            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-            Some(32),
-        ),
-        (
-            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-            Some(48),
-        ),
-        (
-            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-            Some(48),
-        ),
-        (AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, None),
-        (
-            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-            Some(48),
-        ),
-    ];
-    for (suite, expected) in cases {
-        assert_eq!(
-            suite.specification().signing_key_length(),
-            expected,
-            "{:?}",
-            suite
-        );
-    }
-}
-
-#[test]
 fn test_verification_key_length_matches_spec_table() {
     // SEC1 compressed public key: 1 byte tag + coord_len.
     // P-256: 1 + 32 = 33 bytes. P-384: 1 + 48 = 49 bytes. Non-signing: None.

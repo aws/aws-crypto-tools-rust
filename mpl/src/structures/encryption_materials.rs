@@ -36,8 +36,6 @@ impl EncryptionMaterials {
         signing_key: Option<SigningKey>,
         symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
     ) -> Result<Self, MaterialsError> {
-        let suite = algorithm_suite_id.specification();
-
         // Required encryption context keys must be a subset of encryption context keys
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
@@ -62,18 +60,17 @@ impl EncryptionMaterials {
             ));
         }
 
-        // If asymmetric signing, the signing key (when present) MUST match the
-        // suite's asymmetric signature algorithm scalar length.
-        if let Some(ref sk) = signing_key
-            && let Some(expected_len) = suite.signing_key_length()
-            && sk.len() != expected_len
-        {
-            return Err(MaterialsError::new(format!(
-                "Signing key length ({}) does not match expected length ({}) for algorithm suite",
-                sk.len(),
-                expected_len
-            )));
-        }
+        // The signing key's byte length is deliberately NOT validated. The
+        // spec constrains only its presence and the algorithm it must suit
+        // (`structures.md#signing-key`,
+        // `algorithm-suites.md#asymmetric-signature-algorithm`); it defines no
+        // length. The Dafny MPL matches that — `Materials.dfy` constrains
+        // `signingKey` by presence only, and `Signature.dfy`'s `KeyGen` checks
+        // `|verificationKey| == FieldSize` while passing `signingKey` through
+        // unchecked. The key is an opaque blob whose encoding belongs to the
+        // signer: `aws-mpl-primitives` emits and consumes it DER-encoded, so
+        // asserting the raw-scalar length here would reject exactly the keys
+        // that can actually be signed with.
 
         // If no symmetric signing, symmetric signing keys must not be included
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_keys.is_some() {

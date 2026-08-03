@@ -8,9 +8,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use aws_lc_rs::encoding::AsBigEndian;
-use aws_lc_rs::signature::{
-    ECDSA_P256_SHA256_ASN1_SIGNING, ECDSA_P384_SHA384_ASN1_SIGNING, EcdsaKeyPair, KeyPair,
+use aws_mpl_primitives::{
+    EcdsaSignatureAlgorithm as PrimEcdsaSignatureAlgorithm, ecdsa_generate_keypair,
 };
 use base64::Engine;
 
@@ -32,7 +31,7 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 /// On `get_encryption_materials` the default CMM:
 /// - Resolves the algorithm suite from the request (or, if absent, from the
 ///   commitment policy's default).
-/// - For signing suites: generates an ECDSA key pair via `aws-lc-rs`, attaches
+/// - For signing suites: generates an ECDSA key pair via `aws-mpl-primitives`, attaches
 ///   the private signing key to the materials, and inserts the
 ///   base64-encoded SEC1-compressed public key into a copy of the request's
 ///   encryption context under the reserved `aws-crypto-public-key` key.
@@ -97,43 +96,21 @@ impl Cmm for DefaultCmm {
             let alg = match suite.asymmetric_signature_algorithm().expect(
                 "has_asymmetric_signing() == true implies asymmetric_signature_algorithm() is Some",
             ) {
-                AsymmetricSignatureAlgorithm::EcdsaP256 => &ECDSA_P256_SHA256_ASN1_SIGNING,
-                AsymmetricSignatureAlgorithm::EcdsaP384 => &ECDSA_P384_SHA384_ASN1_SIGNING,
+                AsymmetricSignatureAlgorithm::EcdsaP256 => PrimEcdsaSignatureAlgorithm::EcdsaP256,
+                AsymmetricSignatureAlgorithm::EcdsaP384 => PrimEcdsaSignatureAlgorithm::EcdsaP384,
             };
 
-            let key_pair = EcdsaKeyPair::generate(alg).map_err(|e| {
-                MaterialsError::new(format!(
-                    "get_encryption_materials: ECDSA keypair generation failed: {e:?}"
-                ))
-            })?;
-
-            // Extract the raw private scalar (32 bytes for P-256, 48 for P-384).
-            let scalar_bytes = key_pair
-                .private_key()
-                .as_be_bytes()
-                .map_err(|e| {
-                    MaterialsError::new(format!(
-                        "get_encryption_materials: ECDSA private-scalar encoding failed: {e:?}"
-                    ))
-                })?
-                .as_ref()
-                .to_vec();
-
-            // SEC1-compressed public point: tag byte (`0x02` when Y is even,
-            // `0x03` when Y is odd) followed by the X coordinate. 33 bytes
-            // for P-256, 49 for P-384. aws-lc-rs emits the SEC1-*uncompressed*
-            // form (`0x04 || X || Y`); the spec requires the compressed form
-            // in the encryption context per
+            // `prim` returns the key pair in the Dafny MPL's formats: the
+            // verification key is already an X9.62 compressed point (33 bytes
+            // for P-256, 49 for P-384), which is exactly the form the spec
+            // requires in the encryption context per
             // `spec/framework/transitive-requirements.md#ecdsa` (SEC 1 v2.0
-            // §2.3.3).
-            let uncompressed = key_pair.public_key().as_ref();
-            debug_assert_eq!(uncompressed[0], 0x04);
-            let coord_len = (uncompressed.len() - 1) / 2;
-            let y_lsb = uncompressed[uncompressed.len() - 1];
-            let tag = if y_lsb & 1 == 0 { 0x02 } else { 0x03 };
-            let mut public_key_bytes = Vec::with_capacity(1 + coord_len);
-            public_key_bytes.push(tag);
-            public_key_bytes.extend_from_slice(&uncompressed[1..=coord_len]);
+            // §2.3.3), and the signing key is DER-encoded, the form
+            // `ecdsa_sign_digest` accepts when the message is signed.
+            let keys = ecdsa_generate_keypair(alg)
+                .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
+            let scalar_bytes = keys.signing_key;
+            let public_key_bytes = keys.verification_key;
 
             // Encode the verification key as base64 (standard alphabet, with
             // padding) and store the resulting ASCII bytes in the EC.
