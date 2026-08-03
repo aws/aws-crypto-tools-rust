@@ -36,7 +36,7 @@ belong to it. The PR pair-programmer agent keys off `pr_number` to derive
 
 ## Status snapshot
 
-Snapshot as of 2026-07-31. Update this table whenever a slice's state
+Snapshot as of 2026-08-03. Update this table whenever a slice's state
 changes (branch cut, PR opened, PR merged, PR closed).
 
 | PR | Slug | GitHub PR | Status | Review branch |
@@ -55,13 +55,13 @@ changes (branch cut, PR opened, PR merged, PR closed).
 | 12 | `keystore-interface` | [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35) | **Merged** 2026-07-31 (merge commit `3ae7b4e`) | retired after merge |
 | 13 | `keystore-support` | [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36) | **Merged** 2026-07-31 (merge commit `538dbd9`) | retired after merge |
 | 14 | `branch-key-store` | [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48) | **Merged** 2026-07-31 (merge commit `3d0d3f7`) | retired after merge |
-| 15 | `hkeyring-support` | — | Not started | — |
+| 15 | `hkeyring-support` | — | Not started (next up) | — |
 | 16 | `hkeyring` | — | Not started | — |
 | 17 | `client-factories` | — | Not started | — |
 | 18 | `hkeyring-examples` | — | Not started | — |
-| 19 | `branch-key-store-write` | [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) | Open for review (base `main`; rebased after PR 14 merge) | `aws-crypto-rust/branch-key-store-write-review` |
+| 19 | `branch-key-store-write` | [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) | **Merged** 2026-08-03 (merge commit `6d00fae`) | retired after merge |
 
-**Next action:** PR 14 ([#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)) merged; PR 19 ([#49](https://github.com/aws/aws-crypto-tools-rust/pull/49)) is open for review, rebased onto `main` (the stack reset after PR 14 merged). Once PR 19 merges, the next slice to start is PR 15 (`hkeyring-support`).
+**Next action:** PR 19 ([#49](https://github.com/aws/aws-crypto-tools-rust/pull/49)) merged, and `main` has been merged back into `aws-crypto-rust/unreviewed` (merge commit `08156c8`) so the two are in sync. The stack has fully reset — every opened slice is merged and no review branch is live. The next slice to start is PR 15 (`hkeyring-support`), which now bases on `main` rather than the retired `branch-key-store-write-review`.
 
 **Divergence note on PR 2:** the review branch's `encryption_materials.rs`
 carries a hand-rolled slice-2-compatible version of the None-side
@@ -757,7 +757,7 @@ hierarchical keyring). Both crate-internal, exposed via
 (wrap/unwrap and cache-identifier sub-requirements)
 **Review branch:** `aws-crypto-rust/hkeyring-support-review`
 **Sync worktree:** `/Users/jocorell/crypto-tools/rust/aws-crypto-tools-rust-hkeyring-support`
-**Base branch (PR target):** `aws-crypto-rust/branch-key-store-write-review`
+**Base branch (PR target):** `main` (PR 19 merged; the stack reset)
 **Depends on:** PR 8 (aws_kms module), PR 14 (branch-key-store types), PR 19 (sequencing — stacked on the complete keystore)
 
 **Source:**
@@ -926,8 +926,8 @@ Status markers reflect the Status snapshot above; keep the two in sync.
 12. PR 12 — `keystore-interface` — ✅ merged as [#35](https://github.com/aws/aws-crypto-tools-rust/pull/35)
 13. PR 13 — `keystore-support` — ✅ merged as [#36](https://github.com/aws/aws-crypto-tools-rust/pull/36)
 14. PR 14 — `branch-key-store` — ✅ merged as [#48](https://github.com/aws/aws-crypto-tools-rust/pull/48)
-    - **Then PR 19 — `branch-key-store-write`** — 🔎 open for review as [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) (rebased onto `main` after PR 14 merged); completes the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work.
-15. PR 15 — `hkeyring-support` *(stacks on PR 19)*
+    - **Then PR 19 — `branch-key-store-write`** — ✅ merged as [#49](https://github.com/aws/aws-crypto-tools-rust/pull/49) (merge commit `6d00fae`); completed the keystore (`CreateKeyStore` / `CreateKey` / `VersionKey` / `GetBeaconKey`) before the keyring work.
+15. PR 15 — `hkeyring-support` — ⬅️ **next up** *(bases on `main`; the stack reset when PR 19 merged)*
 16. PR 16 — `hkeyring`
 17. PR 17 — `client-factories`
 18. PR 18 — `hkeyring-examples` *(terminal)*
