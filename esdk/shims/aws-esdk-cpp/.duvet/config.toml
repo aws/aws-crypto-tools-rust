@@ -9,6 +9,9 @@ pattern = "./include/**/*.h"
 [[source]]
 pattern = "./*.cpp"
 
+[[source]]
+pattern = "./tests/*.cpp"
+
 [[specification]]
 source = "spec/shim/shim.md"
 
