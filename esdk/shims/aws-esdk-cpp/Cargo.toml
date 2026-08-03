@@ -27,6 +27,5 @@ aws-esdk = { path = "../.." }
 cxx-build = "1.0.194"
 cc = "1.2.54"
 
-# Declare this crate as its own workspace root so `cargo` builds it standalone;
-# `esdk` and `aws-mpl-native` are consumed as the path dependencies above.
+# Declare this crate as its own workspace root so cargo builds it standalone
 [workspace]
