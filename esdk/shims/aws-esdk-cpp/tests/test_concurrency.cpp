@@ -1,16 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Encrypt/decrypt round trips run concurrently across threads, sharing one
-// keyring and one SDK facade.
-//
-// Why assert message ID uniqueness? Two messages with the same message ID get
-// the same data key and the same frame IVs. Repeating an AES-GCM key+IV pair
-// breaks the cipher: plaintext can be recovered and messages forged. So the
-// test asserts message IDs stay unique even when many threads encrypt at once.
-//
-// Local because it drives the shim from real OS threads through the shared Tokio
-// runtime inside the bindings.
+// Message IDs must stay unique under concurrent encrypts: a repeat would reuse
+// the derived data key and frame IVs, breaking AES-GCM.
 
 #include <cstddef>
 #include <cstdint>
@@ -46,14 +38,11 @@ std::vector<std::uint8_t> v1_message_id(const Aws::Esdk::Bytes& ct) {
 
 using ExtractId = std::vector<std::uint8_t> (*)(const Aws::Esdk::Bytes&);
 
-// Everything the worker threads produce.
 struct Collected {
     std::vector<std::vector<std::uint8_t>> message_ids;
     std::vector<std::string> errors;
 };
 
-// Run THREADS threads, each doing ITERS_PER_THREAD encrypt + decrypt round trips
-// through the shared sdk and keyring. Returns every message ID produced.
 Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
                                  const Aws::Esdk::HierarchicalKeyring& keyring,
                                  std::optional<Aws::Esdk::AlgorithmSuiteId> suite,
@@ -100,8 +89,6 @@ Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
     return collected;
 }
 
-// One case: run the concurrent round trips, then check that they all succeeded
-// and that every message ID is present, the expected length, and unique.
 void run_case(const char* label, Aws::Esdk::EncryptionSDK& sdk,
               const Aws::Esdk::HierarchicalKeyring& keyring,
               std::optional<Aws::Esdk::AlgorithmSuiteId> suite,
@@ -143,12 +130,10 @@ int main() {
     try {
         auto keyring = esdk_test::make_keyring(*cfg);
 
-        // The default committing suite produces V2 messages (32-byte message id).
         run_case("v2", sdk, keyring, std::nullopt,
                  Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt,
                  v2_message_id, 32);
 
-        // A non-committing suite produces V1 messages (16-byte message id).
         run_case("v1", sdk, keyring,
                  Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
                  Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt,

@@ -1,20 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Shared setup for the local-correctness tests (test_concurrency.cpp and
-// test_resource_leaks.cpp).
-//
-// These tests use the hierarchical keyring, so they drive the real crypto path
-// and need live AWS resources. Provide them through the same environment
-// variables test_esdk.cpp uses; when any required var is unset,
-// load_test_config() returns std::nullopt so the caller can print SKIP and
-// exit 0 (it never fails credential-less CI):
+// Shared harness for the C++ test binaries. Live AWS resources come from:
 //
 //   ESDK_TEST_KMS_KEY_ARN       KMS key ARN backing the key store
 //   ESDK_TEST_DDB_TABLE         DynamoDB table name of the key store
 //   ESDK_TEST_LOGICAL_KEYSTORE  logical key store name
 //   ESDK_TEST_BRANCH_KEY_ID     branch key id provisioned in the key store
-//   ESDK_TEST_REGION            (optional) AWS region, e.g. us-west-2
+//   ESDK_TEST_REGION            (optional) AWS region
 #pragma once
 
 #include <cstdint>
@@ -28,8 +21,7 @@
 
 namespace esdk_test {
 
-// Assertion harness. Call only from the main thread; not synchronized for
-// concurrent use.
+// Not synchronized; use ESDK_CHECK only from the main thread.
 inline int g_checks = 0;
 inline int g_failures = 0;
 
@@ -43,7 +35,6 @@ inline int g_failures = 0;
         }                                                                      \
     } while (0)
 
-// Print the tally and return a process exit code (0 = all checks passed).
 inline int report(const char* suite) {
     std::cout << suite << ": " << (g_checks - g_failures) << "/" << g_checks
               << " checks passed\n";
@@ -67,7 +58,7 @@ inline const char* env_or_null(const char* name) {
     return (value && *value) ? value : nullptr;
 }
 
-// std::nullopt when a required variable is unset, so the caller can SKIP.
+// std::nullopt when a required variable is unset, so the caller can print SKIP and exit 0.
 inline std::optional<TestConfig> load_test_config() {
     const char* kms = env_or_null("ESDK_TEST_KMS_KEY_ARN");
     const char* ddb = env_or_null("ESDK_TEST_DDB_TABLE");
@@ -80,11 +71,8 @@ inline std::optional<TestConfig> load_test_config() {
     return TestConfig{kms, ddb, logical, branch, region ? region : ""};
 }
 
-// A hierarchical keyring built from the test config. The clients and keystore
-// are constructed as locals and moved in, so the returned keyring is their sole
-// owner — the lifetime test relies on this. The cache defaults to the
-// multi-threaded cache, so the concurrency test shares one instance across
-// threads.
+// Clients and keystore are locals moved into the keyring, which becomes their
+// sole owner — test_lifetime_safety relies on this.
 inline Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
     auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {

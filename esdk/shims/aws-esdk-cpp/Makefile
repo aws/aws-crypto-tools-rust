@@ -1,7 +1,6 @@
-# Simple Makefile - all C++ bridge code is compiled into the Rust static library.
+# The cxx bridge's C++ side is compiled into the Rust static library, so every
+# binary links lib.rs.cc + libcxxbridge1.a + libaws_esdk_cpp.a.
 
-# Example, compiled as C++17.
-# Needs live AWS resources / ESDK_TEST_* env vars to run; builds without them.
 example: examples/basic_hierarchical_keyring_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ examples/basic_hierarchical_keyring_example.cpp target/cxxbridge/aws-esdk-cpp/src/lib.rs.cc \
 		$$(find target/debug/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1) \
@@ -11,8 +10,6 @@ example: examples/basic_hierarchical_keyring_example.cpp include/aws/esdk/Encryp
 		-std=c++17 \
 		-o basic_hierarchical_keyring_example
 
-# Integration tests, compiled as C++17. Run ./test_esdk with
-# ESDK_TEST_* env vars set (it skips cleanly if they are unset).
 test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ tests/test_esdk.cpp target/cxxbridge/aws-esdk-cpp/src/lib.rs.cc \
 		$$(find target/debug/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1) \
@@ -22,8 +19,6 @@ test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/Encryp
 		-std=c++17 \
 		-o test_esdk
 
-# Concurrency local-correctness test, compiled as C++17. Run ./test_concurrency
-# with ESDK_TEST_* env vars set (it skips cleanly if they are unset).
 test_concurrency: tests/test_concurrency.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ tests/test_concurrency.cpp target/cxxbridge/aws-esdk-cpp/src/lib.rs.cc \
 		$$(find target/debug/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1) \
@@ -33,9 +28,6 @@ test_concurrency: tests/test_concurrency.cpp tests/esdk_test_support.h include/a
 		-std=c++17 \
 		-o test_concurrency
 
-# Resource-leak local-correctness test, compiled as C++17. Linux only (reads
-# /proc/self/statm). Run ./test_resource_leaks with ESDK_TEST_* env vars set
-# (it skips cleanly if they are unset).
 test_resource_leaks: tests/test_resource_leaks.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ tests/test_resource_leaks.cpp target/cxxbridge/aws-esdk-cpp/src/lib.rs.cc \
 		$$(find target/debug/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1) \
@@ -45,8 +37,7 @@ test_resource_leaks: tests/test_resource_leaks.cpp tests/esdk_test_support.h inc
 		-std=c++17 \
 		-o test_resource_leaks
 
-# Compile-time enum parity check. No link: the static_asserts fire during
-# compilation, so a value mismatch fails the build.
+# Compile-only: the static_asserts fire during compilation, so no link step.
 enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs target/debug/libaws_esdk_cpp.a
 	g++ -c enum_parity_test.cpp \
 		-Itarget/cxxbridge -Iinclude \
