@@ -29,7 +29,7 @@ constexpr std::size_t THREADS = 8;
 constexpr std::size_t ITERS_PER_THREAD = 24;
 
 // V2 header: version (1) + algorithm suite id (2) + message id (32).
-std::vector<std::uint8_t> v2_message_id(const std::vector<std::uint8_t>& ct) {
+std::vector<std::uint8_t> v2_message_id(const Aws::Esdk::Bytes& ct) {
     if (ct.size() < 35 || ct[0] != 0x02) {
         return {};
     }
@@ -37,14 +37,14 @@ std::vector<std::uint8_t> v2_message_id(const std::vector<std::uint8_t>& ct) {
 }
 
 // V1 header: version (1) + type (1) + algorithm suite id (2) + message id (16).
-std::vector<std::uint8_t> v1_message_id(const std::vector<std::uint8_t>& ct) {
+std::vector<std::uint8_t> v1_message_id(const Aws::Esdk::Bytes& ct) {
     if (ct.size() < 20 || ct[0] != 0x01) {
         return {};
     }
     return std::vector<std::uint8_t>(ct.begin() + 4, ct.begin() + 20);
 }
 
-using ExtractId = std::vector<std::uint8_t> (*)(const std::vector<std::uint8_t>&);
+using ExtractId = std::vector<std::uint8_t> (*)(const Aws::Esdk::Bytes&);
 
 // Everything the worker threads produce.
 struct Collected {
@@ -150,7 +150,7 @@ int main() {
 
         // A non-committing suite produces V1 messages (16-byte message id).
         run_case("v1", sdk, keyring,
-                 Aws::Esdk::AlgorithmSuiteId::AesGcm256Hkdf256,
+                 Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
                  Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt,
                  v1_message_id, 16);
     } catch (const std::exception& e) {
