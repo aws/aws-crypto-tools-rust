@@ -1,23 +1,18 @@
 //! # aws-esdk-cpp — a C++ shim over the Rust AWS Encryption SDK
-//!
-//! This crate is a shim that exposes the native Rust AWS Encryption SDK to C++
-//! callers. Its behavioral contract is specified in `spec/shim/shim.md` and
-//! `spec/shim/esdk-shim.md`.
-//!
-//! ## Layering
-//!
-//! 1. This bridge (`#[cxx::bridge] mod ffi`) + the Rust glue below it.
-//! 2. The cxx-generated bindings (`lib.rs.h` / `lib.rs.cc`).
-//! 3. A hand-written idiomatic facade, `include/aws/esdk/EncryptionSDK.h`, which
-//!    is what consumers use.
+
+// Structure:
+//
+// 1. This bridge (`#[cxx::bridge] mod ffi`) + the Rust glue below it.
+// 2. The cxx-generated bindings (`lib.rs.h` / `lib.rs.cc`).
+// 3. A hand-written idiomatic facade, `include/aws/esdk/EncryptionSDK.h`, which
+//    is what consumers use.
 
 #![allow(clippy::boxed_local, reason = "need to pass Box<T> to destructors")]
 
-// ---- Crate-wide conformance (see spec/shim/shim.md and spec/shim/esdk-shim.md) ----
-//
 // The generic Shim Specification requirements below are file-wide: they describe
 // behavior that EVERY translation / operation / resource in this crate obeys, so
 // they are recorded here once as implications rather than pinned to a single site.
+//
 //= spec/shim/esdk-shim.md#overview
 //= type=implication
 //= reason=This crate's annotations against shim.md are the evidence that the ESDK shim conforms to the generic Shim Specification.

@@ -16,3 +16,7 @@ pub use cmc::{
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::Keyring;
+pub use keystore::{
+    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+    encryption_context, kms_config, record,
+};
