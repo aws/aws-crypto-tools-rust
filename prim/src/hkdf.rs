@@ -59,7 +59,10 @@ pub fn hkdf(
 /// Calculate HKDF, with default salt
 ///
 /// The default salt is a run of zero bytes as long as `alg`'s digest output
-/// (32 bytes for SHA-256, 48 for SHA-384, 64 for SHA-512).
+/// (32 bytes for SHA-256, 48 for SHA-384, 64 for SHA-512). This is not an
+/// arbitrary hard-coded key: RFC 5869 §2.2 specifies that when no salt is
+/// provided it is set to a string of `HashLen` zeros, so the all-zero salt
+/// below is the standard-mandated value for the no-salt case.
 ///
 /// # Errors
 ///
