@@ -1,17 +1,4 @@
-// test_esdk.cpp — integration tests for the C++ facade (EncryptionSDK.h).
-//
-// These test the SHIM's own behavior through the public C++ API:
-//   * encrypt/decrypt round-trip fidelity,
-//   * encryption-context handling,
-//   * failures surface as Aws::Esdk::AwsEncryptionSdkException (not a crash),
-//   * tampered ciphertext is rejected,
-//   * handle lifetime safety (a keyring keeps its clients/keystore alive even
-//     after the local wrappers go out of scope).
-//
-// They exercise the real crypto path, so they need real AWS resources,
-// supplied through the ESDK_TEST_* environment variables documented in
-// esdk_test_support.h. If any required var is unset the suite prints SKIP and
-// exits 0 (so it never fails credential-less CI).
+// Integration tests for the C++ facade (EncryptionSDK.h).
 
 #include <iostream>
 #include <map>
@@ -149,10 +136,6 @@ void test_tampered_ciphertext_throws(const TestConfig& cfg) {
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring));
 }
 
-// The keyring is built inside make_keyring(); all local KmsClient/DdbClient/
-// KeyStore wrappers are destroyed when it returns. If the facade did NOT keep
-// them alive, the raw pointers the bridge stored would dangle and this would
-// crash. Succeeding proves the shared_ptr ownership works.
 void test_lifetime_safety(const TestConfig& cfg) {
     Aws::Esdk::HierarchicalKeyring keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
@@ -192,7 +175,6 @@ int main() {
         return 0;
     }
 
-    // Each test builds its own keyring so a failure in one does not cascade.
     try {
         test_round_trip(*cfg);
         test_round_trip_with_encryption_context(*cfg);

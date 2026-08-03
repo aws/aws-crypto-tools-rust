@@ -1,22 +1,15 @@
-//! Unit tests for the shim's pure conversion layer.
-//!
-//! These test the shim's OWN behavior (correct mapping + no target abort on
-//! bad input), not ESDK crypto correctness. No AWS resources required.
+//! Only round_trip_integration needs AWS resources (the ESDK_TEST_* variables);
+//! everything else runs offline.
 
 use super::*;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
-// The complete set of algorithm-suite discriminants the shim supports.
-// Mirrors the `ffi::EsdkAlgorithmSuiteId` enum in the bridge.
+// Must mirror the discriminants of `ffi::EsdkAlgorithmSuiteId` in the bridge.
 const ALG_REPRS: [u16; 11] = [
     0x0014, 0x0046, 0x0078, 0x0114, 0x0146, 0x0178, 0x0214, 0x0346, 0x0378, 0x0478, 0x0578,
 ];
 
-/// Exhaustiveness (ffi -> core): the set of values `alg_id_target_to_core` accepts must
-/// be EXACTLY the known suite ids — no more, no fewer. Adding a suite id without
-/// updating the conversion (or vice versa) fails this test. The sweep also calls
-/// the conversion on every possible u16, so any panicking input fails it.
 //= spec/shim/shim.md#conformance-and-testing
 //= type=test
 //# - The shim SHOULD be tested for the behavior it owns — translation, handle
@@ -49,7 +42,6 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     assert_eq!(accepted, expected);
 }
 
-/// An unknown suite id returns an error rather than panicking.
 #[test]
 fn alg_id_target_to_core_rejects_unknown() {
     //= spec/shim/esdk-shim.md#algorithm-suite-identifier
@@ -66,7 +58,6 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
-/// Every core variant maps to the expected ffi discriminant.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
     use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
@@ -92,7 +83,6 @@ fn alg_id_core_to_target_maps_every_core_variant() {
     }
 }
 
-/// Round-trip: every known ffi suite id survives ffi -> core -> ffi.
 #[test]
 fn alg_id_round_trips_through_both_conversions() {
     for &n in &ALG_REPRS {
@@ -107,8 +97,6 @@ fn alg_id_round_trips_through_both_conversions() {
     }
 }
 
-/// Exhaustiveness + correctness: each known repr maps to the core commitment
-/// policy of the same meaning, and exactly the reprs {0,1,2} are accepted.
 #[test]
 fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
     use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
@@ -142,8 +130,6 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
     assert_eq!(accepted, vec![0u8, 1, 2]);
 }
 
-// encryption context: HashMap <-> Vec<EncryptionContextItem>
-
 #[test]
 fn encryption_context_round_trips() {
     use std::collections::HashMap;
@@ -169,18 +155,15 @@ fn encryption_context_round_trips() {
 
 #[test]
 fn encryption_context_empty() {
-    // Empty translates to empty in both directions — no spurious pairs.
     use std::collections::HashMap;
     let empty: HashMap<String, String> = HashMap::new();
     assert!(encryption_context_core_to_target(empty).is_empty());
     assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
-// Orchestration error paths: the null-checks and enum validation in
-// create_*/encrypt/decrypt all return before any network call, so these run
+// The null-handle and enum checks fire before any network call, so these run
 // without credentials.
 
-/// Returns the error message from a shim call that must fail.
 fn expect_err<T>(result: Result<T, String>) -> String {
     match result {
         Ok(_) => panic!("expected an error"),
@@ -190,7 +173,6 @@ fn expect_err<T>(result: Result<T, String>) -> String {
 
 #[test]
 fn encrypt_rejects_null_keyring() {
-    // default_encrypt_input() has a null keyring pointer.
     //= spec/shim/esdk-shim.md#materials-source
     //= type=test
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
@@ -201,14 +183,12 @@ fn encrypt_rejects_null_keyring() {
 
 #[test]
 fn decrypt_rejects_null_keyring() {
-    // default_decrypt_input() has a null keyring pointer.
     let err = expect_err(decrypt(&default_decrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn create_keystore_rejects_null_clients() {
-    // default config has null kms_client / ddb_client pointers.
     let err = expect_err(create_keystore(&default_keystore_config()));
     //= spec/shim/shim.md#handles-and-lifetimes
     //= type=test
@@ -226,7 +206,6 @@ fn create_keystore_rejects_null_clients() {
         "unexpected error: {err}"
     );
 
-    // With a KMS client supplied, the DynamoDB handle check fires.
     let kms = create_kms_client(&default_client_config()).expect("create kms client");
     let mut cfg = default_keystore_config();
     cfg.kms_client = &*kms as *const MplKmsClient;
@@ -239,8 +218,6 @@ fn create_keystore_rejects_null_clients() {
 
 #[test]
 fn create_hierarchical_keyring_rejects_null_key_store() {
-    // default input has a null key_store pointer; the handle check fires before
-    // any network call.
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //# - Creating a hierarchical keyring MUST require a key store handle, checked as
@@ -351,8 +328,6 @@ fn make_cache_type_builds_no_cache() {
     ));
 }
 
-// Frame length + max-encrypted-data-keys translation (pure, no AWS)
-
 #[test]
 fn make_frame_length_translates_and_rejects_zero() {
     //= spec/shim/esdk-shim.md#frame-length
@@ -381,11 +356,8 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
     assert_eq!(max_edks_target_to_core(42), std::num::NonZeroUsize::new(42));
 }
 
-// Service client user-agent + retry translation (pure, no AWS)
-
 #[test]
 fn user_agent_form_and_append() {
-    // Empty existing app-name -> the shim's own user-agent, in the required form.
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - The shim MUST set a user-agent on each service client of the form
@@ -396,7 +368,6 @@ fn user_agent_form_and_append() {
     assert_eq!(merge_user_agent("", &ua), ua);
     assert!(ua.starts_with("AwsEncryptionSdk-Shim-C++-Rust-"));
 
-    // Existing app-name is preserved and the shim's UA appended, not replaced.
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - The shim MUST preserve any user-agent already present in the loaded
@@ -411,8 +382,6 @@ fn user_agent_form_and_append() {
 
 #[test]
 fn create_sdk_config_defers_retry_when_unset() {
-    // No retry values supplied: the shim must not substitute its own; the assembled
-    // config keeps the SDK's loaded default retry configuration.
     let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
@@ -427,8 +396,6 @@ fn create_sdk_config_defers_retry_when_unset() {
         default_ref.retry_config().map(|r| r.max_attempts())
     );
 }
-
-// Service client SdkConfig assembly (builds config, no credentials used)
 
 #[test]
 fn create_sdk_config_applies_region_retry_and_user_agent() {
@@ -450,13 +417,8 @@ fn create_sdk_config_applies_region_retry_and_user_agent() {
     assert_eq!(sdk.retry_config().map(|r| r.max_attempts()), Some(7));
 
     let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
-    // Regression: the assembled SdkConfig carries the shim's user-agent; the
-    // user-agent form/append requirements are annotated in user_agent_form_and_append.
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
-
-// Full round-trip integration test: requires real AWS resources. Skips cleanly
-// when the ESDK_TEST_* env vars are unset, so it never fails credential-less CI.
 
 fn test_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
@@ -624,10 +586,7 @@ fn round_trip_integration() {
     );
 }
 
-// Forwarding is asserted on the core input directly, so no live materials are
-// needed. Each value differs from the core default, so a dropped assignment
-// fails the test.
-
+// Each value differs from the core default, so a dropped assignment fails.
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
     use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
