@@ -8,40 +8,21 @@
 //   * handle lifetime safety (a keyring keeps its clients/keystore alive even
 //     after the local wrappers go out of scope).
 //
-// They exercise the real crypto path, so they need real AWS resources. Provide
-// them via environment variables; if any required var is unset the suite prints
-// SKIP and exits 0 (so it never fails credential-less CI):
-//
-//   ESDK_TEST_KMS_KEY_ARN     KMS key ARN backing the key store
-//   ESDK_TEST_DDB_TABLE       DynamoDB table name of the key store
-//   ESDK_TEST_LOGICAL_KEYSTORE  logical key store name
-//   ESDK_TEST_BRANCH_KEY_ID   branch key id provisioned in the key store
-//   ESDK_TEST_REGION          (optional) AWS region, e.g. us-west-2
+// They exercise the real crypto path, so they need real AWS resources,
+// supplied through the ESDK_TEST_* environment variables documented in
+// esdk_test_support.h. If any required var is unset the suite prints SKIP and
+// exits 0 (so it never fails credential-less CI).
 
-#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <string>
 #include <vector>
 
-#include <aws/esdk/EncryptionSDK.h>
-
-static int g_tests = 0;
-static int g_failures = 0;
-
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        ++g_tests;                                                             \
-        if (!(cond)) {                                                         \
-            ++g_failures;                                                      \
-            std::cerr << "FAIL: " << #cond << " (" << __FILE__ << ":"          \
-                      << __LINE__ << ")\n";                                    \
-        }                                                                      \
-    } while (0)
+#include "esdk_test_support.h"
 
 #define CHECK_THROWS_ESDK(expr)                                                \
     do {                                                                       \
-        ++g_tests;                                                             \
+        ++::esdk_test::g_checks;                                               \
         bool threw = false;                                                    \
         try {                                                                  \
             expr;                                                              \
@@ -50,49 +31,23 @@ static int g_failures = 0;
         } catch (...) {                                                        \
         }                                                                      \
         if (!threw) {                                                          \
-            ++g_failures;                                                      \
+            ++::esdk_test::g_failures;                                         \
             std::cerr << "FAIL: expected AwsEncryptionSdkException from " << #expr << "\n"; \
         }                                                                      \
     } while (0)
 
 namespace {
 
-struct TestConfig {
-    std::string kms_key_arn;
-    std::string ddb_table;
-    std::string logical_keystore;
-    std::string branch_key_id;
-    std::string region;
-};
-
-std::vector<std::uint8_t> to_bytes(const std::string& s) {
-    return std::vector<std::uint8_t>(s.begin(), s.end());
-}
-
-// Build a keyring. Deliberately constructs the clients/keystore as locals and
-// moves them in, so the returned keyring is the sole owner — used by the
-// lifetime test to prove the wrappers keep their dependencies alive.
-Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
-    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
-    if (!cfg.region.empty()) {
-        client_config.with_region(cfg.region);
-    }
-    Aws::Esdk::KmsClient kms(client_config);
-    Aws::Esdk::DdbClient ddb(client_config);
-    Aws::Esdk::KeyStore keystore(cfg.ddb_table, cfg.logical_keystore,
-                                cfg.kms_key_arn, kms, ddb);
-    return Aws::Esdk::HierarchicalKeyring(std::move(keystore), cfg.branch_key_id,
-                                         /*ttl_seconds*/ 600,
-                                         Aws::Esdk::HierarchicalKeyringOptions()
-                                             .with_cache_capacity(100));
-}
+using esdk_test::make_keyring;
+using esdk_test::to_bytes;
+using TestConfig = esdk_test::TestConfig;
 
 void test_round_trip(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
     auto plaintext = to_bytes("Hello World");
     auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
-    CHECK(ciphertext != plaintext);
+    ESDK_CHECK(ciphertext != plaintext);
 
     //= spec/shim/shim.md#delegation
     //= type=test
@@ -120,7 +75,7 @@ void test_round_trip(const TestConfig& cfg) {
     //= reason=The recovered plaintext equals the original, proving decrypt returned the core library's plaintext unmodified.
     //# - MUST return the core ESDK's plaintext unmodified.
     auto decrypted = sdk.decrypt(ciphertext, keyring);
-    CHECK(decrypted.plaintext == plaintext);
+    ESDK_CHECK(decrypted.plaintext == plaintext);
 }
 
 void test_round_trip_with_encryption_context(const TestConfig& cfg) {
@@ -133,15 +88,15 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
                                      .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
                                      .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
                                      .with_encryption_context(ec));
-    CHECK(encrypted.algorithm_suite_id ==
+    ESDK_CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     for (const auto& kv : ec) {
-        CHECK(encrypted.encryption_context.count(kv.first) == 1);
-        CHECK(encrypted.encryption_context[kv.first] == kv.second);
+        ESDK_CHECK(encrypted.encryption_context.count(kv.first) == 1);
+        ESDK_CHECK(encrypted.encryption_context[kv.first] == kv.second);
     }
     auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring,
                                  Aws::Esdk::DecryptOptions().with_encryption_context(ec));
-    CHECK(decrypted.plaintext == plaintext);
+    ESDK_CHECK(decrypted.plaintext == plaintext);
 
     //= spec/shim/esdk-shim.md#decrypt-outputs
     //= type=test
@@ -149,8 +104,8 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     //# - MUST return the result encryption context, converted as defined in
     //# [Encryption context](#encryption-context).
     for (const auto& kv : ec) {
-        CHECK(decrypted.encryption_context.count(kv.first) == 1);
-        CHECK(decrypted.encryption_context[kv.first] == kv.second);
+        ESDK_CHECK(decrypted.encryption_context.count(kv.first) == 1);
+        ESDK_CHECK(decrypted.encryption_context[kv.first] == kv.second);
     }
 
     //= spec/shim/esdk-shim.md#decrypt-outputs
@@ -158,7 +113,7 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     //= reason=The decrypt result exposes the algorithm suite the core library used; it equals the suite selected at encrypt time.
     //# - MUST return the used algorithm suite, converted as defined in
     //# [Algorithm suite identifier](#algorithm-suite-identifier).
-    CHECK(decrypted.algorithm_suite_id ==
+    ESDK_CHECK(decrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
 }
 
@@ -182,14 +137,14 @@ void test_decrypt_garbage_throws(const TestConfig& cfg) {
     //= type=test
     //# - An error the shim returns for a failed core-library operation SHOULD include
     //# context identifying which operation failed.
-    CHECK(msg.find("decrypt") != std::string::npos);
+    ESDK_CHECK(msg.find("decrypt") != std::string::npos);
 }
 
 void test_tampered_ciphertext_throws(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
     auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext.to_vector();
-    CHECK(!ciphertext.empty());
+    ESDK_CHECK(!ciphertext.empty());
     ciphertext[ciphertext.size() / 2] ^= 0xFF;  // flip a byte in the body
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring));
 }
@@ -210,7 +165,7 @@ void test_lifetime_safety(const TestConfig& cfg) {
     //# cannot outlive the resource it refers to.
     auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
     auto decrypted = sdk.decrypt(ciphertext, keyring);
-    CHECK(decrypted.plaintext == plaintext);
+    ESDK_CHECK(decrypted.plaintext == plaintext);
 }
 
 void test_default_options_defer(const TestConfig& cfg) {
@@ -222,51 +177,33 @@ void test_default_options_defer(const TestConfig& cfg) {
     //= reason=Encrypt with default (empty) options yields the core default algorithm suite, proving the shim did not substitute its own default.
     //# - When the target does not supply an optional input, the shim MUST defer to
     //# the core library's default and MUST NOT substitute its own.
-    CHECK(encrypted.algorithm_suite_id ==
+    ESDK_CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-}
-
-const char* env_or_null(const char* name) {
-    const char* v = std::getenv(name);
-    return (v && *v) ? v : nullptr;
 }
 
 }  // namespace
 
 int main() {
-    const char* kms = env_or_null("ESDK_TEST_KMS_KEY_ARN");
-    const char* ddb = env_or_null("ESDK_TEST_DDB_TABLE");
-    const char* logical = env_or_null("ESDK_TEST_LOGICAL_KEYSTORE");
-    const char* branch = env_or_null("ESDK_TEST_BRANCH_KEY_ID");
-    const char* region = env_or_null("ESDK_TEST_REGION");
-
-    if (!kms || !ddb || !logical || !branch) {
+    auto cfg = esdk_test::load_test_config();
+    if (!cfg) {
         std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
                      "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID "
                      "to run the C++ integration tests.\n";
         return 0;
     }
 
-    TestConfig cfg{kms, ddb, logical, branch, region ? region : ""};
-
     // Each test builds its own keyring so a failure in one does not cascade.
     try {
-        test_round_trip(cfg);
-        test_round_trip_with_encryption_context(cfg);
-        test_decrypt_garbage_throws(cfg);
-        test_tampered_ciphertext_throws(cfg);
-        test_lifetime_safety(cfg);
-        test_default_options_defer(cfg);
+        test_round_trip(*cfg);
+        test_round_trip_with_encryption_context(*cfg);
+        test_decrypt_garbage_throws(*cfg);
+        test_tampered_ciphertext_throws(*cfg);
+        test_lifetime_safety(*cfg);
+        test_default_options_defer(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
     }
 
-    std::cout << (g_tests - g_failures) << "/" << g_tests << " checks passed\n";
-    if (g_failures > 0) {
-        std::cerr << g_failures << " check(s) FAILED\n";
-        return 1;
-    }
-    std::cout << "All C++ integration tests passed.\n";
-    return 0;
+    return esdk_test::report("test_esdk");
 }
