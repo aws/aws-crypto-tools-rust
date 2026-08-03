@@ -69,7 +69,6 @@ test:
 	make test_resource_leaks
 
 duvet:
-	@test -e spec || ln -s ../../spec spec
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
 

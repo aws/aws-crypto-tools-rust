@@ -1,6 +1,6 @@
-# Runs duvet for the aws-esdk-cpp shim and uploads its HTML compliance report.
-# Reuses the shared duvet.yml reusable workflow, targeting the shim's nested
-# project directory and giving the artifact a slash-free name.
+# Duvet for the aws-esdk-cpp shim via the reusable duvet.yml. artifact-name is
+# set because the nested project path contains slashes, which artifact names
+# do not allow.
 name: aws-esdk-cpp duvet
 
 permissions:
