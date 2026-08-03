@@ -13,14 +13,17 @@
 //
 
 pub mod attributes;
+pub mod branch_key_store;
 pub mod config;
 pub mod encryption_context;
 pub mod error;
 pub mod kms_config;
+pub(crate) mod kms_ops;
 pub mod record;
 
 use async_trait::async_trait;
 
+pub use branch_key_store::BranchKeyStore;
 pub use config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
 pub use error::{KeystoreError, KeystoreErrorKind};
 
