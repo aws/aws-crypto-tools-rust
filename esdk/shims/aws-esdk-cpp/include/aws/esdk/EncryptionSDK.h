@@ -40,6 +40,8 @@ namespace Esdk {
 //# generated handle privately and MUST NOT expose it in its public API.
 //
 //= spec/shim/shim.md#handles-and-lifetimes
+//= type=implication
+//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle (KeyStore owns its KmsClient and DdbClient; HierarchicalKeyring owns its KeyStore), so a dependency outlives every handle that points at it.
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
@@ -63,6 +65,7 @@ namespace Esdk {
 //# an optional input can be added without breaking existing target code.
 //
 //= spec/shim/shim.md#operation-contracts
+//= type=implication
 //= reason=Options fields are std::optional (or empty); an operation overrides a default_*_input() value only when the caller set the field.
 //# - When the target does not supply an optional input, the shim MUST defer to
 //# the core library's default and MUST NOT substitute its own.

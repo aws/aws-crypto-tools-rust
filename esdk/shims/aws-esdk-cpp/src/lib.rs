@@ -40,7 +40,7 @@
 //
 //= spec/shim/shim.md#type-translation
 //= type=implication
-//= reason=Every concrete translation in this crate returns a Result and follows the convert-or-error rules.
+//= reason=Every fallible translation returns a Result and follows the convert-or-error rules; the two total maps that cannot fail — maximum-encrypted-data-keys and retry configuration — return the converted value directly, since their absent case (no limit / defer to the core default) is a value rather than an error.
 //# Every such translation MUST obey the following rules.
 //
 //= spec/shim/shim.md#type-translation
@@ -63,7 +63,7 @@
 //
 //= spec/shim/shim.md#type-translation
 //= type=implication
-//= reason=Every conversion is a total match returning Ok or Err; none contains a panicking operation.
+//= reason=No conversion contains a panicking operation: each either returns Ok/Err or maps every input to a value, so none can abort the target process.
 //# - A translation reports failure by returning an error; it MUST NOT panic,
 //# abort, or otherwise terminate the target process.
 //
@@ -75,7 +75,7 @@
 //
 //= spec/shim/shim.md#delegation
 //= type=implication
-//= reason=Every operation in this crate produces its result by calling the corresponding aws_esdk core-library function.
+//= reason=Every operation produces its result by invoking the corresponding core-library function: aws_esdk for encrypt and decrypt, the AWS SDK for the KMS and DynamoDB clients, and the MPL for the key store and hierarchical keyring.
 //# - Each operation the shim exposes MUST produce its result by invoking the
 //# corresponding core-library operation.
 //
@@ -418,8 +418,8 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> std::collections::HashMap<String, String> {
-    x.iter().map(|x| (x.key.clone(), x.value.clone())).collect()
+) -> Result<std::collections::HashMap<String, String>, String> {
+    Ok(x.iter().map(|x| (x.key.clone(), x.value.clone())).collect())
 }
 
 //= spec/shim/esdk-shim.md#encryption-context
@@ -428,10 +428,10 @@ fn encryption_context_target_to_core(
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
     x: std::collections::HashMap<String, String>,
-) -> Vec<ffi::EncryptionContextItem> {
-    x.into_iter()
+) -> Result<Vec<ffi::EncryptionContextItem>, String> {
+    Ok(x.into_iter()
         .map(|(k, v)| ffi::EncryptionContextItem { key: k, value: v })
-        .collect()
+        .collect())
 }
 
 //= spec/shim/esdk-shim.md#maximum-encrypted-data-keys
@@ -661,7 +661,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        encryption_context_target_to_core(&input.encryption_context),
+        encryption_context_target_to_core(&input.encryption_context)?,
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=EncryptInput carries exactly one materials-source field (keyring); the type admits no second source.
@@ -690,7 +690,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context),
+        encryption_context: encryption_context_core_to_target(output.encryption_context)?,
     })
 }
 
@@ -707,7 +707,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        encryption_context_target_to_core(&input.encryption_context),
+        encryption_context_target_to_core(&input.encryption_context)?,
         keyring.client.clone(),
     );
     apply_decrypt_options(&mut core_input, input)?;
@@ -724,7 +724,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context),
+        encryption_context: encryption_context_core_to_target(output.encryption_context)?,
     })
 }
 
