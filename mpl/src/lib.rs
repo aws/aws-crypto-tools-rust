@@ -12,11 +12,11 @@ pub mod structures;
 pub use client::*;
 pub use cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcError, CmcErrorKind, LocalCmc, MessageUsage,
-    UsageMetadata,
+    StormTrackingCmc, TimeUnits, UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::Keyring;
 pub use keystore::{
-    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
-    encryption_context, kms_config, record,
+    encryption_context, kms_config, record, BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore,
+    KeystoreError, KmsConfiguration,
 };
