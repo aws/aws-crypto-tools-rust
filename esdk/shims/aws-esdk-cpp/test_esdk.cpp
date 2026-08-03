@@ -97,30 +97,24 @@ void test_round_trip(const TestConfig& cfg) {
     auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
     CHECK(ciphertext != plaintext);
 
-    //= spec/shim/shim.md#delegation
-    //= type=test
-    //= reason=Encrypting then decrypting back to the plaintext through the C++ facade proves the shim invoked the core library's encrypt and decrypt operations.
-    //# - Each operation the shim exposes MUST produce its result by invoking the
-    //# corresponding core-library operation.
-    //
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
-    //= reason=Round-tripping back to the original plaintext proves encrypt passed the target plaintext to the core library unmodified.
+    //= reason=A plaintext modified before core encrypt would decrypt back to the modified bytes, failing the equality below.
     //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
     //
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
-    //= reason=Decrypting the returned ciphertext back to the original plaintext proves encrypt returned the core library's ciphertext unmodified.
+    //= reason=A ciphertext modified after core encrypt fails AEAD authentication on decrypt.
     //# - MUST return the core ESDK's ciphertext unmodified.
     //
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
-    //= reason=Decrypting this exact ciphertext back to the original plaintext proves it reached the core library unmodified; any modification would fail authentication.
+    //= reason=A ciphertext modified before core decrypt fails AEAD authentication.
     //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
     //
     //= spec/shim/esdk-shim.md#decrypt-outputs
     //= type=test
-    //= reason=The recovered plaintext equals the original, proving decrypt returned the core library's plaintext unmodified.
+    //= reason=A plaintext modified after core decrypt fails the equality below.
     //# - MUST return the core ESDK's plaintext unmodified.
     auto decrypted = sdk.decrypt(ciphertext, keyring);
     CHECK(decrypted.plaintext == plaintext);
@@ -211,7 +205,7 @@ void test_lifetime_safety(const TestConfig& cfg) {
     auto plaintext = to_bytes("outlives its dependencies");
     //= spec/shim/shim.md#handles-and-lifetimes
     //= type=test
-    //= reason=make_keyring builds the KmsClient/DdbClient/KeyStore as locals and returns only the keyring; a successful encrypt+decrypt after those locals are destroyed proves the keyring retained ownership of its dependencies, so a handle could not outlive the resource it refers to.
+    //= reason=The KmsClient/DdbClient/KeyStore locals are destroyed inside make_keyring; encrypt+decrypt then use the keyring's retained copies.
     //# - An owned interface that depends on another resource MUST retain ownership of
     //# that resource for its own lifetime, so that a handle passed across the boundary
     //# cannot outlive the resource it refers to.
@@ -227,7 +221,7 @@ void test_default_options_defer(const TestConfig& cfg) {
     auto encrypted = sdk.encrypt(to_bytes("defer to defaults"), keyring);
     //= spec/shim/shim.md#operation-contracts
     //= type=test
-    //= reason=Encrypt with default (empty) options yields the core default algorithm suite, proving the shim did not substitute its own default.
+    //= reason=With empty options the returned suite is the core default; a shim-substituted suite would differ.
     //# - When the target does not supply an optional input, the shim MUST defer to
     //# the core library's default and MUST NOT substitute its own.
     CHECK(encrypted.algorithm_suite_id ==
