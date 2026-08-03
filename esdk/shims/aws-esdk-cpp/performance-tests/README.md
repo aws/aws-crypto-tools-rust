@@ -10,8 +10,9 @@ exercising encrypt/decrypt through an AWS KMS Hierarchical Keyring
 - **Memory**: peak resident-memory delta and efficiency ratio during an operation.
 - **Concurrency**: parallel throughput across multiple worker threads.
 
-The payload size is 50 MiB, matching the Rust benchmark so both plot on the
-same CloudWatch series. Results carry language `rust-cpp`.
+Payload sizes are 1 KiB, 1 MiB, and 50 MiB, matching the Rust benchmark
+scenarios so both plot on the same CloudWatch series. Results carry language
+`rust-cpp`.
 
 ## Keyring
 

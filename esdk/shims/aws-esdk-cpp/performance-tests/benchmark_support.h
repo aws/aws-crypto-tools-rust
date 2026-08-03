@@ -30,10 +30,6 @@
 
 namespace esdk_bench {
 
-// 50 MiB, shared with the Rust benchmark so both plot on the same CloudWatch
-// series.
-constexpr std::size_t DEFAULT_PAYLOAD_BYTES = 52428800;
-
 // Encrypt/decrypt round trips sampled by the memory test.
 constexpr int MEMORY_TEST_ITERATIONS = 5;
 
@@ -41,9 +37,10 @@ constexpr int MEMORY_TEST_ITERATIONS = 5;
 constexpr int CONCURRENT_ITERS_PER_WORKER = 5;
 
 struct BenchmarkConfig {
-    // 1 KiB and 1 MiB alongside 50 MiB separate fixed per-call cost from
-    // per-byte cost.
-    std::vector<std::size_t> data_sizes = {1024, 1048576, DEFAULT_PAYLOAD_BYTES};
+    // Sizes match the Rust benchmark scenarios so both plot on the same
+    // CloudWatch series; 1 KiB and 1 MiB alongside 50 MiB separate fixed
+    // per-call cost from per-byte cost.
+    std::vector<std::size_t> data_sizes = {1024, 1048576, 52428800};
     int warmup = 5;
     int measurement = 10;
     std::vector<int> concurrency_levels = {1, 2};
