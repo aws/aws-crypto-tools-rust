@@ -17,6 +17,7 @@
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::{
@@ -370,4 +371,172 @@ async fn integ_get_active_key_does_not_exist() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::RecordNotFound);
+}
+
+// ─── Write path: CreateKeyStore / CreateKey / VersionKey round trips ─────────
+//
+// These tests mutate the shared keystore table. Each uses a random
+// branch-key-id (so it never collides with the read fixtures) and deletes
+// every item it created via `cleanup_branch_key` before asserting, so a
+// failed assertion still leaves the table clean. They require write
+// permissions in addition to the read role: `kms:GenerateDataKeyWithoutPlaintext`
+// and `kms:ReEncrypt` on the test key, and `dynamodb:PutItem` /
+// `TransactWriteItems` / `Query` / `DeleteItem` on the table.
+
+/// Delete every item stored under `branch_key_id` (all `type` sort keys),
+/// so a create/version round trip leaves no residue in the shared table.
+async fn cleanup_branch_key(ddb: &DynamoDbClient, table: &str, branch_key_id: &str) {
+    let response = ddb
+        .query()
+        .table_name(table)
+        .consistent_read(true)
+        .key_condition_expression("#bk = :bk")
+        .expression_attribute_names("#bk", "branch-key-id")
+        .expression_attribute_values(":bk", AttributeValue::S(branch_key_id.to_string()))
+        .send()
+        .await
+        .expect("cleanup Query must succeed");
+
+    for item in response.items() {
+        if let Some(AttributeValue::S(type_value)) = item.get("type") {
+            ddb.delete_item()
+                .table_name(table)
+                .key(
+                    "branch-key-id",
+                    AttributeValue::S(branch_key_id.to_string()),
+                )
+                .key("type", AttributeValue::S(type_value.clone()))
+                .send()
+                .await
+                .expect("cleanup DeleteItem must succeed");
+        }
+    }
+}
+
+#[tokio::test]
+async fn integ_create_key_store_returns_existing_table_arn() {
+    // The table already exists, so CreateKeyStore takes the DescribeTable
+    // path, validates the KeySchema, and returns the existing table ARN.
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
+    )
+    .await;
+
+    let arn = store
+        .create_key_store()
+        .await
+        .expect("CreateKeyStore against the existing table must return its ARN");
+    assert!(
+        arn.contains(&format!(":table/{BRANCH_KEY_STORE_NAME}")),
+        "expected a DynamoDB table ARN, got: {arn}"
+    );
+}
+
+#[tokio::test]
+async fn integ_create_key_round_trips() {
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
+    )
+    .await;
+    let cleanup_ddb = ddb_client_us_west_2().await;
+
+    // Create a brand-new branch key (random id) with no custom EC.
+    let branch_key_id = store
+        .create_key(None, None)
+        .await
+        .expect("create_key must succeed");
+
+    // Read back the ACTIVE, the specific version, and the beacon key.
+    let active = store.get_active_branch_key(branch_key_id.clone()).await;
+    let version = active
+        .as_ref()
+        .ok()
+        .map(|m| m.branch_key_version().to_string());
+    let by_version = match &version {
+        Some(v) => Some(
+            store
+                .get_branch_key_version(branch_key_id.clone(), v.clone())
+                .await,
+        ),
+        None => None,
+    };
+    let beacon = store.get_beacon_key(branch_key_id.clone()).await;
+
+    cleanup_branch_key(&cleanup_ddb, BRANCH_KEY_STORE_NAME, &branch_key_id).await;
+
+    let active = active.expect("get_active_branch_key must succeed after create_key");
+    assert_eq!(active.branch_key_id(), branch_key_id);
+    assert_eq!(active.branch_key().len(), 32);
+
+    let by_version = by_version
+        .expect("a version must have been read")
+        .expect("get_branch_key_version must succeed for the created version");
+    assert_eq!(by_version.branch_key_id(), branch_key_id);
+    assert_eq!(by_version.branch_key().len(), 32);
+    assert_eq!(
+        by_version.branch_key_version(),
+        active.branch_key_version(),
+        "the created version MUST be the ACTIVE version"
+    );
+
+    let beacon = beacon.expect("get_beacon_key must succeed after create_key");
+    assert_eq!(beacon.beacon_key_id(), branch_key_id);
+    assert_eq!(beacon.beacon_key().map(<[u8]>::len), Some(32));
+}
+
+#[tokio::test]
+async fn integ_version_key_round_trips() {
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
+    )
+    .await;
+    let cleanup_ddb = ddb_client_us_west_2().await;
+
+    let branch_key_id = store
+        .create_key(None, None)
+        .await
+        .expect("create_key must succeed");
+
+    let first_version = store
+        .get_active_branch_key(branch_key_id.clone())
+        .await
+        .expect("get_active_branch_key must succeed after create_key")
+        .branch_key_version()
+        .to_string();
+
+    // Rotate the ACTIVE branch key to a new version.
+    let version_result = store.version_key(branch_key_id.clone()).await;
+
+    // After versioning, ACTIVE points at a new version, and the original
+    // version is still retrievable by version id.
+    let new_active = store.get_active_branch_key(branch_key_id.clone()).await;
+    let old_by_version = store
+        .get_branch_key_version(branch_key_id.clone(), first_version.clone())
+        .await;
+
+    cleanup_branch_key(&cleanup_ddb, BRANCH_KEY_STORE_NAME, &branch_key_id).await;
+
+    version_result.expect("version_key must succeed");
+
+    let new_active = new_active.expect("get_active_branch_key must succeed after version_key");
+    assert_eq!(new_active.branch_key_id(), branch_key_id);
+    assert_eq!(new_active.branch_key().len(), 32);
+    assert_ne!(
+        new_active.branch_key_version(),
+        first_version,
+        "version_key MUST rotate ACTIVE to a new version"
+    );
+
+    let old = old_by_version.expect("the original version must remain retrievable");
+    assert_eq!(old.branch_key_version(), first_version);
+    assert_eq!(old.branch_key().len(), 32);
 }
