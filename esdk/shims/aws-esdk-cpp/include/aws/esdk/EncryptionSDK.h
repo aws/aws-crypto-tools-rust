@@ -344,9 +344,13 @@ class EncryptOptions {
     friend class EncryptionSDK;
 
 public:
+    /// Algorithm suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
     EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Key-value pairs to associate with the encrypted data.
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
+    /// Bytes of plaintext data per frame. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
     /// 0 means no limit.
     EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
@@ -361,7 +365,9 @@ class DecryptOptions {
     friend class EncryptionSDK;
 
 public:
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
     DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// 0 means no limit.
     DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
@@ -410,16 +416,22 @@ inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) {
 /// suite the core library actually used. A CMM may add context entries and the
 /// suite may be defaulted, so both can differ from what was requested.
 struct EncryptResult {
+    /// The encrypted message.
     Bytes ciphertext;
+    /// Encryption context associated with the encrypted message.
     std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used for encryption.
     AlgorithmSuiteId algorithm_suite_id;
 };
 
 /// Result of decrypt: the plaintext plus the encryption context and algorithm
 /// suite that were authenticated during decryption.
 struct DecryptResult {
+    /// Decrypted plaintext data.
     Bytes plaintext;
+    /// Encryption context recovered from the encrypted message.
     std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used for decryption.
     AlgorithmSuiteId algorithm_suite_id;
 };
 
