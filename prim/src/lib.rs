@@ -55,7 +55,6 @@
     clippy::string_lit_chars_any,
     clippy::tests_outside_test_module,
 )]
-#![allow(clippy::missing_errors_doc)] // REMOVE
 
 use std::sync::Arc;
 
@@ -131,6 +130,11 @@ fn err<T>(s: String) -> Result<T, Error> {
 }
 
 /// Fill `bytes` with random data.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if the system random number generator fails to
+/// produce the requested number of bytes.
 pub fn generate_random_bytes(bytes: &mut [u8]) -> Result<(), Error> {
     rand::fill(bytes)
         .map_err(|_| serr(format!("Failed to generate {} random bytes.", bytes.len())))?;
@@ -169,6 +173,15 @@ const fn get_aes_alg(alg: AesGcm) -> &'static aws_lc_rs::aead::Algorithm {
 }
 
 /// Encrypt message with AES GCM
+///
+/// On success, `cipher_text` is extended with the ciphertext followed by the
+/// authentication tag.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `key` is not the length required by `alg` (see
+/// [`AesGcm::key_len`]), if `iv` is not a valid GCM nonce, or if the
+/// underlying seal operation fails.
 pub fn aes_encrypt(
     alg: AesGcm,
     iv: &[u8],
@@ -193,6 +206,12 @@ pub fn aes_encrypt(
 }
 
 /// Decrypt message with AES GCM
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `plain_text` is shorter than `cipher_text`, if
+/// `key` is not the length required by `alg` (see [`AesGcm::key_len`]), if
+/// `iv` is not a valid GCM nonce, or if `auth_tag` fails to verify.
 pub fn aes_decrypt(
     alg: AesGcm,
     key: &[u8],
@@ -273,6 +292,12 @@ pub fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
 ///
 /// This is the same algorithm consumed by the AWS KMS Hierarchical
 /// Keyring's branch-key derivation.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if the selected HMAC PRF is unavailable in the
+/// linked `aws-lc-rs` build, or if the underlying derivation rejects the
+/// inputs — notably when `okm` is zero-length.
 pub fn kbkdf_ctr_hmac(
     alg: DigestAlg,
     ikm: &[u8],

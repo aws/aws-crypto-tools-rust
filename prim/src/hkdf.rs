@@ -35,6 +35,11 @@ fn get_len(len: usize) -> Result<&'static aws_lc_rs::aead::Algorithm, Error> {
 }
 
 /// Calculate HKDF
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `okm.len()` is not 16, 24, or 32, or if the
+/// underlying expand operation fails.
 pub fn hkdf(
     alg: DigestAlg,
     salt: &[u8],
@@ -52,6 +57,14 @@ pub fn hkdf(
 }
 
 /// Calculate HKDF, with default salt
+///
+/// The default salt is a run of zero bytes as long as `alg`'s digest output
+/// (32 bytes for SHA-256, 48 for SHA-384, 64 for SHA-512).
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `okm.len()` is not 16, 24, or 32, or if the
+/// underlying expand operation fails.
 pub fn hkdf_no_salt(
     alg: DigestAlg,
     ikm: &[u8],
@@ -72,6 +85,11 @@ pub fn hkdf_extract(alg: DigestAlg, salt: &[u8], ikm: &[u8]) -> Prk {
 }
 
 /// HKDF Expand
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `okm.len()` is not 16, 24, or 32, or if the
+/// underlying expand operation fails.
 pub fn hkdf_expand(prk: &Prk, info: &[&[u8]], okm: &mut [u8]) -> Result<(), Error> {
     let inner_okm = prk
         .prk

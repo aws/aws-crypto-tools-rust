@@ -24,6 +24,13 @@ impl std::fmt::Debug for DigestContext {
 
 impl DigestContext {
     /// Create new `DigestContext` from the given algorithm
+    ///
+    /// # Errors
+    ///
+    /// Every [`DigestAlg`] maps to a supported digest, so this currently
+    /// always returns [`Ok`]. The fallible signature is retained so a future
+    /// algorithm that requires runtime availability checks does not become a
+    /// breaking change.
     pub fn new(alg: DigestAlg) -> Result<Self, Error> {
         let alg = get_digest_alg(alg);
         Ok(Self {
@@ -31,7 +38,14 @@ impl DigestContext {
         })
     }
 
-    /// Create new `DigestContext` from the given algorithm
+    /// Create new `DigestContext` from the digest paired with the given
+    /// ECDSA signature algorithm
+    ///
+    /// # Errors
+    ///
+    /// Every [`EcdsaSignatureAlgorithm`] maps to a supported digest, so this
+    /// currently always returns [`Ok`]. The fallible signature is retained
+    /// for the same reason as [`DigestContext::new`].
     pub fn new_from_ecdsa(alg: EcdsaSignatureAlgorithm) -> Result<Self, Error> {
         let alg = get_digest_alg_from_ecdsa(alg);
         Ok(Self {
@@ -100,6 +114,11 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
 /// Sign the message with the key using the given algorithm
 ///
 /// The key must be in DER format
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `key` is not a valid DER-encoded private key for
+/// `alg`, or if the signing operation fails.
 // FIXME - pass in &mut[u8] instead of returning Vec
 pub fn ecdsa_sign(alg: EcdsaSignatureAlgorithm, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, Error> {
     // This loop can in theory run forever, but the chances of that are negligible.
@@ -123,9 +142,14 @@ pub fn ecdsa_sign(alg: EcdsaSignatureAlgorithm, key: &[u8], msg: &[u8]) -> Resul
     }
 }
 
-/// Sign the message with the key using the given algorithm
+/// Sign the accumulated digest with the key using the given algorithm
 ///
 /// The key must be in DER format
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `key` is not a valid DER-encoded private key for
+/// `alg`, or if the signing operation fails.
 pub fn ecdsa_sign_digest(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
@@ -154,6 +178,17 @@ pub fn ecdsa_sign_digest(
 }
 
 /// Verify the signature of the message using the key and algorithm
+///
+/// Returns `Ok(true)` when the signature verifies and `Ok(false)` when it
+/// does not.
+///
+/// # Errors
+///
+/// A rejected signature, a malformed signature, and a malformed key are all
+/// reported as `Ok(false)`, so this currently never returns an [`Error`].
+/// The fallible signature is retained so verification can distinguish
+/// operational failures from a genuine mismatch in future without a
+/// breaking change.
 pub fn ecdsa_verify(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
@@ -167,7 +202,16 @@ pub fn ecdsa_verify(
     }
 }
 
-/// Verify the signature of the message using the key and algorithm
+/// Verify the signature of the accumulated digest using the key and
+/// algorithm
+///
+/// Returns `Ok(true)` when the signature verifies and `Ok(false)` when it
+/// does not.
+///
+/// # Errors
+///
+/// As with [`ecdsa_verify`], failures are reported as `Ok(false)`, so this
+/// currently never returns an [`Error`].
 pub fn ecdsa_verify_context(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
@@ -194,6 +238,11 @@ pub fn ecdsa_verify_context(
 /// crate (e.g. `aws-crypto-mpl`'s default CMM) need to encode a signing
 /// key into a `SigningKey` and to publish the verification key in the
 /// encryption context.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if key generation fails or if the generated private
+/// key cannot be encoded to big-endian bytes.
 pub fn ecdsa_generate_keypair(alg: EcdsaSignatureAlgorithm) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let signing_alg = get_sign_alg(alg);
     let key_pair =
