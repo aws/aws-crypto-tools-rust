@@ -1,16 +1,4 @@
 // EncryptionSDK.h — idiomatic C++ facade over the cxx-generated bindings.
-//
-// Design invariants:
-//   * Stable, GENERATOR-AGNOSTIC public API: no cxx type (rust::*, the generated
-//     enums/structs) appears in any public signature, so swapping the binding
-//     backend touches only this file's internals, not consumer code.
-//   * RAII + exceptions: cxx throws rust::Error on failure; we translate that
-//     into Aws::Esdk::AwsEncryptionSdkException so callers never see a cxx type.
-//   * Memory safety at the handle seam: the bridge passes handles as raw
-//     `*const` pointers inside config structs, which can dangle if a C++ caller
-//     drops a client before it is used. Each wrapper here OWNS its dependencies
-//     via shared_ptr and declares them before the object that points at them,
-//     so a dependency can never be destroyed while something references it.
 #pragma once
 
 #include <algorithm>
@@ -30,9 +18,8 @@ namespace Esdk {
 
 // File-wide invariants (see spec/shim/shim.md): each requirement below holds
 // for every wrapper, options type, and operation in this facade, so it is
-// recorded once here. Optional inputs are options objects with chained with_*
-// setters over std::optional fields; only fields the caller set override the
-// bridge's default_*_input() values.
+// recorded once here.
+//
 //= spec/shim/shim.md#owned-interface
 //= type=implication
 //= reason=The facade defines its own Aws::Esdk:: enum for every core-library enumeration it exposes (AlgorithmSuiteId, CommitmentPolicy, CacheKind).
