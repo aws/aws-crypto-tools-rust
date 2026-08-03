@@ -2,9 +2,6 @@
 //!
 //! These test the shim's OWN behavior (correct mapping + no target abort on
 //! bad input), not ESDK crypto correctness. No AWS resources required.
-//!
-//! Declared from `lib.rs` as `#[cfg(test)] mod tests;`, so it is a child of the
-//! crate root and reaches the crate-private conversion functions via `super::`.
 
 use super::*;
 use ffi::EsdkAlgorithmSuiteId as F;
@@ -16,11 +13,10 @@ const ALG_REPRS: [u16; 11] = [
     0x0014, 0x0046, 0x0078, 0x0114, 0x0146, 0x0178, 0x0214, 0x0346, 0x0378, 0x0478, 0x0578,
 ];
 
-// alg_id_target_to_core: ffi enum -> core enum
-
 /// Exhaustiveness (ffi -> core): the set of values `alg_id_target_to_core` accepts must
 /// be EXACTLY the known suite ids — no more, no fewer. Adding a suite id without
-/// updating the conversion (or vice versa) fails this test.
+/// updating the conversion (or vice versa) fails this test. The sweep also calls
+/// the conversion on every possible u16, so any panicking input fails it.
 //= spec/shim/shim.md#conformance-and-testing
 //= type=test
 //# - The shim SHOULD be tested for the behavior it owns — translation, handle
@@ -32,6 +28,12 @@ const ALG_REPRS: [u16; 11] = [
 //# - The ESDK shim MUST be tested for the behavior it owns — translation, handle
 //# validation, error propagation, and lifetime safety — rather than by re-testing
 //# the core ESDK's cryptographic behavior.
+//
+//= spec/shim/shim.md#type-translation
+//= type=test
+//= reason=The sweep calls the conversion on all of 0..=u16::MAX; every value returns Ok or Err and none panics.
+//# - A translation reports failure by returning an error; it MUST NOT panic,
+//# abort, or otherwise terminate the target process.
 #[test]
 fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     let mut accepted: Vec<u16> = (0..=u16::MAX)
@@ -45,20 +47,6 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
     //# algorithm suite that has the same two-byte ID.
     assert_eq!(accepted, expected);
-}
-
-/// Security property: NO value a C++ caller can supply may abort the target.
-/// Sweeping the entire u16 domain proves `alg_id_target_to_core` returns Ok/Err for
-/// every possible input and never panics.
-//= spec/shim/shim.md#type-translation
-//= type=test
-//# - A translation reports failure by returning an error; it MUST NOT panic,
-//# abort, or otherwise terminate the target process.
-#[test]
-fn alg_id_target_to_core_never_panics_over_full_range() {
-    for n in 0..=u16::MAX {
-        let _ = alg_id_target_to_core(F { repr: n });
-    }
 }
 
 /// An unknown suite id returns an error rather than panicking.
@@ -77,8 +65,6 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(err.contains("unrecognized"), "unexpected error: {err}");
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
-
-// alg_id_core_to_target: core enum -> ffi enum
 
 /// Every core variant maps to the expected ffi discriminant.
 #[test]
@@ -121,8 +107,6 @@ fn alg_id_round_trips_through_both_conversions() {
     }
 }
 
-// commitment_policy_target_to_core: ffi enum -> core enum
-
 /// Exhaustiveness + correctness: each known repr maps to the core commitment
 /// policy of the same meaning, and exactly the reprs {0,1,2} are accepted.
 #[test]
@@ -158,14 +142,6 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
     assert_eq!(accepted, vec![0u8, 1, 2]);
 }
 
-/// No commitment-policy value from C++ can abort the target.
-#[test]
-fn commitment_policy_target_to_core_never_panics_over_full_range() {
-    for n in 0..=u8::MAX {
-        let _ = commitment_policy_target_to_core(P { repr: n });
-    }
-}
-
 // encryption context: HashMap <-> Vec<EncryptionContextItem>
 
 #[test]
@@ -193,19 +169,16 @@ fn encryption_context_round_trips() {
 
 #[test]
 fn encryption_context_empty() {
-    // Regression: the empty map/list must translate to an empty result in both
-    // directions (no spurious pairs introduced), guarding the conversion helpers'
-    // edge case.
+    // Empty translates to empty in both directions — no spurious pairs.
     use std::collections::HashMap;
     let empty: HashMap<String, String> = HashMap::new();
     assert!(encryption_context_core_to_target(empty).is_empty());
     assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
-// Orchestration error paths (NO AWS resources required)
-// These reach the null-checks / enum-validation in the create_*/encrypt/decrypt
-// functions, which all return before any network call. They exercise the
-// error-handling lines without credentials, so they run in ordinary CI.
+// Orchestration error paths: the null-checks and enum validation in
+// create_*/encrypt/decrypt all return before any network call, so these run
+// without credentials.
 
 /// Returns the error message from a shim call that must fail.
 fn expect_err<T>(result: Result<T, String>) -> String {
@@ -228,15 +201,13 @@ fn encrypt_rejects_null_keyring() {
 
 #[test]
 fn decrypt_rejects_null_keyring() {
-    // Regression coverage for the symmetric decrypt null-check. The
-    // materials-source requirement is annotated once (on encrypt) to avoid a
-    // duplicate citation.
+    // default_decrypt_input() has a null keyring pointer.
     let err = expect_err(decrypt(&default_decrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
-fn create_keystore_rejects_null_kms_client() {
+fn create_keystore_rejects_null_clients() {
     // default config has null kms_client / ddb_client pointers.
     let err = expect_err(create_keystore(&default_keystore_config()));
     //= spec/shim/shim.md#handles-and-lifetimes
@@ -252,6 +223,16 @@ fn create_keystore_rejects_null_kms_client() {
     //# and MUST provide both to the core ESDK.
     assert!(
         err.contains("kms_client is null"),
+        "unexpected error: {err}"
+    );
+
+    // With a KMS client supplied, the DynamoDB handle check fires.
+    let kms = create_kms_client(&default_client_config()).expect("create kms client");
+    let mut cfg = default_keystore_config();
+    cfg.kms_client = &*kms as *const MplKmsClient;
+    let err = expect_err(create_keystore(&cfg));
+    assert!(
+        err.contains("ddb_client is null"),
         "unexpected error: {err}"
     );
 }
@@ -474,10 +455,8 @@ fn create_sdk_config_applies_region_retry_and_user_agent() {
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
 
-// Full round-trip integration test (REQUIRES real AWS resources)
-// Skips cleanly when the ESDK_TEST_* env vars are unset, so it never fails
-// credential-less CI. Run under `cargo llvm-cov` in a creds-enabled job to
-// cover the create_*/encrypt/decrypt success paths.
+// Full round-trip integration test: requires real AWS resources. Skips cleanly
+// when the ESDK_TEST_* env vars are unset, so it never fails credential-less CI.
 
 fn test_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
@@ -586,16 +565,11 @@ fn round_trip_integration() {
     enc_in.plaintext = plaintext.as_slice();
     enc_in.encryption_context = encryption_context_core_to_target(ec.clone());
     enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
-    // commitment policy, frame length, and max-EDKs are forwarded plumbing
-    // (plain source-side `implementation`); values here equal the ESDK defaults, so
-    // asserting on them would not falsify the forwarding — no `type=test` here.
     enc_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     enc_in.frame_length = 4096;
     enc_in.max_encrypted_data_keys = 3;
 
     let enc_out = encrypt(&enc_in).expect("encrypt");
-    // Ciphertext differs from plaintext (encryption happened); the "unmodified"
-    // guarantee is proven below by the successful decrypt back to `plaintext`.
     assert_ne!(enc_out.ciphertext, plaintext);
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
@@ -639,13 +613,7 @@ fn round_trip_integration() {
     dec_in.encryption_context = encryption_context_core_to_target(ec.clone());
 
     let dec_out = decrypt(&dec_in).expect("decrypt");
-    // Round-trip fidelity — plaintext/ciphertext passed and returned unmodified,
-    // and the core operation actually invoked — is proven end-to-end through the
-    // C++ facade in test_esdk.cpp (see the `type=test` citations there).
     assert_eq!(dec_out.plaintext, plaintext);
-    // The decrypt-output fields (used suite, result encryption context) are now
-    // surfaced by the C++ facade's DecryptResult and asserted there (test_esdk.cpp);
-    // these bridge-level checks remain but carry no duvet citation.
     assert_eq!(
         dec_out.algorithm_suite_id.repr,
         enc_in.algorithm_suite_id.repr
@@ -656,10 +624,9 @@ fn round_trip_integration() {
     );
 }
 
-// Operation-input forwarding: encrypt/decrypt provide every target-supplied
-// optional input to the core ESDK input, converted per its Type-translation
-// rule. Asserted on the core input directly — no live materials needed. Each
-// value differs from the core default, so a dropped assignment fails the test.
+// Forwarding is asserted on the core input directly, so no live materials are
+// needed. Each value differs from the core default, so a dropped assignment
+// fails the test.
 
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {

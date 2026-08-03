@@ -17,8 +17,6 @@
 //   ESDK_TEST_LOGICAL_KEYSTORE  logical key store name
 //   ESDK_TEST_BRANCH_KEY_ID   branch key id provisioned in the key store
 //   ESDK_TEST_REGION          (optional) AWS region, e.g. us-west-2
-//
-// Build: see the `test_esdk` target in the Makefile (requires -std=c++17).
 
 #include <cstdlib>
 #include <iostream>
@@ -28,7 +26,6 @@
 
 #include <aws/esdk/EncryptionSDK.h>
 
-// ---- Tiny assertion harness (no external test framework dependency) ---------
 static int g_tests = 0;
 static int g_failures = 0;
 
@@ -136,7 +133,6 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
                                      .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
                                      .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
                                      .with_encryption_context(ec));
-    // encrypt surfaces the used suite and the encryption context sent to the core library.
     CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     for (const auto& kv : ec) {
@@ -170,15 +166,12 @@ void test_decrypt_garbage_throws(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
     auto garbage = to_bytes("this is not a valid ESDK message");
-    // A failure must surface as an exception, never a crash/abort.
     //= spec/shim/shim.md#delegation
     //= type=test
     //# - When a core-library operation returns an error, the shim MUST return an error to
     //# the target and MUST NOT report the operation as successful.
     CHECK_THROWS_ESDK(sdk.decrypt(garbage, keyring));
 
-    // The surfaced error identifies which operation failed (SHOULD context):
-    // AwsEncryptionSdkException carries the core error string, which is prefixed "decrypt failed".
     std::string msg;
     try {
         sdk.decrypt(garbage, keyring);
@@ -201,7 +194,7 @@ void test_tampered_ciphertext_throws(const TestConfig& cfg) {
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring));
 }
 
-// #3: the keyring is built inside make_keyring(); all local KmsClient/DdbClient/
+// The keyring is built inside make_keyring(); all local KmsClient/DdbClient/
 // KeyStore wrappers are destroyed when it returns. If the facade did NOT keep
 // them alive, the raw pointers the bridge stored would dangle and this would
 // crash. Succeeding proves the shared_ptr ownership works.
@@ -220,7 +213,6 @@ void test_lifetime_safety(const TestConfig& cfg) {
     CHECK(decrypted.plaintext == plaintext);
 }
 
-// With no EncryptOptions the shim keeps the core library's defaults.
 void test_default_options_defer(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
