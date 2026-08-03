@@ -1,4 +1,5 @@
-// EncryptionSDK.h — idiomatic C++ facade over the cxx-generated bindings.
+// EncryptionSDK.h — public types to interact with the C++ Shim for the AWS Encryption SDK for Rust.
+
 #pragma once
 
 #include <algorithm>

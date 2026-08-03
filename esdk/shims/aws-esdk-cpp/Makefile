@@ -1,5 +1,3 @@
-# Simple Makefile - all C++ bridge code is compiled into the Rust static library.
-
 clean:
 	rm -f *.o
 
