@@ -72,16 +72,8 @@ jobs:
         run: cargo build --verbose
 
       - name: Test (Rust unit + integration tests)
-        run: cargo test --verbose
+        run: make test-ci-rust
 
       - name: Build and run C++ facade, example, and integration and local-correctness tests
         if: runner.os == 'Linux'
-        run: |
-          make example
-          make enum_parity
-          make test_esdk
-          LD_LIBRARY_PATH="$PWD/target/debug" ./test_esdk
-          make test_concurrency
-          LD_LIBRARY_PATH="$PWD/target/debug" ./test_concurrency
-          make test_resource_leaks
-          LD_LIBRARY_PATH="$PWD/target/debug" ./test_resource_leaks
+        run: make test-ci-cpp

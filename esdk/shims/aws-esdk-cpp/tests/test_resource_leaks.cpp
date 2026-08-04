@@ -49,10 +49,7 @@ bool round_trip(Aws::Esdk::EncryptionSDK& sdk,
 int main() {
     auto cfg = esdk_test::load_test_config();
     if (!cfg) {
-        std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to "
-                     "run the C++ resource-leak test.\n";
-        return 0;
+        return esdk_test::skip_or_fail_without_creds("the C++ resource-leak test");
     }
     if (read_rss_bytes() == 0) {
         std::cout << "SKIP: /proc/self/statm is unavailable; the resource-leak "
