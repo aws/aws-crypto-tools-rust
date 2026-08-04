@@ -247,6 +247,23 @@ mod ffi {
         partition_id: String,
     }
 
+    enum AesWrappingAlg {
+        Unset,
+        AlgAes128GcmIv12Tag16,
+        AlgAes192GcmIv12Tag16,
+        AlgAes256GcmIv12Tag16,
+    }
+
+    struct RawAesKeyringInput<'a> {
+        /// A namespace associated with this wrapping key.
+        key_namespace: String,
+        /// A name associated with this wrapping key.
+        key_name: String,
+        /// The AES key used to wrap and unwrap data keys.
+        wrapping_key: &'a [u8],
+        wrapping_alg: AesWrappingAlg,
+    }
+
     extern "Rust" {
         type MplDdbClient;
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
@@ -266,6 +283,7 @@ mod ffi {
 
         type Keyring;
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
+        fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
         fn delete_keyring(client: Box<Keyring>) -> Result<()>;
 
         type MplKmsClient;
@@ -823,6 +841,45 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     let store = dafny_key_store::client::Client::from_conf(config)
         .map_err(|e| format!("failed to create key store client: {:?}", e))?;
     Ok(Box::new(KeyStore { client: store }))
+}
+
+fn wrapping_alg_target_to_core(
+    alg: ffi::AesWrappingAlg,
+) -> Result<dafny::types::AesWrappingAlg, String> {
+    match alg {
+        ffi::AesWrappingAlg::Unset => Err("wrapping_alg is unset".to_string()),
+        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => {
+            Ok(dafny::types::AesWrappingAlg::AlgAes128GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => {
+            Ok(dafny::types::AesWrappingAlg::AlgAes192GcmIv12Tag16)
+        }
+        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
+            Ok(dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
+        }
+        _ => Err("Invalid AesWrappingAlg".to_string()),
+    }
+}
+
+fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring>, String> {
+    let mpl_config = dafny::types::MaterialProvidersConfig::builder()
+        .build()
+        .map_err(|e| format!("failed to build MaterialProvidersConfig: {:?}", e))?;
+    let mpl = dafny::Client::from_conf(mpl_config)
+        .map_err(|e| format!("failed to create MPL client: {:?}", e))?;
+
+    let keyring = TOKIO_RUNTIME
+        .block_on(
+            mpl.create_raw_aes_keyring()
+                .key_namespace(input.key_namespace.clone())
+                .key_name(input.key_name.clone())
+                .wrapping_key(input.wrapping_key.to_vec())
+                .wrapping_alg(wrapping_alg_target_to_core(input.wrapping_alg)?)
+                .send(),
+        )
+        .map_err(|e| format!("failed to create raw AES keyring: {:?}", e))?;
+
+    Ok(Box::new(Keyring { client: keyring }))
 }
 
 //= spec/shim/esdk-shim.md#create-hierarchical-keyring

@@ -17,19 +17,20 @@
 namespace Aws {
 namespace Esdk {
 
-// File-wide invariants (see spec/shim/shim.md): each requirement below holds
-// for every wrapper, options type, and operation in this facade, so it is
-// recorded once here.
+// File-wide invariants.
+// Each requirement below holds for every type and operation in this facade.
+// These cannot be explicitly tested, but are recorded as implications.
+// Any edits to this file must respect these requirements.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=The facade defines its own Aws::Esdk:: enum for every core-library enumeration it exposes (AlgorithmSuiteId, CommitmentPolicy).
+//= reason=The facade defines its own Aws::Esdk:: enums and does not expose any ffi-generated enum types.
 //# - For each core-library enumeration it exposes, the shim MUST define its own
 //# corresponding enumeration type.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every public method signature uses only Aws::Esdk:: types and standard-library types; no generated or core-library type appears.
+//= reason=Every public method signature uses only Aws::Esdk:: types and standard-library types.
 //# - Each public function the shim exposes MUST use only owned-interface types or
 //# standard-library types in its signature.
 //
@@ -41,14 +42,14 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#handles-and-lifetimes
 //= type=implication
-//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle (KeyStore owns its KmsClient and DdbClient; HierarchicalKeyring owns its KeyStore and retains its Cache), so a dependency outlives every handle that points at it.
+//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle to prevent this.
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Every optional input is a with_* setter on the operation's or resource's options object.
+//= reason=Every optional input has a with_* setter on the operation's or resource's options object.
 //# - The shim MUST expose each optional input of the operations and resource
 //# creations it exposes.
 //
@@ -60,7 +61,7 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=A new optional input is a new with_* setter and defaulted field on an options object; existing call sites keep compiling.
+//= reason=The with_* setters provide this
 //# - The shim MUST define its operation and resource-creation inputs such that
 //# an optional input can be added without breaking existing target code.
 //
@@ -99,6 +100,13 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 3,
 };
 
+/// The AES-GCM algorithm a raw AES keyring uses to wrap and unwrap data keys.
+enum class AesWrappingAlgorithm : std::uint8_t {
+    AlgAes128GcmIv12Tag16 = 1,
+    AlgAes192GcmIv12Tag16 = 2,
+    AlgAes256GcmIv12Tag16 = 3,
+};
+
 namespace detail {
 
 // Calls into Rust and catches any Rust error, re-throwing it as our
@@ -119,6 +127,9 @@ inline ::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
 }
 inline ::EsdkCommitmentPolicy to_ffi(CommitmentPolicy p) {
     return static_cast<::EsdkCommitmentPolicy>(static_cast<std::uint8_t>(p));
+}
+inline ::AesWrappingAlg to_ffi(AesWrappingAlgorithm a) {
+    return static_cast<::AesWrappingAlg>(static_cast<std::uint8_t>(a));
 }
 
 inline ::rust::Vec<::EncryptionContextItem> to_ec(
@@ -334,6 +345,30 @@ private:
             return ::create_hierarchical_keyring(in);
         }));
     }
+};
+
+class RawAesKeyring : public Keyring {
+public:
+    /// Creates a Raw AES Keyring, which wraps and unwraps data keys locally using
+    /// AES-GCM. The wrapping key bytes are copied into the keyring.
+    /// \param key_namespace A namespace associated with this wrapping key.
+    /// \param key_name A name associated with this wrapping key.
+    /// \param wrapping_key The AES key. Its length must match the wrapping
+    ///        algorithm (16, 24, or 32 bytes).
+    /// \param wrapping_alg The AES-GCM algorithm used to wrap and unwrap data keys.
+    RawAesKeyring(const std::string& key_namespace,
+                  const std::string& key_name,
+                  const std::vector<std::uint8_t>& wrapping_key,
+                  AesWrappingAlgorithm wrapping_alg)
+        : Keyring(std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
+              ::RawAesKeyringInput in{};
+              in.key_namespace = ::rust::String(key_namespace);
+              in.key_name = ::rust::String(key_name);
+              in.wrapping_key = ::rust::Slice<const std::uint8_t>(wrapping_key.data(),
+                                                                  wrapping_key.size());
+              in.wrapping_alg = detail::to_ffi(wrapping_alg);
+              return ::create_raw_aes_keyring(in);
+          }))) {}
 };
 
 /// Optional encrypt parameters.
