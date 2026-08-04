@@ -23,6 +23,12 @@ static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384Ecd
 static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, ::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey), "AlgAes256GcmHkdfSha512CommitKey");
 static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, ::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384), "AlgAes256GcmHkdfSha512CommitKeyEcdsaP384");
 
+// A value-initialized bridge enum is Unset: unset is the zero value, never a
+// real selection.
+static_assert(eq(::EsdkAlgorithmSuiteId{}, ::EsdkAlgorithmSuiteId::Unset), "zero-init AlgorithmSuiteId is Unset");
+static_assert(eq(::EsdkCommitmentPolicy{}, ::EsdkCommitmentPolicy::Unset), "zero-init CommitmentPolicy is Unset");
+static_assert(eq(::KmsConfigurationType{}, ::KmsConfigurationType::Unset), "zero-init KmsConfigurationType is Unset");
+
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptAllowDecrypt, ::EsdkCommitmentPolicy::RequireEncryptAllowDecrypt), "RequireEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt), "RequireEncryptRequireDecrypt");

@@ -5,6 +5,63 @@ use super::*;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
+// All-unset test fixtures, mirroring the C++ side's value-initialized inputs.
+
+fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
+    ffi::EncryptInput {
+        algorithm_suite_id: ffi::EsdkAlgorithmSuiteId::Unset,
+        encryption_context: Vec::new(),
+        frame_length: 0,
+        keyring: std::ptr::null(),
+        plaintext: &[],
+        max_encrypted_data_keys: 0,
+        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
+    }
+}
+
+fn unset_decrypt_input() -> ffi::DecryptInput<'static> {
+    ffi::DecryptInput {
+        ciphertext: &[],
+        encryption_context: Vec::new(),
+        keyring: std::ptr::null(),
+        max_encrypted_data_keys: 0,
+        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
+    }
+}
+
+fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
+    ffi::HierarchicalKeyringInput {
+        branch_key_id: String::new(),
+        key_store: std::ptr::null(),
+        ttl_seconds: 0,
+        cache: std::ptr::null(),
+        partition_id: String::new(),
+    }
+}
+
+fn unset_keystore_config() -> ffi::KeyStoreConfig {
+    ffi::KeyStoreConfig {
+        ddb_table_name: String::new(),
+        kms_configuration_type: ffi::KmsConfigurationType::Unset,
+        kms_configuration_value: String::new(),
+        logical_key_store_name: String::new(),
+        id: String::new(),
+        grant_tokens: Vec::new(),
+        ddb_client: std::ptr::null(),
+        kms_client: std::ptr::null(),
+    }
+}
+
+fn unset_client_config() -> ffi::MplAwsClientConfig {
+    ffi::MplAwsClientConfig {
+        region: String::new(),
+        retry: ffi::RetryConfig {
+            mode_adaptive: false,
+            max_attempts: 0,
+        },
+    }
+}
+
 // Must mirror the discriminants of `ffi::EsdkAlgorithmSuiteId` in the bridge.
 const ALG_REPRS: [u16; 11] = [
     0x0014, 0x0046, 0x0078, 0x0114, 0x0146, 0x0178, 0x0214, 0x0346, 0x0378, 0x0478, 0x0578,
@@ -102,10 +159,10 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
         .collect();
     //= spec/shim/esdk-shim.md#commitment-policy
     //= type=test
-    //= reason=Sweeping 0..=u8::MAX, only 0,1,2 are accepted; every other value returns an error.
+    //= reason=Sweeping 0..=u8::MAX, only 1,2,3 are accepted; every other value (including 0 = Unset) returns an error.
     //# - The shim MUST return an error when the target commitment policy is not a supported
     //# value.
-    assert_eq!(accepted, vec![0u8, 1, 2]);
+    assert_eq!(accepted, vec![1u8, 2, 3]);
 }
 
 #[test]
@@ -155,19 +212,19 @@ fn encrypt_rejects_null_keyring() {
     //= type=test
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
     //# materials source is supplied.
-    let err = expect_err(encrypt(&default_encrypt_input()));
+    let err = expect_err(encrypt(&unset_encrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn decrypt_rejects_null_keyring() {
-    let err = expect_err(decrypt(&default_decrypt_input()));
+    let err = expect_err(decrypt(&unset_decrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn create_keystore_rejects_null_clients() {
-    let err = expect_err(create_keystore(&default_keystore_config()));
+    let err = expect_err(create_keystore(&unset_keystore_config()));
     //= spec/shim/shim.md#handles-and-lifetimes
     //= type=test
     //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
@@ -184,8 +241,8 @@ fn create_keystore_rejects_null_clients() {
         "unexpected error: {err}"
     );
 
-    let kms = create_kms_client(&default_client_config()).expect("create kms client");
-    let mut cfg = default_keystore_config();
+    let kms = create_kms_client(&unset_client_config()).expect("create kms client");
+    let mut cfg = unset_keystore_config();
     cfg.kms_client = &*kms as *const MplKmsClient;
     let err = expect_err(create_keystore(&cfg));
     assert!(
@@ -203,7 +260,7 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
     //# and MUST provide it to the core ESDK.
     let err = expect_err(create_hierarchical_keyring(
-        &default_hierarchical_keyring_input(),
+        &unset_hierarchical_keyring_input(),
     ));
     assert!(err.contains("key_store is null"), "unexpected error: {err}");
 }
@@ -217,6 +274,11 @@ fn make_kms_config_rejects_unknown_type() {
     let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
         err.contains("Invalid KmsConfigurationType"),
+        "unexpected error: {err}"
+    );
+    let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
+    assert!(
+        err.contains("kms_configuration_type is unset"),
         "unexpected error: {err}"
     );
 }
@@ -355,7 +417,7 @@ fn create_sdk_config_defers_retry_when_unset() {
     let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
-    let sdk = create_sdk_config(&default_client_config()).expect("build sdk config");
+    let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //= reason=With no retry supplied, the assembled config's retry matches a reference load_defaults() rather than a substituted standard config.
@@ -369,7 +431,7 @@ fn create_sdk_config_defers_retry_when_unset() {
 
 #[test]
 fn create_sdk_config_applies_region_retry_and_user_agent() {
-    let mut cfg = default_client_config();
+    let mut cfg = unset_client_config();
     cfg.region = "us-west-2".to_string();
     cfg.retry.max_attempts = 7;
     let sdk = create_sdk_config(&cfg).expect("build sdk config");
@@ -418,7 +480,7 @@ fn round_trip_integration() {
         }
     };
 
-    let mut client_cfg = default_client_config();
+    let mut client_cfg = unset_client_config();
     client_cfg.region = test_env("ESDK_TEST_REGION").unwrap_or_default();
 
     //= spec/shim/esdk-shim.md#create-kms-client
@@ -443,7 +505,7 @@ fn round_trip_integration() {
     //# as defined in [Service client configuration](#service-client-configuration).
     let ddb = create_ddb_client(&client_cfg).expect("create ddb client");
 
-    let mut ks_cfg = default_keystore_config();
+    let mut ks_cfg = unset_keystore_config();
     //= spec/shim/esdk-shim.md#create-key-store
     //= type=test
     //# - Creating a key store MUST provide the target-supplied table name and logical key
@@ -470,7 +532,7 @@ fn round_trip_integration() {
     //# ESDK.
     let keystore = create_keystore(&ks_cfg).expect("create keystore");
 
-    let mut kr_in = default_hierarchical_keyring_input();
+    let mut kr_in = unset_hierarchical_keyring_input();
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
@@ -499,7 +561,7 @@ fn round_trip_integration() {
     let mut ec = std::collections::HashMap::new();
     ec.insert("purpose".to_string(), "integration-test".to_string());
 
-    let mut enc_in = default_encrypt_input();
+    let mut enc_in = unset_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = plaintext.as_slice();
     enc_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
@@ -541,7 +603,7 @@ fn round_trip_integration() {
         Some(&"integration-test".to_string())
     );
 
-    let mut dec_in = default_decrypt_input();
+    let mut dec_in = unset_decrypt_input();
     dec_in.keyring = &*keyring as *const Keyring;
     dec_in.ciphertext = enc_out.ciphertext.as_slice();
     dec_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
