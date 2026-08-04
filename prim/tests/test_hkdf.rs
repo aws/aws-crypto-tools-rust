@@ -7,9 +7,8 @@
 //! The Dafny tests use the RFC 5869 vectors with L = 42 or 82. Prim's
 //! `hkdf` and `hkdf_expand` restrict output length to 16/24/32 bytes
 //! (`get_len` in `src/hkdf.rs`), so this port asks for L=32 and compares
-//! against the first 32 bytes of each RFC OKM. HKDF-Expand is defined as
-//! the first L bytes of a fixed sequence of blocks; the first 32 bytes
-//! are identical for any L >= 32 with the same PRK and info.
+//! against the first 32 bytes of each RFC OKM. HKDF-Expand output is
+//! prefix-stable, so the comparison is exact, not approximate.
 
 use aws_mpl_primitives::{DigestAlg, Error, Prk, hkdf, hkdf_expand, hkdf_extract, hkdf_no_salt};
 

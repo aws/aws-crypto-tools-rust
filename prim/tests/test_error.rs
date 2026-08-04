@@ -1,10 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Error` trait-implementation coverage. Not in the Dafny suite — the
-//! Rust `Error` type has custom `Display` / `PartialEq` implementations
-//! and a `#[track_caller]` `Backtrace`, so these exist to cover those
-//! branches for the 100%-line coverage gate.
+//! `Error` trait-implementation coverage
 
 use aws_mpl_primitives::{AesGcm, DigestAlg, Error, aes_encrypt, hkdf};
 
