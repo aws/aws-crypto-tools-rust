@@ -6,12 +6,12 @@
   },
   "product": "esdk",
   "supportedFeatures": [
-    "hierarchical"
+    "hierarchical",
+    "raw-aes"
   ],
   "unsupportedFeatures": [
     "streaming",
     "MPL",
-    "raw-aes",
     "raw-rsa",
     "raw-ecdh",
     "multi",
