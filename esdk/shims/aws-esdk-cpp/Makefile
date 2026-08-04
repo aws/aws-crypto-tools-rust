@@ -50,17 +50,35 @@ clean:
 clippy:
 	cargo clippy --tests --examples
 
-test:
+# Build the Rust static library, the C++ example, the compile-time parity check,
+# and the test binaries.
+build-tests:
 	cargo build
-	cargo build --release
-	make example
-	make enum_parity
-	make test_esdk
-	make test_concurrency
-	make test_resource_leaks
+	$(MAKE) example enum_parity test_esdk test_concurrency test_resource_leaks
+
+# Run the C++ integration + local-correctness binaries.
+run-cpp:
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_esdk
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_concurrency
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_resource_leaks
+
+# Full local test suite (Rust + C++). Credential-gated tests skip when the
+# ESDK_TEST_* variables are unset.
+test: build-tests
+	cargo test
+	$(MAKE) run-cpp
+
+# CI test targets: ESDK_TEST_REQUIRE_CREDS turns absent ESDK_TEST_* credentials
+# into a failure instead of a skip, so unsetting them cannot pass silently. Split
+# Rust/C++ because the workflow runs the C++ half on Linux only.
+test-ci-rust:
+	ESDK_TEST_REQUIRE_CREDS=1 cargo test
+
+test-ci-cpp: build-tests
+	ESDK_TEST_REQUIRE_CREDS=1 $(MAKE) run-cpp
 
 duvet:
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
 
-.PHONY: all clean duvet test clippy
+.PHONY: all clean clippy duvet build-tests run-cpp test test-ci-rust test-ci-cpp

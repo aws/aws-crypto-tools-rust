@@ -58,7 +58,7 @@ inline const char* env_or_null(const char* name) {
     return (value && *value) ? value : nullptr;
 }
 
-// std::nullopt when a required variable is unset, so the caller can print SKIP and exit 0.
+// std::nullopt when a required variable is unset.
 inline std::optional<TestConfig> load_test_config() {
     const char* kms = env_or_null("ESDK_TEST_KMS_KEY_ARN");
     const char* ddb = env_or_null("ESDK_TEST_DDB_TABLE");
@@ -69,6 +69,23 @@ inline std::optional<TestConfig> load_test_config() {
         return std::nullopt;
     }
     return TestConfig{kms, ddb, logical, branch, region ? region : ""};
+}
+
+// When ESDK_TEST_REQUIRE_CREDS is set, absent ESDK_TEST_* credentials fail
+// (return 1) instead of skip (return 0), so unsetting the credentials cannot
+// pass CI silently.
+inline int skip_or_fail_without_creds(const char* test_name) {
+    if (env_or_null("ESDK_TEST_REQUIRE_CREDS")) {
+        std::cerr << "FAIL: " << test_name
+                  << " requires ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
+                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID, "
+                     "but they are unset.\n";
+        return 1;
+    }
+    std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
+                 "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to run "
+              << test_name << ".\n";
+    return 0;
 }
 
 // Clients and keystore are locals moved into the keyring, which becomes their

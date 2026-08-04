@@ -404,6 +404,12 @@ fn round_trip_integration() {
     ) {
         (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
         _ => {
+            // ESDK_TEST_REQUIRE_CREDS makes absent credentials a failure (CI), so an
+            // accidentally-unset credential set cannot pass by skipping.
+            assert!(
+                test_env("ESDK_TEST_REQUIRE_CREDS").is_none(),
+                "ESDK_TEST_REQUIRE_CREDS is set but ESDK_TEST_* credentials are unset"
+            );
             eprintln!(
                 "SKIP round_trip_integration: set ESDK_TEST_KMS_KEY_ARN, \
                  ESDK_TEST_DDB_TABLE, ESDK_TEST_LOGICAL_KEYSTORE, ESDK_TEST_BRANCH_KEY_ID"
