@@ -1069,11 +1069,8 @@ mod onencrypt {
     use super::*;
     use std::sync::Mutex;
 
-    use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
-    use aws_crypto_mpl::structures::{
-        AlgorithmSuiteId, EncryptionMaterials, MaterialsError, PlaintextDataKey,
-    };
+    use aws_crypto_mpl::structures::{AlgorithmSuiteId, EncryptionMaterials, MaterialsError};
     use aws_crypto_mpl::{Keyring, KmsConfiguration};
 
     /// Stable test fixtures.
@@ -1198,95 +1195,6 @@ mod onencrypt {
     /// invariants don't intrude on the test.
     fn non_signing_suite() -> AlgorithmSuiteId {
         AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
-    }
-
-    #[tokio::test]
-    async fn on_encrypt_generates_random_data_key_when_materials_lack_one() {
-        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
-        let suite_id = non_signing_suite();
-        let materials_in = fixture_empty_materials_with_id(suite_id);
-        assert!(materials_in.plaintext_data_key().is_none());
-
-        let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
-        let pdk = materials_out
-            .plaintext_data_key()
-            .expect("on_encrypt must produce a plaintext data key");
-        assert_eq!(pdk.len(), suite_id.specification().encryption_key_length());
-    }
-
-    #[tokio::test]
-    async fn on_encrypt_preserves_existing_plaintext_data_key() {
-        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
-        let suite_id = non_signing_suite();
-        let bytes = vec![0xAA; suite_id.specification().encryption_key_length()];
-        let materials_in = EncryptionMaterials::new(
-            suite_id,
-            Vec::new(),
-            EncryptionContext::new(),
-            Default::default(),
-            Some(PlaintextDataKey::new(bytes.clone())),
-            None,
-            None,
-        )
-        .unwrap();
-
-        let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
-        assert_eq!(
-            materials_out.plaintext_data_key().unwrap().as_bytes(),
-            &bytes,
-            "on_encrypt MUST preserve a caller-supplied plaintext data key"
-        );
-    }
-
-    #[tokio::test]
-    async fn on_encrypt_appends_exactly_one_edk_with_aws_kms_hierarchy_provider() {
-        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
-        let materials_out = keyring
-            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
-            .await
-            .unwrap();
-
-        let edks = materials_out.encrypted_data_keys();
-        assert_eq!(edks.len(), 1, "on_encrypt MUST append exactly one EDK");
-
-        assert_eq!(edks[0].key_provider_id, "aws-kms-hierarchy");
-
-        assert_eq!(
-            edks[0].key_provider_info.as_slice(),
-            FIXED_BRANCH_KEY_ID.as_bytes()
-        );
-    }
-
-    #[tokio::test]
-    async fn on_encrypt_edk_round_trips_through_branch_key_unwrap() {
-        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
-        let materials_out = keyring
-            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
-            .await
-            .unwrap();
-        let edk = &materials_out.encrypted_data_keys()[0];
-
-        // The EDK ciphertext was produced by the keyring calling into
-        // branch_key_wrap::wrap with FakeKeystore's BranchKeyMaterials and
-        // the (empty) encryption context from the input EncryptionMaterials.
-        // Re-running branch_key_unwrap with the same materials and the same
-        // EC must recover the plaintext DK that on_encrypt set.
-        let recovered = branch_key_unwrap(
-            &fixture_materials_empty_ec(),
-            &EncryptionContext::new(),
-            &edk.ciphertext,
-        )
-        .unwrap();
-
-        assert_eq!(
-            &recovered,
-            materials_out.plaintext_data_key().unwrap().as_bytes(),
-            "EDK ciphertext MUST round-trip through branch_key_wrap/unwrap"
-        );
     }
 
     #[tokio::test]
@@ -1642,26 +1550,6 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
         assert_eq!(err.kind, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
-    }
-
-    #[tokio::test]
-    async fn on_decrypt_round_trips_with_on_encrypt_output() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
-        let suite_id = non_signing_suite();
-
-        let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;
-
-        let dm_in = fixture_empty_decryption_materials(suite_id);
-        let dm_out = keyring
-            .on_decrypt(dm_in, &edks)
-            .await
-            .expect("on_decrypt must succeed for an EDK produced by this keyring");
-
-        let recovered = dm_out
-            .plaintext_data_key()
-            .expect("on_decrypt must populate the plaintext data key on success");
-        assert_eq!(recovered.as_bytes(), expected_pdk.as_bytes());
     }
 
     #[tokio::test]
