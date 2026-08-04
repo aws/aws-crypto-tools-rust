@@ -26,11 +26,12 @@ pub struct CppBackend {
     clients: Mutex<HashMap<String, ClientEntry>>,
 }
 
+// Matches the C++ facade's CommitmentPolicy enum values.
 fn commitment_code(policy: EsdkCommitmentPolicy) -> u8 {
     match policy {
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt => 0,
-        EsdkCommitmentPolicy::RequireEncryptAllowDecrypt => 1,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => 2,
+        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt => 1,
+        EsdkCommitmentPolicy::RequireEncryptAllowDecrypt => 2,
+        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => 3,
     }
 }
 

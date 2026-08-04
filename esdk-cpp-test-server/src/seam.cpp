@@ -114,7 +114,7 @@ int esdk_cpp_create_raw_aes_client(const char* key_namespace,
     }
 }
 
-// commitment_policy is 0/1/2. algorithm_suite_id, frame_length, and
+// commitment_policy is the CommitmentPolicy enum value. algorithm_suite_id, frame_length, and
 // max_encrypted_data_keys use 0 to mean "unset — defer to the core default".
 int esdk_cpp_encrypt(void* client,
                      const uint8_t* plaintext,
