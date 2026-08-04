@@ -1,7 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Shared harness for the C++ test binaries. Live AWS resources come from:
+// Shared setup for test_concurrency.cpp and test_resource_leaks.cpp.
+//
+// These tests use the hierarchical keyring, so they need live AWS resources.
+// Provide them through the same environment variables test_esdk.cpp uses.
+// When any required var is unset, the test is skipped so as to not fail a cred-less CI.
 //
 //   ESDK_TEST_KMS_KEY_ARN       KMS key ARN backing the key store
 //   ESDK_TEST_DDB_TABLE         DynamoDB table name of the key store
@@ -21,7 +25,7 @@
 
 namespace esdk_test {
 
-// Not synchronized; use ESDK_CHECK only from the main thread.
+// Assertion harness. Call only from the main thread; not suitable for concurrent use.
 inline int g_checks = 0;
 inline int g_failures = 0;
 
@@ -35,6 +39,8 @@ inline int g_failures = 0;
         }                                                                      \
     } while (0)
 
+// Print the tally and return a process exit code.
+// 0 --> all checks passed; 1 --> tests failed.
 inline int report(const char* suite) {
     std::cout << suite << ": " << (g_checks - g_failures) << "/" << g_checks
               << " checks passed\n";
@@ -58,7 +64,7 @@ inline const char* env_or_null(const char* name) {
     return (value && *value) ? value : nullptr;
 }
 
-// std::nullopt when a required variable is unset.
+// Return std::nullopt if a required variable is unset so the caller can skip
 inline std::optional<TestConfig> load_test_config() {
     const char* kms = env_or_null("ESDK_TEST_KMS_KEY_ARN");
     const char* ddb = env_or_null("ESDK_TEST_DDB_TABLE");
@@ -71,25 +77,6 @@ inline std::optional<TestConfig> load_test_config() {
     return TestConfig{kms, ddb, logical, branch, region ? region : ""};
 }
 
-// When ESDK_TEST_REQUIRE_CREDS is set, absent ESDK_TEST_* credentials fail
-// (return 1) instead of skip (return 0), so unsetting the credentials cannot
-// pass CI silently.
-inline int skip_or_fail_without_creds(const char* test_name) {
-    if (env_or_null("ESDK_TEST_REQUIRE_CREDS")) {
-        std::cerr << "FAIL: " << test_name
-                  << " requires ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID, "
-                     "but they are unset.\n";
-        return 1;
-    }
-    std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                 "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to run "
-              << test_name << ".\n";
-    return 0;
-}
-
-// Clients and keystore are locals moved into the keyring, which becomes their
-// sole owner — test_lifetime_safety relies on this.
 inline Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
     auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
