@@ -27,7 +27,4 @@ static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::EsdkC
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptAllowDecrypt, ::EsdkCommitmentPolicy::RequireEncryptAllowDecrypt), "RequireEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt), "RequireEncryptRequireDecrypt");
 
-static_assert(eq(Aws::Esdk::CacheKind::None, ::CacheType::NoCache), "CacheKind::None");
-static_assert(eq(Aws::Esdk::CacheKind::MultiThreaded, ::CacheType::MultiThreadedCache), "CacheKind::MultiThreaded");
-
 }  // namespace

@@ -23,7 +23,7 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=The facade defines its own Aws::Esdk:: enum for every core-library enumeration it exposes (AlgorithmSuiteId, CommitmentPolicy, CacheKind).
+//= reason=The facade defines its own Aws::Esdk:: enum for every core-library enumeration it exposes (AlgorithmSuiteId, CommitmentPolicy).
 //# - For each core-library enumeration it exposes, the shim MUST define its own
 //# corresponding enumeration type.
 //
@@ -41,7 +41,7 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#handles-and-lifetimes
 //= type=implication
-//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle (KeyStore owns its KmsClient and DdbClient; HierarchicalKeyring owns its KeyStore), so a dependency outlives every handle that points at it.
+//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle (KeyStore owns its KmsClient and DdbClient; HierarchicalKeyring owns its KeyStore and retains its Cache), so a dependency outlives every handle that points at it.
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
@@ -99,17 +99,10 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 2,
 };
 
-enum class CacheKind : std::uint8_t {
-    /// No caching: branch key material is fetched on every use.
-    None = 0,
-    /// Cache safe for concurrent use from multiple threads.
-    MultiThreaded = 1,
-};
-
 namespace detail {
 
-// Run a cxx call, translating rust::Error -> AwsEncryptionSdkException so no cxx
-// exception type escapes this header.
+// Calls into Rust and catches any Rust error, re-throwing it as our
+// own C++ exception type so callers only ever see AwsEncryptionSdkException.
 template <typename F>
 inline auto guard(F&& f) -> decltype(f()) {
     try {
@@ -119,16 +112,13 @@ inline auto guard(F&& f) -> decltype(f()) {
     }
 }
 
-// Enum translation is the only code that knows the generated enum types exist.
-// Values are kept identical to the generated enums, so casts are exact.
+// Convert our enums to the generated FFI enums.
+// Users must depend on these ESDK enums so changes to the FFI layer don't break them.
 inline ::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
 inline ::EsdkCommitmentPolicy to_ffi(CommitmentPolicy p) {
     return static_cast<::EsdkCommitmentPolicy>(static_cast<std::uint8_t>(p));
-}
-inline ::CacheType to_ffi(CacheKind c) {
-    return static_cast<::CacheType>(static_cast<std::uint8_t>(c));
 }
 
 inline ::rust::Vec<::EncryptionContextItem> to_ec(
@@ -206,9 +196,8 @@ public:
 };
 
 class KeyStore {
-    // Declared before inner_ so they outlive it; shared_ptr keeps the Rust
-    // clients alive for as long as this KeyStore exists -> the raw pointers the
-    // bridge stores can never dangle.
+    // kms and ddb must be declared before inner_ (core, Rust) keystore
+    // so they are destroyed after inner_ is
     KmsClient kms_;
     DdbClient ddb_;
     std::shared_ptr<::rust::Box<::KeyStore>> inner_;
@@ -266,19 +255,41 @@ public:
     virtual ~Keyring() = default;
 };
 
-/// Optional hierarchical keyring parameters. A field left unset keeps the core
-/// library's default; an empty partition id is omitted.
+/// A cryptographic materials cache for a Hierarchical Keyring, created via the
+/// static factories. A keyring created without a cache uses the core library's
+/// default cache. One Cache may be passed to multiple keyrings.
+class Cache {
+    std::shared_ptr<::rust::Box<::Cache>> inner_;
+    friend class HierarchicalKeyringOptions;
+    friend class HierarchicalKeyring;
+    explicit Cache(::rust::Box<::Cache> inner)
+        : inner_(std::make_shared<::rust::Box<::Cache>>(std::move(inner))) {}
+
+public:
+    /// No caching: branch key material is fetched on every use.
+    static Cache NoCache() {
+        return Cache(detail::guard([] { return ::create_no_cache(); }));
+    }
+    /// Cache safe for concurrent use from multiple threads. A parameter left 0
+    /// keeps the core library's default for that parameter.
+    static Cache MultiThreaded(std::uint32_t entry_capacity = 0,
+                               std::uint32_t entry_pruning_tail_size = 0) {
+        return Cache(detail::guard([&] {
+            return ::create_multi_threaded_cache(entry_capacity, entry_pruning_tail_size);
+        }));
+    }
+};
+
+/// Optional hierarchical keyring parameters.
+/// A field left unset keeps the core library's default.
 class HierarchicalKeyringOptions {
-    std::optional<CacheKind> cache_;
-    std::optional<std::uint32_t> cache_capacity_;
+    std::shared_ptr<::rust::Box<::Cache>> cache_;
     std::string partition_id_;
     friend class HierarchicalKeyring;
 
 public:
-    /// Sets the type of cache for this Hierarchical Keyring.
-    HierarchicalKeyringOptions& with_cache(CacheKind kind) { cache_ = kind; return *this; }
-    /// Maximum number of entries cached.
-    HierarchicalKeyringOptions& with_cache_capacity(std::uint32_t entries) { cache_capacity_ = entries; return *this; }
+    /// Sets the cache for this Hierarchical Keyring.
+    HierarchicalKeyringOptions& with_cache(const Cache& cache) { cache_ = cache.inner_; return *this; }
     /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing
     /// to a cache. If the Partition ID is the same for two Hierarchical Keyrings (or another
     /// Material Provider), they can share the same cache entries in the cache.
@@ -287,6 +298,7 @@ public:
 
 class HierarchicalKeyring : public Keyring {
     KeyStore key_store_;  // owns the keystore (and transitively its clients)
+    std::shared_ptr<::rust::Box<::Cache>> cache_;  // retains the cache handle, if one was supplied
 public:
     /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
     /// using Branch Keys persisted in DynamoDB and protected by a symmetric AWS KMS Key or
@@ -304,7 +316,8 @@ public:
                         std::uint32_t ttl_seconds,
                         const HierarchicalKeyringOptions& options = {})
         : Keyring(create(key_store, branch_key_id, ttl_seconds, options)),
-          key_store_(std::move(key_store)) {}
+          key_store_(std::move(key_store)),
+          cache_(options.cache_) {}
 
 private:
     static std::shared_ptr<::rust::Box<::Keyring>> create(const KeyStore& key_store,
@@ -317,15 +330,14 @@ private:
             in.key_store = key_store.ffi();
             in.ttl_seconds = ttl_seconds;
             in.partition_id = ::rust::String(options.partition_id_);
-            if (options.cache_) in.cache = detail::to_ffi(*options.cache_);
-            if (options.cache_capacity_) in.multi_threaded_cache.entryCapacity = *options.cache_capacity_;
+            if (options.cache_) in.cache = &**options.cache_;
             return ::create_hierarchical_keyring(in);
         }));
     }
 };
 
-/// Optional encrypt parameters. A field left unset keeps the core library's
-/// default.
+/// Optional encrypt parameters.
+/// A field left unset keeps the core library's default.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::optional<CommitmentPolicy> commitment_policy_;
@@ -347,8 +359,8 @@ public:
     EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
-/// Optional decrypt parameters. A field left unset keeps the core library's
-/// default.
+/// Optional decrypt parameters.
+/// A field left unset keeps the core library's default.
 class DecryptOptions {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
@@ -365,11 +377,10 @@ public:
 };
 
 /// Owned, read-only byte buffer returned by encrypt and decrypt.
-///
-/// It owns the core library's output buffer, so obtaining it and reading it —
-/// data()/size(), indexing, iteration, comparison — never copy. to_vector() is
-/// the only accessor that copies. Move-only, so the buffer is never duplicated
-/// implicitly; call to_vector() when an owning std::vector is required.
+/// 
+/// This owns the core (Rust) library's output buffer; not a C++ type.
+/// This setup allows readers to read outputs without a copy, improving performance.
+/// If you need a std::vector, use `.to_vector()`.
 class Bytes {
     ::rust::Vec<std::uint8_t> buf_;
     friend class EncryptionSDK;

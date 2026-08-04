@@ -292,39 +292,31 @@ fn make_kms_config_accepts_mr_discovery() {
 }
 
 #[test]
-fn make_cache_type_rejects_unknown() {
-    let cache_cfg = default_hierarchical_keyring_input().multi_threaded_cache;
-    //= spec/shim/esdk-shim.md#cache-configuration
-    //= type=test
-    //# - The shim MUST return an error when the target cache type is not a supported
-    //# value.
-    let err = make_cache_type(ffi::CacheType { repr: 99 }, &cache_cfg).unwrap_err();
-    assert!(err.contains("Invalid CacheType"), "unexpected error: {err}");
-}
-
-#[test]
-fn make_cache_type_builds_multi_threaded() {
+fn create_no_cache_builds_no_cache() {
     use aws_mpl_legacy::dafny::types::CacheType;
-    let cache_cfg = default_hierarchical_keyring_input().multi_threaded_cache;
-    //= spec/shim/esdk-shim.md#cache-configuration
-    //= type=test
-    //# - The shim MUST translate a multi-threaded cache selection.
-    assert!(matches!(
-        make_cache_type(ffi::CacheType::MultiThreadedCache, &cache_cfg).unwrap(),
-        CacheType::MultiThreaded(_)
-    ));
-}
-
-#[test]
-fn make_cache_type_builds_no_cache() {
-    use aws_mpl_legacy::dafny::types::CacheType;
-    let cache_cfg = default_hierarchical_keyring_input().multi_threaded_cache;
     //= spec/shim/esdk-shim.md#cache-configuration
     //= type=test
     //# - The shim MUST translate a no-cache selection.
     assert!(matches!(
-        make_cache_type(ffi::CacheType::NoCache, &cache_cfg).unwrap(),
+        create_no_cache().unwrap().cache_type,
         CacheType::No(_)
+    ));
+}
+
+#[test]
+fn create_multi_threaded_cache_builds_multi_threaded() {
+    use aws_mpl_legacy::dafny::types::CacheType;
+    //= spec/shim/esdk-shim.md#cache-configuration
+    //= type=test
+    //# - The shim MUST translate a multi-threaded cache selection.
+    assert!(matches!(
+        create_multi_threaded_cache(100, 1).unwrap().cache_type,
+        CacheType::MultiThreaded(_)
+    ));
+    // A parameter left 0 defers to the core library's default.
+    assert!(matches!(
+        create_multi_threaded_cache(0, 0).unwrap().cache_type,
+        CacheType::MultiThreaded(_)
     ));
 }
 
@@ -506,7 +498,8 @@ fn round_trip_integration() {
     //# - Creating a hierarchical keyring MUST provide the target-supplied cache
     //# configuration to the core ESDK, converted as defined in
     //# [Cache configuration](#cache-configuration).
-    kr_in.cache = ffi::CacheType::MultiThreadedCache;
+    let cache = create_multi_threaded_cache(100, 1).expect("create cache");
+    kr_in.cache = &*cache as *const Cache;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
