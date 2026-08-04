@@ -31,7 +31,7 @@ int main() {
             4242,  // ttl_seconds: how long cached branch key material may be reused
             // Unset options keep the library defaults.
             Aws::Esdk::HierarchicalKeyringOptions()
-                .with_cache_capacity(42)
+                .with_cache(Aws::Esdk::Cache::MultiThreaded(42))
         );
 
         Aws::Esdk::EncryptionSDK sdk;

@@ -1,4 +1,4 @@
-name: aws-esdk-cpp shim (Rust)
+name: aws-esdk-cpp shim
 
 on:
   pull_request:
@@ -46,7 +46,7 @@ jobs:
           aws-region: us-west-2
           role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
 
-      # aws-lc-sys (via aws-esdk) needs Go to build its native code
+      # aws-lc-sys needs Go to build
       - name: Install Go
         uses: actions/setup-go@v5
         with:
