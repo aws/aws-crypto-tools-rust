@@ -148,12 +148,14 @@ mod ffi {
         AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0378,
         AlgAes256GcmHkdfSha512CommitKey = 0x0478,
         AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 = 0x0578,
+        Unset = 0x0000,
     }
 
     enum EsdkCommitmentPolicy {
         ForbidEncryptAllowDecrypt,
         RequireEncryptAllowDecrypt,
         RequireEncryptRequireDecrypt,
+        Unset,
     }
 
     struct EncryptionContextItem {
@@ -237,6 +239,7 @@ mod ffi {
     enum CacheType {
         NoCache,
         MultiThreadedCache,
+        Unset,
     }
 
     struct MultiThreadedCacheConfig {
@@ -500,23 +503,28 @@ fn make_cache_type(
         //= spec/shim/esdk-shim.md#cache-configuration
         //# - The shim MUST translate a multi-threaded cache selection.
         ffi::CacheType::MultiThreadedCache => {
-            let entry_capacity = i32::try_from(multi_threaded.entryCapacity).map_err(|_| {
-                format!(
-                    "entry_capacity {} exceeds the core ESDK's i32 limit",
-                    multi_threaded.entryCapacity
-                )
-            })?;
-            let entry_pruning_tail_size = i32::try_from(multi_threaded.entryPruningTailSize)
-                .map_err(|_| {
+            let mut cache_builder = dafny::types::MultiThreadedCache::builder();
+            if multi_threaded.entryCapacity != 0 {
+                let entry_capacity = i32::try_from(multi_threaded.entryCapacity).map_err(|_| {
                     format!(
-                        "entry_pruning_tail_size {} exceeds the core ESDK's i32 limit",
-                        multi_threaded.entryPruningTailSize
+                        "entry_capacity {} exceeds the core ESDK's i32 limit",
+                        multi_threaded.entryCapacity
                     )
                 })?;
+                cache_builder = cache_builder.entry_capacity(entry_capacity);
+            }
+            if multi_threaded.entryPruningTailSize != 0 {
+                let entry_pruning_tail_size = i32::try_from(multi_threaded.entryPruningTailSize)
+                    .map_err(|_| {
+                        format!(
+                            "entry_pruning_tail_size {} exceeds the core ESDK's i32 limit",
+                            multi_threaded.entryPruningTailSize
+                        )
+                    })?;
+                cache_builder = cache_builder.entry_pruning_tail_size(entry_pruning_tail_size);
+            }
             Ok(dafny::types::CacheType::MultiThreaded(
-                dafny::types::MultiThreadedCache::builder()
-                    .entry_capacity(entry_capacity)
-                    .entry_pruning_tail_size(entry_pruning_tail_size)
+                cache_builder
                     .build()
                     .map_err(|e| format!("failed to build MultiThreadedCache: {:?}", e))?,
             ))
@@ -616,19 +624,27 @@ fn apply_encrypt_options(
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    if input.max_encrypted_data_keys != 0 {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    core_input.frame_length = make_frame_length(input.frame_length)?;
+    if input.frame_length != 0 {
+        core_input.frame_length = make_frame_length(input.frame_length)?;
+    }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
+        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
-    core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    if input.algorithm_suite_id != ffi::EsdkAlgorithmSuiteId::Unset {
+        core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    }
     Ok(())
 }
 
@@ -640,11 +656,15 @@ fn apply_decrypt_options(
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    if input.max_encrypted_data_keys != 0 {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    }
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
+        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    }
     Ok(())
 }
 
@@ -825,10 +845,12 @@ fn create_hierarchical_keyring(
     //# and time-to-live to the core ESDK.
     let mut builder = mpl
         .create_aws_kms_hierarchical_keyring()
-        .cache(make_cache_type(input.cache, &input.multi_threaded_cache)?)
         .branch_key_id(input.branch_key_id.clone())
         .ttl_seconds(input.ttl_seconds)
         .key_store(key_store.client.clone());
+    if input.cache != ffi::CacheType::Unset {
+        builder = builder.cache(make_cache_type(input.cache, &input.multi_threaded_cache)?);
+    }
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
     //# the core ESDK when present; an unset value is omitted.
@@ -860,37 +882,40 @@ fn delete_keyring(_client: Box<Keyring>) -> Result<(), String> {
 
 // Default-initialized bridge inputs for the target.
 
+/// An encrypt input with every optional field unset; each defers to the core library's default.
 fn default_encrypt_input() -> ffi::EncryptInput<'static> {
     ffi::EncryptInput {
-        algorithm_suite_id: ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        algorithm_suite_id: ffi::EsdkAlgorithmSuiteId::Unset,
         encryption_context: Vec::default(),
-        frame_length: 4096,
+        frame_length: 0,
         keyring: std::ptr::null(),
         plaintext: &[],
         max_encrypted_data_keys: 0,
-        commitment_policy: ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
     }
 }
 
+/// A decrypt input with every optional field unset; each defers to the core library's default.
 fn default_decrypt_input() -> ffi::DecryptInput<'static> {
     ffi::DecryptInput {
         ciphertext: &[],
         encryption_context: Vec::default(),
         keyring: std::ptr::null(),
         max_encrypted_data_keys: 0,
-        commitment_policy: ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
     }
 }
 
+/// A hierarchical-keyring input with every optional field unset; each defers to the core library's default.
 fn default_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::default(),
         key_store: std::ptr::null(),
-        ttl_seconds: 300,
-        cache: ffi::CacheType::MultiThreadedCache,
+        ttl_seconds: 0,
+        cache: ffi::CacheType::Unset,
         multi_threaded_cache: ffi::MultiThreadedCacheConfig {
-            entryCapacity: 1000,
-            entryPruningTailSize: 1,
+            entryCapacity: 0,
+            entryPruningTailSize: 0,
         },
         partition_id: String::default(),
     }
