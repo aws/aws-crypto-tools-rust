@@ -147,12 +147,54 @@ void test_default_options_defer(const TestConfig& cfg) {
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
 }
 
+// Raw AES keyring tests are fully local and run unconditionally.
+void test_raw_aes_round_trip() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto plaintext = to_bytes("raw aes through the facade");
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+    ESDK_CHECK(ciphertext != plaintext);
+    auto decrypted = sdk.decrypt(ciphertext, keyring);
+    ESDK_CHECK(decrypted.plaintext == plaintext);
+}
+
+void test_raw_aes_wrong_keyring_fails() {
+    std::vector<std::uint8_t> key_a(32, 0x01);
+    std::vector<std::uint8_t> key_b(32, 0x02);
+    Aws::Esdk::RawAesKeyring keyring_a("test-ns", "test-key", key_a,
+                                       Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::RawAesKeyring keyring_b("test-ns", "test-key", key_b,
+                                       Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto ciphertext = sdk.encrypt(to_bytes("keyed to A"), keyring_a).ciphertext;
+    CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring_b));
+}
+
+void test_raw_aes_mismatched_key_length_throws() {
+    std::vector<std::uint8_t> short_key(16, 0x01);
+    CHECK_THROWS_ESDK(Aws::Esdk::RawAesKeyring(
+        "test-ns", "test-key", short_key,
+        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
+}
+
 }  // namespace
 
 int main() {
+    try {
+        test_raw_aes_round_trip();
+        test_raw_aes_wrong_keyring_fails();
+        test_raw_aes_mismatched_key_length_throws();
+    } catch (const std::exception& e) {
+        std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
+        return 2;
+    }
+
     auto cfg = esdk_test::load_test_config();
     if (!cfg) {
-        return esdk_test::skip_or_fail_without_creds("the C++ integration tests");
+        int rc = esdk_test::skip_or_fail_without_creds("the C++ integration tests");
+        return rc != 0 ? rc : esdk_test::report("test_esdk");
     }
 
     try {

@@ -456,6 +456,60 @@ fn test_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
 }
 
+// Raw AES keyring: fully local, so the whole path runs without AWS resources.
+
+#[test]
+fn raw_aes_keyring_round_trip() {
+    let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("create raw AES keyring");
+
+    let plaintext = b"raw aes round trip".to_vec();
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.plaintext = plaintext.as_slice();
+    let enc_out = encrypt(&enc_in).expect("encrypt");
+    assert_ne!(enc_out.ciphertext, plaintext);
+
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = enc_out.ciphertext.as_slice();
+    let dec_out = decrypt(&dec_in).expect("decrypt");
+    assert_eq!(dec_out.plaintext, plaintext);
+}
+
+#[test]
+fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
+    let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg::Unset,
+    }));
+    assert!(
+        err.contains("wrapping_alg is unset"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_raw_aes_keyring_rejects_mismatched_key_length() {
+    let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 16],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    }));
+    assert!(
+        err.contains("Wrapping key length does not match"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn round_trip_integration() {
     let (kms_arn, table, logical, branch) = match (

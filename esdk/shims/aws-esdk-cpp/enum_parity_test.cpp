@@ -28,9 +28,14 @@ static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcd
 static_assert(eq(::EsdkAlgorithmSuiteId{}, ::EsdkAlgorithmSuiteId::Unset), "zero-init AlgorithmSuiteId is Unset");
 static_assert(eq(::EsdkCommitmentPolicy{}, ::EsdkCommitmentPolicy::Unset), "zero-init CommitmentPolicy is Unset");
 static_assert(eq(::KmsConfigurationType{}, ::KmsConfigurationType::Unset), "zero-init KmsConfigurationType is Unset");
+static_assert(eq(::AesWrappingAlg{}, ::AesWrappingAlg::Unset), "zero-init AesWrappingAlg is Unset");
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptAllowDecrypt, ::EsdkCommitmentPolicy::RequireEncryptAllowDecrypt), "RequireEncryptAllowDecrypt");
 static_assert(eq(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt, ::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt), "RequireEncryptRequireDecrypt");
+
+static_assert(eq(Aws::Esdk::AesWrappingAlgorithm::AlgAes128GcmIv12Tag16, ::AesWrappingAlg::AlgAes128GcmIv12Tag16), "AlgAes128GcmIv12Tag16");
+static_assert(eq(Aws::Esdk::AesWrappingAlgorithm::AlgAes192GcmIv12Tag16, ::AesWrappingAlg::AlgAes192GcmIv12Tag16), "AlgAes192GcmIv12Tag16");
+static_assert(eq(Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16, ::AesWrappingAlg::AlgAes256GcmIv12Tag16), "AlgAes256GcmIv12Tag16");
 
 }  // namespace
