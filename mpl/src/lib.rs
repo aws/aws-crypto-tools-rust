@@ -10,6 +10,9 @@ pub mod keystore;
 pub mod structures;
 
 pub use client::*;
+// Re-exported so callers of `create_raw_aes_keyring().wrapping_alg(..)` and
+// `RawAesKeyring::new` need not depend on `aws-mpl-primitives` directly.
+pub use aws_mpl_primitives::AesGcm;
 pub use cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcError, CmcErrorKind, LocalCmc, MessageUsage,
     StormTrackingCmc, TimeUnits, UsageMetadata,
