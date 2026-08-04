@@ -134,12 +134,6 @@ void test_lifetime_safety(const TestConfig& cfg) {
     Aws::Esdk::HierarchicalKeyring keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
     auto plaintext = to_bytes("outlives its dependencies");
-    //= spec/shim/shim.md#handles-and-lifetimes
-    //= type=test
-    //= reason=make_keyring builds the KmsClient/DdbClient/KeyStore as locals and returns only the keyring; a successful encrypt+decrypt after those locals are destroyed proves the keyring retained ownership of its dependencies, so a handle could not outlive the resource it refers to.
-    //# - An owned interface that depends on another resource MUST retain ownership of
-    //# that resource for its own lifetime, so that a handle passed across the boundary
-    //# cannot outlive the resource it refers to.
     auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
     auto decrypted = sdk.decrypt(ciphertext, keyring);
     ESDK_CHECK(decrypted.plaintext == plaintext);
@@ -158,10 +152,7 @@ void test_default_options_defer(const TestConfig& cfg) {
 int main() {
     auto cfg = esdk_test::load_test_config();
     if (!cfg) {
-        std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID "
-                     "to run the C++ integration tests.\n";
-        return 0;
+        return esdk_test::skip_or_fail_without_creds("the C++ integration tests");
     }
 
     try {
