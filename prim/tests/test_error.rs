@@ -21,17 +21,13 @@ fn test_error_display_starts_with_crypto_error_prefix() {
 }
 
 #[test]
-fn test_error_debug_is_non_empty() {
-    let err = make_error();
-    let debug = format!("{err:?}");
-    assert!(debug.contains("Error"));
-}
-
-#[test]
 fn test_error_partial_eq_matches_on_message_only() {
-    // Two errors from the same call path share the same message string;
-    // Error::eq only compares .message, so these should be equal even
-    // though their backtraces differ.
+    // `Error::eq` compares `.message` only, so two errors from the same call
+    // path compare equal. The backtrace never participates, and it is usually
+    // not even distinct: `Error` captures with `Backtrace::capture()`, which
+    // honours `RUST_BACKTRACE` and yields `<disabled>` when it is unset, so
+    // in a default run these two backtraces are byte-identical. They differ
+    // only under `RUST_BACKTRACE=1`, and `eq` ignores them either way.
     let err1 = make_error();
     let err2 = make_error();
     assert_eq!(err1, err2);

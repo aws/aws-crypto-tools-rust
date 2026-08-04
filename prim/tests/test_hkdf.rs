@@ -133,18 +133,29 @@ fn test_hkdf_no_salt_sha384() -> Result<(), Error> {
     // Exercises default_salt_size's SHA-384 arm and the get_len(24) path.
     let mut okm = [0u8; 24];
     hkdf_no_salt(DigestAlg::Sha384, &A1_IKM, &[&A1_INFO], &mut okm)?;
-    // No RFC vector to compare against with L=24 SHA-384; just assert the
-    // call succeeds and fills a fixed-size buffer.
-    assert_eq!(okm.len(), 24);
+
+    // There is no RFC vector for L=24 SHA-384, so instead assert that the
+    // digest argument actually reaches the derivation: the same IKM and
+    // info under SHA-256 must produce different key material. Both the PRF
+    // and the default salt length follow from `alg`, so this does not
+    // isolate `default_salt_size` on its own — it does show the SHA-384
+    // arm is wired rather than silently falling back.
+    let mut okm_sha256 = [0u8; 24];
+    hkdf_no_salt(DigestAlg::Sha256, &A1_IKM, &[&A1_INFO], &mut okm_sha256)?;
+    assert_ne!(okm, okm_sha256);
     Ok(())
 }
 
 #[test]
 fn test_hkdf_no_salt_sha512() -> Result<(), Error> {
-    // Exercises default_salt_size's SHA-512 arm.
+    // Exercises default_salt_size's SHA-512 arm. As above, compare against
+    // SHA-256 over the same inputs rather than asserting a fixed length.
     let mut okm = [0u8; 16];
     hkdf_no_salt(DigestAlg::Sha512, &A1_IKM, &[&A1_INFO], &mut okm)?;
-    assert_eq!(okm.len(), 16);
+
+    let mut okm_sha256 = [0u8; 16];
+    hkdf_no_salt(DigestAlg::Sha256, &A1_IKM, &[&A1_INFO], &mut okm_sha256)?;
+    assert_ne!(okm, okm_sha256);
     Ok(())
 }
 

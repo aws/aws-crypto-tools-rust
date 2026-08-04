@@ -94,12 +94,6 @@ jobs:
       # `cfg(feature = ...)` code, so dropping `--all-features` costs no
       # coverage — the FIPS backend gets its own parity step below.
       #
-      # The expression is written `!= 'prim' && '--all-features' || ''` rather
-      # than `== 'prim' && '' || '--all-features'` because GitHub treats the
-      # empty string as falsy: with `''` on the left of `||` the `||` would fall
-      # through and always yield `--all-features`. Keeping the non-empty value
-      # left of `||` is what makes both branches render.
-      #
       # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
       # today); raise it toward 100 as coverage fills in.
       # TODO(mpl): mpl line-coverage is temporarily 80%
