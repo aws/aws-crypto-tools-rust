@@ -75,9 +75,21 @@
 //
 //= spec/shim/shim.md#delegation
 //= type=implication
-//= reason=Every operation produces its result by invoking the corresponding core-library function: aws_esdk for encrypt and decrypt, the AWS SDK for the KMS and DynamoDB clients, and the MPL for the key store and hierarchical keyring.
+//= reason=Every operation produces its result by invoking the corresponding core-library function: aws_esdk for encrypt and decrypt, the AWS SDK for the KMS and DynamoDB clients, and the MPL for the key store and keyrings.
 //# - Each operation the shim exposes MUST produce its result by invoking the
 //# corresponding core-library operation.
+//
+//= spec/shim/shim.md#delegation
+//= type=implication
+//= reason=Every operation returns Result and maps each core-library error with map_err + ?; no path converts a core Err into Ok.
+//# - When a core-library operation returns an error, the shim MUST return an error to
+//# the target and MUST NOT report the operation as successful.
+//
+//= spec/shim/shim.md#delegation
+//= type=implication
+//= reason=Every map_err formats the failing operation's name into the returned error message.
+//# - An error the shim returns for a failed core-library operation SHOULD include
+//# context identifying which operation failed.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
@@ -717,13 +729,6 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     );
     apply_encrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
-    //= spec/shim/shim.md#delegation
-    //# - When a core-library operation returns an error, the shim MUST return an error to
-    //# the target and MUST NOT report the operation as successful.
-    //
-    //= spec/shim/shim.md#delegation
-    //# - An error the shim returns for a failed core-library operation SHOULD include
-    //# context identifying which operation failed.
     let output = output.map_err(|e| format!("encrypt failed: {:?}", e))?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
