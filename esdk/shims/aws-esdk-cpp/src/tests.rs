@@ -10,23 +10,6 @@ const ALG_REPRS: [u16; 11] = [
     0x0014, 0x0046, 0x0078, 0x0114, 0x0146, 0x0178, 0x0214, 0x0346, 0x0378, 0x0478, 0x0578,
 ];
 
-//= spec/shim/shim.md#conformance-and-testing
-//= type=implication
-//# - The shim SHOULD be tested for the behavior it owns — translation, handle
-//# validation, error propagation, and lifetime safety — rather than by re-testing
-//# the core library's own behavior.
-//
-//= spec/shim/esdk-shim.md#conformance-and-testing
-//= type=implication
-//# - The ESDK shim MUST be tested for the behavior it owns — translation, handle
-//# validation, error propagation, and lifetime safety — rather than by re-testing
-//# the core ESDK's cryptographic behavior.
-//
-//= spec/shim/shim.md#type-translation
-//= type=implication
-//= reason=Total match with an Err catch-all; every input returns Ok or Err.
-//# - A translation reports failure by returning an error; it MUST NOT panic,
-//# abort, or otherwise terminate the target process.
 #[test]
 fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     let mut accepted: Vec<u16> = (0..=u16::MAX)
@@ -87,11 +70,6 @@ fn alg_id_core_to_target_maps_every_core_variant() {
 fn alg_id_round_trips_through_both_conversions() {
     for &n in &ALG_REPRS {
         let core = alg_id_target_to_core(F { repr: n }).expect("known suite id converts");
-        //= spec/shim/shim.md#type-translation
-        //= type=implication
-        //= reason=Forward and backward maps share one fixed suite-id table, so they are inverse by construction.
-        //# - A translation MUST convert between the target representation and the core
-        //# library representation, preserving meaning in both directions it supports.
         let back = alg_id_core_to_target(core).expect("round-trips back");
         assert_eq!(back.repr, n);
     }
