@@ -3,15 +3,13 @@
 
 //! Real-AWS integration tests for [`HierarchicalKeyring::on_encrypt`].
 //!
-//! All tests are `#[ignore]` and skipped by `cargo test`. To run, AWS
-//! credentials with read access to the keystore fixtures are needed
-//! (DDB `KeyStoreDdbTable` in account `370957321024`, KMS keys in
-//! accounts `370957321024` and `658956600833`).
-//!
-//! ```text
-//! cargo test \
-//!     --test test_aws_kms_hierarchical_keyring_integ -- --ignored
-//! ```
+//! These run as part of `cargo test`, against the same assumed role CI uses
+//! for the keystore integration tests (`configure-aws-credentials` in
+//! `.github/workflows/library_rust_tests.yml`). They need read access to the
+//! keystore fixtures: DDB table `KeyStoreDdbTable` and the KMS key
+//! `9d989aa2-2f9c-438c-a745-cc57d3ad0126`, both in account `370957321024`,
+//! region `us-west-2`. Without credentials for that account they fail rather
+//! than skip, the same way `test_keystore_branch_key_store_integ` does.
 //!
 //! Ported from the Dafny suite at
 //! aws-cryptographic-material-providers-library /
@@ -112,7 +110,6 @@ fn fresh_materials() -> EncryptionMaterials {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
     let keystore = build_keystore().await;
     let keyring = HierarchicalKeyring::new(
@@ -161,7 +158,6 @@ async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
     // Two on_encrypt calls with the same branch_key_id should hit the
     // keystore exactly once. We can't observe keystore call counts from
@@ -198,7 +194,6 @@ async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     // Full encrypt → decrypt round trip against the real keystore. Proves
     // the EDK ciphertext produced by on_encrypt is decryptable by
@@ -254,7 +249,6 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
     // First on_decrypt MUST hit the keystore (cache miss). Second
     // on_decrypt MUST be served entirely from the cache. We can't observe
@@ -397,7 +391,6 @@ async fn run_round_trip(
 // ─── TestHierarchyClientESDKSuite — pre-existing PDK variant ───────────────
 
 #[tokio::test]
-#[ignore]
 async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     // Second half of Dafny `TestHierarchyClientESDKSuite`: encrypt with
     // a caller-supplied (zeroed) PDK. on_encrypt MUST preserve the PDK
@@ -464,7 +457,6 @@ fn shared_cache_arc() -> Arc<dyn aws_crypto_mpl::Cmc> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_name() {
     // HK1 and HK2 share Partition ID, Logical Key Store Name, and Branch
     // Key ID — so per `#shared-cache-considerations` they MUST share cache
@@ -518,7 +510,6 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_logical_keystore_name()
 {
     // HK1 and HK2 leave partition_id = None, so each keyring generates a
@@ -568,7 +559,6 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_shared_cache_with_different_specified_partition_id_and_same_logical_keystore_name() {
     // HK1 and HK2 set explicit, distinct partition ids. Cache miss
     // expected: HK2's encrypt MUST still fail.
@@ -616,7 +606,6 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
 }
 
 #[tokio::test]
-#[ignore]
 async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystore_name() {
     // HK1 and HK2 share Partition ID but differ in Logical Key Store Name.
     // Cache identifier binds the logical keystore name, so HK2's encrypt
