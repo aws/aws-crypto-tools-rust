@@ -4,12 +4,12 @@ on:
   pull_request:
     paths:
       - "esdk-cpp-test-server/**"
-      - "esdk/shims/aws-esdk-cpp/**"
+      - "esdk/**"
       - ".github/workflows/aws-esdk-cpp-test-server.yml"
   push:
     paths:
       - "esdk-cpp-test-server/**"
-      - "esdk/shims/aws-esdk-cpp/**"
+      - "esdk/**"
       - ".github/workflows/aws-esdk-cpp-test-server.yml"
   workflow_dispatch:
   workflow_call:
@@ -69,11 +69,10 @@ jobs:
 
   # The complete cross-language TestServer run, delegated to the commons
   # orchestrator with this working tree as the live C++-shim server source.
-  # Manual-only until the two repo secrets below exist and the commons C++-shim
-  # configuration is merged; skips (not fails) on pull_request/push.
+  # Runs on every pull_request/push; needs the CI_AWS_ROLE_ARN and
+  # COMMONS_REPO_TOKEN repo secrets.
   test-server:
     name: Cross-language TestServer run
-    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     # Requires two repo secrets:
     #   CI_AWS_ROLE_ARN     — OIDC role in the branch-key-store account with KMS
