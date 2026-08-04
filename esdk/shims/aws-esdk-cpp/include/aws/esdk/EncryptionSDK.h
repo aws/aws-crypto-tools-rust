@@ -66,7 +66,7 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Options fields are std::optional (or empty); an operation overrides a default_*_input() value only when the caller set the field.
+//= reason=Options fields are std::optional (or empty); operations start from a value-initialized (all-unset) input and assign a field only when the caller set it.
 //# - When the target does not supply an optional input, the shim MUST defer to
 //# the core library's default and MUST NOT substitute its own.
 
@@ -94,9 +94,9 @@ enum class AlgorithmSuiteId : std::uint16_t {
 };
 
 enum class CommitmentPolicy : std::uint8_t {
-    ForbidEncryptAllowDecrypt  = 0,
-    RequireEncryptAllowDecrypt = 1,
-    RequireEncryptRequireDecrypt = 2,
+    ForbidEncryptAllowDecrypt  = 1,
+    RequireEncryptAllowDecrypt = 2,
+    RequireEncryptRequireDecrypt = 3,
 };
 
 namespace detail {
@@ -149,7 +149,7 @@ inline std::map<std::string, std::string> from_ec(
 }  // namespace detail
 
 class ClientConfig {
-    ::MplAwsClientConfig cfg_ = ::default_client_config();
+    ::MplAwsClientConfig cfg_{};
     const ::MplAwsClientConfig& raw() const { return cfg_; }
     friend class KmsClient;
     friend class DdbClient;
@@ -224,7 +224,7 @@ public:
         : kms_(std::move(kms)),
           ddb_(std::move(ddb)),
           inner_(std::make_shared<::rust::Box<::KeyStore>>(detail::guard([&] {
-              ::KeyStoreConfig c = ::default_keystore_config();
+              ::KeyStoreConfig c{};
               c.ddb_table_name = ::rust::String(table_name);
               c.logical_key_store_name = ::rust::String(logical_key_store_name);
               c.kms_configuration_type = ::KmsConfigurationType::KmsKeyArn;
@@ -325,7 +325,7 @@ private:
                                                           std::uint32_t ttl_seconds,
                                                           const HierarchicalKeyringOptions& options) {
         return std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
-            ::HierarchicalKeyringInput in = ::default_hierarchical_keyring_input();
+            ::HierarchicalKeyringInput in{};
             in.branch_key_id = ::rust::String(branch_key_id);
             in.key_store = key_store.ffi();
             in.ttl_seconds = ttl_seconds;
@@ -445,7 +445,7 @@ public:
         const EncryptOptions& options = {}) {
         // Overrides only the fields the caller set, so defaults are never
         // re-declared in C++ and cannot diverge from the Rust core.
-        ::EncryptInput in = ::default_encrypt_input();
+        ::EncryptInput in{};
         in.keyring = keyring.ffi();
         in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext.data(), plaintext.size());
         in.encryption_context = detail::to_ec(options.encryption_context_);
@@ -483,7 +483,7 @@ private:
         std::size_t ciphertext_len,
         const Keyring& keyring,
         const DecryptOptions& options) {
-        ::DecryptInput in = ::default_decrypt_input();
+        ::DecryptInput in{};
         in.keyring = keyring.ffi();
         in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
         in.encryption_context = detail::to_ec(options.encryption_context_);
