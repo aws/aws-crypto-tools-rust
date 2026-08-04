@@ -131,6 +131,18 @@ jobs:
     with:
       project: ${{ matrix.project }}
 
+  # Run the reusable Rust test workflow. Currently only supports MPL.
+  pr-ci-rust-test-vectors:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.projects != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ['mpl']
+    uses: ./.github/workflows/library_rust_test_vectors.yml
+    with:
+      project: ${{ matrix.project }}
+
   # Run duvet and upload the compliance report for projects that have duvet
   # configured. Currently that is esdk only; add a job per project as more
   # projects gain a .duvet/config.toml.
@@ -150,6 +162,7 @@ jobs:
       - detect-changes
       - pr-ci-rust
       - pr-ci-duvet
+      - pr-ci-rust-test-vectors
     runs-on: ubuntu-22.04
     steps:
       - name: Verify all required jobs passed
