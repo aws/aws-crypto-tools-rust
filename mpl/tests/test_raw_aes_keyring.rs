@@ -540,7 +540,7 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
     // Claim a 256-bit authentication tag, which does not match the wrapping
     // algorithm's 128-bit tag.
     let mut tampered_info = edk.key_provider_info.clone();
-    let tag_bits_offset = name.as_bytes().len();
+    let tag_bits_offset = name.len();
     tampered_info[tag_bits_offset..tag_bits_offset + 4].copy_from_slice(&256u32.to_be_bytes());
     let tampered_edk = EncryptedDataKey::new(
         edk.key_provider_id.clone(),
@@ -570,7 +570,7 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
 
     // Claim a 16-byte IV, which does not match the wrapping algorithm's 12.
     let mut tampered_info = edk.key_provider_info.clone();
-    let iv_len_offset = name.as_bytes().len() + 4;
+    let iv_len_offset = name.len() + 4;
     tampered_info[iv_len_offset..iv_len_offset + 4].copy_from_slice(&16u32.to_be_bytes());
     let tampered_edk = EncryptedDataKey::new(
         edk.key_provider_id.clone(),
