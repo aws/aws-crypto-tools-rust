@@ -1,12 +1,11 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
 //! [`Keyring`](aws_esdk::Keyring).
 //!
-//! Two keyring provenance paths are wired:
-//! - Raw AES resolves through the native (unsafe-unreviewed) MPL, yielding a
-//!   [`Keyring::Modern`](aws_esdk::Keyring::Modern).
-//! - AWS KMS Hierarchical resolves through the legacy (Dafny) MPL key store and
-//!   keyring client reached via [`aws_esdk::mpl`], yielding a
-//!   [`Keyring::Legacy`](aws_esdk::Keyring::Legacy).
+//! Both keyrings resolve through the Dafny MPL reached via [`aws_esdk::mpl`],
+//! yielding a [`Keyring::Legacy`](aws_esdk::Keyring::Legacy):
+//! - Raw AES via `create_raw_aes_keyring`.
+//! - AWS KMS Hierarchical via `create_aws_kms_hierarchical_keyring` over the
+//!   Dafny MPL key store client.
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
@@ -20,7 +19,7 @@ use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::client::Client as Ke
 use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::{
     KeyStoreConfig, KmsConfiguration,
 };
-use aws_mpl_legacy::keyring::{AesWrappingAlg as MplAesWrappingAlg, CreateRawAesKeyringInput};
+use aws_mpl_legacy::dafny::types::AesWrappingAlg as MplAesWrappingAlg;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
 ///
@@ -74,7 +73,7 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, Server
     }
 
     if let Some(raw_aes) = &keyring.raw_aes {
-        return build_raw_aes(raw_aes);
+        return build_raw_aes(raw_aes).await;
     }
     if let Some(hierarchical) = &keyring.aws_kms_hierarchical {
         return build_hierarchical(hierarchical).await;
@@ -84,21 +83,22 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, Server
     ))
 }
 
-fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, ServerError> {
+async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, ServerError> {
     let wrapping_alg = match config.wrapping_alg {
         crate::model::AesWrappingAlg::Alg128 => MplAesWrappingAlg::AlgAes128GcmIv12Tag16,
         crate::model::AesWrappingAlg::Alg192 => MplAesWrappingAlg::AlgAes192GcmIv12Tag16,
         crate::model::AesWrappingAlg::Alg256 => MplAesWrappingAlg::AlgAes256GcmIv12Tag16,
     };
-    CreateRawAesKeyringInput::new(
-        config.key_namespace.clone(),
-        config.key_name.clone(),
-        config.wrapping_key.clone(),
-        wrapping_alg,
-    )
-    .go()
-    .map(EsdkKeyring::Modern)
-    .map_err(ServerError::from_mpl)
+    let keyring = aws_esdk::mpl()
+        .create_raw_aes_keyring()
+        .key_namespace(config.key_namespace.clone())
+        .key_name(config.key_name.clone())
+        .wrapping_key(aws_smithy_types::Blob::new(config.wrapping_key.clone()))
+        .wrapping_alg(wrapping_alg)
+        .send()
+        .await
+        .map_err(|e| ServerError::esdk(e.to_string()))?;
+    Ok(EsdkKeyring::Legacy(keyring))
 }
 
 /// Build a hierarchical keyring via the legacy (Dafny) MPL key store client.

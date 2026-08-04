@@ -22,11 +22,6 @@ impl ServerError {
         Self::Esdk(message.into())
     }
 
-    /// Map a vendored-MPL error to the forwarded-ESDK error variant.
-    pub fn from_mpl(e: aws_mpl_legacy::error::Error) -> Self {
-        Self::Esdk(e.message)
-    }
-
     /// The `__type` shape id placed on the wire.
     pub fn type_id(&self) -> String {
         match self {
