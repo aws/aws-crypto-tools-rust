@@ -150,8 +150,8 @@ impl Keystore for StaticKeyStore {
             keystore_id: STUB_KEYSTORE_ID.to_string(),
             keystore_name: STUB_KEYSTORE_NAME.to_string(),
             logical_keystore_name: STUB_LOGICAL_KEYSTORE_NAME.to_string(),
-            aws_kms_grant_tokens: Vec::new(),
-            aws_kms_configuration: KmsConfiguration::KmsKeyArn(STUB_KMS_KEY_ARN.to_string()),
+            grant_tokens: Vec::new(),
+            kms_configuration: KmsConfiguration::KmsKeyArn(STUB_KMS_KEY_ARN.to_string()),
         })
     }
 
@@ -323,8 +323,8 @@ mod tests {
         assert_eq!(info.keystore_id, "key-store-id");
         assert_eq!(info.keystore_name, "key-store-name");
         assert_eq!(info.logical_keystore_name, "logical-key-store-name");
-        assert!(info.aws_kms_grant_tokens.is_empty());
-        match info.aws_kms_configuration {
+        assert!(info.grant_tokens.is_empty());
+        match info.kms_configuration {
             KmsConfiguration::KmsKeyArn(arn) => {
                 assert_eq!(
                     arn,

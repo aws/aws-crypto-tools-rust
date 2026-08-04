@@ -35,6 +35,7 @@
 //! `dafny/KeyVectors/src/CreateStaticKeyStores.dfy` and
 //! `KeyringFromKeyDescription.dfy::case Hierarchy(...)` for the reference.
 
+pub mod encryption_context;
 pub mod keys;
 pub mod runner;
 pub mod static_keystore;
@@ -47,7 +48,7 @@ use serde_json::json;
 
 use crate::error::Result;
 use crate::manifest::encrypt::{EncryptManifest, EncryptTestVector, PositiveEncryptVector};
-use crate::manifest::io::{DEFAULT_KEYS_URI, ensure_dir, keys_path, manifest_path, write_json};
+use crate::manifest::io::{ensure_dir, keys_path, manifest_path, write_json, DEFAULT_KEYS_URI};
 
 use self::keys::KeyGroup;
 
@@ -60,11 +61,11 @@ pub const CLIENT_NAME: &str = "mpl-rust";
 
 /// Key groups the emitted `keys.json` includes.
 ///
-/// Currently the Rust `mpl` crate only implements the AWS KMS hierarchical
-/// keyring, so only [`KeyGroup::Hierarchy`] is registered. When a new keyring
+/// The Rust `mpl` crate implements the AWS KMS hierarchical keyring and the raw
+/// AES keyring, so those two groups are registered. When a new keyring
 /// implementation lands, append its group here so its keys.json entries start
 /// shipping with generated manifests.
-pub const SUPPORTED_KEY_GROUPS: &[KeyGroup] = &[KeyGroup::Hierarchy];
+pub const SUPPORTED_KEY_GROUPS: &[KeyGroup] = &[KeyGroup::Hierarchy, KeyGroup::RawAes];
 
 /// Vector generator for the `mpl` crate.
 pub struct MplProject;
@@ -104,35 +105,96 @@ impl Project for MplProject {
     }
 }
 
-/// Build a small encrypt manifest that exercises the hierarchical KMS keyring
+/// Provider-id prefix the reference vectors use for raw AES key descriptions.
+/// A distinct provider id per key gives each wrapping algorithm its own
+/// provider id, per
+/// `spec/framework/test-vectors/complete-vectors/raw-aes.md`.
+const RAW_AES_PROVIDER_ID_PREFIX: &str = "aws-raw-vectors-persistent-";
+
+/// Suffix of the second provider-id variant the reference emits per key,
+/// U+1D7C1. Reference UTF-16 escape: `\uD835\uDFC1`.
+const RAW_AES_PROVIDER_ID_PSI_SUFFIX: &str = "-\u{1D7C1}";
+
+/// Build a small encrypt manifest that exercises the implemented keyrings
 /// across every algorithm suite in [`suite::SUPPORTED_SUITES`]. Vector UUIDs
 /// are freshly generated on each call so re-running the generator yields a
 /// new-but-equivalent manifest.
 fn build_sample_manifest() -> EncryptManifest {
     let mut manifest = EncryptManifest::new();
     manifest.keys = DEFAULT_KEYS_URI.to_string();
+    add_hierarchy_vectors(&mut manifest);
+    add_raw_aes_vectors(&mut manifest);
+    manifest
+}
 
+/// One hierarchy vector per supported algorithm suite, with an empty
+/// encryption context.
+fn add_hierarchy_vectors(manifest: &mut EncryptManifest) {
     for suite_hex in suite::supported_suite_hex_ids() {
-        let vector = EncryptTestVector::PositiveKeyring(PositiveEncryptVector {
+        let key_description = json!({
+            "type": "aws-kms-hierarchy",
+            "key": "static-branch-key-1"
+        });
+        manifest.add_vector(EncryptTestVector::PositiveKeyring(PositiveEncryptVector {
             description: format!("Generated Hierarchy KMS static-branch-key-1 {suite_hex}"),
             algorithm_suite_id: suite_hex.to_string(),
-            encrypt_key_description: json!({
-                "type": "aws-kms-hierarchy",
-                "key": "static-branch-key-1"
-            }),
-            decrypt_key_description: json!({
-                "type": "aws-kms-hierarchy",
-                "key": "static-branch-key-1"
-            }),
+            encrypt_key_description: key_description.clone(),
+            decrypt_key_description: key_description,
             encryption_context: IndexMap::new(),
             max_plaintext_length: None,
             required_encryption_context_keys: None,
             reproduced_encryption_context: None,
-        });
-        manifest.add_vector(vector);
+        }));
     }
+}
 
-    manifest
+/// Raw AES vectors across the cross product of every raw AES key in the keys
+/// manifest, both provider-id variants, every supported algorithm suite, and
+/// every standard encryption context.
+fn add_raw_aes_vectors(manifest: &mut EncryptManifest) {
+    for key in KeyGroup::RawAes.key_ids() {
+        for provider_id in [
+            format!("{RAW_AES_PROVIDER_ID_PREFIX}{key}"),
+            format!("{RAW_AES_PROVIDER_ID_PREFIX}{key}{RAW_AES_PROVIDER_ID_PSI_SUFFIX}"),
+        ] {
+            let key_description = json!({
+                "type": "raw",
+                "encryption-algorithm": "aes",
+                "key": key,
+                "provider-id": provider_id,
+            });
+            for suite_hex in suite::supported_suite_hex_ids() {
+                for ec in encryption_context::STANDARD_ENCRYPTION_CONTEXTS {
+                    manifest.add_vector(EncryptTestVector::PositiveKeyring(
+                        PositiveEncryptVector {
+                            description: format!(
+                                "Generated RawAES {} {key} {provider_id} {suite_hex}",
+                                ec.label,
+                            ),
+                            algorithm_suite_id: suite_hex.to_string(),
+                            encrypt_key_description: key_description.clone(),
+                            decrypt_key_description: key_description.clone(),
+                            encryption_context: ec.to_map(),
+                            max_plaintext_length: None,
+                            required_encryption_context_keys: None,
+                            reproduced_encryption_context: None,
+                        },
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Number of vectors [`build_sample_manifest`] emits, for assertions in tests.
+#[cfg(test)]
+pub(crate) fn expected_vector_count() -> usize {
+    let hierarchy = suite::SUPPORTED_SUITES.len();
+    let raw_aes = KeyGroup::RawAes.key_ids().len()
+        * 2
+        * suite::SUPPORTED_SUITES.len()
+        * encryption_context::STANDARD_ENCRYPTION_CONTEXTS.len();
+    hierarchy + raw_aes
 }
 
 #[cfg(test)]
@@ -155,16 +217,100 @@ mod tests {
         assert_eq!(manifest.manifest.version, 4);
         assert_eq!(manifest.manifest.manifest_type, "awses-mpl-encrypt");
         assert_eq!(manifest.keys, "file://keys.json");
-        assert_eq!(manifest.tests.len(), suite::SUPPORTED_SUITES.len());
+        assert_eq!(manifest.tests.len(), expected_vector_count());
 
         let keys_manifest: KeyManifest = read_json(&dir.path().join("keys.json")).unwrap();
-        // Currently only the hierarchy group ships, so exactly its keys should
-        // appear. Update this assertion when SUPPORTED_KEY_GROUPS is extended.
-        assert_eq!(
-            keys_manifest.keys.len(),
-            KeyGroup::Hierarchy.key_ids().len()
-        );
+        // Exactly the distinct key ids of every registered group should appear.
+        let expected_keys: std::collections::HashSet<&str> = SUPPORTED_KEY_GROUPS
+            .iter()
+            .flat_map(|g| g.key_ids().iter().copied())
+            .collect();
+        assert_eq!(keys_manifest.keys.len(), expected_keys.len());
         assert!(keys_manifest.get("static-branch-key-1").is_some());
+        for key in KeyGroup::RawAes.key_ids() {
+            assert!(
+                keys_manifest.get(key).is_some(),
+                "raw AES key '{key}' must ship in keys.json"
+            );
+        }
+    }
+
+    #[test]
+    fn raw_aes_vectors_cover_the_full_cross_product() {
+        // spec/framework/test-vectors/complete-vectors/raw-aes.md: a positive
+        // key description per wrapping algorithm, a different provider id per
+        // scheme, every algorithm suite, and every standard encryption context.
+        let dir = tempdir().unwrap();
+        MplProject.generate_manifest(dir.path()).unwrap();
+        let manifest: EncryptManifest = read_json(&dir.path().join("manifest.json")).unwrap();
+
+        let mut provider_ids = std::collections::HashSet::new();
+        let mut keys = std::collections::HashSet::new();
+        let mut suites = std::collections::HashSet::new();
+        let mut ec_sizes = std::collections::HashSet::new();
+        let mut raw_aes_vectors = 0;
+
+        for vector in manifest.tests.values() {
+            let EncryptTestVector::PositiveKeyring(v) = vector else {
+                continue;
+            };
+            if v.encrypt_key_description
+                .get("type")
+                .and_then(|t| t.as_str())
+                != Some("raw")
+            {
+                continue;
+            }
+            raw_aes_vectors += 1;
+            assert_eq!(
+                v.encrypt_key_description
+                    .get("encryption-algorithm")
+                    .and_then(|a| a.as_str()),
+                Some("aes"),
+            );
+            provider_ids.insert(
+                v.encrypt_key_description
+                    .get("provider-id")
+                    .and_then(|p| p.as_str())
+                    .expect("raw AES vector must carry a provider-id")
+                    .to_string(),
+            );
+            keys.insert(
+                v.encrypt_key_description
+                    .get("key")
+                    .and_then(|k| k.as_str())
+                    .expect("raw AES vector must carry a key")
+                    .to_string(),
+            );
+            suites.insert(v.algorithm_suite_id.clone());
+            ec_sizes.insert(v.encryption_context.len());
+            // The decrypt-side description must select the same keyring.
+            assert_eq!(v.encrypt_key_description, v.decrypt_key_description);
+        }
+
+        let raw_key_count = KeyGroup::RawAes.key_ids().len();
+        assert_eq!(keys.len(), raw_key_count, "one description per raw AES key");
+        assert_eq!(
+            provider_ids.len(),
+            raw_key_count * 2,
+            "two distinct provider ids per key"
+        );
+        assert_eq!(
+            suites.len(),
+            suite::SUPPORTED_SUITES.len(),
+            "every supported algorithm suite is exercised"
+        );
+        assert_eq!(
+            raw_aes_vectors,
+            raw_key_count
+                * 2
+                * suite::SUPPORTED_SUITES.len()
+                * encryption_context::STANDARD_ENCRYPTION_CONTEXTS.len(),
+        );
+        assert!(
+            ec_sizes.contains(&0),
+            "the empty encryption context must be exercised"
+        );
     }
 
     #[test]

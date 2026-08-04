@@ -24,13 +24,13 @@ use std::path::Path;
 use std::str;
 use std::sync::Arc;
 
-use aws_crypto_mpl::MaterialProviders;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::keystore::Keystore;
 use aws_crypto_mpl::structures::{
     DecryptionMaterials, EncryptedDataKey as MplEncryptedDataKey, EncryptionContext,
     EncryptionMaterials,
 };
+use aws_crypto_mpl::{AesGcm, MaterialProviders};
 use indexmap::IndexMap;
 use serde_json::Value;
 use tokio::runtime::Builder;
@@ -46,12 +46,24 @@ use crate::manifest::header;
 use crate::manifest::io::{keys_path, manifest_path, read_json, resolve_keys_uri, write_json};
 use crate::manifest::keys::KeyManifest;
 
-use super::CLIENT_NAME;
 use super::static_keystore::StaticKeyStore;
 use super::suite;
+use super::CLIENT_NAME;
 
 /// The `type` string used by hierarchy keyring key descriptions.
 const KEY_DESC_TYPE_HIERARCHY: &str = "aws-kms-hierarchy";
+
+/// The `type` string used by raw keyring key descriptions.
+const KEY_DESC_TYPE_RAW: &str = "raw";
+
+/// Field naming the raw keyring flavor within a `raw` key description.
+const KEY_DESC_FIELD_ENCRYPTION_ALGORITHM: &str = "encryption-algorithm";
+
+/// Field naming the key namespace within a `raw` key description.
+const KEY_DESC_FIELD_PROVIDER_ID: &str = "provider-id";
+
+/// The only `encryption-algorithm` value the Rust `mpl` crate implements.
+const RAW_ENCRYPTION_ALGORITHM_AES: &str = "aes";
 
 /// TTL passed to `create_aws_kms_hierarchical_keyring` — matches the
 /// hardcoded `ttlSeconds := 11` in Dafny `KeyringFromKeyDescription.dfy`
@@ -95,7 +107,7 @@ pub fn run_encrypt(
             }
         };
 
-        if !is_hierarchy_key_description(&encrypt_vector.encrypt_key_description) {
+        if !is_supported_key_description(&encrypt_vector.encrypt_key_description) {
             summary.skipped += 1;
             continue;
         }
@@ -126,7 +138,7 @@ pub fn run_encrypt(
     fs::copy(&keys_source_path, &keys_dest).map_err(|e| TestVectorError::io(&keys_dest, e))?;
 
     println!(
-        "run_encrypt: processed {} vector(s), skipped {} (non-hierarchy or negative)",
+        "run_encrypt: processed {} vector(s), skipped {} (unsupported keyring or negative)",
         summary.processed, summary.skipped,
     );
     Ok(())
@@ -157,7 +169,7 @@ pub fn run_decrypt(manifest_dir: &Path, test_name: Option<&str>) -> Result<()> {
             }
         };
 
-        if !is_hierarchy_key_description(&decrypt_vector.key_description) {
+        if !is_supported_key_description(&decrypt_vector.key_description) {
             summary.skipped += 1;
             continue;
         }
@@ -327,8 +339,8 @@ async fn verify_positive_decrypt(
 
 /// Build a `DefaultCmm` wrapping a keyring resolved from `key_description`.
 ///
-/// Currently only the `aws-kms-hierarchy` key description is supported;
-/// callers gate on [`is_hierarchy_key_description`] before invoking this so
+/// Supports the `aws-kms-hierarchy` and `raw` + `aes` key descriptions;
+/// callers gate on [`is_supported_key_description`] before invoking this so
 /// they can skip unsupported vectors cleanly.
 fn build_cmm_for_description(
     mpl: &MaterialProviders,
@@ -336,18 +348,22 @@ fn build_cmm_for_description(
     key_description: &Value,
 ) -> Result<(DefaultCmm, String)> {
     let (kind, key_name) = parse_key_description(key_description)?;
-    if kind != KEY_DESC_TYPE_HIERARCHY {
-        return Err(TestVectorError::NotImplemented {
+    match kind {
+        KEY_DESC_TYPE_HIERARCHY => build_hierarchy_cmm(mpl, key_manifest, key_name),
+        KEY_DESC_TYPE_RAW => build_raw_cmm(mpl, key_manifest, key_description, key_name),
+        _ => Err(TestVectorError::NotImplemented {
             project: "mpl",
-            operation: "build_cmm for non-hierarchy keyring",
-        });
+            operation: "build_cmm for unsupported keyring type",
+        }),
     }
+}
 
-    let entry = key_manifest.get(key_name).ok_or_else(|| {
-        TestVectorError::other(format!(
-            "keys.json does not contain '{key_name}' referenced by vector"
-        ))
-    })?;
+fn build_hierarchy_cmm(
+    mpl: &MaterialProviders,
+    key_manifest: &KeyManifest,
+    key_name: &str,
+) -> Result<(DefaultCmm, String)> {
+    let entry = lookup_key_entry(key_manifest, key_name)?;
     let static_keystore = StaticKeyStore::from_entry(entry)?;
     let branch_key_id = static_keystore.key_id().to_string();
     let keystore: Arc<dyn Keystore> = Arc::new(static_keystore);
@@ -360,6 +376,100 @@ fn build_cmm_for_description(
         .send()
         .map_err(|e| TestVectorError::other(format!("create_aws_kms_hierarchical_keyring: {e}")))?;
     Ok((DefaultCmm::new(Arc::new(keyring)), branch_key_id))
+}
+
+/// Build a raw keyring CMM. Only the `aes` encryption algorithm is implemented.
+///
+/// Mirrors the Dafny `KeyringFromKeyDescription.dfy` `case AES(RawAES(...))`:
+/// the keyring's key namespace is the description's `provider-id`, its key name
+/// is the keys.json entry's `key-id`, and the wrapping algorithm is selected by
+/// the entry's `bits`.
+fn build_raw_cmm(
+    mpl: &MaterialProviders,
+    key_manifest: &KeyManifest,
+    key_description: &Value,
+    key_name: &str,
+) -> Result<(DefaultCmm, String)> {
+    let algorithm = key_description
+        .get(KEY_DESC_FIELD_ENCRYPTION_ALGORITHM)
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            TestVectorError::other(format!(
+                "raw key description missing '{KEY_DESC_FIELD_ENCRYPTION_ALGORITHM}'"
+            ))
+        })?;
+    if algorithm != RAW_ENCRYPTION_ALGORITHM_AES {
+        return Err(TestVectorError::NotImplemented {
+            project: "mpl",
+            operation: "build_cmm for a non-AES raw keyring",
+        });
+    }
+
+    let provider_id = key_description
+        .get(KEY_DESC_FIELD_PROVIDER_ID)
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            TestVectorError::other(format!(
+                "raw key description missing '{KEY_DESC_FIELD_PROVIDER_ID}'"
+            ))
+        })?;
+
+    let entry = lookup_key_entry(key_manifest, key_name)?;
+    let entry_type = entry.get("type").and_then(Value::as_str);
+    if entry_type != Some("symmetric") {
+        return Err(TestVectorError::other(format!(
+            "keys.json entry '{key_name}' must have type 'symmetric', found {entry_type:?}"
+        )));
+    }
+
+    let bits = entry.get("bits").and_then(Value::as_u64).ok_or_else(|| {
+        TestVectorError::other(format!("keys.json entry '{key_name}' missing 'bits'"))
+    })?;
+    let wrapping_alg = match bits {
+        128 => AesGcm::Aes128Gcm,
+        192 => AesGcm::Aes192Gcm,
+        256 => AesGcm::Aes256Gcm,
+        other => {
+            return Err(TestVectorError::other(format!(
+                "keys.json entry '{key_name}' has unsupported AES key length {other} bits"
+            )));
+        }
+    };
+
+    let material = entry
+        .get("material")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            TestVectorError::other(format!("keys.json entry '{key_name}' missing 'material'"))
+        })?;
+    let wrapping_key = codec::decode(material)?;
+
+    // The keyring's key name is the entry's own `key-id`, which may differ from
+    // the keys.json map key the vector references.
+    let keyring_key_name = entry.get("key-id").and_then(Value::as_str).ok_or_else(|| {
+        TestVectorError::other(format!("keys.json entry '{key_name}' missing 'key-id'"))
+    })?;
+
+    let keyring = mpl
+        .create_raw_aes_keyring()
+        .key_namespace(provider_id)
+        .key_name(keyring_key_name)
+        .wrapping_key(wrapping_key)
+        .wrapping_alg(wrapping_alg)
+        .send()
+        .map_err(|e| TestVectorError::other(format!("create_raw_aes_keyring: {e}")))?;
+    Ok((
+        DefaultCmm::new(Arc::new(keyring)),
+        keyring_key_name.to_string(),
+    ))
+}
+
+fn lookup_key_entry<'k>(key_manifest: &'k KeyManifest, key_name: &str) -> Result<&'k Value> {
+    key_manifest.get(key_name).ok_or_else(|| {
+        TestVectorError::other(format!(
+            "keys.json does not contain '{key_name}' referenced by vector"
+        ))
+    })
 }
 
 /// Extract `(type, key)` from a key description JSON object. Both fields must
@@ -379,9 +489,17 @@ fn parse_key_description(desc: &Value) -> Result<(&str, &str)> {
     Ok((kind, key_name))
 }
 
-/// True iff `desc` selects the `aws-kms-hierarchy` keyring.
-fn is_hierarchy_key_description(desc: &Value) -> bool {
-    desc.get("type").and_then(Value::as_str) == Some(KEY_DESC_TYPE_HIERARCHY)
+/// True iff `desc` selects a keyring the Rust `mpl` crate implements.
+fn is_supported_key_description(desc: &Value) -> bool {
+    match desc.get("type").and_then(Value::as_str) {
+        Some(KEY_DESC_TYPE_HIERARCHY) => true,
+        Some(KEY_DESC_TYPE_RAW) => {
+            desc.get(KEY_DESC_FIELD_ENCRYPTION_ALGORITHM)
+                .and_then(Value::as_str)
+                == Some(RAW_ENCRYPTION_ALGORITHM_AES)
+        }
+        _ => false,
+    }
 }
 
 // ─── manifest ↔ mpl conversions ──────────────────────────────────────────────
@@ -523,14 +641,14 @@ struct RunSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::projects::Project;
     use crate::projects::mpl::MplProject;
+    use crate::projects::Project;
     use tempfile::tempdir;
 
     // End-to-end: generate an encrypt manifest, run it, and verify the
     // resulting decrypt manifest round-trips through run_decrypt.
     #[test]
-    fn generate_then_encrypt_then_decrypt_round_trips_all_hierarchy_vectors() {
+    fn generate_then_encrypt_then_decrypt_round_trips_every_vector() {
         let encrypt_dir = tempdir().unwrap();
         let decrypt_dir = tempdir().unwrap();
 
@@ -539,15 +657,15 @@ mod tests {
             .run_encrypt(encrypt_dir.path(), decrypt_dir.path(), None)
             .unwrap();
 
-        // Emitted decrypt manifest must parse and have one entry per
-        // supported ESDK suite (matches SAMPLE_ALGORITHM_SUITES).
+        // Every generated vector targets an implemented keyring and a supported
+        // suite, so none should have been skipped.
         let decrypt_manifest: DecryptManifest =
             read_json(&manifest_path(decrypt_dir.path())).unwrap();
         assert!(decrypt_manifest.manifest.is_decrypt());
         assert_eq!(
             decrypt_manifest.tests.len(),
-            suite::SUPPORTED_SUITES.len(),
-            "one decrypt vector per supported ESDK suite"
+            crate::projects::mpl::expected_vector_count(),
+            "every generated vector must produce a decrypt vector"
         );
         assert!(decrypt_dir.path().join("keys.json").exists());
 
@@ -572,14 +690,14 @@ mod tests {
                 DecryptTestVector::Positive(v) => v,
                 DecryptTestVector::Negative(_) => panic!("expected only positive vectors"),
             };
-            // The generated hierarchy vector must reference the hierarchy
-            // keyring on the decrypt side.
-            assert_eq!(
-                v.key_description.get("type").and_then(Value::as_str),
-                Some("aws-kms-hierarchy"),
-                "vector {uuid}: unexpected key description"
+            // Every generated vector must select an implemented keyring on the
+            // decrypt side too.
+            assert!(
+                is_supported_key_description(&v.key_description),
+                "vector {uuid}: unexpected key description {:?}",
+                v.key_description
             );
-            // Exactly one EDK per hierarchy vector (single-keyring flow).
+            // Exactly one EDK per vector (single-keyring flow).
             assert_eq!(
                 v.encrypted_data_keys.len(),
                 1,
@@ -592,12 +710,70 @@ mod tests {
                 "vector {uuid}: positive vector missing plaintextDataKey"
             );
             // Description must have "->Decryption" appended before the suite id.
-            let expected = format!(
-                "Generated Hierarchy KMS static-branch-key-1->Decryption {}",
-                v.algorithm_suite_id
+            let expected_suffix = format!("->Decryption {}", v.algorithm_suite_id);
+            assert!(
+                v.description.ends_with(&expected_suffix),
+                "vector {uuid}: description {:?} must end with {expected_suffix:?}",
+                v.description
             );
-            assert_eq!(v.description, expected, "vector {uuid}: description");
         }
+    }
+
+    // A single raw AES vector must round-trip end to end, and its EDK must
+    // carry the key description's provider-id as the key provider ID.
+    #[test]
+    fn raw_aes_vector_round_trips_and_uses_the_provider_id() {
+        let encrypt_dir = tempdir().unwrap();
+        let decrypt_dir = tempdir().unwrap();
+
+        MplProject.generate_manifest(encrypt_dir.path()).unwrap();
+        let encrypt_manifest: EncryptManifest =
+            read_json(&manifest_path(encrypt_dir.path())).unwrap();
+
+        // Pick one raw AES vector and note its expected provider id.
+        let (uuid, provider_id) = encrypt_manifest
+            .tests
+            .iter()
+            .find_map(|(uuid, v)| match v {
+                EncryptTestVector::PositiveKeyring(pv)
+                    if pv
+                        .encrypt_key_description
+                        .get("type")
+                        .and_then(Value::as_str)
+                        == Some("raw") =>
+                {
+                    Some((
+                        uuid.clone(),
+                        pv.encrypt_key_description
+                            .get("provider-id")
+                            .and_then(Value::as_str)
+                            .unwrap()
+                            .to_string(),
+                    ))
+                }
+                _ => None,
+            })
+            .expect("the generated manifest must contain raw AES vectors");
+
+        MplProject
+            .run_encrypt(encrypt_dir.path(), decrypt_dir.path(), Some(&uuid))
+            .unwrap();
+
+        let decrypt_manifest: DecryptManifest =
+            read_json(&manifest_path(decrypt_dir.path())).unwrap();
+        assert_eq!(decrypt_manifest.tests.len(), 1);
+
+        let DecryptTestVector::Positive(v) = &decrypt_manifest.tests[&uuid] else {
+            panic!("expected a positive decrypt vector");
+        };
+        assert_eq!(v.encrypted_data_keys.len(), 1);
+        assert_eq!(
+            v.encrypted_data_keys[0].key_provider_id, provider_id,
+            "the EDK key provider ID must be the key description's provider-id"
+        );
+
+        // The emitted vector must verify.
+        MplProject.run_decrypt(decrypt_dir.path(), None).unwrap();
     }
 
     #[test]
@@ -712,8 +888,8 @@ mod tests {
         );
         assert_eq!(
             decrypt_manifest.tests.len(),
-            suite::SUPPORTED_SUITES.len(),
-            "one decrypt vector per supported ESDK suite",
+            crate::projects::mpl::expected_vector_count(),
+            "every supported-suite vector still made it through",
         );
     }
 
