@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Message IDs must stay unique under concurrent encrypts: a repeat would reuse
-// the derived data key and frame IVs, breaking AES-GCM.
+// Test that message IDs stay unique under concurrent encrypts.
+// This is important because a repeat would reuse the derived data key and frame IVs, breaking AES-GCM.
 
 #include <cstddef>
 #include <cstdint>
