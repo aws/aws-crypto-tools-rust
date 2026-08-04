@@ -1,12 +1,12 @@
-//! Offline: the C++ facade exposes only the hierarchical keyring, so a
+//! Offline: the C++ facade exposes the hierarchical and raw-AES keyrings, so a
 //! CreateClient for any other keyring is rejected before the shim is invoked.
 
 use std::sync::Arc;
 
 use aws_esdk_cpp_test_server::backend::CppBackend;
 use aws_esdk_cpp_test_server::model::{
-    AesWrappingAlg, CreateClientRequest, CryptographicMaterialsManager, DefaultCmmConfig,
-    EsdkClientConfig, EsdkCommitmentPolicy, Keyring, RawAesKeyringConfig,
+    AwsKmsKeyringConfig, CreateClientRequest, CryptographicMaterialsManager, DefaultCmmConfig,
+    EsdkClientConfig, EsdkCommitmentPolicy, Keyring,
 };
 use aws_esdk_cpp_test_server::wire::app;
 use axum::body::Body;
@@ -21,7 +21,7 @@ fn text<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a str> {
     })
 }
 
-fn raw_aes_create_client() -> CreateClientRequest {
+fn aws_kms_create_client() -> CreateClientRequest {
     CreateClientRequest {
         config: EsdkClientConfig {
             commitment_policy: EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
@@ -29,11 +29,10 @@ fn raw_aes_create_client() -> CreateClientRequest {
             cmm: CryptographicMaterialsManager {
                 default_cmm: Some(DefaultCmmConfig {
                     keyring: Keyring {
-                        raw_aes: Some(RawAesKeyringConfig {
-                            key_namespace: "esdk-cpp-test-server".to_owned(),
-                            key_name: "raw-aes-key".to_owned(),
-                            wrapping_key: (0u8..32).collect(),
-                            wrapping_alg: AesWrappingAlg::Alg256,
+                        aws_kms: Some(AwsKmsKeyringConfig {
+                            kms_key_id: "arn:aws:kms:us-west-2:000000000000:key/unsupported"
+                                .to_owned(),
+                            grant_tokens: None,
                         }),
                         ..Default::default()
                     },
@@ -45,11 +44,11 @@ fn raw_aes_create_client() -> CreateClientRequest {
 }
 
 #[tokio::test]
-async fn raw_aes_keyring_is_rejected_as_unsupported() {
+async fn aws_kms_keyring_is_rejected_as_unsupported() {
     let router = app(Arc::new(CppBackend::new()));
 
     let mut body = Vec::new();
-    ciborium::into_writer(&raw_aes_create_client(), &mut body).expect("encode request");
+    ciborium::into_writer(&aws_kms_create_client(), &mut body).expect("encode request");
 
     let request = Request::builder()
         .method("POST")
@@ -80,6 +79,6 @@ async fn raw_aes_keyring_is_rejected_as_unsupported() {
     let message = text(&map, "message").expect("error carries a message");
     assert!(
         message.contains("AwsKmsHierarchical"),
-        "message must name the supported keyring, got: {message}",
+        "message must name the supported keyrings, got: {message}",
     );
 }

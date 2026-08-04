@@ -15,6 +15,16 @@ extern "C" {
         out_err: *mut *mut c_char,
     ) -> c_int;
 
+    fn esdk_cpp_create_raw_aes_client(
+        key_namespace: *const c_char,
+        key_name: *const c_char,
+        wrapping_key: *const u8,
+        wrapping_key_len: usize,
+        wrapping_alg: u8,
+        out_client: *mut *mut c_void,
+        out_err: *mut *mut c_char,
+    ) -> c_int;
+
     fn esdk_cpp_encrypt(
         client: *mut c_void,
         plaintext: *const u8,
@@ -50,7 +60,7 @@ extern "C" {
     fn esdk_cpp_free_err(err: *mut c_char);
 }
 
-/// Owns a C++ `HierarchicalKeyring` handle and frees it on drop.
+/// Owns a C++ keyring handle (a `Keyring` base pointer) and frees it on drop.
 pub struct CppClient {
     handle: *mut c_void,
 }
@@ -144,6 +154,39 @@ pub fn create_hierarchical_client(
             kms.as_ptr(),
             branch.as_ptr(),
             ttl_seconds,
+            &mut handle,
+            &mut err,
+        )
+    };
+    if rc == 0 {
+        Ok(CppClient { handle })
+    } else {
+        Err(unsafe { take_err(err) })
+    }
+}
+
+pub fn create_raw_aes_client(
+    key_namespace: &str,
+    key_name: &str,
+    wrapping_key: &[u8],
+    wrapping_alg: u8,
+) -> Result<CppClient, String> {
+    let namespace = CString::new(key_namespace)
+        .map_err(|_| "keyNamespace contains an interior NUL".to_string())?;
+    let name =
+        CString::new(key_name).map_err(|_| "keyName contains an interior NUL".to_string())?;
+
+    let mut handle: *mut c_void = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+    // SAFETY: the strings and slice outlive the call; the seam writes exactly
+    // one of *out_client / *out_err according to its return code.
+    let rc = unsafe {
+        esdk_cpp_create_raw_aes_client(
+            namespace.as_ptr(),
+            name.as_ptr(),
+            wrapping_key.as_ptr(),
+            wrapping_key.len(),
+            wrapping_alg,
             &mut handle,
             &mut err,
         )

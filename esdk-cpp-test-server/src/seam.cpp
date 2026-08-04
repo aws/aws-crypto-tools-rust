@@ -20,10 +20,13 @@ using Aws::Esdk::DecryptResult;
 using Aws::Esdk::EncryptionSDK;
 using Aws::Esdk::EncryptOptions;
 using Aws::Esdk::EncryptResult;
+using Aws::Esdk::AesWrappingAlgorithm;
 using Aws::Esdk::HierarchicalKeyring;
 using Aws::Esdk::KmsClient;
-// Aws::Esdk::KeyStore is referenced fully qualified: the generated cxx header
-// declares a global ::KeyStore, so importing the facade's into this scope clashes.
+using Aws::Esdk::RawAesKeyring;
+// Aws::Esdk::KeyStore and Aws::Esdk::Keyring are referenced fully qualified: the
+// generated cxx header declares global ::KeyStore and ::Keyring, so importing the
+// facade's into this scope clashes.
 
 namespace {
 
@@ -35,7 +38,7 @@ char* dup_message(const std::string& msg) {
     return out;
 }
 
-uint8_t* dup_bytes(const std::vector<uint8_t>& bytes) {
+uint8_t* dup_bytes(const Aws::Esdk::Bytes& bytes) {
     uint8_t* out = static_cast<uint8_t*>(std::malloc(bytes.empty() ? 1 : bytes.size()));
     if (out && !bytes.empty()) {
         std::memcpy(out, bytes.data(), bytes.size());
@@ -75,7 +78,7 @@ int esdk_cpp_create_hierarchical_client(const char* region,
         KmsClient kms(config);
         DdbClient ddb(config);
         Aws::Esdk::KeyStore key_store(table_name, logical_key_store_name, kms_key_arn, kms, ddb);
-        auto* keyring = new HierarchicalKeyring(std::move(key_store), branch_key_id, ttl_seconds);
+        Aws::Esdk::Keyring* keyring = new HierarchicalKeyring(std::move(key_store), branch_key_id, ttl_seconds);
         *out_client = keyring;
         return 0;
     } catch (const std::exception& e) {
@@ -83,6 +86,30 @@ int esdk_cpp_create_hierarchical_client(const char* region,
         return 1;
     } catch (...) {
         *out_err = dup_message("unknown C++ exception creating hierarchical client");
+        return 1;
+    }
+}
+
+// On success returns 0 and sets *out_client; on failure returns 1 and sets
+// *out_err. wrapping_alg is 1/2/3 for AES-128/192/256-GCM.
+int esdk_cpp_create_raw_aes_client(const char* key_namespace,
+                                   const char* key_name,
+                                   const uint8_t* wrapping_key,
+                                   size_t wrapping_key_len,
+                                   uint8_t wrapping_alg,
+                                   void** out_client,
+                                   char** out_err) {
+    try {
+        std::vector<uint8_t> key(wrapping_key, wrapping_key + wrapping_key_len);
+        Aws::Esdk::Keyring* keyring = new RawAesKeyring(key_namespace, key_name, key,
+                                             static_cast<AesWrappingAlgorithm>(wrapping_alg));
+        *out_client = keyring;
+        return 0;
+    } catch (const std::exception& e) {
+        *out_err = dup_message(e.what());
+        return 1;
+    } catch (...) {
+        *out_err = dup_message("unknown C++ exception creating raw AES client");
         return 1;
     }
 }
@@ -103,7 +130,7 @@ int esdk_cpp_encrypt(void* client,
                      size_t* out_len,
                      char** out_err) {
     try {
-        auto* keyring = reinterpret_cast<HierarchicalKeyring*>(client);
+        auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         EncryptOptions options;
         options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
         if (algorithm_suite_id != 0) {
@@ -144,7 +171,7 @@ int esdk_cpp_decrypt(void* client,
                      size_t* out_len,
                      char** out_err) {
     try {
-        auto* keyring = reinterpret_cast<HierarchicalKeyring*>(client);
+        auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
         DecryptOptions options;
         options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
         if (max_encrypted_data_keys != 0) {
@@ -168,7 +195,7 @@ int esdk_cpp_decrypt(void* client,
 }
 
 void esdk_cpp_free_client(void* client) {
-    delete reinterpret_cast<HierarchicalKeyring*>(client);
+    delete reinterpret_cast<Aws::Esdk::Keyring*>(client);
 }
 
 void esdk_cpp_free_buf(uint8_t* buf) { std::free(buf); }

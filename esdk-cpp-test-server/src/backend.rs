@@ -5,9 +5,9 @@
 use crate::seam::{self, CppClient};
 use aws_esdk_test_server::error::ServerError;
 use aws_esdk_test_server::model::{
-    AwsKmsHierarchicalKeyringConfig, CreateClientRequest, CreateClientResponse,
-    CryptographicMaterialsManager, DecryptRequest, DecryptResponse, EncryptRequest,
-    EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy, Keyring,
+    AesWrappingAlg, CreateClientRequest, CreateClientResponse, CryptographicMaterialsManager,
+    DecryptRequest, DecryptResponse, EncryptRequest, EncryptResponse, EsdkAlgorithmSuiteId,
+    EsdkClientConfig, EsdkCommitmentPolicy, Keyring,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -73,26 +73,24 @@ fn encryption_context(map: Option<BTreeMap<String, String>>) -> Vec<(String, Str
     map.map(|m| m.into_iter().collect()).unwrap_or_default()
 }
 
-// The C++ facade exposes only the hierarchical keyring, so the server accepts
-// exactly the Default CMM wrapping an AwsKmsHierarchical keyring.
-fn hierarchical_config(
-    cmm: &CryptographicMaterialsManager,
-) -> Result<&AwsKmsHierarchicalKeyringConfig, ServerError> {
+// The C++ facade exposes the hierarchical and raw-AES keyrings, both wrapped in
+// the Default CMM.
+fn default_cmm_keyring(cmm: &CryptographicMaterialsManager) -> Result<&Keyring, ServerError> {
     let Some(default_cmm) = &cmm.default_cmm else {
         return Err(ServerError::generic(
             "the C++ shim server supports only the Default CMM",
         ));
     };
-    let Keyring {
-        aws_kms_hierarchical: Some(config),
-        ..
-    } = &default_cmm.keyring
-    else {
-        return Err(ServerError::generic(
-            "the C++ shim server supports only the AwsKmsHierarchical keyring",
-        ));
-    };
-    Ok(config)
+    Ok(&default_cmm.keyring)
+}
+
+// The FFI encodes the AES wrapping suite as 1/2/3 for AES-128/192/256-GCM.
+fn wrapping_alg_code(alg: AesWrappingAlg) -> u8 {
+    match alg {
+        AesWrappingAlg::Alg128 => 1,
+        AesWrappingAlg::Alg192 => 2,
+        AesWrappingAlg::Alg256 => 3,
+    }
 }
 
 /// The registered materials needed for one operation.
@@ -107,7 +105,7 @@ impl CppBackend {
         Self::default()
     }
 
-    /// Build a hierarchical keyring through the shim, register it, return its id.
+    /// Build the configured keyring through the shim, register it, return its id.
     pub async fn create_client(
         &self,
         req: CreateClientRequest,
@@ -115,32 +113,49 @@ impl CppBackend {
         let config = req.config;
         let commitment_policy = commitment_code(config.commitment_policy);
         let max_encrypted_data_keys = max_edks_code(&config)?;
-        let hierarchical = hierarchical_config(&config.cmm)?.clone();
-        let Ok(ttl) = u32::try_from(hierarchical.ttl_seconds) else {
-            return Err(ServerError::generic(format!(
-                "ttlSeconds out of range: {}",
-                hierarchical.ttl_seconds
-            )));
-        };
-        // The facade resolves the rest of the AWS configuration (credentials,
-        // region) from the ambient environment.
-        let region = std::env::var("AWS_REGION")
-            .or_else(|_| std::env::var("ESDK_TEST_REGION"))
-            .unwrap_or_default();
+        let keyring = default_cmm_keyring(&config.cmm)?;
 
-        let client = tokio::task::spawn_blocking(move || {
-            seam::create_hierarchical_client(
-                &region,
-                &hierarchical.key_store_table_name,
-                &hierarchical.logical_key_store_name,
-                &hierarchical.kms_key_arn,
-                &hierarchical.branch_key_id,
-                ttl,
-            )
-        })
-        .await
-        .map_err(|e| ServerError::generic(format!("create_client task failed: {e}")))?
-        .map_err(ServerError::esdk)?;
+        let create = if let Some(raw_aes) = &keyring.raw_aes {
+            let key_namespace = raw_aes.key_namespace.clone();
+            let key_name = raw_aes.key_name.clone();
+            let wrapping_key = raw_aes.wrapping_key.clone();
+            let wrapping_alg = wrapping_alg_code(raw_aes.wrapping_alg);
+            tokio::task::spawn_blocking(move || {
+                seam::create_raw_aes_client(&key_namespace, &key_name, &wrapping_key, wrapping_alg)
+            })
+        } else if let Some(hierarchical) = &keyring.aws_kms_hierarchical {
+            let hierarchical = hierarchical.clone();
+            let Ok(ttl) = u32::try_from(hierarchical.ttl_seconds) else {
+                return Err(ServerError::generic(format!(
+                    "ttlSeconds out of range: {}",
+                    hierarchical.ttl_seconds
+                )));
+            };
+            // The facade resolves the rest of the AWS configuration (credentials,
+            // region) from the ambient environment.
+            let region = std::env::var("AWS_REGION")
+                .or_else(|_| std::env::var("ESDK_TEST_REGION"))
+                .unwrap_or_default();
+            tokio::task::spawn_blocking(move || {
+                seam::create_hierarchical_client(
+                    &region,
+                    &hierarchical.key_store_table_name,
+                    &hierarchical.logical_key_store_name,
+                    &hierarchical.kms_key_arn,
+                    &hierarchical.branch_key_id,
+                    ttl,
+                )
+            })
+        } else {
+            return Err(ServerError::generic(
+                "the C++ shim server supports only the AwsKmsHierarchical and RawAes keyrings",
+            ));
+        };
+
+        let client = create
+            .await
+            .map_err(|e| ServerError::generic(format!("create_client task failed: {e}")))?
+            .map_err(ServerError::esdk)?;
 
         let client_id = uuid::Uuid::new_v4().to_string();
         self.clients.lock().expect("registry mutex").insert(
