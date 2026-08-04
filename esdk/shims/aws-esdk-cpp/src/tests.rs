@@ -1,37 +1,72 @@
-//! Unit tests for the shim's pure conversion layer.
-//!
-//! These test the shim's OWN behavior (correct mapping + no target abort on
-//! bad input), not ESDK crypto correctness. No AWS resources required.
-//!
-//! Declared from `lib.rs` as `#[cfg(test)] mod tests;`, so it is a child of the
-//! crate root and reaches the crate-private conversion functions via `super::`.
+//! Only round_trip_integration needs AWS resources (the ESDK_TEST_* variables);
+//! everything else runs offline.
 
 use super::*;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
-// The complete set of algorithm-suite discriminants the shim supports.
-// Mirrors the `ffi::EsdkAlgorithmSuiteId` enum in the bridge.
+// All-unset test fixtures, mirroring the C++ side's value-initialized inputs.
+
+fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
+    ffi::EncryptInput {
+        algorithm_suite_id: ffi::EsdkAlgorithmSuiteId::Unset,
+        encryption_context: Vec::new(),
+        frame_length: 0,
+        keyring: std::ptr::null(),
+        plaintext: &[],
+        max_encrypted_data_keys: 0,
+        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
+    }
+}
+
+fn unset_decrypt_input() -> ffi::DecryptInput<'static> {
+    ffi::DecryptInput {
+        ciphertext: &[],
+        encryption_context: Vec::new(),
+        keyring: std::ptr::null(),
+        max_encrypted_data_keys: 0,
+        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
+    }
+}
+
+fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
+    ffi::HierarchicalKeyringInput {
+        branch_key_id: String::new(),
+        key_store: std::ptr::null(),
+        ttl_seconds: 0,
+        cache: std::ptr::null(),
+        partition_id: String::new(),
+    }
+}
+
+fn unset_keystore_config() -> ffi::KeyStoreConfig {
+    ffi::KeyStoreConfig {
+        ddb_table_name: String::new(),
+        kms_configuration_type: ffi::KmsConfigurationType::Unset,
+        kms_configuration_value: String::new(),
+        logical_key_store_name: String::new(),
+        id: String::new(),
+        grant_tokens: Vec::new(),
+        ddb_client: std::ptr::null(),
+        kms_client: std::ptr::null(),
+    }
+}
+
+fn unset_client_config() -> ffi::MplAwsClientConfig {
+    ffi::MplAwsClientConfig {
+        region: String::new(),
+        retry: ffi::RetryConfig {
+            mode_adaptive: false,
+            max_attempts: 0,
+        },
+    }
+}
+
+// Must mirror the discriminants of `ffi::EsdkAlgorithmSuiteId` in the bridge.
 const ALG_REPRS: [u16; 11] = [
     0x0014, 0x0046, 0x0078, 0x0114, 0x0146, 0x0178, 0x0214, 0x0346, 0x0378, 0x0478, 0x0578,
 ];
 
-// alg_id_target_to_core: ffi enum -> core enum
-
-/// Exhaustiveness (ffi -> core): the set of values `alg_id_target_to_core` accepts must
-/// be EXACTLY the known suite ids — no more, no fewer. Adding a suite id without
-/// updating the conversion (or vice versa) fails this test.
-//= spec/shim/shim.md#conformance-and-testing
-//= type=test
-//# - The shim SHOULD be tested for the behavior it owns — translation, handle
-//# validation, error propagation, and lifetime safety — rather than by re-testing
-//# the core library's own behavior.
-//
-//= spec/shim/esdk-shim.md#conformance-and-testing
-//= type=test
-//# - The ESDK shim MUST be tested for the behavior it owns — translation, handle
-//# validation, error propagation, and lifetime safety — rather than by re-testing
-//# the core ESDK's cryptographic behavior.
 #[test]
 fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     let mut accepted: Vec<u16> = (0..=u16::MAX)
@@ -47,21 +82,6 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     assert_eq!(accepted, expected);
 }
 
-/// Security property: NO value a C++ caller can supply may abort the target.
-/// Sweeping the entire u16 domain proves `alg_id_target_to_core` returns Ok/Err for
-/// every possible input and never panics.
-//= spec/shim/shim.md#type-translation
-//= type=test
-//# - A translation reports failure by returning an error; it MUST NOT panic,
-//# abort, or otherwise terminate the target process.
-#[test]
-fn alg_id_target_to_core_never_panics_over_full_range() {
-    for n in 0..=u16::MAX {
-        let _ = alg_id_target_to_core(F { repr: n });
-    }
-}
-
-/// An unknown suite id returns an error rather than panicking.
 #[test]
 fn alg_id_target_to_core_rejects_unknown() {
     //= spec/shim/esdk-shim.md#algorithm-suite-identifier
@@ -78,9 +98,6 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
-// alg_id_core_to_target: core enum -> ffi enum
-
-/// Every core variant maps to the expected ffi discriminant.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
     use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
@@ -106,25 +123,15 @@ fn alg_id_core_to_target_maps_every_core_variant() {
     }
 }
 
-/// Round-trip: every known ffi suite id survives ffi -> core -> ffi.
 #[test]
 fn alg_id_round_trips_through_both_conversions() {
     for &n in &ALG_REPRS {
         let core = alg_id_target_to_core(F { repr: n }).expect("known suite id converts");
-        //= spec/shim/shim.md#type-translation
-        //= type=test
-        //= reason=The suite id survives ffi -> core -> ffi unchanged, proving the translation preserves meaning in both directions.
-        //# - A translation MUST convert between the target representation and the core
-        //# library representation, preserving meaning in both directions it supports.
         let back = alg_id_core_to_target(core).expect("round-trips back");
         assert_eq!(back.repr, n);
     }
 }
 
-// commitment_policy_target_to_core: ffi enum -> core enum
-
-/// Exhaustiveness + correctness: each known repr maps to the core commitment
-/// policy of the same meaning, and exactly the reprs {0,1,2} are accepted.
 #[test]
 fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
     use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
@@ -152,21 +159,11 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
         .collect();
     //= spec/shim/esdk-shim.md#commitment-policy
     //= type=test
-    //= reason=Sweeping 0..=u8::MAX, only 0,1,2 are accepted; every other value returns an error.
+    //= reason=Sweeping 0..=u8::MAX, only 1,2,3 are accepted; every other value (including 0 = Unset) returns an error.
     //# - The shim MUST return an error when the target commitment policy is not a supported
     //# value.
-    assert_eq!(accepted, vec![0u8, 1, 2]);
+    assert_eq!(accepted, vec![1u8, 2, 3]);
 }
-
-/// No commitment-policy value from C++ can abort the target.
-#[test]
-fn commitment_policy_target_to_core_never_panics_over_full_range() {
-    for n in 0..=u8::MAX {
-        let _ = commitment_policy_target_to_core(P { repr: n });
-    }
-}
-
-// encryption context: HashMap <-> Vec<EncryptionContextItem>
 
 #[test]
 fn encryption_context_round_trips() {
@@ -174,7 +171,7 @@ fn encryption_context_round_trips() {
     let mut m = HashMap::new();
     m.insert("k1".to_string(), "v1".to_string());
     m.insert("k2".to_string(), "v2".to_string());
-    let list = encryption_context_core_to_target(m.clone());
+    let list = encryption_context_core_to_target(m.clone()).unwrap();
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
@@ -188,58 +185,46 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the core ESDK's encryption context, given as a
     //# key-value map, to the target's list of key-value pairs, preserving every pair
     //# and the exact key and value of each.
-    assert_eq!(encryption_context_target_to_core(&list), m);
+    assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
 }
 
 #[test]
 fn encryption_context_empty() {
-    // Regression: the empty map/list must translate to an empty result in both
-    // directions (no spurious pairs introduced), guarding the conversion helpers'
-    // edge case.
     use std::collections::HashMap;
     let empty: HashMap<String, String> = HashMap::new();
-    assert!(encryption_context_core_to_target(empty).is_empty());
-    assert!(encryption_context_target_to_core(&[]).is_empty());
+    assert!(encryption_context_core_to_target(empty).unwrap().is_empty());
+    assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
 }
 
-// Orchestration error paths (NO AWS resources required)
-// These reach the null-checks / enum-validation in the create_*/encrypt/decrypt
-// functions, which all return before any network call. They exercise the
-// error-handling lines without credentials, so they run in ordinary CI.
+// The null-handle and enum checks fire before any network call, so these run
+// without credentials.
+
+fn expect_err<T>(result: Result<T, String>) -> String {
+    match result {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => e,
+    }
+}
 
 #[test]
 fn encrypt_rejects_null_keyring() {
-    // default_encrypt_input() has a null keyring pointer.
     //= spec/shim/esdk-shim.md#materials-source
     //= type=test
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
     //# materials source is supplied.
-    let err = match encrypt(&default_encrypt_input()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(encrypt(&unset_encrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn decrypt_rejects_null_keyring() {
-    // Regression coverage for the symmetric decrypt null-check. The
-    // materials-source requirement is annotated once (on encrypt) to avoid a
-    // duplicate citation.
-    let err = match decrypt(&default_decrypt_input()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(decrypt(&unset_decrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
 }
 
 #[test]
-fn create_keystore_rejects_null_kms_client() {
-    // default config has null kms_client / ddb_client pointers.
-    let err = match create_keystore(&default_keystore_config()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+fn create_keystore_rejects_null_clients() {
+    let err = expect_err(create_keystore(&unset_keystore_config()));
     //= spec/shim/shim.md#handles-and-lifetimes
     //= type=test
     //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
@@ -255,77 +240,81 @@ fn create_keystore_rejects_null_kms_client() {
         err.contains("kms_client is null"),
         "unexpected error: {err}"
     );
+
+    let kms = create_kms_client(&unset_client_config()).expect("create kms client");
+    let mut cfg = unset_keystore_config();
+    cfg.kms_client = &*kms as *const MplKmsClient;
+    let err = expect_err(create_keystore(&cfg));
+    assert!(
+        err.contains("ddb_client is null"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
 fn create_hierarchical_keyring_rejects_null_key_store() {
-    // default input has a null key_store pointer; the handle check fires before
-    // any network call.
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //# - Creating a hierarchical keyring MUST require a key store handle, checked as
     //# defined in
     //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
     //# and MUST provide it to the core ESDK.
-    let err = match create_hierarchical_keyring(&default_hierarchical_keyring_input()) {
-        Ok(_) => panic!("expected error"),
-        Err(e) => e,
-    };
+    let err = expect_err(create_hierarchical_keyring(
+        &unset_hierarchical_keyring_input(),
+    ));
     assert!(err.contains("key_store is null"), "unexpected error: {err}");
 }
 
 #[test]
 fn make_kms_config_rejects_unknown_type() {
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType { repr: 99 };
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST return an error when the target KMS configuration type is not a
     //# supported value.
-    let err = make_kms_config(&cfg).unwrap_err();
+    let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
         err.contains("Invalid KmsConfigurationType"),
+        "unexpected error: {err}"
+    );
+    let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
+    assert!(
+        err.contains("kms_configuration_type is unset"),
         "unexpected error: {err}"
     );
 }
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    // default type is KmsKeyArn -> exercises the happy arm (local, no AWS).
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
     assert!(matches!(
-        make_kms_config(&default_keystore_config()).unwrap(),
-        KmsConfiguration::KmsKeyArn(_)
+        make_kms_config(ffi::KmsConfigurationType::KmsKeyArn, "arn:test-key").unwrap(),
+        KmsConfiguration::KmsKeyArn(v) if v == "arn:test-key"
     ));
 }
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsMrKeyArn;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
     assert!(matches!(
-        make_kms_config(&cfg).unwrap(),
-        KmsConfiguration::KmsMrKeyArn(_)
+        make_kms_config(ffi::KmsConfigurationType::KmsMrKeyArn, "arn:test-mr-key").unwrap(),
+        KmsConfiguration::KmsMrKeyArn(v) if v == "arn:test-mr-key"
     ));
 }
 
 #[test]
 fn make_kms_config_accepts_discovery() {
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::Discovery;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
     assert!(matches!(
-        make_kms_config(&cfg).unwrap(),
+        make_kms_config(ffi::KmsConfigurationType::Discovery, "").unwrap(),
         KmsConfiguration::Discovery(_)
     ));
 }
@@ -333,54 +322,43 @@ fn make_kms_config_accepts_discovery() {
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
     use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
-    let mut cfg = default_keystore_config();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::MrDiscovery;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.
     assert!(matches!(
-        make_kms_config(&cfg).unwrap(),
+        make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "").unwrap(),
         KmsConfiguration::MrDiscovery(_)
     ));
 }
 
 #[test]
-fn make_cache_type_rejects_unknown() {
-    let mut input = default_hierarchical_keyring_input();
-    input.cache = ffi::CacheType { repr: 99 };
+fn create_no_cache_builds_no_cache() {
+    use aws_mpl_legacy::dafny::types::CacheType;
     //= spec/shim/esdk-shim.md#cache-configuration
     //= type=test
-    //# - The shim MUST return an error when the target cache type is not a supported
-    //# value.
-    let err = make_cache_type(&input).unwrap_err();
-    assert!(err.contains("Invalid CacheType"), "unexpected error: {err}");
+    //# - The shim MUST translate a no-cache selection.
+    assert!(matches!(
+        create_no_cache().unwrap().cache_type,
+        CacheType::No(_)
+    ));
 }
 
 #[test]
-fn make_cache_type_builds_multi_threaded() {
-    // default cache is MultiThreaded -> exercises that arm (local, no AWS).
+fn create_multi_threaded_cache_builds_multi_threaded() {
     use aws_mpl_legacy::dafny::types::CacheType;
     //= spec/shim/esdk-shim.md#cache-configuration
     //= type=test
     //# - The shim MUST translate a multi-threaded cache selection.
     assert!(matches!(
-        make_cache_type(&default_hierarchical_keyring_input()).unwrap(),
+        create_multi_threaded_cache(100, 1).unwrap().cache_type,
+        CacheType::MultiThreaded(_)
+    ));
+    // A parameter left 0 defers to the core library's default.
+    assert!(matches!(
+        create_multi_threaded_cache(0, 0).unwrap().cache_type,
         CacheType::MultiThreaded(_)
     ));
 }
-
-#[test]
-fn make_cache_type_builds_no_cache() {
-    use aws_mpl_legacy::dafny::types::CacheType;
-    let mut input = default_hierarchical_keyring_input();
-    input.cache = ffi::CacheType::NoCache;
-    //= spec/shim/esdk-shim.md#cache-configuration
-    //= type=test
-    //# - The shim MUST translate a no-cache selection.
-    assert!(matches!(make_cache_type(&input).unwrap(), CacheType::No(_)));
-}
-
-// Frame length + max-encrypted-data-keys translation (pure, no AWS)
 
 #[test]
 fn make_frame_length_translates_and_rejects_zero() {
@@ -410,11 +388,8 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
     assert_eq!(max_edks_target_to_core(42), std::num::NonZeroUsize::new(42));
 }
 
-// Service client user-agent + retry translation (pure, no AWS)
-
 #[test]
 fn user_agent_form_and_append() {
-    // Empty existing app-name -> the shim's own user-agent, in the required form.
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - The shim MUST set a user-agent on each service client of the form
@@ -425,7 +400,6 @@ fn user_agent_form_and_append() {
     assert_eq!(merge_user_agent("", &ua), ua);
     assert!(ua.starts_with("AwsEncryptionSdk-Shim-C++-Rust-"));
 
-    // Existing app-name is preserved and the shim's UA appended, not replaced.
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - The shim MUST preserve any user-agent already present in the loaded
@@ -440,12 +414,10 @@ fn user_agent_form_and_append() {
 
 #[test]
 fn create_sdk_config_defers_retry_when_unset() {
-    // No retry values supplied: the shim must not substitute its own; the assembled
-    // config keeps the SDK's loaded default retry configuration.
-    let default_ref = DAFNY_TOKIO_RUNTIME.block_on(aws_config::load_defaults(
+    let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
-    let sdk = create_sdk_config(&default_client_config()).expect("build sdk config");
+    let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //= reason=With no retry supplied, the assembled config's retry matches a reference load_defaults() rather than a substituted standard config.
@@ -457,11 +429,9 @@ fn create_sdk_config_defers_retry_when_unset() {
     );
 }
 
-// Service client SdkConfig assembly (builds config, no credentials used)
-
 #[test]
 fn create_sdk_config_applies_region_retry_and_user_agent() {
-    let mut cfg = default_client_config();
+    let mut cfg = unset_client_config();
     cfg.region = "us-west-2".to_string();
     cfg.retry.max_attempts = 7;
     let sdk = create_sdk_config(&cfg).expect("build sdk config");
@@ -479,18 +449,65 @@ fn create_sdk_config_applies_region_retry_and_user_agent() {
     assert_eq!(sdk.retry_config().map(|r| r.max_attempts()), Some(7));
 
     let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
-    // Regression: the assembled SdkConfig carries the shim's user-agent; the
-    // user-agent form/append requirements are annotated in user_agent_form_and_append.
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
 
-// Full round-trip integration test (REQUIRES real AWS resources)
-// Skips cleanly when the ESDK_TEST_* env vars are unset, so it never fails
-// credential-less CI. Run under `cargo llvm-cov` in a creds-enabled job to
-// cover the create_*/encrypt/decrypt success paths.
-
 fn test_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
+}
+
+// Raw AES keyring: fully local, so the whole path runs without AWS resources.
+
+#[test]
+fn raw_aes_keyring_round_trip() {
+    let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("create raw AES keyring");
+
+    let plaintext = b"raw aes round trip".to_vec();
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.plaintext = plaintext.as_slice();
+    let enc_out = encrypt(&enc_in).expect("encrypt");
+    assert_ne!(enc_out.ciphertext, plaintext);
+
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = enc_out.ciphertext.as_slice();
+    let dec_out = decrypt(&dec_in).expect("decrypt");
+    assert_eq!(dec_out.plaintext, plaintext);
+}
+
+#[test]
+fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
+    let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg::Unset,
+    }));
+    assert!(
+        err.contains("wrapping_alg is unset"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_raw_aes_keyring_rejects_mismatched_key_length() {
+    let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 16],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    }));
+    assert!(
+        err.contains("Wrapping key length does not match"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -511,7 +528,7 @@ fn round_trip_integration() {
         }
     };
 
-    let mut client_cfg = default_client_config();
+    let mut client_cfg = unset_client_config();
     client_cfg.region = test_env("ESDK_TEST_REGION").unwrap_or_default();
 
     //= spec/shim/esdk-shim.md#create-kms-client
@@ -536,7 +553,7 @@ fn round_trip_integration() {
     //# as defined in [Service client configuration](#service-client-configuration).
     let ddb = create_ddb_client(&client_cfg).expect("create ddb client");
 
-    let mut ks_cfg = default_keystore_config();
+    let mut ks_cfg = unset_keystore_config();
     //= spec/shim/esdk-shim.md#create-key-store
     //= type=test
     //# - Creating a key store MUST provide the target-supplied table name and logical key
@@ -563,7 +580,7 @@ fn round_trip_integration() {
     //# ESDK.
     let keystore = create_keystore(&ks_cfg).expect("create keystore");
 
-    let mut kr_in = default_hierarchical_keyring_input();
+    let mut kr_in = unset_hierarchical_keyring_input();
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
@@ -575,7 +592,8 @@ fn round_trip_integration() {
     //# - Creating a hierarchical keyring MUST provide the target-supplied cache
     //# configuration to the core ESDK, converted as defined in
     //# [Cache configuration](#cache-configuration).
-    kr_in.cache = ffi::CacheType::MultiThreadedCache;
+    let cache = create_multi_threaded_cache(100, 1).expect("create cache");
+    kr_in.cache = &*cache as *const Cache;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
@@ -591,27 +609,16 @@ fn round_trip_integration() {
     let mut ec = std::collections::HashMap::new();
     ec.insert("purpose".to_string(), "integration-test".to_string());
 
-    let mut enc_in = default_encrypt_input();
+    let mut enc_in = unset_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = plaintext.as_slice();
-    enc_in.encryption_context = ec
-        .iter()
-        .map(|(k, v)| ffi::EncryptionContextItem {
-            key: k.clone(),
-            value: v.clone(),
-        })
-        .collect();
+    enc_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
     enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
-    // commitment policy, frame length, and max-EDKs are forwarded plumbing
-    // (plain source-side `implementation`); values here equal the ESDK defaults, so
-    // asserting on them would not falsify the forwarding — no `type=test` here.
     enc_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     enc_in.frame_length = 4096;
     enc_in.max_encrypted_data_keys = 3;
 
     let enc_out = encrypt(&enc_in).expect("encrypt");
-    // Ciphertext differs from plaintext (encryption happened); the "unmodified"
-    // guarantee is proven below by the successful decrypt back to `plaintext`.
     assert_ne!(enc_out.ciphertext, plaintext);
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
@@ -638,16 +645,15 @@ fn round_trip_integration() {
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     assert_eq!(
-        encryption_context_target_to_core(&enc_out.encryption_context).get("purpose"),
+        encryption_context_target_to_core(&enc_out.encryption_context)
+            .unwrap()
+            .get("purpose"),
         Some(&"integration-test".to_string())
     );
 
-    let mut dec_in = default_decrypt_input();
+    let mut dec_in = unset_decrypt_input();
     dec_in.keyring = &*keyring as *const Keyring;
     dec_in.ciphertext = enc_out.ciphertext.as_slice();
-    // commitment policy and max-EDKs are forwarded plumbing (plain source-side
-    // `implementation`); values here equal the ESDK defaults, so asserting on
-    // them would not falsify the forwarding — no `type=test` here.
     dec_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     dec_in.max_encrypted_data_keys = 3;
     //= spec/shim/esdk-shim.md#decrypt-inputs
@@ -655,28 +661,81 @@ fn round_trip_integration() {
     //= reason=decrypt supplies the same encryption-context pair used at encrypt time; a successful round-trip proves it was provided to the core ESDK.
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
-    dec_in.encryption_context = ec
-        .iter()
-        .map(|(k, v)| ffi::EncryptionContextItem {
-            key: k.clone(),
-            value: v.clone(),
-        })
-        .collect();
+    dec_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
 
     let dec_out = decrypt(&dec_in).expect("decrypt");
-    // Round-trip fidelity — plaintext/ciphertext passed and returned unmodified,
-    // and the core operation actually invoked — is proven end-to-end through the
-    // C++ facade in test_esdk.cpp (see the `type=test` citations there).
     assert_eq!(dec_out.plaintext, plaintext);
-    // The decrypt-output fields (used suite, result encryption context) are now
-    // surfaced by the C++ facade's DecryptResult and asserted there (test_esdk.cpp);
-    // these bridge-level checks remain but carry no duvet citation.
     assert_eq!(
         dec_out.algorithm_suite_id.repr,
         enc_in.algorithm_suite_id.repr
     );
     assert_eq!(
-        encryption_context_target_to_core(&dec_out.encryption_context).get("purpose"),
+        encryption_context_target_to_core(&dec_out.encryption_context)
+            .unwrap()
+            .get("purpose"),
         Some(&"integration-test".to_string())
     );
+}
+
+// Each value differs from the core default, so a dropped assignment fails.
+#[test]
+fn apply_encrypt_options_forwards_every_optional_input() {
+    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    let input = ffi::EncryptInput {
+        algorithm_suite_id: F { repr: 0x0578 },
+        encryption_context: Vec::new(),
+        frame_length: 1024,
+        keyring: std::ptr::null(),
+        plaintext: &[],
+        max_encrypted_data_keys: 5,
+        commitment_policy: P::ForbidEncryptAllowDecrypt,
+    };
+    let mut core = aws_esdk::EncryptInput::default();
+    apply_encrypt_options(&mut core, &input).expect("options apply");
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(5));
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied frame length to the core ESDK,
+    //# converted as defined in [Frame length](#frame-length).
+    assert_eq!(core.frame_length.0.get(), 1024);
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    assert_eq!(core.commitment_policy, C::ForbidEncryptAllowDecrypt);
+}
+
+#[test]
+fn apply_decrypt_options_forwards_every_optional_input() {
+    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    let input = ffi::DecryptInput {
+        ciphertext: &[],
+        encryption_context: Vec::new(),
+        keyring: std::ptr::null(),
+        max_encrypted_data_keys: 7,
+        commitment_policy: P::RequireEncryptAllowDecrypt,
+    };
+    let mut core = aws_esdk::DecryptInput::default();
+    apply_decrypt_options(&mut core, &input).expect("options apply");
+
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(7));
+
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
 }

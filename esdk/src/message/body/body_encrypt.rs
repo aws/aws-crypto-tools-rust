@@ -62,7 +62,8 @@ pub(crate) fn construct_frame(
         //# [message ID](../data-format/message-header.md#message-id) serialized in the header of this message.
         //
         //= spec/data-format/message-header.md#message-id
-        //= reason=input.message_id is the message ID from the header, interpreted as raw bytes for AAD construction
+        //= type=implication
+        //= reason=input.message_id is a &[u8]; a byte slice cannot be reinterpreted as anything but bytes
         //# The message ID MUST be interpreted as bytes.
         input.message_id,
         //= spec/client-apis/encrypt.md#construct-a-frame
@@ -143,6 +144,7 @@ pub(crate) fn construct_frame(
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= reason=write_u32 above serializes the sequence number for both regular and final frames in this shared code path
     //# - MUST serialize the [Sequence Number](../data-format/message-body.md#final-frame-sequence-number).
+    //# The value MUST be the sequence number of this frame.
     //
     //= spec/data-format/message-body.md#final-frame-sequence-number
     //= reason=write_u32 serializes the sequence number as a UInt32, same type as the regular frame sequence number
@@ -153,9 +155,6 @@ pub(crate) fn construct_frame(
     //= reason=write_u32 writes exactly 4 bytes, the same length as the regular frame sequence number field
     //# The length of the Final Frame Sequence number field MUST be the same as the
     //# [Regular Frame Sequence Number](#regular-frame-sequence-number).
-    //
-    //= spec/client-apis/encrypt.md#construct-a-frame
-    //# The value MUST be the sequence number of this frame.
     write_u32(frame_buf, input.sequence_number)?;
 
     // IV
@@ -264,6 +263,7 @@ pub(crate) fn construct_frame(
     write_bytes(ciphertext, frame_buf)?;
 
     //= spec/client-apis/encrypt.md#construct-a-frame
+    //= type=implication
     //= reason=DigestWriter feeds the serialized frame bytes to the signature algorithm
     //# If the algorithm suite contains a signature algorithm and
     //# the Encrypt operation is [streaming](streaming.md) the encrypted message output to the caller,

@@ -1,4 +1,4 @@
-.PHONY: clippy test
+.PHONY: clippy test duvet
 
 clippy:
 	cargo clippy --tests
@@ -13,3 +13,8 @@ test:
 	cargo test --no-default-features --features kms
 	cargo test --no-default-features --features ddb
 	cargo test --no-default-features --features legacy
+
+duvet:
+	@test -e spec || ln -s ../spec spec
+	rm -rf .duvet/reports .duvet/requirements
+	duvet report

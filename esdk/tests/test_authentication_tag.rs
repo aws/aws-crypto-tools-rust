@@ -68,9 +68,34 @@ async fn test_v1_header_auth_has_iv_then_tag() {
         "V1 header auth tag must not be all zeros"
     );
 
-    // Round-trip cross-check: decrypt the same ct whose bytes we inspected above.
-    let result = decrypt_v1_with_keyring(&ct, &keyring).await;
-    assert_eq!(result, pt, "V1 round-trip with auth tag verification");
+    // Falsifiable proof the header auth tag is the verified AEAD output: the
+    // untampered message decrypts, and flipping one tag byte is rejected.
+    let mut tag_tampered = ct.clone();
+    tag_tampered[tag_offset] ^= 0xFF;
+
+    //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=test
+    //= reason=Untampered V1 ct decrypts; flipping a header auth tag byte → CryptographicError, so the tag is the verified AEAD output
+    //# The value of this MUST be the output of the [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
+    //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
+    //
+    //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=test
+    //= reason=The header auth tag verifies only under the derived data key, so the untampered tag verifying (and the tampered tag failing) pins the cipherkey to the derived key
+    //# - The cipherkey MUST be the derived data key
+    assert_eq!(
+        decrypt_v1_with_keyring(&ct, &keyring).await,
+        pt,
+        "valid V1 ct must decrypt"
+    );
+    assert_eq!(
+        try_decrypt_v1_with_keyring(&tag_tampered, &keyring)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::CryptographicError,
+        "tampered V1 header auth tag must fail authentication"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

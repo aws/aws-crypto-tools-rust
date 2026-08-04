@@ -9,11 +9,19 @@ pattern = "./include/**/*.h"
 [[source]]
 pattern = "./*.cpp"
 
+[[source]]
+pattern = "./tests/*.cpp"
+
 [[specification]]
 source = "spec/shim/shim.md"
 
 [[specification]]
 source = "spec/shim/esdk-shim.md"
 
-[report.snapshot]
+[report.html]
 enabled = true
+
+# Snapshot checking requires a committed snapshot file; this project does not
+# commit one, so the CI duvet run generates and uploads the HTML report only.
+[report.snapshot]
+enabled = false
