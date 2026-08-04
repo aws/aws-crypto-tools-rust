@@ -125,9 +125,9 @@ use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore as dafny_key_store;
 use std::sync::LazyLock;
 
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    // Building the runtime fails only if the OS cannot spawn a thread or install
-    // the I/O/timer drivers — an environment failure with no library-level
-    // recovery, surfaced as a panic at first use.
+    // Building the runtime would fail only if the OS cannot spawn a thread or install
+    // the I/O/timer drivers. This is an environment failure with no library-level
+    // recovery. This is intentionally surfaced as a panic at library instantiation time.
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

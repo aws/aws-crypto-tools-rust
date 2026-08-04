@@ -108,8 +108,8 @@ enum class CacheKind : std::uint8_t {
 
 namespace detail {
 
-// Run a cxx call, translating rust::Error -> AwsEncryptionSdkException so no cxx
-// exception type escapes this header.
+// Calls into Rust and catches any Rust error, re-throwing it as our
+// own C++ exception type so callers only ever see AwsEncryptionSdkException.
 template <typename F>
 inline auto guard(F&& f) -> decltype(f()) {
     try {
@@ -119,8 +119,8 @@ inline auto guard(F&& f) -> decltype(f()) {
     }
 }
 
-// Enum translation is the only code that knows the generated enum types exist.
-// Values are kept identical to the generated enums, so casts are exact.
+// Convert our enums to the generated FFI enums.
+// Users must depend on these ESDK enums so changes to the FFI layer don't break them.
 inline ::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
@@ -206,9 +206,8 @@ public:
 };
 
 class KeyStore {
-    // Declared before inner_ so they outlive it; shared_ptr keeps the Rust
-    // clients alive for as long as this KeyStore exists -> the raw pointers the
-    // bridge stores can never dangle.
+    // kms and ddb must be declared before inner_ (core, Rust) keystore
+    // so they are destroyed after inner_ is
     KmsClient kms_;
     DdbClient ddb_;
     std::shared_ptr<::rust::Box<::KeyStore>> inner_;
@@ -266,8 +265,8 @@ public:
     virtual ~Keyring() = default;
 };
 
-/// Optional hierarchical keyring parameters. A field left unset keeps the core
-/// library's default; an empty partition id is omitted.
+/// Optional hierarchical keyring parameters.
+/// A field left unset keeps the core library's default.
 class HierarchicalKeyringOptions {
     std::optional<CacheKind> cache_;
     std::optional<std::uint32_t> cache_capacity_;
@@ -324,8 +323,8 @@ private:
     }
 };
 
-/// Optional encrypt parameters. A field left unset keeps the core library's
-/// default.
+/// Optional encrypt parameters.
+/// A field left unset keeps the core library's default.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
     std::optional<CommitmentPolicy> commitment_policy_;
@@ -347,8 +346,8 @@ public:
     EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
-/// Optional decrypt parameters. A field left unset keeps the core library's
-/// default.
+/// Optional decrypt parameters.
+/// A field left unset keeps the core library's default.
 class DecryptOptions {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
@@ -365,11 +364,10 @@ public:
 };
 
 /// Owned, read-only byte buffer returned by encrypt and decrypt.
-///
-/// It owns the core library's output buffer, so obtaining it and reading it —
-/// data()/size(), indexing, iteration, comparison — never copy. to_vector() is
-/// the only accessor that copies. Move-only, so the buffer is never duplicated
-/// implicitly; call to_vector() when an owning std::vector is required.
+/// 
+/// This owns the core (Rust) library's output buffer; not a C++ type.
+/// This setup allows readers to read outputs without a copy, improving performance.
+/// If you need a std::vector, use `.to_vector()`.
 class Bytes {
     ::rust::Vec<std::uint8_t> buf_;
     friend class EncryptionSDK;
