@@ -4,13 +4,13 @@
 //! Raw AES keyring.
 
 use async_trait::async_trait;
-use aws_mpl_primitives::{aes_decrypt, aes_encrypt, generate_random_bytes, AesGcm};
+use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
 
+use crate::Keyring;
 use crate::structures::{
     AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
     MaterialsError, PlaintextDataKey,
 };
-use crate::Keyring;
 
 /// Byte width of the authentication-tag-length field of the serialized key
 /// provider information.

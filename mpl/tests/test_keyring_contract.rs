@@ -15,11 +15,11 @@ use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 
+use aws_crypto_mpl::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
-use aws_crypto_mpl::Keyring;
 
 // MockKeyring
 
