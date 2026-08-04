@@ -14,30 +14,11 @@
 //! returning `Pin<Box<dyn Future + Send>>`, which IS dyn-compatible. The one
 //! heap allocation per call is the price of the plug-in shape.
 //!
-//! # Concrete-keyring-deferred clauses (`type=exception`)
-//!
-//! This commit introduces the abstract `Keyring` trait scaffolding only — no
-//! concrete keyring (Raw AES, Raw RSA, AWS KMS, multi-keyring, …) is
-//! implemented yet. Two classes of spec clause are therefore annotated as
-//! `type=exception` here:
-//!
-//! 1. Configuration / value-selection / cryptographic-property clauses
-//!    (`#key-namespace`, `#key-name`, `#key-provider-id`,
-//!    `#security-considerations`, the CSPRNG randomness clause of
-//!    `#generate-data-key`) describe properties of CONCRETE keyrings — value
-//!    selection, configuration shape, cryptographic boundary, randomness
-//!    source — that the abstract trait cannot satisfy.
-//! 2. Behavioral MUSTs on `OnEncrypt` / `OnDecrypt` /
-//!    `Generate Data Key` / `Encrypt Data Key` / `Decrypt Data Key` describe
-//!    runtime conduct that only a concrete keyring can fulfill. These are
-//!    exercised TODAY by the mock-driven contract harness in
-//!    `tests/test_keyring_contract.rs`, but those tests intentionally carry
-//!    no `type=test` annotations: when each concrete keyring is added in a
-//!    future commit, the matching exception below will be replaced with
-//!    `type=implementation` on the concrete method, and `type=test` will be
-//!    placed on the contract test that proves it.
-
 use async_trait::async_trait;
+
+pub mod raw_aes_keyring;
+
+pub use raw_aes_keyring::RawAesKeyring;
 
 use crate::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,

@@ -28,10 +28,13 @@ use std::sync::Arc;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
+use aws_mpl_primitives::AesGcm;
+
 use crate::aws_kms::hierarchical_keyring::{
     BranchKeySource, BranchKeySupplier, CacheType, HierarchicalKeyring,
 };
 use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc};
+use crate::keyring::RawAesKeyring;
 use crate::keystore::{BranchKeyStore, KeyStoreConfig, Keystore, KeystoreError};
 use crate::structures::MaterialsError;
 
@@ -105,6 +108,13 @@ impl MaterialProviders {
         &self,
     ) -> CreateAwsKmsHierarchicalKeyringFluentBuilder {
         CreateAwsKmsHierarchicalKeyringFluentBuilder::default()
+    }
+
+    /// Begin constructing a [`RawAesKeyring`] through this client.
+    /// See [`CreateRawAesKeyringFluentBuilder`].
+    #[must_use]
+    pub fn create_raw_aes_keyring(&self) -> CreateRawAesKeyringFluentBuilder {
+        CreateRawAesKeyringFluentBuilder::default()
     }
 }
 
@@ -376,5 +386,81 @@ impl CreateAwsKmsHierarchicalKeyringFluentBuilder {
             self.cache,
             self.partition_id,
         )
+    }
+}
+
+// ─── create_raw_aes_keyring ─────────────────────────────────────────────────
+
+/// Fluent builder produced by [`MaterialProviders::create_raw_aes_keyring`].
+///
+/// All four setters are required: [`Self::key_namespace`], [`Self::key_name`],
+/// [`Self::wrapping_key`], and [`Self::wrapping_alg`].
+#[derive(Debug, Clone, Default)]
+pub struct CreateRawAesKeyringFluentBuilder {
+    key_namespace: Option<String>,
+    key_name: Option<String>,
+    wrapping_key: Option<Vec<u8>>,
+    wrapping_alg: Option<AesGcm>,
+}
+
+impl CreateRawAesKeyringFluentBuilder {
+    /// Set the key namespace, used as the key provider ID of produced EDKs.
+    #[must_use]
+    pub fn key_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.key_namespace = Some(namespace.into());
+        self
+    }
+
+    /// Set the key name, serialized into the key provider information of
+    /// produced EDKs.
+    #[must_use]
+    pub fn key_name(mut self, name: impl Into<String>) -> Self {
+        self.key_name = Some(name.into());
+        self
+    }
+
+    /// Set the AES wrapping key. MUST be 128, 192, or 256 bits and MUST match
+    /// the length specified by [`Self::wrapping_alg`].
+    #[must_use]
+    pub fn wrapping_key(mut self, key: Vec<u8>) -> Self {
+        self.wrapping_key = Some(key);
+        self
+    }
+
+    /// Set the wrapping algorithm.
+    #[must_use]
+    pub const fn wrapping_alg(mut self, alg: AesGcm) -> Self {
+        self.wrapping_alg = Some(alg);
+        self
+    }
+
+    /// Build the [`RawAesKeyring`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MaterialsError`] when any of the four required setters was not
+    /// invoked, or when [`RawAesKeyring::new`] rejects the parameters.
+    pub fn send(self) -> Result<RawAesKeyring, MaterialsError> {
+        let key_namespace = self.key_namespace.ok_or_else(|| {
+            MaterialsError::new(
+                "create_raw_aes_keyring: key_namespace is required (call .key_namespace(...))",
+            )
+        })?;
+        let key_name = self.key_name.ok_or_else(|| {
+            MaterialsError::new(
+                "create_raw_aes_keyring: key_name is required (call .key_name(...))",
+            )
+        })?;
+        let wrapping_key = self.wrapping_key.ok_or_else(|| {
+            MaterialsError::new(
+                "create_raw_aes_keyring: wrapping_key is required (call .wrapping_key(...))",
+            )
+        })?;
+        let wrapping_alg = self.wrapping_alg.ok_or_else(|| {
+            MaterialsError::new(
+                "create_raw_aes_keyring: wrapping_alg is required (call .wrapping_alg(...))",
+            )
+        })?;
+        RawAesKeyring::new(key_namespace, key_name, wrapping_key, wrapping_alg)
     }
 }

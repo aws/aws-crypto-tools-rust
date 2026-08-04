@@ -4,10 +4,7 @@
 //! Contract tests for the abstract `Keyring` trait.
 //!
 //! These tests verify the abstract `Keyring` trait contract via the in-file
-//! `MockKeyring`. They are intentionally NOT duvet-annotated — the
-//! corresponding requirements are annotated as `type=exception` in
-//! `src/keyring/mod.rs` and will be re-annotated as `type=implementation,test`
-//! once concrete keyrings (Raw AES, AWS KMS) are added.
+//! `MockKeyring`.
 //!
 //! The mock's `on_encrypt` / `on_decrypt` exercise every documented branch of
 //! the keyring interface (generate-only, encrypt-only, generate+encrypt,
@@ -18,11 +15,11 @@ use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 
-use aws_crypto_mpl::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
+use aws_crypto_mpl::Keyring;
 
 // MockKeyring
 
@@ -116,8 +113,7 @@ impl Keyring for MockKeyring {
         let new_pdk = if self.behaviors.generate && materials.plaintext_data_key().is_none() {
             attempted = true;
             // Deterministic suite-length filler so the length assertion is precise
-            // and tests stay reproducible. Concrete keyrings will source from a
-            // CSPRNG (annotated `type=exception` on the trait module).
+            // and tests stay reproducible. Concrete keyrings source from a CSPRNG.
             Some(PlaintextDataKey::new(vec![
                 0xAA;
                 suite.encryption_key_length()
