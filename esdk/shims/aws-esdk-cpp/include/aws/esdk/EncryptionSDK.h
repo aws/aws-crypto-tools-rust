@@ -99,6 +99,13 @@ enum class CommitmentPolicy : std::uint8_t {
     RequireEncryptRequireDecrypt = 3,
 };
 
+/// The AES-GCM algorithm a raw AES keyring uses to wrap and unwrap data keys.
+enum class AesWrappingAlgorithm : std::uint8_t {
+    AlgAes128GcmIv12Tag16 = 1,
+    AlgAes192GcmIv12Tag16 = 2,
+    AlgAes256GcmIv12Tag16 = 3,
+};
+
 namespace detail {
 
 // Calls into Rust and catches any Rust error, re-throwing it as our
@@ -119,6 +126,9 @@ inline ::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
 }
 inline ::EsdkCommitmentPolicy to_ffi(CommitmentPolicy p) {
     return static_cast<::EsdkCommitmentPolicy>(static_cast<std::uint8_t>(p));
+}
+inline ::AesWrappingAlg to_ffi(AesWrappingAlgorithm a) {
+    return static_cast<::AesWrappingAlg>(static_cast<std::uint8_t>(a));
 }
 
 inline ::rust::Vec<::EncryptionContextItem> to_ec(
@@ -334,6 +344,30 @@ private:
             return ::create_hierarchical_keyring(in);
         }));
     }
+};
+
+class RawAesKeyring : public Keyring {
+public:
+    /// Creates a Raw AES Keyring, which wraps and unwraps data keys locally using
+    /// AES-GCM. The wrapping key bytes are copied into the keyring.
+    /// \param key_namespace A namespace associated with this wrapping key.
+    /// \param key_name A name associated with this wrapping key.
+    /// \param wrapping_key The AES key. Its length must match the wrapping
+    ///        algorithm (16, 24, or 32 bytes).
+    /// \param wrapping_alg The AES-GCM algorithm used to wrap and unwrap data keys.
+    RawAesKeyring(const std::string& key_namespace,
+                  const std::string& key_name,
+                  const std::vector<std::uint8_t>& wrapping_key,
+                  AesWrappingAlgorithm wrapping_alg)
+        : Keyring(std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
+              ::RawAesKeyringInput in{};
+              in.key_namespace = ::rust::String(key_namespace);
+              in.key_name = ::rust::String(key_name);
+              in.wrapping_key = ::rust::Slice<const std::uint8_t>(wrapping_key.data(),
+                                                                  wrapping_key.size());
+              in.wrapping_alg = detail::to_ffi(wrapping_alg);
+              return ::create_raw_aes_keyring(in);
+          }))) {}
 };
 
 /// Optional encrypt parameters.
