@@ -136,7 +136,9 @@ static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 
 #[cxx::bridge]
 mod ffi {
+    /// Zero-initialized inputs are unset: `Unset` is repr 0 in every bridge enum.
     enum EsdkAlgorithmSuiteId {
+        Unset = 0x0000,
         AlgAes128GcmIv12Tag16NoKdf = 0x0014,
         AlgAes192GcmIv12Tag16NoKdf = 0x0046,
         AlgAes256GcmIv12Tag16NoKdf = 0x0078,
@@ -148,14 +150,13 @@ mod ffi {
         AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0378,
         AlgAes256GcmHkdfSha512CommitKey = 0x0478,
         AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 = 0x0578,
-        Unset = 0x0000,
     }
 
     enum EsdkCommitmentPolicy {
+        Unset,
         ForbidEncryptAllowDecrypt,
         RequireEncryptAllowDecrypt,
         RequireEncryptRequireDecrypt,
-        Unset,
     }
 
     struct EncryptionContextItem {
@@ -219,6 +220,7 @@ mod ffi {
     }
 
     enum KmsConfigurationType {
+        Unset,
         KmsKeyArn,
         KmsMrKeyArn,
         Discovery,
@@ -272,12 +274,6 @@ mod ffi {
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
-
-        fn default_client_config() -> MplAwsClientConfig;
-        fn default_keystore_config() -> KeyStoreConfig;
-        fn default_hierarchical_keyring_input() -> HierarchicalKeyringInput;
-        fn default_encrypt_input() -> EncryptInput<'static>;
-        fn default_decrypt_input() -> DecryptInput<'static>;
     }
 }
 
@@ -475,6 +471,7 @@ fn make_kms_config(
 ) -> Result<dafny_key_store::types::KmsConfiguration, String> {
     use dafny_key_store::types::KmsConfiguration;
     match kind {
+        ffi::KmsConfigurationType::Unset => Err("kms_configuration_type is unset".to_string()),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
         ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.to_string())),
@@ -892,68 +889,4 @@ fn delete_keyring(_client: Box<Keyring>) -> Result<(), String> {
 }
 fn delete_cache(_cache: Box<Cache>) -> Result<(), String> {
     Ok(())
-}
-
-// Default-initialized bridge inputs for the target.
-
-/// An encrypt input with every optional field unset; each defers to the core library's default.
-fn default_encrypt_input() -> ffi::EncryptInput<'static> {
-    ffi::EncryptInput {
-        algorithm_suite_id: ffi::EsdkAlgorithmSuiteId::Unset,
-        encryption_context: Vec::default(),
-        frame_length: 0,
-        keyring: std::ptr::null(),
-        plaintext: &[],
-        max_encrypted_data_keys: 0,
-        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
-    }
-}
-
-/// A decrypt input with every optional field unset; each defers to the core library's default.
-fn default_decrypt_input() -> ffi::DecryptInput<'static> {
-    ffi::DecryptInput {
-        ciphertext: &[],
-        encryption_context: Vec::default(),
-        keyring: std::ptr::null(),
-        max_encrypted_data_keys: 0,
-        commitment_policy: ffi::EsdkCommitmentPolicy::Unset,
-    }
-}
-
-/// A hierarchical-keyring input with every optional field unset; each defers to the core library's default.
-fn default_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
-    ffi::HierarchicalKeyringInput {
-        branch_key_id: String::default(),
-        key_store: std::ptr::null(),
-        ttl_seconds: 0,
-        cache: std::ptr::null(),
-        partition_id: String::default(),
-    }
-}
-
-fn default_keystore_config() -> ffi::KeyStoreConfig {
-    ffi::KeyStoreConfig {
-        ddb_table_name: String::default(),
-        kms_configuration_type: ffi::KmsConfigurationType::KmsKeyArn,
-        kms_configuration_value: String::default(),
-        logical_key_store_name: String::default(),
-        id: String::default(),
-        grant_tokens: Vec::default(),
-        ddb_client: std::ptr::null(),
-        kms_client: std::ptr::null(),
-    }
-}
-
-fn default_client_config() -> ffi::MplAwsClientConfig {
-    ffi::MplAwsClientConfig {
-        region: String::default(),
-        retry: default_retry_config(),
-    }
-}
-
-fn default_retry_config() -> ffi::RetryConfig {
-    ffi::RetryConfig {
-        mode_adaptive: false,
-        max_attempts: 0,
-    }
 }
