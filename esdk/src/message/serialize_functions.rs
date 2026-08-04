@@ -44,7 +44,6 @@ pub(crate) fn read_up_to(this: &mut dyn SafeRead, buf: &mut [u8]) -> Result<usiz
                     return Ok(curr);
                 }
             }
-            // Err(ref e) if e.is_interrupted() => {}
             Err(e) => return Err(ser_io(e)),
         }
     }
@@ -62,10 +61,7 @@ pub(crate) fn read_up_to_peek(
     match first {
         Some(f) => {
             buf[0] = f;
-            match read_up_to(this, &mut buf[1..]) {
-                Ok(n) => Ok(n + 1),
-                Err(e) => Err(e),
-            }
+            read_up_to(this, &mut buf[1..]).map(|n| n + 1)
         }
         None => read_up_to(this, buf),
     }
