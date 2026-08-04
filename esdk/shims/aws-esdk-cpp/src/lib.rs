@@ -92,7 +92,7 @@
 //
 //= spec/shim/shim.md#creating-and-releasing-resources
 //= type=implication
-//= reason=Each resource kind has its own create_* function in the cxx bridge (keyring, key store, KMS client, DynamoDB client).
+//= reason=Each resource kind has its own create_* function in the cxx bridge (keyring, key store, KMS client, DynamoDB client, cache).
 //# - For each resource kind, the shim MUST provide a means for the target to create an
 //# instance backed by the core library.
 //
@@ -236,23 +236,12 @@ mod ffi {
         kms_client: *const MplKmsClient,
     }
 
-    enum CacheType {
-        NoCache,
-        MultiThreadedCache,
-        Unset,
-    }
-
-    struct MultiThreadedCacheConfig {
-        entryCapacity: u32,
-        entryPruningTailSize: u32,
-    }
-
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
         ttl_seconds: u32,
-        cache: CacheType,
-        multi_threaded_cache: MultiThreadedCacheConfig,
+        /// The cache this keyring uses; null defers to the core library's default cache.
+        cache: *const Cache,
         partition_id: String,
     }
 
@@ -264,6 +253,14 @@ mod ffi {
         type KeyStore;
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
         fn delete_keystore(client: Box<KeyStore>) -> Result<()>;
+
+        type Cache;
+        fn create_no_cache() -> Result<Box<Cache>>;
+        fn create_multi_threaded_cache(
+            entry_capacity: u32,
+            entry_pruning_tail_size: u32,
+        ) -> Result<Box<Cache>>;
+        fn delete_cache(cache: Box<Cache>) -> Result<()>;
 
         type Keyring;
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
@@ -303,6 +300,17 @@ struct Keyring {
     client: dafny::types::keyring::KeyringRef,
 }
 
+/// A cache selection held for the target as an opaque resource, wrapping the
+/// core library's cache-type union.
+//= spec/shim/esdk-shim.md#cache-configuration
+//= type=implication
+//= reason=The bridge exposes one create_* operation per supported cache type, so an unsupported cache type cannot be expressed across the boundary.
+//# - The shim MUST return an error when the target cache type is not a supported
+//# value.
+struct Cache {
+    cache_type: dafny::types::CacheType,
+}
+
 /// Checks a target-supplied resource handle and borrows the resource behind it.
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
     //= spec/shim/shim.md#handles-and-lifetimes
@@ -314,6 +322,14 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
     // SAFETY: a non-null handle is a Box the shim returned to the target from a
     // create_* operation; the target keeps it alive for the duration of the call.
     Ok(unsafe { &*ptr })
+}
+
+/// Borrows the resource behind an optional target-supplied handle; `None` when
+/// the target left it unset.
+fn optional_handle<'a, T>(ptr: *const T) -> Option<&'a T> {
+    // SAFETY: a non-null handle is a Box the shim returned to the target from a
+    // create_* operation; the target keeps it alive for the duration of the call.
+    (!ptr.is_null()).then(|| unsafe { &*ptr })
 }
 
 // Type translation (see spec/shim/esdk-shim.md#type-translation).
@@ -488,52 +504,47 @@ fn make_kms_config(
     }
 }
 
-fn make_cache_type(
-    cache: ffi::CacheType,
-    multi_threaded: &ffi::MultiThreadedCacheConfig,
-) -> Result<dafny::types::CacheType, String> {
-    match cache {
-        //= spec/shim/esdk-shim.md#cache-configuration
-        //# - The shim MUST translate a no-cache selection.
-        ffi::CacheType::NoCache => Ok(dafny::types::CacheType::No(
+//= spec/shim/esdk-shim.md#cache-configuration
+//# - The shim MUST translate a no-cache selection.
+fn create_no_cache() -> Result<Box<Cache>, String> {
+    Ok(Box::new(Cache {
+        cache_type: dafny::types::CacheType::No(
             dafny::types::NoCache::builder()
                 .build()
                 .map_err(|e| format!("failed to build NoCache: {:?}", e))?,
-        )),
-        //= spec/shim/esdk-shim.md#cache-configuration
-        //# - The shim MUST translate a multi-threaded cache selection.
-        ffi::CacheType::MultiThreadedCache => {
-            let mut cache_builder = dafny::types::MultiThreadedCache::builder();
-            if multi_threaded.entryCapacity != 0 {
-                let entry_capacity = i32::try_from(multi_threaded.entryCapacity).map_err(|_| {
-                    format!(
-                        "entry_capacity {} exceeds the core ESDK's i32 limit",
-                        multi_threaded.entryCapacity
-                    )
-                })?;
-                cache_builder = cache_builder.entry_capacity(entry_capacity);
-            }
-            if multi_threaded.entryPruningTailSize != 0 {
-                let entry_pruning_tail_size = i32::try_from(multi_threaded.entryPruningTailSize)
-                    .map_err(|_| {
-                        format!(
-                            "entry_pruning_tail_size {} exceeds the core ESDK's i32 limit",
-                            multi_threaded.entryPruningTailSize
-                        )
-                    })?;
-                cache_builder = cache_builder.entry_pruning_tail_size(entry_pruning_tail_size);
-            }
-            Ok(dafny::types::CacheType::MultiThreaded(
-                cache_builder
-                    .build()
-                    .map_err(|e| format!("failed to build MultiThreadedCache: {:?}", e))?,
-            ))
-        }
-        //= spec/shim/esdk-shim.md#cache-configuration
-        //# - The shim MUST return an error when the target cache type is not a supported
-        //# value.
-        _ => Err("Invalid CacheType".to_string()),
+        ),
+    }))
+}
+
+//= spec/shim/esdk-shim.md#cache-configuration
+//# - The shim MUST translate a multi-threaded cache selection.
+fn create_multi_threaded_cache(
+    entry_capacity: u32,
+    entry_pruning_tail_size: u32,
+) -> Result<Box<Cache>, String> {
+    // A parameter left 0 is omitted so the core library's default applies.
+    let mut cache_builder = dafny::types::MultiThreadedCache::builder();
+    if entry_capacity != 0 {
+        let entry_capacity = i32::try_from(entry_capacity).map_err(|_| {
+            format!("entry_capacity {entry_capacity} exceeds the core ESDK's i32 limit")
+        })?;
+        cache_builder = cache_builder.entry_capacity(entry_capacity);
     }
+    if entry_pruning_tail_size != 0 {
+        let entry_pruning_tail_size = i32::try_from(entry_pruning_tail_size).map_err(|_| {
+            format!(
+                "entry_pruning_tail_size {entry_pruning_tail_size} exceeds the core ESDK's i32 limit"
+            )
+        })?;
+        cache_builder = cache_builder.entry_pruning_tail_size(entry_pruning_tail_size);
+    }
+    Ok(Box::new(Cache {
+        cache_type: dafny::types::CacheType::MultiThreaded(
+            cache_builder
+                .build()
+                .map_err(|e| format!("failed to build MultiThreadedCache: {:?}", e))?,
+        ),
+    }))
 }
 
 /// Translates the bridge retry configuration; `None` when the target set no
@@ -848,8 +859,8 @@ fn create_hierarchical_keyring(
         .branch_key_id(input.branch_key_id.clone())
         .ttl_seconds(input.ttl_seconds)
         .key_store(key_store.client.clone());
-    if input.cache != ffi::CacheType::Unset {
-        builder = builder.cache(make_cache_type(input.cache, &input.multi_threaded_cache)?);
+    if let Some(cache) = optional_handle(input.cache) {
+        builder = builder.cache(cache.cache_type.clone());
     }
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
@@ -877,6 +888,9 @@ fn delete_keystore(_client: Box<KeyStore>) -> Result<(), String> {
     Ok(())
 }
 fn delete_keyring(_client: Box<Keyring>) -> Result<(), String> {
+    Ok(())
+}
+fn delete_cache(_cache: Box<Cache>) -> Result<(), String> {
     Ok(())
 }
 
@@ -912,11 +926,7 @@ fn default_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
         branch_key_id: String::default(),
         key_store: std::ptr::null(),
         ttl_seconds: 0,
-        cache: ffi::CacheType::Unset,
-        multi_threaded_cache: ffi::MultiThreadedCacheConfig {
-            entryCapacity: 0,
-            entryPruningTailSize: 0,
-        },
+        cache: std::ptr::null(),
         partition_id: String::default(),
     }
 }
