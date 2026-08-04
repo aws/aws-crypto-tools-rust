@@ -36,12 +36,6 @@ void test_round_trip(const TestConfig& cfg) {
     auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
     ESDK_CHECK(ciphertext != plaintext);
 
-    //= spec/shim/shim.md#delegation
-    //= type=test
-    //= reason=Encrypting then decrypting back to the plaintext through the C++ facade proves the shim invoked the core library's encrypt and decrypt operations.
-    //# - Each operation the shim exposes MUST produce its result by invoking the
-    //# corresponding core-library operation.
-    //
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //= reason=Round-tripping back to the original plaintext proves encrypt passed the target plaintext to the core library unmodified.
@@ -155,11 +149,6 @@ void test_default_options_defer(const TestConfig& cfg) {
     auto keyring = make_keyring(cfg);
     Aws::Esdk::EncryptionSDK sdk;
     auto encrypted = sdk.encrypt(to_bytes("defer to defaults"), keyring);
-    //= spec/shim/shim.md#operation-contracts
-    //= type=test
-    //= reason=Encrypt with default (empty) options yields the core default algorithm suite, proving the shim did not substitute its own default.
-    //# - When the target does not supply an optional input, the shim MUST defer to
-    //# the core library's default and MUST NOT substitute its own.
     ESDK_CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
 }
