@@ -223,7 +223,7 @@ pub fn aes_decrypt(
 ) -> Result<(), Error> {
     if plain_text.len() < cipher_text.len() {
         return err(format!(
-            "aes_decrypt : Cipher text length of {} is less than plain text length of {}.",
+            "aes_decrypt : Plain text buffer length of {} is less than cipher text length of {}.",
             plain_text.len(),
             cipher_text.len()
         ));

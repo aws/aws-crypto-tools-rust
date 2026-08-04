@@ -1,5 +1,6 @@
 use crate::DigestAlg;
 use crate::Error;
+use crate::err;
 use crate::serr;
 
 use aws_lc_rs::encoding::AsBigEndian;
@@ -111,6 +112,56 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
     }
 }
 
+/// Maximum number of signing attempts made while looking for a DER
+/// signature of the canonical length (see [`sign_fixed_len`]).
+///
+/// Each attempt succeeds with probability ~0.51, measured over 4000
+/// signatures per curve, so 32 attempts leaves a spurious-failure
+/// probability of ~1.3e-10.
+const MAX_SIGN_ATTEMPTS: u32 = 32;
+
+/// The DER-encoded signature length this crate emits for `alg`.
+///
+/// A `match` on the algorithm rather than a comparison against the
+/// `aws-lc-rs` constants, so adding a curve to the `#[non_exhaustive]`
+/// [`EcdsaSignatureAlgorithm`] is a compile error instead of a signing
+/// operation that can never satisfy its length check.
+const fn der_sig_len(alg: EcdsaSignatureAlgorithm) -> usize {
+    match alg {
+        EcdsaSignatureAlgorithm::EcdsaP256 => 71,
+        EcdsaSignatureAlgorithm::EcdsaP384 => 103,
+    }
+}
+
+/// Call `sign_once` until it produces a DER signature of exactly
+/// `want_len` bytes, giving up after [`MAX_SIGN_ATTEMPTS`].
+///
+/// The DER encoding of an ECDSA signature varies in length because `r` and
+/// `s` each need a leading `0x00` when their high bit is set, so a fresh
+/// signature is simply retried until it lands on the canonical length.
+/// This terminates only because ECDSA draws a random nonce per attempt,
+/// making the attempts independent; a deterministic scheme (RFC 6979)
+/// would produce the same length forever and always exhaust the retries.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `sign_once` fails, or if no signature of
+/// `want_len` bytes is produced within [`MAX_SIGN_ATTEMPTS`].
+fn sign_fixed_len(
+    want_len: usize,
+    mut sign_once: impl FnMut() -> Result<aws_lc_rs::signature::Signature, Error>,
+) -> Result<Vec<u8>, Error> {
+    for _ in 0..MAX_SIGN_ATTEMPTS {
+        let signature = sign_once()?;
+        if signature.as_ref().len() == want_len {
+            return Ok(signature.as_ref().into());
+        }
+    }
+    err(format!(
+        "ecdsa_sign : no {want_len} byte DER signature produced in {MAX_SIGN_ATTEMPTS} attempts."
+    ))
+}
+
 /// Sign the message with the key using the given algorithm
 ///
 /// The key must be in DER format
@@ -118,28 +169,19 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
 /// # Errors
 ///
 /// Returns an [`Error`] if `key` is not a valid DER-encoded private key for
-/// `alg`, or if the signing operation fails.
+/// `alg`, if the signing operation fails, or if no canonical-length
+/// signature is produced within [`MAX_SIGN_ATTEMPTS`].
 // FIXME - pass in &mut[u8] instead of returning Vec
 pub fn ecdsa_sign(alg: EcdsaSignatureAlgorithm, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, Error> {
-    // This loop can in theory run forever, but the chances of that are negligible.
-    // We may want to consider failing, after some number of loops, if we can do so in a way consistent with other ESDKs.
-    let alg = get_sign_alg(alg);
-    let private_key: EcdsaKeyPair =
-        EcdsaKeyPair::from_private_key_der(alg, key).map_err(|e| serr(format!("{e:?}")))?;
+    let want_len = der_sig_len(alg);
+    let private_key: EcdsaKeyPair = EcdsaKeyPair::from_private_key_der(get_sign_alg(alg), key)
+        .map_err(|e| serr(format!("{e:?}")))?;
     let rng = SystemRandom::new();
-    loop {
-        let result: aws_lc_rs::signature::Signature = private_key
+    sign_fixed_len(want_len, || {
+        private_key
             .sign(&rng, msg)
-            .map_err(|e| serr(format!("{e:?}")))?;
-
-        if (alg == &aws_lc_rs::signature::ECDSA_P384_SHA384_ASN1_SIGNING
-            && result.as_ref().len() == 103)
-            || (alg == &aws_lc_rs::signature::ECDSA_P256_SHA256_ASN1_SIGNING
-                && result.as_ref().len() == 71)
-        {
-            return Ok(result.as_ref().into());
-        }
-    }
+            .map_err(|e| serr(format!("{e:?}")))
+    })
 }
 
 /// Sign the accumulated digest with the key using the given algorithm
@@ -149,32 +191,22 @@ pub fn ecdsa_sign(alg: EcdsaSignatureAlgorithm, key: &[u8], msg: &[u8]) -> Resul
 /// # Errors
 ///
 /// Returns an [`Error`] if `key` is not a valid DER-encoded private key for
-/// `alg`, or if the signing operation fails.
+/// `alg`, if the signing operation fails, or if no canonical-length
+/// signature is produced within [`MAX_SIGN_ATTEMPTS`].
 pub fn ecdsa_sign_digest(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
     context: DigestContext,
 ) -> Result<Vec<u8>, Error> {
-    let alg = get_sign_alg(alg);
+    let want_len = der_sig_len(alg);
+    let private_key: EcdsaKeyPair = EcdsaKeyPair::from_private_key_der(get_sign_alg(alg), key)
+        .map_err(|e| serr(format!("{e:?}")))?;
     let digest = context.digest();
-    let private_key: EcdsaKeyPair =
-        EcdsaKeyPair::from_private_key_der(alg, key).map_err(|e| serr(format!("{e:?}")))?;
-
-    // This loop can in theory run forever, but the chances of that are negligible.
-    // We may want to consider failing, after some number of loops, if we can do so in a way consistent with other ESDKs.
-    loop {
-        let result: aws_lc_rs::signature::Signature = private_key
+    sign_fixed_len(want_len, || {
+        private_key
             .sign_digest(&digest)
-            .map_err(|e| serr(format!("{e:?}")))?;
-
-        if (alg == &aws_lc_rs::signature::ECDSA_P384_SHA384_ASN1_SIGNING
-            && result.as_ref().len() == 103)
-            || (alg == &aws_lc_rs::signature::ECDSA_P256_SHA256_ASN1_SIGNING
-                && result.as_ref().len() == 71)
-        {
-            return Ok(result.as_ref().into());
-        }
-    }
+            .map_err(|e| serr(format!("{e:?}")))
+    })
 }
 
 /// Verify the signature of the message using the key and algorithm
