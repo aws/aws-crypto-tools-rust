@@ -38,22 +38,22 @@ void test_round_trip(const TestConfig& cfg) {
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
-    //= reason=Round-tripping back to the original plaintext proves encrypt passed the target plaintext to the core library unmodified.
+    //= reason=A plaintext modified before core encrypt would decrypt back to the modified bytes, failing the equality below.
     //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
     //
     //= spec/shim/esdk-shim.md#encrypt-outputs
     //= type=test
-    //= reason=Decrypting the returned ciphertext back to the original plaintext proves encrypt returned the core library's ciphertext unmodified.
+    //= reason=A ciphertext modified after core encrypt fails AEAD authentication on decrypt.
     //# - MUST return the core ESDK's ciphertext unmodified.
     //
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
-    //= reason=Decrypting this exact ciphertext back to the original plaintext proves it reached the core library unmodified; any modification would fail authentication.
+    //= reason=A ciphertext modified before core decrypt fails AEAD authentication.
     //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
     //
     //= spec/shim/esdk-shim.md#decrypt-outputs
     //= type=test
-    //= reason=The recovered plaintext equals the original, proving decrypt returned the core library's plaintext unmodified.
+    //= reason=A plaintext modified after core decrypt fails the equality below.
     //# - MUST return the core ESDK's plaintext unmodified.
     auto decrypted = sdk.decrypt(ciphertext, keyring);
     ESDK_CHECK(decrypted.plaintext == plaintext);
