@@ -655,7 +655,7 @@ async fn test_decrypt_materials_without_reproduced_context_is_unchanged() {
 #[tokio::test]
 async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context() {
     // The reserved verification key may arrive only via the reproduced context;
-    // the CMM must look it up after reconciliation, not before.
+    // the CMM must look it up after the merge, not before.
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let vk = vec![0x02; 49];
@@ -677,7 +677,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
     assert_eq!(
         materials
             .verification_key()
-            .expect("verification key must be extracted from the reconciled context")
+            .expect("verification key must be extracted from the merged context")
             .as_bytes(),
         &vk,
     );
@@ -685,7 +685,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
 
 #[tokio::test]
 async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reproduced_context() {
-    // The reserved-key rejection must also see the reconciled context, so it
+    // The reserved-key rejection must also see the merged context, so it
     // cannot be smuggled past via the reproduced context.
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);

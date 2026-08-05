@@ -41,13 +41,13 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///
 /// On `decrypt_materials` the default CMM:
 /// - Validates the algorithm suite against the request's commitment policy.
-/// - Reconciles the request's encryption context with its Reproduced
+/// - Merges the request's encryption context with its Reproduced
 ///   Encryption Context: shared keys must agree, and pairs present only in
 ///   the reproduced context are appended and reported as Required Encryption
-///   Context Keys. See [`reconcile_reproduced_encryption_context`].
+///   Context Keys. See [`merge_reproduced_encryption_context`].
 /// - For signing suites: extracts and base64-decodes the verification key
-///   from the reconciled encryption context.
-/// - For non-signing suites: rejects requests whose reconciled encryption
+///   from the merged encryption context.
+/// - For non-signing suites: rejects requests whose merged encryption
 ///   context contains the reserved `aws-crypto-public-key`.
 /// - Calls the wrapped keyring's `on_decrypt` to populate the plaintext data
 ///   key.
@@ -183,12 +183,12 @@ impl Cmm for DefaultCmm {
             )));
         }
 
-        // Reconcile the message's encryption context with the customer-supplied
+        // Merge the message's encryption context with the customer-supplied
         // Reproduced Encryption Context before anything reads the context. Every
         // subsequent step — the reserved-key checks, the verification key, and
-        // the context handed to the keyring as AAD — MUST see the reconciled
+        // the context handed to the keyring as AAD — MUST see the merged
         // context, not the message's.
-        let (ec, required_encryption_context_keys) = reconcile_reproduced_encryption_context(
+        let (ec, required_encryption_context_keys) = merge_reproduced_encryption_context(
             request.encryption_context(),
             request.reproduced_encryption_context(),
         )?;
@@ -240,7 +240,7 @@ impl Cmm for DefaultCmm {
     }
 }
 
-/// Reconcile the message's encryption context with the customer-supplied
+/// Merge the message's encryption context with the customer-supplied
 /// Reproduced Encryption Context, per
 /// `spec/framework/cmm-interface.md#decrypt-materials`.
 ///
@@ -257,7 +257,7 @@ impl Cmm for DefaultCmm {
 /// CMM may hold required keys back from the message, so a decryptor that only
 /// ever saw the message's context would compute a short AAD and fail
 /// authentication.
-fn reconcile_reproduced_encryption_context(
+fn merge_reproduced_encryption_context(
     message_ec: &EncryptionContext,
     reproduced_ec: Option<&EncryptionContext>,
 ) -> Result<(EncryptionContext, BTreeSet<Vec<u8>>), MaterialsError> {
