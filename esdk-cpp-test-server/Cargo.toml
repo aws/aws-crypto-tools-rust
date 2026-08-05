@@ -29,3 +29,4 @@ cc = "1"
 # Own workspace root so cargo builds it standalone; the test-server crate and the
 # aws-esdk-cpp shim are consumed as a path dependency and a prebuilt cdylib.
 [workspace]
+exclude = [".commons-clone"]
