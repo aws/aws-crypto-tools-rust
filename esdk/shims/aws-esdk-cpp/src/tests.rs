@@ -75,11 +75,32 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
     accepted.sort_unstable();
     let mut expected = ALG_REPRS.to_vec();
     expected.sort_unstable();
-    //= spec/shim/esdk-shim.md#algorithm-suite-identifier
-    //= type=test
-    //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
-    //# algorithm suite that has the same two-byte ID.
     assert_eq!(accepted, expected);
+}
+
+#[test]
+fn alg_id_target_to_core_maps_each_repr_to_matching_variant() {
+    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
+    let pairs: [(u16, C); 11] = [
+        (0x0014, C::AlgAes128GcmIv12Tag16NoKdf),
+        (0x0046, C::AlgAes192GcmIv12Tag16NoKdf),
+        (0x0078, C::AlgAes256GcmIv12Tag16NoKdf),
+        (0x0114, C::AlgAes128GcmIv12Tag16HkdfSha256),
+        (0x0146, C::AlgAes192GcmIv12Tag16HkdfSha256),
+        (0x0178, C::AlgAes256GcmIv12Tag16HkdfSha256),
+        (0x0214, C::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256),
+        (0x0346, C::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384),
+        (0x0378, C::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384),
+        (0x0478, C::AlgAes256GcmHkdfSha512CommitKey),
+        (0x0578, C::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384),
+    ];
+    for (repr, core) in pairs {
+        //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+        //= type=test
+        //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
+        //# algorithm suite that has the same two-byte ID.
+        assert_eq!(alg_id_target_to_core(F { repr }).unwrap(), core);
+    }
 }
 
 #[test]
@@ -175,16 +196,23 @@ fn encryption_context_round_trips() {
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
-    //# - The shim MUST translate the target's encryption context, given as a list of
-    //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
-    //# the exact key and value of each.
-    //
-    //= spec/shim/esdk-shim.md#encryption-context
-    //= type=test
-    //= reason=Round-trip map -> list -> map equals the original, proving the core-to-target conversion preserves every pair, key and value.
+    //= reason=The produced list is checked item-by-item: each source pair appears once with its exact key and value.
     //# - The shim MUST translate the core ESDK's encryption context, given as a
     //# key-value map, to the target's list of key-value pairs, preserving every pair
     //# and the exact key and value of each.
+    for (k, v) in &m {
+        assert_eq!(
+            list.iter().filter(|i| &i.key == k && &i.value == v).count(),
+            1,
+            "pair {k}={v} must appear exactly once"
+        );
+    }
+    //= spec/shim/esdk-shim.md#encryption-context
+    //= type=test
+    //= reason=The map built from the item-checked list equals the source map, pinning key and value per pair.
+    //# - The shim MUST translate the target's encryption context, given as a list of
+    //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
+    //# the exact key and value of each.
     assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
 }
 
@@ -613,7 +641,10 @@ fn round_trip_integration() {
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = plaintext.as_slice();
     enc_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
-    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
+    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    // commitment policy, frame length, and max-EDKs are forwarded plumbing
+    // (plain source-side `implementation`); values here equal the ESDK defaults, so
+    // asserting on them would not falsify the forwarding — no `type=test` here.
     enc_in.commitment_policy = ffi::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     enc_in.frame_length = 4096;
     enc_in.max_encrypted_data_keys = 3;
@@ -627,7 +658,7 @@ fn round_trip_integration() {
     //
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
-    //= reason=The returned used-suite equals the suite set on the input, proving the target-supplied algorithm suite reached the core ESDK.
+    //= reason=0x0478 differs from the core default 0x0578; a dropped input suite would echo the default here.
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
     assert_eq!(
@@ -641,7 +672,7 @@ fn round_trip_integration() {
     //
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
-    //= reason=The result encryption context contains the target-supplied pair, proving the encryption context reached the core ESDK.
+    //= reason=Core's result encryption context carries the pairs it received; a dropped input pair would be absent here.
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     assert_eq!(
@@ -658,7 +689,7 @@ fn round_trip_integration() {
     dec_in.max_encrypted_data_keys = 3;
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
-    //= reason=decrypt supplies the same encryption-context pair used at encrypt time; a successful round-trip proves it was provided to the core ESDK.
+    //= reason=Core rejects a reproduced encryption context that mismatches the message; decrypt succeeding requires these pairs to have reached it.
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     dec_in.encryption_context = encryption_context_core_to_target(ec.clone()).unwrap();
