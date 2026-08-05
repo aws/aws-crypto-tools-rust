@@ -28,6 +28,8 @@ jobs:
         working-directory: esdk-test-server
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # aws-lc-sys (via aws-esdk) needs Go to build its native code
       - name: Install Go
@@ -78,6 +80,8 @@ jobs:
       AWS_REGION: us-west-2
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # aws-lc-sys (via aws-esdk) needs Go to build its native code
       - name: Install Go
