@@ -2,15 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! KBKDF-CTR-HMAC test vectors ported from Dafny
-//! `TestKDF_TestVectors.dfy`.
+//! [`TestKDF_TestVectors.dfy`].
+//!
+//! The scheme is NIST SP 800-108r1 §4.1: key derivation in counter mode
+//! with HMAC as the PRF. Dafny implements it as `KdfCounterMode` in
+//! [`KdfCtr.dfy`]. See `aws_mpl_primitives::kbkdf_ctr_hmac` for the
+//! algorithm itself and the PRF-per-digest mapping.
 //!
 //! Two vector families:
 //!
-//! * B.1–B.10 (`RAW_VECTORS`) — NIST-style KBKDF-CTR-HMAC vectors driven
-//!   through the raw entry point. `info` is passed verbatim.
-//! * C.1–C.5 (`PURPOSE_NONCE_VECTORS`) — MPL-shape vectors where the info
-//!   string is constructed as `PURPOSE || 0x00 || nonce || L_be32` (bits),
-//!   matching the AWS KMS Hierarchical Keyring's fixed-info convention.
+//! * B.1–B.10 (`RAW_VECTORS`) — driven through the raw entry point, with
+//!   `info` passed verbatim as the fixed-info input.
+//! * C.1–C.5 (`PURPOSE_NONCE_VECTORS`) — the same derivation, with fixed
+//!   info assembled the way the AWS KMS Hierarchical Keyring assembles it:
+//!   `PURPOSE || 0x00 || nonce || L_be32` (see `build_fixed_info`). That
+//!   is SP 800-108's fixed-info layout rather than an MPL invention:
+//!   `PURPOSE` is the label, `0x00` the separation indicator, `nonce` the
+//!   context, and `L_be32` is `[L]_2`, the derived length in bits.
+//!
+//! [`TestKDF_TestVectors.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestKDF_TestVectors.dfy
+//! [`KdfCtr.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/src/KDF/KdfCtr.dfy
 
 use aws_mpl_primitives::{DigestAlg, Error, kbkdf_ctr_hmac};
 

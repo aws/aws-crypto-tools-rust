@@ -1,13 +1,15 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! AES-GCM tests ported from Dafny `TestAES.dfy`.
+//! AES-GCM tests ported from Dafny [`TestAES.dfy`].
 //!
 //! The KAT (key, IV, AAD, ciphertext, auth tag) was generated in Node.js
-//! against AES-256-GCM; see the leading comment in `TestAES.dfy` for the
+//! against AES-256-GCM; see the leading comment in [`TestAES.dfy`] for the
 //! generator recipe. Additional round-trip and error-path tests are added
 //! to hit the wider prim API surface (AES-128-GCM, AES-192-GCM, length
 //! validation).
+//!
+//! [`TestAES.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAES.dfy
 
 use aws_mpl_primitives::{AesGcm, Error, aes_decrypt, aes_encrypt};
 
