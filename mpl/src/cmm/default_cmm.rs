@@ -10,12 +10,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use aws_lc_rs::encoding::AsBigEndian;
 use aws_lc_rs::signature::{
-    EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING, ECDSA_P384_SHA384_ASN1_SIGNING,
+    ECDSA_P256_SHA256_ASN1_SIGNING, ECDSA_P384_SHA384_ASN1_SIGNING, EcdsaKeyPair, KeyPair,
 };
 use base64::Engine;
 
-use super::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use super::Cmm;
+use super::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use crate::keyring::Keyring;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
