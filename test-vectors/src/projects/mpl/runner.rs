@@ -19,6 +19,7 @@
 //! extending [`build_cmm_for_description`]; adding new suites is a matter of
 //! extending [`suite::SUPPORTED_SUITES`].
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::str;
@@ -46,9 +47,9 @@ use crate::manifest::header;
 use crate::manifest::io::{keys_path, manifest_path, read_json, resolve_keys_uri, write_json};
 use crate::manifest::keys::KeyManifest;
 
+use super::CLIENT_NAME;
 use super::static_keystore::StaticKeyStore;
 use super::suite;
-use super::CLIENT_NAME;
 
 /// The `type` string used by hierarchy keyring key descriptions.
 const KEY_DESC_TYPE_HIERARCHY: &str = "aws-kms-hierarchy";
@@ -102,13 +103,15 @@ pub fn run_encrypt(
                 // negative-encrypt / negative-decrypt aren't supported yet;
                 // skip them so the runner can still emit vectors for the
                 // ones it can handle.
-                summary.skipped += 1;
+                summary.skip("negative vector");
                 continue;
             }
         };
 
         if !is_supported_key_description(&encrypt_vector.encrypt_key_description) {
-            summary.skipped += 1;
+            summary.skip(unsupported_key_description_reason(
+                &encrypt_vector.encrypt_key_description,
+            ));
             continue;
         }
 
@@ -118,7 +121,10 @@ pub fn run_encrypt(
                  is not supported by the Rust mpl crate yet",
                 encrypt_vector.algorithm_suite_id,
             );
-            summary.skipped += 1;
+            summary.skip(format!(
+                "unsupported algorithm suite '{}'",
+                encrypt_vector.algorithm_suite_id
+            ));
             continue;
         }
 
@@ -138,9 +144,15 @@ pub fn run_encrypt(
     fs::copy(&keys_source_path, &keys_dest).map_err(|e| TestVectorError::io(&keys_dest, e))?;
 
     println!(
-        "run_encrypt: processed {} vector(s), skipped {} (unsupported keyring or negative)",
+        "run_encrypt: processed {} vector(s), skipped {}",
         summary.processed, summary.skipped,
     );
+    if summary.skipped > 0 {
+        println!(
+            "run_encrypt: skipped by reason: {}",
+            summary.skip_breakdown()
+        );
+    }
     Ok(())
 }
 
@@ -164,13 +176,15 @@ pub fn run_decrypt(manifest_dir: &Path, test_name: Option<&str>) -> Result<()> {
         let decrypt_vector = match vector {
             DecryptTestVector::Positive(v) => v,
             DecryptTestVector::Negative(_) => {
-                summary.skipped += 1;
+                summary.skip("negative vector");
                 continue;
             }
         };
 
         if !is_supported_key_description(&decrypt_vector.key_description) {
-            summary.skipped += 1;
+            summary.skip(unsupported_key_description_reason(
+                &decrypt_vector.key_description,
+            ));
             continue;
         }
 
@@ -180,7 +194,10 @@ pub fn run_decrypt(manifest_dir: &Path, test_name: Option<&str>) -> Result<()> {
                  is not supported by the Rust mpl crate yet",
                 decrypt_vector.algorithm_suite_id,
             );
-            summary.skipped += 1;
+            summary.skip(format!(
+                "unsupported algorithm suite '{}'",
+                decrypt_vector.algorithm_suite_id
+            ));
             continue;
         }
 
@@ -197,6 +214,12 @@ pub fn run_decrypt(manifest_dir: &Path, test_name: Option<&str>) -> Result<()> {
         "run_decrypt: verified {} vector(s), skipped {}",
         summary.processed, summary.skipped,
     );
+    if summary.skipped > 0 {
+        println!(
+            "run_decrypt: skipped by reason: {}",
+            summary.skip_breakdown()
+        );
+    }
     Ok(())
 }
 
@@ -632,17 +655,58 @@ fn build_runtime() -> Result<tokio::runtime::Runtime> {
 
 /// Tally of vectors processed vs. skipped during a run. Printed to stdout
 /// at the end of each `run_*` call so operators can see progress.
+///
+/// `skipped_by_reason` breaks the skip count down by cause so an operator can
+/// tell "this keyring isn't implemented yet" apart from "this suite isn't
+/// supported yet" without diffing manifests by hand.
 #[derive(Debug, Default)]
 struct RunSummary {
     processed: usize,
     skipped: usize,
+    skipped_by_reason: BTreeMap<String, usize>,
+}
+
+impl RunSummary {
+    /// Record one skipped vector under `reason`.
+    fn skip(&mut self, reason: impl Into<String>) {
+        self.skipped += 1;
+        *self.skipped_by_reason.entry(reason.into()).or_default() += 1;
+    }
+
+    /// Render the skip breakdown as `reason (count), ...`, most frequent first.
+    fn skip_breakdown(&self) -> String {
+        let mut entries: Vec<(&String, &usize)> = self.skipped_by_reason.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        entries
+            .iter()
+            .map(|(reason, count)| format!("{reason} ({count})"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// Describe why `desc` cannot be exercised, for the skip breakdown. Named
+/// keyring types the Rust `mpl` crate has not implemented yet are reported
+/// verbatim so the gap is visible rather than folded into a bare count.
+fn unsupported_key_description_reason(desc: &Value) -> String {
+    match desc.get("type").and_then(Value::as_str) {
+        Some(KEY_DESC_TYPE_RAW) => {
+            let algorithm = desc
+                .get(KEY_DESC_FIELD_ENCRYPTION_ALGORITHM)
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            format!("unsupported keyring 'raw/{algorithm}'")
+        }
+        Some(other) => format!("unsupported keyring '{other}'"),
+        None => "key description missing 'type'".to_string(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::projects::mpl::MplProject;
     use crate::projects::Project;
+    use crate::projects::mpl::MplProject;
     use tempfile::tempdir;
 
     // End-to-end: generate an encrypt manifest, run it, and verify the
@@ -931,6 +995,83 @@ mod tests {
         );
         write_json(&manifest_path(decrypt_dir.path()), &decrypt_manifest).unwrap();
 
+        MplProject.run_decrypt(decrypt_dir.path(), None).unwrap();
+    }
+
+    // Skip reasons must name the unsupported keyring so an operator can see
+    // which capability gap accounts for a skip, rather than a bare count.
+    #[test]
+    fn unsupported_key_description_reason_names_the_keyring_type() {
+        assert_eq!(
+            unsupported_key_description_reason(&serde_json::json!({
+                "type": "required-encryption-context-cmm",
+            })),
+            "unsupported keyring 'required-encryption-context-cmm'",
+        );
+        assert_eq!(
+            unsupported_key_description_reason(&serde_json::json!({
+                "type": "raw",
+                "encryption-algorithm": "rsa",
+            })),
+            "unsupported keyring 'raw/rsa'",
+        );
+        assert_eq!(
+            unsupported_key_description_reason(&serde_json::json!({})),
+            "key description missing 'type'",
+        );
+    }
+
+    #[test]
+    fn skip_breakdown_lists_most_frequent_reason_first() {
+        let mut summary = RunSummary::default();
+        summary.skip("beta");
+        summary.skip("alpha");
+        summary.skip("alpha");
+        assert_eq!(summary.skipped, 3);
+        assert_eq!(summary.skip_breakdown(), "alpha (2), beta (1)");
+    }
+
+    #[test]
+    fn skip_breakdown_is_empty_when_nothing_was_skipped() {
+        assert_eq!(RunSummary::default().skip_breakdown(), "");
+    }
+
+    // The required-encryption-context CMM is not implemented, so a manifest
+    // carrying one must be reported under that name rather than silently
+    // inflating the skip count.
+    #[test]
+    fn decrypt_reports_required_encryption_context_cmm_as_unsupported() {
+        let dir = tempdir().unwrap();
+        MplProject.generate_manifest(dir.path()).unwrap();
+        let decrypt_dir = tempdir().unwrap();
+        MplProject
+            .run_encrypt(dir.path(), decrypt_dir.path(), None)
+            .unwrap();
+
+        let mut manifest: DecryptManifest = read_json(&manifest_path(decrypt_dir.path())).unwrap();
+        manifest.tests.insert(
+            "injected-required-ec-cmm".into(),
+            DecryptTestVector::Positive(PositiveDecryptVector {
+                description: "Injected required-EC-CMM->Decryption 0078".into(),
+                algorithm_suite_id: "0078".into(),
+                key_description: serde_json::json!({
+                    "type": "required-encryption-context-cmm",
+                    "underlying": {"type": "raw", "encryption-algorithm": "aes", "key": "aes-256"},
+                    "requiredEncryptionContextKeys": ["a"],
+                }),
+                encrypted_data_keys: Vec::new(),
+                encryption_context: IndexMap::new(),
+                result: DecryptResult {
+                    plaintext_data_key: Some(String::new()),
+                    symmetric_signing_key: None,
+                    required_encryption_context_keys: Vec::new(),
+                },
+                reproduced_encryption_context: None,
+            }),
+        );
+        write_json(&manifest_path(decrypt_dir.path()), &manifest).unwrap();
+
+        // The run must still succeed; the unsupported CMM is skipped, not fatal.
         MplProject.run_decrypt(decrypt_dir.path(), None).unwrap();
     }
 }
