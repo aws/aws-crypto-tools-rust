@@ -17,8 +17,8 @@ use super::Cmm;
 use super::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use crate::keyring::Keyring;
 use crate::structures::{
-    AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionMaterials, MaterialsError,
-    SigningKey, VerificationKey,
+    AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
+    MaterialsError, SigningKey, VerificationKey,
 };
 
 /// Reserved encryption-context key under which the default CMM stores the
@@ -40,10 +40,14 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///
 /// On `decrypt_materials` the default CMM:
 /// - Validates the algorithm suite against the request's commitment policy.
+/// - Reconciles the request's encryption context with its Reproduced
+///   Encryption Context: shared keys must agree, and pairs present only in
+///   the reproduced context are appended and reported as Required Encryption
+///   Context Keys. See [`reconcile_reproduced_encryption_context`].
 /// - For signing suites: extracts and base64-decodes the verification key
-///   from the request's encryption context.
-/// - For non-signing suites: rejects requests whose encryption context
-///   contains the reserved `aws-crypto-public-key`.
+///   from the reconciled encryption context.
+/// - For non-signing suites: rejects requests whose reconciled encryption
+///   context contains the reserved `aws-crypto-public-key`.
 /// - Calls the wrapped keyring's `on_decrypt` to populate the plaintext data
 ///   key.
 pub struct DefaultCmm {
@@ -158,13 +162,22 @@ impl Cmm for DefaultCmm {
     ) -> Result<DecryptionMaterials, MaterialsError> {
         let suite_id = request.algorithm_suite_id();
         let commitment_policy = request.commitment_policy();
-        let ec = request.encryption_context();
 
         if !commitment_policy.allows_for_decrypt(suite_id) {
             return Err(MaterialsError::new(format!(
                 "Algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
             )));
         }
+
+        // Reconcile the message's encryption context with the customer-supplied
+        // Reproduced Encryption Context before anything reads the context. Every
+        // subsequent step — the reserved-key checks, the verification key, and
+        // the context handed to the keyring as AAD — MUST see the reconciled
+        // context, not the message's.
+        let (ec, required_encryption_context_keys) = reconcile_reproduced_encryption_context(
+            request.encryption_context(),
+            request.reproduced_encryption_context(),
+        )?;
 
         // For signing suites: extract the verification key from the EC under
         // the reserved aws-crypto-public-key. For non-signing suites: reject
@@ -196,8 +209,8 @@ impl Cmm for DefaultCmm {
         // recovering it from one of the request's encrypted data keys.
         let empty_materials = DecryptionMaterials::new(
             suite_id,
-            ec.clone(),
-            BTreeSet::new(),
+            ec,
+            required_encryption_context_keys,
             None,
             verification_key,
             None,
@@ -211,6 +224,54 @@ impl Cmm for DefaultCmm {
         // on_decrypt populates PDK; returning materials passes it through unchanged.
         Ok(materials)
     }
+}
+
+/// Reconcile the message's encryption context with the customer-supplied
+/// Reproduced Encryption Context, per
+/// `spec/framework/cmm-interface.md#decrypt-materials`.
+///
+/// Returns the encryption context to place on the decryption materials and the
+/// Required Encryption Context Keys that accompany it:
+///
+/// - For every key present in both contexts, the values MUST be equal or the
+///   operation fails with `MaterialsErrorKind::EncryptionContextValueMismatch`.
+/// - Every pair present in the reproduced context but absent from the message's
+///   is appended to the returned context, and its key becomes a Required
+///   Encryption Context Key.
+///
+/// The appended pairs are what make a keyring's AAD whole again: an encrypting
+/// CMM may hold required keys back from the message, so a decryptor that only
+/// ever saw the message's context would compute a short AAD and fail
+/// authentication.
+fn reconcile_reproduced_encryption_context(
+    message_ec: &EncryptionContext,
+    reproduced_ec: Option<&EncryptionContext>,
+) -> Result<(EncryptionContext, BTreeSet<Vec<u8>>), MaterialsError> {
+    let mut ec = message_ec.clone();
+    let mut required_keys = BTreeSet::new();
+
+    let Some(reproduced_ec) = reproduced_ec else {
+        return Ok((ec, required_keys));
+    };
+
+    for (key, value) in reproduced_ec.iter() {
+        match message_ec.get(key) {
+            Some(message_value) => {
+                if message_value != value {
+                    return Err(MaterialsError::encryption_context_value_mismatch(format!(
+                        "decrypt_materials: reproduced encryption context disagrees with the message's encryption context on key '{}'",
+                        String::from_utf8_lossy(key),
+                    )));
+                }
+            }
+            None => {
+                ec.insert(key.clone(), value.clone());
+                required_keys.insert(key.clone());
+            }
+        }
+    }
+
+    Ok((ec, required_keys))
 }
 
 // =====================================================================
