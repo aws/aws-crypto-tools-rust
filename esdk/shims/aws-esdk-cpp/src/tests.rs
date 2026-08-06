@@ -642,7 +642,7 @@ fn streaming_decrypt_tamper_fails_at_finish() {
     dec_in.keyring = &*keyring as *const Keyring;
     let mut stream = create_decrypt_stream(&dec_in).expect("create decrypt stream");
     // Feeding may or may not surface the failure (the pump is asynchronous);
-    // finish MUST fail with the Authentication kind either way.
+    // finish MUST fail with the core's CryptographicError kind either way.
     let mut failed = None;
     for chunk in ciphertext.chunks(7) {
         if let Err(e) = decrypt_stream_write(&mut stream, chunk) {
@@ -655,7 +655,7 @@ fn streaming_decrypt_tamper_fails_at_finish() {
         None => expect_err(decrypt_stream_finish(&mut stream)),
     };
     assert!(
-        err.starts_with(&format!("1{}decrypt_stream: ", '\u{1f}')),
+        err.starts_with(&format!("2{}decrypt_stream: ", '\u{1f}')),
         "unexpected encoding: {err}"
     );
 }
@@ -709,7 +709,7 @@ fn streaming_write_after_finish_is_invalid_input() {
     encrypt_stream_finish(&mut stream).expect("finish");
     let err = expect_err(encrypt_stream_write(&mut stream, b"late"));
     assert!(
-        err.starts_with(&format!("3{}encrypt_stream: ", '\u{1f}')),
+        err.starts_with(&format!("5{}encrypt_stream: ", '\u{1f}')),
         "unexpected encoding: {err}"
     );
 }
@@ -748,25 +748,25 @@ fn error_kinds_reach_the_target() {
     .expect("create raw AES keyring");
     let sep = '\u{1f}';
 
-    // Absent required handle: InvalidInput (repr 3), operation named.
+    // Absent required handle: the core's ValidationError kind (repr 5).
     let err = expect_err(encrypt(&unset_encrypt_input()));
     assert!(
-        err.starts_with(&format!("3{sep}encrypt: ")),
+        err.starts_with(&format!("5{sep}encrypt: ")),
         "unexpected encoding: {err}"
     );
 
-    // Malformed message, no cryptography attempted: InvalidInput (repr 3).
+    // Malformed message: the core's SerializationError kind (repr 1).
     let mut dec_in = unset_decrypt_input();
     dec_in.keyring = &*keyring as *const Keyring;
     dec_in.ciphertext = b"this is not a valid ESDK message";
     let err = expect_err(decrypt(&dec_in));
     assert!(
-        err.starts_with(&format!("3{sep}decrypt: ")),
+        err.starts_with(&format!("1{sep}decrypt: ")),
         "unexpected encoding: {err}"
     );
 
     // Tampered message, non-signing suite: the AEAD tag mismatch surfaces as
-    // Authentication (repr 1).
+    // the core's CryptographicError kind (repr 2).
     let mut enc_in = unset_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = b"tamper target";
@@ -778,13 +778,12 @@ fn error_kinds_reach_the_target() {
     dec_in.ciphertext = ciphertext.as_slice();
     let err = expect_err(decrypt(&dec_in));
     assert!(
-        err.starts_with(&format!("1{sep}decrypt: ")),
+        err.starts_with(&format!("2{sep}decrypt: ")),
         "unexpected encoding: {err}"
     );
 
-    // Tampered message, signing suite: the footer signature failure also
-    // surfaces as Authentication (repr 1). Locks the message-based
-    // classification of the core's signature-verification error.
+    // Tampered message, signing suite: the core reports the footer signature
+    // failure with its base Esdk kind (repr 0), carried as-is.
     let mut enc_in = unset_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
     enc_in.plaintext = b"tamper target";
@@ -796,7 +795,7 @@ fn error_kinds_reach_the_target() {
     dec_in.ciphertext = ciphertext.as_slice();
     let err = expect_err(decrypt(&dec_in));
     assert!(
-        err.starts_with(&format!("1{sep}decrypt: ")),
+        err.starts_with(&format!("0{sep}decrypt: ")),
         "unexpected encoding: {err}"
     );
 }

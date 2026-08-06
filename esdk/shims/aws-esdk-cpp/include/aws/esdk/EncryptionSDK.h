@@ -96,27 +96,27 @@ public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
 };
 
-/// Cryptographic verification failed — for example the authentication tag of a
-/// tampered or corrupted message did not verify. The message cannot be
-/// trusted; retrying the same input cannot succeed.
-class AuthenticationException : public AwsEncryptionSdkException {
+/// The core ESDK's SerializationError: the message bytes are malformed and
+/// could not be read or written. No cryptography was attempted.
+class SerializationException : public AwsEncryptionSdkException {
 public:
-    explicit AuthenticationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+    explicit SerializationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
 };
 
-/// A dependency service call (for example AWS KMS) or transient
-/// cache-contention failure. The operation may succeed if retried.
-class ServiceException : public AwsEncryptionSdkException {
+/// The core ESDK's CryptographicError: a cryptographic operation failed — for
+/// example the authentication tag of a tampered message did not verify.
+/// Retrying the same input cannot succeed.
+class CryptographicException : public AwsEncryptionSdkException {
 public:
-    explicit ServiceException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+    explicit CryptographicException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
 };
 
-/// The caller supplied invalid input — a malformed message, an unrecognized
-/// enum value, or a missing required resource. Fix the input; retrying the
-/// same input cannot succeed.
-class InvalidInputException : public AwsEncryptionSdkException {
+/// The core ESDK's ValidationError: an input is invalid — malformed, an
+/// unrecognized value, or a missing required resource. Fix the input;
+/// retrying the same input cannot succeed.
+class ValidationException : public AwsEncryptionSdkException {
 public:
-    explicit InvalidInputException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+    explicit ValidationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
 };
 
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK
@@ -475,8 +475,9 @@ struct DecryptResult {
 
 /// Client-level configuration for EncryptionSDK, mirroring the Rust core's
 /// EsdkConfig (a commitment policy and an optional cap on encrypted data
-/// keys). A field set on a per-call EncryptOptions/DecryptOptions overrides
-/// the same field set here; a field unset in both defers to the core
+/// keys). Matching the core's client, a field set both here and on a per-call
+/// EncryptOptions/DecryptOptions is rejected with ValidationException — set
+/// each field in exactly one place. A field unset in both defers to the core
 /// library's default.
 class SdkOptions {
     std::optional<CommitmentPolicy> commitment_policy_;
@@ -575,8 +576,8 @@ public:
     /// A client with no cross-call configuration: every unset input defers to
     /// the core library's default.
     EncryptionSDK() = default;
-    /// A client whose configuration applies to every operation; a per-call
-    /// options object overrides it field by field.
+    /// A client whose configuration applies to every operation. Setting the
+    /// same field on a per-call options object is rejected; see SdkOptions.
     explicit EncryptionSDK(const SdkOptions& options)
         : commitment_policy_(options.commitment_policy_),
           max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}

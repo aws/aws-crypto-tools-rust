@@ -14,19 +14,20 @@ namespace Esdk {
 namespace detail {
 
 // Decodes the `{ShimErrorKind repr}{U+001F}` prefix `shim_err` (lib.rs) puts on
-// every bridge error and throws the matching exception type. An unprefixed
-// message (for example from a cxx-level failure) throws the base type.
+// every bridge error and throws the exception type named after the core's
+// error kind. Kinds without a dedicated type (Esdk, MplError, LegacyError) and
+// unprefixed messages throw the base type.
 [[noreturn]] void throw_shim_exception(const std::string& what) {
-    ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Generic;
+    ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Esdk;
     std::string message = what;
     if (what.size() >= 2 && what[1] == '\x1f' && what[0] >= '0' && what[0] <= '9') {
         kind = static_cast<::ffi::ShimErrorKind>(what[0] - '0');
         message = what.substr(2);
     }
     switch (kind) {
-        case ::ffi::ShimErrorKind::Authentication: throw AuthenticationException(message);
-        case ::ffi::ShimErrorKind::Service: throw ServiceException(message);
-        case ::ffi::ShimErrorKind::InvalidInput: throw InvalidInputException(message);
+        case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(message);
+        case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(message);
+        case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(message);
         default: throw AwsEncryptionSdkException(message);
     }
 }
@@ -271,11 +272,19 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext, plaintext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
     if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
-    // Client-level configuration applies unless the per-call options set the
-    // same field; unset in both stays zero-initialized (the core's default).
+    // Matching the core's client: configuration provided in two places is
+    // rejected; unset in both stays zero-initialized (the core's default).
+    if (commitment_policy_ && options.commitment_policy_)
+        throw ValidationException(
+            "commitment_policy is provided by both the EncryptionSDK client and the "
+            "per-call options. Set it in exactly one place.");
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
     if (options.frame_length_) in.frame_length = *options.frame_length_;
+    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
+        throw ValidationException(
+            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
+            "the per-call options. Set it in exactly one place.");
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
@@ -313,10 +322,18 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     in.keyring = &*keyring.impl_->handle;
     in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    // Client-level configuration applies unless the per-call options set the
-    // same field; unset in both stays zero-initialized (the core's default).
+    // Matching the core's client: configuration provided in two places is
+    // rejected; unset in both stays zero-initialized (the core's default).
+    if (commitment_policy_ && options.commitment_policy_)
+        throw ValidationException(
+            "commitment_policy is provided by both the EncryptionSDK client and the "
+            "per-call options. Set it in exactly one place.");
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
+    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
+        throw ValidationException(
+            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
+            "the per-call options. Set it in exactly one place.");
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
@@ -336,9 +353,19 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
     if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
+    // Matching the core's client: configuration provided in two places is
+    // rejected; unset in both stays zero-initialized (the core's default).
+    if (commitment_policy_ && options.commitment_policy_)
+        throw ValidationException(
+            "commitment_policy is provided by both the EncryptionSDK client and the "
+            "per-call options. Set it in exactly one place.");
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
     if (options.frame_length_) in.frame_length = *options.frame_length_;
+    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
+        throw ValidationException(
+            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
+            "the per-call options. Set it in exactly one place.");
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
@@ -351,8 +378,18 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
     ::ffi::DecryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
+    // Matching the core's client: configuration provided in two places is
+    // rejected; unset in both stays zero-initialized (the core's default).
+    if (commitment_policy_ && options.commitment_policy_)
+        throw ValidationException(
+            "commitment_policy is provided by both the EncryptionSDK client and the "
+            "per-call options. Set it in exactly one place.");
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
+    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
+        throw ValidationException(
+            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
+            "the per-call options. Set it in exactly one place.");
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;

@@ -198,14 +198,18 @@ void test_error_kinds() {
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::EncryptionSDK sdk;
 
-    // Malformed message: InvalidInputException.
-    CHECK_THROWS_TYPE(Aws::Esdk::InvalidInputException,
+    // Malformed message: the core's SerializationError kind.
+    CHECK_THROWS_TYPE(Aws::Esdk::SerializationException,
                       sdk.decrypt(to_bytes("this is not a valid ESDK message"), keyring));
 
-    // Tampered message (authentication tag flipped): AuthenticationException.
-    auto tampered = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext.to_vector();
+    // Tampered message under a non-signing suite (authentication tag
+    // flipped): the core's CryptographicError kind.
+    auto tampered = sdk.encrypt(to_bytes("tamper me"), keyring,
+                                Aws::Esdk::EncryptOptions().with_algorithm_suite(
+                                    Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey))
+                        .ciphertext.to_vector();
     tampered.back() ^= 0xFF;
-    CHECK_THROWS_TYPE(Aws::Esdk::AuthenticationException, sdk.decrypt(tampered, keyring));
+    CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(tampered, keyring));
 
     // Mismatched wrapping-key length is unclassified: the base exception type,
     // not one of the subclasses.
@@ -216,17 +220,17 @@ void test_error_kinds() {
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
         ++::esdk_test::g_failures;
         std::cerr << "FAIL: short wrapping key did not throw\n";
-    } catch (const Aws::Esdk::AuthenticationException&) {
+    } catch (const Aws::Esdk::SerializationException&) {
         ++::esdk_test::g_failures;
-        std::cerr << "FAIL: short wrapping key threw AuthenticationException\n";
-    } catch (const Aws::Esdk::ServiceException&) {
+        std::cerr << "FAIL: short wrapping key threw SerializationException\n";
+    } catch (const Aws::Esdk::CryptographicException&) {
         ++::esdk_test::g_failures;
-        std::cerr << "FAIL: short wrapping key threw ServiceException\n";
-    } catch (const Aws::Esdk::InvalidInputException&) {
+        std::cerr << "FAIL: short wrapping key threw CryptographicException\n";
+    } catch (const Aws::Esdk::ValidationException&) {
         ++::esdk_test::g_failures;
-        std::cerr << "FAIL: short wrapping key threw InvalidInputException\n";
+        std::cerr << "FAIL: short wrapping key threw ValidationException\n";
     } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
-        // expected: base type only
+        // expected: the core's LegacyError kind has no dedicated type
     }
 }
 
@@ -245,14 +249,13 @@ void test_client_configuration() {
         Aws::Esdk::EncryptOptions().with_algorithm_suite(
             Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)));
 
-    // A per-call policy overrides the client's: the same encrypt succeeds.
-    auto encrypted = forbid_sdk.encrypt(
-        to_bytes("per-call overrides client"), keyring,
-        Aws::Esdk::EncryptOptions()
-            .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-            .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
-    ESDK_CHECK(encrypted.algorithm_suite_id ==
-               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    // Matching the core's client: the same field set on both the client and
+    // the per-call options is rejected.
+    CHECK_THROWS_TYPE(
+        Aws::Esdk::ValidationException,
+        forbid_sdk.encrypt(to_bytes("set in two places"), keyring,
+                           Aws::Esdk::EncryptOptions().with_commitment_policy(
+                               Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)));
 
     // Unset everywhere defers to the core default (committing suite allowed).
     Aws::Esdk::EncryptionSDK default_sdk;
@@ -351,7 +354,7 @@ void test_streaming() {
         bad.finish();
         ++::esdk_test::g_failures;
         std::cerr << "FAIL: tampered stream did not throw\n";
-    } catch (const Aws::Esdk::AuthenticationException&) {
+    } catch (const Aws::Esdk::CryptographicException&) {
         // expected
     }
 }

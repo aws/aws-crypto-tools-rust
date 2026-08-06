@@ -35,10 +35,12 @@ static_assert(eq(::aws_esdk_ffi::KmsConfigurationType{}, ::aws_esdk_ffi::KmsConf
 static_assert(eq(::aws_esdk_ffi::AesWrappingAlg{}, ::aws_esdk_ffi::AesWrappingAlg::Unset), "zero-init AesWrappingAlg is Unset");
 // The facade's guard decodes these reprs from the error-message prefix; a
 // renumbering here must fail this build, not misclassify errors at runtime.
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Generic, 0), "ShimErrorKind::Generic");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Authentication, 1), "ShimErrorKind::Authentication");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Service, 2), "ShimErrorKind::Service");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::InvalidInput, 3), "ShimErrorKind::InvalidInput");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Esdk, 0), "ShimErrorKind::Esdk");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::SerializationError, 1), "ShimErrorKind::SerializationError");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CryptographicError, 2), "ShimErrorKind::CryptographicError");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::MplError, 3), "ShimErrorKind::MplError");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::LegacyError, 4), "ShimErrorKind::LegacyError");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::ValidationError, 5), "ShimErrorKind::ValidationError");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
