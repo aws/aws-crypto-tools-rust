@@ -361,6 +361,10 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
 }
 
 Bytes EncryptStream::write(const std::uint8_t* data, std::size_t size) {
+    // An empty write is a poll; keep the slice pointer valid even when the
+    // caller passes null with size 0.
+    static const std::uint8_t empty = 0;
+    if (size == 0) data = &empty;
     return detail::make_bytes(detail::guard([&] {
         return ::ffi::encrypt_stream_write(*impl_->handle,
                                            ::rust::Slice<const std::uint8_t>(data, size));
@@ -378,6 +382,10 @@ StreamResult EncryptStream::finish() {
 }
 
 Bytes DecryptStream::write(const std::uint8_t* data, std::size_t size) {
+    // An empty write is a poll; keep the slice pointer valid even when the
+    // caller passes null with size 0.
+    static const std::uint8_t empty = 0;
+    if (size == 0) data = &empty;
     return detail::make_bytes(detail::guard([&] {
         return ::ffi::decrypt_stream_write(*impl_->handle,
                                            ::rust::Slice<const std::uint8_t>(data, size));

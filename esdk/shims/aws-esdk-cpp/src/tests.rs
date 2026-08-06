@@ -564,6 +564,66 @@ fn streaming_round_trips_interoperate_with_one_shot() {
     assert_eq!(recovered, plaintext);
 }
 
+//= spec/shim/shim.md#streaming
+//= type=test
+//= reason=Multi-frame output is released by write/poll while the input side is still open — finish has not been called — in both directions.
+//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) input/outputs,
+//# the shim library SHOULD support it as well.
+#[test]
+fn streaming_releases_output_before_finish() {
+    let keyring = test_raw_aes_keyring();
+    let plaintext = vec![0x11u8; 8192];
+
+    // Encrypt: after all plaintext is written (input still open), at least one
+    // full frame of ciphertext must be released.
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.frame_length = 1024;
+    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
+    let mut pre_finish = Vec::new();
+    for chunk in plaintext.chunks(1024) {
+        pre_finish.extend_from_slice(&encrypt_stream_write(&mut stream, chunk).expect("write"));
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while pre_finish.len() < 1024 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        pre_finish.extend_from_slice(&encrypt_stream_write(&mut stream, &[]).expect("poll"));
+    }
+    assert!(
+        pre_finish.len() >= 1024,
+        "no ciphertext released before finish: {} bytes",
+        pre_finish.len()
+    );
+    let fin = encrypt_stream_finish(&mut stream).expect("finish");
+    let mut ciphertext = pre_finish;
+    ciphertext.extend_from_slice(&fin.trailing_output);
+
+    // Decrypt: with every ciphertext byte written but finish not yet called,
+    // released plaintext must be a nonempty prefix of the original.
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    let mut stream = create_decrypt_stream(&dec_in).expect("create decrypt stream");
+    let mut released = Vec::new();
+    for chunk in ciphertext.chunks(1024) {
+        released.extend_from_slice(&decrypt_stream_write(&mut stream, chunk).expect("write"));
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while released.is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        released.extend_from_slice(&decrypt_stream_write(&mut stream, &[]).expect("poll"));
+    }
+    assert!(!released.is_empty(), "no plaintext released before finish");
+    assert_eq!(
+        released,
+        plaintext[..released.len()],
+        "released bytes must prefix the plaintext"
+    );
+    let fin = decrypt_stream_finish(&mut stream).expect("finish");
+    released.extend_from_slice(&fin.trailing_output);
+    assert_eq!(released, plaintext);
+}
+
 #[test]
 fn streaming_decrypt_tamper_fails_at_finish() {
     let keyring = test_raw_aes_keyring();

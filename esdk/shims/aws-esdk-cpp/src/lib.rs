@@ -1145,7 +1145,7 @@ struct ChannelReader {
 
 impl std::io::Read for ChannelReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.offset == self.pending.len() {
+        while self.offset == self.pending.len() {
             let rx = self.rx.lock().expect("stream reader poisoned");
             match rx.recv() {
                 Ok(chunk) => {
@@ -1229,7 +1229,8 @@ impl StreamState {
         }
     }
 
-    /// Sends a chunk to the core and returns the output produced so far.
+    /// Sends a chunk to the core and returns the output produced so far. An
+    /// empty chunk adds no input, so it polls for output.
     fn write(&mut self, chunk: &[u8]) -> Result<Vec<u8>, String> {
         let tx = self.input_tx.as_ref().ok_or_else(|| {
             shim_err(
@@ -1238,6 +1239,9 @@ impl StreamState {
                 "write after finish",
             )
         })?;
+        if chunk.is_empty() {
+            return Ok(self.drain_available());
+        }
         if tx.send(chunk.to_vec()).is_err() {
             // The core stopped reading: it has failed. Join to surface its error.
             return self.join_worker().map(|_| Vec::new());

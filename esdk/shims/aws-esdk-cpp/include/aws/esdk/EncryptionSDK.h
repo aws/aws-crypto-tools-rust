@@ -514,7 +514,9 @@ class EncryptStream {
 
 public:
     /// Feeds a plaintext chunk and returns whatever ciphertext the core has
-    /// produced so far (possibly empty; frames are emitted as they fill).
+    /// produced so far (possibly empty; frames are emitted as they fill and
+    /// the pump is asynchronous). An empty write adds no input and polls for
+    /// produced output.
     Bytes write(const std::uint8_t* data, std::size_t size);
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
@@ -546,8 +548,9 @@ class DecryptStream {
 
 public:
     /// Feeds a ciphertext chunk and returns whatever plaintext the core has
-    /// released so far (possibly empty). Released plaintext is unverified
-    /// until finish() succeeds; see the class documentation.
+    /// released so far (possibly empty; the pump is asynchronous). An empty
+    /// write adds no input and polls for released output. Released plaintext
+    /// is unverified until finish() succeeds; see the class documentation.
     Bytes write(const std::uint8_t* data, std::size_t size);
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }

@@ -312,6 +312,13 @@ void test_streaming() {
         auto out = enc.write(plaintext.data() + off, n);
         ciphertext.insert(ciphertext.end(), out.begin(), out.end());
     }
+    // Streaming means streaming: with all plaintext written and the stream
+    // still open, at least one frame of ciphertext must already be released.
+    for (int i = 0; i < 2000 && ciphertext.size() < 4096; ++i) {
+        auto out = enc.write(nullptr, 0);
+        ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    }
+    ESDK_CHECK(ciphertext.size() >= 4096);
     auto enc_fin = enc.finish();
     ciphertext.insert(ciphertext.end(), enc_fin.trailing_output.begin(), enc_fin.trailing_output.end());
 
