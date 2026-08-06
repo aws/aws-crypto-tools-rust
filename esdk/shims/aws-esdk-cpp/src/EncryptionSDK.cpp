@@ -215,6 +215,12 @@ Cache Cache::MultiThreaded(std::uint32_t entry_capacity, std::uint32_t entry_pru
 
 // Keyrings
 
+Keyring Keyring::adopt(void* raw_handle) {
+    return Keyring(std::make_shared<detail::KeyringImpl>(
+        nullptr, nullptr,
+        ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
+}
+
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::uint32_t ttl_seconds,

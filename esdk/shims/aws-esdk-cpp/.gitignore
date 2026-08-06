@@ -25,3 +25,4 @@ Cargo.lock
 .duvet/snapshot.txt
 .duvet/reports/
 /zero_copy_comparison
+/adopt_keyring_test

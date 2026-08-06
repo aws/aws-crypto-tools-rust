@@ -356,7 +356,7 @@ struct KeyStore {
 }
 
 struct Keyring {
-    client: dafny::types::keyring::KeyringRef,
+    client: aws_esdk::Keyring,
 }
 
 /// A cache selection held for the target as an opaque resource, wrapping the
@@ -858,21 +858,20 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     //# materials source is supplied.
     let keyring = require_handle(input.keyring, "keyring", "encrypt")?;
 
-    let mut core_input = aws_esdk::EncryptInput::with_legacy_keyring(
-        //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
-        input.plaintext,
-        //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST provide the target-supplied encryption context to the core ESDK,
-        //# converted as defined in [Encryption context](#encryption-context).
-        encryption_context_target_to_core(&input.encryption_context)?,
-        //= spec/shim/esdk-shim.md#materials-source
-        //= type=implication
-        //= reason=EncryptInput carries exactly one materials-source field (keyring); the type admits no second source.
-        //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
-        //# source (see [Resources](#resources)).
-        keyring.client.clone(),
-    );
+    let mut core_input = aws_esdk::EncryptInput::new();
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
+    core_input.plaintext = input.plaintext;
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied encryption context to the core ESDK,
+    //# converted as defined in [Encryption context](#encryption-context).
+    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
+    //= spec/shim/esdk-shim.md#materials-source
+    //= type=implication
+    //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
+    //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
+    //# source (see [Resources](#resources)).
+    core_input.keyring = Some(keyring.client.clone());
     apply_encrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
     let output = output.map_err(|e| shim_err(classify_core_error(&e), "encrypt", e))?;
@@ -897,16 +896,15 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     //# materials source is supplied.
     let keyring = require_handle(input.keyring, "keyring", "decrypt")?;
 
-    let mut core_input = aws_esdk::DecryptInput::with_legacy_keyring(
-        //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
-        input.ciphertext,
-        //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - MUST provide the target-supplied encryption context to the core ESDK,
-        //# converted as defined in [Encryption context](#encryption-context).
-        encryption_context_target_to_core(&input.encryption_context)?,
-        keyring.client.clone(),
-    );
+    let mut core_input = aws_esdk::DecryptInput::new();
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
+    core_input.ciphertext = input.ciphertext;
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied encryption context to the core ESDK,
+    //# converted as defined in [Encryption context](#encryption-context).
+    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
+    core_input.keyring = Some(keyring.client.clone());
     apply_decrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
     let output = output.map_err(|e| shim_err(classify_core_error(&e), "decrypt", e))?;
@@ -1048,7 +1046,9 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
         )
         .map_err(|e| shim_err(classify_legacy_error(&e), "create_raw_aes_keyring", e))?;
 
-    Ok(Box::new(Keyring { client: keyring }))
+    Ok(Box::new(Keyring {
+        client: keyring.into(),
+    }))
 }
 
 //= spec/shim/esdk-shim.md#create-hierarchical-keyring
@@ -1102,7 +1102,9 @@ fn create_hierarchical_keyring(
         .block_on(builder.send())
         .map_err(|e| shim_err(classify_legacy_error(&e), "create_hierarchical_keyring", e))?;
 
-    Ok(Box::new(Keyring { client: keyring }))
+    Ok(Box::new(Keyring {
+        client: keyring.into(),
+    }))
 }
 
 // Resource release (see spec/shim/shim.md#creating-and-releasing-resources).
@@ -1290,7 +1292,7 @@ struct DecryptStream {
 fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
     let mut core_input = aws_esdk::EncryptStreamInput::new();
-    core_input.keyring = Some(keyring.client.clone().into());
+    core_input.keyring = Some(keyring.client.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
     if input.algorithm_suite_id != ffi::EsdkAlgorithmSuiteId::Unset {
         core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
@@ -1337,7 +1339,7 @@ fn delete_encrypt_stream(_stream: Box<EncryptStream>) -> Result<(), String> {
 fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
     let mut core_input = aws_esdk::DecryptStreamInput::new();
-    core_input.keyring = Some(keyring.client.clone().into());
+    core_input.keyring = Some(keyring.client.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
     if input.max_encrypted_data_keys != 0 {
         core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
@@ -1373,6 +1375,24 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 
 fn delete_decrypt_stream(_stream: Box<DecryptStream>) -> Result<(), String> {
     Ok(())
+}
+
+// Custom keyring adoption (see
+// spec/shim/shim.md#custom-implementations-of-core-library-interfaces).
+//
+// A consumer defines a keyring in Rust as anything the core ESDK accepts
+// (`aws_esdk::Keyring`), converts it to a handle here, passes the pointer to
+// its C++ code through its own channel, and adopts it there with
+// `Aws::Esdk::Keyring::adopt`. The shim carries the keyring opaquely; it takes
+// no dependency on which materials-provider library defined it.
+
+/// Converts a core-ESDK keyring into a shim keyring handle for adoption by
+/// C++ via `Aws::Esdk::Keyring::adopt`.
+///
+/// Ownership transfers to the returned pointer; exactly one `adopt` call must
+/// consume it. The pointer is only meaningful to this crate's C++ facade.
+pub fn into_keyring_handle(keyring: aws_esdk::Keyring) -> *mut std::ffi::c_void {
+    Box::into_raw(Box::new(Keyring { client: keyring })).cast()
 }
 
 #[cfg(test)]

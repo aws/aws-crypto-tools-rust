@@ -655,6 +655,29 @@ fn streaming_write_after_finish_is_invalid_input() {
 }
 
 #[test]
+fn keyring_handle_adoption_round_trips() {
+    // A consumer converts any core-accepted keyring into a handle; adopting it
+    // yields a keyring usable wherever a keyring is accepted.
+    let source = test_raw_aes_keyring();
+    let ptr = crate::into_keyring_handle(source.client.clone());
+    assert!(!ptr.is_null());
+    // SAFETY: into_keyring_handle transfers ownership of a Box<Keyring>; this
+    // is the adopt side of the contract.
+    let adopted = unsafe { Box::from_raw(ptr.cast::<Keyring>()) };
+
+    let plaintext = b"adopted keyring round trip".to_vec();
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*adopted as *const Keyring;
+    enc_in.plaintext = plaintext.as_slice();
+    let ciphertext = encrypt(&enc_in).expect("encrypt").ciphertext;
+
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*adopted as *const Keyring;
+    dec_in.ciphertext = ciphertext.as_slice();
+    assert_eq!(decrypt(&dec_in).expect("decrypt").plaintext, plaintext);
+}
+
+#[test]
 fn error_kinds_reach_the_target() {
     let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),

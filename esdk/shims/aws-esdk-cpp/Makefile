@@ -36,6 +36,13 @@ test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/Encryp
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o test_esdk
 
+# White-box like enum_parity: includes the bridge header to play the
+# consumer's Rust side, which manufactures the keyring handle C++ adopts.
+adopt_keyring_test: tests/adopt_keyring_test.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ tests/adopt_keyring_test.cpp \
+		-Itarget/cxxbridge $(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o adopt_keyring_test
+
 test_concurrency: tests/test_concurrency.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ tests/test_concurrency.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
@@ -63,12 +70,13 @@ clippy:
 # and the test binaries.
 build-tests:
 	cargo build
-	$(MAKE) example raw_aes_example zero_copy_example enum_parity test_esdk test_concurrency test_resource_leaks
+	$(MAKE) example raw_aes_example zero_copy_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
 
 # Run the C++ integration + local-correctness binaries.
 run-cpp:
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./raw_aes_keyring_example
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_esdk
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./adopt_keyring_test
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_concurrency
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_resource_leaks
 

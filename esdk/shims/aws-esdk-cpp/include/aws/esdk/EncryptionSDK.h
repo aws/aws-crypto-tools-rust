@@ -257,6 +257,16 @@ protected:
 
 public:
     virtual ~Keyring() = default;
+
+    /// Adopts a keyring defined in Rust.
+    ///
+    /// `raw_handle` must come from the shim crate's Rust function
+    /// `aws_esdk_cpp::into_keyring_handle`, which accepts any keyring the core
+    /// ESDK accepts — including one you define yourself in Rust. Ownership
+    /// transfers to the returned Keyring: pass each handle to exactly one
+    /// adopt call, and use the result anywhere a Keyring is accepted. Any
+    /// other pointer is undefined behavior.
+    static Keyring adopt(void* raw_handle);
 };
 
 /// A cryptographic materials cache for a Hierarchical Keyring, created via the
