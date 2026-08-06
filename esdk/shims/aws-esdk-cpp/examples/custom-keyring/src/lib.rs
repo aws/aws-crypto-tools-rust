@@ -1,8 +1,8 @@
-//! A consumer-defined keyring, built in Rust and exported to C++.
+//! Your custom keyring, defined in Rust and exported to C++.
 //!
-//! This crate owns the keyring: which algorithm wraps data keys and where the
-//! wrapping key comes from. `custom_keyring_create` packages it as a handle
-//! that C++ adopts with `Aws::Esdk::Keyring::adopt` (see `example.cpp`).
+//! Step 1 (`build_keyring`): define your keyring.
+//! Step 2 (`custom_keyring_create`): export it as a handle for C++ to adopt.
+//! See README.md for the full setup, and example.cpp for the C++ side.
 
 use std::ffi::c_void;
 
@@ -10,7 +10,9 @@ use std::ffi::c_void;
 /// from a secure store and never hardcode it.
 const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 
-/// This consumer's keyring: raw AES-256-GCM over the crate's own key material.
+/// Step 1: define your keyring here. Anything the core ESDK accepts works.
+/// This one wraps data keys with AES-256-GCM under key material this crate
+/// sources itself — replace the body with your key management.
 fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     let mpl = aws_mpl_legacy::dafny::Client::from_conf(
         aws_mpl_legacy::dafny::types::MaterialProvidersConfig::builder().build()?,
@@ -27,9 +29,9 @@ fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     Ok(keyring.into())
 }
 
-/// Entry point the C++ example calls. Returns a keyring handle for
-/// `Aws::Esdk::Keyring::adopt`, or null when construction fails. Ownership of
-/// a non-null handle transfers to the caller's single adopt call.
+/// Step 2: export your keyring. Your C++ declares this function, calls it,
+/// and adopts the returned handle with `Aws::Esdk::Keyring::adopt` — exactly
+/// once per handle. Return null when construction fails.
 #[unsafe(no_mangle)]
 pub extern "C" fn custom_keyring_create() -> *mut c_void {
     match build_keyring() {

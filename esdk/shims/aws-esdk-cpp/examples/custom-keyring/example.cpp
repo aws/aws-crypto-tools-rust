@@ -1,18 +1,17 @@
-// Encrypts and decrypts a message with a keyring defined in Rust (see
-// src/lib.rs in this directory). The Rust side hands over an opaque handle;
-// Keyring::adopt turns it into a keyring usable anywhere one is accepted.
+// Your C++ side of the custom keyring (see README.md; the keyring itself is
+// defined in src/lib.rs).
 
 #include <iostream>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
 
-// Implemented by this example's Rust crate. Returns a handle for
-// Aws::Esdk::Keyring::adopt, or null on failure; each non-null handle must be
-// adopted exactly once.
+// Step 3: declare the extern "C" constructor your Rust crate exports.
 extern "C" void* custom_keyring_create();
 
 int main() {
     try {
+        // Step 4: adopt the handle. Adopt each handle exactly once; the
+        // result is a keyring like any other.
         void* handle = custom_keyring_create();
         if (handle == nullptr) {
             std::cerr << "Rust keyring construction failed\n";
@@ -20,6 +19,7 @@ int main() {
         }
         auto keyring = Aws::Esdk::Keyring::adopt(handle);
 
+        // From here on, nothing is special about your keyring.
         Aws::Esdk::EncryptionSDK sdk;
 
         std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
