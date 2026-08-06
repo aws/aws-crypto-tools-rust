@@ -255,9 +255,14 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext, plaintext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
     if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
-    if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
+    // Client-level configuration applies unless the per-call options set the
+    // same field; unset in both stays zero-initialized (the core's default).
+    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
+        in.commitment_policy = detail::to_ffi(*p);
     if (options.frame_length_) in.frame_length = *options.frame_length_;
-    if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
+    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                                        : max_encrypted_data_keys_)
+        in.max_encrypted_data_keys = *m;
     ::ffi::EncryptOutput out = detail::guard([&] { return ::ffi::encrypt(in); });
     EncryptResult result;
     result.ciphertext = detail::make_bytes(std::move(out.ciphertext));
@@ -292,8 +297,13 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     in.keyring = &*keyring.impl_->handle;
     in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
-    if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
+    // Client-level configuration applies unless the per-call options set the
+    // same field; unset in both stays zero-initialized (the core's default).
+    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
+        in.commitment_policy = detail::to_ffi(*p);
+    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                                        : max_encrypted_data_keys_)
+        in.max_encrypted_data_keys = *m;
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
     DecryptResult result;
     result.plaintext = detail::make_bytes(std::move(out.plaintext));

@@ -404,8 +404,38 @@ struct DecryptResult {
     AlgorithmSuiteId algorithm_suite_id;
 };
 
-class EncryptionSDK {
+/// Client-level configuration for EncryptionSDK, mirroring the Rust core's
+/// EsdkConfig (a commitment policy and an optional cap on encrypted data
+/// keys). A field set on a per-call EncryptOptions/DecryptOptions overrides
+/// the same field set here; a field unset in both defers to the core
+/// library's default.
+class SdkOptions {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
 public:
+    /// Commitment policy applied to every operation on this client.
+    SdkOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Cap on the number of encrypted data keys per message, applied to every
+    /// operation on this client. 0 means no limit.
+    SdkOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
+class EncryptionSDK {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+
+public:
+    /// A client with no cross-call configuration: every unset input defers to
+    /// the core library's default.
+    EncryptionSDK() = default;
+    /// A client whose configuration applies to every operation; a per-call
+    /// options object overrides it field by field.
+    explicit EncryptionSDK(const SdkOptions& options)
+        : commitment_policy_(options.commitment_policy_),
+          max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
+
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,

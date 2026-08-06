@@ -230,6 +230,37 @@ void test_error_kinds() {
     }
 }
 
+// Client-level configuration applies to every operation and is overridden
+// field-by-field by per-call options; all offline via the raw AES keyring.
+void test_client_configuration() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+
+    // The client's ForbidEncryptAllowDecrypt policy rejects a committing suite.
+    Aws::Esdk::EncryptionSDK forbid_sdk(Aws::Esdk::SdkOptions().with_commitment_policy(
+        Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
+    CHECK_THROWS_ESDK(forbid_sdk.encrypt(
+        to_bytes("client policy applies"), keyring,
+        Aws::Esdk::EncryptOptions().with_algorithm_suite(
+            Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)));
+
+    // A per-call policy overrides the client's: the same encrypt succeeds.
+    auto encrypted = forbid_sdk.encrypt(
+        to_bytes("per-call overrides client"), keyring,
+        Aws::Esdk::EncryptOptions()
+            .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
+    ESDK_CHECK(encrypted.algorithm_suite_id ==
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+
+    // Unset everywhere defers to the core default (committing suite allowed).
+    Aws::Esdk::EncryptionSDK default_sdk;
+    auto rt = default_sdk.encrypt(to_bytes("defaults"), keyring);
+    auto pt = default_sdk.decrypt(rt.ciphertext, keyring);
+    ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
+}
+
 }  // namespace
 
 int main() {
@@ -238,6 +269,7 @@ int main() {
         test_raw_aes_wrong_keyring_fails();
         test_raw_aes_mismatched_key_length_throws();
         test_error_kinds();
+        test_client_configuration();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
