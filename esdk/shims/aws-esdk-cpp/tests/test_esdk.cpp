@@ -261,6 +261,35 @@ void test_client_configuration() {
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
 }
 
+// String-view and Bytes ergonomics; offline via the raw AES keyring.
+void test_bytes_and_string_ergonomics() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+
+    // Text payload in, text payload out.
+    auto encrypted = sdk.encrypt(std::string_view("text payload"), keyring);
+    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+    ESDK_CHECK(decrypted.plaintext.as_string_view() == "text payload");
+
+    // Copies share the buffer and compare equal; different content does not.
+    Aws::Esdk::Bytes copy = encrypted.ciphertext;
+    ESDK_CHECK(copy == encrypted.ciphertext);
+    ESDK_CHECK(copy.data() == encrypted.ciphertext.data());
+    auto other = sdk.encrypt(std::string_view("different payload"), keyring);
+    ESDK_CHECK(copy != other.ciphertext);
+
+    // A copy keeps the buffer alive after the original is destroyed.
+    Aws::Esdk::Bytes survivor;
+    {
+        auto scoped = sdk.encrypt(std::string_view("outlives original"), keyring);
+        survivor = scoped.ciphertext;
+    }
+    auto plain = sdk.decrypt(survivor, keyring);
+    ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
+}
+
 }  // namespace
 
 int main() {
@@ -270,6 +299,7 @@ int main() {
         test_raw_aes_mismatched_key_length_throws();
         test_error_kinds();
         test_client_configuration();
+        test_bytes_and_string_ergonomics();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

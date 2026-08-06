@@ -15,7 +15,17 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#if defined(__has_include)
+#if __has_include(<version>)
+#include <version>
+#endif
+#endif
+#if defined(__cpp_lib_span)
+#include <span>
+#endif
 
 namespace Aws {
 namespace Esdk {
@@ -109,6 +119,9 @@ public:
     explicit InvalidInputException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
 };
 
+/// Algorithm suite for encryption, identified by the two-byte ID from the ESDK
+/// message format. See
+/// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
 enum class AlgorithmSuiteId : std::uint16_t {
     AlgAes128GcmIv12Tag16NoKdf               = 0x0014,
     AlgAes192GcmIv12Tag16NoKdf               = 0x0046,
@@ -123,6 +136,8 @@ enum class AlgorithmSuiteId : std::uint16_t {
     AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 = 0x0578,
 };
 
+/// Governs whether messages are encrypted with, and are required to carry,
+/// key commitment.
 enum class CommitmentPolicy : std::uint8_t {
     ForbidEncryptAllowDecrypt  = 1,
     RequireEncryptAllowDecrypt = 2,
@@ -149,6 +164,9 @@ struct CacheImpl;
 struct BytesFactory;
 }  // namespace detail
 
+/// AWS service-client configuration for the KMS and DynamoDB clients a Key
+/// Store uses. A field left unset defers to the core library's default
+/// configuration resolution. One ClientConfig may configure multiple clients.
 class ClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
@@ -156,8 +174,11 @@ class ClientConfig {
 
 public:
     ClientConfig();
+    /// Maximum request attempts (1 = no retries).
     ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    /// Selects the adaptive retry mode instead of the standard one.
     ClientConfig& with_adaptive_retry(bool a);
+    /// AWS region for the client (for example "us-west-2").
     ClientConfig& with_region(const std::string& r);
 };
 
@@ -167,6 +188,8 @@ class KmsClient {
     friend class KeyStore;
 
 public:
+    /// Creates the client; region and credentials come from `cfg` and the
+    /// default AWS configuration chain.
     explicit KmsClient(const ClientConfig& cfg = {});
 };
 
@@ -176,6 +199,8 @@ class DdbClient {
     friend class KeyStore;
 
 public:
+    /// Creates the client; region and credentials come from `cfg` and the
+    /// default AWS configuration chain.
     explicit DdbClient(const ClientConfig& cfg = {});
 };
 
@@ -193,6 +218,7 @@ public:
     KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
 };
 
+/// A Branch Key Store backed by a DynamoDB table and protected by AWS KMS.
 class KeyStore {
     std::shared_ptr<detail::KeyStoreImpl> impl_;
     friend class HierarchicalKeyring;
@@ -265,6 +291,8 @@ public:
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
+/// Keyring backed by Branch Keys in a KeyStore, amortizing KMS calls through
+/// a cache.
 class HierarchicalKeyring : public Keyring {
 public:
     /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
@@ -284,6 +312,8 @@ public:
                         const HierarchicalKeyringOptions& options = {});
 };
 
+/// Keyring that wraps and unwraps data keys locally with AES-GCM; fully
+/// offline.
 class RawAesKeyring : public Keyring {
 public:
     /// Creates a Raw AES Keyring, which wraps and unwraps data keys locally using
@@ -354,25 +384,52 @@ class Bytes {
         : data_(data), size_(size), owner_(std::move(owner)) {}
 
 public:
+    /// An empty buffer.
     Bytes() = default;
     Bytes(Bytes&&) = default;
     Bytes& operator=(Bytes&&) = default;
-    Bytes(const Bytes&) = delete;
-    Bytes& operator=(const Bytes&) = delete;
+    /// Copies share the underlying buffer (no byte copy): the buffer is
+    /// reference-counted and freed when the last copy is destroyed.
+    Bytes(const Bytes&) = default;
+    Bytes& operator=(const Bytes&) = default;
 
+    /// Pointer to the first byte; valid while any Bytes sharing the buffer lives.
     const std::uint8_t* data() const { return data_; }
+    /// Number of bytes.
     std::size_t size() const { return size_; }
+    /// True when size() == 0.
     bool empty() const { return size_ == 0; }
 
+    /// Iterator to the first byte.
     const std::uint8_t* begin() const { return data_; }
+    /// Iterator one past the last byte.
     const std::uint8_t* end() const { return data_ + size_; }
+    /// The byte at `index`; no bounds check.
     std::uint8_t operator[](std::size_t index) const { return data_[index]; }
 
     /// Copies the bytes into an owning std::vector.
     std::vector<std::uint8_t> to_vector() const {
         return std::vector<std::uint8_t>(begin(), end());
     }
+
+    /// Views the bytes as characters (for text payloads). The view is valid
+    /// while any Bytes sharing the buffer lives; no copy is made.
+    std::string_view as_string_view() const {
+        return std::string_view(reinterpret_cast<const char*>(data_), size_);
+    }
+
+#if defined(__cpp_lib_span)
+    /// Views the bytes as a std::span; valid while any Bytes sharing the
+    /// buffer lives.
+    std::span<const std::uint8_t> as_span() const { return {data_, size_}; }
+#endif
 };
+
+/// Byte-wise equality; buffers of equal content compare equal regardless of ownership.
+inline bool operator==(const Bytes& lhs, const Bytes& rhs) {
+    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+}
+inline bool operator!=(const Bytes& lhs, const Bytes& rhs) { return !(lhs == rhs); }
 
 inline bool operator==(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) {
     return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
@@ -475,6 +532,36 @@ public:
         std::size_t ciphertext_len,
         const Keyring& keyring,
         const DecryptOptions& options = {});
+
+    /// Encrypts a text payload viewed through a std::string_view without
+    /// copying it. The view must stay valid for the duration of the call.
+    EncryptResult encrypt(
+        std::string_view plaintext,
+        const Keyring& keyring,
+        const EncryptOptions& options = {}) {
+        return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
+                       plaintext.size(), keyring, options);
+    }
+
+#if defined(__cpp_lib_span)
+    /// Encrypts a plaintext viewed through a std::span without copying it.
+    /// The span must stay valid for the duration of the call.
+    EncryptResult encrypt(
+        std::span<const std::uint8_t> plaintext,
+        const Keyring& keyring,
+        const EncryptOptions& options = {}) {
+        return encrypt(plaintext.data(), plaintext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext viewed through a std::span without copying it.
+    /// The span must stay valid for the duration of the call.
+    DecryptResult decrypt(
+        std::span<const std::uint8_t> ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) {
+        return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
+    }
+#endif
 };
 
 }  // namespace Esdk
