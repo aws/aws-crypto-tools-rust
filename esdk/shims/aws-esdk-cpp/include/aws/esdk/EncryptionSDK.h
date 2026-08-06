@@ -1,4 +1,10 @@
 // EncryptionSDK.h — public types to interact with the C++ Shim for the AWS Encryption SDK for Rust.
+//
+// This header exposes only owned-interface types (Aws::Esdk::) and C++
+// standard-library types. The cxx-generated FFI layer is confined to the
+// compiled EncryptionSDK.cpp translation unit: no cxx-generated type, function,
+// or header is reachable through this header, so consumers cannot take a
+// dependency on the FFI layer even accidentally.
 
 #pragma once
 
@@ -11,57 +17,56 @@
 #include <string>
 #include <vector>
 
-#include "rust/cxx.h"                 // rust::Error, rust::Box, rust::Vec, rust::Slice
-#include "aws-esdk-cpp/src/lib.rs.h"  // cxx-generated bindings (global namespace)
-
 namespace Aws {
 namespace Esdk {
 
 // File-wide invariants.
 // Each requirement below holds for every type and operation in this facade.
 // These cannot be explicitly tested, but are recorded as implications.
-// Any edits to this file must respect these requirements.
+// Any edits to this file must respect these requirements. Enforcement mechanism:
+// this header includes no cxx-generated header, so an edit that names an FFI
+// type here fails to compile.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=The facade defines its own Aws::Esdk:: enums and does not expose any ffi-generated enum types.
+//= reason=The facade defines its own enums (Aws::Esdk::); the ffi-generated enum types are not visible in this header.
 //# - For each core-library enumeration it exposes, the shim MUST define its own
 //# corresponding enumeration type.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every public method signature uses only Aws::Esdk:: types and standard-library types.
+//= reason=Every public function signature uses only Aws::Esdk:: types and C++ standard-library types; no ffi-generated type is even visible in this header.
 //# - Each public function the shim exposes MUST use only owned-interface types or
 //# standard-library types in its signature.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every wrapper stores its generated handle in a private member and exposes it only through the internal ffi() accessor.
+//= reason=Every C++ resource holds its handle behind a private pointer to an implementation type that is only defined inside the compiled shim, so users cannot access or name it.
 //# - Each owned interface that represents a core-library resource MUST hold the
 //# generated handle privately and MUST NOT expose it in its public API.
 //
 //= spec/shim/shim.md#handles-and-lifetimes
 //= type=implication
-//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle to prevent this.
+//= reason=Every C++ resource that depends on another resource holds it (or a shared owner of it) inside its implementation for its own lifetime.
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Every optional input has a with_* setter on the operation's or resource's options object.
+//= reason=Every optional input has a with_* setter on every operation's or resource's options object.
 //# - The shim MUST expose each optional input of the operations and resource
 //# creations it exposes.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Options objects with chained with_* setters are the idiomatic C++ optional-input mechanism.
+//= reason=Options objects with with_* setters are the idiomatic C++ optional-input mechanism.
 //# - The shim MUST accept optional inputs through a mechanism idiomatic to the
 //# target language (e.g.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=The with_* setters provide this
+//= reason=with_* setters
 //# - The shim MUST define its operation and resource-creation inputs such that
 //# an optional input can be added without breaking existing target code.
 //
@@ -73,7 +78,6 @@ namespace Esdk {
 
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=AwsEncryptionSdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
 //# - The shim MUST define its own error type for its public surface.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
@@ -107,89 +111,47 @@ enum class AesWrappingAlgorithm : std::uint8_t {
     AlgAes256GcmIv12Tag16 = 3,
 };
 
+// Implementation types. Defined only inside the compiled shim
+// (EncryptionSDK.cpp); deliberately left incomplete here so no consumer can
+// construct, copy, or inspect them.
 namespace detail {
-
-// Calls into Rust and catches any Rust error, re-throwing it as our
-// own C++ exception type so callers only ever see AwsEncryptionSdkException.
-template <typename F>
-inline auto guard(F&& f) -> decltype(f()) {
-    try {
-        return f();
-    } catch (const ::rust::Error& e) {
-        throw AwsEncryptionSdkException(e.what());
-    }
-}
-
-// Convert our enums to the generated FFI enums.
-// Users must depend on these ESDK enums so changes to the FFI layer don't break them.
-inline ::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
-    return static_cast<::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
-}
-inline ::EsdkCommitmentPolicy to_ffi(CommitmentPolicy p) {
-    return static_cast<::EsdkCommitmentPolicy>(static_cast<std::uint8_t>(p));
-}
-inline ::AesWrappingAlg to_ffi(AesWrappingAlgorithm a) {
-    return static_cast<::AesWrappingAlg>(static_cast<std::uint8_t>(a));
-}
-
-inline ::rust::Vec<::EncryptionContextItem> to_ec(
-    const std::map<std::string, std::string>& ec) {
-    ::rust::Vec<::EncryptionContextItem> out;
-    for (const auto& kv : ec) {
-        ::EncryptionContextItem item;
-        item.key = ::rust::String(kv.first);
-        item.value = ::rust::String(kv.second);
-        out.push_back(std::move(item));
-    }
-    return out;
-}
-
-inline AlgorithmSuiteId alg_from_ffi(::EsdkAlgorithmSuiteId a) {
-    return static_cast<AlgorithmSuiteId>(static_cast<std::uint16_t>(a));
-}
-
-inline std::map<std::string, std::string> from_ec(
-    const ::rust::Vec<::EncryptionContextItem>& ec) {
-    std::map<std::string, std::string> out;
-    for (const auto& item : ec) {
-        out.emplace(std::string(item.key), std::string(item.value));
-    }
-    return out;
-}
-
+struct ClientConfigImpl;
+struct KmsClientImpl;
+struct DdbClientImpl;
+struct KeyStoreImpl;
+struct KeyringImpl;
+struct CacheImpl;
+struct BytesFactory;
 }  // namespace detail
 
 class ClientConfig {
-    ::MplAwsClientConfig cfg_{};
-    const ::MplAwsClientConfig& raw() const { return cfg_; }
+    std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
     friend class DdbClient;
+
 public:
-    ClientConfig& with_max_retry_attempts(std::uint32_t n) { cfg_.retry.max_attempts = n; return *this; }
-    ClientConfig& with_adaptive_retry(bool a)              { cfg_.retry.mode_adaptive = a; return *this; }
-    ClientConfig& with_region(const std::string& r)        { cfg_.region = ::rust::String(r); return *this; }
+    ClientConfig();
+    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    ClientConfig& with_adaptive_retry(bool a);
+    ClientConfig& with_region(const std::string& r);
 };
 
-/// The KMS client this Key Store uses to call AWS KMS.
+/// The KMS client a Key Store uses to call AWS KMS.
 class KmsClient {
-    std::shared_ptr<::rust::Box<::MplKmsClient>> inner_;
-    const ::MplKmsClient* ffi() const { return &**inner_; }
+    std::shared_ptr<detail::KmsClientImpl> impl_;
     friend class KeyStore;
+
 public:
-    explicit KmsClient(const ClientConfig& cfg)
-        : inner_(std::make_shared<::rust::Box<::MplKmsClient>>(
-              detail::guard([&] { return ::create_kms_client(cfg.raw()); }))) {}
+    explicit KmsClient(const ClientConfig& cfg = {});
 };
 
-/// The DynamoDB client this Key Store uses to call Amazon DynamoDB.
+/// The DynamoDB client a Key Store uses to call Amazon DynamoDB.
 class DdbClient {
-    std::shared_ptr<::rust::Box<::MplDdbClient>> inner_;
-    const ::MplDdbClient* ffi() const { return &**inner_; }
+    std::shared_ptr<detail::DdbClientImpl> impl_;
     friend class KeyStore;
+
 public:
-    explicit DdbClient(const ClientConfig& cfg)
-        : inner_(std::make_shared<::rust::Box<::MplDdbClient>>(
-              detail::guard([&] { return ::create_ddb_client(cfg.raw()); }))) {}
+    explicit DdbClient(const ClientConfig& cfg = {});
 };
 
 /// Optional key store parameters. A field left empty is omitted from the core
@@ -207,13 +169,9 @@ public:
 };
 
 class KeyStore {
-    // kms and ddb must be declared before inner_ (core, Rust) keystore
-    // so they are destroyed after inner_ is
-    KmsClient kms_;
-    DdbClient ddb_;
-    std::shared_ptr<::rust::Box<::KeyStore>> inner_;
-    const ::KeyStore* ffi() const { return &**inner_; }
+    std::shared_ptr<detail::KeyStoreImpl> impl_;
     friend class HierarchicalKeyring;
+
 public:
     /// Creates a Key Store backed by a DynamoDB table and protected by AWS KMS.
     /// \param table_name The DynamoDB table name that backs this Key Store.
@@ -231,36 +189,18 @@ public:
              const std::string& kms_arn,
              KmsClient kms,
              DdbClient ddb,
-             const KeyStoreOptions& options = {})
-        : kms_(std::move(kms)),
-          ddb_(std::move(ddb)),
-          inner_(std::make_shared<::rust::Box<::KeyStore>>(detail::guard([&] {
-              ::KeyStoreConfig c{};
-              c.ddb_table_name = ::rust::String(table_name);
-              c.logical_key_store_name = ::rust::String(logical_key_store_name);
-              c.kms_configuration_type = ::KmsConfigurationType::KmsKeyArn;
-              c.kms_configuration_value = ::rust::String(kms_arn);
-              c.id = ::rust::String(options.key_store_id_);
-              for (const auto& token : options.grant_tokens_) {
-                  c.grant_tokens.push_back(::rust::String(token));
-              }
-              c.kms_client = kms_.ffi();
-              c.ddb_client = ddb_.ffi();
-              return ::create_keystore(c);
-          }))) {}
+             const KeyStoreOptions& options = {});
 };
 
 /// Base type for every keyring encrypt/decrypt can accept. A concrete keyring
 /// derives from it, supplies the created handle, and keeps its own dependencies
 /// alive for its lifetime.
 class Keyring {
-    std::shared_ptr<::rust::Box<::Keyring>> inner_;
-    const ::Keyring* ffi() const { return &**inner_; }
+    std::shared_ptr<detail::KeyringImpl> impl_;
     friend class EncryptionSDK;
 
 protected:
-    explicit Keyring(std::shared_ptr<::rust::Box<::Keyring>> inner)
-        : inner_(std::move(inner)) {}
+    explicit Keyring(std::shared_ptr<detail::KeyringImpl> impl) : impl_(std::move(impl)) {}
 
 public:
     virtual ~Keyring() = default;
@@ -270,37 +210,30 @@ public:
 /// static factories. A keyring created without a cache uses the core library's
 /// default cache. One Cache may be passed to multiple keyrings.
 class Cache {
-    std::shared_ptr<::rust::Box<::Cache>> inner_;
+    std::shared_ptr<detail::CacheImpl> impl_;
     friend class HierarchicalKeyringOptions;
     friend class HierarchicalKeyring;
-    explicit Cache(::rust::Box<::Cache> inner)
-        : inner_(std::make_shared<::rust::Box<::Cache>>(std::move(inner))) {}
+    explicit Cache(std::shared_ptr<detail::CacheImpl> impl) : impl_(std::move(impl)) {}
 
 public:
     /// No caching: branch key material is fetched on every use.
-    static Cache NoCache() {
-        return Cache(detail::guard([] { return ::create_no_cache(); }));
-    }
+    static Cache NoCache();
     /// Cache safe for concurrent use from multiple threads. A parameter left 0
     /// keeps the core library's default for that parameter.
     static Cache MultiThreaded(std::uint32_t entry_capacity = 0,
-                               std::uint32_t entry_pruning_tail_size = 0) {
-        return Cache(detail::guard([&] {
-            return ::create_multi_threaded_cache(entry_capacity, entry_pruning_tail_size);
-        }));
-    }
+                               std::uint32_t entry_pruning_tail_size = 0);
 };
 
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the core library's default.
 class HierarchicalKeyringOptions {
-    std::shared_ptr<::rust::Box<::Cache>> cache_;
+    std::shared_ptr<detail::CacheImpl> cache_;
     std::string partition_id_;
     friend class HierarchicalKeyring;
 
 public:
     /// Sets the cache for this Hierarchical Keyring.
-    HierarchicalKeyringOptions& with_cache(const Cache& cache) { cache_ = cache.inner_; return *this; }
+    HierarchicalKeyringOptions& with_cache(const Cache& cache) { cache_ = cache.impl_; return *this; }
     /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing
     /// to a cache. If the Partition ID is the same for two Hierarchical Keyrings (or another
     /// Material Provider), they can share the same cache entries in the cache.
@@ -308,8 +241,6 @@ public:
 };
 
 class HierarchicalKeyring : public Keyring {
-    KeyStore key_store_;  // owns the keystore (and transitively its clients)
-    std::shared_ptr<::rust::Box<::Cache>> cache_;  // retains the cache handle, if one was supplied
 public:
     /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
     /// using Branch Keys persisted in DynamoDB and protected by a symmetric AWS KMS Key or
@@ -325,26 +256,7 @@ public:
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
                         std::uint32_t ttl_seconds,
-                        const HierarchicalKeyringOptions& options = {})
-        : Keyring(create(key_store, branch_key_id, ttl_seconds, options)),
-          key_store_(std::move(key_store)),
-          cache_(options.cache_) {}
-
-private:
-    static std::shared_ptr<::rust::Box<::Keyring>> create(const KeyStore& key_store,
-                                                          const std::string& branch_key_id,
-                                                          std::uint32_t ttl_seconds,
-                                                          const HierarchicalKeyringOptions& options) {
-        return std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
-            ::HierarchicalKeyringInput in{};
-            in.branch_key_id = ::rust::String(branch_key_id);
-            in.key_store = key_store.ffi();
-            in.ttl_seconds = ttl_seconds;
-            in.partition_id = ::rust::String(options.partition_id_);
-            if (options.cache_) in.cache = &**options.cache_;
-            return ::create_hierarchical_keyring(in);
-        }));
-    }
+                        const HierarchicalKeyringOptions& options = {});
 };
 
 class RawAesKeyring : public Keyring {
@@ -359,16 +271,7 @@ public:
     RawAesKeyring(const std::string& key_namespace,
                   const std::string& key_name,
                   const std::vector<std::uint8_t>& wrapping_key,
-                  AesWrappingAlgorithm wrapping_alg)
-        : Keyring(std::make_shared<::rust::Box<::Keyring>>(detail::guard([&] {
-              ::RawAesKeyringInput in{};
-              in.key_namespace = ::rust::String(key_namespace);
-              in.key_name = ::rust::String(key_name);
-              in.wrapping_key = ::rust::Slice<const std::uint8_t>(wrapping_key.data(),
-                                                                  wrapping_key.size());
-              in.wrapping_alg = detail::to_ffi(wrapping_alg);
-              return ::create_raw_aes_keyring(in);
-          }))) {}
+                  AesWrappingAlgorithm wrapping_alg);
 };
 
 /// Optional encrypt parameters.
@@ -412,14 +315,18 @@ public:
 };
 
 /// Owned, read-only byte buffer returned by encrypt and decrypt.
-/// 
-/// This owns the core (Rust) library's output buffer; not a C++ type.
-/// This setup allows readers to read outputs without a copy, improving performance.
+///
+/// This owns the core (Rust) library's output buffer without copying it: the
+/// data/size pair points into the core library's buffer, and a type-erased
+/// owner releases it when the last Bytes referring to it is destroyed.
 /// If you need a std::vector, use `.to_vector()`.
 class Bytes {
-    ::rust::Vec<std::uint8_t> buf_;
-    friend class EncryptionSDK;
-    explicit Bytes(::rust::Vec<std::uint8_t> buf) : buf_(std::move(buf)) {}
+    const std::uint8_t* data_ = nullptr;
+    std::size_t size_ = 0;
+    std::shared_ptr<void> owner_;  // keeps the core library's buffer alive
+    friend struct detail::BytesFactory;
+    Bytes(const std::uint8_t* data, std::size_t size, std::shared_ptr<void> owner)
+        : data_(data), size_(size), owner_(std::move(owner)) {}
 
 public:
     Bytes() = default;
@@ -428,13 +335,13 @@ public:
     Bytes(const Bytes&) = delete;
     Bytes& operator=(const Bytes&) = delete;
 
-    const std::uint8_t* data() const { return buf_.data(); }
-    std::size_t size() const { return buf_.size(); }
-    bool empty() const { return buf_.empty(); }
+    const std::uint8_t* data() const { return data_; }
+    std::size_t size() const { return size_; }
+    bool empty() const { return size_ == 0; }
 
-    const std::uint8_t* begin() const { return buf_.data(); }
-    const std::uint8_t* end() const { return buf_.data() + buf_.size(); }
-    std::uint8_t operator[](std::size_t index) const { return buf_[index]; }
+    const std::uint8_t* begin() const { return data_; }
+    const std::uint8_t* end() const { return data_ + size_; }
+    std::uint8_t operator[](std::size_t index) const { return data_[index]; }
 
     /// Copies the bytes into an owning std::vector.
     std::vector<std::uint8_t> to_vector() const {
@@ -477,60 +384,38 @@ public:
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
-        // Overrides only the fields the caller set, so defaults are never
-        // re-declared in C++ and cannot diverge from the Rust core.
-        ::EncryptInput in{};
-        in.keyring = keyring.ffi();
-        in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext.data(), plaintext.size());
-        in.encryption_context = detail::to_ec(options.encryption_context_);
-        if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
-        if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
-        if (options.frame_length_) in.frame_length = *options.frame_length_;
-        if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
-        ::EncryptOutput out = detail::guard([&] { return ::encrypt(in); });
-        EncryptResult result;
-        result.ciphertext = Bytes(std::move(out.ciphertext));
-        result.encryption_context = detail::from_ec(out.encryption_context);
-        result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
-        return result;
-    }
+        const EncryptOptions& options = {});
+
+    /// Encrypts a plaintext held in any contiguous buffer — e.g. an mmap'd
+    /// file or another library's buffer — without copying it into a
+    /// std::vector first. The buffer must stay valid for the duration of the
+    /// call; the plaintext bytes are not retained afterwards.
+    EncryptResult encrypt(
+        const std::uint8_t* plaintext,
+        std::size_t plaintext_len,
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
-        return decrypt_bytes(ciphertext.data(), ciphertext.size(), keyring, options);
-    }
+        const DecryptOptions& options = {});
 
     /// Decrypts a ciphertext held in a Bytes — e.g. an EncryptResult's
     /// ciphertext fed straight back in — without copying it.
     DecryptResult decrypt(
         const Bytes& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
-        return decrypt_bytes(ciphertext.data(), ciphertext.size(), keyring, options);
-    }
+        const DecryptOptions& options = {});
 
-private:
-    DecryptResult decrypt_bytes(
+    /// Decrypts a ciphertext held in any contiguous buffer without copying it
+    /// into a std::vector first. The buffer must stay valid for the duration
+    /// of the call; the ciphertext bytes are not retained afterwards.
+    DecryptResult decrypt(
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
         const Keyring& keyring,
-        const DecryptOptions& options) {
-        ::DecryptInput in{};
-        in.keyring = keyring.ffi();
-        in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
-        in.encryption_context = detail::to_ec(options.encryption_context_);
-        if (options.commitment_policy_) in.commitment_policy = detail::to_ffi(*options.commitment_policy_);
-        if (options.max_encrypted_data_keys_) in.max_encrypted_data_keys = *options.max_encrypted_data_keys_;
-        ::DecryptOutput out = detail::guard([&] { return ::decrypt(in); });
-        DecryptResult result;
-        result.plaintext = Bytes(std::move(out.plaintext));
-        result.encryption_context = detail::from_ec(out.encryption_context);
-        result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
-        return result;
-    }
+        const DecryptOptions& options = {});
 };
 
 }  // namespace Esdk
