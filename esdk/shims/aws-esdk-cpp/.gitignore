@@ -26,3 +26,6 @@ Cargo.lock
 .duvet/reports/
 /zero_copy_comparison
 /adopt_keyring_test
+/custom_keyring_example
+/examples/custom-keyring/target/
+/examples/custom-keyring/Cargo.lock
