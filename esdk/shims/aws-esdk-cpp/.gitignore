@@ -24,3 +24,4 @@ Cargo.lock
 .duvet/requirements/
 .duvet/snapshot.txt
 .duvet/reports/
+/zero_copy_comparison

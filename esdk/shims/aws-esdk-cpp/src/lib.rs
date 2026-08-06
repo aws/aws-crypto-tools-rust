@@ -175,6 +175,17 @@ mod ffi {
         RequireEncryptRequireDecrypt,
     }
 
+    /// Classification of a shim error, carried to the target as a prefix on the
+    /// error message (see `shim_err`) and decoded by the facade into the
+    /// matching exception type. `Generic` is the fallback for errors the shim
+    /// does not classify.
+    enum ShimErrorKind {
+        Generic,
+        Authentication,
+        Service,
+        InvalidInput,
+    }
+
     struct EncryptionContextItem {
         key: String,
         value: String,
@@ -341,13 +352,74 @@ struct Cache {
     cache_type: dafny::types::CacheType,
 }
 
+/// Separates the encoded `ShimErrorKind` repr from the message in every error
+/// the bridge returns; the facade's guard decodes it. U+001F cannot appear in
+/// the operation names or error Display text the shim produces.
+const ERROR_KIND_SEPARATOR: char = '\u{1f}';
+
+/// Builds the error string for the target: `{kind repr}{separator}{operation}: {message}`.
+/// Every error the bridge returns is built here, exactly once.
+fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
+    format!("{}{ERROR_KIND_SEPARATOR}{operation}: {message}", kind.repr)
+}
+
+/// Classifies a core ESDK error for the target.
+fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
+    use aws_esdk::ErrorKind;
+    match &e.kind {
+        // Malformed message or input; no cryptography was attempted.
+        ErrorKind::ValidationError | ErrorKind::SerializationError => {
+            ffi::ShimErrorKind::InvalidInput
+        }
+        // Cryptographic verification failed (for example an authentication-tag
+        // mismatch on a tampered message); retrying cannot succeed.
+        ErrorKind::CryptographicError => ffi::ShimErrorKind::Authentication,
+        // The core reports a failed footer signature as a generic Esdk error
+        // with this exact spec-cited message (esdk/src/decrypt.rs); it is a
+        // tampered-message failure, so classify it with the tag mismatches.
+        // error_kinds_reach_the_target locks this coupling.
+        ErrorKind::Esdk if e.message == "Signature verification failed" => {
+            ffi::ShimErrorKind::Authentication
+        }
+        ErrorKind::LegacyError(inner) => classify_legacy_error(inner),
+        _ => ffi::ShimErrorKind::Generic,
+    }
+}
+
+/// Classifies an error from the legacy MPL for the target.
+fn classify_legacy_error(e: &dafny::types::error::Error) -> ffi::ShimErrorKind {
+    use dafny::types::error::Error;
+    match e {
+        // A dependency service (AWS KMS) or transient cache-contention failure;
+        // the operation may succeed on retry.
+        Error::TrentServiceError { .. } | Error::InFlightTtlExceeded { .. } => {
+            ffi::ShimErrorKind::Service
+        }
+        _ => ffi::ShimErrorKind::Generic,
+    }
+}
+
+/// Classifies an error from the legacy MPL's key store for the target.
+fn classify_key_store_error(e: &dafny_key_store::types::error::Error) -> ffi::ShimErrorKind {
+    use dafny_key_store::types::error::Error;
+    match e {
+        // A dependency service (AWS KMS) failure; the operation may succeed on retry.
+        Error::TrentServiceError { .. } => ffi::ShimErrorKind::Service,
+        _ => ffi::ShimErrorKind::Generic,
+    }
+}
+
 /// Checks a target-supplied resource handle and borrows the resource behind it.
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
     //= spec/shim/shim.md#handles-and-lifetimes
     //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
     //# and MUST return an error when a required handle is absent.
     if ptr.is_null() {
-        return Err(format!("{name} is null in {operation}"));
+        return Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            operation,
+            format!("{name} is null"),
+        ));
     }
     // SAFETY: a non-null handle is a Box the shim returned to the target from a
     // create_* operation; the target keeps it alive for the duration of the call.
@@ -395,9 +467,10 @@ fn alg_id_target_to_core(
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
         //# - The shim MUST return an error when the target value is not one of the algorithm
         //# suite IDs defined by the core ESDK.
-        _ => Err(format!(
-            "unrecognized EsdkAlgorithmSuiteId value: {:#06x}",
-            e.repr
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "algorithm suite translation",
+            format!("unrecognized EsdkAlgorithmSuiteId value: {:#06x}", e.repr),
         )),
     }
 }
@@ -435,7 +508,11 @@ fn alg_id_core_to_target(
         //= reason=The core ESDK enum is exhaustive over its defined suites; a value it does not define cannot be constructed, so this defensive arm cannot be reached by a runtime test.
         //# - The shim MUST return an error when the core ESDK produces an algorithm suite
         //# the shim does not define.
-        _ => Err("core returned an algorithm suite id unknown to the C++ bindings".to_string()),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::Generic,
+            "algorithm suite translation",
+            "core returned an algorithm suite id unknown to the C++ bindings",
+        )),
     }
 }
 
@@ -454,9 +531,10 @@ fn commitment_policy_target_to_core(
         //= spec/shim/esdk-shim.md#commitment-policy
         //# - The shim MUST return an error when the target commitment policy is not a supported
         //# value.
-        _ => Err(format!(
-            "unrecognized EsdkCommitmentPolicy value: {}",
-            x.repr
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "commitment policy translation",
+            format!("unrecognized EsdkCommitmentPolicy value: {}", x.repr),
         )),
     }
 }
@@ -496,7 +574,13 @@ fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
 //# length constructor, and MUST return an error when the core ESDK rejects the
 //# value.
 fn make_frame_length(frame_length: u32) -> Result<aws_esdk::FrameLength, String> {
-    aws_esdk::FrameLength::new(frame_length).map_err(|e| format!("invalid frame_length: {:?}", e))
+    aws_esdk::FrameLength::new(frame_length).map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "frame length translation",
+            e,
+        )
+    })
 }
 
 fn make_kms_config(
@@ -505,7 +589,11 @@ fn make_kms_config(
 ) -> Result<dafny_key_store::types::KmsConfiguration, String> {
     use dafny_key_store::types::KmsConfiguration;
     match kind {
-        ffi::KmsConfigurationType::Unset => Err("kms_configuration_type is unset".to_string()),
+        ffi::KmsConfigurationType::Unset => Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "create_keystore",
+            "kms_configuration_type is unset",
+        )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
         ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.to_string())),
@@ -519,19 +607,35 @@ fn make_kms_config(
         ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery(
             dafny_key_store::types::Discovery::builder()
                 .build()
-                .map_err(|e| format!("failed to build Discovery: {:?}", e))?,
+                .map_err(|e| {
+                    shim_err(
+                        ffi::ShimErrorKind::InvalidInput,
+                        "create_keystore",
+                        format!("failed to build Discovery: {e:?}"),
+                    )
+                })?,
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a multi-Region-key discovery configuration.
         ffi::KmsConfigurationType::MrDiscovery => Ok(KmsConfiguration::MrDiscovery(
             dafny_key_store::types::MrDiscovery::builder()
                 .build()
-                .map_err(|e| format!("failed to build MrDiscovery: {:?}", e))?,
+                .map_err(|e| {
+                    shim_err(
+                        ffi::ShimErrorKind::InvalidInput,
+                        "create_keystore",
+                        format!("failed to build MrDiscovery: {e:?}"),
+                    )
+                })?,
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST return an error when the target KMS configuration type is not a
         //# supported value.
-        _ => Err("Invalid KmsConfigurationType".to_string()),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "create_keystore",
+            "Invalid KmsConfigurationType",
+        )),
     }
 }
 
@@ -539,11 +643,15 @@ fn make_kms_config(
 //# - The shim MUST translate a no-cache selection.
 fn create_no_cache() -> Result<Box<Cache>, String> {
     Ok(Box::new(Cache {
-        cache_type: dafny::types::CacheType::No(
-            dafny::types::NoCache::builder()
-                .build()
-                .map_err(|e| format!("failed to build NoCache: {:?}", e))?,
-        ),
+        cache_type: dafny::types::CacheType::No(dafny::types::NoCache::builder().build().map_err(
+            |e| {
+                shim_err(
+                    ffi::ShimErrorKind::InvalidInput,
+                    "create_cache",
+                    format!("failed to build NoCache: {e:?}"),
+                )
+            },
+        )?),
     }))
 }
 
@@ -557,24 +665,34 @@ fn create_multi_threaded_cache(
     let mut cache_builder = dafny::types::MultiThreadedCache::builder();
     if entry_capacity != 0 {
         let entry_capacity = i32::try_from(entry_capacity).map_err(|_| {
-            format!("entry_capacity {entry_capacity} exceeds the core ESDK's i32 limit")
+            shim_err(
+                ffi::ShimErrorKind::InvalidInput,
+                "create_cache",
+                format!("entry_capacity {entry_capacity} exceeds the core ESDK's i32 limit"),
+            )
         })?;
         cache_builder = cache_builder.entry_capacity(entry_capacity);
     }
     if entry_pruning_tail_size != 0 {
         let entry_pruning_tail_size = i32::try_from(entry_pruning_tail_size).map_err(|_| {
-            format!(
-                "entry_pruning_tail_size {entry_pruning_tail_size} exceeds the core ESDK's i32 limit"
+            shim_err(
+                ffi::ShimErrorKind::InvalidInput,
+                "create_cache",
+                format!(
+                    "entry_pruning_tail_size {entry_pruning_tail_size} exceeds the core ESDK's i32 limit"
+                ),
             )
         })?;
         cache_builder = cache_builder.entry_pruning_tail_size(entry_pruning_tail_size);
     }
     Ok(Box::new(Cache {
-        cache_type: dafny::types::CacheType::MultiThreaded(
-            cache_builder
-                .build()
-                .map_err(|e| format!("failed to build MultiThreadedCache: {:?}", e))?,
-        ),
+        cache_type: dafny::types::CacheType::MultiThreaded(cache_builder.build().map_err(|e| {
+            shim_err(
+                ffi::ShimErrorKind::InvalidInput,
+                "create_cache",
+                format!("failed to build MultiThreadedCache: {e:?}"),
+            )
+        })?),
     }))
 }
 
@@ -636,7 +754,13 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
         .map(|app_name| app_name.to_string())
         .unwrap_or_default();
     let new_app_name = merge_user_agent(&current_app_name, &user_agent_string);
-    let app_name = AppName::new(new_app_name).map_err(|e| format!("invalid app name: {:?}", e))?;
+    let app_name = AppName::new(new_app_name).map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "client configuration",
+            format!("invalid app name: {e}"),
+        )
+    })?;
     let mut builder = shared_config.to_builder().app_name(app_name);
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= reason=When no retry values are supplied make_retry_config yields None and the builder keeps load_defaults()'s retry config; the shim adds none.
@@ -733,7 +857,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     );
     apply_encrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
-    let output = output.map_err(|e| format!("encrypt failed: {:?}", e))?;
+    let output = output.map_err(|e| shim_err(classify_core_error(&e), "encrypt", e))?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -767,7 +891,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     );
     apply_decrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
-    let output = output.map_err(|e| format!("decrypt failed: {:?}", e))?;
+    let output = output.map_err(|e| shim_err(classify_core_error(&e), "decrypt", e))?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -843,12 +967,16 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     if !input.grant_tokens.is_empty() {
         builder = builder.grant_tokens(input.grant_tokens.clone());
     }
-    let config = builder
-        .build()
-        .map_err(|e| format!("failed to build KeyStoreConfig: {:?}", e))?;
+    let config = builder.build().map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "create_keystore",
+            format!("failed to build KeyStoreConfig: {e:?}"),
+        )
+    })?;
 
     let store = dafny_key_store::client::Client::from_conf(config)
-        .map_err(|e| format!("failed to create key store client: {:?}", e))?;
+        .map_err(|e| shim_err(classify_key_store_error(&e), "create_keystore", e))?;
     Ok(Box::new(KeyStore { client: store }))
 }
 
@@ -856,7 +984,11 @@ fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
 ) -> Result<dafny::types::AesWrappingAlg, String> {
     match alg {
-        ffi::AesWrappingAlg::Unset => Err("wrapping_alg is unset".to_string()),
+        ffi::AesWrappingAlg::Unset => Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "create_raw_aes_keyring",
+            "wrapping_alg is unset",
+        )),
         ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => {
             Ok(dafny::types::AesWrappingAlg::AlgAes128GcmIv12Tag16)
         }
@@ -866,16 +998,26 @@ fn wrapping_alg_target_to_core(
         ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
             Ok(dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
         }
-        _ => Err("Invalid AesWrappingAlg".to_string()),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::InvalidInput,
+            "create_raw_aes_keyring",
+            "Invalid AesWrappingAlg",
+        )),
     }
 }
 
 fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring>, String> {
     let mpl_config = dafny::types::MaterialProvidersConfig::builder()
         .build()
-        .map_err(|e| format!("failed to build MaterialProvidersConfig: {:?}", e))?;
+        .map_err(|e| {
+            shim_err(
+                ffi::ShimErrorKind::Generic,
+                "create_keyring",
+                format!("failed to build MaterialProvidersConfig: {e:?}"),
+            )
+        })?;
     let mpl = dafny::Client::from_conf(mpl_config)
-        .map_err(|e| format!("failed to create MPL client: {:?}", e))?;
+        .map_err(|e| shim_err(classify_legacy_error(&e), "create_keyring", e))?;
 
     let keyring = TOKIO_RUNTIME
         .block_on(
@@ -886,7 +1028,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
                 .wrapping_alg(wrapping_alg_target_to_core(input.wrapping_alg)?)
                 .send(),
         )
-        .map_err(|e| format!("failed to create raw AES keyring: {:?}", e))?;
+        .map_err(|e| shim_err(classify_legacy_error(&e), "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring { client: keyring }))
 }
@@ -906,9 +1048,15 @@ fn create_hierarchical_keyring(
 
     let mpl_config = dafny::types::MaterialProvidersConfig::builder()
         .build()
-        .map_err(|e| format!("failed to build MaterialProvidersConfig: {:?}", e))?;
+        .map_err(|e| {
+            shim_err(
+                ffi::ShimErrorKind::Generic,
+                "create_keyring",
+                format!("failed to build MaterialProvidersConfig: {e:?}"),
+            )
+        })?;
     let mpl = dafny::Client::from_conf(mpl_config)
-        .map_err(|e| format!("failed to create MPL client: {:?}", e))?;
+        .map_err(|e| shim_err(classify_legacy_error(&e), "create_keyring", e))?;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied cache
     //# configuration to the core ESDK, converted as defined in
@@ -934,7 +1082,7 @@ fn create_hierarchical_keyring(
 
     let keyring = TOKIO_RUNTIME
         .block_on(builder.send())
-        .map_err(|e| format!("failed to create hierarchical keyring: {:?}", e))?;
+        .map_err(|e| shim_err(classify_legacy_error(&e), "create_hierarchical_keyring", e))?;
 
     Ok(Box::new(Keyring { client: keyring }))
 }

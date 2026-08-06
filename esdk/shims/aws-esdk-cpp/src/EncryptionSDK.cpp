@@ -13,16 +13,34 @@ namespace Aws {
 namespace Esdk {
 namespace detail {
 
+// Decodes the `{ShimErrorKind repr}{U+001F}` prefix `shim_err` (lib.rs) puts on
+// every bridge error and throws the matching exception type. An unprefixed
+// message (for example from a cxx-level failure) throws the base type.
+[[noreturn]] void throw_shim_exception(const std::string& what) {
+    ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Generic;
+    std::string message = what;
+    if (what.size() >= 2 && what[1] == '\x1f' && what[0] >= '0' && what[0] <= '9') {
+        kind = static_cast<::ffi::ShimErrorKind>(what[0] - '0');
+        message = what.substr(2);
+    }
+    switch (kind) {
+        case ::ffi::ShimErrorKind::Authentication: throw AuthenticationException(message);
+        case ::ffi::ShimErrorKind::Service: throw ServiceException(message);
+        case ::ffi::ShimErrorKind::InvalidInput: throw InvalidInputException(message);
+        default: throw AwsEncryptionSdkException(message);
+    }
+}
+
 // Error-catching wrapper for a function call into the core Rust ESDK.
 // If attached to a function call, catches any Rust error from that call
-// and re-throws it as an AwsEncryptionSdkException.
+// and re-throws it as the matching Aws::Esdk exception type.
 // This should be attached to every call to the Rust ESDK.
 template <typename F>
 auto guard(F&& f) -> decltype(f()) {
     try {
         return f();
     } catch (const ::rust::Error& e) {
-        throw AwsEncryptionSdkException(e.what());
+        throw_shim_exception(e.what());
     }
 }
 

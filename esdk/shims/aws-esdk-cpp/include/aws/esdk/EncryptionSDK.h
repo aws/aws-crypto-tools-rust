@@ -79,9 +79,34 @@ namespace Esdk {
 //= spec/shim/shim.md#owned-interface
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
+/// Base exception for every failure this library reports. Catching this type
+/// catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
+};
+
+/// Cryptographic verification failed — for example the authentication tag of a
+/// tampered or corrupted message did not verify. The message cannot be
+/// trusted; retrying the same input cannot succeed.
+class AuthenticationException : public AwsEncryptionSdkException {
+public:
+    explicit AuthenticationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+};
+
+/// A dependency service call (for example AWS KMS) or transient
+/// cache-contention failure. The operation may succeed if retried.
+class ServiceException : public AwsEncryptionSdkException {
+public:
+    explicit ServiceException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+};
+
+/// The caller supplied invalid input — a malformed message, an unrecognized
+/// enum value, or a missing required resource. Fix the input; retrying the
+/// same input cannot succeed.
+class InvalidInputException : public AwsEncryptionSdkException {
+public:
+    explicit InvalidInputException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
 };
 
 enum class AlgorithmSuiteId : std::uint16_t {

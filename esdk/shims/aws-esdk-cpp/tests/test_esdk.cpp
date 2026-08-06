@@ -7,6 +7,26 @@
 
 #include "esdk_test_support.h"
 
+// Passes only if `expr` throws exactly the exception type `ExType` (allowing
+// derived-to-base only when ExType is that exact class in the hierarchy check
+// below via catch ordering).
+#define CHECK_THROWS_TYPE(ExType, expr)                                        \
+    do {                                                                       \
+        ++::esdk_test::g_checks;                                               \
+        bool caught_expected = false;                                          \
+        try {                                                                  \
+            expr;                                                              \
+        } catch (const ExType&) {                                              \
+            caught_expected = true;                                            \
+        } catch (const std::exception& e) {                                    \
+            std::cerr << "FAIL: " << #expr << " threw wrong type: " << e.what() << "\n"; \
+        }                                                                      \
+        if (caught_expected) {                                                 \
+        } else {                                                               \
+            ++::esdk_test::g_failures;                                         \
+        }                                                                      \
+    } while (0)
+
 #define CHECK_THROWS_ESDK(expr)                                                \
     do {                                                                       \
         ++::esdk_test::g_checks;                                               \
@@ -171,6 +191,45 @@ void test_raw_aes_mismatched_key_length_throws() {
         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
 }
 
+// Error kinds surface as typed exceptions; all offline via the raw AES keyring.
+void test_error_kinds() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+
+    // Malformed message: InvalidInputException.
+    CHECK_THROWS_TYPE(Aws::Esdk::InvalidInputException,
+                      sdk.decrypt(to_bytes("this is not a valid ESDK message"), keyring));
+
+    // Tampered message (authentication tag flipped): AuthenticationException.
+    auto tampered = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext.to_vector();
+    tampered.back() ^= 0xFF;
+    CHECK_THROWS_TYPE(Aws::Esdk::AuthenticationException, sdk.decrypt(tampered, keyring));
+
+    // Mismatched wrapping-key length is unclassified: the base exception type,
+    // not one of the subclasses.
+    std::vector<std::uint8_t> short_key(16, 0x01);
+    ++::esdk_test::g_checks;
+    try {
+        Aws::Esdk::RawAesKeyring bad("ns", "n", short_key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: short wrapping key did not throw\n";
+    } catch (const Aws::Esdk::AuthenticationException&) {
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: short wrapping key threw AuthenticationException\n";
+    } catch (const Aws::Esdk::ServiceException&) {
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: short wrapping key threw ServiceException\n";
+    } catch (const Aws::Esdk::InvalidInputException&) {
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: short wrapping key threw InvalidInputException\n";
+    } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
+        // expected: base type only
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -178,6 +237,7 @@ int main() {
         test_raw_aes_round_trip();
         test_raw_aes_wrong_keyring_fails();
         test_raw_aes_mismatched_key_length_throws();
+        test_error_kinds();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

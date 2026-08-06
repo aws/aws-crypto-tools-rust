@@ -397,7 +397,7 @@ fn make_frame_length_translates_and_rejects_zero() {
     //# value.
     let err = make_frame_length(0).unwrap_err();
     assert!(
-        err.contains("invalid frame_length"),
+        err.contains("Frame length must be non-zero"),
         "unexpected error: {err}"
     );
     assert!(make_frame_length(4096).is_ok());
@@ -508,6 +508,70 @@ fn raw_aes_keyring_round_trip() {
     dec_in.ciphertext = enc_out.ciphertext.as_slice();
     let dec_out = decrypt(&dec_in).expect("decrypt");
     assert_eq!(dec_out.plaintext, plaintext);
+}
+
+#[test]
+fn error_kinds_reach_the_target() {
+    let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("create raw AES keyring");
+    let sep = '\u{1f}';
+
+    // Absent required handle: InvalidInput (repr 3), operation named.
+    let err = expect_err(encrypt(&unset_encrypt_input()));
+    assert!(
+        err.starts_with(&format!("3{sep}encrypt: ")),
+        "unexpected encoding: {err}"
+    );
+
+    // Malformed message, no cryptography attempted: InvalidInput (repr 3).
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = b"this is not a valid ESDK message";
+    let err = expect_err(decrypt(&dec_in));
+    assert!(
+        err.starts_with(&format!("3{sep}decrypt: ")),
+        "unexpected encoding: {err}"
+    );
+
+    // Tampered message, non-signing suite: the AEAD tag mismatch surfaces as
+    // Authentication (repr 1).
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.plaintext = b"tamper target";
+    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    let mut ciphertext = encrypt(&enc_in).expect("encrypt").ciphertext;
+    *ciphertext.last_mut().unwrap() ^= 0xFF;
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = ciphertext.as_slice();
+    let err = expect_err(decrypt(&dec_in));
+    assert!(
+        err.starts_with(&format!("1{sep}decrypt: ")),
+        "unexpected encoding: {err}"
+    );
+
+    // Tampered message, signing suite: the footer signature failure also
+    // surfaces as Authentication (repr 1). Locks the message-based
+    // classification of the core's signature-verification error.
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.plaintext = b"tamper target";
+    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384;
+    let mut ciphertext = encrypt(&enc_in).expect("encrypt").ciphertext;
+    *ciphertext.last_mut().unwrap() ^= 0xFF;
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = ciphertext.as_slice();
+    let err = expect_err(decrypt(&dec_in));
+    assert!(
+        err.starts_with(&format!("1{sep}decrypt: ")),
+        "unexpected encoding: {err}"
+    );
 }
 
 #[test]
