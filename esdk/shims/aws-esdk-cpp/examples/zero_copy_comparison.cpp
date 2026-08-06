@@ -1,31 +1,17 @@
-// zero_copy_comparison.cpp — why the pointer+length overloads and the Bytes
-// output type exist.
+// Motivation: large payloads should not pay for copies at the API boundary.
+// Plaintext rarely lives in a std::vector — it is an mmap'd file, a protobuf
+// arena, a network buffer, a std::string — and ciphertext usually goes
+// straight to a socket or file. This example measures the cost of forcing it
+// through vectors anyway:
 //
-// Scenario: your plaintext does not live in a std::vector. In real programs it
-// rarely does — it's an mmap'd file, a protobuf arena, a network buffer, a
-// std::string. And after encrypting, you usually just write the ciphertext
-// somewhere (socket, file, S3 SDK call) and never need to own it in a vector.
+//   SLOW: copy the buffer into a std::vector, encrypt, then
+//         result.ciphertext.to_vector()            — two full copies per call
+//   FAST: encrypt(ptr, len), then read
+//         result.ciphertext.data()/size() in place — zero copies
 //
-// SLOW path (what the API used to force):
-//   1. Copy your buffer into a std::vector      <- copy #1, doubles peak memory
-//   2. encrypt(vector)
-//   3. result.ciphertext.to_vector()            <- copy #2, doubles it again
-//
-// FAST path (what the overloads enable):
-//   1. encrypt(ptr, len)                        <- borrows your buffer in place
-//   2. read result.ciphertext.data()/size()     <- reads Rust's buffer in place
-//
-// The crypto work is identical; the difference is pure memcpy + allocator
-// traffic. Run it and compare:
-//
-//   c++ -std=c++17 -O2 -Iinclude examples/zero_copy_comparison.cpp \
-//       target/release/libaws_esdk_cpp.a \
-//       target/release/build/cxx-*/out/libcxxbridge1.a \
-//       -framework Security -framework CoreFoundation \
-//       -framework SystemConfiguration -o zero_copy_comparison   # macOS
-//   ./zero_copy_comparison
-//
-// Uses a Raw AES keyring, so it runs offline with no AWS account.
+// The cryptography is identical; the difference is pure memcpy and allocator
+// traffic. Build and run with `make zero_copy_example`. Uses a raw AES
+// keyring, so it runs offline with no AWS account.
 
 #include <aws/esdk/EncryptionSDK.h>
 

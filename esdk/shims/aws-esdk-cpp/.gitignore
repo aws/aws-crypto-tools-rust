@@ -29,3 +29,4 @@ Cargo.lock
 /custom_keyring_example
 /examples/custom-keyring/target/
 /examples/custom-keyring/Cargo.lock
+/streaming_example
