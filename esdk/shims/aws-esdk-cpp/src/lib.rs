@@ -126,8 +126,7 @@
 //# the shim library SHOULD support it as well.
 //
 //= spec/shim/shim.md#streaming
-//= type=exception
-//= reason=The owned interface exposes one-shot encrypt/decrypt (Vec in, Vec out); streamed input/output is not surfaced.
+//= reason=EncryptStream/DecryptStream expose the core's encrypt_stream/decrypt_stream: chunked writes in, incremental output out, finish() completing the operation.
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) input/outputs,
 //# the shim library SHOULD support it as well.
 use aws_config::{AppName, Region, SdkConfig};
@@ -226,6 +225,14 @@ mod ffi {
         /// default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: EsdkCommitmentPolicy,
     }
+    /// Result of finishing a stream: the trailing output bytes plus the
+    /// algorithm suite and encryption context the core library reported.
+    struct StreamFinishOutput {
+        pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+        pub encryption_context: Vec<EncryptionContextItem>,
+        pub trailing_output: Vec<u8>,
+    }
+
     struct DecryptOutput {
         /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
         pub algorithm_suite_id: EsdkAlgorithmSuiteId,
@@ -318,6 +325,18 @@ mod ffi {
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
+
+        type EncryptStream;
+        fn create_encrypt_stream(input: &EncryptInput) -> Result<Box<EncryptStream>>;
+        fn encrypt_stream_write(stream: &mut EncryptStream, chunk: &[u8]) -> Result<Vec<u8>>;
+        fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<StreamFinishOutput>;
+        fn delete_encrypt_stream(stream: Box<EncryptStream>) -> Result<()>;
+
+        type DecryptStream;
+        fn create_decrypt_stream(input: &DecryptInput) -> Result<Box<DecryptStream>>;
+        fn decrypt_stream_write(stream: &mut DecryptStream, chunk: &[u8]) -> Result<Vec<u8>>;
+        fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<StreamFinishOutput>;
+        fn delete_decrypt_stream(stream: Box<DecryptStream>) -> Result<()>;
     }
 }
 
@@ -1101,6 +1120,258 @@ fn delete_keyring(_client: Box<Keyring>) -> Result<(), String> {
     Ok(())
 }
 fn delete_cache(_cache: Box<Cache>) -> Result<(), String> {
+    Ok(())
+}
+
+// Streaming (see spec/shim/shim.md#streaming).
+//
+// The core's encrypt_stream/decrypt_stream drive a Read source and a Write sink
+// themselves, so each shim stream runs the core operation on its own thread:
+// `write` sends a chunk to the core's Read side and returns whatever output the
+// core has produced so far; `finish` signals end of input, joins the thread,
+// and returns the core's result with the trailing output.
+
+/// Read side the core pulls from: chunks arrive over a channel; end of input
+/// is the channel closing.
+struct ChannelReader {
+    // Mutex only to satisfy SafeRead's Sync bound; the worker thread is the
+    // sole reader, so the lock is never contended.
+    rx: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
+    pending: Vec<u8>,
+    offset: usize,
+}
+
+impl std::io::Read for ChannelReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.offset == self.pending.len() {
+            let rx = self.rx.lock().expect("stream reader poisoned");
+            match rx.recv() {
+                Ok(chunk) => {
+                    self.pending = chunk;
+                    self.offset = 0;
+                }
+                // Sender dropped: end of input.
+                Err(_) => return Ok(0),
+            }
+        }
+        let n = buf.len().min(self.pending.len() - self.offset);
+        buf[..n].copy_from_slice(&self.pending[self.offset..self.offset + n]);
+        self.offset += n;
+        Ok(n)
+    }
+}
+
+impl std::fmt::Debug for ChannelReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ChannelReader")
+    }
+}
+
+/// Write side the core pushes to: every produced buffer is sent to the target
+/// side without blocking (the channel is unbounded), so the core's pump can
+/// never deadlock against a target that has not called `write` again yet.
+struct ChannelWriter {
+    tx: std::sync::mpsc::Sender<Vec<u8>>,
+}
+
+impl std::io::Write for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if !buf.is_empty() {
+            self.tx.send(buf.to_vec()).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stream closed")
+            })?;
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for ChannelWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ChannelWriter")
+    }
+}
+
+/// One in-flight streaming operation: the input sender, the output receiver,
+/// and the thread running the core operation.
+struct StreamState {
+    input_tx: Option<std::sync::mpsc::Sender<Vec<u8>>>,
+    output_rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    worker: Option<std::thread::JoinHandle<Result<ffi::StreamFinishOutput, String>>>,
+    operation: &'static str,
+}
+
+impl StreamState {
+    fn spawn<F>(operation: &'static str, run: F) -> Self
+    where
+        F: FnOnce(ChannelReader, ChannelWriter) -> Result<ffi::StreamFinishOutput, String>
+            + Send
+            + 'static,
+    {
+        let (input_tx, input_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let (output_tx, output_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let reader = ChannelReader {
+            rx: std::sync::Mutex::new(input_rx),
+            pending: Vec::new(),
+            offset: 0,
+        };
+        let writer = ChannelWriter { tx: output_tx };
+        let worker = std::thread::spawn(move || run(reader, writer));
+        StreamState {
+            input_tx: Some(input_tx),
+            output_rx,
+            worker: Some(worker),
+            operation,
+        }
+    }
+
+    /// Sends a chunk to the core and returns the output produced so far.
+    fn write(&mut self, chunk: &[u8]) -> Result<Vec<u8>, String> {
+        let tx = self.input_tx.as_ref().ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::InvalidInput,
+                self.operation,
+                "write after finish",
+            )
+        })?;
+        if tx.send(chunk.to_vec()).is_err() {
+            // The core stopped reading: it has failed. Join to surface its error.
+            return self.join_worker().map(|_| Vec::new());
+        }
+        Ok(self.drain_available())
+    }
+
+    /// Signals end of input, waits for the core to complete, and returns its
+    /// result with any output not yet handed to the target.
+    fn finish(&mut self) -> Result<ffi::StreamFinishOutput, String> {
+        drop(self.input_tx.take());
+        let mut result = self.join_worker()?;
+        let mut trailing = self.drain_available();
+        trailing.extend_from_slice(&result.trailing_output);
+        result.trailing_output = trailing;
+        Ok(result)
+    }
+
+    fn join_worker(&mut self) -> Result<ffi::StreamFinishOutput, String> {
+        let worker = self.worker.take().ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::InvalidInput,
+                self.operation,
+                "finish called twice",
+            )
+        })?;
+        worker.join().map_err(|_| {
+            shim_err(
+                ffi::ShimErrorKind::Generic,
+                self.operation,
+                "stream worker panicked",
+            )
+        })?
+    }
+
+    fn drain_available(&mut self) -> Vec<u8> {
+        let mut out = Vec::new();
+        while let Ok(chunk) = self.output_rx.try_recv() {
+            out.extend_from_slice(&chunk);
+        }
+        out
+    }
+}
+
+struct EncryptStream {
+    state: StreamState,
+}
+struct DecryptStream {
+    state: StreamState,
+}
+
+fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
+    let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
+    let mut core_input = aws_esdk::EncryptStreamInput::new();
+    core_input.keyring = Some(keyring.client.clone().into());
+    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
+    if input.algorithm_suite_id != ffi::EsdkAlgorithmSuiteId::Unset {
+        core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    }
+    if input.frame_length != 0 {
+        core_input.frame_length = make_frame_length(input.frame_length)?;
+    }
+    if input.max_encrypted_data_keys != 0 {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    }
+    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
+        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    }
+    Ok(Box::new(EncryptStream {
+        state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
+            let output = TOKIO_RUNTIME
+                .block_on(aws_esdk::encrypt_stream(
+                    &mut reader,
+                    &mut writer,
+                    &core_input,
+                ))
+                .map_err(|e| shim_err(classify_core_error(&e), "encrypt_stream", e))?;
+            Ok(ffi::StreamFinishOutput {
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+                trailing_output: Vec::new(),
+            })
+        }),
+    }))
+}
+
+fn encrypt_stream_write(stream: &mut EncryptStream, chunk: &[u8]) -> Result<Vec<u8>, String> {
+    stream.state.write(chunk)
+}
+
+fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<ffi::StreamFinishOutput, String> {
+    stream.state.finish()
+}
+
+fn delete_encrypt_stream(_stream: Box<EncryptStream>) -> Result<(), String> {
+    Ok(())
+}
+
+fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
+    let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
+    let mut core_input = aws_esdk::DecryptStreamInput::new();
+    core_input.keyring = Some(keyring.client.clone().into());
+    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
+    if input.max_encrypted_data_keys != 0 {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    }
+    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
+        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    }
+    Ok(Box::new(DecryptStream {
+        state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
+            let output = TOKIO_RUNTIME
+                .block_on(aws_esdk::decrypt_stream(
+                    &mut reader,
+                    &mut writer,
+                    &core_input,
+                ))
+                .map_err(|e| shim_err(classify_core_error(&e), "decrypt_stream", e))?;
+            Ok(ffi::StreamFinishOutput {
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+                trailing_output: Vec::new(),
+            })
+        }),
+    }))
+}
+
+fn decrypt_stream_write(stream: &mut DecryptStream, chunk: &[u8]) -> Result<Vec<u8>, String> {
+    stream.state.write(chunk)
+}
+
+fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinishOutput, String> {
+    stream.state.finish()
+}
+
+fn delete_decrypt_stream(_stream: Box<DecryptStream>) -> Result<(), String> {
     Ok(())
 }
 

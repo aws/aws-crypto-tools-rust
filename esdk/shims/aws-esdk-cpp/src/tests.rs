@@ -510,6 +510,150 @@ fn raw_aes_keyring_round_trip() {
     assert_eq!(dec_out.plaintext, plaintext);
 }
 
+fn test_raw_aes_keyring() -> Box<Keyring> {
+    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("create raw AES keyring")
+}
+
+//= spec/shim/shim.md#streaming
+//= type=test
+//= reason=Plaintext fed in non-frame-aligned chunks streams to ciphertext that one-shot decrypt accepts, and streamed decrypt recovers it.
+//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) input/outputs,
+//# the shim library SHOULD support it as well.
+#[test]
+fn streaming_round_trips_interoperate_with_one_shot() {
+    let keyring = test_raw_aes_keyring();
+    let plaintext: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.frame_length = 4096;
+    // Non-signing suite: the core refuses to stream-decrypt multi-frame
+    // signed messages (covered separately below).
+    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
+    let mut ciphertext = Vec::new();
+    for chunk in plaintext.chunks(3001) {
+        ciphertext.extend_from_slice(&encrypt_stream_write(&mut stream, chunk).expect("write"));
+    }
+    let fin = encrypt_stream_finish(&mut stream).expect("finish");
+    ciphertext.extend_from_slice(&fin.trailing_output);
+
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = ciphertext.as_slice();
+    assert_eq!(
+        decrypt(&dec_in).expect("one-shot decrypt").plaintext,
+        plaintext
+    );
+
+    let mut dec_stream_in = unset_decrypt_input();
+    dec_stream_in.keyring = &*keyring as *const Keyring;
+    let mut stream = create_decrypt_stream(&dec_stream_in).expect("create decrypt stream");
+    let mut recovered = Vec::new();
+    for chunk in ciphertext.chunks(1517) {
+        recovered.extend_from_slice(&decrypt_stream_write(&mut stream, chunk).expect("write"));
+    }
+    let fin = decrypt_stream_finish(&mut stream).expect("finish");
+    recovered.extend_from_slice(&fin.trailing_output);
+    assert_eq!(recovered, plaintext);
+}
+
+#[test]
+fn streaming_decrypt_tamper_fails_at_finish() {
+    let keyring = test_raw_aes_keyring();
+
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
+    let mut ciphertext = encrypt_stream_write(&mut stream, b"stream tamper target").expect("write");
+    let fin = encrypt_stream_finish(&mut stream).expect("finish");
+    ciphertext.extend_from_slice(&fin.trailing_output);
+
+    *ciphertext.last_mut().unwrap() ^= 0xFF;
+
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    let mut stream = create_decrypt_stream(&dec_in).expect("create decrypt stream");
+    // Feeding may or may not surface the failure (the pump is asynchronous);
+    // finish MUST fail with the Authentication kind either way.
+    let mut failed = None;
+    for chunk in ciphertext.chunks(7) {
+        if let Err(e) = decrypt_stream_write(&mut stream, chunk) {
+            failed = Some(e);
+            break;
+        }
+    }
+    let err = match failed {
+        Some(e) => e,
+        None => expect_err(decrypt_stream_finish(&mut stream)),
+    };
+    assert!(
+        err.starts_with(&format!("1{}decrypt_stream: ", '\u{1f}')),
+        "unexpected encoding: {err}"
+    );
+}
+
+#[test]
+fn streaming_decrypt_refuses_multi_frame_signed_messages() {
+    let keyring = test_raw_aes_keyring();
+
+    // Multi-frame message under the default (signing) suite.
+    let plaintext = vec![0x5Au8; 10_000];
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.plaintext = plaintext.as_slice();
+    enc_in.frame_length = 4096;
+    let ciphertext = encrypt(&enc_in).expect("encrypt").ciphertext;
+
+    // One-shot decrypt handles it.
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.ciphertext = ciphertext.as_slice();
+    assert_eq!(
+        decrypt(&dec_in).expect("one-shot decrypt").plaintext,
+        plaintext
+    );
+
+    // Streamed decrypt refuses rather than releasing plaintext whose trailing
+    // signature has not been verified.
+    let mut dec_stream_in = unset_decrypt_input();
+    dec_stream_in.keyring = &*keyring as *const Keyring;
+    let mut stream = create_decrypt_stream(&dec_stream_in).expect("create decrypt stream");
+    let mut failed = None;
+    for chunk in ciphertext.chunks(4096) {
+        if let Err(e) = decrypt_stream_write(&mut stream, chunk) {
+            failed = Some(e);
+            break;
+        }
+    }
+    let err = match failed {
+        Some(e) => e,
+        None => expect_err(decrypt_stream_finish(&mut stream)),
+    };
+    assert!(err.contains("signed"), "unexpected error: {err}");
+}
+
+#[test]
+fn streaming_write_after_finish_is_invalid_input() {
+    let keyring = test_raw_aes_keyring();
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
+    encrypt_stream_finish(&mut stream).expect("finish");
+    let err = expect_err(encrypt_stream_write(&mut stream, b"late"));
+    assert!(
+        err.starts_with(&format!("3{}encrypt_stream: ", '\u{1f}')),
+        "unexpected encoding: {err}"
+    );
+}
+
 #[test]
 fn error_kinds_reach_the_target() {
     let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {

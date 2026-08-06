@@ -138,6 +138,16 @@ struct KeyringImpl {
         : key_store(std::move(ks)), cache(std::move(c)), handle(std::move(h)) {}
 };
 
+struct EncryptStreamImpl {
+    ::rust::Box<::ffi::EncryptStream> handle;
+    explicit EncryptStreamImpl(::rust::Box<::ffi::EncryptStream> h) : handle(std::move(h)) {}
+};
+
+struct DecryptStreamImpl {
+    ::rust::Box<::ffi::DecryptStream> handle;
+    explicit DecryptStreamImpl(::rust::Box<::ffi::DecryptStream> h) : handle(std::move(h)) {}
+};
+
 }  // namespace detail
 
 // ClientConfig
@@ -307,6 +317,72 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
     DecryptResult result;
     result.plaintext = detail::make_bytes(std::move(out.plaintext));
+    result.encryption_context = detail::from_ec(out.encryption_context);
+    result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
+    return result;
+}
+
+// Streaming
+
+EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
+                                                   const EncryptOptions& options) {
+    ::ffi::EncryptInput in{};
+    in.keyring = &*keyring.impl_->handle;
+    in.encryption_context = detail::to_ec(options.encryption_context_);
+    if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
+    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
+        in.commitment_policy = detail::to_ffi(*p);
+    if (options.frame_length_) in.frame_length = *options.frame_length_;
+    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                                        : max_encrypted_data_keys_)
+        in.max_encrypted_data_keys = *m;
+    return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
+        detail::guard([&] { return ::ffi::create_encrypt_stream(in); })));
+}
+
+DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
+                                                   const DecryptOptions& options) {
+    ::ffi::DecryptInput in{};
+    in.keyring = &*keyring.impl_->handle;
+    in.encryption_context = detail::to_ec(options.encryption_context_);
+    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
+        in.commitment_policy = detail::to_ffi(*p);
+    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                                        : max_encrypted_data_keys_)
+        in.max_encrypted_data_keys = *m;
+    return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
+        detail::guard([&] { return ::ffi::create_decrypt_stream(in); })));
+}
+
+Bytes EncryptStream::write(const std::uint8_t* data, std::size_t size) {
+    return detail::make_bytes(detail::guard([&] {
+        return ::ffi::encrypt_stream_write(*impl_->handle,
+                                           ::rust::Slice<const std::uint8_t>(data, size));
+    }));
+}
+
+StreamResult EncryptStream::finish() {
+    ::ffi::StreamFinishOutput out =
+        detail::guard([&] { return ::ffi::encrypt_stream_finish(*impl_->handle); });
+    StreamResult result;
+    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    result.encryption_context = detail::from_ec(out.encryption_context);
+    result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
+    return result;
+}
+
+Bytes DecryptStream::write(const std::uint8_t* data, std::size_t size) {
+    return detail::make_bytes(detail::guard([&] {
+        return ::ffi::decrypt_stream_write(*impl_->handle,
+                                           ::rust::Slice<const std::uint8_t>(data, size));
+    }));
+}
+
+StreamResult DecryptStream::finish() {
+    ::ffi::StreamFinishOutput out =
+        detail::guard([&] { return ::ffi::decrypt_stream_finish(*impl_->handle); });
+    StreamResult result;
+    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;

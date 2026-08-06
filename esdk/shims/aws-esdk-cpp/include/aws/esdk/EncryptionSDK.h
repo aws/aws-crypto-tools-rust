@@ -156,6 +156,8 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 // construct, copy, or inspect them.
 namespace detail {
 struct ClientConfigImpl;
+struct EncryptStreamImpl;
+struct DecryptStreamImpl;
 struct KmsClientImpl;
 struct DdbClientImpl;
 struct KeyStoreImpl;
@@ -479,6 +481,75 @@ public:
     SdkOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
+/// Result of finishing a stream: any output produced after the last write,
+/// plus the encryption context and algorithm suite the core library reported.
+struct StreamResult {
+    /// Output bytes produced by finishing (for encrypt: the final frame and,
+    /// for signing suites, the signature footer).
+    Bytes trailing_output;
+    /// Encryption context associated with the message.
+    std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used.
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
+/// Streaming encrypt: feed plaintext in chunks, receive ciphertext as it is
+/// produced, then finish() to flush the final frame (and signature footer for
+/// signing suites). Create via EncryptionSDK::create_encrypt_stream. One
+/// stream is single-threaded; different streams may run on different threads.
+class EncryptStream {
+    std::shared_ptr<detail::EncryptStreamImpl> impl_;
+    friend class EncryptionSDK;
+    explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    /// Feeds a plaintext chunk and returns whatever ciphertext the core has
+    /// produced so far (possibly empty; frames are emitted as they fill).
+    Bytes write(const std::uint8_t* data, std::size_t size);
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
+    /// Ends the plaintext, flushes the final frame (and the signature footer
+    /// for signing suites), and returns it with the message metadata. The
+    /// stream cannot be written after finish.
+    StreamResult finish();
+};
+
+/// Streaming decrypt: feed ciphertext in chunks, receive plaintext as it is
+/// produced, then finish() to complete verification.
+///
+/// SECURITY: the message is not fully verified until finish() returns
+/// successfully. Do not act on released plaintext before finish() succeeds,
+/// and discard everything released if finish() throws. For signing suites the
+/// trailing signature is only verifiable at the end of the message, so the
+/// core refuses to stream a multi-frame signed message (the operation throws)
+/// rather than release signature-unverified plaintext — use the one-shot
+/// EncryptionSDK::decrypt for those. The one-shot decrypt avoids this hazard
+/// entirely; prefer it unless the message cannot be buffered.
+class DecryptStream {
+    std::shared_ptr<detail::DecryptStreamImpl> impl_;
+    friend class EncryptionSDK;
+    explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    /// Feeds a ciphertext chunk and returns whatever plaintext the core has
+    /// released so far (possibly empty). Released plaintext is unverified
+    /// until finish() succeeds; see the class documentation.
+    Bytes write(const std::uint8_t* data, std::size_t size);
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
+    /// Ends the ciphertext and completes decryption, including signature
+    /// verification for signing suites. Success means every byte this stream
+    /// released is authenticated; failure means all released plaintext must be
+    /// discarded.
+    StreamResult finish();
+};
+
 /// Operations client. Thread safety: one EncryptionSDK and one Keyring may be
 /// used concurrently from multiple threads; encrypt and decrypt hold no
 /// client-side mutable state and defer to the core library's own thread
@@ -542,6 +613,20 @@ public:
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
     }
+
+    /// Creates a streaming encrypt operation. Options are resolved exactly as
+    /// for encrypt: per-call options override this client's SdkOptions, and
+    /// unset fields defer to the core library's defaults.
+    EncryptStream create_encrypt_stream(
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Creates a streaming decrypt operation. See DecryptStream for the
+    /// verification semantics of streamed plaintext. Options are resolved
+    /// exactly as for decrypt.
+    DecryptStream create_decrypt_stream(
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
 
 #if defined(__cpp_lib_span)
     /// Encrypts a plaintext viewed through a std::span without copying it.

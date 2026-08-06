@@ -290,6 +290,65 @@ void test_bytes_and_string_ergonomics() {
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
 }
 
+// Streaming through the facade; offline via the raw AES keyring.
+void test_streaming() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    // Non-signing suite: streamed decrypt of multi-frame signed messages is
+    // refused by the core (pinned below).
+    auto opts = Aws::Esdk::EncryptOptions()
+                    .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+                    .with_frame_length(4096);
+
+    std::vector<std::uint8_t> plaintext(20000);
+    for (std::size_t i = 0; i < plaintext.size(); ++i) plaintext[i] = static_cast<std::uint8_t>(i % 251);
+
+    auto enc = sdk.create_encrypt_stream(keyring, opts);
+    std::vector<std::uint8_t> ciphertext;
+    for (std::size_t off = 0; off < plaintext.size(); off += 3001) {
+        auto n = std::min<std::size_t>(3001, plaintext.size() - off);
+        auto out = enc.write(plaintext.data() + off, n);
+        ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    }
+    auto enc_fin = enc.finish();
+    ciphertext.insert(ciphertext.end(), enc_fin.trailing_output.begin(), enc_fin.trailing_output.end());
+
+    // Streamed ciphertext one-shot decrypts.
+    ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
+
+    // Streamed decrypt recovers the plaintext.
+    auto dec = sdk.create_decrypt_stream(keyring);
+    std::vector<std::uint8_t> recovered;
+    for (std::size_t off = 0; off < ciphertext.size(); off += 1517) {
+        auto n = std::min<std::size_t>(1517, ciphertext.size() - off);
+        auto out = dec.write(ciphertext.data() + off, n);
+        recovered.insert(recovered.end(), out.begin(), out.end());
+    }
+    auto dec_fin = dec.finish();
+    recovered.insert(recovered.end(), dec_fin.trailing_output.begin(), dec_fin.trailing_output.end());
+    ESDK_CHECK(recovered == plaintext);
+
+    // Tampered stream: released plaintext must be discarded; the failure
+    // surfaces as AuthenticationException by finish() at the latest.
+    auto tampered = ciphertext;
+    tampered.back() ^= 0xFF;
+    ++::esdk_test::g_checks;
+    try {
+        auto bad = sdk.create_decrypt_stream(keyring);
+        for (std::size_t off = 0; off < tampered.size(); off += 4096) {
+            auto n = std::min<std::size_t>(4096, tampered.size() - off);
+            bad.write(tampered.data() + off, n);
+        }
+        bad.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: tampered stream did not throw\n";
+    } catch (const Aws::Esdk::AuthenticationException&) {
+        // expected
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -300,6 +359,7 @@ int main() {
         test_error_kinds();
         test_client_configuration();
         test_bytes_and_string_ergonomics();
+        test_streaming();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
