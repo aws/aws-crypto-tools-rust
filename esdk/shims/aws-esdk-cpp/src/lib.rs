@@ -146,7 +146,11 @@ static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
         .unwrap()
 });
 
-#[cxx::bridge]
+// The bridge lives in the `aws_esdk_ffi` C++ namespace so no generated type or
+// function lands in the global namespace (where `encrypt`/`decrypt` would be
+// collision-prone). The generated header is only included by the shim's own
+// EncryptionSDK.cpp; the public EncryptionSDK.h never exposes these types.
+#[cxx::bridge(namespace = "aws_esdk_ffi")]
 mod ffi {
     /// Zero-initialized inputs are unset: `Unset` is repr 0 in every bridge enum.
     enum EsdkAlgorithmSuiteId {
