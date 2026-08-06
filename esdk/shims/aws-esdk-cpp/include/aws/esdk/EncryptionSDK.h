@@ -20,48 +20,48 @@ namespace Esdk {
 // File-wide invariants.
 // Each requirement below holds for every type and operation in this facade.
 // These cannot be explicitly tested, but are recorded as implications.
-// Any edits to this file must respect these requirements.
+// Any edits to this file must respect these requirements, but there is no enforcement mechanism.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=The facade defines its own Aws::Esdk:: enums and does not expose any ffi-generated enum types.
+//= reason=The facade defines its own enums (Aws::Esdk::) and does not expose any ffi-generated enum types.
 //# - For each core-library enumeration it exposes, the shim MUST define its own
 //# corresponding enumeration type.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every public method signature uses only Aws::Esdk:: types and standard-library types.
+//= reason=Every public method signature uses only Aws::Esdk:: types and C++ standard-library types.
 //# - Each public function the shim exposes MUST use only owned-interface types or
 //# standard-library types in its signature.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every wrapper stores its generated handle in a private member and exposes it only through the internal ffi() accessor.
+//= reason=Every C++ resource stores its ffi-generated handle in a private member that users cannot access.
 //# - Each owned interface that represents a core-library resource MUST hold the
 //# generated handle privately and MUST NOT expose it in its public API.
 //
 //= spec/shim/shim.md#handles-and-lifetimes
 //= type=implication
-//= reason=Each wrapper that depends on another resource holds it as a member declared before its own handle to prevent this.
+//= reason=Every C++ resource that depends on another resource holds it as a member declared before its own ffi-generated handle to prevent this.
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Every optional input has a with_* setter on the operation's or resource's options object.
+//= reason=Every optional input has a with_* setter on every operation's or resource's options object.
 //# - The shim MUST expose each optional input of the operations and resource
 //# creations it exposes.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Options objects with chained with_* setters are the idiomatic C++ optional-input mechanism.
+//= reason=Options objects with with_* setters are the idiomatic C++ optional-input mechanism.
 //# - The shim MUST accept optional inputs through a mechanism idiomatic to the
 //# target language (e.g.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=The with_* setters provide this
+//= reason=with_* setters
 //# - The shim MUST define its operation and resource-creation inputs such that
 //# an optional input can be added without breaking existing target code.
 //
@@ -73,7 +73,6 @@ namespace Esdk {
 
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=AwsEncryptionSdkException is the shim's own error type; detail::guard translates every cxx rust::Error into it, so no cxx or core-library error type appears on the public surface.
 //# - The shim MUST define its own error type for its public surface.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
@@ -109,8 +108,9 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 
 namespace detail {
 
-// Calls into Rust and catches any Rust error, re-throwing it as our
-// own C++ exception type so callers only ever see AwsEncryptionSdkException.
+// Error-catching method attached to all method calls to the core Rust ESDK.
+// Catches any error thrown in Rust and re-throws it as our own C++ exception type.
+// This way callers only ever see AwsEncryptionSdkException.
 template <typename F>
 inline auto guard(F&& f) -> decltype(f()) {
     try {
@@ -120,8 +120,8 @@ inline auto guard(F&& f) -> decltype(f()) {
     }
 }
 
-// Convert our enums to the generated FFI enums.
-// Users must depend on these ESDK enums so changes to the FFI layer don't break them.
+// Convert public enums to the generated FFI enums.
+// Users must depend on the public enums so changes to the FFI layer don't break them.
 inline ::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
