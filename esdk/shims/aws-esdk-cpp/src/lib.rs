@@ -127,7 +127,7 @@
 //
 //= spec/shim/shim.md#streaming
 //= reason=EncryptStream/DecryptStream expose the core's encrypt_stream/decrypt_stream: chunked writes in, incremental output out, finish() completing the operation.
-//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) input/outputs,
+//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
 use aws_config::{AppName, Region, SdkConfig};
 use aws_mpl_legacy::dafny;

@@ -523,7 +523,7 @@ fn test_raw_aes_keyring() -> Box<Keyring> {
 //= spec/shim/shim.md#streaming
 //= type=test
 //= reason=Plaintext fed in non-frame-aligned chunks streams to ciphertext that one-shot decrypt accepts, and streamed decrypt recovers it.
-//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) input/outputs,
+//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
 #[test]
 fn streaming_round_trips_interoperate_with_one_shot() {
@@ -567,7 +567,7 @@ fn streaming_round_trips_interoperate_with_one_shot() {
 //= spec/shim/shim.md#streaming
 //= type=test
 //= reason=Multi-frame output is released by write/poll while the input side is still open — finish has not been called — in both directions.
-//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) input/outputs,
+//# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
 #[test]
 fn streaming_releases_output_before_finish() {
