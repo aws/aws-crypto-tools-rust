@@ -10,12 +10,21 @@ CXXBRIDGE_CC := $(TARGET_DIR)/cxxbridge/aws-esdk-cpp/src/lib.rs.cc
 STATICLIB := $(TARGET_DIR)/$(PROFILE)/libaws_esdk_cpp.a
 CXXBRIDGE_RT = $(shell find $(TARGET_DIR)/$(PROFILE)/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
 
+# Link the static archive BY PATH: -laws_esdk_cpp would pick the cdylib, whose
+# Rust export list hides the compiled facade's Aws::Esdk symbols. The generated
+# bridge C++ and the facade are already inside the archive (built by build.rs).
+UNAME_S := $(shell uname -s)
+PLATFORM_LIBS :=
+ifeq ($(UNAME_S),Darwin)
+PLATFORM_LIBS += -framework Security -framework CoreFoundation -framework SystemConfiguration
+endif
+
 benchmark: benchmark.cpp benchmark_support.h $(STATICLIB)
-	g++ benchmark.cpp $(CXXBRIDGE_CC) \
+	g++ benchmark.cpp \
+		$(STATICLIB) \
 		$(CXXBRIDGE_RT) \
-		-L$(TARGET_DIR)/$(PROFILE) -laws_esdk_cpp \
-		-I$(TARGET_DIR)/cxxbridge -I$(SHIM_DIR)/include \
-		-lpthread -ldl \
+		-I$(SHIM_DIR)/include \
+		-lpthread -ldl $(PLATFORM_LIBS) \
 		-std=c++17 -O2 \
 		-o benchmark
 
