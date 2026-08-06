@@ -121,8 +121,7 @@
 //# owned interface is destroyed, or through an explicit target operation.
 //
 //= spec/shim/shim.md#concurrency
-//= type=exception
-//= reason=The shim adds no concurrency feature of its own and does not exercise concurrent use in this no-AWS crate; bridge entry points defer any threading behavior to the core library.
+//= reason=Bridge operations take shared references and keep no shim-side mutable state, so concurrent calls against one resource pass through to the core library's own thread safety.
 //# If a core library resource or operation supports concurrent use from multiple threads,
 //# the shim library SHOULD support it as well.
 //

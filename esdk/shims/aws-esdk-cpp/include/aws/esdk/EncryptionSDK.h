@@ -219,7 +219,7 @@ public:
 
 /// Base type for every keyring encrypt/decrypt can accept. A concrete keyring
 /// derives from it, supplies the created handle, and keeps its own dependencies
-/// alive for its lifetime.
+/// alive for its lifetime. A keyring may be shared across threads.
 class Keyring {
     std::shared_ptr<detail::KeyringImpl> impl_;
     friend class EncryptionSDK;
@@ -422,6 +422,10 @@ public:
     SdkOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
+/// Operations client. Thread safety: one EncryptionSDK and one Keyring may be
+/// used concurrently from multiple threads; encrypt and decrypt hold no
+/// client-side mutable state and defer to the core library's own thread
+/// safety.
 class EncryptionSDK {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;

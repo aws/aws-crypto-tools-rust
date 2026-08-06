@@ -44,7 +44,7 @@ struct Collected {
 };
 
 Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
-                                 const Aws::Esdk::HierarchicalKeyring& keyring,
+                                 const Aws::Esdk::Keyring& keyring,
                                  std::optional<Aws::Esdk::AlgorithmSuiteId> suite,
                                  Aws::Esdk::CommitmentPolicy policy,
                                  ExtractId extract_id) {
@@ -90,7 +90,7 @@ Collected concurrent_round_trips(Aws::Esdk::EncryptionSDK& sdk,
 }
 
 void run_case(const char* label, Aws::Esdk::EncryptionSDK& sdk,
-              const Aws::Esdk::HierarchicalKeyring& keyring,
+              const Aws::Esdk::Keyring& keyring,
               std::optional<Aws::Esdk::AlgorithmSuiteId> suite,
               Aws::Esdk::CommitmentPolicy policy, ExtractId extract_id,
               std::size_t id_len) {
@@ -118,12 +118,38 @@ void run_case(const char* label, Aws::Esdk::EncryptionSDK& sdk,
 }  // namespace
 
 int main() {
+    // Offline: one shared SDK and one shared raw AES keyring across all
+    // threads; no AWS resources required, so this section always runs.
+    {
+        std::vector<std::uint8_t> key(32, 0x2A);
+        Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+        Aws::Esdk::EncryptionSDK sdk;
+        try {
+            //= spec/shim/shim.md#concurrency
+            //= type=test
+            //= reason=8 threads share one client and one keyring; every round trip returns the exact plaintext and every message ID is unique.
+            //# If a core library resource or operation supports concurrent use from multiple threads,
+            //# the shim library SHOULD support it as well.
+            run_case("raw-aes v2", sdk, keyring, std::nullopt,
+                     Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt,
+                     v2_message_id, 32);
+            run_case("raw-aes v1", sdk, keyring,
+                     Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+                     Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt,
+                     v1_message_id, 16);
+        } catch (const std::exception& e) {
+            std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
+            return 2;
+        }
+    }
+
     auto cfg = esdk_test::load_test_config();
     if (!cfg) {
         std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
                      "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to "
-                     "run the C++ concurrency test.\n";
-        return 0;
+                     "run the hierarchical-keyring concurrency cases.\n";
+        return esdk_test::report("test_concurrency");
     }
 
     Aws::Esdk::EncryptionSDK sdk;
