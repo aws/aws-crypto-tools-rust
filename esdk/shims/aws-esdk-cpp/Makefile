@@ -9,10 +9,12 @@ STATICLIB   := target/debug/libaws_esdk_cpp.a
 CXXBRIDGE_RT = $$(find target/debug/build -path "*/cxx-*/out/libcxxbridge1.a" | head -n1)
 UNAME_S     := $(shell uname -s)
 
-LINK_LIBS = $(STATICLIB) $(CXXBRIDGE_RT) -lpthread -ldl
+PLATFORM_LIBS =
 ifeq ($(UNAME_S),Darwin)
-LINK_LIBS += -framework Security -framework CoreFoundation -framework SystemConfiguration
+PLATFORM_LIBS += -framework Security -framework CoreFoundation -framework SystemConfiguration
 endif
+
+LINK_LIBS = $(STATICLIB) $(CXXBRIDGE_RT) -lpthread -ldl $(PLATFORM_LIBS)
 
 CXXFLAGS_COMMON = -Iinclude -std=c++17
 
@@ -43,7 +45,7 @@ custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyri
 	g++ examples/custom-keyring/example.cpp \
 		-Iinclude \
 		examples/custom-keyring/target/debug/libcustom_keyring_example.a \
-		-lpthread -ldl \
+		-lpthread -ldl $(PLATFORM_LIBS) \
 		-std=c++17 \
 		-o custom_keyring_example
 

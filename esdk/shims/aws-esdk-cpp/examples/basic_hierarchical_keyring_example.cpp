@@ -1,6 +1,6 @@
-// Encrypts and decrypts a message with a hierarchical keyring backed by a
-// DynamoDB key store and a KMS key. Requires an existing key store with a
-// provisioned branch key.
+// Encrypts and decrypts a message with a hierarchical keyring.
+//
+// Requires an existing key store with a provisioned branch key.
 
 #include <iostream>
 #include <vector>

@@ -21,6 +21,12 @@ uses it like any other keyring. Two files show the whole path:
 4. In C++, declare that function and pass its result to
    `Aws::Esdk::Keyring::adopt`. Adopt each handle exactly once; the result
    works everywhere a keyring is accepted.
+
+   Everything your keyring depends on (caches, clients, key material) should
+   be owned by the Rust keyring itself — Rust's ownership then ties those
+   lifetimes to the handle automatically. Do not reference C++ objects from
+   the Rust keyring through raw pointers: nothing manages that lifetime, and
+   a destroyed C++ object becomes a use-after-free inside your keyring.
 5. Build. `cargo build` produces one self-contained archive — your code, the
    shim, and the core ESDK — so your C++ links a single library:
 

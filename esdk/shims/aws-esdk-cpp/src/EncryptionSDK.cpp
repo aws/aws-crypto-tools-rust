@@ -13,8 +13,8 @@ namespace Aws {
 namespace Esdk {
 namespace detail {
 
-// Rethrow Rust ESDK exception as corresponding C++ exception.
-// Default is to throw C++ AwsEncryptionSdkException.
+// Rethrow Rust ESDK exceptions as corresponding C++ exceptions.
+// If a Rust exception isn't explicitly listed, default to throwing the C++ AwsEncryptionSdkException.
 [[noreturn]] void throw_shim_exception(const std::string& what) {
     ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Esdk;
     std::string message = what;
@@ -33,8 +33,8 @@ namespace detail {
     }
 }
 
-// Attach to every call into the bridge: converts a rust::Error into the
-// matching Aws::Esdk exception.
+// Converts a rust::Error into the matching Aws::Esdk exception.
+// Attached to every call into the bridge.
 template <typename F>
 auto guard(F&& f) -> decltype(f()) {
     try {
@@ -43,6 +43,8 @@ auto guard(F&& f) -> decltype(f()) {
         throw_shim_exception(e.what());
     }
 }
+
+// Conversions from public type to FFI type
 
 ::ffi::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::ffi::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
@@ -65,6 +67,8 @@ auto guard(F&& f) -> decltype(f()) {
     return out;
 }
 
+// Conversions from FFI type to public type
+
 AlgorithmSuiteId alg_from_ffi(::ffi::EsdkAlgorithmSuiteId a) {
     return static_cast<AlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
@@ -77,7 +81,10 @@ std::map<std::string, std::string> from_ec(const ::rust::Vec<::ffi::EncryptionCo
     return out;
 }
 
+// Aws::Esdk::Bytes
+
 struct BytesFactory {
+    // Zero-copy wrapper for Rust buffer in C++-accessible type
     static Bytes make(::rust::Vec<std::uint8_t> buf) {
         auto owner = std::make_shared<::rust::Vec<std::uint8_t>>(std::move(buf));
         const std::uint8_t* data = owner->data();
@@ -90,58 +97,69 @@ Bytes make_bytes(::rust::Vec<std::uint8_t> buf) {
     return BytesFactory::make(std::move(buf));
 }
 
+// MPL Client Config
+
 struct ClientConfigImpl {
     ::ffi::MplAwsClientConfig cfg{};
 };
 
 // Resources
 
+// Resources may depend on other resources.
+// (ex. KeyStore depends on KMS and DDB clients.)
+// All dependent resources are stored in the resource's `retained` field.
+using Retained = std::vector<std::shared_ptr<void>>;
+
 struct KmsClientImpl {
+    // `retained` must be declared before the handle so its resources are destroyed last.
+    // In C++, destructor behavior is declared first -> destroyed last.
+    // Dependent resources must be destroyed after the handle that depends on them.
+    Retained retained;
     ::rust::Box<::ffi::MplKmsClient> handle;
-    explicit KmsClientImpl(::rust::Box<::ffi::MplKmsClient> h) : handle(std::move(h)) {}
+    KmsClientImpl(Retained deps, ::rust::Box<::ffi::MplKmsClient> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 struct DdbClientImpl {
+    Retained retained;
     ::rust::Box<::ffi::MplDdbClient> handle;
-    explicit DdbClientImpl(::rust::Box<::ffi::MplDdbClient> h) : handle(std::move(h)) {}
+    DdbClientImpl(Retained deps, ::rust::Box<::ffi::MplDdbClient> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 struct KeyStoreImpl {
-    // kms and ddb must outlive the key store handle, so they must be declared first.
-    // (In C++, declared first -> destroyed last.)
-    std::shared_ptr<KmsClientImpl> kms;
-    std::shared_ptr<DdbClientImpl> ddb;
+    Retained retained;
     ::rust::Box<::ffi::KeyStore> handle;
-    KeyStoreImpl(std::shared_ptr<KmsClientImpl> kms_in,
-                 std::shared_ptr<DdbClientImpl> ddb_in,
-                 ::rust::Box<::ffi::KeyStore> h)
-        : kms(std::move(kms_in)), ddb(std::move(ddb_in)), handle(std::move(h)) {}
+    KeyStoreImpl(Retained deps, ::rust::Box<::ffi::KeyStore> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 struct CacheImpl {
+    Retained retained;
     ::rust::Box<::ffi::Cache> handle;
-    explicit CacheImpl(::rust::Box<::ffi::Cache> h) : handle(std::move(h)) {}
+    CacheImpl(Retained deps, ::rust::Box<::ffi::Cache> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 struct KeyringImpl {
-    // Declared before handle so they outlive it (see KeyStoreImpl).
-    std::shared_ptr<KeyStoreImpl> key_store;
-    std::shared_ptr<CacheImpl> cache;
+    Retained retained;
     ::rust::Box<::ffi::Keyring> handle;
-    KeyringImpl(std::shared_ptr<KeyStoreImpl> ks,
-                std::shared_ptr<CacheImpl> c,
-                ::rust::Box<::ffi::Keyring> h)
-        : key_store(std::move(ks)), cache(std::move(c)), handle(std::move(h)) {}
+    KeyringImpl(Retained deps, ::rust::Box<::ffi::Keyring> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 struct EncryptStreamImpl {
+    Retained retained;
     ::rust::Box<::ffi::EncryptStream> handle;
-    explicit EncryptStreamImpl(::rust::Box<::ffi::EncryptStream> h) : handle(std::move(h)) {}
+    EncryptStreamImpl(Retained deps, ::rust::Box<::ffi::EncryptStream> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 struct DecryptStreamImpl {
+    Retained retained;
     ::rust::Box<::ffi::DecryptStream> handle;
-    explicit DecryptStreamImpl(::rust::Box<::ffi::DecryptStream> h) : handle(std::move(h)) {}
+    DecryptStreamImpl(Retained deps, ::rust::Box<::ffi::DecryptStream> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
 }  // namespace detail
@@ -166,10 +184,12 @@ ClientConfig& ClientConfig::with_region(const std::string& r) {
 
 KmsClient::KmsClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::KmsClientImpl>(
+          detail::Retained{},
           detail::guard([&] { return ::ffi::create_kms_client(cfg.impl_->cfg); }))) {}
 
 DdbClient::DdbClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
+          detail::Retained{},
           detail::guard([&] { return ::ffi::create_ddb_client(cfg.impl_->cfg); }))) {}
 
 // KeyStore
@@ -181,7 +201,7 @@ KeyStore::KeyStore(const std::string& table_name,
                    DdbClient ddb,
                    const KeyStoreOptions& options)
     : impl_(std::make_shared<detail::KeyStoreImpl>(
-          kms.impl_, ddb.impl_, detail::guard([&] {
+          detail::Retained{kms.impl_, ddb.impl_}, detail::guard([&] {
               ::ffi::KeyStoreConfig c{};
               c.ddb_table_name = ::rust::String(table_name);
               c.logical_key_store_name = ::rust::String(logical_key_store_name);
@@ -200,11 +220,11 @@ KeyStore::KeyStore(const std::string& table_name,
 
 Cache Cache::NoCache() {
     return Cache(std::make_shared<detail::CacheImpl>(
-        detail::guard([] { return ::ffi::create_no_cache(); })));
+        detail::Retained{}, detail::guard([] { return ::ffi::create_no_cache(); })));
 }
 
 Cache Cache::MultiThreaded(std::uint32_t entry_capacity, std::uint32_t entry_pruning_tail_size) {
-    return Cache(std::make_shared<detail::CacheImpl>(detail::guard([&] {
+    return Cache(std::make_shared<detail::CacheImpl>(detail::Retained{}, detail::guard([&] {
         return ::ffi::create_multi_threaded_cache(entry_capacity, entry_pruning_tail_size);
     })));
 }
@@ -212,8 +232,10 @@ Cache Cache::MultiThreaded(std::uint32_t entry_capacity, std::uint32_t entry_pru
 // Keyrings
 
 Keyring Keyring::adopt(void* raw_handle) {
+    // No retained C++ dependencies: everything an adopted keyring depends on
+    // is owned by the Rust keyring inside the handle.
     return Keyring(std::make_shared<detail::KeyringImpl>(
-        nullptr, nullptr,
+        detail::Retained{},
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
 
@@ -222,7 +244,10 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          std::uint32_t ttl_seconds,
                                          const HierarchicalKeyringOptions& options)
     : Keyring(std::make_shared<detail::KeyringImpl>(
-          key_store.impl_, options.cache_, detail::guard([&] {
+          // Retain the key store, and the cache when one was supplied.
+          options.cache_ ? detail::Retained{key_store.impl_, options.cache_}
+                         : detail::Retained{key_store.impl_},
+          detail::guard([&] {
               ::ffi::HierarchicalKeyringInput in{};
               in.branch_key_id = ::rust::String(branch_key_id);
               in.key_store = &*key_store.impl_->handle;
@@ -237,7 +262,7 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
                              const std::vector<std::uint8_t>& wrapping_key,
                              AesWrappingAlgorithm wrapping_alg)
     : Keyring(std::make_shared<detail::KeyringImpl>(
-          nullptr, nullptr, detail::guard([&] {
+          detail::Retained{}, detail::guard([&] {
               ::ffi::RawAesKeyringInput in{};
               in.key_namespace = ::rust::String(key_namespace);
               in.key_name = ::rust::String(key_name);
@@ -362,7 +387,10 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
+    // Retain the keyring: the stream outlives this call and must not outlive
+    // the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
+        detail::Retained{keyring.impl_},
         detail::guard([&] { return ::ffi::create_encrypt_stream(in); })));
 }
 
@@ -386,7 +414,10 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
+    // Retain the keyring: the stream outlives this call and must not outlive
+    // the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
+        detail::Retained{keyring.impl_},
         detail::guard([&] { return ::ffi::create_decrypt_stream(in); })));
 }
 

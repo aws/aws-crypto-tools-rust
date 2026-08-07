@@ -1,13 +1,12 @@
-// Motivation: encrypt or decrypt data that never fits in memory at once — a
-// large file, a socket, a pipeline stage — with bounded working memory. The
-// one-shot encrypt/decrypt APIs need the whole payload in one buffer; the
-// streaming APIs accept it chunk by chunk and hand output back as it is
-// produced (ciphertext frames as they fill, plaintext frames as they verify).
+// Encrypts and decrypts in chunks, with bounded working memory.
 //
-// Uses a raw AES keyring and a non-signing algorithm suite, so it runs offline.
-// Streamed decrypt of a multi-frame message under a *signing* suite is refused
-// by the core, which will not release plaintext whose trailing signature is
-// unverified — decrypt those with the one-shot API instead.
+// The one-shot encrypt/decrypt APIs need the whole payload in one buffer.
+// That doesn't work for data that never fits in memory at once, like a large file or a socket.
+// The streaming APIs accept the payload chunk by chunk and hand output back as it is produced:
+// ciphertext frames as they fill, plaintext frames as they verify.
+//
+// The ESDK rejects streamed decrypt of a multi-frame message under a signing suite.
+// If you need this, decrypt those with the one-shot API instead.
 
 #include <cstdint>
 #include <iostream>

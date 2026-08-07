@@ -1,5 +1,4 @@
-// Encrypts and decrypts a message with a raw AES keyring, which wraps data keys
-// locally with AES-GCM. No AWS account or credentials are required.
+// Encrypts and decrypts a message with a raw AES keyring.
 
 #include <iostream>
 #include <vector>

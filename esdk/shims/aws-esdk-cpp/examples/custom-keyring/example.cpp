@@ -1,5 +1,10 @@
-// Your C++ side of the custom keyring (see README.md; the keyring itself is
-// defined in src/lib.rs).
+// Your C++ side of the custom keyring.
+//
+// The keyring itself is defined in src/lib.rs, not here. Keyring behavior
+// runs in Rust, where the core ESDK lives; C++ only holds a handle to it.
+// This file shows the C++ half: declare your crate's extern "C" constructor,
+// adopt the handle once, and use the result like any other keyring.
+// See README.md for the full setup.
 
 #include <iostream>
 #include <vector>
