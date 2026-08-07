@@ -574,8 +574,8 @@ fn streaming_round_trips_interoperate_with_one_shot() {
     //# - A successful finish step MUST return the same non-payload outputs as
     //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
     assert_eq!(
-        fin.algorithm_suite_id,
-        ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        fin.algorithm_suite_id.repr,
+        ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.repr
     );
     ciphertext.extend_from_slice(&fin.trailing_output);
 
