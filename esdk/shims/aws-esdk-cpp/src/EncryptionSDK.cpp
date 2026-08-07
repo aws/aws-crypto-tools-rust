@@ -13,10 +13,8 @@ namespace Aws {
 namespace Esdk {
 namespace detail {
 
-// Decodes the `{ShimErrorKind repr}{U+001F}` prefix `shim_err` (lib.rs) puts on
-// every bridge error and throws the exception type named after the core's
-// error kind. Kinds without a dedicated type (Esdk, MplError, LegacyError) and
-// unprefixed messages throw the base type.
+// Rethrow Rust ESDK exception as corresponding C++ exception.
+// Default is to throw C++ AwsEncryptionSdkException.
 [[noreturn]] void throw_shim_exception(const std::string& what) {
     ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Esdk;
     std::string message = what;
