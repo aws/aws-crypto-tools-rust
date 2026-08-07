@@ -28,6 +28,9 @@ namespace detail {
         case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(message);
         case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(message);
         case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(message);
+        //= spec/shim/shim.md#error-classification
+        //# - An error whose kind the shim does not expose MUST be reported as the shim's
+        //# own base error type.
         default: throw AwsEncryptionSdkException(message);
     }
 }
@@ -274,6 +277,9 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
     // Matching the core's client: configuration provided in two places is
     // rejected; unset in both stays zero-initialized (the core's default).
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
     if (commitment_policy_ && options.commitment_policy_)
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
@@ -328,6 +334,10 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
             "per-call options. Set it in exactly one place.");
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= reason=No branch sets the field when it is unset on both the client and the options; the zero-initialized input defers to the core.
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
     if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)

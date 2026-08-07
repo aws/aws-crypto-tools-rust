@@ -362,9 +362,10 @@ fn make_kms_config_accepts_mr_discovery() {
 #[test]
 fn create_no_cache_builds_no_cache() {
     use aws_mpl_legacy::dafny::types::CacheType;
-    //= spec/shim/esdk-shim.md#cache-configuration
+    //= spec/shim/esdk-shim.md#create-cache
     //= type=test
-    //# - The shim MUST translate a no-cache selection.
+    //# - The shim MUST provide an operation that creates a cache that performs no
+    //# caching, backed by the core ESDK.
     assert!(matches!(
         create_no_cache().unwrap().cache_type,
         CacheType::No(_)
@@ -374,9 +375,10 @@ fn create_no_cache_builds_no_cache() {
 #[test]
 fn create_multi_threaded_cache_builds_multi_threaded() {
     use aws_mpl_legacy::dafny::types::CacheType;
-    //= spec/shim/esdk-shim.md#cache-configuration
+    //= spec/shim/esdk-shim.md#create-cache
     //= type=test
-    //# - The shim MUST translate a multi-threaded cache selection.
+    //# - The shim MUST provide an operation that creates a multi-threaded cache backed
+    //# by the core ESDK.
     assert!(matches!(
         create_multi_threaded_cache(100, 1).unwrap().cache_type,
         CacheType::MultiThreaded(_)
@@ -486,6 +488,11 @@ fn test_env(name: &str) -> Option<String> {
 
 // Raw AES keyring: fully local, so the whole path runs without AWS resources.
 
+//= spec/shim/esdk-shim.md#create-raw-aes-keyring
+//= type=test
+//= reason=The created keyring encrypts and decrypts back to the plaintext, so the operation exists and is backed by the core.
+//# - The shim MUST provide an operation that creates a raw AES keyring backed by
+//# the core ESDK.
 #[test]
 fn raw_aes_keyring_round_trip() {
     let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
@@ -525,6 +532,13 @@ fn test_raw_aes_keyring() -> Box<Keyring> {
 //= reason=Plaintext fed in non-frame-aligned chunks streams to ciphertext that one-shot decrypt accepts, and streamed decrypt recovers it.
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
+//= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+//= type=test
+//= reason=Both streaming operations exist and accept the same non-payload inputs; the payload is supplied in chunks.
+//# - The ESDK shim SHOULD provide streaming encrypt and decrypt operations,
+//# accepting the same inputs as [encrypt](#encrypt-inputs) and
+//# [decrypt](#decrypt-inputs) except the plaintext or ciphertext, which the
+//# target supplies incrementally.
 #[test]
 fn streaming_round_trips_interoperate_with_one_shot() {
     let keyring = test_raw_aes_keyring();
@@ -538,10 +552,31 @@ fn streaming_round_trips_interoperate_with_one_shot() {
     enc_in.algorithm_suite_id = ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
     let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
     let mut ciphertext = Vec::new();
+    //= spec/shim/shim.md#streaming
+    //= type=test
+    //= reason=write is called repeatedly with successive chunks, and its returned output is collected into the ciphertext that later decrypts.
+    //# - The shim MUST provide a write step that the target calls repeatedly, each
+    //# call supplying the next chunk of input and returning whatever output the
+    //# operation has produced so far (possibly none).
     for chunk in plaintext.chunks(3001) {
         ciphertext.extend_from_slice(&encrypt_stream_write(&mut stream, chunk).expect("write"));
     }
+    //= spec/shim/shim.md#streaming
+    //= type=test
+    //= reason=Finish ends the input and returns trailing output; the assembled ciphertext decrypts, so the operation completed.
+    //# - The shim MUST provide a finish step that ends the input, completes the
+    //# operation, and returns the operation's result together with any output not
+    //# yet returned by a write step.
     let fin = encrypt_stream_finish(&mut stream).expect("finish");
+    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= type=test
+    //= reason=The finish output carries the used suite, matching encrypt outputs.
+    //# - A successful finish step MUST return the same non-payload outputs as
+    //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
+    assert_eq!(
+        fin.algorithm_suite_id,
+        ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+    );
     ciphertext.extend_from_slice(&fin.trailing_output);
 
     let mut dec_in = unset_decrypt_input();
@@ -569,6 +604,12 @@ fn streaming_round_trips_interoperate_with_one_shot() {
 //= reason=Multi-frame output is released by write/poll while the input side is still open — finish has not been called — in both directions.
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
+//
+//= spec/shim/shim.md#streaming
+//= type=test
+//= reason=Output arrives from write/poll calls before finish is called, in both directions.
+//# - The shim SHOULD return output from write steps as the core library produces
+//# it, rather than holding all output until the finish step.
 #[test]
 fn streaming_releases_output_before_finish() {
     let keyring = test_raw_aes_keyring();
@@ -650,6 +691,11 @@ fn streaming_decrypt_tamper_fails_at_finish() {
             break;
         }
     }
+    //= spec/shim/shim.md#streaming
+    //= type=test
+    //= reason=The tampered stream's failure is returned by a write or by finish, whichever the target reaches first.
+    //# - When the operation has failed, the shim MUST return an error from the next
+    //# write or finish step.
     let err = match failed {
         Some(e) => e,
         None => expect_err(decrypt_stream_finish(&mut stream)),
@@ -693,6 +739,12 @@ fn streaming_decrypt_refuses_multi_frame_signed_messages() {
             break;
         }
     }
+    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= type=test
+    //= reason=The core's refusal to stream the multi-frame signed message surfaces as an error instead of released plaintext.
+    //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
+    //# and the shim MUST surface the core ESDK's refusal to stream a message whose
+    //# verification cannot complete until the end of the message.
     let err = match failed {
         Some(e) => e,
         None => expect_err(decrypt_stream_finish(&mut stream)),
@@ -737,6 +789,12 @@ fn keyring_handle_adoption_round_trips() {
     assert_eq!(decrypt(&dec_in).expect("decrypt").plaintext, plaintext);
 }
 
+//= spec/shim/shim.md#error-classification
+//= type=test
+//= reason=Each failure's encoded kind repr equals the core's kind for that failure, end to end.
+//# - When the core library distinguishes kinds of errors, the shim SHOULD expose
+//# the same kinds under the core library's own names, expressed in the target
+//# language's error mechanism.
 #[test]
 fn error_kinds_reach_the_target() {
     let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
@@ -802,6 +860,10 @@ fn error_kinds_reach_the_target() {
 
 #[test]
 fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
+    //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
+    //= type=test
+    //# - The shim MUST return an error when the target wrapping algorithm is not a
+    //# supported value.
     let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
@@ -816,6 +878,11 @@ fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
 
 #[test]
 fn create_raw_aes_keyring_rejects_mismatched_key_length() {
+    //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
+    //= type=test
+    //= reason=A 16-byte key under Alg256 is rejected by the core's length check, pinning that the translated algorithm carries the 256-bit meaning.
+    //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
+    //# wrapping algorithm of the same meaning.
     let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
@@ -907,9 +974,9 @@ fn round_trip_integration() {
     kr_in.key_store = &*keystore as *const KeyStore;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
-    //# - Creating a hierarchical keyring MUST provide the target-supplied cache
-    //# configuration to the core ESDK, converted as defined in
-    //# [Cache configuration](#cache-configuration).
+    //= reason=A created cache handle is supplied and the keyring creation succeeds and round-trips.
+    //# - When a cache handle is supplied, creating a hierarchical keyring MUST provide
+    //# the referenced cache to the core ESDK.
     let cache = create_multi_threaded_cache(100, 1).expect("create cache");
     kr_in.cache = &*cache as *const Cache;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring

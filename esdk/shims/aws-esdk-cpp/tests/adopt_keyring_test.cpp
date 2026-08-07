@@ -27,6 +27,11 @@ int main() {
         void* raw_handle = ::aws_esdk_ffi::create_raw_aes_keyring(in).into_raw();
 
         // Consumer's C++ side: adopt and use through the public facade.
+        //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+        //= type=test
+        //= reason=A handle produced by the shim's conversion is adopted and the result encrypts and decrypts through the facade.
+        //# - The shim MAY let the target adopt a consumer-written implementation of a
+        //# core-library interface.
         auto keyring = Aws::Esdk::Keyring::adopt(raw_handle);
         Aws::Esdk::EncryptionSDK sdk;
         auto plaintext = esdk_test::to_bytes("adopted keyring through the facade");

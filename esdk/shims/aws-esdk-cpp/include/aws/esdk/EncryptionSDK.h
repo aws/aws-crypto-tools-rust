@@ -96,6 +96,12 @@ public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
 };
 
+//= spec/shim/shim.md#error-classification
+//= type=implication
+//= reason=Every kind-specific exception derives from AwsEncryptionSdkException, so a handler of the base type catches them all.
+//# - Every exposed error kind MUST also be identifiable as the shim's own base
+//# error type, so a target that handles only the base type is unaffected when a
+//# kind is added.
 /// The core ESDK's SerializationError: the message bytes are malformed and
 /// could not be read or written. No cryptography was attempted.
 class SerializationException : public AwsEncryptionSdkException {
@@ -387,6 +393,15 @@ public:
 /// data/size pair points into the core library's buffer, and a type-erased
 /// owner releases it when the last Bytes referring to it is destroyed.
 /// If you need a std::vector, use `.to_vector()`.
+//= spec/shim/shim.md#bulk-data
+//= reason=data()/size() read the core library's buffer where it was written; no copy is made to construct a Bytes.
+//# - The shim SHOULD let the caller read a payload result in place, where the
+//# core library wrote it, instead of copying it into a new container first.
+//
+//= spec/shim/shim.md#bulk-data
+//= type=implication
+//= reason=Every Bytes holds a shared owner of the core buffer; the buffer is freed only when the last Bytes referring to it is destroyed.
+//# - A result exposed this way MUST remain valid until the caller releases it.
 class Bytes {
     const std::uint8_t* data_ = nullptr;
     std::size_t size_ = 0;
@@ -420,6 +435,9 @@ public:
     std::uint8_t operator[](std::size_t index) const { return data_[index]; }
 
     /// Copies the bytes into an owning std::vector.
+    //= spec/shim/shim.md#bulk-data
+    //# - The shim MUST also let the caller copy a result into memory the caller
+    //# owns.
     std::vector<std::uint8_t> to_vector() const {
         return std::vector<std::uint8_t>(begin(), end());
     }
@@ -479,6 +497,9 @@ struct DecryptResult {
 /// EncryptOptions/DecryptOptions is rejected with ValidationException — set
 /// each field in exactly one place. A field unset in both defers to the core
 /// library's default.
+//= spec/shim/esdk-shim.md#client-configuration
+//# The ESDK shim MAY expose a client-level configuration mirroring the core
+//# ESDK's client configuration, applied to every operation of that client.
 class SdkOptions {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
@@ -552,6 +573,11 @@ public:
     /// released so far (possibly empty; the pump is asynchronous). An empty
     /// write adds no input and polls for released output. Released plaintext
     /// is unverified until finish() succeeds; see the class documentation.
+    //= spec/shim/shim.md#streaming
+    //= type=implication
+    //= reason=This documentation and the class documentation above are themselves the required statement, placed where the output is returned.
+    //# - The shim MUST document to users that output returned before the finish step
+    //# succeeds is not yet complete or verified.
     Bytes write(const std::uint8_t* data, std::size_t size);
     /// \copydoc write(const std::uint8_t*, std::size_t)
     Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
@@ -591,6 +617,10 @@ public:
     /// file or another library's buffer — without copying it into a
     /// std::vector first. The buffer must stay valid for the duration of the
     /// call; the plaintext bytes are not retained afterwards.
+    //= spec/shim/shim.md#bulk-data
+    //# - The shim SHOULD let the caller pass a payload without first copying it into
+    //# a shim-defined container: the operation reads the caller's bytes in place,
+    //# and the caller's bytes need to stay valid only for the duration of the call.
     EncryptResult encrypt(
         const std::uint8_t* plaintext,
         std::size_t plaintext_len,

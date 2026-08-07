@@ -173,6 +173,16 @@ mod ffi {
         RequireEncryptRequireDecrypt,
     }
 
+    //= spec/shim/shim.md#error-classification
+    //= reason=The variants are exactly the core ESDK's ErrorKind names; the enum defines no other kind.
+    //# - When the core library distinguishes kinds of errors, the shim SHOULD expose
+    //# the same kinds under the core library's own names, expressed in the target
+    //# language's error mechanism.
+    //
+    //= spec/shim/shim.md#error-classification
+    //= type=implication
+    //= reason=The enum's variants mirror the core's ErrorKind exactly; no additional kind exists to report.
+    //# - The shim MUST NOT invent error kinds the core library does not define.
     /// The core ESDK's error kinds, mirrored under the core's own names and
     /// carried to the target as a prefix on the error message (see `shim_err`);
     /// the facade decodes the prefix into the exception type of the same name.
@@ -363,11 +373,6 @@ struct Keyring {
 
 /// A cache selection held for the target as an opaque resource, wrapping the
 /// core library's cache-type union.
-//= spec/shim/esdk-shim.md#cache-configuration
-//= type=implication
-//= reason=The bridge exposes one create_* operation per supported cache type, so an unsupported cache type cannot be expressed across the boundary.
-//# - The shim MUST return an error when the target cache type is not a supported
-//# value.
 struct Cache {
     cache_type: dafny::types::CacheType,
 }
@@ -626,8 +631,9 @@ fn make_kms_config(
     }
 }
 
-//= spec/shim/esdk-shim.md#cache-configuration
-//# - The shim MUST translate a no-cache selection.
+//= spec/shim/esdk-shim.md#create-cache
+//# - The shim MUST provide an operation that creates a cache that performs no
+//# caching, backed by the core ESDK.
 fn create_no_cache() -> Result<Box<Cache>, String> {
     Ok(Box::new(Cache {
         cache_type: dafny::types::CacheType::No(dafny::types::NoCache::builder().build().map_err(
@@ -642,14 +648,19 @@ fn create_no_cache() -> Result<Box<Cache>, String> {
     }))
 }
 
-//= spec/shim/esdk-shim.md#cache-configuration
-//# - The shim MUST translate a multi-threaded cache selection.
+//= spec/shim/esdk-shim.md#create-cache
+//# - The shim MUST provide an operation that creates a multi-threaded cache backed
+//# by the core ESDK.
 fn create_multi_threaded_cache(
     entry_capacity: u32,
     entry_pruning_tail_size: u32,
 ) -> Result<Box<Cache>, String> {
-    // A parameter left 0 is omitted so the core library's default applies.
     let mut cache_builder = dafny::types::MultiThreadedCache::builder();
+    //= spec/shim/esdk-shim.md#create-cache
+    //= reason=A parameter is set on the builder only when non-zero; a zero parameter is omitted and the builder keeps the core default.
+    //# - Creating a multi-threaded cache MUST provide the target-supplied entry
+    //# capacity and entry pruning tail size to the core ESDK when present; an unset
+    //# value is omitted, deferring to the core ESDK's default.
     if entry_capacity != 0 {
         let entry_capacity = i32::try_from(entry_capacity).map_err(|_| {
             shim_err(
@@ -965,6 +976,9 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     Ok(Box::new(KeyStore { client: store }))
 }
 
+//= spec/shim/esdk-shim.md#aes-wrapping-algorithm
+//# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
+//# wrapping algorithm of the same meaning.
 fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
 ) -> Result<dafny::types::AesWrappingAlg, String> {
@@ -983,6 +997,9 @@ fn wrapping_alg_target_to_core(
         ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
             Ok(dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
         }
+        //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
+        //# - The shim MUST return an error when the target wrapping algorithm is not a
+        //# supported value.
         _ => Err(shim_err(
             ffi::ShimErrorKind::ValidationError,
             "create_raw_aes_keyring",
@@ -991,6 +1008,9 @@ fn wrapping_alg_target_to_core(
     }
 }
 
+//= spec/shim/esdk-shim.md#create-raw-aes-keyring
+//# - The shim MUST provide an operation that creates a raw AES keyring backed by
+//# the core ESDK.
 fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring>, String> {
     let mpl_config = dafny::types::MaterialProvidersConfig::builder()
         .build()
@@ -1007,9 +1027,19 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
     let keyring = TOKIO_RUNTIME
         .block_on(
             mpl.create_raw_aes_keyring()
+                //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+                //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
+                //# key name to the core ESDK.
                 .key_namespace(input.key_namespace.clone())
                 .key_name(input.key_name.clone())
+                //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+                //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
+                //# core ESDK unmodified.
                 .wrapping_key(input.wrapping_key.to_vec())
+                //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+                //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
+                //# to the core ESDK, converted as defined in
+                //# [AES wrapping algorithm](#aes-wrapping-algorithm).
                 .wrapping_alg(wrapping_alg_target_to_core(input.wrapping_alg)?)
                 .send(),
         )
@@ -1045,9 +1075,8 @@ fn create_hierarchical_keyring(
     let mpl = dafny::Client::from_conf(mpl_config)
         .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, "create_keyring", e))?;
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //# - Creating a hierarchical keyring MUST provide the target-supplied cache
-    //# configuration to the core ESDK, converted as defined in
-    //# [Cache configuration](#cache-configuration).
+    //# - Creating a hierarchical keyring MAY be supplied with a cache handle (see
+    //# [Resources](#resources)).
     //
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
@@ -1057,7 +1086,14 @@ fn create_hierarchical_keyring(
         .branch_key_id(input.branch_key_id.clone())
         .ttl_seconds(input.ttl_seconds)
         .key_store(key_store.client.clone());
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= reason=The builder receives a cache only inside this branch; with no handle supplied it keeps the core ESDK's default cache.
+    //# - When no cache handle is supplied, creating a hierarchical keyring MUST defer
+    //# to the core ESDK's default cache.
     if let Some(cache) = optional_handle(input.cache) {
+        //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+        //# - When a cache handle is supplied, creating a hierarchical keyring MUST provide
+        //# the referenced cache to the core ESDK.
         builder = builder.cache(cache.cache_type.clone());
     }
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
@@ -1150,6 +1186,16 @@ struct ChannelWriter {
 }
 
 impl std::io::Write for ChannelWriter {
+    //= spec/shim/shim.md#streaming
+    //= reason=Every buffer the core produces is sent to the target side immediately; nothing is held for the finish step.
+    //# - The shim SHOULD return output from write steps as the core library produces
+    //# it, rather than holding all output until the finish step.
+    //
+    //= spec/shim/shim.md#streaming
+    //= type=implication
+    //= reason=The writer forwards the core's output verbatim as produced; the shim adds no release of its own beyond transport.
+    //# - The shim MUST NOT weaken the core library's own rules for releasing
+    //# unverified output.
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if !buf.is_empty() {
             self.tx.send(buf.to_vec()).map_err(|_| {
@@ -1204,6 +1250,10 @@ impl StreamState {
 
     /// Sends a chunk to the core and returns the output produced so far. An
     /// empty chunk adds no input, so it polls for output.
+    //= spec/shim/shim.md#streaming
+    //# - The shim MUST provide a write step that the target calls repeatedly, each
+    //# call supplying the next chunk of input and returning whatever output the
+    //# operation has produced so far (possibly none).
     fn write(&mut self, chunk: &[u8]) -> Result<Vec<u8>, String> {
         let tx = self.input_tx.as_ref().ok_or_else(|| {
             shim_err(
@@ -1215,6 +1265,10 @@ impl StreamState {
         if chunk.is_empty() {
             return Ok(self.drain_available());
         }
+        //= spec/shim/shim.md#streaming
+        //= reason=A core failure stops its reader; the next write joins the worker and returns its error, and finish joins unconditionally.
+        //# - When the operation has failed, the shim MUST return an error from the next
+        //# write or finish step.
         if tx.send(chunk.to_vec()).is_err() {
             // The core stopped reading: it has failed. Join to surface its error.
             return self.join_worker().map(|_| Vec::new());
@@ -1224,6 +1278,10 @@ impl StreamState {
 
     /// Signals end of input, waits for the core to complete, and returns its
     /// result with any output not yet handed to the target.
+    //= spec/shim/shim.md#streaming
+    //# - The shim MUST provide a finish step that ends the input, completes the
+    //# operation, and returns the operation's result together with any output not
+    //# yet returned by a write step.
     fn finish(&mut self) -> Result<ffi::StreamFinishOutput, String> {
         drop(self.input_tx.take());
         let mut result = self.join_worker()?;
@@ -1266,6 +1324,11 @@ struct DecryptStream {
     state: StreamState,
 }
 
+//= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+//# - The ESDK shim SHOULD provide streaming encrypt and decrypt operations,
+//# accepting the same inputs as [encrypt](#encrypt-inputs) and
+//# [decrypt](#decrypt-inputs) except the plaintext or ciphertext, which the
+//# target supplies incrementally.
 fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
     let mut core_input = aws_esdk::EncryptStreamInput::new();
@@ -1292,6 +1355,9 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                     &core_input,
                 ))
                 .map_err(|e| shim_err(classify_core_error(&e), "encrypt_stream", e))?;
+            //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+            //# - A successful finish step MUST return the same non-payload outputs as
+            //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
                 encryption_context: encryption_context_core_to_target(output.encryption_context)?,
@@ -1332,6 +1398,11 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                     &mut writer,
                     &core_input,
                 ))
+                //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+                //= reason=The core's refusal (and every other core error) propagates through this map_err; the shim releases only what the core's writer produced.
+                //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
+                //# and the shim MUST surface the core ESDK's refusal to stream a message whose
+                //# verification cannot complete until the end of the message.
                 .map_err(|e| shim_err(classify_core_error(&e), "decrypt_stream", e))?;
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
@@ -1368,6 +1439,26 @@ fn delete_decrypt_stream(_stream: Box<DecryptStream>) -> Result<(), String> {
 ///
 /// Ownership transfers to the returned pointer; exactly one `adopt` call must
 /// consume it. The pointer is only meaningful to this crate's C++ facade.
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//# - The shim MAY let the target adopt a consumer-written implementation of a
+//# core-library interface.
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=implication
+//= reason=The parameter type is the core ESDK's own keyring carrier, so exactly the values the core accepts are adoptable.
+//# - Anything the core library accepts for that interface MUST be adoptable.
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=implication
+//= reason=An adopted keyring enters encrypt and decrypt like any other; their error paths report its failures.
+//# - Errors an adopted implementation returns during an operation MUST be
+//# reported like any core-library error (see [Delegation](#delegation)).
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=exception
+//= reason=Target obligation: adopt's documentation states it, and the shim cannot detect a violation.
+//# - The target MUST adopt only values produced by the shim's conversion, and
+//# MUST adopt each at most once; the shim does not detect violations.
 pub fn into_keyring_handle(keyring: aws_esdk::Keyring) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring { client: keyring })).cast()
 }

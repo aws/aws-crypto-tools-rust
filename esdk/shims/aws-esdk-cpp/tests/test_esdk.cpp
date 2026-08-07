@@ -231,6 +231,12 @@ void test_error_kinds() {
         std::cerr << "FAIL: short wrapping key threw ValidationException\n";
     } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
         // expected: the core's LegacyError kind has no dedicated type
+        //= spec/shim/shim.md#error-classification
+        //= type=test
+        //= reason=A LegacyError-kind failure is caught only as the base exception type; the kind-specific catches above did not fire.
+        //# - An error whose kind the shim does not expose MUST be reported as the shim's
+        //# own base error type.
+        (void)0;
     }
 }
 
@@ -251,6 +257,10 @@ void test_client_configuration() {
 
     // Matching the core's client: the same field set on both the client and
     // the per-call options is rejected.
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= type=test
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
     CHECK_THROWS_TYPE(
         Aws::Esdk::ValidationException,
         forbid_sdk.encrypt(to_bytes("set in two places"), keyring,
@@ -258,6 +268,11 @@ void test_client_configuration() {
                                Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)));
 
     // Unset everywhere defers to the core default (committing suite allowed).
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= type=test
+    //= reason=With no client or per-call policy, encrypt succeeds under the core's default policy.
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
     Aws::Esdk::EncryptionSDK default_sdk;
     auto rt = default_sdk.encrypt(to_bytes("defaults"), keyring);
     auto pt = default_sdk.decrypt(rt.ciphertext, keyring);
@@ -272,9 +287,27 @@ void test_bytes_and_string_ergonomics() {
     Aws::Esdk::EncryptionSDK sdk;
 
     // Text payload in, text payload out.
+    //= spec/shim/shim.md#bulk-data
+    //= type=test
+    //= reason=The string_view borrows the caller's characters; no shim container is constructed for the input.
+    //# - The shim SHOULD let the caller pass a payload without first copying it into
+    //# a shim-defined container: the operation reads the caller's bytes in place,
+    //# and the caller's bytes need to stay valid only for the duration of the call.
     auto encrypted = sdk.encrypt(std::string_view("text payload"), keyring);
+    //= spec/shim/shim.md#bulk-data
+    //= type=test
+    //= reason=as_string_view reads the plaintext where the core wrote it; no copy is made.
+    //# - The shim SHOULD let the caller read a payload result in place, where the
+    //# core library wrote it, instead of copying it into a new container first.
     auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
     ESDK_CHECK(decrypted.plaintext.as_string_view() == "text payload");
+
+    //= spec/shim/shim.md#bulk-data
+    //= type=test
+    //= reason=to_vector yields caller-owned bytes equal to the in-place view.
+    //# - The shim MUST also let the caller copy a result into memory the caller
+    //# owns.
+    ESDK_CHECK(encrypted.ciphertext.to_vector() == encrypted.ciphertext);
 
     // Copies share the buffer and compare equal; different content does not.
     Aws::Esdk::Bytes copy = encrypted.ciphertext;
@@ -284,6 +317,10 @@ void test_bytes_and_string_ergonomics() {
     ESDK_CHECK(copy != other.ciphertext);
 
     // A copy keeps the buffer alive after the original is destroyed.
+    //= spec/shim/shim.md#bulk-data
+    //= type=test
+    //= reason=The surviving copy decrypts after the original result left scope, so the buffer outlived its first owner.
+    //# - A result exposed this way MUST remain valid until the caller releases it.
     Aws::Esdk::Bytes survivor;
     {
         auto scoped = sdk.encrypt(std::string_view("outlives original"), keyring);
