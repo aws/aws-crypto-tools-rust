@@ -135,19 +135,17 @@ use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore as dafny_key_store;
 use std::sync::LazyLock;
 
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    // Building the runtime would fail only if the OS cannot spawn a thread or install
-    // the I/O/timer drivers. This is an environment failure with no library-level
-    // recovery. This is intentionally surfaced as a panic at library instantiation time.
+    // Runtime construction fails only when the OS cannot spawn a thread or install the I/O drivers.
+    // That environment failure has no library-level recovery, so it panics at instantiation.
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
 });
 
-// The bridge lives in the `aws_esdk_ffi` C++ namespace so no generated type or
-// function lands in the global namespace (where `encrypt`/`decrypt` would be
-// collision-prone). The generated header is only included by the shim's own
-// EncryptionSDK.cpp; the public EncryptionSDK.h never exposes these types.
+// The bridge lives in the `aws_esdk_ffi` C++ namespace so no generated name lands in
+// the global namespace, where `encrypt`/`decrypt` would be collision-prone.
+// Only the shim's own EncryptionSDK.cpp includes the generated header.
 #[cxx::bridge(namespace = "aws_esdk_ffi")]
 mod ffi {
     /// Zero-initialized inputs are unset: `Unset` is repr 0 in every bridge enum.
@@ -1418,11 +1416,9 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 // Custom keyring adoption (see
 // spec/shim/shim.md#custom-implementations-of-core-library-interfaces).
 //
-// A consumer defines a keyring in Rust as anything the core ESDK accepts
-// (`aws_esdk::Keyring`), converts it to a handle here, passes the pointer to
-// its C++ code through its own channel, and adopts it there with
-// `Aws::Esdk::Keyring::adopt`. The shim carries the keyring opaquely; it takes
-// no dependency on which materials-provider library defined it.
+// A consumer builds any keyring the core ESDK accepts, converts it to a handle here,
+// and adopts the pointer in its C++ with `Aws::Esdk::Keyring::adopt`.
+// The shim carries the keyring opaquely, so which library defined it never matters.
 
 /// Converts a core-ESDK keyring into a shim keyring handle for adoption by
 /// C++ via `Aws::Esdk::Keyring::adopt`.

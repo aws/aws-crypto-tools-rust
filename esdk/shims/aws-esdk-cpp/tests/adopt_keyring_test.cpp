@@ -1,10 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// White-box test (like enum_parity_test.cpp, this TU includes the bridge
-// header deliberately): it plays the consumer's Rust crate, which produces a
-// keyring handle for C++ to adopt. Everything after the handle exists goes
-// through the public facade only.
+// White-box test: like enum_parity_test.cpp, this TU includes the bridge header.
+// It plays the consumer's Rust crate, which produces the keyring handle C++ adopts.
+// Everything after the handle exists goes through the public facade only.
 
 #include <cstdint>
 #include <iostream>

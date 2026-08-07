@@ -26,7 +26,7 @@
 
 namespace esdk_test {
 
-// Assertion harness. Call only from the main thread; not suitable for concurrent use.
+// Assertion harness; call only from the main thread.
 inline int g_checks = 0;
 inline int g_failures = 0;
 
