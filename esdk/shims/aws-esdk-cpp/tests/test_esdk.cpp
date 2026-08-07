@@ -13,17 +13,14 @@
 #define CHECK_THROWS_TYPE(ExType, expr)                                        \
     do {                                                                       \
         ++::esdk_test::g_checks;                                               \
-        bool caught_expected = false;                                          \
         try {                                                                  \
             expr;                                                              \
-        } catch (const ExType&) {                                              \
-            caught_expected = true;                                            \
-        } catch (const std::exception& e) {                                    \
-            std::cerr << "FAIL: " << #expr << " threw wrong type: " << e.what() << "\n"; \
-        }                                                                      \
-        if (caught_expected) {                                                 \
-        } else {                                                               \
             ++::esdk_test::g_failures;                                         \
+            std::cerr << "FAIL: " << #expr << " did not throw\n";              \
+        } catch (const ExType&) {                                              \
+        } catch (const std::exception& e) {                                    \
+            ++::esdk_test::g_failures;                                         \
+            std::cerr << "FAIL: " << #expr << " threw wrong type: " << e.what() << "\n"; \
         }                                                                      \
     } while (0)
 
@@ -213,6 +210,11 @@ void test_error_kinds() {
 
     // Mismatched wrapping-key length is unclassified: the base exception type,
     // not one of the subclasses.
+    //= spec/shim/shim.md#error-classification
+    //= type=test
+    //= reason=A LegacyError-kind failure is caught only as the base exception type; the kind-specific catch arms below record failures.
+    //# - An error whose kind the shim does not expose MUST be reported as the shim's
+    //# own base error type.
     std::vector<std::uint8_t> short_key(16, 0x01);
     ++::esdk_test::g_checks;
     try {
@@ -231,12 +233,6 @@ void test_error_kinds() {
         std::cerr << "FAIL: short wrapping key threw ValidationException\n";
     } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
         // expected: the core's LegacyError kind has no dedicated type
-        //= spec/shim/shim.md#error-classification
-        //= type=test
-        //= reason=A LegacyError-kind failure is caught only as the base exception type; the kind-specific catches above did not fire.
-        //# - An error whose kind the shim does not expose MUST be reported as the shim's
-        //# own base error type.
-        (void)0;
     }
 }
 
@@ -378,7 +374,7 @@ void test_streaming() {
     ESDK_CHECK(recovered == plaintext);
 
     // Tampered stream: released plaintext must be discarded; the failure
-    // surfaces as AuthenticationException by finish() at the latest.
+    // surfaces as CryptographicException by finish() at the latest.
     auto tampered = ciphertext;
     tampered.back() ^= 0xFF;
     ++::esdk_test::g_checks;

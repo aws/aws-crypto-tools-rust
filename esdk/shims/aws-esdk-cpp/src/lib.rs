@@ -11,7 +11,7 @@
 
 // The generic Shim Specification requirements below are file-wide: they describe
 // behavior that EVERY translation / operation / resource in this crate obeys, so
-// they are recorded here once as implications rather than pinned to a single site.
+// they are recorded here once as implications.
 //
 //= spec/shim/esdk-shim.md#overview
 //= type=implication
@@ -342,19 +342,17 @@ mod ffi {
         fn create_encrypt_stream(input: &EncryptInput) -> Result<Box<EncryptStream>>;
         fn encrypt_stream_write(stream: &mut EncryptStream, chunk: &[u8]) -> Result<Vec<u8>>;
         fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<StreamFinishOutput>;
-        fn delete_encrypt_stream(stream: Box<EncryptStream>) -> Result<()>;
 
         type DecryptStream;
         fn create_decrypt_stream(input: &DecryptInput) -> Result<Box<DecryptStream>>;
         fn decrypt_stream_write(stream: &mut DecryptStream, chunk: &[u8]) -> Result<Vec<u8>>;
         fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<StreamFinishOutput>;
-        fn delete_decrypt_stream(stream: Box<DecryptStream>) -> Result<()>;
     }
 }
 
 // Owned resource types (see spec/shim/shim.md#handles-and-lifetimes): each is
-// created by a create_* operation, held by the target as a Box handle, and
-// released by the matching delete_* operation.
+// created by a create_* operation and held by the target as a Box handle,
+// whose drop releases it.
 
 struct MplKmsClient {
     client: aws_sdk_kms::Client,
@@ -1375,10 +1373,6 @@ fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<ffi::StreamFinish
     stream.state.finish()
 }
 
-fn delete_encrypt_stream(_stream: Box<EncryptStream>) -> Result<(), String> {
-    Ok(())
-}
-
 fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
     let mut core_input = aws_esdk::DecryptStreamInput::new();
@@ -1419,10 +1413,6 @@ fn decrypt_stream_write(stream: &mut DecryptStream, chunk: &[u8]) -> Result<Vec<
 
 fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinishOutput, String> {
     stream.state.finish()
-}
-
-fn delete_decrypt_stream(_stream: Box<DecryptStream>) -> Result<(), String> {
-    Ok(())
 }
 
 // Custom keyring adoption (see

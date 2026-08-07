@@ -35,10 +35,8 @@ namespace detail {
     }
 }
 
-// Error-catching wrapper for a function call into the core Rust ESDK.
-// If attached to a function call, catches any Rust error from that call
-// and re-throws it as the matching Aws::Esdk exception type.
-// This should be attached to every call to the Rust ESDK.
+// Attach to every call into the bridge: converts a rust::Error into the
+// matching Aws::Esdk exception.
 template <typename F>
 auto guard(F&& f) -> decltype(f()) {
     try {
@@ -48,7 +46,6 @@ auto guard(F&& f) -> decltype(f()) {
     }
 }
 
-// Conversions from the owned-interface types to the FFI types
 ::ffi::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::ffi::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
@@ -70,7 +67,6 @@ auto guard(F&& f) -> decltype(f()) {
     return out;
 }
 
-// Conversions from the FFI types to the owned-interface types
 AlgorithmSuiteId alg_from_ffi(::ffi::EsdkAlgorithmSuiteId a) {
     return static_cast<AlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
@@ -83,8 +79,6 @@ std::map<std::string, std::string> from_ec(const ::rust::Vec<::ffi::EncryptionCo
     return out;
 }
 
-// Wraps an ESDK Rust output buffer as a Bytes.
-// Used to pass output to user without an expensive copy.
 struct BytesFactory {
     static Bytes make(::rust::Vec<std::uint8_t> buf) {
         auto owner = std::make_shared<::rust::Vec<std::uint8_t>>(std::move(buf));
@@ -132,7 +126,7 @@ struct CacheImpl {
 };
 
 struct KeyringImpl {
-    // key_store and cache must outlive the key store handle, so they must be declared first.
+    // Declared before handle so they outlive it (see KeyStoreImpl).
     std::shared_ptr<KeyStoreImpl> key_store;
     std::shared_ptr<CacheImpl> cache;
     ::rust::Box<::ffi::Keyring> handle;
@@ -257,15 +251,12 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
 
 // Operations
 
-// Encrypt with C++-idiomatic std::vector.
 EncryptResult EncryptionSDK::encrypt(const std::vector<std::uint8_t>& plaintext,
                                      const Keyring& keyring,
                                      const EncryptOptions& options) {
     return encrypt(plaintext.data(), plaintext.size(), keyring, options);
 }
 
-// Encrypt from any contiguous caller-owned buffer, without copying it into a
-// std::vector first. The slice borrows the buffer only for this call.
 EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
                                      std::size_t plaintext_len,
                                      const Keyring& keyring,
@@ -302,24 +293,18 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     return result;
 }
 
-// Decrypt with C++-idiomatic std::vector.
 DecryptResult EncryptionSDK::decrypt(const std::vector<std::uint8_t>& ciphertext,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
-// Decrypt with custom Aws::Esdk::Bytes type.
-// Aws::Esdk::Bytes wraps a Rust type directly, avoiding a possibly expensive copy
-// from a C++ std::vector to a Rust buffer.
 DecryptResult EncryptionSDK::decrypt(const Bytes& ciphertext,
                                      const Keyring& keyring,
                                      const DecryptOptions& options) {
     return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
 }
 
-// Decrypt from any contiguous caller-owned buffer, without copying it into a
-// std::vector first. The slice borrows the buffer only for this call.
 DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
                                      std::size_t ciphertext_len,
                                      const Keyring& keyring,

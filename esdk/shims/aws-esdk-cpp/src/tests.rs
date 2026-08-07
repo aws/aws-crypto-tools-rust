@@ -727,8 +727,8 @@ fn streaming_decrypt_refuses_multi_frame_signed_messages() {
         plaintext
     );
 
-    // Streamed decrypt refuses rather than releasing plaintext whose trailing
-    // signature has not been verified.
+    // Streamed decrypt refuses: plaintext whose trailing signature is
+    // unverified is never released.
     let mut dec_stream_in = unset_decrypt_input();
     dec_stream_in.keyring = &*keyring as *const Keyring;
     let mut stream = create_decrypt_stream(&dec_stream_in).expect("create decrypt stream");
