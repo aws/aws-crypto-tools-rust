@@ -9,8 +9,7 @@
 int main() {
     try {
         // Region and credentials come from the default AWS config chain.
-        auto client_config = Aws::Esdk::ClientConfig()
-            .with_max_retry_attempts(5);
+        auto client_config = Aws::Esdk::ClientConfig();
 
         auto kms = Aws::Esdk::KmsClient(client_config);
         auto ddb = Aws::Esdk::DdbClient(client_config);

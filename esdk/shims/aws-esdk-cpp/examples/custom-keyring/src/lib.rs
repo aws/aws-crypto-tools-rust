@@ -13,6 +13,11 @@ const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 /// Step 1: define your keyring here. Anything the core ESDK accepts works.
 /// This one wraps data keys with AES-256-GCM under key material this crate
 /// sources itself — replace the body with your key management.
+///
+/// TODO(native-mpl): once the ESDK for Rust depends on the native Rust MPL,
+/// replace this Dafny-built keyring with a custom implementation of the
+/// unsealed native keyring trait (a struct implementing the trait, which may
+/// still delegate to a built-in keyring internally).
 fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     let mpl = aws_mpl_legacy::dafny::Client::from_conf(
         aws_mpl_legacy::dafny::types::MaterialProvidersConfig::builder().build()?,

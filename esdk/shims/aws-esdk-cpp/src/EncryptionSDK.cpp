@@ -108,12 +108,13 @@ struct ClientConfigImpl {
 // Resources may depend on other resources.
 // (ex. KeyStore depends on KMS and DDB clients.)
 // All dependent resources are stored in the resource's `retained` field.
+// Implementations of resources' interfaces should declare dependent resources here.
 using Retained = std::vector<std::shared_ptr<void>>;
 
 struct KmsClientImpl {
     // `retained` must be declared before the handle so its resources are destroyed last.
     // In C++, destructor behavior is declared first -> destroyed last.
-    // Dependent resources must be destroyed after the handle that depends on them.
+    // Dependent resources must be destroyed after the handle that depends on them to avoid NPE in resource operation.
     Retained retained;
     ::rust::Box<::ffi::MplKmsClient> handle;
     KmsClientImpl(Retained deps, ::rust::Box<::ffi::MplKmsClient> h)
@@ -232,9 +233,11 @@ Cache Cache::MultiThreaded(std::uint32_t entry_capacity, std::uint32_t entry_pru
 // Keyrings
 
 Keyring Keyring::adopt(void* raw_handle) {
-    // No retained C++ dependencies: everything an adopted keyring depends on
-    // is owned by the Rust keyring inside the handle.
     return Keyring(std::make_shared<detail::KeyringImpl>(
+        // Custom keyrings cannot adopt C++ depen
+
+        // everything an adopted keyring depends on
+        // is owned by the Rust keyring inside the handle.
         detail::Retained{},
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
