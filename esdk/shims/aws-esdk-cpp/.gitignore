@@ -30,3 +30,4 @@ Cargo.lock
 /examples/custom-keyring/target/
 /examples/custom-keyring/Cargo.lock
 /streaming_example
+/shared_cache_example

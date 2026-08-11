@@ -90,7 +90,7 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), cfg.branch_key_id, /*ttl_seconds=*/600,
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::Cache::MultiThreaded(100)));
+            Aws::Esdk::CryptographicMaterialsCache::MultiThreaded(100)));
 }
 
 inline std::vector<std::uint8_t> to_bytes(const std::string& s) {

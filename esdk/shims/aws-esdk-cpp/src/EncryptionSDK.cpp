@@ -108,7 +108,10 @@ struct ClientConfigImpl {
 // Resources may depend on other resources.
 // (ex. KeyStore depends on KMS and DDB clients.)
 // All dependent resources are stored in the resource's `retained` field.
-// Implementations of resources' interfaces should declare dependent resources here.
+// What a resource retains is fixed by its kind, so the dependencies are held
+// generically as `std::shared_ptr<void>`: ex. a hierarchical keyring retains its key
+// store and cache, and an adopted keyring, owning its dependencies internally,
+// retains nothing.
 using Retained = std::vector<std::shared_ptr<void>>;
 
 struct KmsClientImpl {
@@ -135,10 +138,11 @@ struct KeyStoreImpl {
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
-struct CacheImpl {
+struct CryptographicMaterialsCacheImpl {
     Retained retained;
-    ::rust::Box<::ffi::Cache> handle;
-    CacheImpl(Retained deps, ::rust::Box<::ffi::Cache> h)
+    ::rust::Box<::ffi::CryptographicMaterialsCache> handle;
+    CryptographicMaterialsCacheImpl(Retained deps,
+                                    ::rust::Box<::ffi::CryptographicMaterialsCache> h)
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
@@ -217,27 +221,34 @@ KeyStore::KeyStore(const std::string& table_name,
               return ::ffi::create_keystore(c);
           }))) {}
 
-// Caches
+// Cryptographic materials cache. Construct one of a chosen kind, then pass it
+// to keyrings; passing the same one to several keyrings shares it.
 
-Cache Cache::NoCache() {
-    return Cache(std::make_shared<detail::CacheImpl>(
-        detail::Retained{}, detail::guard([] { return ::ffi::create_no_cache(); })));
+CryptographicMaterialsCache CryptographicMaterialsCache::MultiThreaded(
+    std::uint32_t entry_capacity, std::uint32_t entry_pruning_tail_size) {
+    return CryptographicMaterialsCache(
+        std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+            detail::Retained{}, detail::guard([&] {
+                return ::ffi::create_cryptographic_materials_cache(
+                    ::ffi::CacheKind::MultiThreaded, entry_capacity, entry_pruning_tail_size);
+            })));
 }
 
-Cache Cache::MultiThreaded(std::uint32_t entry_capacity, std::uint32_t entry_pruning_tail_size) {
-    return Cache(std::make_shared<detail::CacheImpl>(detail::Retained{}, detail::guard([&] {
-        return ::ffi::create_multi_threaded_cache(entry_capacity, entry_pruning_tail_size);
-    })));
+CryptographicMaterialsCache CryptographicMaterialsCache::NoCache() {
+    return CryptographicMaterialsCache(
+        std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+            detail::Retained{}, detail::guard([&] {
+                return ::ffi::create_cryptographic_materials_cache(::ffi::CacheKind::No, 0, 0);
+            })));
 }
 
 // Keyrings
 
+// Adopt a custom Rust keyring into the Aws::Esdk::Keyring type
 Keyring Keyring::adopt(void* raw_handle) {
     return Keyring(std::make_shared<detail::KeyringImpl>(
-        // Custom keyrings cannot adopt C++ depen
-
-        // everything an adopted keyring depends on
-        // is owned by the Rust keyring inside the handle.
+        // Custom implementations of Keyrings currently can't retain C++ resources,
+        // but support for this can be added in the future as a non-breaking change.
         detail::Retained{},
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
@@ -247,7 +258,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          std::uint32_t ttl_seconds,
                                          const HierarchicalKeyringOptions& options)
     : Keyring(std::make_shared<detail::KeyringImpl>(
-          // Retain the key store, and the cache when one was supplied.
+          // Retain the key store always, and the cache when one is supplied.
           options.cache_ ? detail::Retained{key_store.impl_, options.cache_}
                          : detail::Retained{key_store.impl_},
           detail::guard([&] {
@@ -256,7 +267,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
               in.key_store = &*key_store.impl_->handle;
               in.ttl_seconds = ttl_seconds;
               in.partition_id = ::rust::String(options.partition_id_);
-              if (options.cache_) in.cache = &*options.cache_->handle;
+              in.cache = options.cache_ ? &*options.cache_->handle : nullptr;
               return ::ffi::create_hierarchical_keyring(in);
           }))) {}
 
@@ -275,7 +286,7 @@ RawAesKeyring::RawAesKeyring(const std::string& key_namespace,
               return ::ffi::create_raw_aes_keyring(in);
           }))) {}
 
-// Operations
+// ESDK Operations
 
 EncryptResult EncryptionSDK::encrypt(const std::vector<std::uint8_t>& plaintext,
                                      const Keyring& keyring,
@@ -292,8 +303,6 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext, plaintext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
     if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
-    // Matching the core's client: configuration provided in two places is
-    // rejected; unset in both stays zero-initialized (the core's default).
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
@@ -339,14 +348,14 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     in.keyring = &*keyring.impl_->handle;
     in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    // Matching the core's client: configuration provided in two places is
-    // rejected; unset in both stays zero-initialized (the core's default).
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
     if (commitment_policy_ && options.commitment_policy_)
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
             "per-call options. Set it in exactly one place.");
     //= spec/shim/esdk-shim.md#client-configuration
-    //= reason=No branch sets the field when it is unset on both the client and the options; the zero-initialized input defers to the core.
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
@@ -374,8 +383,9 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
     if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
-    // Matching the core's client: configuration provided in two places is
-    // rejected; unset in both stays zero-initialized (the core's default).
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
     if (commitment_policy_ && options.commitment_policy_)
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
@@ -390,8 +400,8 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
-    // Retain the keyring: the stream outlives this call and must not outlive
-    // the keyring it was created from.
+    // Keyring MUST be retained.
+    // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
         detail::Retained{keyring.impl_},
         detail::guard([&] { return ::ffi::create_encrypt_stream(in); })));
@@ -402,8 +412,9 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
     ::ffi::DecryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    // Matching the core's client: configuration provided in two places is
-    // rejected; unset in both stays zero-initialized (the core's default).
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
     if (commitment_policy_ && options.commitment_policy_)
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
@@ -417,17 +428,17 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
     if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                                         : max_encrypted_data_keys_)
         in.max_encrypted_data_keys = *m;
-    // Retain the keyring: the stream outlives this call and must not outlive
-    // the keyring it was created from.
+    // Keyring MUST be retained.
+    // The stream outlives this call and must not outlive the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
         detail::Retained{keyring.impl_},
         detail::guard([&] { return ::ffi::create_decrypt_stream(in); })));
 }
 
 Bytes EncryptStream::write(const std::uint8_t* data, std::size_t size) {
-    // An empty write is a poll; keep the slice pointer valid even when the
-    // caller passes null with size 0.
     static const std::uint8_t empty = 0;
+    // An empty write is a poll.
+    // Keep the slice pointer valid even when the caller passes null with size 0.
     if (size == 0) data = &empty;
     return detail::make_bytes(detail::guard([&] {
         return ::ffi::encrypt_stream_write(*impl_->handle,
@@ -446,9 +457,9 @@ StreamResult EncryptStream::finish() {
 }
 
 Bytes DecryptStream::write(const std::uint8_t* data, std::size_t size) {
-    // An empty write is a poll; keep the slice pointer valid even when the
-    // caller passes null with size 0.
     static const std::uint8_t empty = 0;
+    // An empty write is a poll.
+    // Keep the slice pointer valid even when the caller passes null with size 0.
     if (size == 0) data = &empty;
     return detail::make_bytes(detail::guard([&] {
         return ::ffi::decrypt_stream_write(*impl_->handle,

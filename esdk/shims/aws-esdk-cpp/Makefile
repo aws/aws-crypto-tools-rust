@@ -33,6 +33,11 @@ zero_copy_example: examples/zero_copy_comparison.cpp include/aws/esdk/Encryption
 		$(CXXFLAGS_COMMON) -O2 $(LINK_LIBS) \
 		-o zero_copy_comparison
 
+shared_cache_example: examples/shared_cache_example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ examples/shared_cache_example.cpp \
+		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o shared_cache_example
+
 test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ tests/test_esdk.cpp \
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
@@ -79,7 +84,7 @@ enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(
 		-o enum_parity_test.o
 
 clean:
-	rm -f basic_hierarchical_keyring_example raw_aes_keyring_example zero_copy_comparison test_esdk test_concurrency test_resource_leaks enum_parity_test.o
+	rm -f basic_hierarchical_keyring_example raw_aes_keyring_example zero_copy_comparison shared_cache_example custom_keyring_example streaming_example test_esdk adopt_keyring_test test_concurrency test_resource_leaks enum_parity_test.o
 
 clippy:
 	cargo clippy --tests --examples
@@ -88,7 +93,7 @@ clippy:
 # and the test binaries.
 build-tests:
 	cargo build
-	$(MAKE) example raw_aes_example zero_copy_example custom_keyring_example streaming_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
+	$(MAKE) example raw_aes_example zero_copy_example shared_cache_example custom_keyring_example streaming_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
 
 # Run the C++ integration + local-correctness binaries.
 run-cpp:

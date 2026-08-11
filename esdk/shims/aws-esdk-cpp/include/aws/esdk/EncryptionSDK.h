@@ -158,7 +158,7 @@ struct KmsClientImpl;
 struct DdbClientImpl;
 struct KeyStoreImpl;
 struct KeyringImpl;
-struct CacheImpl;
+struct CryptographicMaterialsCacheImpl;
 struct BytesFactory;
 }  // namespace detail
 
@@ -268,36 +268,47 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-/// A cryptographic materials cache.
-/// One cache may be shared across multiple keyrings.
-class Cache {
-    std::shared_ptr<detail::CacheImpl> impl_;
+/// A cryptographic materials cache. Construct one with a cache kind, then pass
+/// it to one or more keyrings via HierarchicalKeyringOptions::with_cache.
+/// Keyrings given the same cache reference the same instance, so they share
+/// cached materials (subject to their partition ids). Copies share the
+/// underlying cache.
+class CryptographicMaterialsCache {
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
     friend class HierarchicalKeyringOptions;
     friend class HierarchicalKeyring;
-    explicit Cache(std::shared_ptr<detail::CacheImpl> impl) : impl_(std::move(impl)) {}
+    explicit CryptographicMaterialsCache(
+        std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
+        : impl_(std::move(impl)) {}
 
 public:
-    /// No caching. Branch key material is fetched on every use.
-    static Cache NoCache();
-    /// Cache safe for concurrent use from multiple threads.
-    /// A parameter left 0 keeps the ESDK Rust's default for that parameter.
-    static Cache MultiThreaded(std::uint32_t entry_capacity = 0,
-                               std::uint32_t entry_pruning_tail_size = 0);
+    /// A cache safe for concurrent use from multiple threads. entry_capacity
+    /// (the maximum number of cached entries) is required; entry_pruning_tail_size
+    /// left 0 keeps the ESDK Rust's default.
+    static CryptographicMaterialsCache MultiThreaded(std::uint32_t entry_capacity,
+                                                     std::uint32_t entry_pruning_tail_size = 0);
+    /// A cache that performs no caching: materials are fetched on every use.
+    static CryptographicMaterialsCache NoCache();
 };
 
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class HierarchicalKeyringOptions {
-    std::shared_ptr<detail::CacheImpl> cache_;
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> cache_;
     std::string partition_id_;
     friend class HierarchicalKeyring;
 
 public:
-    /// Sets the cache for this Hierarchical Keyring.
-    HierarchicalKeyringOptions& with_cache(const Cache& cache) { cache_ = cache.impl_; return *this; }
+    /// Use the given cache for this keyring. Passing the same cache to several
+    /// keyrings makes them share it. When unset, the keyring uses the ESDK
+    /// Rust's default cache.
+    HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
+        cache_ = cache.impl_;
+        return *this;
+    }
     /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing to a cache.
     /// If the Partition ID is the same for two Hierarchical Keyrings (or another Material Provider),
-    /// they can share the same cache entries in the cache.
+    /// they can share the same cache entries in a shared cache.
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
