@@ -1,0 +1,18 @@
+{
+  "commonsRepository": {
+    "name": "aws-crypto-tools-commons",
+    "url": "git@github.com:aws/aws-crypto-tools-commons.git",
+    "branch": "main"
+  },
+  "product": "primitives",
+  "supportedFeatures": [
+    "aes-gcm",
+    "hkdf",
+    "kbkdf-ctr-hmac",
+    "digest",
+    "hmac",
+    "ecdsa",
+    "random"
+  ],
+  "unsupportedFeatures": []
+}
