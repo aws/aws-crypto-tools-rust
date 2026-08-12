@@ -370,22 +370,28 @@ struct Keyring {
     client: aws_esdk::Keyring,
 }
 
-/// A constructed cryptographic materials cache. A keyring given this cache
-/// references this exact instance, so passing one cache to several keyrings
-/// makes them share it.
 struct CryptographicMaterialsCache {
     cache: dafny::types::cryptographic_materials_cache::CryptographicMaterialsCacheRef,
 }
 
-/// Machine-readable "information separator" character
+// ASCII Unit Seperator, used below
 const ERROR_KIND_SEPARATOR: char = '\u{1f}';
-/// Builds the error string for the target: `{kind repr}{separator}{operation}: {message}`.
-/// Every error the bridge returns is built here, exactly once.
+
+/// Encodes a shim error for the C++ facade. Called by every error-raising path.
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
-    format!("{}{ERROR_KIND_SEPARATOR}{operation}: {message}", kind.repr)
+    // `.repr` is the enum's underlying integer (how cxx exposes an enum value);
+    // bind it so every piece of the format string reads the same way.
+    let kind = kind.repr;
+    // cxx can only give a message string, never a typed error.
+    // Workaround: create an error message format to allow passing a "typed" error:
+    // `{kind}{ERROR_KIND_SEPARATOR}{operation}: {message}`
+    //   - kind: ShimErrorKind enum's integer value
+    //   - ERROR_KIND_SEPARATOR: the ASCII Unit Separator (0x1F), a control character that never appears in these messages
+    //   - `{operation}: {message}`: remainder passed into C++-facing exception
+    format!("{kind}{ERROR_KIND_SEPARATOR}{operation}: {message}")
 }
 
-/// Maps a core ESDK error to the shim error kind the target sees.
+/// Map every ESDK Rust error to ffi error
 fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
     use aws_esdk::ErrorKind;
     match &e.kind {
@@ -398,8 +404,9 @@ fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
     }
 }
 
-/// Checks a target-supplied resource handle and borrows the resource behind it.
+/// Validates a C++-supplied resource handle, then borrows the resource behind it.
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
+    // Only validation right now is null-checking; could be extended in future (ex. method/field checks)
     //= spec/shim/shim.md#handles-and-lifetimes
     //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
     //# and MUST return an error when a required handle is absent.
@@ -410,13 +417,13 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
             format!("{name} is null"),
         ));
     }
-    // SAFETY: a non-null handle is a Box the shim returned to the target from a
-    // create_* operation; the target keeps it alive for the duration of the call.
+    // SAFETY: Return the non-null handle to the target
     Ok(unsafe { &*ptr })
 }
 
-// Type translation (see spec/shim/esdk-shim.md#type-translation).
+// Type translation
 
+// C++ to Rust for Algorithm Suite ID
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
 //# algorithm suite that has the same two-byte ID.
@@ -456,6 +463,7 @@ fn alg_id_target_to_core(
     }
 }
 
+// Rust to C++ for Algorithm Suite ID
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
@@ -497,6 +505,7 @@ fn alg_id_core_to_target(
     }
 }
 
+// C++ to Rust for Commitment Policy
 //= spec/shim/esdk-shim.md#commitment-policy
 //# - The shim MUST translate the target commitment policy to the core ESDK
 //# commitment policy of the same meaning.
@@ -520,6 +529,7 @@ fn commitment_policy_target_to_core(
     }
 }
 
+// C++ to Rust for Encryption Context
 //= spec/shim/esdk-shim.md#encryption-context
 //# - The shim MUST translate the target's encryption context, given as a list of
 //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
@@ -530,6 +540,7 @@ fn encryption_context_target_to_core(
     Ok(x.iter().map(|x| (x.key.clone(), x.value.clone())).collect())
 }
 
+// Rust to C++ for Encryption Context
 //= spec/shim/esdk-shim.md#encryption-context
 //# - The shim MUST translate the core ESDK's encryption context, given as a
 //# key-value map, to the target's list of key-value pairs, preserving every pair
@@ -542,6 +553,7 @@ fn encryption_context_core_to_target(
         .collect())
 }
 
+// C++ to Rust for Maximum Encrypted Data Keys
 //= spec/shim/esdk-shim.md#maximum-encrypted-data-keys
 //# The shim MUST translate zero
 //# to the core ESDK's "no limit" representation, and a positive value `n` to a
@@ -550,6 +562,7 @@ fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
     std::num::NonZeroUsize::new(usize::try_from(n).unwrap_or(usize::MAX))
 }
 
+// C++ to Rust for Frame Length
 //= spec/shim/esdk-shim.md#frame-length
 //# - The shim MUST translate the target frame length using the core ESDK's frame
 //# length constructor, and MUST return an error when the core ESDK rejects the
@@ -564,6 +577,7 @@ fn make_frame_length(frame_length: u32) -> Result<aws_esdk::FrameLength, String>
     })
 }
 
+// C++ to Rust for KmsConfigurationType
 fn make_kms_config(
     kind: ffi::KmsConfigurationType,
     value: &str,
@@ -620,14 +634,7 @@ fn make_kms_config(
     }
 }
 
-/// Builds the cache-kind config the ESDK Rust constructs a cache from. `kind`
-/// selects the cache kind; `entry_capacity`/`entry_pruning_tail_size` apply to
-/// the multi-threaded kind, where a zero value is omitted to keep the core
-/// default.
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//# - Creating a cryptographic materials cache MUST provide the target-supplied
-//# entry capacity and entry pruning tail size to the core ESDK when present; an
-//# unset value is omitted, deferring to the core ESDK's default.
+// C++ to Rust for Cache Type
 fn make_cache_type(
     kind: ffi::CacheKind,
     entry_capacity: u32,
@@ -681,6 +688,10 @@ fn create_cryptographic_materials_cache(
     entry_capacity: u32,
     entry_pruning_tail_size: u32,
 ) -> Result<Box<CryptographicMaterialsCache>, String> {
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //# - Creating a cryptographic materials cache MUST provide the target-supplied
+    //# entry capacity and entry pruning tail size to the core ESDK when present; an
+    //# unset value is omitted, deferring to the core ESDK's default.
     let cache_type = make_cache_type(kind, entry_capacity, entry_pruning_tail_size)?;
     let op = "create_cryptographic_materials_cache";
 
@@ -706,8 +717,7 @@ fn create_cryptographic_materials_cache(
     Ok(Box::new(CryptographicMaterialsCache { cache }))
 }
 
-/// Translates the bridge retry configuration; `None` when the target set no
-/// retry field, so the caller keeps the loaded default retry configuration.
+/// C++ to Rust for AWS SDK call retry config
 fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
     if !config.mode_adaptive && config.max_attempts == 0 {
         return None;
@@ -723,7 +733,7 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
     Some(out_config)
 }
 
-// Service client configuration (see spec/shim/esdk-shim.md#service-client-configuration).
+// AWS SDK client configuration
 
 fn shim_user_agent() -> String {
     //= spec/shim/esdk-shim.md#service-client-configuration
@@ -773,7 +783,6 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
     })?;
     let mut builder = shared_config.to_builder().app_name(app_name);
     //= spec/shim/esdk-shim.md#service-client-configuration
-    //= reason=When no retry values are supplied make_retry_config yields None and the builder keeps load_defaults()'s retry config; the shim adds none.
     //# - If the target does not supply a retry configuration, the shim MUST defer to
     //# the core ESDK's default retry configuration and MUST NOT substitute its own.
     if let Some(retry_config) = make_retry_config(&input.retry) {
@@ -790,7 +799,7 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
     Ok(builder.build())
 }
 
-// Operations (see spec/shim/esdk-shim.md#operation-contracts).
+// ESDK/MPL Client Operations
 
 fn apply_encrypt_options(
     core_input: &mut aws_esdk::EncryptInput<'_>,
@@ -1128,7 +1137,11 @@ fn create_hierarchical_keyring(
     }))
 }
 
-// Resource release (see spec/shim/shim.md#creating-and-releasing-resources).
+// Resource release
+//
+// C++ owns each resource as a Box and calls these to free it.
+// Taking the Box by value hands ownership back to Rust, which drops it at the end of the function.
+// Every create_* needs a matching delete_* so C++ has a way to release what it holds.
 
 fn delete_kms_client(_client: Box<MplKmsClient>) -> Result<(), String> {
     Ok(())
@@ -1148,29 +1161,28 @@ fn delete_cryptographic_materials_cache(
     Ok(())
 }
 
-// Streaming (see spec/shim/shim.md#streaming).
-//
-// The core's encrypt_stream/decrypt_stream drive a Read source and a Write sink
-// themselves, so each shim stream runs the core operation on its own thread:
-// `write` sends a chunk to the core's Read side and returns whatever output the
-// core has produced so far; `finish` signals end of input, joins the thread,
-// and returns the core's result with the trailing output.
+// Streaming
 
-/// Read side the core pulls from: chunks arrive over a channel; end of input
-/// is the channel closing.
+/// Feeds chunks from C++ to a Rust ESDK input channel
 struct ChannelReader {
-    // Mutex only to satisfy SafeRead's Sync bound; the worker thread is the
-    // sole reader, so the lock is never contended.
+    // Input channel to Rust ESDK
     rx: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
+    // Current chunk being fed to Rust
+    // (Must be persisted across reads. One read may not consume entire chunk)
     pending: Vec<u8>,
+    // How much of `pending` has been read
     offset: usize,
 }
 
+// ChannelReader implements std::io::Read so ESDK Rust can read from it.
+// ESDK Rust calls read() to get new bytes from the ChannelReader.
 impl std::io::Read for ChannelReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Current chunk exhausted: block for the next one from C++.
         while self.offset == self.pending.len() {
             let rx = self.rx.lock().expect("stream reader poisoned");
             match rx.recv() {
+                // Next chunk arrived; read from its start.
                 Ok(chunk) => {
                     self.pending = chunk;
                     self.offset = 0;
@@ -1179,6 +1191,7 @@ impl std::io::Read for ChannelReader {
                 Err(_) => return Ok(0),
             }
         }
+        // Copy as much of the current chunk as fits in buf; the rest waits for the next read.
         let n = buf.len().min(self.pending.len() - self.offset);
         buf[..n].copy_from_slice(&self.pending[self.offset..self.offset + n]);
         self.offset += n;
@@ -1192,22 +1205,23 @@ impl std::fmt::Debug for ChannelReader {
     }
 }
 
-/// Write side the core pushes to: every produced buffer is sent to the target
-/// side without blocking (the channel is unbounded), so the core's pump can
-/// never deadlock against a target that has not called `write` again yet.
+/// Feeds output from Rust ESDK to a Rust output channel
 struct ChannelWriter {
+    // Rust output channel
     tx: std::sync::mpsc::Sender<Vec<u8>>,
 }
 
+// ChannelWriter implements std::io::Write so the ESDK Rust can write to it.
+// ESDK Rust calls write() to send output bytes to the ChannelWriter.
 impl std::io::Write for ChannelWriter {
     //= spec/shim/shim.md#streaming
-    //= reason=Every buffer the core produces is sent to the target side immediately; nothing is held for the finish step.
+    //= reason=Every buffer ESDK Rust produces is sent to C++ immediately
     //# - The shim SHOULD return output from write steps as the core library produces
     //# it, rather than holding all output until the finish step.
     //
     //= spec/shim/shim.md#streaming
     //= type=implication
-    //= reason=The writer forwards the core's output verbatim as produced; the shim adds no release of its own beyond transport.
+    //= reason=The writer forwards the ESDK Rust's output verbatim
     //# - The shim MUST NOT weaken the core library's own rules for releasing
     //# unverified output.
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -1229,23 +1243,30 @@ impl std::fmt::Debug for ChannelWriter {
     }
 }
 
-/// One in-flight streaming operation: the input sender, the output receiver,
-/// and the thread running the core operation.
+/// One in-flight streaming operation connecting C++ to the worker thread that runs ESDK Rust
 struct StreamState {
+    // Sends C++ chunks to the Rust ChannelReader
     input_tx: Option<std::sync::mpsc::Sender<Vec<u8>>>,
+    // Receives output from the Rust ChannelWriter and forwards to C++.
     output_rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    // The thread running the ESDK operation
     worker: Option<std::thread::JoinHandle<Result<ffi::StreamFinishOutput, String>>>,
+    // Operation name ("encrypt_stream"/"decrypt_stream"), for error messages.
     operation: &'static str,
 }
 
 impl StreamState {
+    /// Wires up the two channels and starts the ESDK operation on its own thread.
+    /// (Must run on a thread; the ESDK Rust call blocks, while C++ needs to keep calling write.)
     fn spawn<F>(operation: &'static str, run: F) -> Self
     where
         F: FnOnce(ChannelReader, ChannelWriter) -> Result<ffi::StreamFinishOutput, String>
             + Send
             + 'static,
     {
+        // input: C++ -> Rust reader
         let (input_tx, input_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        // output: Rust writer -> C++
         let (output_tx, output_rx) = std::sync::mpsc::channel::<Vec<u8>>();
         let reader = ChannelReader {
             rx: std::sync::Mutex::new(input_rx),
@@ -1262,8 +1283,9 @@ impl StreamState {
         }
     }
 
-    /// Sends a chunk to the core and returns the output produced so far. An
-    /// empty chunk adds no input, so it polls for output.
+    /// Sends a chunk to ESDK Rust and returns the output produced so far.
+    /// An empty chunk adds no input. It only polls for output.
+    //
     //= spec/shim/shim.md#streaming
     //# - The shim MUST provide a write step that the target calls repeatedly, each
     //# call supplying the next chunk of input and returning whatever output the
@@ -1280,18 +1302,18 @@ impl StreamState {
             return Ok(self.drain_available());
         }
         //= spec/shim/shim.md#streaming
-        //= reason=A core failure stops its reader; the next write joins the worker and returns its error, and finish joins unconditionally.
+        //= reason=An ESDK Rust failure stops its reader. Writing again returns error, so does finish.
         //# - When the operation has failed, the shim MUST return an error from the next
         //# write or finish step.
         if tx.send(chunk.to_vec()).is_err() {
-            // The core stopped reading: it has failed. Join to surface its error.
+            // ESDK Rust raised an error. Join to surface its error.
             return self.join_worker().map(|_| Vec::new());
         }
         Ok(self.drain_available())
     }
 
-    /// Signals end of input, waits for the core to complete, and returns its
-    /// result with any output not yet handed to the target.
+    /// Signals end of input, waits for the ESDK Rust to complete, and returns any remaining output.
+    //
     //= spec/shim/shim.md#streaming
     //# - The shim MUST provide a finish step that ends the input, completes the
     //# operation, and returns the operation's result together with any output not
@@ -1305,6 +1327,7 @@ impl StreamState {
         Ok(result)
     }
 
+    /// Waits for the worker thread to finish and returns its result
     fn join_worker(&mut self) -> Result<ffi::StreamFinishOutput, String> {
         let worker = self.worker.take().ok_or_else(|| {
             shim_err(
@@ -1322,6 +1345,7 @@ impl StreamState {
         })?
     }
 
+    /// Collects all output the worker has produced so far without blocking
     fn drain_available(&mut self) -> Vec<u8> {
         let mut out = Vec::new();
         while let Ok(chunk) = self.output_rx.try_recv() {
@@ -1431,30 +1455,22 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
     stream.state.finish()
 }
 
-// Custom keyring adoption (see
-// spec/shim/shim.md#custom-implementations-of-core-library-interfaces).
+// Custom interface adoption
 //
-// A consumer builds any keyring the core ESDK accepts, converts it to a handle here,
-// and adopts the pointer in its C++ with `Aws::Esdk::Keyring::adopt`.
-// The shim carries the keyring opaquely, so which library defined it never matters.
-
-/// Converts a core-ESDK keyring into a shim keyring handle for adoption by
-/// C++ via `Aws::Esdk::Keyring::adopt`.
-///
-/// Ownership transfers to the returned pointer; exactly one `adopt` call must
-/// consume it. The pointer is only meaningful to this crate's C++ facade.
+// A consumer builds any interface the core ESDK accepts,
+// converts it to a handle using these methods,
+// and adopts the pointer in its C++ with the interface's C++ `adopt` methods.
+//
 //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
 //# - The shim MAY let the target adopt a consumer-written implementation of a
 //# core-library interface.
 //
 //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
 //= type=implication
-//= reason=The parameter type is the core ESDK's own keyring carrier, so exactly the values the core accepts are adoptable.
 //# - Anything the core library accepts for that interface MUST be adoptable.
 //
 //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
 //= type=implication
-//= reason=An adopted keyring enters encrypt and decrypt like any other; their error paths report its failures.
 //# - Errors an adopted implementation returns during an operation MUST be
 //# reported like any core-library error (see [Delegation](#delegation)).
 //
@@ -1463,6 +1479,10 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 //= reason=Target obligation: adopt's documentation states it, and the shim cannot detect a violation.
 //# - The target MUST adopt only values produced by the shim's conversion, and
 //# MUST adopt each at most once; the shim does not detect violations.
+
+/// Converts an ESDK Rust keyring into a shim keyring handle.
+/// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
+/// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
 pub fn into_keyring_handle(keyring: aws_esdk::Keyring) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring { client: keyring })).cast()
 }

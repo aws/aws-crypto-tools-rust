@@ -221,8 +221,7 @@ KeyStore::KeyStore(const std::string& table_name,
               return ::ffi::create_keystore(c);
           }))) {}
 
-// Cryptographic materials cache. Construct one of a chosen kind, then pass it
-// to keyrings; passing the same one to several keyrings shares it.
+// Cryptographic materials caches
 
 CryptographicMaterialsCache CryptographicMaterialsCache::MultiThreaded(
     std::uint32_t entry_capacity, std::uint32_t entry_pruning_tail_size) {
@@ -310,6 +309,9 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
             "per-call options. Set it in exactly one place.");
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
     if (options.frame_length_) in.frame_length = *options.frame_length_;
@@ -390,6 +392,9 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
             "per-call options. Set it in exactly one place.");
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
     if (options.frame_length_) in.frame_length = *options.frame_length_;
@@ -419,6 +424,9 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
         throw ValidationException(
             "commitment_policy is provided by both the EncryptionSDK client and the "
             "per-call options. Set it in exactly one place.");
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
     if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
         in.commitment_policy = detail::to_ffi(*p);
     if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
