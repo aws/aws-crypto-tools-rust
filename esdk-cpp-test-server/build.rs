@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
-// Link the server against the prebuilt aws-esdk-cpp shim: compile the C++ seam
-// plus the shim's generated cxx bridge, then link the shim cdylib (its Rust side
-// stays inside that shared object) and the cxx runtime. Build the shim first
-// with `make build-shim` (or `cargo build` in esdk/shims/aws-esdk-cpp); the
-// server build does not build it, so the two heavy Rust builds never contend.
+// Link the server against the prebuilt aws-esdk-cpp shim: compile the C++ seam,
+// the shim's compiled facade (EncryptionSDK.cpp), and the shim's generated cxx
+// bridge, then link the shim cdylib (its Rust side stays inside that shared
+// object) and the cxx runtime. Build the shim first with `make build-shim` (or
+// `cargo build` in esdk/shims/aws-esdk-cpp); the server build does not build it,
+// so the two heavy Rust builds never contend.
 fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let shim = manifest
@@ -33,6 +34,7 @@ fn main() {
         .cpp(true)
         .std("c++17")
         .file(manifest.join("src/seam.cpp"))
+        .file(shim.join("src/EncryptionSDK.cpp"))
         .file(&generated)
         .include(&cxxbridge)
         .include(shim.join("include"))
@@ -50,13 +52,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=cxxbridge1");
     // rpath so the server finds libaws_esdk_cpp at runtime.
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", profile_dir.display());
-    // Linux only: CI's rust-lld + --gc-sections (rustc default) drops the
-    // header-only Aws::Esdk facade weak inline symbols. macOS ld64 has no such flag.
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-        println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
-    }
 
     println!("cargo:rerun-if-changed=src/seam.cpp");
+    println!(
+        "cargo:rerun-if-changed={}",
+        shim.join("src/EncryptionSDK.cpp").display()
+    );
     println!("cargo:rerun-if-changed=build.rs");
 }
 
