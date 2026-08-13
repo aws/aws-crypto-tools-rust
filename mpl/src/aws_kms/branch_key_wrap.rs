@@ -11,11 +11,12 @@
 //! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad)
 //! sections — pure crypto leaves over `aws-mpl-primitives`, with no
 //! cache or KMS dependency. Used by the `Keyring` impl in
-//! [`super::hierarchical_keyring`] (in a later cycle).
+//! [`super::hierarchical_keyring`].
 
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
+use uuid::Uuid;
 
 use crate::structures::{BranchKeyMaterials, EncryptionContext, MaterialsError};
 
@@ -53,9 +54,8 @@ const FIXED_OVERHEAD_LEN: usize = SALT_LEN + IV_LEN + VERSION_LEN + TAG_LEN;
 /// The output is the concatenation, in order, of:
 /// 1. UTF-8 bytes of the literal `"aws-kms-hierarchy"`.
 /// 2. UTF-8 bytes of `branch_key_id`.
-/// 3. The 16-byte representation of `branch_key_version` (a v4 UUID hex
-///    string with the four `-` separators stripped, parsed as 32 hex
-///    digits).
+/// 3. The 16-byte representation of `branch_key_version` (parsed from its
+///    canonical hyphenated UUID form).
 /// 4. The serialized `EncryptionContext`.
 ///
 /// Returns `MaterialsError` if the encryption context fails to serialize
@@ -82,54 +82,28 @@ pub fn compute_aad(
     Ok(aad)
 }
 
-/// Parse a v4 UUID canonical hex string (8-4-4-4-12) into its 16 raw bytes.
+/// Parse a UUID in canonical hyphenated form (8-4-4-4-12) into its 16 raw
+/// bytes.
 ///
 /// `BranchKeyMaterials::new` no longer re-validates the UUID shape, so this
 /// parse acts as the actual validation gate on the branch-key-version
 /// string. Returns `MaterialsError` rather than panicking so a caller that
 /// hands us a malformed string (e.g. a corrupted keystore record or a
 /// fuzzer) gets a clean error instead of a process abort.
+///
+/// The explicit length check keeps the gate strict: `Uuid::parse_str` also
+/// accepts the 32-character simple form as well as braced and URN forms,
+/// and only the canonical hyphenated form is 36 characters.
 fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
-    let bytes = s.as_bytes();
-    if bytes.len() != 36
-        || bytes[8] != b'-'
-        || bytes[13] != b'-'
-        || bytes[18] != b'-'
-        || bytes[23] != b'-'
-    {
+    if s.len() != 36 {
         return Err(MaterialsError::new(format!(
             "Branch key version is not a valid 36-char UUID: {s}",
         )));
     }
-    // Strip the four hyphens, leaving 32 hex digits.
-    let mut hex = [0u8; 32];
-    let mut hex_idx = 0;
-    for (i, &b) in bytes.iter().enumerate() {
-        if i == 8 || i == 13 || i == 18 || i == 23 {
-            continue;
-        }
-        hex[hex_idx] = b;
-        hex_idx += 1;
-    }
-    debug_assert_eq!(
-        hex_idx, 32,
-        "uuid hex digit count must be 32 after stripping"
-    );
-
-    let mut out = [0u8; VERSION_LEN];
-    for (i, chunk) in hex.chunks_exact(2).enumerate() {
-        let pair = std::str::from_utf8(chunk).map_err(|_| {
-            MaterialsError::new(format!(
-                "Branch key version contains non-ASCII hex digits: {s}",
-            ))
-        })?;
-        out[i] = u8::from_str_radix(pair, 16).map_err(|_| {
-            MaterialsError::new(format!(
-                "Branch key version contains non-hex characters: {s}",
-            ))
-        })?;
-    }
-    Ok(out)
+    let uuid = Uuid::parse_str(s).map_err(|e| {
+        MaterialsError::new(format!("Branch key version is not a valid UUID: {s}: {e}"))
+    })?;
+    Ok(*uuid.as_bytes())
 }
 
 // ---- KDF ---------------------------------------------------------------------
@@ -292,15 +266,13 @@ pub fn unwrap(
         encryption_context,
     )?;
 
-    let unbound_iv = iv_bytes;
-
     let mut plaintext = vec![0u8; encrypted_key.len()];
     aes_decrypt(
         AesGcm::Aes256Gcm,
         &derived_branch_key,
         encrypted_key,
         tag,
-        &unbound_iv,
+        &iv_bytes,
         &aad_bytes,
         &mut plaintext,
     )

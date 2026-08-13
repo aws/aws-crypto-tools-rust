@@ -3,11 +3,10 @@
 
 //! Tests for `aws_kms::hierarchical_keyring`.
 //!
-//! Covers the construction / configuration surface only (cycle 1, slice 1):
-//! - TTL > 0 validation
-//! - 16-byte v4 UUID partition-id default
-//! - UTF-8 partition-id round-trip (regression coverage for the
-//!   `If provided, it MUST be interpreted as UTF8 bytes` implication)
+//! Covers, in order: construction and configuration validation (TTL,
+//! partition id, cache wiring), the cache entry identifier formulas, the
+//! branch-key wrap / unwrap / AAD leaves, and the OnEncrypt / OnDecrypt
+//! operations against keystore doubles.
 
 use std::sync::Arc;
 
@@ -235,7 +234,7 @@ async fn branch_key_source_supplier_variant_compiles() {
     ));
 }
 
-// ─── Cache wiring tests (slice 2) ───────────────────────────────────────────
+// ─── Cache wiring tests: which Cmc a given CacheType produces ───────────────
 
 #[tokio::test]
 async fn new_with_default_cache_succeeds() {
@@ -441,10 +440,6 @@ fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
 
     let actual = for_encrypt(partition_id, logical_key_store_name, branch_key_id);
 
-    //
-    //
-    //
-    //
     assert_eq!(actual, expected);
 }
 
@@ -472,9 +467,6 @@ fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
         branch_key_version,
     );
 
-    //
-    //
-    //
     assert_eq!(actual, expected);
 }
 
@@ -539,7 +531,7 @@ fn cache_entry_identifier_distinct_versions_produce_distinct_outputs() {
     );
 }
 
-// ─── Branch-key wrapping / unwrapping / AAD tests (cycle 3) ─────────────────
+// ─── Branch-key wrapping / unwrapping / AAD tests ───────────────────────────
 
 /// Stable test fixtures for the wrap/unwrap round-trip tests. The branch_key
 /// bytes are arbitrary but fixed so the round-trip is deterministic across
@@ -835,7 +827,6 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     // Different branch_key bytes derive a different AES-256-GCM cipher key
     // on each side, so AES-GCM authentication fails on unwrap; this proves
     // the cipher key on both wrap and unwrap was the derivedBranchKey.
-    //
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -878,7 +869,6 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     // was the AES-GCM AAD on the wrap side, and that the keyring
     // included branch_key_id as part of the AAD for both Encrypt and
     // Decrypt calls.
-    //
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -1025,7 +1015,7 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     );
 }
 
-// ─── OnEncrypt tests (slice 3) ──────────────────────────────────────────────
+// ─── OnEncrypt tests ────────────────────────────────────────────────────────
 //
 // These tests exercise the [`Keyring::on_encrypt`] body via a
 // `FakeKeystore` that returns canned BranchKeyMaterials. The KMS / DDB
@@ -1181,7 +1171,6 @@ mod onencrypt {
             "first on_encrypt must call keystore.get_active_branch_key once"
         );
 
-        //
         keyring
             .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
             .await
@@ -1546,7 +1535,6 @@ mod ondecrypt {
             .await
             .unwrap();
 
-        //
         assert_eq!(keystore.get_version_calls(), 1);
         assert_eq!(
             keystore.last_version_arg().as_deref(),
@@ -1573,7 +1561,6 @@ mod ondecrypt {
             "first on_decrypt must call get_branch_key_version once",
         );
 
-        //
         let _ = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await
@@ -1777,7 +1764,6 @@ mod ondecrypt {
         )
         .unwrap();
 
-        //
         let err = keyring
             .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
             .await

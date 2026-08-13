@@ -17,9 +17,8 @@
 //! test / Keyrings / AwsKms / AwsKmsHierarchicalKeyring /
 //! `TestAwsKmsHierarchicalKeyring.dfy` (commit `09e485a3...`).
 //!
-//! Slice 3 ports the on-encrypt half of the Dafny round-trip tests; slice 4
-//! ports the encrypt → on_decrypt full round trip. Slice 5 ports the
-//! remaining suites (`TestHierarchyClientESDKSuite` second half +
+//! This file ports the on-encrypt tests, the encrypt → on_decrypt full round
+//! trip, and the shared-cache suites (`TestHierarchyClientESDKSuite` and
 //! `TestSharedCache*`).
 //!
 //! Two Dafny suites are intentionally NOT ported here:
@@ -93,7 +92,8 @@ fn non_signing_suite() -> AlgorithmSuiteId {
 }
 
 /// Build empty encryption materials with a small encryption context, in
-/// the spirit of the Dafny `GetTestMaterials`.
+/// the spirit of the Dafny `GetTestMaterials`:
+/// <https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/AwsKms/AwsKmsHierarchicalKeyring/TestAwsKmsHierarchicalKeyring.dfy#L64>
 fn fresh_materials() -> EncryptionMaterials {
     let mut ec = EncryptionContext::new();
     ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
@@ -503,9 +503,6 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
     // HK1 round-trip succeeds (and populates the shared cache).
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    //
-    //
-    //
     run_round_trip(&hk2, shared_cache_materials(), BRANCH_KEY_ID).await;
 }
 

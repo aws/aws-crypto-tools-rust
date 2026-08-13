@@ -14,10 +14,8 @@
 //! incorporate the *logical* name, so two physical key stores sharing a
 //! logical name will collide in the cache.
 
-//
 use aws_mpl_primitives::{DigestAlg, digest};
 
-//
 const RESOURCE_ID_HIERARCHICAL_KEYRING: u8 = 0x02;
 
 const SCOPE_ID_ENCRYPT: u8 = 0x01;
@@ -55,16 +53,12 @@ fn build_cache_identifier(
         NULL_BYTE,
     ];
 
-    //
     buf.extend_from_slice(partition_id);
     buf.push(NULL_BYTE);
 
-    //
-    //
     buf.extend_from_slice(logical_key_store_name.as_bytes());
     buf.push(NULL_BYTE);
 
-    //
     buf.extend_from_slice(branch_key_id.as_bytes());
 
     if let Some(version) = branch_key_version {
