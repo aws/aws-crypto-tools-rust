@@ -50,9 +50,11 @@ fn main() {
     println!("cargo:rustc-link-lib=static=cxxbridge1");
     // rpath so the server finds libaws_esdk_cpp at runtime.
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", profile_dir.display());
-    // CI links with rust-lld + --gc-sections (rustc default), which drops the
-    // header-only Aws::Esdk facade weak inline symbols; keep all sections.
-    println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
+    // Linux only: CI's rust-lld + --gc-sections (rustc default) drops the
+    // header-only Aws::Esdk facade weak inline symbols. macOS ld64 has no such flag.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
+        println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
+    }
 
     println!("cargo:rerun-if-changed=src/seam.cpp");
     println!("cargo:rerun-if-changed=build.rs");
