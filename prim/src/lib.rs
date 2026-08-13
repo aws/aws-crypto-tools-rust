@@ -238,40 +238,60 @@ pub fn aes_decrypt(
     Ok(())
 }
 
-#[must_use]
-/// Calculate HMAC
-// FIXME - pass in &mut[u8] instead of returning Vec
-pub fn hmac(alg: DigestAlg, key: &[u8], msg: &[u8]) -> Vec<u8> {
+/// Calculate HMAC into `out`.
+///
+/// `out` must be exactly [`DigestAlg::output_len`] bytes for `alg`.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `out` is not exactly [`DigestAlg::output_len`]
+/// bytes for `alg`.
+pub fn hmac(alg: DigestAlg, key: &[u8], msg: &[u8], out: &mut [u8]) -> Result<(), Error> {
     use aws_lc_rs::hmac;
-    match alg {
-        DigestAlg::Sha256 => {
-            let s_key = hmac::Key::new(hmac::HMAC_SHA256, key);
-            hmac::sign(&s_key, msg).as_ref().into()
-        }
-        DigestAlg::Sha384 => {
-            let s_key = hmac::Key::new(hmac::HMAC_SHA384, key);
-            hmac::sign(&s_key, msg).as_ref().into()
-        }
-        DigestAlg::Sha512 => {
-            let s_key = hmac::Key::new(hmac::HMAC_SHA512, key);
-            hmac::sign(&s_key, msg).as_ref().into()
-        }
+    // An HMAC tag is the length of its underlying digest. Taken from the
+    // algorithm rather than DigestAlg::output_len so the check is
+    // authoritative: a disagreement between the two surfaces as an error
+    // here instead of a panic in copy_from_slice below.
+    let want_len = get_digest_alg(alg).output_len();
+    if out.len() != want_len {
+        return err(format!(
+            "hmac : output buffer length of {} does not match the {want_len} byte {alg:?} output.",
+            out.len()
+        ));
     }
+    let hmac_alg = match alg {
+        DigestAlg::Sha256 => hmac::HMAC_SHA256,
+        DigestAlg::Sha384 => hmac::HMAC_SHA384,
+        DigestAlg::Sha512 => hmac::HMAC_SHA512,
+    };
+    let s_key = hmac::Key::new(hmac_alg, key);
+    out.copy_from_slice(hmac::sign(&s_key, msg).as_ref());
+    Ok(())
 }
-#[must_use]
-/// Return a digest of the data using the selected algorithm
-pub fn digest(alg: DigestAlg, data: &[u8]) -> Vec<u8> {
-    match alg {
-        DigestAlg::Sha256 => aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, data)
-            .as_ref()
-            .to_vec(),
-        DigestAlg::Sha384 => aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA384, data)
-            .as_ref()
-            .to_vec(),
-        DigestAlg::Sha512 => aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA512, data)
-            .as_ref()
-            .to_vec(),
+/// Return a digest of `data` using the selected algorithm, written into
+/// `out`.
+///
+/// `out` must be exactly [`DigestAlg::output_len`] bytes for `alg`.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if `out` is not exactly [`DigestAlg::output_len`]
+/// bytes for `alg`.
+pub fn digest(alg: DigestAlg, data: &[u8], out: &mut [u8]) -> Result<(), Error> {
+    // Length taken from the algorithm rather than DigestAlg::output_len so
+    // the check is authoritative: a disagreement between the two surfaces
+    // as an error here instead of a panic in copy_from_slice below.
+    let digest_alg = get_digest_alg(alg);
+    if out.len() != digest_alg.output_len() {
+        return err(format!(
+            "digest : output buffer length of {} does not match the {} byte {:?} output.",
+            out.len(),
+            digest_alg.output_len(),
+            alg
+        ));
     }
+    out.copy_from_slice(aws_lc_rs::digest::digest(digest_alg, data).as_ref());
+    Ok(())
 }
 
 /// Compare in constant time
