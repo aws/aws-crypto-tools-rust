@@ -118,10 +118,19 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
 /// Maximum number of signing attempts made while looking for a DER
 /// signature of the canonical length (see [`sign_fixed_len`]).
 ///
-/// Each attempt succeeds with probability ~0.51, measured over 4000
-/// signatures per curve, so 32 attempts leaves a spurious-failure
-/// probability of ~1.3e-10.
-const MAX_SIGN_ATTEMPTS: u32 = 32;
+/// Each attempt succeeds with probability 1/2, which follows from the
+/// encoding rather than from measurement. `r` and `s` are each encoded as a
+/// DER INTEGER, and each independently takes a leading `0x00` byte exactly
+/// when its high bit is set — probability 1/2 apiece. So a signature runs
+/// one byte long when both take the pad (1/4), one byte short when neither
+/// does (1/4), and lands on the canonical length when exactly one does
+/// (1/2). An `r` or `s` whose top byte is zero shortens it further, which
+/// shifts the rate by about 1/256.
+///
+/// At p = 1/2, exhausting 128 attempts has probability 2^-128, negligible
+/// against the other failure modes of signing. The expected number of
+/// attempts is 2, so a bound this loose costs nothing in practice.
+const MAX_SIGN_ATTEMPTS: u32 = 128;
 
 /// The DER-encoded signature length this crate emits for `alg`.
 ///

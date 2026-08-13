@@ -1,10 +1,13 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! HMAC tests ported from Dafny `TestHMAC.dfy` and
-//! `TestAwsCryptographyPrimitivesHMAC.dfy`. Two key sets (`[1,2,3,4]` and
+//! HMAC tests ported from Dafny [`TestHMAC.dfy`] and
+//! [`TestAwsCryptographyPrimitivesHMAC.dfy`]. Two key sets (`[1,2,3,4]` and
 //! `[1,1,1,1]`), each with the message `"asdf"` and known-answer digests
 //! for SHA-256, SHA-384, and SHA-512.
+//!
+//! [`TestHMAC.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestHMAC.dfy
+//! [`TestAwsCryptographyPrimitivesHMAC.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAwsCryptographyPrimitivesHMAC.dfy
 
 use aws_mpl_primitives::{DigestAlg, hmac};
 

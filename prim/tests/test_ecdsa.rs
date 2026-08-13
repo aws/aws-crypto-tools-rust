@@ -6,10 +6,6 @@
 //! entry points), plus the tampered-message negative case that Dafny
 //! asserts.
 //!
-//! Key formats follow the Dafny MPL: `ecdsa_generate_keypair` yields an
-//! X9.62 compressed verification key and a DER-encoded signing key, so a
-//! generated key pair feeds `ecdsa_sign` and `ecdsa_verify` directly.
-//!
 //! [`TestSignature.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestSignature.dfy
 
 use aws_mpl_primitives::{

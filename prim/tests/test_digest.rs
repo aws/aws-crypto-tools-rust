@@ -1,8 +1,10 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Digest tests ported from Dafny `TestDigest.dfy`. Known-answer digests
+//! Digest tests ported from Dafny [`TestDigest.dfy`]. Known-answer digests
 //! for SHA-256, SHA-384, and SHA-512 of the message `"asdf"`.
+//!
+//! [`TestDigest.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestDigest.dfy
 
 use aws_mpl_primitives::{DigestAlg, digest};
 
