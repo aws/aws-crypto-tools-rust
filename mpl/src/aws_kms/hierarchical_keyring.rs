@@ -325,6 +325,12 @@ pub struct HierarchicalKeyring {
 
     partition_id_bytes: Vec<u8>,
 
+    /// The keystore's logical name, resolved once at construction. The cache
+    /// identifier formulas bind it, and it is keystore configuration fixed
+    /// before the keystore was handed to this keyring, so re-reading it on
+    /// every operation would return the same value.
+    logical_keystore_name: String,
+
     /// Cryptographic-materials cache for branch-key materials. Either a
     /// keyring-local `LocalCmc`/`StormTrackingCmc` built at construction
     /// time, or a `Shared` cache supplied by the caller.
@@ -406,11 +412,23 @@ impl HierarchicalKeyring {
             None => generate_v4_uuid_bytes()?,
         };
 
+        // Resolve the keystore's logical name once, here, so the OnEncrypt and
+        // OnDecrypt paths can build cache identifiers without re-reading it.
+        let logical_keystore_name = keystore
+            .get_key_store_info()
+            .map_err(|e| {
+                MaterialsError::new(format!(
+                    "HierarchicalKeyring: get_key_store_info failed: {e}",
+                ))
+            })?
+            .logical_keystore_name;
+
         Ok(Self {
             keystore,
             ttl_seconds,
             branch_key_source,
             partition_id_bytes,
+            logical_keystore_name,
             cache,
         })
     }
@@ -494,22 +512,9 @@ impl Keyring for HierarchicalKeyring {
             None => generate_random_data_key(materials.algorithm_suite())?,
         };
 
-        // Resolve the keystore's logical name once per operation; the
-        // Appendix A formula binds it into the cache identifier.
-        let logical_keystore_name = self
-            .keystore
-            .get_key_store_info()
-            .await
-            .map_err(|e| {
-                MaterialsError::keyring_failed(format!(
-                    "HierarchicalKeyring: get_key_store_info failed: {e}",
-                ))
-            })?
-            .logical_keystore_name;
-
         let cache_id = cache_entry_identifier::for_encrypt(
             &self.partition_id_bytes,
-            &logical_keystore_name,
+            &self.logical_keystore_name,
             &branch_key_id,
         );
 
@@ -598,19 +603,6 @@ impl Keyring for HierarchicalKeyring {
             .resolve_branch_key_id(materials.encryption_context())
             .await?;
 
-        // Resolve the keystore's logical name once per operation; the
-        // Appendix A formula binds it into the cache identifier.
-        let logical_keystore_name = self
-            .keystore
-            .get_key_store_info()
-            .await
-            .map_err(|e| {
-                MaterialsError::keyring_failed(format!(
-                    "HierarchicalKeyring: get_key_store_info failed: {e}",
-                ))
-            })?
-            .logical_keystore_name;
-
         let mut collected_errors: Vec<String> = Vec::new();
         for edk in encrypted_data_keys {
             if edk.key_provider_id != KEY_PROVIDER_ID_HIERARCHY {
@@ -625,10 +617,7 @@ impl Keyring for HierarchicalKeyring {
                 continue;
             }
 
-            match self
-                .try_decrypt_edk(&materials, edk, &branch_key_id, &logical_keystore_name)
-                .await
-            {
+            match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
                 Ok(plaintext_dk_bytes) => {
                     return DecryptionMaterials::new(
                         materials.algorithm_suite_id(),
@@ -700,7 +689,6 @@ impl HierarchicalKeyring {
         materials: &DecryptionMaterials,
         edk: &EncryptedDataKey,
         branch_key_id: &str,
-        logical_keystore_name: &str,
     ) -> Result<Vec<u8>, MaterialsError> {
         // Parse the 16-byte branch-key version out of the on-wire layout
         // `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`
@@ -724,7 +712,7 @@ impl HierarchicalKeyring {
 
         let cache_id = cache_entry_identifier::for_decrypt(
             &self.partition_id_bytes,
-            logical_keystore_name,
+            &self.logical_keystore_name,
             branch_key_id,
             &branch_key_version,
         );

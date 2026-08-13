@@ -1064,7 +1064,7 @@ mod onencrypt {
 
     #[async_trait]
     impl Keystore for FakeKeystore {
-        async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+        fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
             Ok(KeyStoreInfo {
                 keystore_id: "test-id".to_string(),
                 keystore_name: "test-table".to_string(),
@@ -1188,7 +1188,7 @@ mod onencrypt {
 
         #[async_trait]
         impl Keystore for FailingKeystore {
-            async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
                 Ok(KeyStoreInfo {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
@@ -1353,7 +1353,7 @@ mod ondecrypt {
 
     #[async_trait]
     impl Keystore for FakeKeystore {
-        async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+        fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
             Ok(KeyStoreInfo {
                 keystore_id: "test-id".to_string(),
                 keystore_name: "test-table".to_string(),
@@ -1701,7 +1701,7 @@ mod ondecrypt {
 
         #[async_trait]
         impl Keystore for FailingKeystore {
-            async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
                 Ok(KeyStoreInfo {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),

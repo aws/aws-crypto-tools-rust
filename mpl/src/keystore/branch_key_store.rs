@@ -212,7 +212,7 @@ impl BranchKeyStore {
 
 #[async_trait]
 impl Keystore for BranchKeyStore {
-    async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
         Ok(KeyStoreInfo {
             keystore_id: self.keystore_id.clone(),
             keystore_name: self.config.ddb_table_name.clone(),

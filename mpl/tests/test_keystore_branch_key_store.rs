@@ -170,7 +170,7 @@ async fn get_key_store_info_returns_configured_values() {
     };
     let store = BranchKeyStore::new(cfg).await.unwrap();
 
-    let info = store.get_key_store_info().await.unwrap();
+    let info = store.get_key_store_info().unwrap();
     assert_eq!(info.keystore_id, "my-id");
     assert_eq!(info.keystore_name, "my-table");
     assert_eq!(info.logical_keystore_name, "my-logical");
@@ -186,14 +186,14 @@ async fn get_key_store_info_returns_empty_grant_tokens_when_none() {
     let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
         .await
         .unwrap();
-    let info = store.get_key_store_info().await.unwrap();
+    let info = store.get_key_store_info().unwrap();
     assert!(info.grant_tokens.is_empty());
 }
 
 #[tokio::test]
 async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
     let store = BranchKeyStore::new(fixture_config_no_id()).await.unwrap();
-    let info = store.get_key_store_info().await.unwrap();
+    let info = store.get_key_store_info().unwrap();
     assert_eq!(info.keystore_id.len(), 36);
     assert_eq!(info.keystore_id, store.keystore_id());
 }
