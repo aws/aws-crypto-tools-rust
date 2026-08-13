@@ -91,6 +91,18 @@ impl DigestAlg {
     }
 }
 
+// Defined here rather than in `ecdsa` because `pub use ecdsa::*` would make a
+// `pub` item there part of the public API, and `pub(crate)` inside a private
+// module trips `clippy::redundant_pub_crate`. At the crate root a private
+// `const fn` is reachable from `ecdsa` without exporting it.
+const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
+    match x {
+        DigestAlg::Sha256 => &aws_lc_rs::digest::SHA256,
+        DigestAlg::Sha384 => &aws_lc_rs::digest::SHA384,
+        DigestAlg::Sha512 => &aws_lc_rs::digest::SHA512,
+    }
+}
+
 /// Error type for this crate
 #[derive(Clone, Debug)]
 #[non_exhaustive]

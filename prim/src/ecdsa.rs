@@ -36,7 +36,7 @@ impl DigestContext {
     /// algorithm that requires runtime availability checks does not become a
     /// breaking change.
     pub fn new(alg: DigestAlg) -> Result<Self, Error> {
-        let alg = get_digest_alg(alg);
+        let alg = crate::get_digest_alg(alg);
         Ok(Self {
             context: aws_lc_rs::digest::Context::new(alg),
         })
@@ -102,14 +102,6 @@ pub enum EcdsaSignatureAlgorithm {
     EcdsaP384,
     /// 256 bit ECDSA
     EcdsaP256,
-}
-
-pub(crate) const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
-    match x {
-        DigestAlg::Sha256 => &aws_lc_rs::digest::SHA256,
-        DigestAlg::Sha384 => &aws_lc_rs::digest::SHA384,
-        DigestAlg::Sha512 => &aws_lc_rs::digest::SHA512,
-    }
 }
 
 const fn get_digest_alg_from_ecdsa(
