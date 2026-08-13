@@ -12,6 +12,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use aws_config::{BehaviorVersion, SdkConfig};
+use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::aws_kms::__test_internals::{
     compute_aad, for_decrypt, for_encrypt, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
@@ -20,89 +23,54 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring,
 };
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError};
+use aws_crypto_mpl::keystore::{
+    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+};
 use aws_crypto_mpl::structures::{
     BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext, MaterialsErrorKind,
 };
 
-/// Minimal mock keystore that returns "not implemented" errors for every
-/// operation. Cycle 1, slice 1 only exercises construction-time configuration;
-/// no test in this file invokes a keystore method.
-struct StubKeystore;
-
-#[async_trait]
-impl Keystore for StubKeystore {
-    async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_key_store_info",
-        ))
-    }
-
-    async fn create_key_store(&self) -> Result<String, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::create_key_store",
-        ))
-    }
-
-    async fn create_key(
-        &self,
-        _branch_key_id: Option<String>,
-        _encryption_context: Option<EncryptionContext>,
-    ) -> Result<String, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::create_key",
-        ))
-    }
-
-    async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::version_key",
-        ))
-    }
-
-    async fn get_active_branch_key(
-        &self,
-        _branch_key_id: String,
-    ) -> Result<BranchKeyMaterials, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_active_branch_key",
-        ))
-    }
-
-    async fn get_branch_key_version(
-        &self,
-        _branch_key_id: String,
-        _branch_key_version: String,
-    ) -> Result<BranchKeyMaterials, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_branch_key_version",
-        ))
-    }
-
-    async fn get_beacon_key(
-        &self,
-        _branch_key_id: String,
-    ) -> Result<BeaconKeyMaterials, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_beacon_key",
-        ))
-    }
+/// Construct a pair of zero-config AWS SDK clients suitable for tests that
+/// never invoke a remote operation. `BehaviorVersion::latest()` is required by
+/// the SDK at client-construction time; no IO occurs at construction itself.
+fn dummy_clients() -> (KmsClient, DynamoDbClient) {
+    let cfg = SdkConfig::builder()
+        .behavior_version(BehaviorVersion::latest())
+        .build();
+    (KmsClient::new(&cfg), DynamoDbClient::new(&cfg))
 }
 
-fn stub_keystore() -> Arc<dyn Keystore> {
-    Arc::new(StubKeystore)
+/// The real [`BranchKeyStore`] — the keystore implementation callers actually
+/// pass to the keyring.
+///
+/// No test in this file invokes a keystore method: `HierarchicalKeyring::new`
+/// only stores the handle, and the keystore is first consulted inside
+/// OnEncrypt / OnDecrypt. So the construction and configuration surface is
+/// exercised against the real type without any network call. The KMS and
+/// DynamoDB clients are supplied explicitly so `BranchKeyStore::new` never
+/// builds a default client.
+async fn real_keystore() -> Arc<dyn Keystore> {
+    let (kms, ddb) = dummy_clients();
+    let store = BranchKeyStore::new(KeyStoreConfig {
+        ddb_table_name: "test-table".to_string(),
+        kms_configuration: KmsConfiguration::KmsKeyArn(
+            "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                .to_string(),
+        ),
+        logical_keystore_name: "test-logical".to_string(),
+        id: None,
+        grant_tokens: None,
+        ddb_client: Some(ddb),
+        kms_client: Some(kms),
+    })
+    .await
+    .expect("BranchKeyStore construction with a valid config must succeed");
+    Arc::new(store)
 }
 
-#[test]
-fn new_with_zero_ttl_returns_validation_error() {
-    let keystore = stub_keystore();
+#[tokio::test]
+async fn new_with_zero_ttl_returns_validation_error() {
+    let keystore = real_keystore().await;
     let result = HierarchicalKeyring::new(
         keystore,
         0, // zero TTL — must be rejected
@@ -127,9 +95,9 @@ fn new_with_zero_ttl_returns_validation_error() {
     );
 }
 
-#[test]
-fn new_with_positive_ttl_succeeds() {
-    let keystore = stub_keystore();
+#[tokio::test]
+async fn new_with_positive_ttl_succeeds() {
+    let keystore = real_keystore().await;
     let result = HierarchicalKeyring::new(
         keystore,
         1, // smallest legal TTL
@@ -142,9 +110,9 @@ fn new_with_positive_ttl_succeeds() {
     assert_eq!(keyring.ttl_seconds(), 1);
 }
 
-#[test]
-fn partition_id_default_is_16_byte_v4_uuid() {
-    let keystore = stub_keystore();
+#[tokio::test]
+async fn partition_id_default_is_16_byte_v4_uuid() {
+    let keystore = real_keystore().await;
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
@@ -178,14 +146,14 @@ fn partition_id_default_is_16_byte_v4_uuid() {
     );
 }
 
-#[test]
-fn partition_id_default_two_calls_are_distinct() {
+#[tokio::test]
+async fn partition_id_default_two_calls_are_distinct() {
     // Two consecutive constructions with no partition id must yield two
     // independent v4 UUIDs. This is regression coverage for the v4-UUID
     // default — a stub that returned all-zero bytes would still pass the
     // length / version-bit checks.
     let a = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Identifier("branch-key-id".to_string()),
         None,
@@ -194,7 +162,7 @@ fn partition_id_default_two_calls_are_distinct() {
     .expect("first constructor call must succeed");
 
     let b = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Identifier("branch-key-id".to_string()),
         None,
@@ -209,8 +177,8 @@ fn partition_id_default_two_calls_are_distinct() {
     );
 }
 
-#[test]
-fn partition_id_provided_is_utf8_round_tripped() {
+#[tokio::test]
+async fn partition_id_provided_is_utf8_round_tripped() {
     // The "If provided, it MUST be interpreted as UTF8 bytes" requirement is
     // a `type=implication` on the source side (Rust's `String::into_bytes` is
     // UTF-8 by construction of the `String` type). This test exists as
@@ -218,7 +186,7 @@ fn partition_id_provided_is_utf8_round_tripped() {
     // and have not been re-encoded or truncated.
     let original = "hello-世界";
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Identifier("branch-key-id".to_string()),
         None,
@@ -229,8 +197,8 @@ fn partition_id_provided_is_utf8_round_tripped() {
     assert_eq!(keyring.partition_id_bytes(), original.as_bytes());
 }
 
-#[test]
-fn branch_key_source_supplier_variant_compiles() {
+#[tokio::test]
+async fn branch_key_source_supplier_variant_compiles() {
     // Smoke test that the BranchKeySource::Supplier variant is usable —
     // construct a no-op supplier, store it in the enum, and confirm the
     // keyring can be built with it. The trait object existence proves the
@@ -253,7 +221,7 @@ fn branch_key_source_supplier_variant_compiles() {
 
     let supplier: Arc<dyn BranchKeySupplier> = Arc::new(ConstSupplier("branch-id-from-supplier"));
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Supplier(supplier),
         None,
@@ -269,10 +237,10 @@ fn branch_key_source_supplier_variant_compiles() {
 
 // ─── Cache wiring tests (slice 2) ───────────────────────────────────────────
 
-#[test]
-fn new_with_default_cache_succeeds() {
+#[tokio::test]
+async fn new_with_default_cache_succeeds() {
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Identifier("bk".to_string()),
         Some(CacheType::Default(DefaultCache::default())),
@@ -283,10 +251,10 @@ fn new_with_default_cache_succeeds() {
     let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
 
-#[test]
-fn new_with_cache_type_none_uses_default() {
+#[tokio::test]
+async fn new_with_cache_type_none_uses_default() {
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Identifier("bk".to_string()),
         None,
@@ -296,15 +264,15 @@ fn new_with_cache_type_none_uses_default() {
     let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
 
-#[test]
-fn new_with_shared_cache_round_trips_provided_arc() {
+#[tokio::test]
+async fn new_with_shared_cache_round_trips_provided_arc() {
     use aws_crypto_mpl::{Cmc, LocalCmc};
 
     let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
     let supplied_for_compare = Arc::clone(&supplied);
 
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600,
         BranchKeySource::Identifier("bk".to_string()),
         Some(CacheType::Shared(supplied)),
@@ -322,8 +290,8 @@ fn new_with_shared_cache_round_trips_provided_arc() {
     );
 }
 
-#[test]
-fn new_with_storm_tracking_cache_succeeds() {
+#[tokio::test]
+async fn new_with_storm_tracking_cache_succeeds() {
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
     let params = StormTrackingCache {
@@ -337,7 +305,7 @@ fn new_with_storm_tracking_cache_succeeds() {
         time_units: None,
     };
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         3600, // ttl_seconds — strictly greater than grace_period (60).
         BranchKeySource::Identifier("bk".to_string()),
         Some(CacheType::StormTracking(params)),
@@ -347,8 +315,8 @@ fn new_with_storm_tracking_cache_succeeds() {
     let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
 
-#[test]
-fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
+#[tokio::test]
+async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
     let params = StormTrackingCache {
@@ -362,7 +330,7 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         time_units: None,
     };
     let err = match HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         60, // ttl_seconds == grace_period — must fail.
         BranchKeySource::Identifier("bk".to_string()),
         Some(CacheType::StormTracking(params)),
@@ -378,8 +346,8 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
     );
 }
 
-#[test]
-fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
+#[tokio::test]
+async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
     let params = StormTrackingCache {
@@ -393,7 +361,7 @@ fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         time_units: None,
     };
     let err = match HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         60,
         BranchKeySource::Identifier("bk".to_string()),
         Some(CacheType::StormTracking(params)),
@@ -409,8 +377,8 @@ fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
     );
 }
 
-#[test]
-fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
+#[tokio::test]
+async fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     use aws_crypto_mpl::TimeUnits;
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
 
@@ -427,7 +395,7 @@ fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
         time_units: Some(TimeUnits::Milliseconds),
     };
     HierarchicalKeyring::new(
-        stub_keystore(),
+        real_keystore().await,
         60,
         BranchKeySource::Identifier("bk".to_string()),
         Some(CacheType::StormTracking(params)),
