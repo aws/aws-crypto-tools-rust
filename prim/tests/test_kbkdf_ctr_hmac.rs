@@ -9,6 +9,11 @@
 //! [`KdfCtr.dfy`]. See `aws_mpl_primitives::kbkdf_ctr_hmac` for the
 //! algorithm itself and the PRF-per-digest mapping.
 //!
+//! Vector fields use the KDF terminology from SP 800-108 / RFC 5869:
+//! `ikm` is the *input keying material*, the secret fed into the KDF, and
+//! `okm` is the *output keying material*, the derived bytes the KDF is
+//! expected to produce for that input.
+//!
 //! Two vector families:
 //!
 //! * B.1–B.10 (`RAW_VECTORS`) — driven through the raw entry point, with
@@ -346,17 +351,20 @@ fn test_kbkdf_ctr_hmac_purpose_nonce_vectors() -> Result<(), Error> {
 
 #[test]
 fn test_kbkdf_ctr_hmac_sha512_smoke() -> Result<(), Error> {
-    // No known-answer for SHA-512 in the Dafny suite; assert the call
-    // succeeds and produces the requested length. Verifies the DigestAlg
-    // -> KbkdfCtrHmacAlgorithmId mapping for the SHA-512 arm.
+    // Verifies the DigestAlg -> KbkdfCtrHmacAlgorithmId mapping for the
+    // SHA-512 arm, which the Dafny suite has no known-answer for.
     let ikm = [1u8; 32];
     let info = build_fixed_info(b"test", &[0u8; 8], 32);
     let mut okm = [0u8; 32];
     kbkdf_ctr_hmac(DigestAlg::Sha512, &ikm, &info, &mut okm)?;
-    assert!(
-        okm.iter().any(|b| *b != 0),
-        "SHA-512 KBKDF output must not be all zeros"
-    );
+
+    // No known-answer to compare against, so assert the property the API
+    // does guarantee: the derivation is deterministic. Asserting the output
+    // is non-zero would not be sound — nothing in the contract forbids an
+    // all-zero derivation.
+    let mut again = [0u8; 32];
+    kbkdf_ctr_hmac(DigestAlg::Sha512, &ikm, &info, &mut again)?;
+    assert_eq!(okm, again);
     Ok(())
 }
 

@@ -16,7 +16,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, Esdk, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
-use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify};
+use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify, signature_len};
 
 /// Assert the CMM's signing key composes with the signer, and that the
 /// verification key it publishes in the encryption context verifies the result.
@@ -27,8 +27,9 @@ use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify};
 /// key DER-encoded, matching the Dafny MPL's `ExternKeyGen`.
 fn assert_signing_key_composes(alg: EcdsaSignatureAlgorithm, sk: &[u8], vk_compressed: &[u8]) {
     assert_eq!(sk[0], 0x30, "signing key must be a DER SEQUENCE");
-    let sig =
-        ecdsa_sign(alg, sk, b"message").expect("CMM signing key must be usable by the signer");
+    let mut sig = vec![0u8; signature_len(alg)];
+    ecdsa_sign(alg, sk, b"message", &mut sig)
+        .expect("CMM signing key must be usable by the signer");
     assert!(
         ecdsa_verify(alg, vk_compressed, b"message", &sig).expect("verify must not error"),
         "the published verification key must verify a signature made with the signing key"
