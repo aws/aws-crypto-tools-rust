@@ -159,6 +159,7 @@ struct DdbClientImpl;
 struct KeyStoreImpl;
 struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
+struct CacheTypeLowerer;
 struct BytesFactory;
 }  // namespace detail
 
@@ -201,9 +202,9 @@ public:
 };
 
 /// Optional Key Store parameters.
-/// A field left empty is omitted from the ESDK Rust's Key Store configuration.
+/// A field left unset is omitted from the ESDK Rust's Key Store configuration.
 class KeyStoreOptions {
-    std::string key_store_id_;
+    std::optional<std::string> key_store_id_;
     std::vector<std::string> grant_tokens_;
     friend class KeyStore;
 
@@ -268,47 +269,80 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-/// A cryptographic materials cache. Construct one with a cache kind, then pass
-/// it to one or more keyrings via HierarchicalKeyringOptions::with_cache.
-/// Keyrings given the same cache reference the same instance, so they share
-/// cached materials (subject to their partition ids). Copies share the
-/// underlying cache.
+class CacheType;
+
+/// A constructed cryptographic materials cache.
+/// Copies share the underlying cache.
 class CryptographicMaterialsCache {
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
-    friend class HierarchicalKeyringOptions;
+    friend class CacheType;
     friend class HierarchicalKeyring;
     explicit CryptographicMaterialsCache(
         std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
         : impl_(std::move(impl)) {}
 
 public:
-    /// A cache safe for concurrent use from multiple threads. entry_capacity
-    /// (the maximum number of cached entries) is required; entry_pruning_tail_size
-    /// left 0 keeps the ESDK Rust's default.
-    static CryptographicMaterialsCache MultiThreaded(std::uint32_t entry_capacity,
-                                                     std::uint32_t entry_pruning_tail_size = 0);
-    /// A cache that performs no caching: materials are fetched on every use.
-    static CryptographicMaterialsCache NoCache();
+    /// Constructs the cache described by `cache`.
+    /// \param cache Which type of local cache to use.
+    static CryptographicMaterialsCache Create(const CacheType& cache);
+};
+
+/// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
+class CacheType {
+public:
+    /// The best choice for most situations. Probably a StormTrackingCache.
+    /// \param entry_capacity Maximum number of entries cached.
+    static CacheType Default(std::uint32_t entry_capacity);
+    /// Nothing should ever be cached.
+    static CacheType No();
+    /// A cache that is safe for use in a multi threaded environment, but no
+    /// extra functionality.
+    /// \param entry_capacity Maximum number of entries cached.
+    /// \param entry_pruning_tail_size Number of entries to prune at a time.
+    static CacheType MultiThreaded(
+        std::uint32_t entry_capacity,
+        std::optional<std::uint32_t> entry_pruning_tail_size = std::nullopt);
+    /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
+    /// the user should provide an already constructed CryptographicMaterialsCache
+    /// to the Hierarchical Keyring at initialization.
+    static CacheType Shared(const CryptographicMaterialsCache& cache);
+
+private:
+    enum class Kind { Default, No, MultiThreaded, Shared };
+    explicit CacheType(Kind kind) : kind_(kind) {}
+    Kind kind_;
+    std::uint32_t entry_capacity_ = 0;
+    std::optional<std::uint32_t> entry_pruning_tail_size_;
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
+    friend class CryptographicMaterialsCache;
+    friend class HierarchicalKeyring;
+    friend struct detail::CacheTypeLowerer;
 };
 
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class HierarchicalKeyringOptions {
-    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> cache_;
-    std::string partition_id_;
+    std::optional<CacheType> cache_;
+    std::optional<std::string> partition_id_;
     friend class HierarchicalKeyring;
 
 public:
-    /// Use the given cache for this keyring. Passing the same cache to several
-    /// keyrings makes them share it. When unset, the keyring uses the ESDK
-    /// Rust's default cache.
-    HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
-        cache_ = cache.impl_;
+    /// Sets the type of cache for this Hierarchical Keyring.
+    /// By providing an already initialized 'Shared' cache, users can determine the scope of the cache.
+    /// That is, if the cache is shared across other Cryptographic Material Providers,
+    /// for instance other Hierarchical Keyrings or Caching Cryptographic Materials Managers (Caching CMMs).
+    /// If any other type of cache in the CacheType union is provided,
+    /// the Hierarchical Keyring will initialize a cache of that type,
+    /// to be used with only this Hierarchical Keyring.
+    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
+    /// with entryCapacity = 1000.
+    HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
+        cache_ = cache;
         return *this;
     }
     /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing to a cache.
     /// If the Partition ID is the same for two Hierarchical Keyrings (or another Material Provider),
-    /// they can share the same cache entries in a shared cache.
+    /// they can share the same cache entries in the cache.
     HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
 };
 
@@ -339,8 +373,8 @@ public:
     /// AES-GCM. The wrapping key bytes are copied into the keyring.
     /// \param key_namespace A namespace associated with this wrapping key.
     /// \param key_name A name associated with this wrapping key.
-    /// \param wrapping_key The AES key. Its length must match the wrapping
-    ///        algorithm (16, 24, or 32 bytes).
+    /// \param wrapping_key The AES key used with AES_GCM encryption and decryption.
+    ///        Its length must match the wrapping algorithm (16, 24, or 32 bytes).
     /// \param wrapping_alg The AES-GCM algorithm used to wrap and unwrap data keys.
     RawAesKeyring(const std::string& key_namespace,
                   const std::string& key_name,
@@ -634,8 +668,7 @@ public:
         const Keyring& keyring,
         const DecryptOptions& options = {});
 
-    /// Decrypts a ciphertext held in any contiguous buffer
-    /// without copying it into a std::vector first.
+    /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
     /// The buffer must stay valid for the duration of the call; the ciphertext bytes are not retained afterwards.
     DecryptResult decrypt(
         const std::uint8_t* ciphertext,

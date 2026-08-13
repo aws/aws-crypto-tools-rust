@@ -56,6 +56,21 @@ auto guard(F&& f) -> decltype(f()) {
     return static_cast<::ffi::AesWrappingAlg>(static_cast<std::uint8_t>(a));
 }
 
+// Presence-encoded optionals: set=false defers to the ESDK Rust's default.
+
+::ffi::OptU32 to_opt(const std::optional<std::uint32_t>& o) {
+    return o ? ::ffi::OptU32{true, *o} : ::ffi::OptU32{false, 0};
+}
+::ffi::OptString to_opt(const std::optional<std::string>& o) {
+    return o ? ::ffi::OptString{true, ::rust::String(*o)} : ::ffi::OptString{false, {}};
+}
+::ffi::OptAlgId to_opt(const std::optional<AlgorithmSuiteId>& o) {
+    return o ? ::ffi::OptAlgId{true, to_ffi(*o)} : ::ffi::OptAlgId{false, {}};
+}
+::ffi::OptCommitmentPolicy to_opt(const std::optional<CommitmentPolicy>& o) {
+    return o ? ::ffi::OptCommitmentPolicy{true, to_ffi(*o)} : ::ffi::OptCommitmentPolicy{false, {}};
+}
+
 ::rust::Vec<::ffi::EncryptionContextItem> to_ec(const std::map<std::string, std::string>& ec) {
     ::rust::Vec<::ffi::EncryptionContextItem> out;
     for (const auto& kv : ec) {
@@ -108,10 +123,8 @@ struct ClientConfigImpl {
 // Resources may depend on other resources.
 // (ex. KeyStore depends on KMS and DDB clients.)
 // All dependent resources are stored in the resource's `retained` field.
-// What a resource retains is fixed by its kind, so the dependencies are held
-// generically as `std::shared_ptr<void>`: ex. a hierarchical keyring retains its key
-// store and cache, and an adopted keyring, owning its dependencies internally,
-// retains nothing.
+// What a resource retains is fixed by its type (ex. Keyring);
+// an HKeyring may retain a Key Store and cache, while a raw AES keyring may retain nothing.
 using Retained = std::vector<std::shared_ptr<void>>;
 
 struct KmsClientImpl {
@@ -173,7 +186,7 @@ struct DecryptStreamImpl {
 
 ClientConfig::ClientConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
 ClientConfig& ClientConfig::with_max_retry_attempts(std::uint32_t n) {
-    impl_->cfg.retry.max_attempts = n;
+    impl_->cfg.retry.max_attempts = ::ffi::OptU32{true, n};
     return *this;
 }
 ClientConfig& ClientConfig::with_adaptive_retry(bool a) {
@@ -181,7 +194,7 @@ ClientConfig& ClientConfig::with_adaptive_retry(bool a) {
     return *this;
 }
 ClientConfig& ClientConfig::with_region(const std::string& r) {
-    impl_->cfg.region = ::rust::String(r);
+    impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
     return *this;
 }
 
@@ -212,7 +225,7 @@ KeyStore::KeyStore(const std::string& table_name,
               c.logical_key_store_name = ::rust::String(logical_key_store_name);
               c.kms_configuration_type = ::ffi::KmsConfigurationType::KmsKeyArn;
               c.kms_configuration_value = ::rust::String(kms_arn);
-              c.id = ::rust::String(options.key_store_id_);
+              c.id = detail::to_opt(options.key_store_id_);
               for (const auto& token : options.grant_tokens_) {
                   c.grant_tokens.push_back(::rust::String(token));
               }
@@ -223,22 +236,65 @@ KeyStore::KeyStore(const std::string& table_name,
 
 // Cryptographic materials caches
 
-CryptographicMaterialsCache CryptographicMaterialsCache::MultiThreaded(
-    std::uint32_t entry_capacity, std::uint32_t entry_pruning_tail_size) {
-    return CryptographicMaterialsCache(
-        std::make_shared<detail::CryptographicMaterialsCacheImpl>(
-            detail::Retained{}, detail::guard([&] {
-                return ::ffi::create_cryptographic_materials_cache(
-                    ::ffi::CacheKind::MultiThreaded, entry_capacity, entry_pruning_tail_size);
-            })));
+CacheType CacheType::Default(std::uint32_t entry_capacity) {
+    CacheType c(Kind::Default);
+    c.entry_capacity_ = entry_capacity;
+    return c;
 }
 
-CryptographicMaterialsCache CryptographicMaterialsCache::NoCache() {
-    return CryptographicMaterialsCache(
-        std::make_shared<detail::CryptographicMaterialsCacheImpl>(
-            detail::Retained{}, detail::guard([&] {
-                return ::ffi::create_cryptographic_materials_cache(::ffi::CacheKind::No, 0, 0);
-            })));
+CacheType CacheType::No() { return CacheType(Kind::No); }
+
+CacheType CacheType::MultiThreaded(std::uint32_t entry_capacity,
+                                   std::optional<std::uint32_t> entry_pruning_tail_size) {
+    CacheType c(Kind::MultiThreaded);
+    c.entry_capacity_ = entry_capacity;
+    c.entry_pruning_tail_size_ = entry_pruning_tail_size;
+    return c;
+}
+
+CacheType CacheType::Shared(const CryptographicMaterialsCache& cache) {
+    CacheType c(Kind::Shared);
+    c.shared_ = cache.impl_;
+    return c;
+}
+
+namespace detail {
+// Lowers the public CacheType to the bridge struct. The result borrows a
+// Shared descriptor's handle; the caller retains that cache's impl.
+struct CacheTypeLowerer {
+    static ::ffi::CacheType lower(const CacheType& c) {
+        ::ffi::CacheType out{};
+        switch (c.kind_) {
+            case CacheType::Kind::Default:
+                out.kind = ::ffi::CacheKind::Default;
+                out.entry_capacity = c.entry_capacity_;
+                break;
+            case CacheType::Kind::No:
+                out.kind = ::ffi::CacheKind::No;
+                break;
+            case CacheType::Kind::MultiThreaded:
+                out.kind = ::ffi::CacheKind::MultiThreaded;
+                out.entry_capacity = c.entry_capacity_;
+                out.entry_pruning_tail_size = to_opt(c.entry_pruning_tail_size_);
+                break;
+            case CacheType::Kind::Shared:
+                out.kind = ::ffi::CacheKind::Shared;
+                out.shared = c.shared_ ? &*c.shared_->handle : nullptr;
+                break;
+        }
+        return out;
+    }
+};
+}  // namespace detail
+
+CryptographicMaterialsCache CryptographicMaterialsCache::Create(const CacheType& cache) {
+    detail::Retained retained =
+        cache.shared_ ? detail::Retained{cache.shared_} : detail::Retained{};
+    return CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+        std::move(retained), detail::guard([&] {
+            ::ffi::CacheType ffi_cache = detail::CacheTypeLowerer::lower(cache);
+            return ::ffi::create_cryptographic_materials_cache(ffi_cache);
+        })));
 }
 
 // Keyrings
@@ -257,16 +313,19 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          std::uint32_t ttl_seconds,
                                          const HierarchicalKeyringOptions& options)
     : Keyring(std::make_shared<detail::KeyringImpl>(
-          // Retain the key store always, and the cache when one is supplied.
-          options.cache_ ? detail::Retained{key_store.impl_, options.cache_}
-                         : detail::Retained{key_store.impl_},
+          (options.cache_ && options.cache_->shared_)
+              ? detail::Retained{key_store.impl_, options.cache_->shared_}
+              : detail::Retained{key_store.impl_},
           detail::guard([&] {
               ::ffi::HierarchicalKeyringInput in{};
               in.branch_key_id = ::rust::String(branch_key_id);
               in.key_store = &*key_store.impl_->handle;
               in.ttl_seconds = ttl_seconds;
-              in.partition_id = ::rust::String(options.partition_id_);
-              in.cache = options.cache_ ? &*options.cache_->handle : nullptr;
+              in.partition_id = detail::to_opt(options.partition_id_);
+              in.cache = options.cache_
+                             ? ::ffi::OptCacheType{true,
+                                                   detail::CacheTypeLowerer::lower(*options.cache_)}
+                             : ::ffi::OptCacheType{false, ::ffi::CacheType{}};
               return ::ffi::create_hierarchical_keyring(in);
           }))) {}
 
@@ -301,7 +360,7 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     in.keyring = &*keyring.impl_->handle;
     in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext, plaintext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
+    in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
@@ -312,16 +371,16 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
-        in.commitment_policy = detail::to_ffi(*p);
-    if (options.frame_length_) in.frame_length = *options.frame_length_;
+    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
+                                                                     : commitment_policy_);
+    in.frame_length = detail::to_opt(options.frame_length_);
     if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
         throw ValidationException(
             "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
             "the per-call options. Set it in exactly one place.");
-    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                                        : max_encrypted_data_keys_)
-        in.max_encrypted_data_keys = *m;
+    in.max_encrypted_data_keys = detail::to_opt(
+        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                         : max_encrypted_data_keys_);
     ::ffi::EncryptOutput out = detail::guard([&] { return ::ffi::encrypt(in); });
     EncryptResult result;
     result.ciphertext = detail::make_bytes(std::move(out.ciphertext));
@@ -360,15 +419,15 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
-        in.commitment_policy = detail::to_ffi(*p);
+    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
+                                                                     : commitment_policy_);
     if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
         throw ValidationException(
             "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
             "the per-call options. Set it in exactly one place.");
-    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                                        : max_encrypted_data_keys_)
-        in.max_encrypted_data_keys = *m;
+    in.max_encrypted_data_keys = detail::to_opt(
+        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                         : max_encrypted_data_keys_);
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
     DecryptResult result;
     result.plaintext = detail::make_bytes(std::move(out.plaintext));
@@ -384,7 +443,7 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     ::ffi::EncryptInput in{};
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
-    if (options.algorithm_suite_) in.algorithm_suite_id = detail::to_ffi(*options.algorithm_suite_);
+    in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
@@ -395,16 +454,16 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
-        in.commitment_policy = detail::to_ffi(*p);
-    if (options.frame_length_) in.frame_length = *options.frame_length_;
+    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
+                                                                     : commitment_policy_);
+    in.frame_length = detail::to_opt(options.frame_length_);
     if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
         throw ValidationException(
             "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
             "the per-call options. Set it in exactly one place.");
-    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                                        : max_encrypted_data_keys_)
-        in.max_encrypted_data_keys = *m;
+    in.max_encrypted_data_keys = detail::to_opt(
+        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                         : max_encrypted_data_keys_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
@@ -427,15 +486,15 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    if (const auto p = options.commitment_policy_ ? options.commitment_policy_ : commitment_policy_)
-        in.commitment_policy = detail::to_ffi(*p);
+    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
+                                                                     : commitment_policy_);
     if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
         throw ValidationException(
             "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
             "the per-call options. Set it in exactly one place.");
-    if (const auto m = options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                                        : max_encrypted_data_keys_)
-        in.max_encrypted_data_keys = *m;
+    in.max_encrypted_data_keys = detail::to_opt(
+        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                         : max_encrypted_data_keys_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(

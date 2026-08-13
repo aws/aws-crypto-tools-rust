@@ -117,7 +117,7 @@ void run_case(const char* label, Aws::Esdk::EncryptionSDK& sdk,
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     // Offline: one shared SDK and one shared raw AES keyring across all
     // threads; no AWS resources required, so this section always runs.
     {
@@ -144,11 +144,8 @@ int main() {
         }
     }
 
-    auto cfg = esdk_test::load_test_config();
+    auto cfg = esdk_test::integration_config_or_gate(argc, argv, "test_concurrency");
     if (!cfg) {
-        std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to "
-                     "run the hierarchical-keyring concurrency cases.\n";
         return esdk_test::report("test_concurrency");
     }
 

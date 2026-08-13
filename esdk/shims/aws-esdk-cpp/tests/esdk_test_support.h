@@ -78,6 +78,36 @@ inline std::optional<TestConfig> load_test_config() {
     return TestConfig{kms, ddb, logical, branch, region ? region : ""};
 }
 
+inline bool has_local_only_flag(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--local-only") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Gate for the credentialed integration tests. Skipping requires the explicit
+// --local-only flag; a missing ESDK_TEST_* variable is a hard failure, never a
+// silent skip, so a dropped CI credential cannot turn into a green build.
+inline std::optional<TestConfig> integration_config_or_gate(int argc, char** argv,
+                                                            const char* suite) {
+    if (has_local_only_flag(argc, argv)) {
+        std::cout << suite << ": --local-only, skipping integration tests\n";
+        return std::nullopt;
+    }
+    auto cfg = load_test_config();
+    if (!cfg) {
+        std::cerr << "FATAL: " << suite
+                  << " integration tests require ESDK_TEST_KMS_KEY_ARN, "
+                     "ESDK_TEST_DDB_TABLE, ESDK_TEST_LOGICAL_KEYSTORE, and "
+                     "ESDK_TEST_BRANCH_KEY_ID. Pass --local-only to run only the "
+                     "offline tests.\n";
+        std::exit(2);
+    }
+    return cfg;
+}
+
 inline Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
     auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
@@ -90,7 +120,7 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const TestConfig& cfg) {
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), cfg.branch_key_id, /*ttl_seconds=*/600,
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CryptographicMaterialsCache::MultiThreaded(100)));
+            Aws::Esdk::CacheType::MultiThreaded(100)));
 }
 
 inline std::vector<std::uint8_t> to_bytes(const std::string& s) {

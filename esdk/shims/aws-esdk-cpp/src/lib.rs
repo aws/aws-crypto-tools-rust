@@ -137,10 +137,32 @@ static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 
 #[cxx::bridge(namespace = "aws_esdk_ffi")]
 mod ffi {
-    /// `Unset` indicates user did not select an enum value.
-    /// The C++ shim will defer to the ESDK Rust's default value.
+    // cxx does not support passing Rust's Option or C++'s optional across the FFI boundary.
+    // For basic types, wrap data crossing the boundary inside a shared struct.
+    // `set: false` means `value` is unset and should not be read from (mimicking Option None).
+    // `set: true` means `value` is set and should be read from (mimicking Option Some).
+    struct OptU32 {
+        set: bool,
+        value: u32,
+    }
+    struct OptString {
+        set: bool,
+        value: String,
+    }
+    struct OptAlgId {
+        set: bool,
+        value: EsdkAlgorithmSuiteId,
+    }
+    struct OptCommitmentPolicy {
+        set: bool,
+        value: EsdkCommitmentPolicy,
+    }
+    struct OptCacheType {
+        set: bool,
+        value: CacheType,
+    }
+
     enum EsdkAlgorithmSuiteId {
-        Unset = 0x0000,
         AlgAes128GcmIv12Tag16NoKdf = 0x0014,
         AlgAes192GcmIv12Tag16NoKdf = 0x0046,
         AlgAes256GcmIv12Tag16NoKdf = 0x0078,
@@ -155,12 +177,15 @@ mod ffi {
     }
 
     enum EsdkCommitmentPolicy {
-        Unset,
-        ForbidEncryptAllowDecrypt,
-        RequireEncryptAllowDecrypt,
-        RequireEncryptRequireDecrypt,
+        ForbidEncryptAllowDecrypt = 1,
+        RequireEncryptAllowDecrypt = 2,
+        RequireEncryptRequireDecrypt = 3,
     }
 
+    /// ESDK Rust's error kinds.
+    /// Copied under the ESDK Rust's own names,
+    /// carried to C++ as a prefix on the error message (see `shim_err`);
+    //
     //= spec/shim/shim.md#error-classification
     //= reason=These are exactly the Rust ESDK's errors.
     //# - When the core library distinguishes kinds of errors, the shim SHOULD expose
@@ -170,10 +195,6 @@ mod ffi {
     //= spec/shim/shim.md#error-classification
     //= type=implication
     //# - The shim MUST NOT invent error kinds the core library does not define.
-    /// The core ESDK's error kinds, mirrored under the core's own names and
-    /// carried to the target as a prefix on the error message (see `shim_err`);
-    /// the facade decodes the prefix into the exception type of the same name.
-    /// `Esdk` is the base kind and the fallback.
     enum ShimErrorKind {
         Esdk,
         SerializationError,
@@ -190,21 +211,21 @@ mod ffi {
 
     struct EncryptInput<'a> {
         /// Algorithm Suite to use to encrypt the message
-        pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+        pub algorithm_suite_id: OptAlgId,
         /// Key-Value pairs to associate with the encrypted data
         pub encryption_context: Vec<EncryptionContextItem>,
-        /// Bytes of data per frame. Default 4096.
-        pub frame_length: u32,
+        /// Bytes of data per frame. Core default 4096.
+        pub frame_length: OptU32,
         /// The source of cryptographic materials
         pub keyring: *const Keyring,
         /// Data to be encrypted
         pub plaintext: &'a [u8],
         /// Limit on number of encrypted data keys in a message.
-        /// Default is no limit
-        pub max_encrypted_data_keys: u32,
+        /// 0 means no limit.
+        pub max_encrypted_data_keys: OptU32,
         /// Whether to require committing algorithms on encrypt/decrypt.
-        /// default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
-        pub commitment_policy: EsdkCommitmentPolicy,
+        /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
+        pub commitment_policy: OptCommitmentPolicy,
     }
     struct EncryptOutput {
         /// Algorithm Suite used to encrypt the message
@@ -222,14 +243,13 @@ mod ffi {
         /// The source of cryptographic materials
         pub keyring: *const Keyring,
         /// Limit on number of encrypted data keys in a message.
-        /// Default is no limit
-        pub max_encrypted_data_keys: u32,
+        /// 0 means no limit.
+        pub max_encrypted_data_keys: OptU32,
         /// Whether to require committing algorithms on encrypt/decrypt.
-        /// default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
-        pub commitment_policy: EsdkCommitmentPolicy,
+        /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
+        pub commitment_policy: OptCommitmentPolicy,
     }
-    /// Result of finishing a stream: the trailing output bytes plus the
-    /// algorithm suite and encryption context the core library reported.
+
     struct StreamFinishOutput {
         pub algorithm_suite_id: EsdkAlgorithmSuiteId,
         pub encryption_context: Vec<EncryptionContextItem>,
@@ -246,12 +266,13 @@ mod ffi {
     }
 
     struct RetryConfig {
+        /// false selects standard mode, which is also the AWS SDK default.
         mode_adaptive: bool,
-        max_attempts: u32,
+        max_attempts: OptU32,
     }
 
     struct MplAwsClientConfig {
-        region: String,
+        region: OptString,
         retry: RetryConfig,
     }
 
@@ -268,29 +289,37 @@ mod ffi {
         kms_configuration_type: KmsConfigurationType,
         kms_configuration_value: String,
         logical_key_store_name: String,
-        id: String,
+        id: OptString,
         grant_tokens: Vec<String>,
         ddb_client: *const MplDdbClient,
         kms_client: *const MplKmsClient,
     }
 
-    /// The kind of cryptographic materials cache to construct. `Unset` (the
-    /// zero value) is not a valid selection.
     enum CacheKind {
-        Unset,
-        No,
-        MultiThreaded,
+        No = 1,
+        Default = 2,
+        MultiThreaded = 3,
+        Shared = 4,
+    }
+
+    // cxx does not support passing options on each enum value across the FFI boundary.
+    // As a workaround, union options for each cache on the CacheType enum.
+    struct CacheType {
+        kind: CacheKind,
+        /// Read by `Default` and `MultiThreaded`.
+        entry_capacity: u32,
+        /// Read by `MultiThreaded`.
+        entry_pruning_tail_size: OptU32,
+        /// Read by `Shared`.
+        shared: *const CryptographicMaterialsCache,
     }
 
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
         ttl_seconds: u32,
-        /// A constructed cache this keyring uses. Null defers to the Rust
-        /// ESDK's default cache. When set, the keyring references this exact
-        /// cache, so passing one cache to several keyrings shares it.
-        cache: *const CryptographicMaterialsCache,
-        partition_id: String,
+        cache: OptCacheType,
+        partition_id: OptString,
     }
 
     enum AesWrappingAlg {
@@ -321,9 +350,7 @@ mod ffi {
 
         type CryptographicMaterialsCache;
         fn create_cryptographic_materials_cache(
-            kind: CacheKind,
-            entry_capacity: u32,
-            entry_pruning_tail_size: u32,
+            cache: &CacheType,
         ) -> Result<Box<CryptographicMaterialsCache>>;
         fn delete_cryptographic_materials_cache(
             cache: Box<CryptographicMaterialsCache>,
@@ -634,40 +661,51 @@ fn make_kms_config(
     }
 }
 
-// C++ to Rust for Cache Type
-fn make_cache_type(
-    kind: ffi::CacheKind,
-    entry_capacity: u32,
-    entry_pruning_tail_size: u32,
-) -> Result<dafny::types::CacheType, String> {
+// C++ to Rust for CacheType
+fn make_cache_type(cache: &ffi::CacheType) -> Result<dafny::types::CacheType, String> {
     let op = "create_cryptographic_materials_cache";
-    match kind {
+    let capacity = |field: &str, v: u32| -> Result<i32, String> {
+        i32::try_from(v).map_err(|_| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                op,
+                format!("{field} {v} exceeds the core ESDK's i32 limit"),
+            )
+        })
+    };
+    match cache.kind {
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a cache that performs no caching.
         ffi::CacheKind::No => Ok(dafny::types::CacheType::No(
-            dafny::types::NoCache::builder()
-                .build()
-                .map_err(|e| shim_err(ffi::ShimErrorKind::ValidationError, op, format!("failed to build NoCache: {e:?}")))?,
+            dafny::types::NoCache::builder().build().map_err(|e| {
+                shim_err(ffi::ShimErrorKind::ValidationError, op, format!("failed to build NoCache: {e:?}"))
+            })?,
         )),
+        ffi::CacheKind::Default => {
+            let b = dafny::types::DefaultCache::builder()
+                .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?);
+            Ok(dafny::types::CacheType::Default(b.build().map_err(|e| {
+                shim_err(ffi::ShimErrorKind::ValidationError, op, format!("failed to build DefaultCache: {e:?}"))
+            })?))
+        }
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a multi-threaded cache.
         ffi::CacheKind::MultiThreaded => {
-            let mut cache_builder = dafny::types::MultiThreadedCache::builder();
-            if entry_capacity != 0 {
-                let entry_capacity = i32::try_from(entry_capacity).map_err(|_| {
-                    shim_err(ffi::ShimErrorKind::ValidationError, op, format!("entry_capacity {entry_capacity} exceeds the core ESDK's i32 limit"))
-                })?;
-                cache_builder = cache_builder.entry_capacity(entry_capacity);
+            let mut b = dafny::types::MultiThreadedCache::builder()
+                .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?);
+            if cache.entry_pruning_tail_size.set {
+                b = b.entry_pruning_tail_size(capacity(
+                    "entry_pruning_tail_size",
+                    cache.entry_pruning_tail_size.value,
+                )?);
             }
-            if entry_pruning_tail_size != 0 {
-                let entry_pruning_tail_size = i32::try_from(entry_pruning_tail_size).map_err(|_| {
-                    shim_err(ffi::ShimErrorKind::ValidationError, op, format!("entry_pruning_tail_size {entry_pruning_tail_size} exceeds the core ESDK's i32 limit"))
-                })?;
-                cache_builder = cache_builder.entry_pruning_tail_size(entry_pruning_tail_size);
-            }
-            Ok(dafny::types::CacheType::MultiThreaded(cache_builder.build().map_err(|e| {
+            Ok(dafny::types::CacheType::MultiThreaded(b.build().map_err(|e| {
                 shim_err(ffi::ShimErrorKind::ValidationError, op, format!("failed to build MultiThreadedCache: {e:?}"))
             })?))
+        }
+        ffi::CacheKind::Shared => {
+            let shared = require_handle(cache.shared, "shared cache", op)?;
+            Ok(dafny::types::CacheType::Shared(shared.cache.clone()))
         }
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST return an error when the target cache kind is not a supported
@@ -684,15 +722,13 @@ fn make_cache_type(
 //# - The shim MUST provide an operation that creates a cryptographic materials
 //# cache of a target-selected kind, backed by the core ESDK.
 fn create_cryptographic_materials_cache(
-    kind: ffi::CacheKind,
-    entry_capacity: u32,
-    entry_pruning_tail_size: u32,
+    cache: &ffi::CacheType,
 ) -> Result<Box<CryptographicMaterialsCache>, String> {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //# - Creating a cryptographic materials cache MUST provide the target-supplied
     //# entry capacity and entry pruning tail size to the core ESDK when present; an
     //# unset value is omitted, deferring to the core ESDK's default.
-    let cache_type = make_cache_type(kind, entry_capacity, entry_pruning_tail_size)?;
+    let cache_type = make_cache_type(cache)?;
     let op = "create_cryptographic_materials_cache";
 
     let mpl_config = dafny::types::MaterialProvidersConfig::builder()
@@ -706,7 +742,7 @@ fn create_cryptographic_materials_cache(
         })?;
     let mpl = dafny::Client::from_conf(mpl_config)
         .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, op, e))?;
-    let cache = TOKIO_RUNTIME
+    let created = TOKIO_RUNTIME
         .block_on(
             mpl.create_cryptographic_materials_cache()
                 .cache(cache_type)
@@ -714,12 +750,12 @@ fn create_cryptographic_materials_cache(
         )
         .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, op, e))?;
 
-    Ok(Box::new(CryptographicMaterialsCache { cache }))
+    Ok(Box::new(CryptographicMaterialsCache { cache: created }))
 }
 
 /// C++ to Rust for AWS SDK call retry config
 fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
-    if !config.mode_adaptive && config.max_attempts == 0 {
+    if !config.mode_adaptive && !config.max_attempts.set {
         return None;
     }
     let mut out_config = if config.mode_adaptive {
@@ -727,8 +763,8 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
     } else {
         aws_config::retry::RetryConfig::standard()
     };
-    if config.max_attempts > 0 {
-        out_config = out_config.with_max_attempts(config.max_attempts);
+    if config.max_attempts.set {
+        out_config = out_config.with_max_attempts(config.max_attempts.value);
     }
     Some(out_config)
 }
@@ -793,8 +829,8 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
     }
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target supplies a region, the shim MUST apply it to each service client.
-    if !input.region.is_empty() {
-        builder = builder.region(Region::new(input.region.clone()));
+    if input.region.set {
+        builder = builder.region(Region::new(input.region.value.clone()));
     }
     Ok(builder.build())
 }
@@ -809,26 +845,29 @@ fn apply_encrypt_options(
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    if input.max_encrypted_data_keys != 0 {
-        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    if input.max_encrypted_data_keys.set {
+        core_input.max_encrypted_data_keys =
+            max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    if input.frame_length != 0 {
-        core_input.frame_length = make_frame_length(input.frame_length)?;
+    if input.frame_length.set {
+        core_input.frame_length = make_frame_length(input.frame_length.value)?;
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
-        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    if input.commitment_policy.set {
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
-    if input.algorithm_suite_id != ffi::EsdkAlgorithmSuiteId::Unset {
-        core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    if input.algorithm_suite_id.set {
+        core_input.algorithm_suite_id =
+            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
     }
     Ok(())
 }
@@ -841,14 +880,16 @@ fn apply_decrypt_options(
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    if input.max_encrypted_data_keys != 0 {
-        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    if input.max_encrypted_data_keys.set {
+        core_input.max_encrypted_data_keys =
+            max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
-        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    if input.commitment_policy.set {
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     Ok(())
 }
@@ -949,8 +990,7 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 }
 
 //= spec/shim/esdk-shim.md#create-key-store
-//# - The shim MUST provide an operation that creates a key store backed by the core
-//# ESDK.
+//# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
     //= spec/shim/esdk-shim.md#create-key-store
     //# - Creating a key store MUST require a KMS client handle and a DynamoDB client
@@ -978,8 +1018,8 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     //= spec/shim/esdk-shim.md#create-key-store
     //# - Creating a key store MUST provide the target-supplied key store id and grant
     //# tokens to the core ESDK when present; an unset value is omitted.
-    if !input.id.is_empty() {
-        builder = builder.id(input.id.clone());
+    if input.id.set {
+        builder = builder.id(input.id.value.clone());
     }
     if !input.grant_tokens.is_empty() {
         builder = builder.grant_tokens(input.grant_tokens.clone());
@@ -1104,24 +1144,22 @@ fn create_hierarchical_keyring(
         .ttl_seconds(input.ttl_seconds)
         .key_store(key_store.client.clone());
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=The builder receives a cache only when the target supplied a constructed cache handle; otherwise it keeps the core ESDK's default cache.
+    //= reason=The builder receives a cache only when the target supplied one; otherwise it keeps the core ESDK's default cache.
     //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
     //# core ESDK's default cache.
-    if !input.cache.is_null() {
-        // SAFETY: a non-null handle is a Box the shim returned from
-        // create_cryptographic_materials_cache; the target keeps it alive for
-        // the duration of this call.
-        let cache = unsafe { &*input.cache };
-        //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-        //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
-        //# exact cache, so several keyrings given the same cache share it.
-        builder = builder.cache(dafny::types::CacheType::Shared(cache.cache.clone()));
+    //
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= reason=A Shared CacheType carries an existing cache handle, which make_cache_type converts to the core's Shared cache referencing that exact instance.
+    //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
+    //# exact cache, so several keyrings given the same cache share it.
+    if input.cache.set {
+        builder = builder.cache(make_cache_type(&input.cache.value)?);
     }
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
     //# the core ESDK when present; an unset value is omitted.
-    if !input.partition_id.is_empty() {
-        builder = builder.partition_id(input.partition_id.clone());
+    if input.partition_id.set {
+        builder = builder.partition_id(input.partition_id.value.clone());
     }
 
     let keyring = TOKIO_RUNTIME.block_on(builder.send()).map_err(|e| {
@@ -1372,17 +1410,20 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     let mut core_input = aws_esdk::EncryptStreamInput::new();
     core_input.keyring = Some(keyring.client.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    if input.algorithm_suite_id != ffi::EsdkAlgorithmSuiteId::Unset {
-        core_input.algorithm_suite_id = Some(alg_id_target_to_core(input.algorithm_suite_id)?);
+    if input.algorithm_suite_id.set {
+        core_input.algorithm_suite_id =
+            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
     }
-    if input.frame_length != 0 {
-        core_input.frame_length = make_frame_length(input.frame_length)?;
+    if input.frame_length.set {
+        core_input.frame_length = make_frame_length(input.frame_length.value)?;
     }
-    if input.max_encrypted_data_keys != 0 {
-        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    if input.max_encrypted_data_keys.set {
+        core_input.max_encrypted_data_keys =
+            max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
-    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
-        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    if input.commitment_policy.set {
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
@@ -1418,11 +1459,13 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let mut core_input = aws_esdk::DecryptStreamInput::new();
     core_input.keyring = Some(keyring.client.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    if input.max_encrypted_data_keys != 0 {
-        core_input.max_encrypted_data_keys = max_edks_target_to_core(input.max_encrypted_data_keys);
+    if input.max_encrypted_data_keys.set {
+        core_input.max_encrypted_data_keys =
+            max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
-    if input.commitment_policy != ffi::EsdkCommitmentPolicy::Unset {
-        core_input.commitment_policy = commitment_policy_target_to_core(input.commitment_policy)?;
+    if input.commitment_policy.set {
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
@@ -1457,7 +1500,7 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 
 // Custom interface adoption
 //
-// A consumer builds any interface the core ESDK accepts,
+// A consumer builds any interface accepted by the Rust ESDK
 // converts it to a handle using these methods,
 // and adopts the pointer in its C++ with the interface's C++ `adopt` methods.
 //

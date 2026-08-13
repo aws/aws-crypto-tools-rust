@@ -96,37 +96,35 @@ build-tests:
 	$(MAKE) example raw_aes_example zero_copy_example shared_cache_example custom_keyring_example streaming_example enum_parity test_esdk adopt_keyring_test test_concurrency test_resource_leaks
 
 # Run the C++ integration + local-correctness binaries.
+# LOCAL_ONLY=--local-only skips the credentialed integration tests; when it is
+# empty (the default), a missing ESDK_TEST_* credential is a hard failure
+# (see integration_config_or_gate in tests/esdk_test_support.h).
+LOCAL_ONLY ?=
+
 run-cpp:
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./raw_aes_keyring_example
 	./custom_keyring_example
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./streaming_example
-	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_esdk
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_esdk $(LOCAL_ONLY)
 	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./adopt_keyring_test
-	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_concurrency
-	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_resource_leaks
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_concurrency $(LOCAL_ONLY)
+	LD_LIBRARY_PATH="$(CURDIR)/target/debug" ./test_resource_leaks $(LOCAL_ONLY)
 
-# Full local test suite (Rust + C++). Credential-gated tests skip when the
-# ESDK_TEST_* variables are unset.
+# Full local suite without credentials (all Rust tests are offline).
 test: build-tests
 	cargo test
-	$(MAKE) run-cpp
+	$(MAKE) run-cpp LOCAL_ONLY=--local-only
 
-# CI test targets refuse to run when the ESDK_TEST_* credentials are unset, so
-# unsetting them cannot turn the integration tests into silent skips. Split
-# Rust/C++ because the workflow runs the C++ half on Linux only.
-require-creds:
-	@test -n "$$ESDK_TEST_KMS_KEY_ARN" && test -n "$$ESDK_TEST_DDB_TABLE" \
-	&& test -n "$$ESDK_TEST_LOGICAL_KEYSTORE" && test -n "$$ESDK_TEST_BRANCH_KEY_ID" \
-	|| { echo "FAIL: ESDK_TEST_* credentials are unset; CI requires them."; exit 1; }
-
-test-ci-rust: require-creds
+# CI runs the full suite. Split Rust/C++ because the workflow runs the C++
+# half on Linux only.
+test-ci-rust:
 	cargo test
 
-test-ci-cpp: require-creds build-tests
+test-ci-cpp: build-tests
 	$(MAKE) run-cpp
 
 duvet:
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
 
-.PHONY: all clean clippy duvet build-tests run-cpp require-creds test test-ci-rust test-ci-cpp
+.PHONY: all clean clippy duvet build-tests run-cpp test test-ci-rust test-ci-cpp

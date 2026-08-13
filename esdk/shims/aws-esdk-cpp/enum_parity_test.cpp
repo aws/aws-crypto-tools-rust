@@ -27,12 +27,13 @@ static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384Ecd
 static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey), "AlgAes256GcmHkdfSha512CommitKey");
 static_assert(eq(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384), "AlgAes256GcmHkdfSha512CommitKeyEcdsaP384");
 
-// A value-initialized bridge enum is Unset: unset is the zero value, never a
-// real selection.
-static_assert(eq(::aws_esdk_ffi::EsdkAlgorithmSuiteId{}, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::Unset), "zero-init AlgorithmSuiteId is Unset");
-static_assert(eq(::aws_esdk_ffi::EsdkCommitmentPolicy{}, ::aws_esdk_ffi::EsdkCommitmentPolicy::Unset), "zero-init CommitmentPolicy is Unset");
+// A value-initialized bridge enum is never a real selection: required-field
+// enums keep an Unset zero, optional-field enums leave 0 unassigned.
 static_assert(eq(::aws_esdk_ffi::KmsConfigurationType{}, ::aws_esdk_ffi::KmsConfigurationType::Unset), "zero-init KmsConfigurationType is Unset");
 static_assert(eq(::aws_esdk_ffi::AesWrappingAlg{}, ::aws_esdk_ffi::AesWrappingAlg::Unset), "zero-init AesWrappingAlg is Unset");
+static_assert(!eq(::aws_esdk_ffi::EsdkCommitmentPolicy{}, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "zero-init CommitmentPolicy is not a selection");
+static_assert(!eq(::aws_esdk_ffi::EsdkAlgorithmSuiteId{}, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf), "zero-init AlgorithmSuiteId is not a selection");
+static_assert(!eq(::aws_esdk_ffi::CacheKind{}, ::aws_esdk_ffi::CacheKind::No), "zero-init CacheKind is not a selection");
 // The facade's guard decodes these reprs from the error-message prefix; a
 // renumbering here must fail this build, not misclassify errors at runtime.
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Esdk, 0), "ShimErrorKind::Esdk");
