@@ -46,12 +46,10 @@ bool round_trip(Aws::Esdk::EncryptionSDK& sdk,
 
 }  // namespace
 
-int main() {
-    auto cfg = esdk_test::load_test_config();
+int main(int argc, char** argv) {
+    auto cfg = esdk_test::integration_config_or_gate(argc, argv, "test_resource_leaks");
     if (!cfg) {
-        std::cout << "SKIP: set ESDK_TEST_KMS_KEY_ARN, ESDK_TEST_DDB_TABLE, "
-                     "ESDK_TEST_LOGICAL_KEYSTORE, and ESDK_TEST_BRANCH_KEY_ID to "
-                     "run the C++ resource-leak test.\n";
+        // --local-only: this suite has no offline cases, so there is nothing to run.
         return 0;
     }
     if (read_rss_bytes() == 0) {

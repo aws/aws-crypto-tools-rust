@@ -1,6 +1,6 @@
-// Encrypts and decrypts a message with a hierarchical keyring backed by a
-// DynamoDB key store and a KMS key. Requires an existing key store with a
-// provisioned branch key.
+// Encrypts and decrypts a message with a hierarchical keyring.
+//
+// Requires an existing key store with a provisioned branch key.
 
 #include <iostream>
 #include <vector>
@@ -9,8 +9,7 @@
 int main() {
     try {
         // Region and credentials come from the default AWS config chain.
-        auto client_config = Aws::Esdk::ClientConfig()
-            .with_max_retry_attempts(5);
+        auto client_config = Aws::Esdk::ClientConfig();
 
         auto kms = Aws::Esdk::KmsClient(client_config);
         auto ddb = Aws::Esdk::DdbClient(client_config);
@@ -31,7 +30,7 @@ int main() {
             4242,  // ttl_seconds: how long cached branch key material may be reused
             // Unset options keep the library defaults.
             Aws::Esdk::HierarchicalKeyringOptions()
-                .with_cache(Aws::Esdk::Cache::MultiThreaded(42))
+                .with_cache(Aws::Esdk::CacheType::MultiThreaded(42))
         );
 
         Aws::Esdk::EncryptionSDK sdk;

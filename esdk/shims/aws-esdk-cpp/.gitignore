@@ -24,3 +24,10 @@ Cargo.lock
 .duvet/requirements/
 .duvet/snapshot.txt
 .duvet/reports/
+/zero_copy_comparison
+/adopt_keyring_test
+/custom_keyring_example
+/examples/custom-keyring/target/
+/examples/custom-keyring/Cargo.lock
+/streaming_example
+/shared_cache_example

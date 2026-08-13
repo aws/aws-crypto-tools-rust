@@ -7,6 +7,9 @@ pattern = "./src/**/*.rs"
 pattern = "./include/**/*.h"
 
 [[source]]
+pattern = "./src/*.cpp"
+
+[[source]]
 pattern = "./*.cpp"
 
 [[source]]
