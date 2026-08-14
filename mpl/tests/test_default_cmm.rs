@@ -18,14 +18,17 @@ use aws_crypto_mpl::structures::{
 };
 use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify, signature_len};
 
-/// Assert the CMM's signing key composes with the signer, and that the
-/// verification key it publishes in the encryption context verifies the result.
-///
-/// This is stronger than asserting a byte length. The CMM previously stored a
-/// raw private scalar, which `ecdsa_sign` cannot consume, so nothing signed
-/// with the key the CMM produced. `aws-mpl-primitives` now emits the signing
-/// key DER-encoded, matching the Dafny MPL's `ExternKeyGen`.
+// Assert the CMM's signing key composes with the signer, and that the
+// verification key it publishes in the encryption context verifies the result.
+//
+// `ecdsa_sign` accepts the private key DER-encoded and `ecdsa_verify` accepts
+// the public key as an X9.62 compressed point — the two forms
+// `ecdsa_generate_keypair` emits. Signing and then verifying checks the CMM
+// stored each key in the form its consumer requires.
 fn assert_signing_key_composes(alg: EcdsaSignatureAlgorithm, sk: &[u8], vk_compressed: &[u8]) {
+    // Checked separately from signing because `ecdsa_sign` reports a non-DER key
+    // as an opaque aws-lc-rs error; the SEQUENCE tag attributes the failure to
+    // the key's format rather than to the signing operation.
     assert_eq!(sk[0], 0x30, "signing key must be a DER SEQUENCE");
     let mut sig = vec![0u8; signature_len(alg)];
     ecdsa_sign(alg, sk, b"message", &mut sig)
