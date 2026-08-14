@@ -1,14 +1,17 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! HKDF tests ported from Dafny `TestAwsCryptographyPrimitivesHKDF.dfy`
-//! and `TestHKDF_Rfc5869TestVectors.dfy`.
+//! HKDF tests ported from Dafny [`TestAwsCryptographyPrimitivesHKDF.dfy`]
+//! and [`TestHKDF_Rfc5869TestVectors.dfy`].
 //!
 //! The Dafny tests use the RFC 5869 vectors with L = 42 or 82. Prim's
 //! `hkdf` and `hkdf_expand` restrict output length to 16/24/32 bytes
 //! (`get_len` in `src/hkdf.rs`), so this port asks for L=32 and compares
 //! against the first 32 bytes of each RFC OKM. HKDF-Expand output is
 //! prefix-stable, so the comparison is exact, not approximate.
+//!
+//! [`TestAwsCryptographyPrimitivesHKDF.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAwsCryptographyPrimitivesHKDF.dfy
+//! [`TestHKDF_Rfc5869TestVectors.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestHKDF_Rfc5869TestVectors.dfy
 
 use aws_mpl_primitives::{DigestAlg, Error, Prk, hkdf, hkdf_expand, hkdf_extract, hkdf_no_salt};
 
