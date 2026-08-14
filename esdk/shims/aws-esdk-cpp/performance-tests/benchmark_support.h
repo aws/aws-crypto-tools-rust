@@ -97,7 +97,7 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), env.branch_key_id, /*ttl_seconds=*/600000,
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::Cache::MultiThreaded(100)));
+            Aws::Esdk::CacheType::MultiThreaded(100)));
 }
 
 // Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read

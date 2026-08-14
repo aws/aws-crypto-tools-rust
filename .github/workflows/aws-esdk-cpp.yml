@@ -39,6 +39,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Each Linux C++ test binary statically links aws-lc and the AWS SDKs; the
+      # default runner disk cannot hold all of them at once, so reclaim the large
+      # preinstalled toolchains this job does not use.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          df -h /
+
       # integration tests need real KMS + DynamoDB
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
