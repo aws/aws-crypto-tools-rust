@@ -532,7 +532,8 @@ fn streaming_decrypt_tamper_fails_at_finish() {
 
     let mut enc_in = unset_encrypt_input();
     enc_in.keyring = &*keyring as *const Keyring;
-    enc_in.algorithm_suite_id = set_alg_id(ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    enc_in.algorithm_suite_id =
+        set_alg_id(ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
     let mut ciphertext = encrypt_stream_write(&mut stream, b"stream tamper target").expect("write");
     let fin = encrypt_stream_finish(&mut stream).expect("finish");
