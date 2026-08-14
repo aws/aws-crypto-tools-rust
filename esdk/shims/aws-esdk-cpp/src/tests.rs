@@ -613,20 +613,31 @@ fn streaming_write_after_finish_is_invalid_input() {
 }
 
 #[test]
-fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
+fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
     //= type=test
     //# - The shim MUST return an error when the target wrapping algorithm is not a
     //# supported value.
-    let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+    let unset = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
         wrapping_key: &[0x01; 32],
         wrapping_alg: ffi::AesWrappingAlg::Unset,
     }));
     assert!(
-        err.contains("wrapping_alg is unset"),
-        "unexpected error: {err}"
+        unset.contains("wrapping_alg is unset"),
+        "unexpected error: {unset}"
+    );
+
+    let unknown = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg { repr: 99 },
+    }));
+    assert!(
+        unknown.contains("Invalid AesWrappingAlg"),
+        "unexpected error: {unknown}"
     );
 }
 
@@ -691,4 +702,116 @@ fn apply_decrypt_options_forwards_every_optional_input() {
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
+}
+
+// The C++ facade releases resources by dropping their `rust::Box`, so these
+// explicit bridge deletes have no facade caller; exercise each release path here.
+#[test]
+fn delete_releases_client_keyring_and_cache() {
+    delete_kms_client(create_kms_client(&unset_client_config()).expect("kms client"))
+        .expect("delete kms client");
+    delete_ddb_client(create_ddb_client(&unset_client_config()).expect("ddb client"))
+        .expect("delete ddb client");
+    delete_keyring(test_raw_aes_keyring()).expect("delete keyring");
+    let cache = create_cryptographic_materials_cache(&ffi::CacheType {
+        kind: ffi::CacheKind { repr: 1 }, // No
+        entry_capacity: 0,
+        entry_pruning_tail_size: unset_u32(),
+        shared: std::ptr::null(),
+    })
+    .expect("cache");
+    delete_cryptographic_materials_cache(cache).expect("delete cache");
+}
+
+#[test]
+fn delete_keystore_releases_the_key_store() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let mut cfg = unset_keystore_config();
+    cfg.kms_client = &*kms as *const MplKmsClient;
+    cfg.ddb_client = &*ddb as *const MplDdbClient;
+    cfg.ddb_table_name = "test-key-store-table".to_string();
+    cfg.logical_key_store_name = "test-key-store-table".to_string();
+    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsKeyArn;
+    cfg.kms_configuration_value = "arn:aws:kms:us-west-2:000000000000:key/test".to_string();
+    let keystore = create_keystore(&cfg).expect("key store");
+    delete_keystore(keystore).expect("delete key store");
+}
+
+// Covers the adaptive-mode branch of make_retry_config; the retry-config
+// requirement is cited by create_sdk_config_applies_region_retry_and_user_agent.
+#[test]
+fn create_sdk_config_applies_adaptive_retry_mode() {
+    let mut cfg = unset_client_config();
+    cfg.retry.mode_adaptive = true;
+    let sdk = create_sdk_config(&cfg).expect("build sdk config");
+    assert_eq!(
+        sdk.retry_config().map(|r| r.mode()),
+        Some(aws_config::retry::RetryConfig::adaptive().mode())
+    );
+}
+
+// Covers the AlgAes128/AlgAes192 arms of wrapping_alg_target_to_core; AlgAes256
+// is exercised by test_raw_aes_keyring. A wrong arm would map to a suite whose
+// key length rejects the supplied key, failing keyring creation.
+#[test]
+fn create_raw_aes_keyring_accepts_each_wrapping_alg() {
+    for (wrapping_alg, key_len) in [
+        (ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16, 16usize),
+        (ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16, 24),
+        (ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16, 32),
+    ] {
+        create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+            key_namespace: "test-ns".to_string(),
+            key_name: "test-key".to_string(),
+            wrapping_key: &vec![0x01; key_len],
+            wrapping_alg,
+        })
+        .expect("keyring builds for a supported wrapping algorithm");
+    }
+}
+
+// into_keyring_handle backs the C++ `Keyring::adopt` path, which test_esdk does
+// not exercise; check it yields an owned Box<Keyring> pointer.
+#[test]
+fn into_keyring_handle_boxes_the_keyring() {
+    let keyring = test_raw_aes_keyring();
+    let handle = into_keyring_handle(keyring.client.clone());
+    assert!(!handle.is_null());
+    // Reclaim ownership so nothing leaks; a non-Keyring pointer would corrupt here.
+    unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
+}
+
+// A second finish has no worker to join; the stream reports the invalid call.
+#[test]
+fn stream_finish_twice_is_invalid_input() {
+    let keyring = test_raw_aes_keyring();
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
+    encrypt_stream_finish(&mut stream).expect("first finish");
+    let err = expect_err(encrypt_stream_finish(&mut stream));
+    assert!(
+        err.contains("finish called twice"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.starts_with(&format!("5{}encrypt_stream: ", '\u{1f}')),
+        "unexpected encoding: {err}"
+    );
+}
+
+// entry_capacity above the core's i32 limit is rejected before the cache builds.
+#[test]
+fn create_cache_rejects_capacity_over_i32_limit() {
+    let err = expect_err(create_cryptographic_materials_cache(&ffi::CacheType {
+        kind: ffi::CacheKind { repr: 2 }, // Default
+        entry_capacity: 0x8000_0000,      // > i32::MAX
+        entry_pruning_tail_size: unset_u32(),
+        shared: std::ptr::null(),
+    }));
+    assert!(
+        err.contains("exceeds the core ESDK's i32 limit"),
+        "unexpected error: {err}"
+    );
 }
