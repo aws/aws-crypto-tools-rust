@@ -129,9 +129,9 @@ use aws_mpl_legacy::dafny;
 use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore as dafny_key_store;
 use std::sync::LazyLock;
 
+// ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    // This fails only when the OS cannot spawn a thread or install the I/O drivers.
-    // That environment failure has no recovery, so it panics at instantiation.
+    // Fails only if the OS cannot start threads; unrecoverable, so panic here.
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -141,7 +141,7 @@ static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 #[cxx::bridge(namespace = "aws_esdk_ffi")]
 mod ffi {
     // cxx does not support passing Rust's Option or C++'s optional across the FFI boundary.
-    // For basic types, wrap data crossing the boundary inside a shared struct.
+    // For basic types, wrap data crossing the boundary inside a pseudo-optional struct.
     // `set: false` means `value` is unset and should not be read from (mimicking Option None).
     // `set: true` means `value` is set and should be read from (mimicking Option Some).
     struct OptU32 {
@@ -607,7 +607,7 @@ fn make_frame_length(frame_length: u32) -> Result<aws_esdk::FrameLength, String>
     })
 }
 
-// C++ to Rust for KmsConfigurationType
+// Create an ESDK Rust Key Store KmsConfiguration value from the given FFI KmsConfiguration value
 fn make_kms_config(
     kind: ffi::KmsConfigurationType,
     value: &str,
@@ -664,7 +664,7 @@ fn make_kms_config(
     }
 }
 
-// C++ to Rust for CacheType
+// Create an ESDK Rust CacheType from the given FFI CacheType
 fn make_cache_type(cache: &ffi::CacheType) -> Result<dafny::types::CacheType, String> {
     let op = "create_cryptographic_materials_cache";
     let capacity = |field: &str, v: u32| -> Result<i32, String> {

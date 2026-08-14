@@ -424,6 +424,41 @@ fn create_cache_rejects_unknown_kind() {
 }
 
 #[test]
+fn create_cache_builds_each_kind() {
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST support creating a cache that performs no caching.
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST support creating a multi-threaded cache.
+    let no = ffi::CacheType {
+        kind: ffi::CacheKind { repr: 1 }, // No
+        entry_capacity: 0,
+        entry_pruning_tail_size: unset_u32(),
+        shared: std::ptr::null(),
+    };
+    let default = ffi::CacheType {
+        kind: ffi::CacheKind { repr: 2 }, // Default
+        entry_capacity: 10,
+        entry_pruning_tail_size: unset_u32(),
+        shared: std::ptr::null(),
+    };
+    let multi = ffi::CacheType {
+        kind: ffi::CacheKind { repr: 3 }, // MultiThreaded
+        entry_capacity: 10,
+        entry_pruning_tail_size: set_u32(2),
+        shared: std::ptr::null(),
+    };
+    // Shared is intentionally omitted: the MPL rejects a Shared CacheType passed
+    // to create_cryptographic_materials_cache ("should never be called with
+    // Shared CacheType"). The Shared arm is reached only through a keyring's
+    // with_cache, which the C++ hierarchical-keyring test exercises.
+    for cache in [&no, &default, &multi] {
+        assert!(create_cryptographic_materials_cache(cache).is_ok());
+    }
+}
+
+#[test]
 fn make_frame_length_translates_and_rejects_zero() {
     //= spec/shim/esdk-shim.md#frame-length
     //= type=test
@@ -595,7 +630,7 @@ fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
     );
 }
 
-// Each value differs from the core default, so a dropped assignment fails.
+// Each value differs from the ESDK Rust default, so a dropped assignment fails.
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
     use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;

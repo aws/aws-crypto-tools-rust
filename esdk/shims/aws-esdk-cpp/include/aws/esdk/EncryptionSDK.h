@@ -645,7 +645,8 @@ public:
     /// Encrypts a plaintext held in any contiguous buffer
     /// (e.g. an mmap'd file or another library's buffer)
     /// without copying it into an std::vector first.
-    /// The buffer must stay valid for the duration of the call; the plaintext bytes are not retained afterwards.
+    /// The buffer must stay valid for the duration of the call.
+    /// The plaintext bytes are not retained afterwards.
     //
     //= spec/shim/shim.md#bulk-data
     //# - The shim SHOULD let the caller pass a payload without first copying it into
@@ -669,7 +670,8 @@ public:
         const DecryptOptions& options = {});
 
     /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
-    /// The buffer must stay valid for the duration of the call; the ciphertext bytes are not retained afterwards.
+    /// The buffer must stay valid for the duration of the call.
+    /// The ciphertext bytes are not retained afterwards.
     DecryptResult decrypt(
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
