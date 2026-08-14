@@ -85,6 +85,15 @@ jobs:
       # coverage-instrumented); dropping debug info keeps the ubuntu link within
       # the hosted runner's memory. Harmless on macOS.
       #
+      # `prim` is deliberately excluded from `--all-features`. Its only
+      # non-default feature is `fips`, and `aws-lc-rs` treats `fips` as an
+      # override rather than an addition: with both features on it links
+      # `aws-lc-fips-sys` and ignores `aws-lc-sys`. Running coverage with
+      # `--all-features` would therefore measure the FIPS backend and leave the
+      # default (non-FIPS) backend that actually ships untested. `prim` has no
+      # `cfg(feature = ...)` code, so dropping `--all-features` costs no
+      # coverage — the FIPS backend gets its own parity step below.
+      #
       # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
       # today); raise it toward 100 as coverage fills in.
       # TODO(mpl): mpl line-coverage is temporarily 80%
@@ -92,4 +101,16 @@ jobs:
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov --all-features --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+
+      # FIPS parity check for `prim`. `--no-default-features` is required to get
+      # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
+      # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
+      # is used. Test-only — the coverage gate above already covers these lines
+      # against the default backend, so this step exists to prove the same code
+      # passes when linked against AWS-LC-FIPS. Needs the Go step above.
+      - name: Test FIPS-only backend
+        if: inputs.project == 'prim'
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+        run: cargo test --no-default-features --features fips --verbose
