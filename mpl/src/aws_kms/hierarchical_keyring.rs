@@ -47,8 +47,7 @@ pub enum BranchKeySource {
 /// The decision is made from the encryption context alone, so this method is
 /// synchronous. An implementation that must perform IO to reach its answer is
 /// responsible for bridging to it itself (for example
-/// `tokio::task::block_in_place`), rather than every consumer paying for an
-/// async callback that almost none of them need.
+/// `tokio::task::block_in_place`).
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
     fn get_branch_key_id(
@@ -71,8 +70,9 @@ pub struct HierarchicalKeyring {
 
     partition_id_bytes: Vec<u8>,
 
-    /// The keystore's logical name, resolved once at construction. The cache
-    /// identifier formulas bind it.
+    /// The keystore's logical name, which the cache identifier formulas bind.
+    /// Not a construction parameter: it is read from the keystore's own
+    /// `get_key_store_info` once in [`HierarchicalKeyring::new`].
     logical_keystore_name: String,
 
     /// Cryptographic-materials cache for branch-key materials. Either a
