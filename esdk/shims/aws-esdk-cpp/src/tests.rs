@@ -428,9 +428,6 @@ fn create_cache_builds_each_kind() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
     //# - The shim MUST support creating a cache that performs no caching.
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //= type=test
-    //# - The shim MUST support creating a multi-threaded cache.
     let no = ffi::CacheType {
         kind: ffi::CacheKind { repr: 1 }, // No
         entry_capacity: 0,
@@ -443,6 +440,9 @@ fn create_cache_builds_each_kind() {
         entry_pruning_tail_size: unset_u32(),
         shared: std::ptr::null(),
     };
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST support creating a multi-threaded cache.
     let multi = ffi::CacheType {
         kind: ffi::CacheKind { repr: 3 }, // MultiThreaded
         entry_capacity: 10,

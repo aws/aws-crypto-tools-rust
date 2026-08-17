@@ -413,9 +413,10 @@ fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::D
     // bind it so every piece of the format string reads the same way.
     let kind = kind.repr;
     // cxx can only give a message string, never a typed error.
-    // Workaround: create an error message format to allow passing a "typed" error:
+    // But typed errors are nice, so we should surface them.
+    // Workaround: create an error message format:
     // `{kind}{ERROR_KIND_SEPARATOR}{operation}: {message}`
-    //   - kind: ShimErrorKind enum's integer value
+    //   - kind: ShimErrorKind enum's integer value (translates to error type)
     //   - ERROR_KIND_SEPARATOR: the ASCII Unit Separator (0x1F), a control character that never appears in these messages
     //   - `{operation}: {message}`: remainder passed into C++-facing exception
     format!("{kind}{ERROR_KIND_SEPARATOR}{operation}: {message}")

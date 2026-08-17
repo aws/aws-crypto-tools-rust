@@ -31,38 +31,37 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=The facade defines its own enums (Aws::Esdk::); the ffi-generated enum types are not visible in this header.
+//= reason=The facade defines its own enums in Aws::Esdk:: namespace
 //# - For each core-library enumeration it exposes, the shim MUST define its own
 //# corresponding enumeration type.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every public function signature uses only Aws::Esdk:: types and C++ standard-library types; no ffi-generated type is even visible in this header.
+//= reason=Every public function uses only Aws::Esdk:: types and C++ standard-library types
 //# - Each public function the shim exposes MUST use only owned-interface types or
 //# standard-library types in its signature.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every C++ resource holds its handle behind a private pointer to an implementation type that is only defined inside the compiled shim, so users cannot access or name it.
 //# - Each owned interface that represents a core-library resource MUST hold the
 //# generated handle privately and MUST NOT expose it in its public API.
 //
 //= spec/shim/shim.md#handles-and-lifetimes
 //= type=implication
-//= reason=Every C++ resource that depends on another resource holds it (or a shared owner of it) inside its implementation for its own lifetime.
+//= reason=Resourcs hold dependent resources inside its own implementation
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Every optional input has a with_* setter on every operation's or resource's options object.
+//= reason=with_* setters
 //# - The shim MUST expose each optional input of the operations and resource
 //# creations it exposes.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Options objects with with_* setters are the idiomatic C++ optional-input mechanism.
+//= reason=with_* setters
 //# - The shim MUST accept optional inputs through a mechanism idiomatic to the
 //# target language (e.g.
 //
@@ -82,8 +81,8 @@ namespace Esdk {
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
 //
-/// Base exception for every failure this library reports. Catching this type
-/// catches everything the shim can throw.
+/// Base exception for every failure this library reports.
+/// Catching this type catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
