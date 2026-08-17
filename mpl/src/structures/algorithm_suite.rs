@@ -320,16 +320,6 @@ impl AlgorithmSuite {
         self.algorithm_suite_data_length
     }
 
-    /// Required length of a private signing key (scalar) for this suite, in
-    /// bytes. Returns `None` for non-signing suites.
-    pub const fn signing_key_length(&self) -> Option<usize> {
-        match self.asymmetric_signature_algorithm {
-            Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Some(SIGNING_KEY_LEN_P256),
-            Some(AsymmetricSignatureAlgorithm::EcdsaP384) => Some(SIGNING_KEY_LEN_P384),
-            None => None,
-        }
-    }
-
     /// Required length of a verification key (public point, SEC1 compressed
     /// `tag || X` where `tag` is `0x02` when Y is even and `0x03` when Y is
     /// odd) for this suite, in bytes. Returns `None` for non-signing suites.
@@ -341,10 +331,6 @@ impl AlgorithmSuite {
         }
     }
 }
-
-// Private signing key (curve scalar) lengths
-const SIGNING_KEY_LEN_P256: usize = 32;
-const SIGNING_KEY_LEN_P384: usize = 48;
 
 // SEC1-compressed public key lengths: 1 byte tag + coord_len
 const VERIFICATION_KEY_LEN_P256: usize = 33;
