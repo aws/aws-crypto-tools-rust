@@ -13,6 +13,9 @@ Cargo.lock
 *.o
 *.a
 
+# Coverage instrumentation output
+*.profraw
+
 # Agent tooling scratch / transcripts
 .agent-reports/
 
