@@ -3,9 +3,10 @@
 
 //! Branch-key wrapping/unwrapping primitives for the AWS KMS Hierarchical Keyring.
 //!
-//! Wrapping, unwrapping, and the AAD both sides bind: pure crypto leaves over
-//! `aws-mpl-primitives`, with no cache or KMS dependency. Used by the
-//! `Keyring` impl in [`super::hierarchical_keyring`].
+//! Wrapping, unwrapping, and the AAD both sides bind. These are the keyring's
+//! leaf operations: pure crypto over `aws-mpl-primitives`, with no cache or
+//! KMS dependency. Used by the `Keyring` impl in
+//! [`super::hierarchical_keyring`].
 
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
