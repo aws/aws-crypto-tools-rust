@@ -19,8 +19,10 @@
 //!
 //! This file ports the on-encrypt tests, the encrypt → on_decrypt full round
 //! trip, and the shared-cache suites (`TestHierarchyClientESDKSuite` and
-//! `TestSharedCache*`). The Discovery-keystore tests at the end have no Dafny
-//! counterpart; see the comment on that section.
+//! `TestSharedCache*`). The Discovery and MRDiscovery sections at the end
+//! reach further than the Dafny keyring suite does: Dafny covers those KMS
+//! configurations against the KeyStore directly, never through a keyring. See
+//! the comments on those two sections.
 //!
 //! Two Dafny suites are intentionally NOT ported here:
 //! - `TestHierarchyClientDBESuite` — DBE algorithm suites are out of scope
@@ -819,4 +821,109 @@ async fn integ_discovery_keystore_on_decrypt_round_trips() {
         "partition-id-integ-discovery-decrypt",
     );
     run_round_trip(&keyring, fresh_materials(), POSTAL_HORN_BRANCH_KEY_ID).await;
+}
+
+// ─── MrDiscovery keystore — mirrors Dafny TestGetKeysForMrk ────────────────
+//
+// `MyEastBranch2`'s record names a us-east-1 MRK. `MrDiscovery { region }`
+// rewrites the record's ARN into that region before calling KMS, so a
+// us-west-2 client reaches the MRK replica; plain `Discovery` passes the
+// us-east-1 ARN through unchanged and the us-west-2 endpoint rejects it.
+//
+// Dafny asserts this pair at the keystore level in
+// AwsCryptographyKeyStore/test/TestDiscoveryGetKeys.dfy `TestGetKeysForMrk`,
+// over GetBeaconKey and GetActiveBranchKey. Beacon keys are not part of the
+// keyring's path, so the keyring analog of GetActiveBranchKey is OnEncrypt,
+// and a round trip additionally covers GetBranchKeyVersion.
+
+/// A branch key whose record's `kms-arn` is a us-east-1 MRK. Mirrors Dafny's
+/// `EastBranchKey`. The MRK lives in account `658956600833`, replicated to
+/// us-east-1 and us-west-2.
+const EAST_BRANCH_KEY: &str = "MyEastBranch2";
+
+/// Build a keystore in MRDiscovery mode: the record's `kms-arn` is used, but
+/// rewritten into `region` first.
+async fn build_mr_discovery_keystore(region: &str) -> Arc<dyn Keystore> {
+    let (kms, ddb) = build_clients().await;
+    Arc::new(
+        BranchKeyStore::new(KeyStoreConfig {
+            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
+            kms_configuration: KmsConfiguration::MrDiscovery {
+                region: region.to_string(),
+            },
+            logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
+            id: None,
+            grant_tokens: None,
+            ddb_client: Some(ddb),
+            kms_client: Some(kms),
+        })
+        .await
+        .unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn integ_mr_discovery_keystore_reaches_an_mrk_replica_in_the_configured_region() {
+    // build_clients() pins KMS to us-west-2, and MrDiscovery rewrites the
+    // record's us-east-1 ARN to us-west-2, so the decrypt lands on the
+    // replica that client can reach.
+    let keyring = keyring_for(
+        build_mr_discovery_keystore("us-west-2").await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery",
+    );
+
+    let materials_out = keyring.on_encrypt(fresh_materials()).await.expect(
+        "MrDiscovery MUST rewrite the record's us-east-1 ARN into us-west-2 and reach the replica",
+    );
+
+    let edks = materials_out.encrypted_data_keys();
+    assert_eq!(edks.len(), 1);
+    assert_eq!(
+        edks[0].key_provider_info.as_slice(),
+        EAST_BRANCH_KEY.as_bytes(),
+    );
+    assert_eq!(materials_out.plaintext_data_key().unwrap().len(), 32);
+}
+
+#[tokio::test]
+async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
+    // The contrast half of Dafny's TestGetKeysForMrk: plain Discovery does no
+    // region rewrite, so the us-east-1 ARN from the record goes to the
+    // us-west-2 client and KMS rejects it.
+    let keyring = keyring_for(
+        build_discovery_keystore().await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery-negative",
+    );
+
+    let err = keyring
+        .on_encrypt(fresh_materials())
+        .await
+        .expect_err("plain Discovery MUST NOT reach a us-east-1 MRK from a us-west-2 client");
+    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
+
+    // Dafny asserts the specific KMS `IncorrectKeyException`. Our keystore
+    // collapses every KMS SDK error into KeystoreErrorKind::Kms
+    // (`map_kms_error`), so the closest equivalent is that the failure is
+    // attributed to the KMS call — which also rules out the RecordNotFound
+    // and Authentication paths a bare KeyringFailed assertion would admit.
+    // Same substitution the keystore suite documents on
+    // integ_get_active_mrk_key_ap_config_fails_at_kms.
+    assert!(
+        err.to_string().contains("KeystoreError(Kms)"),
+        "expected a KMS-attributed failure, got: {err}",
+    );
+}
+
+#[tokio::test]
+async fn integ_mr_discovery_keystore_on_decrypt_round_trips() {
+    // GetBranchKeyVersion resolves the record ARN separately from
+    // GetActiveBranchKey, so the region rewrite has to hold there too.
+    let keyring = keyring_for(
+        build_mr_discovery_keystore("us-west-2").await,
+        EAST_BRANCH_KEY,
+        "partition-id-integ-mrdiscovery-decrypt",
+    );
+    run_round_trip(&keyring, fresh_materials(), EAST_BRANCH_KEY).await;
 }
