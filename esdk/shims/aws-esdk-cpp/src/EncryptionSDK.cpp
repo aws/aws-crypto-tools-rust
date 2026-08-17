@@ -287,15 +287,13 @@ struct CacheTypeLowerer {
 };
 }  // namespace detail
 
-CryptographicMaterialsCache CryptographicMaterialsCache::Create(const CacheType& cache) {
-    detail::Retained retained =
-        cache.shared_ ? detail::Retained{cache.shared_} : detail::Retained{};
-    return CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
-        std::move(retained), detail::guard([&] {
-            ::ffi::CacheType ffi_cache = detail::CacheTypeLowerer::lower(cache);
-            return ::ffi::create_cryptographic_materials_cache(ffi_cache);
-        })));
-}
+CryptographicMaterialsCache::CryptographicMaterialsCache(const CacheType& cache)
+    : impl_(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+          cache.shared_ ? detail::Retained{cache.shared_} : detail::Retained{},
+          detail::guard([&] {
+              ::ffi::CacheType ffi_cache = detail::CacheTypeLowerer::lower(cache);
+              return ::ffi::create_cryptographic_materials_cache(ffi_cache);
+          }))) {}
 
 // Keyrings
 

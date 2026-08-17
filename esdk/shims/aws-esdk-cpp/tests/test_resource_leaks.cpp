@@ -1,7 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Repeated round trips must not grow resident memory (/proc/self/statm, Linux only).
+// Repeated round trips must not grow resident memory.
+// Only runs on Linux due to checking /proc/self/statm for memory stats
 
 #include <cstddef>
 #include <cstdint>
@@ -18,7 +19,7 @@ namespace {
 constexpr int WARMUP_ITERS = 50;
 constexpr int MEASURED_ITERS = 500;
 constexpr std::size_t PAYLOAD_BYTES = 64 * 1024;
-// A leaked 64 KiB payload per iteration would add ~31 MiB; allocator drift stays under this.
+// A leaked 64 KiB payload per iteration would add ~31 MiB; 12 MB is well under this
 constexpr long MAX_GROWTH_BYTES = 12L * 1024 * 1024;
 
 // 0 when /proc/self/statm is unreadable, so the caller can skip.

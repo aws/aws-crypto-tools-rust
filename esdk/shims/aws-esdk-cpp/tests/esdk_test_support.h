@@ -30,6 +30,7 @@ namespace esdk_test {
 inline int g_checks = 0;
 inline int g_failures = 0;
 
+// Assert helper -- pass iff cond is true
 #define ESDK_CHECK(cond)                                                       \
     do {                                                                       \
         ++::esdk_test::g_checks;                                               \

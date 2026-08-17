@@ -128,7 +128,6 @@ int main(int argc, char** argv) {
         try {
             //= spec/shim/shim.md#concurrency
             //= type=test
-            //= reason=8 threads share one client and one keyring; every round trip returns the exact plaintext and every message ID is unique.
             //# If a core library resource or operation supports concurrent use from multiple threads,
             //# the shim library SHOULD support it as well.
             run_case("raw-aes v2", sdk, keyring, std::nullopt,

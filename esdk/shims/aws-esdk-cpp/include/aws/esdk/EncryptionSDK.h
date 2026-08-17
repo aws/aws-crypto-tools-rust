@@ -283,7 +283,7 @@ class CryptographicMaterialsCache {
 public:
     /// Constructs the cache described by `cache`.
     /// \param cache Which type of local cache to use.
-    static CryptographicMaterialsCache Create(const CacheType& cache);
+    explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
