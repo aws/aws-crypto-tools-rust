@@ -12,10 +12,8 @@
 //! than skip, the same way `test_keystore_branch_key_store_integ` does.
 //!
 //! Ported from the Dafny suite at
-//! aws-cryptographic-material-providers-library /
-//! AwsCryptographicMaterialProviders / dafny / AwsCryptographicMaterialProviders /
-//! test / Keyrings / AwsKms / AwsKmsHierarchicalKeyring /
-//! `TestAwsKmsHierarchicalKeyring.dfy` (commit `09e485a3...`).
+//! <https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/AwsKms/AwsKmsHierarchicalKeyring/TestAwsKmsHierarchicalKeyring.dfy>
+//! (commit `09e485a3...`).
 //!
 //! This file ports the on-encrypt tests, the encrypt → on_decrypt full round
 //! trip, and the shared-cache suites (`TestHierarchyClientESDKSuite` and
@@ -24,20 +22,22 @@
 //! configurations against the KeyStore directly, never through a keyring. See
 //! the comments on those two sections.
 //!
-//! Two Dafny suites are intentionally NOT ported here:
+//! One Dafny suite is intentionally NOT ported here:
 //! - `TestHierarchyClientDBESuite` — DBE algorithm suites are out of scope
 //!   for this Rust implementation (annotated `type=exception` on every DBE /
 //!   S3EC variant in `structures/algorithm_suite.rs`).
-//! - `TestBranchKeyIdSupplier` and `TestInvalidDataKeyError` — both require
-//!   two distinct branch keys configured under the SAME KEY_ARN. The team
-//!   keystore currently only has one such key (`BRANCH_KEY_ID`); the second
-//!   key (`POSTAL_HORN_BRANCH_KEY_ID`) is intentionally configured with a
-//!   mismatched kms-arn for ARN-disagreement tests. The supplier and
-//!   wrong-EC failure paths are fully covered by unit tests in
-//!   `test_aws_kms_hierarchical_keyring.rs::ondecrypt::*` (the
+//! - `TestBranchKeyIdSupplier` and `TestInvalidDataKeyError` — both need two
+//!   distinct, usable branch keys. Under a pinned `KmsKeyArn` keystore the team
+//!   fixtures do not provide that: only `BRANCH_KEY_ID` matches `KEY_ARN`, and
+//!   `POSTAL_HORN_BRANCH_KEY_ID` is deliberately configured with a mismatched
+//!   kms-arn. A Discovery keystore serves both (see the Discovery section
+//!   below), so these are now portable and left as a follow-up rather than a
+//!   limitation. Meanwhile the supplier and wrong-EC failure paths are covered
+//!   by unit tests in `test_aws_kms_hierarchical_keyring.rs` (the
 //!   `*_uses_branch_key_supplier_when_configured`,
 //!   `*_skips_edks_with_wrong_branch_key_id`, and `*_collects_per_edk_errors_*`
-//!   tests).
+//!   tests), which use keystore doubles to count calls — something a real
+//!   `BranchKeyStore` cannot expose.
 
 use std::sync::Arc;
 
@@ -88,6 +88,45 @@ async fn build_keystore() -> Arc<dyn Keystore> {
     )
 }
 
+/// Default TTL for the fixture keyrings, in seconds. Long enough that no test
+/// races an expiry.
+const FIXTURE_TTL_SECONDS: u64 = 3600;
+
+/// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
+/// default cache. Every test varies only these three things, so they share one
+/// fixture rather than repeating the six-argument constructor.
+fn keyring_for(
+    keystore: Arc<dyn Keystore>,
+    branch_key_id: &str,
+    partition: &str,
+) -> HierarchicalKeyring {
+    keyring_with_cache(
+        keystore,
+        branch_key_id,
+        partition,
+        CacheType::Default(DefaultCache::default()),
+    )
+}
+
+/// Same, with an explicit cache. Used by the shared-cache tests, which hand
+/// two keyrings the same `Arc<dyn Cmc>`.
+fn keyring_with_cache(
+    keystore: Arc<dyn Keystore>,
+    branch_key_id: &str,
+    partition: &str,
+    cache: CacheType,
+) -> HierarchicalKeyring {
+    HierarchicalKeyring::new(
+        keystore,
+        FIXTURE_TTL_SECONDS,
+        Some(branch_key_id.to_string()),
+        None,
+        Some(cache),
+        Some(partition.to_string()),
+    )
+    .expect("fixture keyring configuration must be valid")
+}
+
 /// Pick a non-signing suite so signing-key invariants don't intrude.
 fn non_signing_suite() -> AlgorithmSuiteId {
     AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
@@ -114,15 +153,7 @@ fn fresh_materials() -> EncryptionMaterials {
 #[tokio::test]
 async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
     let keystore = build_keystore().await;
-    let keyring = HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::default())),
-        Some("partition-id-integ".to_string()),
-    )
-    .unwrap();
+    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ");
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -170,15 +201,7 @@ async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
     use std::time::Instant;
 
     let keystore = build_keystore().await;
-    let keyring = HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::default())),
-        Some("partition-id-integ-cache".to_string()),
-    )
-    .unwrap();
+    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ-cache");
 
     let t0 = Instant::now();
     let _ = keyring.on_encrypt(fresh_materials()).await.unwrap();
@@ -210,15 +233,7 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     //      (DDB GetItem + KMS Decrypt for the version-specific record)
     //   5. branch_key_unwrap with the input DM's encryption context
     let keystore = build_keystore().await;
-    let keyring = HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::default())),
-        Some("partition-id-integ-decrypt".to_string()),
-    )
-    .unwrap();
+    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ-decrypt");
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -263,15 +278,7 @@ async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
     use std::time::Instant;
 
     let keystore = build_keystore().await;
-    let keyring = HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::default())),
-        Some("partition-id-integ-decrypt-cache".to_string()),
-    )
-    .unwrap();
+    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ-decrypt-cache");
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
@@ -310,7 +317,8 @@ async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
 // ─── Helpers for shared-cache tests ────────────────────────────────────────
 
 /// Build a KMS client pinned to the supplied region. Mirrors Dafny's
-/// `KMS.KMSClientForRegion`.
+/// `KMSClientForRegion`:
+/// <https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/Fixtures.dfy>
 async fn kms_client_for_region(region: &'static str) -> KmsClient {
     let cfg = aws_config::defaults(BehaviorVersion::latest())
         .region(Region::new(region))
@@ -404,15 +412,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     // not empty ... MUST use the existing plaintext data key") and the
     // produced EDK MUST round-trip back to the same PDK on decrypt.
     let keystore = build_keystore().await;
-    let keyring = HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::default())),
-        Some("partition-id-integ-existing-pdk".to_string()),
-    )
-    .unwrap();
+    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ-existing-pdk");
 
     let suite = non_signing_suite();
     let key_len = suite.specification().encryption_key_length();
@@ -483,24 +483,18 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
 
     let cache_arc = shared_cache_arc();
 
-    let hk1 = HierarchicalKeyring::new(
+    let hk1 = keyring_with_cache(
         keystore_west,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(Arc::clone(&cache_arc))),
-        Some("partitionId".to_string()),
-    )
-    .unwrap();
-    let hk2 = HierarchicalKeyring::new(
+        BRANCH_KEY_ID,
+        "partitionId",
+        CacheType::Shared(Arc::clone(&cache_arc)),
+    );
+    let hk2 = keyring_with_cache(
         keystore_east,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache_arc)),
-        Some("partitionId".to_string()),
-    )
-    .unwrap();
+        BRANCH_KEY_ID,
+        "partitionId",
+        CacheType::Shared(cache_arc),
+    );
 
     // HK2 encrypt fails first (cache empty, KMS region mismatch).
     let err = hk2.on_encrypt(shared_cache_materials()).await;
@@ -534,9 +528,12 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
 
     let cache_arc = shared_cache_arc();
 
+    // Not built through `keyring_for` / `keyring_with_cache`: those supply a
+    // partition id, and the point of this test is the `None` case, where each
+    // keyring generates its own distinct v4 UUID partition id.
     let hk1 = HierarchicalKeyring::new(
         keystore_west,
-        3600,
+        FIXTURE_TTL_SECONDS,
         Some(BRANCH_KEY_ID.to_string()),
         None,
         Some(CacheType::Shared(Arc::clone(&cache_arc))),
@@ -545,7 +542,7 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     .unwrap();
     let hk2 = HierarchicalKeyring::new(
         keystore_east,
-        3600,
+        FIXTURE_TTL_SECONDS,
         Some(BRANCH_KEY_ID.to_string()),
         None,
         Some(CacheType::Shared(cache_arc)),
@@ -583,24 +580,18 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
 
     let cache_arc = shared_cache_arc();
 
-    let hk1 = HierarchicalKeyring::new(
+    let hk1 = keyring_with_cache(
         keystore_west,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(Arc::clone(&cache_arc))),
-        Some("partitionIdHK1".to_string()),
-    )
-    .unwrap();
-    let hk2 = HierarchicalKeyring::new(
+        BRANCH_KEY_ID,
+        "partitionIdHK1",
+        CacheType::Shared(Arc::clone(&cache_arc)),
+    );
+    let hk2 = keyring_with_cache(
         keystore_east,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache_arc)),
-        Some("partitionIdHK2".to_string()),
-    )
-    .unwrap();
+        BRANCH_KEY_ID,
+        "partitionIdHK2",
+        CacheType::Shared(cache_arc),
+    );
 
     assert!(
         hk2.on_encrypt(shared_cache_materials()).await.is_err(),
@@ -633,24 +624,18 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
 
     let cache_arc = shared_cache_arc();
 
-    let hk1 = HierarchicalKeyring::new(
+    let hk1 = keyring_with_cache(
         keystore_west,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(Arc::clone(&cache_arc))),
-        Some("partitionId".to_string()),
-    )
-    .unwrap();
-    let hk2 = HierarchicalKeyring::new(
+        BRANCH_KEY_ID,
+        "partitionId",
+        CacheType::Shared(Arc::clone(&cache_arc)),
+    );
+    let hk2 = keyring_with_cache(
         keystore_east,
-        3600,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache_arc)),
-        Some("partitionId".to_string()),
-    )
-    .unwrap();
+        BRANCH_KEY_ID,
+        "partitionId",
+        CacheType::Shared(cache_arc),
+    );
 
     assert!(
         hk2.on_encrypt(shared_cache_materials()).await.is_err(),
@@ -701,22 +686,6 @@ async fn build_discovery_keystore() -> Arc<dyn Keystore> {
         .await
         .unwrap(),
     )
-}
-
-fn keyring_for(
-    keystore: Arc<dyn Keystore>,
-    branch_key_id: &str,
-    partition: &str,
-) -> HierarchicalKeyring {
-    HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(branch_key_id.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::default())),
-        Some(partition.to_string()),
-    )
-    .unwrap()
 }
 
 #[tokio::test]
