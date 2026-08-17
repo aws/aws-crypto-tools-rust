@@ -39,6 +39,59 @@ pub enum BranchKeySource {
     Supplier(Arc<dyn BranchKeySupplier>),
 }
 
+/// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
+/// `GetBranchKeyIdInput`, whose only member is the encryption context.
+///
+/// A struct rather than a bare `EncryptionContext` parameter so that a member
+/// added to the model later does not break every implementor of the trait.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GetBranchKeyIdInput {
+    encryption_context: EncryptionContext,
+}
+
+impl GetBranchKeyIdInput {
+    /// Construct the input from the encryption context of the operation being
+    /// performed.
+    #[must_use]
+    pub const fn new(encryption_context: EncryptionContext) -> Self {
+        Self { encryption_context }
+    }
+
+    /// The encryption context used with this encryption or decryption.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
+}
+
+/// Output of [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
+/// `GetBranchKeyIdOutput`, whose only member is the branch key id.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GetBranchKeyIdOutput {
+    branch_key_id: String,
+}
+
+impl GetBranchKeyIdOutput {
+    /// Construct the output from the chosen branch key id.
+    #[must_use]
+    pub const fn new(branch_key_id: String) -> Self {
+        Self { branch_key_id }
+    }
+
+    /// The identifier of the branch key that should wrap or unwrap the data
+    /// key for this operation.
+    #[must_use]
+    pub fn branch_key_id(&self) -> &str {
+        &self.branch_key_id
+    }
+
+    /// Consume the output, yielding the branch key id.
+    #[must_use]
+    pub fn into_branch_key_id(self) -> String {
+        self.branch_key_id
+    }
+}
+
 /// User-supplied callback that maps an encryption context to a branch key id.
 ///
 /// Implementations are typically used by callers running multi-tenant workloads
@@ -52,8 +105,8 @@ pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
     fn get_branch_key_id(
         &self,
-        encryption_context: &EncryptionContext,
-    ) -> Result<String, MaterialsError>;
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, MaterialsError>;
 }
 
 /// AWS KMS Hierarchical Keyring.
@@ -425,7 +478,13 @@ impl HierarchicalKeyring {
     ) -> Result<String, MaterialsError> {
         match &self.branch_key_source {
             BranchKeySource::Identifier(id) => Ok(id.clone()),
-            BranchKeySource::Supplier(supplier) => supplier.get_branch_key_id(encryption_context),
+            BranchKeySource::Supplier(supplier) => {
+                // The input owns its encryption context, so the clone happens
+                // only on the supplier arm — a static branch key id never pays
+                // for it.
+                let input = GetBranchKeyIdInput::new(encryption_context.clone());
+                Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
+            }
         }
     }
 

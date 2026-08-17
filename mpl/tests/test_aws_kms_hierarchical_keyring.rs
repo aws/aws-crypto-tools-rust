@@ -204,14 +204,19 @@ async fn branch_key_source_supplier_variant_compiles() {
     // keyring can be built with it. The enum is how the keyring requires
     // exactly one of a branch-key id or a supplier, so this covers the
     // supplier arm of that choice.
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
+        BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    };
     use aws_crypto_mpl::structures::MaterialsError;
 
     struct ConstSupplier(&'static str);
 
     impl BranchKeySupplier for ConstSupplier {
-        fn get_branch_key_id(&self, _ec: &EncryptionContext) -> Result<String, MaterialsError> {
-            Ok(self.0.to_string())
+        fn get_branch_key_id(
+            &self,
+            _input: GetBranchKeyIdInput,
+        ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+            Ok(GetBranchKeyIdOutput::new(self.0.to_string()))
         }
     }
 
@@ -1060,7 +1065,9 @@ mod onencrypt {
     use super::*;
     use std::sync::Mutex;
 
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
+        BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    };
     use aws_crypto_mpl::structures::{AlgorithmSuiteId, EncryptionMaterials, MaterialsError};
     use aws_crypto_mpl::{Keyring, KmsConfiguration};
 
@@ -1289,8 +1296,11 @@ mod onencrypt {
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
         struct FixedSupplier(&'static str);
         impl BranchKeySupplier for FixedSupplier {
-            fn get_branch_key_id(&self, _ec: &EncryptionContext) -> Result<String, MaterialsError> {
-                Ok(self.0.to_string())
+            fn get_branch_key_id(
+                &self,
+                _input: GetBranchKeyIdInput,
+            ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+                Ok(GetBranchKeyIdOutput::new(self.0.to_string()))
             }
         }
 
@@ -1322,7 +1332,9 @@ mod ondecrypt {
     use super::*;
     use std::sync::Mutex;
 
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
+        BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    };
     use aws_crypto_mpl::structures::{
         AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
         MaterialsError, PlaintextDataKey,
@@ -1809,8 +1821,11 @@ mod ondecrypt {
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
         struct FixedSupplier(&'static str);
         impl BranchKeySupplier for FixedSupplier {
-            fn get_branch_key_id(&self, _ec: &EncryptionContext) -> Result<String, MaterialsError> {
-                Ok(self.0.to_string())
+            fn get_branch_key_id(
+                &self,
+                _input: GetBranchKeyIdInput,
+            ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+                Ok(GetBranchKeyIdOutput::new(self.0.to_string()))
             }
         }
 
