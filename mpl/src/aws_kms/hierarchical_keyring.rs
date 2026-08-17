@@ -5,8 +5,9 @@
 //!
 //! Provides the keyring's construction and configuration surface, its
 //! OnEncrypt and OnDecrypt operations, and the keystore- / cache-fallthrough
-//! they share. Pure-crypto leaves live in [`super::branch_key_wrap`] and the
-//! cache identifier formulas in [`super::cache_entry_identifier`].
+//! they share. The pure-crypto wrap and unwrap operations live in
+//! [`super::branch_key_wrap`] and the cache identifier formulas in
+//! [`super::cache_entry_identifier`].
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};

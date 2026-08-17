@@ -5,7 +5,7 @@
 //!
 //! Covers, in order: construction and configuration validation (TTL,
 //! partition id, cache wiring), the cache entry identifier formulas, the
-//! branch-key wrap / unwrap / AAD leaves, and the OnEncrypt / OnDecrypt
+//! branch-key wrap / unwrap / AAD functions, and the OnEncrypt / OnDecrypt
 //! operations against keystore doubles.
 
 use std::sync::Arc;
