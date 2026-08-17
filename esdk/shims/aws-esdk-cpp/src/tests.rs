@@ -1,7 +1,9 @@
-//! Bridge-internal tests: translation helpers, null-handle checks, and the
-//! error-kind wire encoding. Everything here runs offline. Facade-observable
+//! Bridge-internal tests: translation helpers, null-handle checks, and inputs
+//! the facade cannot express. Everything here runs offline. Facade-observable
 //! behavior, including the credentialed integration coverage, lives in the C++
-//! suites under tests/.
+//! suites under tests/. The error wire encoding has no test of its own: every
+//! C++ typed-exception check on a Rust-produced error covers the encode and
+//! decode end to end.
 
 use super::*;
 use ffi::EsdkAlgorithmSuiteId as F;
@@ -280,12 +282,6 @@ fn encrypt_rejects_null_keyring() {
     //# materials source is supplied.
     let err = expect_err(encrypt(&unset_encrypt_input()));
     assert!(err.contains("keyring is null"), "unexpected error: {err}");
-    // A null keyring is inexpressible through the facade, so the kind pin
-    // (5 = ValidationError) lives here.
-    assert!(
-        err.starts_with(&format!("5{}encrypt: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
 }
 
 #[test]
@@ -524,57 +520,6 @@ fn test_raw_aes_keyring() -> Box<Keyring> {
         wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
     })
     .expect("create raw AES keyring")
-}
-
-#[test]
-fn streaming_decrypt_tamper_fails_at_finish() {
-    let keyring = test_raw_aes_keyring();
-
-    let mut enc_in = unset_encrypt_input();
-    enc_in.keyring = &*keyring as *const Keyring;
-    enc_in.algorithm_suite_id =
-        set_alg_id(ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
-    let mut ciphertext = encrypt_stream_write(&mut stream, b"stream tamper target").expect("write");
-    let fin = encrypt_stream_finish(&mut stream).expect("finish");
-    ciphertext.extend_from_slice(&fin.trailing_output);
-
-    *ciphertext.last_mut().unwrap() ^= 0xFF;
-
-    let mut dec_in = unset_decrypt_input();
-    dec_in.keyring = &*keyring as *const Keyring;
-    let mut stream = create_decrypt_stream(&dec_in).expect("create decrypt stream");
-    // Feeding may or may not surface the failure (the pump is asynchronous);
-    // finish MUST fail with the core's CryptographicError kind either way.
-    let mut failed = None;
-    for chunk in ciphertext.chunks(7) {
-        if let Err(e) = decrypt_stream_write(&mut stream, chunk) {
-            failed = Some(e);
-            break;
-        }
-    }
-    let err = match failed {
-        Some(e) => e,
-        None => expect_err(decrypt_stream_finish(&mut stream)),
-    };
-    assert!(
-        err.starts_with(&format!("2{}decrypt_stream: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
-}
-
-#[test]
-fn streaming_write_after_finish_is_invalid_input() {
-    let keyring = test_raw_aes_keyring();
-    let mut enc_in = unset_encrypt_input();
-    enc_in.keyring = &*keyring as *const Keyring;
-    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
-    encrypt_stream_finish(&mut stream).expect("finish");
-    let err = expect_err(encrypt_stream_write(&mut stream, b"late"));
-    assert!(
-        err.starts_with(&format!("5{}encrypt_stream: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
 }
 
 #[test]
