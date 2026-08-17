@@ -815,3 +815,23 @@ fn create_cache_rejects_capacity_over_i32_limit() {
         "unexpected error: {err}"
     );
 }
+
+
+// create_encrypt_stream/create_decrypt_stream forward max-EDKs and commitment
+// policy on their own option paths, separate from apply_encrypt/decrypt_options.
+#[test]
+fn create_streams_forward_max_edks_and_commitment() {
+    let keyring = test_raw_aes_keyring();
+
+    let mut enc_in = unset_encrypt_input();
+    enc_in.keyring = &*keyring as *const Keyring;
+    enc_in.max_encrypted_data_keys = set_u32(3);
+    enc_in.commitment_policy = set_policy(P::RequireEncryptRequireDecrypt);
+    create_encrypt_stream(&enc_in).expect("encrypt stream with max-edks + policy");
+
+    let mut dec_in = unset_decrypt_input();
+    dec_in.keyring = &*keyring as *const Keyring;
+    dec_in.max_encrypted_data_keys = set_u32(3);
+    dec_in.commitment_policy = set_policy(P::RequireEncryptRequireDecrypt);
+    create_decrypt_stream(&dec_in).expect("decrypt stream with max-edks + policy");
+}
