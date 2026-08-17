@@ -27,18 +27,6 @@ use crate::structures::{
     EncryptionMaterials, MaterialsError, PlaintextDataKey,
 };
 
-/// Identifier source for the hierarchical keyring's branch key.
-///
-/// A keyring is built with exactly one of a static branch-key id or a
-/// [`BranchKeySupplier`]; this enum enforces that at the type level.
-pub enum BranchKeySource {
-    /// A static branch-key id chosen at construction time.
-    Identifier(String),
-    /// A user-supplied [`BranchKeySupplier`] that selects a branch key id
-    /// at OnEncrypt / OnDecrypt time based on the encryption context.
-    Supplier(Arc<dyn BranchKeySupplier>),
-}
-
 /// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
 /// `GetBranchKeyIdInput`, whose only member is the encryption context.
 ///
@@ -119,7 +107,14 @@ pub struct HierarchicalKeyring {
 
     ttl_seconds: u64,
 
-    branch_key_source: BranchKeySource,
+    /// The single branch key id this keyring wraps and unwraps with, when
+    /// configured with one. Exactly one of this and `branch_key_id_supplier`
+    /// is `Some`, checked in [`HierarchicalKeyring::new`].
+    branch_key_id: Option<String>,
+
+    /// The supplier that chooses a branch key id per operation, when
+    /// configured with one instead of a static `branch_key_id`.
+    branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
 
     partition_id_bytes: Vec<u8>,
 
@@ -147,13 +142,25 @@ impl HierarchicalKeyring {
     pub fn new(
         keystore: Arc<dyn Keystore>,
         ttl_seconds: u64,
-        branch_key_source: BranchKeySource,
+        branch_key_id: Option<String>,
+        branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
         cache_type: Option<CacheType>,
         partition_id: Option<String>,
     ) -> Result<Self, MaterialsError> {
         if ttl_seconds == 0 {
             return Err(MaterialsError::new(
                 "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",
+            ));
+        }
+
+        if branch_key_id.is_some() && branch_key_id_supplier.is_some() {
+            return Err(MaterialsError::new(
+                "Cannot initialize keyring with both a branch_key_id and a branch_key_id_supplier",
+            ));
+        }
+        if branch_key_id.is_none() && branch_key_id_supplier.is_none() {
+            return Err(MaterialsError::new(
+                "Must initialize keyring with either a branch_key_id or a branch_key_id_supplier",
             ));
         }
 
@@ -223,7 +230,8 @@ impl HierarchicalKeyring {
         Ok(Self {
             keystore,
             ttl_seconds,
-            branch_key_source,
+            branch_key_id,
+            branch_key_id_supplier,
             partition_id_bytes,
             logical_keystore_name,
             cache,
@@ -235,10 +243,16 @@ impl HierarchicalKeyring {
         self.ttl_seconds
     }
 
-    /// The source from which a branch key id is resolved (a static identifier
-    /// or a [`BranchKeySupplier`]).
-    pub fn branch_key_source(&self) -> &BranchKeySource {
-        &self.branch_key_source
+    /// The configured static branch key id, if this keyring was built with one
+    /// rather than with a [`BranchKeySupplier`].
+    pub fn branch_key_id(&self) -> Option<&str> {
+        self.branch_key_id.as_deref()
+    }
+
+    /// The configured branch key id supplier, if this keyring was built with
+    /// one rather than with a static branch key id.
+    pub fn branch_key_id_supplier(&self) -> Option<&Arc<dyn BranchKeySupplier>> {
+        self.branch_key_id_supplier.as_ref()
     }
 
     /// The configured keystore.
@@ -476,16 +490,22 @@ impl HierarchicalKeyring {
         &self,
         encryption_context: &EncryptionContext,
     ) -> Result<String, MaterialsError> {
-        match &self.branch_key_source {
-            BranchKeySource::Identifier(id) => Ok(id.clone()),
-            BranchKeySource::Supplier(supplier) => {
-                // The input owns its encryption context, so the clone happens
-                // only on the supplier arm — a static branch key id never pays
-                // for it.
-                let input = GetBranchKeyIdInput::new(encryption_context.clone());
-                Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
-            }
+        if let Some(id) = &self.branch_key_id {
+            return Ok(id.clone());
         }
+
+        // `new` rejects the configuration where neither is set, so reaching
+        // here means the supplier is present.
+        let Some(supplier) = &self.branch_key_id_supplier else {
+            return Err(MaterialsError::new(
+                "HierarchicalKeyring: neither a branch_key_id nor a branch_key_id_supplier is configured",
+            ));
+        };
+
+        // The input owns its encryption context, so the clone happens only on
+        // the supplier path — a static branch key id never pays for it.
+        let input = GetBranchKeyIdInput::new(encryption_context.clone());
+        Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
     }
 
     /// Run the OnDecrypt steps for a single (already-filtered) EDK:

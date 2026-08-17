@@ -19,7 +19,7 @@ use aws_crypto_mpl::aws_kms::__test_internals::{
     build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-    BranchKeySource, HierarchicalKeyring, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
+    HierarchicalKeyring, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
@@ -74,7 +74,8 @@ async fn new_with_zero_ttl_returns_validation_error() {
     let result = HierarchicalKeyring::new(
         keystore,
         0, // zero TTL — must be rejected
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None,
     );
@@ -96,12 +97,68 @@ async fn new_with_zero_ttl_returns_validation_error() {
 }
 
 #[tokio::test]
+async fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
+    // The keyring takes branchKeyId and branchKeyIdSupplier as two optional
+    // inputs, mirroring CreateAwsKmsHierarchicalKeyringInput, so the "exactly
+    // one" rule is enforced here rather than by the type system.
+    use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
+        BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+    };
+    use aws_crypto_mpl::structures::MaterialsError;
+
+    struct NoopSupplier;
+    impl BranchKeySupplier for NoopSupplier {
+        fn get_branch_key_id(
+            &self,
+            _input: GetBranchKeyIdInput,
+        ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+            Ok(GetBranchKeyIdOutput::new("unused".to_string()))
+        }
+    }
+
+    let err = match HierarchicalKeyring::new(
+        real_keystore().await,
+        3600,
+        Some("branch-key-id".to_string()),
+        Some(Arc::new(NoopSupplier) as Arc<dyn BranchKeySupplier>),
+        None,
+        None,
+    ) {
+        Err(e) => e,
+        Ok(_) => panic!("supplying both a branch_key_id and a supplier MUST be rejected"),
+    };
+
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(
+        err.message.contains("both"),
+        "error should identify the both-supplied case; got: {}",
+        err.message,
+    );
+}
+
+#[tokio::test]
+async fn new_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
+    let err = match HierarchicalKeyring::new(real_keystore().await, 3600, None, None, None, None) {
+        Err(e) => e,
+        Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
+    };
+
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(
+        err.message.contains("either"),
+        "error should identify the neither-supplied case; got: {}",
+        err.message,
+    );
+}
+
+#[tokio::test]
 async fn new_with_positive_ttl_succeeds() {
     let keystore = real_keystore().await;
     let result = HierarchicalKeyring::new(
         keystore,
         1, // smallest legal TTL
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         None,
     );
@@ -116,7 +173,8 @@ async fn partition_id_default_is_16_byte_v4_uuid() {
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None, // no partition id supplied → must default to v4 UUID bytes
     )
@@ -155,7 +213,8 @@ async fn partition_id_default_two_calls_are_distinct() {
     let a = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None,
     )
@@ -164,7 +223,8 @@ async fn partition_id_default_two_calls_are_distinct() {
     let b = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None,
     )
@@ -188,7 +248,8 @@ async fn partition_id_provided_is_utf8_round_tripped() {
     let keyring = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         Some(original.to_string()),
     )
@@ -198,12 +259,10 @@ async fn partition_id_provided_is_utf8_round_tripped() {
 }
 
 #[tokio::test]
-async fn branch_key_source_supplier_variant_compiles() {
-    // Smoke test that the BranchKeySource::Supplier variant is usable —
-    // construct a no-op supplier, store it in the enum, and confirm the
-    // keyring can be built with it. The enum is how the keyring requires
-    // exactly one of a branch-key id or a supplier, so this covers the
-    // supplier arm of that choice.
+async fn new_with_branch_key_id_supplier_succeeds() {
+    // Smoke test that configuring a supplier instead of a static branch key
+    // id is usable — construct a no-op supplier, pass it as the
+    // branch_key_id_supplier, and confirm the keyring can be built with it.
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
         BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
     };
@@ -224,16 +283,18 @@ async fn branch_key_source_supplier_variant_compiles() {
     let keyring = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Supplier(supplier),
+        None,
+        Some(supplier),
         None,
         None,
     )
     .expect("constructor with supplier variant must succeed");
 
-    assert!(matches!(
-        keyring.branch_key_source(),
-        BranchKeySource::Supplier(_)
-    ));
+    assert!(
+        keyring.branch_key_id().is_none(),
+        "a supplier-configured keyring MUST NOT carry a static branch key id"
+    );
+    assert!(keyring.branch_key_id_supplier().is_some());
 }
 
 // ─── Cache wiring tests: which Cmc a given CacheType produces ───────────────
@@ -243,7 +304,8 @@ async fn new_with_default_cache_succeeds() {
     let keyring = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         None,
     )
@@ -257,7 +319,8 @@ async fn new_with_cache_type_none_uses_default() {
     let keyring = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         None,
         None,
     )
@@ -275,7 +338,8 @@ async fn new_with_shared_cache_round_trips_provided_arc() {
     let keyring = HierarchicalKeyring::new(
         real_keystore().await,
         3600,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::Shared(supplied)),
         None,
     )
@@ -308,7 +372,8 @@ async fn new_with_storm_tracking_cache_succeeds() {
     let keyring = HierarchicalKeyring::new(
         real_keystore().await,
         3600, // ttl_seconds — strictly greater than grace_period (60).
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     )
@@ -333,7 +398,8 @@ async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
     let err = match HierarchicalKeyring::new(
         real_keystore().await,
         60, // ttl_seconds == grace_period — must fail.
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     ) {
@@ -364,7 +430,8 @@ async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
     let err = match HierarchicalKeyring::new(
         real_keystore().await,
         60,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     ) {
@@ -398,7 +465,8 @@ async fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() 
     HierarchicalKeyring::new(
         real_keystore().await,
         60,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     )
@@ -1182,7 +1250,8 @@ mod onencrypt {
         HierarchicalKeyring::new(
             keystore,
             3600,
-            BranchKeySource::Identifier(branch_key_id.to_string()),
+            Some(branch_key_id.to_string()),
+            None,
             Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
@@ -1276,7 +1345,8 @@ mod onencrypt {
         let keyring = HierarchicalKeyring::new(
             Arc::new(FailingKeystore) as Arc<dyn Keystore>,
             3600,
-            BranchKeySource::Identifier("bk".to_string()),
+            Some("bk".to_string()),
+            None,
             Some(CacheType::Default(DefaultCache::default())),
             None,
         )
@@ -1308,7 +1378,8 @@ mod onencrypt {
         let keyring = HierarchicalKeyring::new(
             Arc::clone(&keystore) as Arc<dyn Keystore>,
             3600,
-            BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
+            None,
+            Some(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID)) as Arc<dyn BranchKeySupplier>),
             Some(CacheType::Default(DefaultCache::default())),
             None,
         )
@@ -1488,7 +1559,8 @@ mod ondecrypt {
         HierarchicalKeyring::new(
             keystore,
             3600,
-            BranchKeySource::Identifier(branch_key_id.to_string()),
+            Some(branch_key_id.to_string()),
+            None,
             Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
@@ -1799,7 +1871,8 @@ mod ondecrypt {
         let keyring = HierarchicalKeyring::new(
             Arc::new(FailingKeystore) as Arc<dyn Keystore>,
             3600,
-            BranchKeySource::Identifier(FIXED_BRANCH_KEY_ID.to_string()),
+            Some(FIXED_BRANCH_KEY_ID.to_string()),
+            None,
             Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )
@@ -1833,7 +1906,8 @@ mod ondecrypt {
         let keyring = HierarchicalKeyring::new(
             Arc::clone(&keystore) as Arc<dyn Keystore>,
             3600,
-            BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
+            None,
+            Some(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID)) as Arc<dyn BranchKeySupplier>),
             Some(CacheType::Default(DefaultCache::default())),
             Some("partition-id".to_string()),
         )

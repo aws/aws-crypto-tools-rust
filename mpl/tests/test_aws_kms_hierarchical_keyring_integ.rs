@@ -46,7 +46,7 @@ use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{BranchKeySource, HierarchicalKeyring};
+use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
@@ -117,7 +117,8 @@ async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ".to_string()),
     )
@@ -172,7 +173,8 @@ async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-cache".to_string()),
     )
@@ -211,7 +213,8 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-decrypt".to_string()),
     )
@@ -263,7 +266,8 @@ async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-decrypt-cache".to_string()),
     )
@@ -403,7 +407,8 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         Some("partition-id-integ-existing-pdk".to_string()),
     )
@@ -481,7 +486,8 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
     let hk1 = HierarchicalKeyring::new(
         keystore_west,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(Arc::clone(&cache_arc))),
         Some("partitionId".to_string()),
     )
@@ -489,7 +495,8 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
     let hk2 = HierarchicalKeyring::new(
         keystore_east,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(cache_arc)),
         Some("partitionId".to_string()),
     )
@@ -530,7 +537,8 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     let hk1 = HierarchicalKeyring::new(
         keystore_west,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(Arc::clone(&cache_arc))),
         None,
     )
@@ -538,7 +546,8 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     let hk2 = HierarchicalKeyring::new(
         keystore_east,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(cache_arc)),
         None,
     )
@@ -577,7 +586,8 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
     let hk1 = HierarchicalKeyring::new(
         keystore_west,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(Arc::clone(&cache_arc))),
         Some("partitionIdHK1".to_string()),
     )
@@ -585,7 +595,8 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
     let hk2 = HierarchicalKeyring::new(
         keystore_east,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(cache_arc)),
         Some("partitionIdHK2".to_string()),
     )
@@ -625,7 +636,8 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
     let hk1 = HierarchicalKeyring::new(
         keystore_west,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(Arc::clone(&cache_arc))),
         Some("partitionId".to_string()),
     )
@@ -633,7 +645,8 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
     let hk2 = HierarchicalKeyring::new(
         keystore_east,
         3600,
-        BranchKeySource::Identifier(BRANCH_KEY_ID.to_string()),
+        Some(BRANCH_KEY_ID.to_string()),
+        None,
         Some(CacheType::Shared(cache_arc)),
         Some("partitionId".to_string()),
     )
@@ -698,7 +711,8 @@ fn keyring_for(
     HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier(branch_key_id.to_string()),
+        Some(branch_key_id.to_string()),
+        None,
         Some(CacheType::Default(DefaultCache::default())),
         Some(partition.to_string()),
     )
