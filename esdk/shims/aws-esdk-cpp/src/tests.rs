@@ -816,7 +816,6 @@ fn create_cache_rejects_capacity_over_i32_limit() {
     );
 }
 
-
 // create_encrypt_stream/create_decrypt_stream forward max-EDKs and commitment
 // policy on their own option paths, separate from apply_encrypt/decrypt_options.
 #[test]
@@ -834,4 +833,154 @@ fn create_streams_forward_max_edks_and_commitment() {
     dec_in.max_encrypted_data_keys = set_u32(3);
     dec_in.commitment_policy = set_policy(P::RequireEncryptRequireDecrypt);
     create_decrypt_stream(&dec_in).expect("decrypt stream with max-edks + policy");
+}
+
+#[test]
+fn classify_core_error_maps_each_kind() {
+    use aws_esdk::ErrorKind;
+    // ErrorKind::Esdk has no explicit arm; it maps through the wildcard.
+    let cases = [
+        (ErrorKind::Esdk, ffi::ShimErrorKind::Esdk),
+        (
+            ErrorKind::SerializationError,
+            ffi::ShimErrorKind::SerializationError,
+        ),
+        (
+            ErrorKind::CryptographicError,
+            ffi::ShimErrorKind::CryptographicError,
+        ),
+        (ErrorKind::MplError, ffi::ShimErrorKind::MplError),
+        (
+            ErrorKind::ValidationError,
+            ffi::ShimErrorKind::ValidationError,
+        ),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(
+            classify_core_error(&kind).repr,
+            expected.repr,
+            "for {kind:?}"
+        );
+    }
+}
+
+#[test]
+fn channel_reader_and_writer_debug() {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let reader = ChannelReader {
+        rx: std::sync::Mutex::new(rx),
+        pending: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(format!("{reader:?}"), "ChannelReader");
+    let writer = ChannelWriter { tx };
+    assert_eq!(format!("{writer:?}"), "ChannelWriter");
+}
+
+#[test]
+fn channel_writer_flush_is_noop_and_reports_broken_pipe() {
+    use std::io::Write;
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let mut writer = ChannelWriter { tx };
+    writer.flush().expect("flush is a no-op");
+    // A non-empty write forwards the bytes and returns the count.
+    assert_eq!(writer.write(b"data").expect("write succeeds"), 4);
+    assert_eq!(rx.recv().unwrap(), b"data");
+    // An empty write is a no-op poll.
+    assert_eq!(writer.write(b"").expect("empty write"), 0);
+    // Receiver gone: a non-empty write reports the broken pipe.
+    drop(rx);
+    let err = writer
+        .write(b"more")
+        .expect_err("write must fail once the receiver is gone");
+    assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+}
+
+// A panicking worker: finish joins it and reports the panic. The worker's
+// panic message prints to stderr; the join converts it to an error.
+#[test]
+fn stream_finish_surfaces_worker_panic() {
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker boom"));
+    let err = expect_err(state.finish());
+    assert!(
+        err.contains("stream worker panicked"),
+        "unexpected error: {err}"
+    );
+}
+
+// A worker that fails drops its reader; the next write can't send and must
+// surface the worker's error rather than report success.
+#[test]
+fn stream_write_after_worker_failure_surfaces_error() {
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| {
+        Err("worker failed".to_string())
+    });
+    let mut surfaced = None;
+    for _ in 0..200 {
+        match state.write(b"data") {
+            Ok(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(e) => {
+                surfaced = Some(e);
+                break;
+            }
+        }
+    }
+    let err = surfaced.expect("write must surface the failed worker");
+    assert!(err.contains("worker failed"), "unexpected error: {err}");
+}
+
+fn keystore_config_with_clients(kms: &MplKmsClient, ddb: &MplDdbClient) -> ffi::KeyStoreConfig {
+    let mut cfg = unset_keystore_config();
+    cfg.kms_client = kms as *const MplKmsClient;
+    cfg.ddb_client = ddb as *const MplDdbClient;
+    cfg.ddb_table_name = "valid-table-name".to_string();
+    cfg.logical_key_store_name = "valid-table-name".to_string();
+    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsKeyArn;
+    cfg.kms_configuration_value = "arn:aws:kms:us-west-2:000000000000:key/test".to_string();
+    cfg
+}
+
+#[test]
+fn create_keystore_reports_config_and_build_errors() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+
+    // Unset KMS configuration type: make_kms_config's error propagates.
+    let mut unset_kms = keystore_config_with_clients(&kms, &ddb);
+    unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
+    let err = expect_err(create_keystore(&unset_kms));
+    assert!(
+        err.contains("kms_configuration_type is unset"),
+        "unexpected error: {err}"
+    );
+
+    // Table name shorter than the core's minimum: from_conf rejects the value.
+    let mut short_table = keystore_config_with_clients(&kms, &ddb);
+    short_table.ddb_table_name = "ab".to_string();
+    let err = expect_err(create_keystore(&short_table));
+    assert!(err.contains("ddb_table_name"), "unexpected error: {err}");
+}
+
+#[test]
+fn create_hierarchical_keyring_reports_bad_cache() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = &*keystore as *const KeyStore;
+    input.cache = ffi::OptCacheType {
+        set: true,
+        value: ffi::CacheType {
+            kind: ffi::CacheKind { repr: 99 },
+            entry_capacity: 0,
+            entry_pruning_tail_size: unset_u32(),
+            shared: std::ptr::null(),
+        },
+    };
+    let err = expect_err(create_hierarchical_keyring(&input));
+    assert!(
+        err.contains("unrecognized or unset cache kind"),
+        "unexpected error: {err}"
+    );
 }
