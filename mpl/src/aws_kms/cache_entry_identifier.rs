@@ -3,10 +3,10 @@
 
 //! Cache entry identifier formulas for the AWS KMS Hierarchical Keyring.
 //!
-//! Implements the SHA-384 cache key derivation specified in Appendix A of
-//! `aws-kms-hierarchical-keyring.md`. [`build_cache_identifier`] is the only
-//! entry point and serves both OnEncrypt and OnDecrypt: the caller passes the
-//! scope byte for the operation it is performing.
+//! [`build_cache_identifier`] is the only entry point and serves both
+//! OnEncrypt and OnDecrypt: the caller passes the scope byte for the
+//! operation it is performing, and gets back the 48-byte SHA-384 digest used
+//! as the cache identifier.
 //!
 //! Users of the Hierarchical Keyring MUST NEVER configure two different
 //! physical Key Stores with the same Logical Key Store Name — the formulas
@@ -32,20 +32,6 @@ const NULL_BYTE: u8 = 0x00;
 /// freshly-generated v4 UUID). `branch_key_version`, when present, is the
 /// version string (typically a UUID, 36 UTF-8 characters) of the branch key
 /// that wrapped the data key being decrypted.
-///
-/// The byte layout is exactly the formula given in
-/// `aws-kms-hierarchical-keyring.md#encryption-materials` /
-/// `#decryption-materials`:
-///
-/// ```text
-/// SHA-384(
-///     resource_id || 0x00 || scope_id || 0x00 ||
-///     partition_id || 0x00 ||
-///     UTF8(logical_key_store_name) || 0x00 ||
-///     UTF8(branch_key_id)
-///     [|| 0x00 || UTF8(branch_key_version)]   // OnDecrypt only
-/// )
-/// ```
 pub fn build_cache_identifier(
     scope_id: u8,
     partition_id: &[u8],

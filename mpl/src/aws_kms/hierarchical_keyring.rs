@@ -8,10 +8,6 @@
 //! they share. Pure-crypto leaves live in [`super::branch_key_wrap`] and the
 //! cache identifier formulas in [`super::cache_entry_identifier`].
 
-// Implements spec/framework/aws-kms/aws-kms-hierarchical-keyring.md:
-// #initialization, #partition-id, #cache-type, #cache-limit-ttl, #onencrypt
-// and #ondecrypt.
-
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -30,22 +26,16 @@ use crate::structures::{
 };
 
 /// Default entry capacity for the keyring-local CMC.
-// #initialization: "If no max cache size is provided, the cryptographic
-// materials cache MUST be configured to a max cache size of 1000."
 const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
 /// Default entry-pruning tail size for the keyring-local CMC. 64 strikes a
 /// reasonable balance between pruning amortization and per-`get` work.
-// Only `entry_capacity` (above) is constrained by #initialization; the
-// pruning tail size is an implementation choice.
 const DEFAULT_CACHE_PRUNING_TAIL_SIZE: usize = 64;
 
 /// Identifier source for the hierarchical keyring's branch key.
 ///
 /// A keyring is built with exactly one of a static branch-key id or a
 /// [`BranchKeySupplier`]; this enum enforces that at the type level.
-// #initialization: "On initialization, the caller … MUST provide either a
-// Branch Key Identifier or a Branch Key Supplier".
 pub enum BranchKeySource {
     /// A static branch-key id chosen at construction time.
     Identifier(String),
@@ -280,8 +270,8 @@ impl StormTrackingCacheBuilder {
 ///
 /// The three variants are a keyring-local default cache, an
 /// externally-supplied `Shared` cache that may be reused across multiple
-/// Cryptographic Material Providers, and a keyring-local Storm-tracking
-/// cache for high-fan-out workloads.
+/// Hierarchical Keyrings or Cryptographic Material Providers, and a
+/// keyring-local Storm-tracking cache for high-fan-out workloads.
 #[non_exhaustive]
 pub enum CacheType {
     /// A keyring-local [`LocalCmc`] configured by the carried
@@ -302,10 +292,15 @@ pub enum CacheType {
 ///
 /// Implementations are typically used by callers running multi-tenant workloads
 /// who want to pick the branch key based on encryption-context metadata.
-#[async_trait]
+///
+/// The decision is made from the encryption context alone, so this method is
+/// synchronous. An implementation that must perform IO to reach its answer is
+/// responsible for bridging to it itself (for example
+/// `tokio::task::block_in_place`), rather than every consumer paying for an
+/// async callback that almost none of them need.
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
-    async fn get_branch_key_id(
+    fn get_branch_key_id(
         &self,
         encryption_context: &EncryptionContext,
     ) -> Result<String, MaterialsError>;
@@ -326,9 +321,7 @@ pub struct HierarchicalKeyring {
     partition_id_bytes: Vec<u8>,
 
     /// The keystore's logical name, resolved once at construction. The cache
-    /// identifier formulas bind it, and it is keystore configuration fixed
-    /// before the keystore was handed to this keyring, so re-reading it on
-    /// every operation would return the same value.
+    /// identifier formulas bind it.
     logical_keystore_name: String,
 
     /// Cryptographic-materials cache for branch-key materials. Either a
@@ -409,7 +402,7 @@ impl HierarchicalKeyring {
 
         let partition_id_bytes = match partition_id {
             Some(s) => s.into_bytes(),
-            None => generate_v4_uuid_bytes()?,
+            None => generate_partition_id()?,
         };
 
         // Resolve the keystore's logical name once, here, so the OnEncrypt and
@@ -469,12 +462,12 @@ impl HierarchicalKeyring {
     }
 }
 
-/// Generate the 16-byte representation of a fresh v4 UUID, drawing the
-/// randomness from the `aws-mpl-primitives` CSPRNG rather than the `uuid`
-/// crate's own entropy source, so all randomness in this crate comes from
-/// one audited primitive. `Builder::from_random_bytes` sets the version and
-/// variant bits.
-fn generate_v4_uuid_bytes() -> Result<Vec<u8>, MaterialsError> {
+/// Generate a default partition id: the 16-byte representation of a fresh v4
+/// UUID, drawing the randomness from the `aws-mpl-primitives` CSPRNG rather
+/// than the `uuid` crate's own entropy source, so all randomness in this crate
+/// comes from one audited primitive. `Builder::from_random_bytes` sets the
+/// version and variant bits.
+fn generate_partition_id() -> Result<Vec<u8>, MaterialsError> {
     let mut bytes = [0u8; 16];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
         MaterialsError::new(
@@ -503,9 +496,7 @@ impl Keyring for HierarchicalKeyring {
         &self,
         materials: EncryptionMaterials,
     ) -> Result<EncryptionMaterials, MaterialsError> {
-        let branch_key_id = self
-            .resolve_branch_key_id(materials.encryption_context())
-            .await?;
+        let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let plaintext_dk = match materials.plaintext_data_key() {
             Some(pdk) => pdk.clone(),
@@ -528,7 +519,7 @@ impl Keyring for HierarchicalKeyring {
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.ttl_seconds) => {
-                let bkm = unwrap_branch_key_materials(&entry)?;
+                let bkm = as_branch_key_materials(&entry)?;
                 branch_key_wrap::wrap(bkm, materials.encryption_context(), plaintext_dk.as_bytes())?
             }
             _ => {
@@ -601,9 +592,7 @@ impl Keyring for HierarchicalKeyring {
             ));
         }
 
-        let branch_key_id = self
-            .resolve_branch_key_id(materials.encryption_context())
-            .await?;
+        let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let mut collected_errors: Vec<String> = Vec::new();
         for edk in encrypted_data_keys {
@@ -647,19 +636,16 @@ impl Keyring for HierarchicalKeyring {
 
 /// UTF-8-encoded key-provider-id sentinel for EDKs produced by the
 /// AWS KMS Hierarchical Keyring.
-// #onencrypt: "key provider id: MUST be UTF8 Encoded `aws-kms-hierarchy`".
 const KEY_PROVIDER_ID_HIERARCHY: &str = "aws-kms-hierarchy";
 
 /// On-wire byte offset of the 16-byte branch-key version in an EDK
 /// ciphertext produced by [`branch_key_wrap::wrap`].
-// #ciphertext gives the layout
-// `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`,
-// so the version starts at `salt + iv = 16 + 12 = 28`.
+// The layout is `salt(16) || iv(12) || version(16) || encrypted_key(var) ||
+// tag(16)`, so the version starts at `salt + iv = 16 + 12 = 28`.
 const CIPHERTEXT_VERSION_OFFSET: usize = 16 + 12;
 
-/// On-wire byte length of the branch-key version in an EDK ciphertext.
-// #ciphertext: the version is the 16-byte representation of the UUID
-// branch-key version.
+/// On-wire byte length of the branch-key version in an EDK ciphertext: the
+/// 16-byte representation of the UUID branch-key version.
 const CIPHERTEXT_VERSION_LEN: usize = 16;
 
 /// Cache-identifier scope byte for OnEncrypt, passed to
@@ -667,7 +653,6 @@ const CIPHERTEXT_VERSION_LEN: usize = 16;
 ///
 /// Hidden from the public API surface; intended for tests that recompute the
 /// identifier independently of the keyring.
-// #encryption-materials gives the encrypt scope as 0x01.
 #[doc(hidden)]
 pub const SCOPE_ID_ENCRYPT: u8 = 0x01;
 
@@ -676,7 +661,6 @@ pub const SCOPE_ID_ENCRYPT: u8 = 0x01;
 ///
 /// Hidden from the public API surface; intended for tests that recompute the
 /// identifier independently of the keyring.
-// #decryption-materials gives the decrypt scope as 0x02.
 #[doc(hidden)]
 pub const SCOPE_ID_DECRYPT: u8 = 0x02;
 
@@ -684,15 +668,13 @@ impl HierarchicalKeyring {
     /// Resolve the branch-key id for this operation: either the
     /// configured static value or the supplier callback's output bound
     /// to the current encryption context.
-    async fn resolve_branch_key_id(
+    fn resolve_branch_key_id(
         &self,
         encryption_context: &EncryptionContext,
     ) -> Result<String, MaterialsError> {
         match &self.branch_key_source {
             BranchKeySource::Identifier(id) => Ok(id.clone()),
-            BranchKeySource::Supplier(supplier) => {
-                supplier.get_branch_key_id(encryption_context).await
-            }
+            BranchKeySource::Supplier(supplier) => supplier.get_branch_key_id(encryption_context),
         }
     }
 
@@ -711,10 +693,10 @@ impl HierarchicalKeyring {
         branch_key_id: &str,
     ) -> Result<Vec<u8>, MaterialsError> {
         // Parse the 16-byte branch-key version out of the on-wire layout
-        // `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`
-        // (per `#ciphertext`). branch_key_wrap::unwrap re-validates the
-        // full layout (including the trailing 16-byte tag) before doing
-        // the AES-GCM open; here we only need the slice for the version.
+        // `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`.
+        // branch_key_wrap::unwrap re-validates the full layout (including the
+        // trailing 16-byte tag) before doing the AES-GCM open; here we only
+        // need the slice for the version.
         let ciphertext = &edk.ciphertext;
         if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
             return Err(MaterialsError::keyring_failed(format!(
@@ -746,7 +728,7 @@ impl HierarchicalKeyring {
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.ttl_seconds) => {
-                unwrap_branch_key_materials(&entry)?.clone()
+                as_branch_key_materials(&entry)?.clone()
             }
             _ => {
                 let bkm = self
@@ -796,7 +778,6 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, M
 
 /// Whether a cache entry is still within its TTL:
 /// `time.now() - cacheEntryCreationTime <= ttlSeconds`.
-// `cacheEntryWithinLimits` in #onencrypt / #ondecrypt.
 fn cache_entry_within_limits(entry: &CacheEntry, ttl_seconds: u64) -> bool {
     let now = SystemTime::now();
     let elapsed = now
@@ -808,7 +789,7 @@ fn cache_entry_within_limits(entry: &CacheEntry, ttl_seconds: u64) -> bool {
 /// Extract a borrowed [`BranchKeyMaterials`] reference from a cache
 /// entry, failing if the entry holds non-branch-key materials (which
 /// would indicate a cache identifier collision).
-fn unwrap_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, MaterialsError> {
+fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, MaterialsError> {
     match &entry.materials {
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
         _ => Err(MaterialsError::keyring_failed(

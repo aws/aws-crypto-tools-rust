@@ -3,15 +3,9 @@
 
 //! Branch-key wrapping/unwrapping primitives for the AWS KMS Hierarchical Keyring.
 //!
-//! Implements the [Branch Key Wrapping](
-//! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping),
-//! [Branch Key Unwrapping](
-//! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping),
-//! and [Branch Key Wrapping and Unwrapping AAD](
-//! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad)
-//! sections — pure crypto leaves over `aws-mpl-primitives`, with no
-//! cache or KMS dependency. Used by the `Keyring` impl in
-//! [`super::hierarchical_keyring`].
+//! Wrapping, unwrapping, and the AAD both sides bind: pure crypto leaves over
+//! `aws-mpl-primitives`, with no cache or KMS dependency. Used by the
+//! `Keyring` impl in [`super::hierarchical_keyring`].
 
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
@@ -85,11 +79,10 @@ pub fn compute_aad(
 /// Parse a UUID in canonical hyphenated form (8-4-4-4-12) into its 16 raw
 /// bytes.
 ///
-/// `BranchKeyMaterials::new` no longer re-validates the UUID shape, so this
-/// parse acts as the actual validation gate on the branch-key-version
-/// string. Returns `MaterialsError` rather than panicking so a caller that
-/// hands us a malformed string (e.g. a corrupted keystore record or a
-/// fuzzer) gets a clean error instead of a process abort.
+/// This parse is the validation gate on the branch-key-version string.
+/// Returns `MaterialsError` rather than panicking so a caller that hands us a
+/// malformed string (e.g. a corrupted keystore record or a fuzzer) gets a
+/// clean error instead of a process abort.
 ///
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also
 /// accepts the 32-character simple form as well as braced and URN forms,
@@ -116,9 +109,6 @@ fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
 /// * `Label`   = "aws-kms-hierarchy"
 /// * `Context` = `salt`
 /// * `L_be32`  = 0x00000100 (256 bits = 32 bytes of output)
-///
-/// The same construction is used on both wrap and unwrap so the round
-/// trip is closed.
 fn derive_branch_key(
     branch_key: &[u8; DERIVED_KEY_LEN],
     salt: &[u8; SALT_LEN],
@@ -147,9 +137,8 @@ fn derive_branch_key(
 /// salt(16) || iv(12) || version(16) || encrypted_key(plaintext_len) || tag(16)
 /// ```
 ///
-/// `encryption_context` is the input encryption-materials' EC, bound
-/// into the AAD per spec `#branch-key-wrapping-and-unwrapping-aad` item 4
-/// ("encryption context from the input encryption materials").
+/// `encryption_context` is the input encryption-materials' EC, bound into
+/// the AAD.
 pub fn wrap(
     materials: &BranchKeyMaterials,
     encryption_context: &EncryptionContext,
@@ -220,8 +209,8 @@ pub fn wrap(
 /// Expects the on-wire layout
 /// `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`.
 ///
-/// `encryption_context` is the input decryption-materials' EC, bound
-/// into the AAD per spec `#branch-key-wrapping-and-unwrapping-aad` item 4.
+/// `encryption_context` is the input decryption-materials' EC, bound into
+/// the AAD.
 pub fn unwrap(
     materials: &BranchKeyMaterials,
     encryption_context: &EncryptionContext,

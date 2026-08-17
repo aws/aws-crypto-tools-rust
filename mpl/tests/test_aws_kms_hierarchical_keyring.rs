@@ -201,20 +201,16 @@ async fn partition_id_provided_is_utf8_round_tripped() {
 async fn branch_key_source_supplier_variant_compiles() {
     // Smoke test that the BranchKeySource::Supplier variant is usable —
     // construct a no-op supplier, store it in the enum, and confirm the
-    // keyring can be built with it. The trait object existence proves the
-    // "MUST provide either a Branch Key Identifier or a Branch Key Supplier"
-    // requirement at the type level.
+    // keyring can be built with it. The enum is how the keyring requires
+    // exactly one of a branch-key id or a supplier, so this covers the
+    // supplier arm of that choice.
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
     use aws_crypto_mpl::structures::MaterialsError;
 
     struct ConstSupplier(&'static str);
 
-    #[async_trait]
     impl BranchKeySupplier for ConstSupplier {
-        async fn get_branch_key_id(
-            &self,
-            _ec: &EncryptionContext,
-        ) -> Result<String, MaterialsError> {
+        fn get_branch_key_id(&self, _ec: &EncryptionContext) -> Result<String, MaterialsError> {
             Ok(self.0.to_string())
         }
     }
@@ -1292,12 +1288,8 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
         struct FixedSupplier(&'static str);
-        #[async_trait]
         impl BranchKeySupplier for FixedSupplier {
-            async fn get_branch_key_id(
-                &self,
-                _ec: &EncryptionContext,
-            ) -> Result<String, MaterialsError> {
+            fn get_branch_key_id(&self, _ec: &EncryptionContext) -> Result<String, MaterialsError> {
                 Ok(self.0.to_string())
             }
         }
@@ -1816,12 +1808,8 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
         struct FixedSupplier(&'static str);
-        #[async_trait]
         impl BranchKeySupplier for FixedSupplier {
-            async fn get_branch_key_id(
-                &self,
-                _ec: &EncryptionContext,
-            ) -> Result<String, MaterialsError> {
+            fn get_branch_key_id(&self, _ec: &EncryptionContext) -> Result<String, MaterialsError> {
                 Ok(self.0.to_string())
             }
         }
