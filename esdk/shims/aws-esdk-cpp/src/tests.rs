@@ -420,10 +420,10 @@ fn classify_core_error_maps_each_kind() {
     }
 }
 
-// Inputs the facade cannot express
+// Inputs the facade cannot express, so must be tested in Rust
 //
-// Null handles (the facade passes references), unset/unknown enum reprs (the
-// facade's factories only produce valid values).
+// - Null resource handles (the facade passes references)
+// - unset/unknown enum reprs (the facade's factories only produce valid values)
 
 #[test]
 fn encrypt_rejects_null_keyring() {
@@ -471,13 +471,14 @@ fn create_keystore_rejects_null_clients() {
     );
 }
 
-// An unset KMS configuration type is inexpressible through the facade (its
-// KeyStore constructor always supplies a key ARN), so the rejection pins here.
 #[test]
 fn create_keystore_rejects_unset_kms_config_type() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let mut unset_kms = keystore_config_with_clients(&kms, &ddb);
+    // An unset KMS configuration type is inexpressible through the facade
+    // (KeyStore constructor always supplies a key ARN)
+    // so the rejection pins here.
     unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
     let err = expect_err(create_keystore(&unset_kms));
     assert!(
@@ -573,8 +574,6 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
 }
 
 // Options forwarding
-//
-// Each value differs from the ESDK Rust default, so a dropped assignment fails.
 
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
@@ -639,8 +638,7 @@ fn apply_decrypt_options_forwards_every_optional_input() {
 }
 
 // AWS SDK client configuration
-//
-// The built SdkConfig is opaque through the facade, so the applied values pin here.
+// The built SdkConfig is opaque through the facade, so the values must be tested from Rust
 
 #[test]
 fn user_agent_form_and_append() {
@@ -713,45 +711,10 @@ fn create_sdk_config_applies_every_field() {
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
 
-// Resource release and handles
-//
-// `delete` has no public C++ method: resources release when their Box drops,
-// so the delete paths and the adopt handle are exercised here.
+// Handles
 
-#[test]
-fn delete_releases_client_keyring_and_cache() {
-    delete_kms_client(create_kms_client(&unset_client_config()).expect("kms client"))
-        .expect("delete kms client");
-    delete_ddb_client(create_ddb_client(&unset_client_config()).expect("ddb client"))
-        .expect("delete ddb client");
-    delete_keyring(test_raw_aes_keyring()).expect("delete keyring");
-    let cache = create_cryptographic_materials_cache(&ffi::CacheType {
-        kind: ffi::CacheKind { repr: 1 }, // No
-        entry_capacity: 0,
-        entry_pruning_tail_size: unset_u32(),
-        shared: std::ptr::null(),
-    })
-    .expect("cache");
-    delete_cryptographic_materials_cache(cache).expect("delete cache");
-}
-
-#[test]
-fn delete_keystore_releases_the_key_store() {
-    let kms = create_kms_client(&unset_client_config()).expect("kms client");
-    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
-    let mut cfg = unset_keystore_config();
-    cfg.kms_client = &*kms as *const MplKmsClient;
-    cfg.ddb_client = &*ddb as *const MplDdbClient;
-    cfg.ddb_table_name = "test-key-store-table".to_string();
-    cfg.logical_key_store_name = "test-key-store-table".to_string();
-    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsKeyArn;
-    cfg.kms_configuration_value = "arn:aws:kms:us-west-2:000000000000:key/test".to_string();
-    let keystore = create_keystore(&cfg).expect("key store");
-    delete_keystore(keystore).expect("delete key store");
-}
-
-// into_keyring_handle backs the C++ `Keyring::adopt` path, which test_esdk does
-// not exercise; check it yields an owned Box<Keyring> pointer.
+// into_keyring_handle is the Rust that backs the public C++ `Keyring::adopt` path.
+// Check it yields an owned Box<Keyring> pointer (type only testable in Rust).
 #[test]
 fn into_keyring_handle_boxes_the_keyring() {
     let keyring = test_raw_aes_keyring();
@@ -763,8 +726,9 @@ fn into_keyring_handle_boxes_the_keyring() {
 
 // Streaming internals
 //
-// ChannelReader/ChannelWriter and the worker thread are unconstructible from
-// C++; streamed encrypt/decrypt behavior lives in the C++ test_streaming.
+// Stream internals (ChannelReader/ChannelWriter and the worker thread)
+// are unconstructible from C++, so internals must be tested here.
+// Actual streamed encrypt/decrypt behavior lives in the C++ test_streaming.
 
 #[test]
 fn channel_reader_and_writer_debug() {
@@ -798,11 +762,11 @@ fn channel_writer_flush_is_noop_and_reports_broken_pipe() {
     assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
 }
 
-// A panicking worker: finish joins it and reports the panic. The worker's
-// panic message prints to stderr; the join converts it to an error.
+// A panicking worker.
+// Finish will join it and surface the Rust panic as an error to C++.
 #[test]
 fn stream_finish_surfaces_worker_panic() {
-    let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker boom"));
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
     let err = expect_err(state.finish());
     assert!(
         err.contains("stream worker panicked"),
@@ -810,8 +774,8 @@ fn stream_finish_surfaces_worker_panic() {
     );
 }
 
-// A worker that fails drops its reader; the next write can't send and must
-// surface the worker's error rather than report success.
+// An erroring worker.
+// Assert its error is raised.
 #[test]
 fn stream_write_after_worker_failure_surfaces_error() {
     let mut state = StreamState::spawn("test_stream", |_reader, _writer| {

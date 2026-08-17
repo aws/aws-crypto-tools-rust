@@ -343,30 +343,25 @@ mod ffi {
     }
 
     extern "Rust" {
+        // No delete_* functions: C++ holds each resource as a rust::Box, whose
+        // destructor runs cxx's generated drop glue and drops the Rust Box.
         type MplDdbClient;
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
-        fn delete_ddb_client(client: Box<MplDdbClient>) -> Result<()>;
 
         type KeyStore;
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
-        fn delete_keystore(client: Box<KeyStore>) -> Result<()>;
 
         type CryptographicMaterialsCache;
         fn create_cryptographic_materials_cache(
             cache: &CacheType,
         ) -> Result<Box<CryptographicMaterialsCache>>;
-        fn delete_cryptographic_materials_cache(
-            cache: Box<CryptographicMaterialsCache>,
-        ) -> Result<()>;
 
         type Keyring;
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
-        fn delete_keyring(client: Box<Keyring>) -> Result<()>;
 
         type MplKmsClient;
         fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
-        fn delete_kms_client(client: Box<MplKmsClient>) -> Result<()>;
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
@@ -1195,30 +1190,6 @@ fn create_hierarchical_keyring(
     }))
 }
 
-// Resource release
-//
-// C++ owns each resource as a Box and calls these to free it.
-// Taking the Box by value hands ownership back to Rust, which drops it at the end of the function.
-// Every create_* needs a matching delete_* so C++ has a way to release what it holds.
-
-fn delete_kms_client(_client: Box<MplKmsClient>) -> Result<(), String> {
-    Ok(())
-}
-fn delete_ddb_client(_client: Box<MplDdbClient>) -> Result<(), String> {
-    Ok(())
-}
-fn delete_keystore(_client: Box<KeyStore>) -> Result<(), String> {
-    Ok(())
-}
-fn delete_keyring(_client: Box<Keyring>) -> Result<(), String> {
-    Ok(())
-}
-fn delete_cryptographic_materials_cache(
-    _cache: Box<CryptographicMaterialsCache>,
-) -> Result<(), String> {
-    Ok(())
-}
-
 // Streaming
 
 /// Feeds chunks from C++ to a Rust ESDK input channel
@@ -1543,7 +1514,7 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 //# - The target MUST adopt only values produced by the shim's conversion, and
 //# MUST adopt each at most once; the shim does not detect violations.
 
-/// Converts an ESDK Rust keyring into a shim keyring handle.
+/// Converts an ESDK Rust keyring into a C++ shim keyring handle.
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
 pub fn into_keyring_handle(keyring: aws_esdk::Keyring) -> *mut std::ffi::c_void {
