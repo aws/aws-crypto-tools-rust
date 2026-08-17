@@ -512,10 +512,12 @@ impl Keyring for HierarchicalKeyring {
             None => generate_random_data_key(materials.algorithm_suite())?,
         };
 
-        let cache_id = cache_entry_identifier::for_encrypt(
+        let cache_id = cache_entry_identifier::build_cache_identifier(
+            SCOPE_ID_ENCRYPT,
             &self.partition_id_bytes,
             &self.logical_keystore_name,
             &branch_key_id,
+            None,
         );
 
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
@@ -660,6 +662,24 @@ const CIPHERTEXT_VERSION_OFFSET: usize = 16 + 12;
 // branch-key version.
 const CIPHERTEXT_VERSION_LEN: usize = 16;
 
+/// Cache-identifier scope byte for OnEncrypt, passed to
+/// `cache_entry_identifier::build_cache_identifier`.
+///
+/// Hidden from the public API surface; intended for tests that recompute the
+/// identifier independently of the keyring.
+// #encryption-materials gives the encrypt scope as 0x01.
+#[doc(hidden)]
+pub const SCOPE_ID_ENCRYPT: u8 = 0x01;
+
+/// Cache-identifier scope byte for OnDecrypt, passed to
+/// `cache_entry_identifier::build_cache_identifier`.
+///
+/// Hidden from the public API surface; intended for tests that recompute the
+/// identifier independently of the keyring.
+// #decryption-materials gives the decrypt scope as 0x02.
+#[doc(hidden)]
+pub const SCOPE_ID_DECRYPT: u8 = 0x02;
+
 impl HierarchicalKeyring {
     /// Resolve the branch-key id for this operation: either the
     /// configured static value or the supplier callback's output bound
@@ -710,11 +730,12 @@ impl HierarchicalKeyring {
 
         let branch_key_version = uuid_16_bytes_to_str(&version_bytes);
 
-        let cache_id = cache_entry_identifier::for_decrypt(
+        let cache_id = cache_entry_identifier::build_cache_identifier(
+            SCOPE_ID_DECRYPT,
             &self.partition_id_bytes,
             &self.logical_keystore_name,
             branch_key_id,
-            &branch_key_version,
+            Some(&branch_key_version),
         );
 
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {

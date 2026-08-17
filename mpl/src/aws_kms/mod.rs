@@ -18,5 +18,5 @@ pub mod hierarchical_keyring;
 #[doc(hidden)]
 pub mod __test_internals {
     pub use super::branch_key_wrap::{compute_aad, unwrap, wrap};
-    pub use super::cache_entry_identifier::{for_decrypt, for_encrypt};
+    pub use super::cache_entry_identifier::build_cache_identifier;
 }

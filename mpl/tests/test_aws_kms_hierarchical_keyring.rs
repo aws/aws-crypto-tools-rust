@@ -16,10 +16,11 @@ use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::aws_kms::__test_internals::{
-    compute_aad, for_decrypt, for_encrypt, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
+    build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-    BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring,
+    BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring, SCOPE_ID_DECRYPT,
+    SCOPE_ID_ENCRYPT,
 };
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
@@ -438,7 +439,13 @@ fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
     expected_input.extend_from_slice(branch_key_id.as_bytes());
     let expected = sha384(&expected_input);
 
-    let actual = for_encrypt(partition_id, logical_key_store_name, branch_key_id);
+    let actual = build_cache_identifier(
+        SCOPE_ID_ENCRYPT,
+        partition_id,
+        logical_key_store_name,
+        branch_key_id,
+        None,
+    );
 
     assert_eq!(actual, expected);
 }
@@ -460,11 +467,12 @@ fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
     expected_input.extend_from_slice(branch_key_version.as_bytes());
     let expected = sha384(&expected_input);
 
-    let actual = for_decrypt(
+    let actual = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
         partition_id,
         logical_key_store_name,
         branch_key_id,
-        branch_key_version,
+        Some(branch_key_version),
     );
 
     assert_eq!(actual, expected);
@@ -473,7 +481,7 @@ fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
 #[test]
 fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
     // Same partition / logical name / branch key id; the only difference
-    // between for_encrypt and for_decrypt's hash inputs is:
+    // between the encrypt and decrypt hash inputs is:
     //   - scope_id (0x01 vs 0x02)
     //   - presence of branch_key_version (absent vs present)
     // The hashes MUST therefore differ. This is the regression check that
@@ -483,8 +491,14 @@ fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
     let branch_id = "shared-branch";
     let version = "1.0";
 
-    let enc = for_encrypt(partition_id, logical, branch_id);
-    let dec = for_decrypt(partition_id, logical, branch_id, version);
+    let enc = build_cache_identifier(SCOPE_ID_ENCRYPT, partition_id, logical, branch_id, None);
+    let dec = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
+        partition_id,
+        logical,
+        branch_id,
+        Some(version),
+    );
 
     assert_ne!(
         enc, dec,
@@ -495,39 +509,62 @@ fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
 #[test]
 fn cache_entry_identifier_distinct_branch_key_ids_produce_distinct_outputs() {
     // Negative-collision regression: changing the branch_key_id MUST
-    // change the cache identifier. Both for_encrypt and for_decrypt
-    // checked.
+    // change the cache identifier. Both scopes checked.
     let partition_id: &[u8] = b"some-partition-bytes";
     let logical = "logical-name";
 
-    let enc_a = for_encrypt(partition_id, logical, "branch-a");
-    let enc_b = for_encrypt(partition_id, logical, "branch-b");
+    let enc_a = build_cache_identifier(SCOPE_ID_ENCRYPT, partition_id, logical, "branch-a", None);
+    let enc_b = build_cache_identifier(SCOPE_ID_ENCRYPT, partition_id, logical, "branch-b", None);
     assert_ne!(
         enc_a, enc_b,
-        "for_encrypt must produce distinct outputs for distinct branch key ids"
+        "the encrypt scope must produce distinct outputs for distinct branch key ids"
     );
 
-    let dec_a = for_decrypt(partition_id, logical, "branch-a", "v1");
-    let dec_b = for_decrypt(partition_id, logical, "branch-b", "v1");
+    let dec_a = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
+        partition_id,
+        logical,
+        "branch-a",
+        Some("v1"),
+    );
+    let dec_b = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
+        partition_id,
+        logical,
+        "branch-b",
+        Some("v1"),
+    );
     assert_ne!(
         dec_a, dec_b,
-        "for_decrypt must produce distinct outputs for distinct branch key ids"
+        "the decrypt scope must produce distinct outputs for distinct branch key ids"
     );
 }
 
 #[test]
 fn cache_entry_identifier_distinct_versions_produce_distinct_outputs() {
     // Decrypt-only: the branch_key_version field MUST contribute to the
-    // hash. Two for_decrypt calls that differ only in branch_key_version
+    // hash. Two decrypt-scope calls that differ only in branch_key_version
     // MUST produce distinct outputs.
     let partition_id: &[u8] = b"another-partition";
     let logical = "logical-name";
     let branch_id = "branch-id";
 
     assert_ne!(
-        for_decrypt(partition_id, logical, branch_id, "v1"),
-        for_decrypt(partition_id, logical, branch_id, "v2"),
-        "for_decrypt must produce distinct outputs for distinct branch key versions"
+        build_cache_identifier(
+            SCOPE_ID_DECRYPT,
+            partition_id,
+            logical,
+            branch_id,
+            Some("v1")
+        ),
+        build_cache_identifier(
+            SCOPE_ID_DECRYPT,
+            partition_id,
+            logical,
+            branch_id,
+            Some("v2")
+        ),
+        "the decrypt scope must produce distinct outputs for distinct branch key versions"
     );
 }
 
