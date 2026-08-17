@@ -166,20 +166,32 @@ void test_default_options_defer(const TestConfig& cfg) {
 }
 
 // Raw AES keyring tests are fully local and run unconditionally.
+// Round-trips under each wrapping algorithm; a wrong translation would map to
+// a suite whose key length rejects the supplied key.
 void test_raw_aes_round_trip() {
-    std::vector<std::uint8_t> key(32, 0x2A);
-    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
-    //= type=test
-    //# - The shim MUST provide an operation that creates a raw AES keyring backed by
-    //# the core ESDK.
-    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
-                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
-    auto plaintext = to_bytes("raw aes through the facade");
-    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
-    ESDK_CHECK(ciphertext != plaintext);
-    auto decrypted = sdk.decrypt(ciphertext, keyring);
-    ESDK_CHECK(decrypted.plaintext == plaintext);
+    struct Case {
+        Aws::Esdk::AesWrappingAlgorithm alg;
+        std::size_t key_len;
+    };
+    const Case cases[] = {
+        {Aws::Esdk::AesWrappingAlgorithm::AlgAes128GcmIv12Tag16, 16},
+        {Aws::Esdk::AesWrappingAlgorithm::AlgAes192GcmIv12Tag16, 24},
+        {Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16, 32},
+    };
+    for (const auto& c : cases) {
+        std::vector<std::uint8_t> key(c.key_len, 0x2A);
+        //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+        //= type=test
+        //# - The shim MUST provide an operation that creates a raw AES keyring backed by
+        //# the core ESDK.
+        Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key, c.alg);
+        Aws::Esdk::EncryptionSDK sdk;
+        auto plaintext = to_bytes("raw aes through the facade");
+        auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+        ESDK_CHECK(ciphertext != plaintext);
+        auto decrypted = sdk.decrypt(ciphertext, keyring);
+        ESDK_CHECK(decrypted.plaintext == plaintext);
+    }
 }
 
 void test_raw_aes_wrong_keyring_fails() {
@@ -232,6 +244,23 @@ void test_cache_kinds() {
     Aws::Esdk::CryptographicMaterialsCache::Create(Aws::Esdk::CacheType::MultiThreaded(100));
 
     Aws::Esdk::CryptographicMaterialsCache::Create(Aws::Esdk::CacheType::Default(100));
+
+    // entry_capacity above ESDK Rust's i32 limit is rejected.
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::CryptographicMaterialsCache::Create(
+                          Aws::Esdk::CacheType::Default(0x80000000u)));
+}
+
+// Key Store construction is offline; ESDK Rust rejects a table name shorter
+// than its minimum at from_conf, before any network call.
+void test_keystore_rejects_short_table_name() {
+    Aws::Esdk::KmsClient kms;
+    Aws::Esdk::DdbClient ddb;
+    // LegacyError kind: exactly the base exception type.
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      Aws::Esdk::KeyStore("ab", "ab",
+                                          "arn:aws:kms:us-west-2:000000000000:key/test",
+                                          kms, ddb));
 }
 
 // Error kinds surface as typed exceptions; all offline via the raw AES keyring.
@@ -381,9 +410,13 @@ void test_streaming() {
     Aws::Esdk::EncryptionSDK sdk;
     // Non-signing suite: streamed decrypt of multi-frame signed messages is
     // refused by the core (pinned below).
+    // max-EDKs and commitment policy ride the stream creators' own option
+    // paths, separate from one-shot encrypt/decrypt.
     auto opts = Aws::Esdk::EncryptOptions()
                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-                    .with_frame_length(4096);
+                    .with_frame_length(4096)
+                    .with_max_encrypted_data_keys(3)
+                    .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt);
 
     std::vector<std::uint8_t> plaintext(20000);
     for (std::size_t i = 0; i < plaintext.size(); ++i) plaintext[i] = static_cast<std::uint8_t>(i % 251);
@@ -446,7 +479,10 @@ void test_streaming() {
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
     // Streamed decrypt recovers the plaintext.
-    auto dec = sdk.create_decrypt_stream(keyring);
+    auto dec = sdk.create_decrypt_stream(
+        keyring, Aws::Esdk::DecryptOptions()
+                     .with_max_encrypted_data_keys(3)
+                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
     std::vector<std::uint8_t> recovered;
     for (std::size_t off = 0; off < ciphertext.size(); off += 1517) {
         auto n = std::min<std::size_t>(1517, ciphertext.size() - off);
@@ -463,6 +499,7 @@ void test_streaming() {
         auto done = sdk.create_encrypt_stream(keyring);
         done.finish();
         CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, done.write(std::string_view("late")));
+        CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, done.finish());
     }
 
     // Tampered stream: released plaintext must be discarded; the failure
@@ -678,6 +715,7 @@ int main(int argc, char** argv) {
         test_raw_aes_wrong_keyring_fails();
         test_raw_aes_mismatched_key_length_throws();
         test_cache_kinds();
+        test_keystore_rejects_short_table_name();
         test_error_kinds();
         test_client_configuration();
         test_bytes_and_string_ergonomics();

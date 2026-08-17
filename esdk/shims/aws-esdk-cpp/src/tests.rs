@@ -424,41 +424,6 @@ fn create_cache_rejects_unknown_kind() {
 }
 
 #[test]
-fn create_cache_builds_each_kind() {
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //= type=test
-    //# - The shim MUST support creating a cache that performs no caching.
-    let no = ffi::CacheType {
-        kind: ffi::CacheKind { repr: 1 }, // No
-        entry_capacity: 0,
-        entry_pruning_tail_size: unset_u32(),
-        shared: std::ptr::null(),
-    };
-    let default = ffi::CacheType {
-        kind: ffi::CacheKind { repr: 2 }, // Default
-        entry_capacity: 10,
-        entry_pruning_tail_size: unset_u32(),
-        shared: std::ptr::null(),
-    };
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //= type=test
-    //# - The shim MUST support creating a multi-threaded cache.
-    let multi = ffi::CacheType {
-        kind: ffi::CacheKind { repr: 3 }, // MultiThreaded
-        entry_capacity: 10,
-        entry_pruning_tail_size: set_u32(2),
-        shared: std::ptr::null(),
-    };
-    // Shared is intentionally omitted: the MPL rejects a Shared CacheType passed
-    // to create_cryptographic_materials_cache ("should never be called with
-    // Shared CacheType"). The Shared arm is reached only through a keyring's
-    // with_cache, which the C++ hierarchical-keyring test exercises.
-    for cache in [&no, &default, &multi] {
-        assert!(create_cryptographic_materials_cache(cache).is_ok());
-    }
-}
-
-#[test]
 fn make_frame_length_translates_and_rejects_zero() {
     //= spec/shim/esdk-shim.md#frame-length
     //= type=test
@@ -751,26 +716,6 @@ fn create_sdk_config_applies_adaptive_retry_mode() {
     );
 }
 
-// Covers the AlgAes128/AlgAes192 arms of wrapping_alg_target_to_core; AlgAes256
-// is exercised by test_raw_aes_keyring. A wrong arm would map to a suite whose
-// key length rejects the supplied key, failing keyring creation.
-#[test]
-fn create_raw_aes_keyring_accepts_each_wrapping_alg() {
-    for (wrapping_alg, key_len) in [
-        (ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16, 16usize),
-        (ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16, 24),
-        (ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16, 32),
-    ] {
-        create_raw_aes_keyring(&ffi::RawAesKeyringInput {
-            key_namespace: "test-ns".to_string(),
-            key_name: "test-key".to_string(),
-            wrapping_key: &vec![0x01; key_len],
-            wrapping_alg,
-        })
-        .expect("keyring builds for a supported wrapping algorithm");
-    }
-}
-
 // into_keyring_handle backs the C++ `Keyring::adopt` path, which test_esdk does
 // not exercise; check it yields an owned Box<Keyring> pointer.
 #[test]
@@ -780,59 +725,6 @@ fn into_keyring_handle_boxes_the_keyring() {
     assert!(!handle.is_null());
     // Reclaim ownership so nothing leaks; a non-Keyring pointer would corrupt here.
     unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
-}
-
-// A second finish has no worker to join; the stream reports the invalid call.
-#[test]
-fn stream_finish_twice_is_invalid_input() {
-    let keyring = test_raw_aes_keyring();
-    let mut enc_in = unset_encrypt_input();
-    enc_in.keyring = &*keyring as *const Keyring;
-    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
-    encrypt_stream_finish(&mut stream).expect("first finish");
-    let err = expect_err(encrypt_stream_finish(&mut stream));
-    assert!(
-        err.contains("finish called twice"),
-        "unexpected error: {err}"
-    );
-    assert!(
-        err.starts_with(&format!("5{}encrypt_stream: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
-}
-
-// entry_capacity above the core's i32 limit is rejected before the cache builds.
-#[test]
-fn create_cache_rejects_capacity_over_i32_limit() {
-    let err = expect_err(create_cryptographic_materials_cache(&ffi::CacheType {
-        kind: ffi::CacheKind { repr: 2 }, // Default
-        entry_capacity: 0x8000_0000,      // > i32::MAX
-        entry_pruning_tail_size: unset_u32(),
-        shared: std::ptr::null(),
-    }));
-    assert!(
-        err.contains("exceeds the core ESDK's i32 limit"),
-        "unexpected error: {err}"
-    );
-}
-
-// create_encrypt_stream/create_decrypt_stream forward max-EDKs and commitment
-// policy on their own option paths, separate from apply_encrypt/decrypt_options.
-#[test]
-fn create_streams_forward_max_edks_and_commitment() {
-    let keyring = test_raw_aes_keyring();
-
-    let mut enc_in = unset_encrypt_input();
-    enc_in.keyring = &*keyring as *const Keyring;
-    enc_in.max_encrypted_data_keys = set_u32(3);
-    enc_in.commitment_policy = set_policy(P::RequireEncryptRequireDecrypt);
-    create_encrypt_stream(&enc_in).expect("encrypt stream with max-edks + policy");
-
-    let mut dec_in = unset_decrypt_input();
-    dec_in.keyring = &*keyring as *const Keyring;
-    dec_in.max_encrypted_data_keys = set_u32(3);
-    dec_in.commitment_policy = set_policy(P::RequireEncryptRequireDecrypt);
-    create_decrypt_stream(&dec_in).expect("decrypt stream with max-edks + policy");
 }
 
 #[test]
@@ -940,12 +832,12 @@ fn keystore_config_with_clients(kms: &MplKmsClient, ddb: &MplDdbClient) -> ffi::
     cfg
 }
 
+// An unset KMS configuration type is inexpressible through the facade (its
+// KeyStore constructor always supplies a key ARN), so the rejection pins here.
 #[test]
-fn create_keystore_reports_config_and_build_errors() {
+fn create_keystore_rejects_unset_kms_config_type() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
-
-    // Unset KMS configuration type: make_kms_config's error propagates.
     let mut unset_kms = keystore_config_with_clients(&kms, &ddb);
     unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
     let err = expect_err(create_keystore(&unset_kms));
@@ -953,12 +845,6 @@ fn create_keystore_reports_config_and_build_errors() {
         err.contains("kms_configuration_type is unset"),
         "unexpected error: {err}"
     );
-
-    // Table name shorter than the core's minimum: from_conf rejects the value.
-    let mut short_table = keystore_config_with_clients(&kms, &ddb);
-    short_table.ddb_table_name = "ab".to_string();
-    let err = expect_err(create_keystore(&short_table));
-    assert!(err.contains("ddb_table_name"), "unexpected error: {err}");
 }
 
 #[test]
