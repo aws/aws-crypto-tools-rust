@@ -19,9 +19,9 @@ use aws_crypto_mpl::aws_kms::__test_internals::{
     build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-    BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring, SCOPE_ID_DECRYPT,
-    SCOPE_ID_ENCRYPT,
+    BranchKeySource, HierarchicalKeyring, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
+use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
@@ -288,7 +288,7 @@ async fn new_with_shared_cache_round_trips_provided_arc() {
 
 #[tokio::test]
 async fn new_with_storm_tracking_cache_succeeds() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
+    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
 
     let params = StormTrackingCache {
         entry_capacity: 16,
@@ -313,7 +313,7 @@ async fn new_with_storm_tracking_cache_succeeds() {
 
 #[tokio::test]
 async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
+    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
 
     let params = StormTrackingCache {
         entry_capacity: 16,
@@ -344,7 +344,7 @@ async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
 
 #[tokio::test]
 async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
+    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
 
     let params = StormTrackingCache {
         entry_capacity: 16,
@@ -376,7 +376,7 @@ async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 #[tokio::test]
 async fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     use aws_crypto_mpl::TimeUnits;
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
+    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
 
     // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.

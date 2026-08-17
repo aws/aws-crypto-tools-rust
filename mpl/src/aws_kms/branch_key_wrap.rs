@@ -28,12 +28,12 @@ const VERSION_LEN: usize = 16;
 /// 16-byte tag.
 const TAG_LEN: usize = 16;
 
-/// Length of the derived branch key produced by KBKDF-CTR-HMAC-SHA256.
-/// AES-256-GCM requires a 32-byte cipher key.
+/// Length of the derived branch key produced by the KDF in Counter Mode with
+/// HMAC SHA256. AES-256-GCM requires a 32-byte cipher key.
 const DERIVED_KEY_LEN: usize = 32;
 
-/// Label for the KBKDF-CTR-HMAC-SHA256 derivation and for the AAD prefix.
-/// Spec: "aws-kms-hierarchy" UTF-8 encoded — 17 bytes.
+/// Label for the KDF in Counter Mode with HMAC SHA256 derivation and for the
+/// AAD prefix. Spec: "aws-kms-hierarchy" UTF-8 encoded — 17 bytes.
 const HIERARCHY_LABEL: &[u8] = b"aws-kms-hierarchy";
 
 /// Total fixed overhead of a wrap output relative to the plaintext data key:
@@ -101,8 +101,8 @@ fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
 
 // ---- KDF ---------------------------------------------------------------------
 
-/// Derive the 32-byte AES-256-GCM cipher key from the branch key using
-/// KBKDF-CTR-HMAC-SHA256 (NIST SP 800-108 §4.1).
+/// Derive the 32-byte AES-256-GCM cipher key from the branch key using the
+/// KDF in Counter Mode with HMAC SHA256 (NIST SP 800-108 §4.1).
 ///
 /// The fixed-info string follows the standard NIST construction
 /// `Label || 0x00 || Context || L_be32`, with:
@@ -123,7 +123,9 @@ fn derive_branch_key(
 
     let mut derived = [0u8; DERIVED_KEY_LEN];
     kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|_| {
-        MaterialsError::keyring_failed("Branch key wrap: KBKDF-CTR-HMAC-SHA256 derivation failed")
+        MaterialsError::keyring_failed(
+            "Branch key wrap: KDF in Counter Mode with HMAC SHA256 derivation failed",
+        )
     })?;
     Ok(derived)
 }
