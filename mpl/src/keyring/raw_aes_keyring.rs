@@ -8,8 +8,8 @@ use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes
 
 use crate::Keyring;
 use crate::structures::{
-    AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
-    MaterialsError, PlaintextDataKey,
+    AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
+    PlaintextDataKey,
 };
 
 /// Byte width of the authentication-tag-length field of the serialized key
@@ -199,7 +199,12 @@ impl Keyring for RawAesKeyring {
     ) -> Result<EncryptionMaterials, MaterialsError> {
         // Serialized before any encryption is attempted, so an unserializable
         // encryption context fails the operation rather than producing an EDK.
-        let aad = serialize_aad(materials.encryption_context(), "on_encrypt")?;
+        let aad = materials.encryption_context().serialize().map_err(|e| {
+            MaterialsError::keyring_failed_with_cause(
+                "RawAesKeyring::on_encrypt: failed to serialize the encryption context",
+                e,
+            )
+        })?;
 
         let plaintext_dk = match materials.plaintext_data_key() {
             Some(pdk) => pdk.clone(),
@@ -267,7 +272,12 @@ impl Keyring for RawAesKeyring {
 
         // Serialized before the EDK loop, so an unserializable encryption
         // context fails the operation even when no EDK matches this keyring.
-        let aad = serialize_aad(materials.encryption_context(), "on_decrypt")?;
+        let aad = materials.encryption_context().serialize().map_err(|e| {
+            MaterialsError::keyring_failed_with_cause(
+                "RawAesKeyring::on_decrypt: failed to serialize the encryption context",
+                e,
+            )
+        })?;
 
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();
 
@@ -333,21 +343,6 @@ impl Keyring for RawAesKeyring {
             errors.join("; "),
         )))
     }
-}
-
-/// Serialize an encryption context for use as AES-GCM additional
-/// authenticated data, failing the keyring operation when it cannot be
-/// serialized.
-fn serialize_aad(
-    encryption_context: &EncryptionContext,
-    operation: &str,
-) -> Result<Vec<u8>, MaterialsError> {
-    encryption_context.serialize().map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            format!("RawAesKeyring::{operation}: failed to serialize the encryption context"),
-            e,
-        )
-    })
 }
 
 /// Generate a random plaintext data key of the algorithm suite's configured
