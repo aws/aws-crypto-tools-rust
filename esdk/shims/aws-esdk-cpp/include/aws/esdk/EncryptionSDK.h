@@ -151,6 +151,8 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 // Deliberately left incomplete here so no consumer can construct, copy, or inspect them.
 namespace detail {
 struct ClientConfigImpl;
+struct EncryptStreamImpl;
+struct DecryptStreamImpl;
 struct KmsClientImpl;
 struct DdbClientImpl;
 struct KeyStoreImpl;
@@ -561,6 +563,80 @@ public:
     EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
+/// Result of finishing a stream
+struct StreamResult {
+    /// Output bytes produced by finishing a stream.
+    // For encrypt: the final frame (and for signing suites, the signature footer).
+    Bytes trailing_output;
+    /// Encryption context associated with the message.
+    std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used.
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
+/// Streaming encrypt. Feed plaintext in chunks, receive ciphertext as it is produced.
+/// `finish()` flushes the final frame (and signature footer, for signing suites).
+/// Create via EncryptionSDK::create_encrypt_stream.
+/// One stream is single-threaded; different streams may run on different threads.
+class EncryptStream {
+    std::shared_ptr<detail::EncryptStreamImpl> impl_;
+    friend class EncryptionSDK;
+    explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    /// Feeds a plaintext chunk and returns whatever ciphertext the Rust ESDK has produced so far.
+    /// The output ciphertext for a given write may be empty. Frames are emitted as they fill and the pump is asynchronous.
+    /// An empty write adds no input and polls for produced output.
+    Bytes write(const std::uint8_t* data, std::size_t size);
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
+    /// Ends the plaintext input, flushes the final frame (and the signature footer
+    /// for signing suites), and returns it with the message metadata.
+    /// The stream cannot be written after finish.
+    StreamResult finish();
+};
+
+/// Streaming decrypt. Feed ciphertext in chunks, receive plaintext as it is produced.
+/// Call finish() to complete verification.
+///
+/// SECURITY: the message is not fully verified until finish() returns successfully.
+/// Do not act on released plaintext before finish() succeeds,
+/// and discard everything released if finish() throws.
+///
+/// Streamed decrypt cannot be used with to decrypt messages
+/// that were encrypted with signing suites and have multiple frames.
+/// Decrypt these messages with Aws::Esdk::decrypt instead.
+class DecryptStream {
+    std::shared_ptr<detail::DecryptStreamImpl> impl_;
+    friend class EncryptionSDK;
+    explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    /// Feeds a ciphertext chunk and returns whatever plaintext the Rust ESDK has released so far.
+    /// The output plaintext for a given write may be empty.
+    /// An empty write adds no input and polls for produced output.
+    /// Released plaintext is unverified until finish() succeeds; see the class documentation.
+    //
+    //= spec/shim/shim.md#streaming
+    //= type=implication
+    //# - The shim MUST document to users that output returned before the finish step
+    //# succeeds is not yet complete or verified.
+    Bytes write(const std::uint8_t* data, std::size_t size);
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
+    /// Ends the ciphertext input and completes decryption, including signature
+    /// verification for signing suites.
+    /// Success means every byte this stream released is authenticated and is safe to be acted upon.
+    /// Failure means the user must discard all released plaintext.
+    StreamResult finish();
+};
+
 /// ESDK client interface.
 class EncryptionSDK {
     std::optional<CommitmentPolicy> commitment_policy_;
@@ -622,6 +698,17 @@ public:
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
     }
+
+    /// Creates a streaming encrypt operation.
+    EncryptStream create_encrypt_stream(
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Creates a streaming decrypt operation.
+    /// See DecryptStream documentation for the verification semantics of streamed plaintext.
+    DecryptStream create_decrypt_stream(
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
 
 #if defined(__cpp_lib_span)
     /// Encrypts a plaintext viewed through a std::span without copying it.
