@@ -688,10 +688,46 @@ fn test_new_rejects_reserved_aws_kms_key_namespace() {
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
     assert_kind(&err, MaterialsErrorKind::Validation);
     assert!(
-        err.message.contains("must not be `aws-kms`"),
+        err.message.contains("must not be or start with `aws-kms`"),
         "error must name the reserved namespace: {}",
         err.message
     );
+}
+
+#[test]
+fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
+    // The key namespace becomes the EDK's key provider ID, so accepting any of
+    // these would let a raw AES keyring emit encrypted data keys that
+    // impersonate the corresponding AWS KMS keyring. All four are reserved by
+    // the `aws-kms` prefix rule, so a prefix check is required; an equality
+    // check against `aws-kms` alone would let the last three through.
+    let (_, name) = namespace_and_name();
+    for namespace in [
+        "aws-kms",
+        "aws-kms-hierarchy",
+        "aws-kms-rsa",
+        "aws-kms-ecdh",
+        // Not a real provider ID, but shares the reserved prefix.
+        "aws-kms-but-not-really",
+    ] {
+        let Err(err) =
+            RawAesKeyring::new(namespace, name.clone(), vec![0u8; 32], AesGcm::Aes256Gcm)
+        else {
+            panic!("`{namespace}` must be rejected as reserved");
+        };
+        assert_kind(&err, MaterialsErrorKind::Validation);
+    }
+}
+
+#[test]
+fn test_new_accepts_the_raw_ecdh_key_provider_id() {
+    // `raw-ecdh` is the raw ECDH keyring's key provider ID, but it is not
+    // covered by the reserved `aws-kms` prefix and the specification does not
+    // reserve it against the raw AES keyring, so it is accepted. This pins the
+    // rejection to the documented prefix rather than to a broader denylist.
+    let (_, name) = namespace_and_name();
+    RawAesKeyring::new("raw-ecdh", name, vec![0u8; 32], AesGcm::Aes256Gcm)
+        .expect("`raw-ecdh` is not reserved against the raw AES keyring");
 }
 
 #[test]
@@ -715,18 +751,4 @@ fn test_debug_does_not_leak_the_wrapping_key() {
         rendered.contains("child0 Namespace") && rendered.contains("child0 Name"),
         "Debug must still show the non-secret configuration: {rendered}"
     );
-}
-
-#[test]
-fn test_new_allows_key_namespace_that_merely_starts_with_aws_kms() {
-    // Only the exact reserved value is rejected, matching the Dafny reference
-    // implementation's `keyNamespace != "aws-kms"` check.
-    let (_, name) = namespace_and_name();
-    RawAesKeyring::new(
-        "aws-kms-but-not-really",
-        name,
-        vec![0u8; 32],
-        AesGcm::Aes256Gcm,
-    )
-    .expect("a namespace that only shares the prefix is accepted");
 }

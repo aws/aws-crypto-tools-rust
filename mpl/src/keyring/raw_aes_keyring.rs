@@ -36,10 +36,14 @@ const TAG_LENGTH: usize = 16;
 /// information.
 const TAG_LENGTH_BITS: u32 = 128;
 
-/// Key namespace reserved for the AWS KMS keyrings. A raw AES keyring MUST NOT
-/// accept it, because the key namespace becomes the EDK's key provider ID and
-/// that value must not claim to be AWS KMS.
-const RESERVED_KEY_NAMESPACE: &str = "aws-kms";
+/// Key namespace prefix reserved for the AWS KMS keyrings. A raw AES keyring
+/// MUST NOT accept a key namespace equal to or starting with this value,
+/// because the key namespace becomes the EDK's key provider ID and that value
+/// must not claim to have been produced by an AWS KMS keyring. The prefix, not
+/// just the exact string, is reserved: the AWS KMS keyrings use `aws-kms`,
+/// `aws-kms-hierarchy`, `aws-kms-rsa` and `aws-kms-ecdh` as their key provider
+/// IDs.
+const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 
 /// A keyring that wraps and unwraps data keys with a local AES-GCM wrapping key.
 ///
@@ -79,8 +83,8 @@ impl RawAesKeyring {
     /// # Errors
     ///
     /// Returns [`MaterialsError`] when `wrapping_key`'s length does not match
-    /// the length specified by `wrapping_alg`, or when `key_namespace` is the
-    /// reserved value `aws-kms`.
+    /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
+    /// to or starts with the reserved value `aws-kms`.
     pub fn new(
         key_namespace: impl Into<String>,
         key_name: impl Into<String>,
@@ -88,9 +92,13 @@ impl RawAesKeyring {
         wrapping_alg: AesGcm,
     ) -> Result<Self, MaterialsError> {
         let key_namespace = key_namespace.into();
-        if key_namespace == RESERVED_KEY_NAMESPACE {
+        // A prefix check, not an equality check: `aws-kms-hierarchy`,
+        // `aws-kms-rsa` and `aws-kms-ecdh` are the key provider IDs of other
+        // AWS KMS keyrings, and an equality check would let this keyring emit
+        // encrypted data keys that impersonate them.
+        if key_namespace.starts_with(RESERVED_KEY_NAMESPACE_PREFIX) {
             return Err(MaterialsError::new(format!(
-                "RawAesKeyring: key namespace must not be `{RESERVED_KEY_NAMESPACE}`"
+                "RawAesKeyring: key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
             )));
         }
 
