@@ -1,42 +1,22 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Raw AES keyring tests, ported from the Dafny [`TestRawAESKeyring.dfy`].
+//! Raw AES keyring tests, ported from the Dafny
+//! [`TestRawAESKeyring.dfy`](https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/TestRawAESKeyring.dfy).
 //!
-//! Each of the seven Dafny test methods has a counterpart below, named after
-//! it and marked with a `Ported from Dafny` comment:
-//!
-//! | Dafny                                   | Rust                                                |
-//! |-----------------------------------------|-----------------------------------------------------|
-//! | `TestOnEncryptOnDecryptGenerateDataKey` | `test_on_encrypt_on_decrypt_generate_data_key`      |
-//! | `TestOnEncryptOnDecryptSuppliedDataKey` | `test_on_encrypt_on_decrypt_supplied_data_key`      |
-//! | `TestOnDecryptKeyNameMismatch`          | `test_on_decrypt_key_name_mismatch`                 |
-//! | `TestOnDecryptBadAndGoodEdkSucceeds`    | `test_on_decrypt_bad_and_good_edk_succeeds`         |
-//! | `TestOnDecryptNoEDKs`                   | `test_on_decrypt_no_edks`                           |
-//! | `TestOnEncryptUnserializableEC`         | `test_on_encrypt_unserializable_encryption_context` |
-//! | `TestOnDecryptUnserializableEC`         | `test_on_decrypt_unserializable_encryption_context` |
-//!
-//! The fixtures mirror [`TestUtils.dfy`]: `namespace_and_name` is
-//! `TestUtils.NamespaceAndName(0)` (`"child0 Namespace"` / `"child0 Name"`),
-//! `small_encryption_context_a` is `TestUtils.SmallEncryptionContext(A)`
-//! (`keyA` -> `valA`), and `unserializable_encryption_context` is the Dafny
+//! The fixtures mirror
+//! [`TestUtils.dfy`](https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/TestUtils.dfy):
+//! `namespace_and_name` is `TestUtils.NamespaceAndName(0)`
+//! (`"child0 Namespace"` / `"child0 Name"`), `small_encryption_context_a` is
+//! `TestUtils.SmallEncryptionContext(A)` (`keyA` -> `valA`), and
+//! `unserializable_encryption_context` is the Dafny
 //! `generateUnserializableEncryptionContext` (a value of `0x1_0000` bytes,
 //! one past what the `u16` length field of the serialization format can
 //! express).
 //!
 //! The tests under `Rust-side additions` have no Dafny counterpart. They
 //! cover the on-wire shape of the encrypted data key, the two constructor
-//! validations, and the negative paths Dafny leaves to its proofs: Dafny
-//! verifies the provider-info round trip statically, so it never needs a
-//! runtime test for a tampered IV or a mismatched tag length, whereas the
-//! Rust parser checks those at runtime and the checks need exercising.
-//!
-//! The implementation under test is the Rust port of Dafny
-//! [`RawAESKeyring.dfy`].
-//!
-//! [`TestRawAESKeyring.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/TestRawAESKeyring.dfy
-//! [`TestUtils.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/TestUtils.dfy
-//! [`RawAESKeyring.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/src/Keyrings/RawAESKeyring.dfy
+//! validations, and the negative paths Dafny leaves to its proofs.
 
 use std::collections::BTreeSet;
 
