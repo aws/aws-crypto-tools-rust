@@ -68,7 +68,8 @@ pub struct BranchKeyStore {
 }
 
 impl BranchKeyStore {
-    /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`].
+    /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`], resolving
+    /// any absent AWS SDK client.
     ///
     /// Validates the KMS configuration ARN (when applicable) and resolves
     /// the keystore id (caller-supplied `config.id`, else a fresh v4 UUID).
@@ -78,17 +79,18 @@ impl BranchKeyStore {
     /// default region provider chain is used for `Discovery`) and stored
     /// back into the config.
     ///
+    /// Resolving a default client is the only reason this is `async`. Callers
+    /// that supply both clients — the common case, since a caller with its own
+    /// SDK configuration builds them itself — should use
+    /// [`BranchKeyStore::with_clients`] and avoid the needless `await`.
+    ///
     /// Returns `KeystoreError::Configuration` if the KMS configuration is
     /// invalid (malformed ARN, alias, non-`kms` service).
     pub async fn new(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
         // Validate the KMS configuration's ARN at construction time so a
-        // malformed ARN fails before any operation is dispatched.
+        // malformed ARN fails before any operation is dispatched, and before
+        // its Region is used to build a default client.
         config.kms_configuration.validate()?;
-
-        let keystore_id = config
-            .id
-            .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
 
         // Resolve any absent client to a default built from the Region in
         // the KMS ARN, storing it back into the config so the config always
@@ -102,6 +104,41 @@ impl BranchKeyStore {
                 config.ddb_client = Some(DynamoDbClient::new(&sdk_config));
             }
         }
+
+        Self::build(config)
+    }
+
+    /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`] that already
+    /// carries both AWS SDK clients.
+    ///
+    /// Synchronous: with both clients supplied there is nothing to resolve, so
+    /// construction does no IO and needs no runtime. Same validation and
+    /// keystore-id resolution as [`BranchKeyStore::new`].
+    ///
+    /// Returns `KeystoreError::Configuration` if the KMS configuration is
+    /// invalid, or if either client is absent — use [`BranchKeyStore::new`] to
+    /// have absent clients defaulted.
+    pub fn with_clients(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
+        config.kms_configuration.validate()?;
+        Self::build(config)
+    }
+
+    /// Shared tail of both constructors: require concrete clients, resolve the
+    /// keystore id, and assemble. Assumes the KMS configuration has already
+    /// been validated.
+    fn build(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
+        if config.kms_client.is_none() || config.ddb_client.is_none() {
+            return Err(KeystoreError::new(
+                KeystoreErrorKind::Configuration,
+                "BranchKeyStore::with_clients requires both a kms_client and a ddb_client; \
+                 use BranchKeyStore::new to build defaults for absent clients",
+            ));
+        }
+
+        let keystore_id = config
+            .id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
 
         Ok(Self {
             config,

@@ -22,7 +22,17 @@
 //! configurations against the KeyStore directly, never through a keyring. See
 //! the comments on those two sections.
 //!
-//! One Dafny suite is intentionally NOT ported here:
+//! Per-operation caching is NOT asserted here. A real `BranchKeyStore` exposes
+//! no call counter, and proving a cache hit by comparing wall-clock latency
+//! between a cold and a warm call is a timing heuristic, not an assertion — it
+//! passes or flakes with runner load. Caching is asserted instead in
+//! `test_aws_kms_hierarchical_keyring.rs`, where the keystore doubles count
+//! calls (`on_encrypt_caches_branch_key_materials_after_keystore_call`,
+//! `on_decrypt_caches_branch_key_after_keystore_call`). The shared-cache tests
+//! below do observe the cache, but through behaviour: a second keyring succeeds
+//! only when the first has populated an entry it is allowed to reuse.
+//!
+//! Two Dafny suites are intentionally NOT ported here:
 //! - `TestHierarchyClientDBESuite` — DBE algorithm suites are out of scope
 //!   for this Rust implementation (annotated `type=exception` on every DBE /
 //!   S3EC variant in `structures/algorithm_suite.rs`).
@@ -51,7 +61,7 @@ use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
-    EncryptionMaterials, MaterialsErrorKind,
+    EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
 use aws_crypto_mpl::{KeyStoreConfig, Keyring, KmsConfiguration};
 
@@ -192,35 +202,6 @@ async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
 }
 
 #[tokio::test]
-async fn integ_on_encrypt_caches_branch_key_across_two_calls() {
-    // Two on_encrypt calls with the same branch_key_id should hit the
-    // keystore exactly once. We can't observe keystore call counts from
-    // outside the BranchKeyStore (no fake / spy), but we can observe
-    // wall-clock latency: the second call should be substantially
-    // faster because no DDB GetItem + KMS Decrypt round-trip happens.
-    use std::time::Instant;
-
-    let keystore = build_keystore().await;
-    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ-cache");
-
-    let t0 = Instant::now();
-    let _ = keyring.on_encrypt(fresh_materials()).await.unwrap();
-    let cold = t0.elapsed();
-
-    let t1 = Instant::now();
-    let _ = keyring.on_encrypt(fresh_materials()).await.unwrap();
-    let warm = t1.elapsed();
-
-    assert!(
-        warm * 5 < cold,
-        "second on_encrypt should be at least 5x faster than the first \
-         (cold={:?}, warm={:?}); cache may not be in use",
-        cold,
-        warm
-    );
-}
-
-#[tokio::test]
 async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     // Full encrypt → decrypt round trip against the real keystore. Proves
     // the EDK ciphertext produced by on_encrypt is decryptable by
@@ -268,52 +249,6 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     );
 }
 
-#[tokio::test]
-async fn integ_on_decrypt_caches_branch_key_version_across_two_calls() {
-    // First on_decrypt MUST hit the keystore (cache miss). Second
-    // on_decrypt MUST be served entirely from the cache. We can't observe
-    // keystore call counts directly through the BranchKeyStore API, but
-    // we can observe the latency difference: a cached on_decrypt skips
-    // the DDB GetItem + KMS Decrypt round-trip and is dramatically faster.
-    use std::time::Instant;
-
-    let keystore = build_keystore().await;
-    let keyring = keyring_for(keystore, BRANCH_KEY_ID, "partition-id-integ-decrypt-cache");
-
-    let materials_in = fresh_materials();
-    let ec = materials_in.encryption_context().clone();
-    let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
-    let edks = materials_out.encrypted_data_keys().to_vec();
-
-    let make_dm = || {
-        DecryptionMaterials::new(
-            non_signing_suite(),
-            ec.clone(),
-            Default::default(),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    };
-
-    let t0 = Instant::now();
-    let _ = keyring.on_decrypt(make_dm(), &edks).await.unwrap();
-    let cold = t0.elapsed();
-
-    let t1 = Instant::now();
-    let _ = keyring.on_decrypt(make_dm(), &edks).await.unwrap();
-    let warm = t1.elapsed();
-
-    assert!(
-        warm * 5 < cold,
-        "second on_decrypt should be at least 5x faster than the first \
-         (cold={:?}, warm={:?}); cache may not be in use",
-        cold,
-        warm
-    );
-}
-
 // ─── Helpers for shared-cache tests ────────────────────────────────────────
 
 /// Build a KMS client pinned to the supplied region. Mirrors Dafny's
@@ -356,6 +291,35 @@ async fn build_keystore_with_kms_and_logical_name(
         .await
         .unwrap(),
     )
+}
+
+/// Assert that `hk2`'s encrypt failed, and failed for the reason these tests
+/// are about.
+///
+/// Every `hk2` in this section is built by `build_keystore_with_kms_and_logical_name`,
+/// which pins `KmsConfiguration::KmsKeyArn(KEY_ARN)` — a us-west-2 ARN — while
+/// handing the keystore a KMS client for another region. So the DDB record is
+/// found and read normally; what fails is the KMS `Decrypt` of the wrapped
+/// branch key, because that client cannot use a key in a different region.
+/// The failure is therefore attributable to KMS, not to a missing record.
+///
+/// That distinction is the whole point of these tests: `hk2` must fail while
+/// the shared cache is cold and succeed only once `hk1` has populated an entry
+/// `hk2` is permitted to reuse. A bare `is_err()` would also be satisfied by a
+/// missing record or an unreachable table, which would make the test pass
+/// without ever exercising the cache. The keyring flattens every keystore
+/// failure into `KeyringFailed`, so the keystore's own kind is matched in the
+/// message.
+fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, context: &str) {
+    let err = match result {
+        Err(e) => e,
+        Ok(_) => panic!("{context}: expected on_encrypt to fail"),
+    };
+    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
+    assert!(
+        err.to_string().contains("KeystoreError(Kms)"),
+        "{context}: expected the cross-region KMS failure, got: {err}",
+    );
 }
 
 /// Run an `on_encrypt` → `on_decrypt` round trip and assert the recovered
@@ -496,11 +460,10 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
         CacheType::Shared(cache_arc),
     );
 
-    // HK2 encrypt fails first (cache empty, KMS region mismatch).
-    let err = hk2.on_encrypt(shared_cache_materials()).await;
-    assert!(
-        err.is_err(),
-        "HK2 on_encrypt MUST fail before the cache is populated (KMS region mismatch)",
+    // HK2 encrypt fails first: the shared cache is cold, so it must reach KMS.
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
+        "HK2 on_encrypt before the cache is populated",
     );
 
     // HK1 round-trip succeeds (and populates the shared cache).
@@ -550,15 +513,15 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     )
     .unwrap();
 
-    assert!(
-        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
         "HK2 on_encrypt MUST fail before the cache is populated",
     );
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    assert!(
-        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
         "HK2 on_encrypt MUST still fail — distinct random partition ids prevent cache reuse",
     );
 }
@@ -593,15 +556,15 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
         CacheType::Shared(cache_arc),
     );
 
-    assert!(
-        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
         "HK2 on_encrypt MUST fail before the cache is populated",
     );
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    assert!(
-        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
         "HK2 on_encrypt MUST still fail — distinct partition ids prevent cache reuse",
     );
 }
@@ -637,15 +600,15 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
         CacheType::Shared(cache_arc),
     );
 
-    assert!(
-        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
         "HK2 on_encrypt MUST fail before the cache is populated",
     );
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
-    assert!(
-        hk2.on_encrypt(shared_cache_materials()).await.is_err(),
+    assert_failed_at_kms(
+        hk2.on_encrypt(shared_cache_materials()).await,
         "HK2 on_encrypt MUST still fail — different logical keystore names prevent cache reuse",
     );
 }

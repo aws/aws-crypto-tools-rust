@@ -22,7 +22,7 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
-use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
+use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
@@ -30,6 +30,7 @@ use aws_crypto_mpl::keystore::{
 use aws_crypto_mpl::structures::{
     BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext, MaterialsError, MaterialsErrorKind,
 };
+use aws_crypto_mpl::{Cmc, LocalCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -76,11 +77,12 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// `HierarchicalKeyring::new` only stores the handle, and the keystore is
 /// first consulted inside OnEncrypt / OnDecrypt. Tests that do exercise those
 /// operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod
-/// ondecrypt` instead. The KMS and DynamoDB clients are supplied explicitly so
-/// `BranchKeyStore::new` never builds a default client.
-async fn keystore_never_consulted() -> Arc<dyn Keystore> {
+/// ondecrypt` instead. Both SDK clients are supplied, so this goes through the
+/// synchronous [`BranchKeyStore::with_clients`] — there is nothing to resolve
+/// and so nothing to await.
+fn keystore_never_consulted() -> Arc<dyn Keystore> {
     let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::new(KeyStoreConfig {
+    let store = BranchKeyStore::with_clients(KeyStoreConfig {
         ddb_table_name: "test-table".to_string(),
         kms_configuration: KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
@@ -92,14 +94,13 @@ async fn keystore_never_consulted() -> Arc<dyn Keystore> {
         ddb_client: Some(ddb),
         kms_client: Some(kms),
     })
-    .await
     .expect("BranchKeyStore construction with a valid config must succeed");
     Arc::new(store)
 }
 
-#[tokio::test]
-async fn new_with_zero_ttl_returns_validation_error() {
-    let keystore = keystore_never_consulted().await;
+#[test]
+fn new_with_zero_ttl_returns_validation_error() {
+    let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::new(
         keystore,
         0, // zero TTL — must be rejected
@@ -125,13 +126,13 @@ async fn new_with_zero_ttl_returns_validation_error() {
     );
 }
 
-#[tokio::test]
-async fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
+#[test]
+fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
     // The keyring takes branchKeyId and branchKeyIdSupplier as two optional
     // inputs, mirroring CreateAwsKmsHierarchicalKeyringInput, so the "exactly
     // one" rule is enforced here rather than by the type system.
     let err = match HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         3600,
         Some("branch-key-id".to_string()),
         Some(Arc::new(FixedBranchKeySupplier("unused")) as Arc<dyn BranchKeySupplier>),
@@ -150,19 +151,13 @@ async fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
     );
 }
 
-#[tokio::test]
-async fn new_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
-    let err = match HierarchicalKeyring::new(
-        keystore_never_consulted().await,
-        3600,
-        None,
-        None,
-        None,
-        None,
-    ) {
-        Err(e) => e,
-        Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
-    };
+#[test]
+fn new_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
+    let err =
+        match HierarchicalKeyring::new(keystore_never_consulted(), 3600, None, None, None, None) {
+            Err(e) => e,
+            Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
+        };
 
     assert_eq!(err.kind, MaterialsErrorKind::Validation);
     assert!(
@@ -172,9 +167,9 @@ async fn new_with_neither_branch_key_id_nor_supplier_returns_validation_error() 
     );
 }
 
-#[tokio::test]
-async fn new_with_positive_ttl_succeeds() {
-    let keystore = keystore_never_consulted().await;
+#[test]
+fn new_with_positive_ttl_succeeds() {
+    let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::new(
         keystore,
         1, // smallest legal TTL
@@ -188,9 +183,9 @@ async fn new_with_positive_ttl_succeeds() {
     assert_eq!(keyring.ttl_seconds(), 1);
 }
 
-#[tokio::test]
-async fn partition_id_default_is_16_byte_v4_uuid() {
-    let keystore = keystore_never_consulted().await;
+#[test]
+fn partition_id_default_is_16_byte_v4_uuid() {
+    let keystore = keystore_never_consulted();
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
@@ -225,14 +220,14 @@ async fn partition_id_default_is_16_byte_v4_uuid() {
     );
 }
 
-#[tokio::test]
-async fn partition_id_default_two_calls_are_distinct() {
+#[test]
+fn partition_id_default_two_calls_are_distinct() {
     // Two consecutive constructions with no partition id must yield two
     // independent v4 UUIDs. This is regression coverage for the v4-UUID
     // default — a stub that returned all-zero bytes would still pass the
     // length / version-bit checks.
     let a = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         3600,
         Some("branch-key-id".to_string()),
         None,
@@ -242,7 +237,7 @@ async fn partition_id_default_two_calls_are_distinct() {
     .expect("first constructor call must succeed");
 
     let b = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         3600,
         Some("branch-key-id".to_string()),
         None,
@@ -258,8 +253,8 @@ async fn partition_id_default_two_calls_are_distinct() {
     );
 }
 
-#[tokio::test]
-async fn partition_id_provided_is_utf8_round_tripped() {
+#[test]
+fn partition_id_provided_is_utf8_round_tripped() {
     // The "If provided, it MUST be interpreted as UTF8 bytes" requirement is
     // a `type=implication` on the source side (Rust's `String::into_bytes` is
     // UTF-8 by construction of the `String` type). This test exists as
@@ -267,7 +262,7 @@ async fn partition_id_provided_is_utf8_round_tripped() {
     // and have not been re-encoded or truncated.
     let original = "hello-世界";
     let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         3600,
         Some("branch-key-id".to_string()),
         None,
@@ -279,15 +274,15 @@ async fn partition_id_provided_is_utf8_round_tripped() {
     assert_eq!(keyring.partition_id_bytes(), original.as_bytes());
 }
 
-#[tokio::test]
-async fn new_with_branch_key_id_supplier_succeeds() {
+#[test]
+fn new_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
     let supplier: Arc<dyn BranchKeySupplier> =
         Arc::new(FixedBranchKeySupplier("branch-id-from-supplier"));
     let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         3600,
         None,
         Some(supplier),
@@ -304,69 +299,32 @@ async fn new_with_branch_key_id_supplier_succeeds() {
 }
 
 // ─── Cache wiring tests: which Cmc a given CacheType produces ───────────────
+//
+// The keyring's only responsibility here is turning a `CacheType` into a
+// `Cmc`, so for the variants it builds itself, successful construction IS the
+// assertion. Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to
+// the cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
+// and is deliberately not re-derived through the keyring. The one exception is
+// `CacheType::Shared`, where the keyring must store the caller's `Arc` verbatim
+// rather than build its own; nothing but a keyring test can check that.
 
-/// A minimal [`CacheEntry`] for asserting cache behaviour through the [`Cmc`]
-/// trait. The materials are irrelevant — these tests care only about whether
-/// an entry is retained or evicted.
-fn cache_entry() -> aws_crypto_mpl::CacheEntry {
-    use aws_crypto_mpl::{CacheEntry, CachedMaterials, UsageMetadata};
-    use std::time::{Duration, SystemTime};
-
-    let now = SystemTime::now();
-    CacheEntry::new(
-        CachedMaterials::BranchKey(fixture_materials_empty_ec()),
-        now,
-        now + Duration::from_secs(3600),
-        UsageMetadata::default(),
-    )
-}
-
-#[tokio::test]
-async fn new_with_default_cache_honors_the_configured_entry_capacity() {
-    // `cache()` hands back a `&Arc<dyn Cmc>`, so the concrete type is not
-    // observable. What is observable through the trait is capacity: a
-    // `LocalCmc` at capacity evicts the least-recently-used entry on put. So
-    // configure capacity 1, store two entries, and assert the first is gone —
-    // which only holds if the DefaultCache's entry_capacity actually reached
-    // the cache the keyring built.
-    let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+#[test]
+fn new_with_default_cache_succeeds() {
+    HierarchicalKeyring::new(
+        keystore_never_consulted(),
         3600,
         Some("bk".to_string()),
         None,
         Some(CacheType::Default(DefaultCache::new(1, 1))),
         None,
     )
-    .expect("CacheType::Default(DefaultCache::new(1, 1)) must succeed");
-
-    let cache = keyring.cache();
-    cache
-        .put_cache_entry(b"first", cache_entry())
-        .await
-        .unwrap();
-    cache
-        .put_cache_entry(b"second", cache_entry())
-        .await
-        .unwrap();
-
-    assert!(
-        cache.get_cache_entry(b"first").await.unwrap().is_none(),
-        "capacity 1 must have evicted the first entry when the second was stored",
-    );
-    assert!(
-        cache.get_cache_entry(b"second").await.unwrap().is_some(),
-        "the most recently stored entry must still be present",
-    );
+    .expect("CacheType::Default must build a keyring-local cache");
 }
 
-#[tokio::test]
-async fn new_with_cache_type_none_builds_a_usable_cache() {
-    // The `None` case defaults to entry_capacity 1000, which would take 1001
-    // puts to demonstrate by eviction. Assert the weaker property the default
-    // actually guarantees here: a cache was built and it stores and returns
-    // entries.
-    let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+#[test]
+fn new_with_cache_type_none_succeeds() {
+    HierarchicalKeyring::new(
+        keystore_never_consulted(),
         3600,
         Some("bk".to_string()),
         None,
@@ -374,24 +332,15 @@ async fn new_with_cache_type_none_builds_a_usable_cache() {
         None,
     )
     .expect("None cache_type must default to a built-in cache");
-
-    let cache = keyring.cache();
-    cache.put_cache_entry(b"id", cache_entry()).await.unwrap();
-    assert!(
-        cache.get_cache_entry(b"id").await.unwrap().is_some(),
-        "the default cache must store and return an entry",
-    );
 }
 
-#[tokio::test]
-async fn new_with_shared_cache_round_trips_provided_arc() {
-    use aws_crypto_mpl::{Cmc, LocalCmc};
-
+#[test]
+fn new_with_shared_cache_round_trips_provided_arc() {
     let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
     let supplied_for_compare = Arc::clone(&supplied);
 
     let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         3600,
         Some("bk".to_string()),
         None,
@@ -410,10 +359,8 @@ async fn new_with_shared_cache_round_trips_provided_arc() {
     );
 }
 
-#[tokio::test]
-async fn new_with_storm_tracking_cache_succeeds() {
-    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
-
+#[test]
+fn new_with_storm_tracking_cache_succeeds() {
     let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
@@ -424,8 +371,8 @@ async fn new_with_storm_tracking_cache_succeeds() {
         sleep_milli: 10,
         time_units: None,
     };
-    let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+    HierarchicalKeyring::new(
+        keystore_never_consulted(),
         3600, // ttl_seconds — strictly greater than grace_period (60).
         Some("bk".to_string()),
         None,
@@ -433,13 +380,10 @@ async fn new_with_storm_tracking_cache_succeeds() {
         None,
     )
     .expect("CacheType::StormTracking with grace_period < ttl must succeed");
-    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
 
-#[tokio::test]
-async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
-
+#[test]
+fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
     let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
@@ -451,7 +395,7 @@ async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         time_units: None,
     };
     let err = match HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         60, // ttl_seconds == grace_period — must fail.
         Some("bk".to_string()),
         None,
@@ -468,10 +412,8 @@ async fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
     );
 }
 
-#[tokio::test]
-async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
-
+#[test]
+fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
     let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
@@ -483,7 +425,7 @@ async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         time_units: None,
     };
     let err = match HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         60,
         Some("bk".to_string()),
         None,
@@ -500,11 +442,9 @@ async fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
     );
 }
 
-#[tokio::test]
-async fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
+#[test]
+fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     use aws_crypto_mpl::TimeUnits;
-    use aws_crypto_mpl::cmc::cache_config::StormTrackingCache;
-
     // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
     let params = StormTrackingCache {
@@ -518,7 +458,7 @@ async fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() 
         time_units: Some(TimeUnits::Milliseconds),
     };
     HierarchicalKeyring::new(
-        keystore_never_consulted().await,
+        keystore_never_consulted(),
         60,
         Some("bk".to_string()),
         None,
