@@ -334,6 +334,136 @@ void test_bytes_and_string_ergonomics() {
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
 }
 
+// Streaming RTT
+void test_streaming() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    // MUST be a non-signing suite to test round-trip here.
+    // Streamed decrypt of multi-frame signed messages is refused by any ESDK.
+    //
+    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= type=test
+    //# - The ESDK shim SHOULD provide streaming encrypt and decrypt operations,
+    //# accepting the same inputs as [encrypt](#encrypt-inputs) and
+    //# [decrypt](#decrypt-inputs) except the plaintext or ciphertext, which the
+    //# target supplies incrementally.
+    auto opts = Aws::Esdk::EncryptOptions()
+                    .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+                    .with_frame_length(4096)
+                    .with_max_encrypted_data_keys(3)
+                    .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt);
+
+    std::vector<std::uint8_t> plaintext(20000);
+    for (std::size_t i = 0; i < plaintext.size(); ++i) plaintext[i] = static_cast<std::uint8_t>(i % 251);
+
+    //= spec/shim/shim.md#streaming
+    //= type=test
+    //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
+    //# the shim library SHOULD support it as well.
+    auto enc = sdk.create_encrypt_stream(keyring, opts);
+    std::vector<std::uint8_t> ciphertext;
+    for (std::size_t off = 0; off < plaintext.size(); off += 3001) {
+        auto n = std::min<std::size_t>(3001, plaintext.size() - off);
+        //= spec/shim/shim.md#streaming
+        //= type=test
+        //# - The shim MUST provide a write step that the target calls repeatedly, each
+        //# call supplying the next chunk of input and returning whatever output the
+        //# operation has produced so far (possibly none).
+        auto out = enc.write(plaintext.data() + off, n);
+        ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    }
+    for (int i = 0; i < 2000 && ciphertext.size() < 4096; ++i) {
+        //= spec/shim/shim.md#streaming
+        //= type=test
+        //= reason=With every plaintext chunk written but the input still open (finish not called), at least one full frame is already released.
+        //# - The shim SHOULD return output from write steps as the core library produces
+        //# it, rather than holding all output until the finish step.
+        auto out = enc.write(nullptr, 0);
+        ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    }
+    ESDK_CHECK(ciphertext.size() >= 4096);
+    //= spec/shim/shim.md#streaming
+    //= type=test
+    //# - The shim MUST provide a finish step that ends the input, completes the
+    //# operation, and returns the operation's result together with any output not
+    //# yet returned by a write step.
+    auto enc_fin = enc.finish();
+    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= type=test
+    //# - A successful finish step MUST return the same non-payload outputs as
+    //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
+    ESDK_CHECK(enc_fin.algorithm_suite_id ==
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    ciphertext.insert(ciphertext.end(), enc_fin.trailing_output.begin(), enc_fin.trailing_output.end());
+
+    // Assert the ciphertext one-shot decrypts.
+    ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
+
+    // Streamed decrypt recovers the plaintext.
+    auto dec = sdk.create_decrypt_stream(
+        keyring, Aws::Esdk::DecryptOptions()
+                     .with_max_encrypted_data_keys(3)
+                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
+    std::vector<std::uint8_t> recovered;
+    for (std::size_t off = 0; off < ciphertext.size(); off += 1517) {
+        auto n = std::min<std::size_t>(1517, ciphertext.size() - off);
+        auto out = dec.write(ciphertext.data() + off, n);
+        recovered.insert(recovered.end(), out.begin(), out.end());
+    }
+    auto dec_fin = dec.finish();
+    recovered.insert(recovered.end(), dec_fin.trailing_output.begin(), dec_fin.trailing_output.end());
+    ESDK_CHECK(recovered == plaintext);
+
+    // Assert the stream can't be operated on after it's finished
+    {
+        auto done = sdk.create_encrypt_stream(keyring);
+        done.finish();
+        CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, done.write(std::string_view("late")));
+        CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, done.finish());
+    }
+
+    // Tampered stream: released plaintext must be discarded.
+    // The failure surfaces as CryptographicException by finish() (at the latest).
+    //= spec/shim/shim.md#streaming
+    //= type=test
+    //# - When the operation has failed, the shim MUST return an error from the next
+    //# write or finish step.
+    auto tampered = ciphertext;
+    tampered.back() ^= 0xFF;
+    ++::esdk_test::g_checks;
+    try {
+        auto bad = sdk.create_decrypt_stream(keyring);
+        for (std::size_t off = 0; off < tampered.size(); off += 4096) {
+            auto n = std::min<std::size_t>(4096, tampered.size() - off);
+            bad.write(tampered.data() + off, n);
+        }
+        bad.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: tampered stream did not throw\n";
+    } catch (const Aws::Esdk::CryptographicException&) {
+        // expected
+    }
+}
+
+void test_lifetime_safety(const TestConfig& cfg) {
+    Aws::Esdk::HierarchicalKeyring keyring = make_hierarchical_keyring(cfg);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto plaintext = to_bytes("outlives its dependencies");
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+    auto decrypted = sdk.decrypt(ciphertext, keyring);
+    ESDK_CHECK(decrypted.plaintext == plaintext);
+}
+
+void test_default_options_defer(const TestConfig& cfg) {
+    auto keyring = make_hierarchical_keyring(cfg);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto encrypted = sdk.encrypt(to_bytes("defer to defaults"), keyring);
+    ESDK_CHECK(encrypted.algorithm_suite_id ==
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+}
+
 void test_full_resource_chain(const TestConfig& cfg) {
     auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
@@ -474,6 +604,42 @@ void test_full_resource_chain(const TestConfig& cfg) {
     ESDK_CHECK(dec.encryption_context["purpose"] == "integration-test");
 }
 
+void test_streaming_signed_message_refused() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+
+    // Multi-frame message under the default (signing) suite.
+    std::vector<std::uint8_t> plaintext(10000, 0x5A);
+    auto ciphertext = sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_frame_length(4096))
+                          .ciphertext;
+
+    // One-shot decrypt handles it.
+    ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
+
+    // Streamed decrypt refuses: it never releases plaintext it cannot yet verify.
+    //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+    //= type=test
+    //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
+    //# and the shim MUST surface the core ESDK's refusal to stream a message whose
+    //# verification cannot complete until the end of the message.
+    ++::esdk_test::g_checks;
+    try {
+        auto dec = sdk.create_decrypt_stream(keyring);
+        for (std::size_t off = 0; off < ciphertext.size(); off += 4096) {
+            auto n = std::min<std::size_t>(4096, ciphertext.size() - off);
+            dec.write(ciphertext.data() + off, n);
+        }
+        dec.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: streamed decrypt of multi-frame signed message did not throw\n";
+    } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
+        // expected
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -487,6 +653,8 @@ int main(int argc, char** argv) {
         test_error_kinds();
         test_client_configuration();
         test_bytes_and_string_ergonomics();
+        test_streaming();
+        test_streaming_signed_message_refused();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
@@ -504,6 +672,8 @@ int main(int argc, char** argv) {
         test_decrypt_garbage_throws(*cfg);
         test_tampered_ciphertext_throws(*cfg);
         test_full_resource_chain(*cfg);
+        test_lifetime_safety(*cfg);
+        test_default_options_defer(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
