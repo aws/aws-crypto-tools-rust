@@ -249,8 +249,6 @@ pub fn unwrap(
 
     // Build the AAD using the materials' branch_key_id, branch_key_version,
     // and the supplied encryption_context (the decryption-materials' EC).
-    // Note: A1 mandates the AAD is included in the AES Decrypt call;
-    // A2 mandates the concatenation order.
     let aad_bytes = compute_aad(
         materials.branch_key_id(),
         materials.branch_key_version(),
