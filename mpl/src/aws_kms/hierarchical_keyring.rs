@@ -17,7 +17,9 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::cache_config::{CacheType, DefaultCache};
+use crate::cmc::cache_config::{
+    CACHE_PRUNING_TAIL_SIZE, CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache,
+};
 use crate::cmc::{
     CacheEntry, CachedMaterials, Cmc, LocalCmc, StormTrackingCmc, TimeUnits, UsageMetadata,
 };
@@ -164,19 +166,19 @@ impl HierarchicalKeyring {
             ));
         }
 
-        let cache: Arc<dyn Cmc> = match cache_type
-            .unwrap_or(CacheType::Default(DefaultCache::default()))
-        {
+        // An absent `cache_type` is where the 1000-entry default lives: the
+        // model requires `DefaultCache.entryCapacity`, and documents this
+        // number on the keyring's own `cache` member.
+        let cache: Arc<dyn Cmc> = match cache_type.unwrap_or(CacheType::Default(DefaultCache::new(
+            DEFAULT_CACHE_ENTRY_CAPACITY,
+        ))) {
             CacheType::Default(default_cache) => {
-                let local = LocalCmc::new(
-                    default_cache.entry_capacity,
-                    default_cache.entry_pruning_tail_size,
-                )
-                .map_err(|e| {
-                    MaterialsError::new(format!(
-                        "HierarchicalKeyring: failed to initialize default LocalCmc: {e}",
-                    ))
-                })?;
+                let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
+                    .map_err(|e| {
+                        MaterialsError::new(format!(
+                            "HierarchicalKeyring: failed to initialize default LocalCmc: {e}",
+                        ))
+                    })?;
                 Arc::new(local)
             }
             CacheType::Shared(cache) => cache,

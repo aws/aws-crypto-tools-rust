@@ -7,6 +7,15 @@
 //! partition id, cache wiring), the cache entry identifier formulas, the
 //! branch-key wrap / unwrap / AAD functions, and the OnEncrypt / OnDecrypt
 //! operations against keystore doubles.
+//!
+//! Where a test builds an expected byte sequence by hand, it is transcribed
+//! from the AWS KMS Hierarchical Keyring specification:
+//!
+//! - [Appendix A: Cache Entry Identifier Formulas][appendix-a]
+//! - [Branch Key Wrapping and Unwrapping AAD][aad]
+//!
+//! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
+//! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
 use std::sync::Arc;
 
@@ -175,7 +184,7 @@ fn new_with_positive_ttl_succeeds() {
         1, // smallest legal TTL
         Some("branch-key-id".to_string()),
         None,
-        Some(CacheType::Default(DefaultCache::default())),
+        Some(CacheType::Default(DefaultCache::new(1000))),
         None,
     );
 
@@ -259,19 +268,80 @@ fn partition_id_provided_is_utf8_round_tripped() {
     // a `type=implication` on the source side (Rust's `String::into_bytes` is
     // UTF-8 by construction of the `String` type). This test exists as
     // regression coverage to confirm the bytes are the original UTF-8 bytes
-    // and have not been re-encoded or truncated.
-    let original = "hello-世界";
-    let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("branch-key-id".to_string()),
-        None,
-        None,
-        Some(original.to_string()),
-    )
-    .expect("constructor with explicit partition id must succeed");
+    // and have not been re-encoded, normalized, or truncated.
+    //
+    // Table-driven across the UTF-8 shapes that could break a naive
+    // implementation: every encoded length, a character outside the BMP, a
+    // string that is not in normal form, and a lone combining mark.
+    let cases: &[(&str, &str)] = &[
+        ("ascii only", "partition-id"),
+        ("2-byte: precomposed e-acute", "café"),
+        ("3-byte: CJK", "hello-世界"),
+        ("4-byte: astral plane emoji", "partition-😀"),
+        ("mixed widths", "hello-aé世😀"),
+        // NFD: "a" followed by COMBINING ACUTE ACCENT. Must survive as two
+        // scalars — normalizing to U+00E1 would change the byte length.
+        ("decomposed: a + U+0301", "hello-a\u{0301}"),
+        ("combining mark with no base", "\u{0301}"),
+        (
+            "emoji ZWJ sequence",
+            "family-\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        ),
+        ("right-to-left", "قسم"),
+        ("empty", ""),
+    ];
 
-    assert_eq!(keyring.partition_id_bytes(), original.as_bytes());
+    for (label, original) in cases {
+        let keyring = HierarchicalKeyring::new(
+            keystore_never_consulted(),
+            3600,
+            Some("branch-key-id".to_string()),
+            None,
+            None,
+            Some((*original).to_string()),
+        )
+        .unwrap_or_else(|e| {
+            panic!("{label}: constructor with explicit partition id must succeed: {e}")
+        });
+
+        assert_eq!(
+            keyring.partition_id_bytes(),
+            original.as_bytes(),
+            "{label}: partition id bytes MUST be the caller's UTF-8 bytes verbatim",
+        );
+    }
+}
+
+#[test]
+fn partition_id_is_not_unicode_normalized() {
+    // The two strings below are canonically equivalent under Unicode
+    // normalization but are different byte sequences. The partition id
+    // separates cache entries, so collapsing them would let two keyrings a
+    // caller intended to keep apart share entries in a `Shared` cache.
+    let precomposed = "caf\u{00E9}"; // é as one scalar
+    let decomposed = "cafe\u{0301}"; // e + combining acute
+
+    let id_of = |partition: &str| {
+        HierarchicalKeyring::new(
+            keystore_never_consulted(),
+            3600,
+            Some("branch-key-id".to_string()),
+            None,
+            None,
+            Some(partition.to_string()),
+        )
+        .expect("constructor must succeed")
+        .partition_id_bytes()
+        .to_vec()
+    };
+
+    assert_eq!(id_of(precomposed), precomposed.as_bytes());
+    assert_eq!(id_of(decomposed), decomposed.as_bytes());
+    assert_ne!(
+        id_of(precomposed),
+        id_of(decomposed),
+        "canonically-equivalent partition ids MUST stay distinct byte sequences",
+    );
 }
 
 #[test]
@@ -315,7 +385,7 @@ fn new_with_default_cache_succeeds() {
         3600,
         Some("bk".to_string()),
         None,
-        Some(CacheType::Default(DefaultCache::new(1, 1))),
+        Some(CacheType::Default(DefaultCache::new(1))),
         None,
     )
     .expect("CacheType::Default must build a keyring-local cache");
@@ -468,7 +538,10 @@ fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
 }
 
-// ─── Cache entry identifier formula tests (Appendix A) ──────────────────────
+// ─── Cache entry identifier formula tests ───────────────────────────────────
+//
+// Byte layouts below are transcribed from Appendix A of the specification;
+// see the module doc for the link.
 
 /// SHA-384 digest of a single concatenated byte sequence. Local helper used to
 /// derive the *expected* cache identifier from an explicitly-laid-out byte
@@ -490,7 +563,7 @@ fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
     let logical_key_store_name = LOGICAL_KEY_STORE_NAME;
     let branch_key_id = FIXTURE_BRANCH_KEY_ID;
 
-    // Manually build the byte sequence the spec dictates:
+    // Manually build the byte sequence Appendix A dictates:
     //   [resource_id=0x02, NULL, scope_id_encrypt=0x01, NULL,
     //    partition_id..., NULL,
     //    UTF8(logical_key_store_name), NULL,
@@ -662,9 +735,10 @@ fn fixture_materials_empty_ec() -> BranchKeyMaterials {
 
 #[test]
 fn compute_aad_layout_for_known_inputs() {
-    // Independently-constructed expected AAD byte vector. Built here from
-    // the spec's bullet list so a drift in the implementation's order or
-    // separator bytes is detected.
+    // Independently-constructed expected AAD byte vector. Built here from the
+    // bullet list in the specification's Branch Key Wrapping and Unwrapping
+    // AAD section (linked in the module doc) so a drift in the
+    // implementation's order or separator bytes is detected.
     let branch_key_id = "ek1";
     let version = "01234567-0123-4123-8123-0123456789ab";
     let ec = EncryptionContext::new();
@@ -683,9 +757,9 @@ fn compute_aad_layout_for_known_inputs() {
         ])
         .collect();
 
-    // The expected bytes are independently constructed from the spec's bullet
-    // list (label || branch-key-id || version || serialized-EC); a drift in
-    // concatenation order or content fails this assertion.
+    // The expected bytes are independently constructed from the AAD section's
+    // bullet list (label || branch-key-id || version || serialized-EC); a
+    // drift in concatenation order or content fails this assertion.
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
     assert_eq!(aad, expected, "AAD must equal label || id || version || ec");
     assert_eq!(
@@ -1241,7 +1315,7 @@ mod onencrypt {
             3600,
             Some(branch_key_id.to_string()),
             None,
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(CacheType::Default(DefaultCache::new(1000))),
             Some("partition-id".to_string()),
         )
         .unwrap()
@@ -1336,7 +1410,7 @@ mod onencrypt {
             3600,
             Some("bk".to_string()),
             None,
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(CacheType::Default(DefaultCache::new(1000))),
             None,
         )
         .unwrap();
@@ -1361,7 +1435,7 @@ mod onencrypt {
             Some(
                 Arc::new(FixedBranchKeySupplier(FIXED_BRANCH_KEY_ID)) as Arc<dyn BranchKeySupplier>
             ),
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(CacheType::Default(DefaultCache::new(1000))),
             None,
         )
         .unwrap();
@@ -1539,7 +1613,7 @@ mod ondecrypt {
             3600,
             Some(branch_key_id.to_string()),
             None,
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(CacheType::Default(DefaultCache::new(1000))),
             Some("partition-id".to_string()),
         )
         .unwrap()
@@ -1851,7 +1925,7 @@ mod ondecrypt {
             3600,
             Some(FIXED_BRANCH_KEY_ID.to_string()),
             None,
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(CacheType::Default(DefaultCache::new(1000))),
             Some("partition-id".to_string()),
         )
         .unwrap();
@@ -1878,7 +1952,7 @@ mod ondecrypt {
             Some(
                 Arc::new(FixedBranchKeySupplier(FIXED_BRANCH_KEY_ID)) as Arc<dyn BranchKeySupplier>
             ),
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(CacheType::Default(DefaultCache::new(1000))),
             Some("partition-id".to_string()),
         )
         .unwrap();

@@ -14,14 +14,14 @@ use uuid::Uuid;
 
 use crate::structures::{BranchKeyMaterials, EncryptionContext, MaterialsError};
 
-/// Length of the random salt used as the KDF context. Spec: 16 bytes.
+/// Length of the random salt used as the KDF context: 16 bytes.
 const SALT_LEN: usize = 16;
 
-/// Length of the AES-GCM IV. Spec: 12 bytes.
+/// Length of the AES-GCM IV: 12 bytes.
 const IV_LEN: usize = 12;
 
 /// Length of the branch-key version (UUID) when serialized as raw bytes
-/// inside the AAD and the on-wire layout. Spec: 16 bytes.
+/// inside the AAD and the on-wire layout: 16 bytes.
 const VERSION_LEN: usize = 16;
 
 /// AES-GCM authentication tag length. AES-256-GCM always produces a
@@ -33,7 +33,7 @@ const TAG_LEN: usize = 16;
 const DERIVED_KEY_LEN: usize = 32;
 
 /// Label for the KDF in Counter Mode with HMAC SHA256 derivation and for the
-/// AAD prefix. Spec: "aws-kms-hierarchy" UTF-8 encoded — 17 bytes.
+/// AAD prefix: the literal "aws-kms-hierarchy", UTF-8 encoded — 17 bytes.
 const HIERARCHY_LABEL: &[u8] = b"aws-kms-hierarchy";
 
 /// Total fixed overhead of a wrap output relative to the plaintext data key:

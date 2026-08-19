@@ -114,7 +114,7 @@ fn keyring_for(
         keystore,
         branch_key_id,
         partition,
-        CacheType::Default(DefaultCache::default()),
+        CacheType::Default(DefaultCache::new(1000)),
     )
 }
 

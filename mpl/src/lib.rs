@@ -21,8 +21,8 @@ pub mod structures;
 pub use client::*;
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
-    DefaultCacheBuilder, LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder,
-    StormTrackingCmc, TimeUnits, UsageMetadata,
+    LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
+    TimeUnits, UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::Keyring;

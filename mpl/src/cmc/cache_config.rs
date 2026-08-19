@@ -12,95 +12,58 @@
 //! These types are deliberately independent of any one CMP so that a keyring
 //! and a caching CMM configure a cache the same way.
 
+// TODO: finish conforming this module to the Smithy `CacheType` union, which
+// has six variants: Default, No, SingleThreaded, MultiThreaded, StormTracking
+// and Shared. `No`, `SingleThreaded` and `MultiThreaded` are not modelled here
+// yet. Also unaddressed: the model makes `entryPruningTailSize` an optional
+// member of SingleThreadedCache / MultiThreadedCache / StormTrackingCache,
+// while `StormTrackingCache` below requires it; and the model's `Default`
+// variant builds a storm-tracking cache (StormTracker.DefaultStorm) rather
+// than the plain LocalCmc built here. Follow-up PR.
+
 use std::sync::Arc;
 
 use crate::cmc::{Cmc, TimeUnits};
 use crate::structures::MaterialsError;
 
-/// Default entry capacity for a CMP-local cache.
-const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
+/// Entry capacity a CMP uses when the caller configures no cache at all.
+///
+/// Not a default on [`DefaultCache`] itself: the Smithy model marks
+/// `DefaultCache.entryCapacity` `@required`, and places this number on the
+/// consuming CMP instead — the Hierarchical Keyring's `cache` member documents
+/// "If not set, a DefaultCache is initialized ... with entryCapacity = 1000".
+pub(crate) const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
-/// Default entry-pruning tail size for a CMP-local cache. 64 strikes a
-/// reasonable balance between pruning amortization and per-`get` work.
-const DEFAULT_CACHE_PRUNING_TAIL_SIZE: usize = 64;
+/// Number of least-recently-used entries a CMP-local cache scans per `get`,
+/// evicting any that are TTL-expired.
+///
+/// Deliberately not caller-configurable. The Smithy model does not give
+/// `DefaultCache` this member, and every path in the Dafny implementation uses
+/// 1 — `LocalCMC`'s constructor default, `StormTracker.DefaultStorm()`, and
+/// each `entryPruningTailSize.UnwrapOr(1)` at the create-cache switch. Matching
+/// that keeps pruning behaviour identical across implementations.
+pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
 
 /// Configuration for a CMP-local "default" Cryptographic Materials Cache
 /// (a wrapped [`LocalCmc`](super::LocalCmc)). Carried by
 /// [`CacheType::Default`].
 ///
-/// Use [`DefaultCache::default()`] to get the default entry capacity (1000)
-/// and a sensible pruning tail size; use [`DefaultCache::builder`] to
-/// customize either field.
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// Mirrors the Smithy `DefaultCache`, whose only member is a required
+/// `entryCapacity`. There is deliberately no `Default` impl: the model requires
+/// the capacity, and the "1000 when unset" behaviour belongs to the consuming
+/// CMP's absent-cache path, not to this type. Pruning tail size is not a
+/// member here for the same reason — the model does not expose it.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct DefaultCache {
-    /// Maximum number of entries the cache holds. Defaults to 1000 when
-    /// none is provided.
+    /// Maximum number of entries the cache holds.
     pub entry_capacity: usize,
-    /// Number of LRU entries scanned per get for TTL-aware pruning.
-    /// Defaults to 64, balancing pruning amortization against per-`get`
-    /// work.
-    pub entry_pruning_tail_size: usize,
-}
-
-impl Default for DefaultCache {
-    fn default() -> Self {
-        Self {
-            entry_capacity: DEFAULT_CACHE_ENTRY_CAPACITY,
-            entry_pruning_tail_size: DEFAULT_CACHE_PRUNING_TAIL_SIZE,
-        }
-    }
 }
 
 impl DefaultCache {
-    /// Construct a `DefaultCache` with explicit capacity and pruning tail size.
+    /// Construct a `DefaultCache` with an explicit maximum entry count.
     #[must_use]
-    pub const fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Self {
-        Self {
-            entry_capacity,
-            entry_pruning_tail_size,
-        }
-    }
-
-    /// Start a fluent builder for `DefaultCache`. Unset fields fall back to
-    /// the defaults (entry_capacity = 1000, entry_pruning_tail_size = 64).
-    #[must_use]
-    pub fn builder() -> DefaultCacheBuilder {
-        DefaultCacheBuilder::default()
-    }
-}
-
-/// Fluent builder for [`DefaultCache`]. Call [`Self::build`] to produce the
-/// configured `DefaultCache`; unset fields fall back to the defaults.
-#[derive(Debug, Clone, Default)]
-pub struct DefaultCacheBuilder {
-    entry_capacity: Option<usize>,
-    entry_pruning_tail_size: Option<usize>,
-}
-
-impl DefaultCacheBuilder {
-    /// Override the maximum number of entries held by the cache.
-    #[must_use]
-    pub const fn entry_capacity(mut self, n: usize) -> Self {
-        self.entry_capacity = Some(n);
-        self
-    }
-
-    /// Override the number of LRU entries scanned per `get` for pruning.
-    #[must_use]
-    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
-        self.entry_pruning_tail_size = Some(n);
-        self
-    }
-
-    /// Finalize the builder into a [`DefaultCache`].
-    #[must_use]
-    pub fn build(self) -> DefaultCache {
-        DefaultCache {
-            entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
-            entry_pruning_tail_size: self
-                .entry_pruning_tail_size
-                .unwrap_or(DEFAULT_CACHE_PRUNING_TAIL_SIZE),
-        }
+    pub const fn new(entry_capacity: usize) -> Self {
+        Self { entry_capacity }
     }
 }
 
@@ -258,8 +221,9 @@ impl StormTrackingCacheBuilder {
 #[non_exhaustive]
 pub enum CacheType {
     /// A CMP-local [`LocalCmc`](super::LocalCmc) configured by the carried
-    /// [`DefaultCache`]. Use [`DefaultCache::default()`] for a max cache
-    /// size of 1000.
+    /// [`DefaultCache`], whose `entry_capacity` the model requires the caller
+    /// to state. Omitting the cache entirely is what selects the CMP's own
+    /// default capacity.
     Default(DefaultCache),
     /// Use the caller-supplied [`Cmc`] impl directly. Common when one
     /// cache is shared across multiple Hierarchical Keyrings (or other

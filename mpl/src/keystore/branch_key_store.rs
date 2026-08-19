@@ -662,7 +662,7 @@ fn expected_key_schema() -> Result<Vec<KeySchemaElement>, KeystoreError> {
 
 /// Returns true if `table` carries at least the expected branch-key-store
 /// KeySchema and attribute definitions. The table MAY carry additional
-/// attributes / indexes (per the spec), so this is a superset check.
+/// attributes / indexes, so this is a superset check.
 fn table_has_expected_schema(table: &TableDescription) -> bool {
     let key_schema = table.key_schema();
     let has_hash = key_schema
