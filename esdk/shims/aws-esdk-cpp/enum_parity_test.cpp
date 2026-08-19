@@ -1,8 +1,6 @@
-// detail::to_ffi() converts the facade enums to the bridge enums with a plain
-// static_cast, so their values must match; drift fails this compile.
-//
-// This is an internal white-box check, so it deliberately includes the
-// cxx-generated bridge header (which the public header no longer exposes).
+// detail::to_ffi() converts the C++ enums to the Rust enums
+// with a plain static_cast (i.e. the same enum byte value),
+// so the enum byte values must match.
 #include <cstdint>
 
 #include <aws/esdk/EncryptionSDK.h>
