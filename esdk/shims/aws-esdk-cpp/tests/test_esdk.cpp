@@ -98,7 +98,6 @@ void test_raw_aes_wrong_keyring_fails() {
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::EncryptionSDK sdk;
     auto ciphertext = sdk.encrypt(to_bytes("keyed to A"), keyring_a).ciphertext;
-    // The unwrap failure's kind is unpinned; any shim error passes.
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring_b));
 }
 
