@@ -40,13 +40,13 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///
 /// On `decrypt_materials` the default CMM:
 /// - Validates the algorithm suite against the request's commitment policy.
-/// - Reconciles the request's encryption context with its Reproduced
+/// - Merges the request's encryption context with its Reproduced
 ///   Encryption Context: shared keys must agree, and pairs present only in
 ///   the reproduced context are appended and reported as Required Encryption
-///   Context Keys. See [`reconcile_reproduced_encryption_context`].
+///   Context Keys. See [`merge_reproduced_encryption_context`].
 /// - For signing suites: extracts and base64-decodes the verification key
-///   from the reconciled encryption context.
-/// - For non-signing suites: rejects requests whose reconciled encryption
+///   from the merged encryption context.
+/// - For non-signing suites: rejects requests whose merged encryption
 ///   context contains the reserved `aws-crypto-public-key`.
 /// - Calls the wrapped keyring's `on_decrypt` to populate the plaintext data
 ///   key.
@@ -104,25 +104,17 @@ impl Cmm for DefaultCmm {
                 AsymmetricSignatureAlgorithm::EcdsaP384 => PrimEcdsaSignatureAlgorithm::EcdsaP384,
             };
 
-            // scalar_bytes: raw private scalar (32 bytes for P-256, 48 for P-384).
-            // uncompressed: SEC1-uncompressed public point emitted by `prim`
-            // (`0x04 || X || Y`; 65 bytes for P-256, 97 for P-384).
-            let (scalar_bytes, uncompressed) = ecdsa_generate_keypair(alg)
-                .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
-
-            // Convert to SEC1-compressed form (`tag || X`, where `tag` is
-            // `0x02` when Y is even and `0x03` when Y is odd). 33 bytes for
-            // P-256, 49 for P-384. The spec requires the compressed form in
-            // the encryption context per
+            // `prim` returns the key pair in the Dafny MPL's formats: the
+            // verification key is already an X9.62 compressed point (33 bytes
+            // for P-256, 49 for P-384), which is exactly the form the spec
+            // requires in the encryption context per
             // `spec/framework/transitive-requirements.md#ecdsa` (SEC 1 v2.0
-            // §2.3.3).
-            debug_assert_eq!(uncompressed[0], 0x04);
-            let coord_len = (uncompressed.len() - 1) / 2;
-            let y_lsb = uncompressed[uncompressed.len() - 1];
-            let tag = if y_lsb & 1 == 0 { 0x02 } else { 0x03 };
-            let mut public_key_bytes = Vec::with_capacity(1 + coord_len);
-            public_key_bytes.push(tag);
-            public_key_bytes.extend_from_slice(&uncompressed[1..=coord_len]);
+            // §2.3.3), and the signing key is DER-encoded, the form
+            // `ecdsa_sign_digest` accepts when the message is signed.
+            let keys = ecdsa_generate_keypair(alg)
+                .expect("ECDSA keypair generation cannot fail for fixed P-256/P-384 algorithms");
+            let scalar_bytes = keys.signing_key;
+            let public_key_bytes = keys.verification_key;
 
             // Encode the verification key as base64 (standard alphabet, with
             // padding) and store the resulting ASCII bytes in the EC.
@@ -152,7 +144,6 @@ impl Cmm for DefaultCmm {
         let materials = self.keyring.on_encrypt(empty_materials).await?;
 
         // on_encrypt populates PDK; returning materials passes it through unchanged.
-        //
         Ok(materials)
     }
 
@@ -169,12 +160,12 @@ impl Cmm for DefaultCmm {
             )));
         }
 
-        // Reconcile the message's encryption context with the customer-supplied
+        // Merge the message's encryption context with the customer-supplied
         // Reproduced Encryption Context before anything reads the context. Every
         // subsequent step — the reserved-key checks, the verification key, and
-        // the context handed to the keyring as AAD — MUST see the reconciled
+        // the context handed to the keyring as AAD — MUST see the merged
         // context, not the message's.
-        let (ec, required_encryption_context_keys) = reconcile_reproduced_encryption_context(
+        let (ec, required_encryption_context_keys) = merge_reproduced_encryption_context(
             request.encryption_context(),
             request.reproduced_encryption_context(),
         )?;
@@ -226,7 +217,7 @@ impl Cmm for DefaultCmm {
     }
 }
 
-/// Reconcile the message's encryption context with the customer-supplied
+/// Merge the message's encryption context with the customer-supplied
 /// Reproduced Encryption Context, per
 /// `spec/framework/cmm-interface.md#decrypt-materials`.
 ///
@@ -243,7 +234,7 @@ impl Cmm for DefaultCmm {
 /// CMM may hold required keys back from the message, so a decryptor that only
 /// ever saw the message's context would compute a short AAD and fail
 /// authentication.
-fn reconcile_reproduced_encryption_context(
+fn merge_reproduced_encryption_context(
     message_ec: &EncryptionContext,
     reproduced_ec: Option<&EncryptionContext>,
 ) -> Result<(EncryptionContext, BTreeSet<Vec<u8>>), MaterialsError> {

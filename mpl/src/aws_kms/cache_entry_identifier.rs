@@ -72,9 +72,9 @@ fn build_cache_identifier(
         buf.extend_from_slice(version.as_bytes());
     }
 
-    let digest_value = digest(DigestAlg::Sha384, &buf);
     let mut output = [0u8; DigestAlg::Sha384.output_len()];
-    output.copy_from_slice(digest_value.as_ref());
+    digest(DigestAlg::Sha384, &buf, &mut output)
+        .expect("output is DigestAlg::Sha384.output_len() bytes, the only length digest accepts");
     output
 }
 
