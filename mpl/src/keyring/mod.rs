@@ -9,6 +9,10 @@
 
 use async_trait::async_trait;
 
+pub mod raw_aes_keyring;
+
+pub use raw_aes_keyring::RawAesKeyring;
+
 use crate::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
 };
