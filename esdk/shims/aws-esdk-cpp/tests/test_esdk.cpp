@@ -420,8 +420,6 @@ void test_full_resource_chain(const TestConfig& cfg) {
     auto plaintext = to_bytes("Hello from the C++ integration test");
     std::map<std::string, std::string> ec = {{"purpose", "integration-test"}};
 
-    // frame length and max-EDKs are forwarded plumbing whose values here equal
-    // the ESDK defaults; their forwarding is pinned by the Rust apply_* tests.
     auto enc = sdk.encrypt(
         plaintext, keyring,
         Aws::Esdk::EncryptOptions()
@@ -434,9 +432,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
             //= type=test
             //# - MUST provide the target-supplied encryption context to the core ESDK,
             //# converted as defined in [Encryption context](#encryption-context).
-            .with_encryption_context(ec)
-            .with_frame_length(4096)
-            .with_max_encrypted_data_keys(3));
+            .with_encryption_context(ec));
     ESDK_CHECK(enc.ciphertext != plaintext);
 
     //= spec/shim/esdk-shim.md#encrypt-outputs
@@ -459,8 +455,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
                                //= type=test
                                //# - MUST provide the target-supplied encryption context to the core ESDK,
                                //# converted as defined in [Encryption context](#encryption-context).
-                               .with_encryption_context(ec)
-                               .with_max_encrypted_data_keys(3));
+                               .with_encryption_context(ec));
     ESDK_CHECK(dec.plaintext == plaintext);
     ESDK_CHECK(dec.algorithm_suite_id ==
                Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
