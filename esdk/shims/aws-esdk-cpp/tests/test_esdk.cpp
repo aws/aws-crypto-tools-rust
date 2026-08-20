@@ -10,40 +10,40 @@
 #include "esdk_test_support.h"
 
 // Test utility -- OK iff `expr` throws `ExType`
-#define CHECK_THROWS_TYPE(ExType, expr)                                        \
-    do {                                                                       \
-        ++::esdk_test::g_checks;                                               \
-        try {                                                                  \
-            expr;                                                              \
-            ++::esdk_test::g_failures;                                         \
-            std::cerr << "FAIL: " << #expr << " did not throw\n";              \
-        } catch (const ExType& e) {                                            \
-            if (typeid(e) != typeid(ExType)) {                                 \
-                ++::esdk_test::g_failures;                                     \
-                std::cerr << "FAIL: " << #expr << " threw " << typeid(e).name() \
-                          << ", a subtype of " << #ExType << ": " << e.what() << "\n"; \
-            }                                                                  \
-        } catch (const std::exception& e) {                                    \
-            ++::esdk_test::g_failures;                                         \
+#define CHECK_THROWS_TYPE(ExType, expr)                                                  \
+    do {                                                                                 \
+        ++::esdk_test::g_checks;                                                         \
+        try {                                                                            \
+            expr;                                                                        \
+            ++::esdk_test::g_failures;                                                   \
+            std::cerr << "FAIL: " << #expr << " did not throw\n";                        \
+        } catch (const ExType& e) {                                                      \
+            if (typeid(e) != typeid(ExType)) {                                           \
+                ++::esdk_test::g_failures;                                               \
+                std::cerr << "FAIL: " << #expr << " threw " << typeid(e).name()          \
+                          << ", a subtype of " << #ExType << ": " << e.what() << "\n";   \
+            }                                                                            \
+        } catch (const std::exception& e) {                                              \
+            ++::esdk_test::g_failures;                                                   \
             std::cerr << "FAIL: " << #expr << " threw wrong type: " << e.what() << "\n"; \
-        }                                                                      \
+        }                                                                                \
     } while (0)
 
 // Test utility -- OK iff `expr` throws `AwsEncryptionSdkException`
-#define CHECK_THROWS_ESDK(expr)                                                \
-    do {                                                                       \
-        ++::esdk_test::g_checks;                                               \
-        bool threw = false;                                                    \
-        try {                                                                  \
-            expr;                                                              \
+#define CHECK_THROWS_ESDK(expr)                                                             \
+    do {                                                                                    \
+        ++::esdk_test::g_checks;                                                            \
+        bool threw = false;                                                                 \
+        try {                                                                               \
+            expr;                                                                           \
         } catch (const Aws::Esdk::AwsEncryptionSdkException&) {                             \
-            threw = true;                                                      \
-        } catch (...) {                                                        \
-        }                                                                      \
-        if (!threw) {                                                          \
-            ++::esdk_test::g_failures;                                         \
+            threw = true;                                                                   \
+        } catch (...) {                                                                     \
+        }                                                                                   \
+        if (!threw) {                                                                       \
+            ++::esdk_test::g_failures;                                                      \
             std::cerr << "FAIL: expected AwsEncryptionSdkException from " << #expr << "\n"; \
-        }                                                                      \
+        }                                                                                   \
     } while (0)
 
 namespace {
