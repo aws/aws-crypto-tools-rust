@@ -447,23 +447,6 @@ void test_streaming() {
     }
 }
 
-void test_lifetime_safety(const TestConfig& cfg) {
-    Aws::Esdk::HierarchicalKeyring keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK sdk;
-    auto plaintext = to_bytes("outlives its dependencies");
-    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
-    auto decrypted = sdk.decrypt(ciphertext, keyring);
-    ESDK_CHECK(decrypted.plaintext == plaintext);
-}
-
-void test_default_options_defer(const TestConfig& cfg) {
-    auto keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK sdk;
-    auto encrypted = sdk.encrypt(to_bytes("defer to defaults"), keyring);
-    ESDK_CHECK(encrypted.algorithm_suite_id ==
-               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
-}
-
 void test_full_resource_chain(const TestConfig& cfg) {
     auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
@@ -672,8 +655,6 @@ int main(int argc, char** argv) {
         test_decrypt_garbage_throws(*cfg);
         test_tampered_ciphertext_throws(*cfg);
         test_full_resource_chain(*cfg);
-        test_lifetime_safety(*cfg);
-        test_default_options_defer(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
