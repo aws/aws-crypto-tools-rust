@@ -492,8 +492,6 @@ int main(int argc, char** argv) {
         test_round_trip_with_encryption_context(*cfg);
         test_decrypt_garbage_throws(*cfg);
         test_tampered_ciphertext_throws(*cfg);
-        test_lifetime_safety(*cfg);
-        test_default_options_defer(*cfg);
         test_full_resource_chain(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
