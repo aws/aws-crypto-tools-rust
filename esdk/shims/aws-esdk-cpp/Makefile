@@ -38,14 +38,17 @@ build-tests:
 	cargo build
 	$(MAKE) enum_parity test_esdk
 
-# Run offline C++ tests
+# Run C++ tests. LOCAL_ONLY=--local-only skips the credentialed integration
+# tests; empty (the default) makes a missing ESDK_TEST_* credential a hard
+# failure (see integration_config_or_gate in tests/esdk_test_support.h).
+LOCAL_ONLY ?=
 run-cpp:
-	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_esdk
+	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_esdk $(LOCAL_ONLY)
 
-# Full local offline suite
+# Full local suite without credentials
 test: build-tests
 	cargo test
-	$(MAKE) run-cpp
+	$(MAKE) run-cpp LOCAL_ONLY=--local-only
 
 # Run all Rust tests
 test-ci-rust:

@@ -150,9 +150,92 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 // Implementation types defined inside EncryptionSDK.cpp.
 // Deliberately left incomplete here so no consumer can construct, copy, or inspect them.
 namespace detail {
+struct ClientConfigImpl;
+struct KmsClientImpl;
+struct DdbClientImpl;
+struct KeyStoreImpl;
 struct KeyringImpl;
+struct CryptographicMaterialsCacheImpl;
+struct CacheTypeLowerer;
 struct BytesFactory;
 }  // namespace detail
+
+/// AWS service-client configuration for AWS SDK clients.
+/// A field left unset defers to the ESDK Rust's default configuration resolution.
+/// One ClientConfig may configure multiple clients.
+class ClientConfig {
+    std::shared_ptr<detail::ClientConfigImpl> impl_;
+    friend class KmsClient;
+    friend class DdbClient;
+
+public:
+    ClientConfig();
+    /// Maximum request attempts (1 = no retries).
+    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    /// Selects adaptive retry mode instead of the standard one.
+    ClientConfig& with_adaptive_retry(bool a);
+    /// AWS region for the client (ex. "us-west-2").
+    ClientConfig& with_region(const std::string& r);
+};
+
+/// KMS Client.
+class KmsClient {
+    std::shared_ptr<detail::KmsClientImpl> impl_;
+    friend class KeyStore;
+
+public:
+    /// Creates a KMS client.
+    explicit KmsClient(const ClientConfig& cfg = {});
+};
+
+/// DynamoDB client.
+class DdbClient {
+    std::shared_ptr<detail::DdbClientImpl> impl_;
+    friend class KeyStore;
+
+public:
+    /// Creates a DynamoDB client.
+    explicit DdbClient(const ClientConfig& cfg = {});
+};
+
+/// Optional Key Store parameters.
+/// A field left unset is omitted from the ESDK Rust's Key Store configuration.
+class KeyStoreOptions {
+    std::optional<std::string> key_store_id_;
+    std::vector<std::string> grant_tokens_;
+    friend class KeyStore;
+
+public:
+    /// An identifier for this Key Store.
+    KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
+    /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
+    KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
+};
+
+/// A Branch Key Store backed by a DynamoDB table and protected by AWS KMS.
+class KeyStore {
+    std::shared_ptr<detail::KeyStoreImpl> impl_;
+    friend class HierarchicalKeyring;
+
+public:
+    /// Creates a Key Store backed by a DynamoDB table and protected by AWS KMS.
+    /// \param table_name The DynamoDB table name that backs this Key Store.
+    /// \param logical_key_store_name The logical name for this Key Store, which is
+    ///        cryptographically bound to the keys it holds. This appears in the
+    ///        Encryption Context of KMS requests as `tablename`.
+    /// \param kms_arn Key Store is restricted to only this KMS Key ARN. If a different
+    ///        KMS Key ARN is encountered when creating, versioning, or getting a Branch
+    ///        Key or Beacon Key, KMS is never called and an exception is thrown.
+    /// \param kms The KMS client this Key Store uses to call AWS KMS.
+    /// \param ddb The DynamoDB client this Key Store uses to call Amazon DynamoDB.
+    /// \param options Optional Key Store parameters.
+    KeyStore(const std::string& table_name,
+             const std::string& logical_key_store_name,
+             const std::string& kms_arn,
+             KmsClient kms,
+             DdbClient ddb,
+             const KeyStoreOptions& options = {});
+};
 
 /// Base Keyring type.
 /// Every concrete keyring must derive from this type.
@@ -166,6 +249,126 @@ protected:
 
 public:
     virtual ~Keyring() = default;
+};
+
+class CacheType;
+
+/// A constructed cryptographic materials cache.
+/// Copies share the underlying cache.
+class CryptographicMaterialsCache {
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
+    friend class CacheType;
+    friend class HierarchicalKeyring;
+    explicit CryptographicMaterialsCache(
+        std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
+        : impl_(std::move(impl)) {}
+
+public:
+    /// Constructs the cache described by `cache`.
+    /// \param cache Which type of local cache to use.
+    explicit CryptographicMaterialsCache(const CacheType& cache);
+};
+
+/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
+/// inflight_ttl. Left unset, they are seconds.
+enum class TimeUnits { Seconds, Milliseconds };
+
+/// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
+class CacheType {
+public:
+    /// The best choice for most situations. Probably a StormTrackingCache.
+    /// \param entry_capacity Maximum number of entries cached.
+    static CacheType Default(std::uint32_t entry_capacity);
+    /// Nothing should ever be cached.
+    static CacheType No();
+    /// A cache safe for multi-threaded use that also limits redundant and
+    /// overly parallel backend calls.
+    /// For a cache with sensible defaults, use Default instead.
+    /// \param entry_capacity Maximum number of entries cached.
+    /// \param entry_pruning_tail_size Number of entries to prune at a time.
+    /// \param grace_period Time before expiration to begin refreshing, in time_units.
+    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param fan_out Maximum number of simultaneous refresh attempts.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
+    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
+    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    static CacheType StormTracking(
+        std::uint32_t entry_capacity,
+        std::uint32_t entry_pruning_tail_size,
+        std::uint32_t grace_period,
+        std::uint32_t grace_interval,
+        std::uint32_t fan_out,
+        std::uint32_t inflight_ttl,
+        std::uint32_t sleep_milli,
+        std::optional<TimeUnits> time_units = std::nullopt);
+    /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
+    /// the user should provide an already constructed CryptographicMaterialsCache
+    /// to the Hierarchical Keyring at initialization.
+    static CacheType Shared(const CryptographicMaterialsCache& cache);
+
+private:
+    enum class Kind { Default, No, StormTracking, Shared };
+    explicit CacheType(Kind kind) : kind_(kind) {}
+    Kind kind_;
+    std::uint32_t entry_capacity_ = 0;
+    std::uint32_t entry_pruning_tail_size_ = 0;
+    std::uint32_t grace_period_ = 0;
+    std::uint32_t grace_interval_ = 0;
+    std::uint32_t fan_out_ = 0;
+    std::uint32_t inflight_ttl_ = 0;
+    std::uint32_t sleep_milli_ = 0;
+    std::optional<TimeUnits> time_units_;
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
+    friend class CryptographicMaterialsCache;
+    friend class HierarchicalKeyring;
+    friend struct detail::CacheTypeLowerer;
+};
+
+/// Optional hierarchical keyring parameters.
+/// A field left unset keeps the ESDK Rust's default.
+class HierarchicalKeyringOptions {
+    std::optional<CacheType> cache_;
+    std::optional<std::string> partition_id_;
+    friend class HierarchicalKeyring;
+
+public:
+    /// Sets the type of cache for this Hierarchical Keyring.
+    /// By providing an already initialized 'Shared' cache, users can determine the scope of the cache.
+    /// That is, if the cache is shared across other Cryptographic Material Providers,
+    /// for instance other Hierarchical Keyrings or Caching Cryptographic Materials Managers (Caching CMMs).
+    /// If any other type of cache in the CacheType union is provided,
+    /// the Hierarchical Keyring will initialize a cache of that type,
+    /// to be used with only this Hierarchical Keyring.
+    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
+    /// with entryCapacity = 1000.
+    HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
+        cache_ = cache;
+        return *this;
+    }
+    /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing to a cache.
+    /// If the Partition ID is the same for two Hierarchical Keyrings (or another Material Provider),
+    /// they can share the same cache entries in the cache.
+    HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
+};
+
+/// Keyring backed by Branch Keys in a KeyStore.
+class HierarchicalKeyring : public Keyring {
+public:
+    /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
+    /// using Branch Keys persisted in DynamoDB and protected by a symmetric AWS KMS Key or
+    /// AWS KMS Multi-Region Key.
+    /// \param key_store The Key Store which contains the Branch Key(s) responsible for
+    ///        wrapping and unwrapping data keys.
+    /// \param branch_key_id The identifier for the single Branch Key responsible for
+    ///        wrapping and unwrapping the data key.
+    /// \param ttl_seconds How many seconds the Branch Key material is allowed to be reused
+    ///        within the local cache before it is re-retrieved from Amazon DynamoDB and
+    ///        re-authenticated with AWS KMS.
+    /// \param options Optional Hierarchical Keyring parameters.
+    HierarchicalKeyring(KeyStore key_store,
+                        const std::string& branch_key_id,
+                        std::uint32_t ttl_seconds,
+                        const HierarchicalKeyringOptions& options = {});
 };
 
 /// Keyring that wraps and unwraps data keys locally with AES-GCM.
@@ -332,10 +535,38 @@ struct DecryptResult {
     AlgorithmSuiteId algorithm_suite_id;
 };
 
+/// Client-level configuration for EncryptionSDK.
+///
+/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
+/// Each field must be set in exactly one place.
+/// A field unset in both defers to the core library's default.
+//
+//= spec/shim/esdk-shim.md#client-configuration
+//# The ESDK shim MAY expose a client-level configuration mirroring the core
+//# ESDK's client configuration, applied to every operation of that client.
+class EncryptionSDKConfig {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
+public:
+    /// Commitment policy applied to every operation on this client.
+    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Cap on the number of encrypted data keys per message, applied to every
+    /// operation on this client. 0 means no limit.
+    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
 /// ESDK client interface.
 class EncryptionSDK {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+
 public:
     EncryptionSDK() = default;
+    explicit EncryptionSDK(const EncryptionSDKConfig& options)
+        : commitment_policy_(options.commitment_policy_),
+          max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
 
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
