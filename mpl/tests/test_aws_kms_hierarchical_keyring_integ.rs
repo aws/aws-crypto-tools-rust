@@ -39,7 +39,7 @@
 //! - `TestBranchKeyIdSupplier` and `TestInvalidDataKeyError` — both need two
 //!   distinct, usable branch keys. Under a pinned `KmsKeyArn` keystore the team
 //!   fixtures do not provide that: only `BRANCH_KEY_ID` matches `KEY_ARN`, and
-//!   `POSTAL_HORN_BRANCH_KEY_ID` is deliberately configured with a mismatched
+//!   `DISCOVERY_BRANCH_KEY_ID` is deliberately configured with a mismatched
 //!   kms-arn. A Discovery keystore serves both (see the Discovery section
 //!   below), so these are now portable and left as a follow-up rather than a
 //!   limitation. Meanwhile the supplier and wrong-EC failure paths are covered
@@ -48,6 +48,16 @@
 //!   `*_skips_edks_with_wrong_branch_key_id`, and `*_collects_per_edk_errors_*`
 //!   tests), which use keystore doubles to count calls — something a real
 //!   `BranchKeyStore` cannot expose.
+//!
+//! Sections of the AWS KMS Hierarchical Keyring specification these tests cite:
+//!
+//! - [OnEncrypt][onencrypt]
+//! - [Appendix A: Cache Entry Identifier Formulas][appendix-a]
+//! - [Shared Cache Considerations][shared-cache]
+//!
+//! [onencrypt]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#onencrypt
+//! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
+//! [shared-cache]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
 
 use std::sync::Arc;
 
@@ -293,23 +303,27 @@ async fn build_keystore_with_kms_and_logical_name(
     )
 }
 
-/// Assert that `hk2`'s encrypt failed, and failed for the reason these tests
-/// are about.
+/// Assert that `hk2`'s encrypt failed, and failed at the KMS call rather than
+/// earlier.
 ///
-/// Every `hk2` in this section is built by `build_keystore_with_kms_and_logical_name`,
-/// which pins `KmsConfiguration::KmsKeyArn(KEY_ARN)` — a us-west-2 ARN — while
-/// handing the keystore a KMS client for another region. So the DDB record is
-/// found and read normally; what fails is the KMS `Decrypt` of the wrapped
-/// branch key, because that client cannot use a key in a different region.
-/// The failure is therefore attributable to KMS, not to a missing record.
+/// What this checks is narrower than why these tests expect a failure. Every
+/// `hk2` here is built by `build_keystore_with_kms_and_logical_name`, which pins
+/// `KmsConfiguration::KmsKeyArn(KEY_ARN)` — a us-west-2 ARN — while handing the
+/// keystore a KMS client for another region, so the intended failure is the KMS
+/// `Decrypt` rejecting a key from a different region. The assertion cannot
+/// distinguish that from any other KMS-side failure (throttling, access denied,
+/// a disabled key): `map_kms_error` in `keystore/kms_ops.rs` formats the SDK
+/// error into a string without attaching it as a cause, so the typed
+/// `IncorrectKeyException` — the error Dafny asserts for this case — never
+/// reaches us. See the TODO there.
 ///
-/// That distinction is the whole point of these tests: `hk2` must fail while
-/// the shared cache is cold and succeed only once `hk1` has populated an entry
-/// `hk2` is permitted to reuse. A bare `is_err()` would also be satisfied by a
-/// missing record or an unreachable table, which would make the test pass
-/// without ever exercising the cache. The keyring flattens every keystore
-/// failure into `KeyringFailed`, so the keystore's own kind is matched in the
-/// message.
+/// `KeystoreError(Kms)` is still the assertion these tests need. Reaching the
+/// KMS call means the DDB record was read, which means `hk2` went to the
+/// keystore instead of being served from the shared cache — and a cache miss is
+/// the property under test. A bare `is_err()` would also be satisfied by a
+/// missing record or an unreachable table, passing without exercising the cache
+/// at all. The keyring flattens every keystore failure into `KeyringFailed`, so
+/// the keystore's own kind is matched in the message.
 fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, context: &str) {
     let err = match result {
         Err(e) => e,
@@ -318,7 +332,7 @@ fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, con
     assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
     assert!(
         err.to_string().contains("KeystoreError(Kms)"),
-        "{context}: expected the cross-region KMS failure, got: {err}",
+        "{context}: expected the failure to come from the KMS call, got: {err}",
     );
 }
 
@@ -372,7 +386,8 @@ async fn run_round_trip(
 async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     // Second half of Dafny `TestHierarchyClientESDKSuite`: encrypt with
     // a caller-supplied (zeroed) PDK. on_encrypt MUST preserve the PDK
-    // (per `#onencrypt` "If the input materials' plaintext data key is
+    // (per the specification's OnEncrypt section, linked in the module doc:
+    // "If the input materials' plaintext data key is
     // not empty ... MUST use the existing plaintext data key") and the
     // produced EDK MUST round-trip back to the same PDK on decrypt.
     let keystore = build_keystore().await;
@@ -411,7 +426,8 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
 // The four tests differ only in (partition_id, logical_keystore_name)
 // configuration and observe whether HK1's cache entry is reachable from
 // HK2 — i.e., they verify the cache identifier formula at
-// `#appendix-a-cache-entry-identifier-formulas` binds those exact fields.
+// Appendix A of the specification (linked in the module doc) binds those
+// exact fields.
 
 /// Build a non-signing-suite encryption materials with a small EC. Mirrors
 /// the Dafny `GetTestMaterials(TEST_ESDK_ALG_SUITE_ID)` call.
@@ -430,7 +446,8 @@ fn shared_cache_arc() -> Arc<dyn aws_crypto_mpl::Cmc> {
 #[tokio::test]
 async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_name() {
     // HK1 and HK2 share Partition ID, Logical Key Store Name, and Branch
-    // Key ID — so per `#shared-cache-considerations` they MUST share cache
+    // Key ID — so per the specification's Shared Cache Considerations section
+    // (linked in the module doc) they MUST share cache
     // entries. After HK1's round trip populates the cache, HK2's encrypt
     // (which would otherwise fail because its KMS client is us-east-2 and
     // the key is us-west-2) succeeds entirely from the cached entry.
@@ -627,10 +644,11 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
 // close that gap by exercising the keyring's OnEncrypt and OnDecrypt paths,
 // both of which resolve the record's ARN through the keystore.
 
-/// A branch key whose record's `kms-arn` is NOT `KEY_ARN`. Mirrors Dafny's
-/// `postalHornBranchKeyId` in AwsCryptographyKeyStore/test/Fixtures.dfy.
-const POSTAL_HORN_BRANCH_KEY_ID: &str = "682dfba7-4c35-491d-8d6a-5a9c56194061";
-const POSTAL_HORN_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7e496e50";
+/// A branch key whose record's `kms-arn` is NOT `KEY_ARN`, so only a Discovery
+/// keystore can serve it. This is Dafny's `postalHornBranchKeyId` fixture in
+/// AwsCryptographyKeyStore/test/Fixtures.dfy.
+const DISCOVERY_BRANCH_KEY_ID: &str = "682dfba7-4c35-491d-8d6a-5a9c56194061";
+const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7e496e50";
 
 /// Build a keystore in Discovery mode: no configured KMS key ARN, so each
 /// record's own `kms-arn` is used for the KMS Decrypt.
@@ -653,13 +671,13 @@ async fn build_discovery_keystore() -> Arc<dyn Keystore> {
 
 #[tokio::test]
 async fn integ_discovery_keystore_wraps_under_the_records_own_kms_key() {
-    // The postal-horn branch key's record names a different KMS key than
+    // The Discovery branch key's record names a different KMS key than
     // KEY_ARN. Discovery must pick that ARN up from the record, so
     // on_encrypt succeeds and the EDK is unwrappable with the same
     // record's materials.
     let keyring = keyring_for(
         build_discovery_keystore().await,
-        POSTAL_HORN_BRANCH_KEY_ID,
+        DISCOVERY_BRANCH_KEY_ID,
         "partition-id-integ-discovery",
     );
 
@@ -674,19 +692,19 @@ async fn integ_discovery_keystore_wraps_under_the_records_own_kms_key() {
     assert_eq!(edks.len(), 1);
     assert_eq!(
         edks[0].key_provider_info.as_slice(),
-        POSTAL_HORN_BRANCH_KEY_ID.as_bytes(),
-        "EDK provider info must carry the postal-horn branch key id",
+        DISCOVERY_BRANCH_KEY_ID.as_bytes(),
+        "EDK provider info must carry the Discovery branch key id",
     );
 
     let pdk = materials_out.plaintext_data_key().unwrap();
     let bkm: BranchKeyMaterials = build_discovery_keystore()
         .await
-        .get_active_branch_key(POSTAL_HORN_BRANCH_KEY_ID.to_string())
+        .get_active_branch_key(DISCOVERY_BRANCH_KEY_ID.to_string())
         .await
         .unwrap();
     assert_eq!(
         bkm.branch_key_version(),
-        POSTAL_HORN_BRANCH_KEY_ACTIVE_VERSION
+        DISCOVERY_BRANCH_KEY_ACTIVE_VERSION
     );
 
     let recovered = branch_key_unwrap(&bkm, &ec, &edks[0].ciphertext)
@@ -702,14 +720,14 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
     // test would pass even if Discovery were silently ignoring the record.
     let keyring = keyring_for(
         build_keystore().await,
-        POSTAL_HORN_BRANCH_KEY_ID,
+        DISCOVERY_BRANCH_KEY_ID,
         "partition-id-integ-discovery-negative",
     );
 
     let err = keyring
         .on_encrypt(fresh_materials())
         .await
-        .expect_err("a keystore pinned to KEY_ARN MUST reject the postal-horn branch key");
+        .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
     assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
 
     // The kind alone is too coarse to be a real assertion here: the keyring
@@ -729,14 +747,14 @@ async fn integ_discovery_keystore_serves_two_branch_keys_under_different_kms_key
     // Mirrors the property Dafny's TestGetActiveKeyForTwoKmsArnsSuccess
     // asserts at the keystore level, but through two keyrings sharing one
     // Discovery keystore: BRANCH_KEY_ID is protected by KEY_ARN and
-    // POSTAL_HORN_BRANCH_KEY_ID by a different key, and one keystore serves
+    // DISCOVERY_BRANCH_KEY_ID by a different key, and one keystore serves
     // both. No pinned configuration can do this.
     let keystore = build_discovery_keystore().await;
 
     for (branch_key_id, partition) in [
         (BRANCH_KEY_ID, "partition-id-integ-discovery-two-a"),
         (
-            POSTAL_HORN_BRANCH_KEY_ID,
+            DISCOVERY_BRANCH_KEY_ID,
             "partition-id-integ-discovery-two-b",
         ),
     ] {
@@ -763,10 +781,10 @@ async fn integ_discovery_keystore_on_decrypt_round_trips() {
     // Discovery has to hold on that path too.
     let keyring = keyring_for(
         build_discovery_keystore().await,
-        POSTAL_HORN_BRANCH_KEY_ID,
+        DISCOVERY_BRANCH_KEY_ID,
         "partition-id-integ-discovery-decrypt",
     );
-    run_round_trip(&keyring, fresh_materials(), POSTAL_HORN_BRANCH_KEY_ID).await;
+    run_round_trip(&keyring, fresh_materials(), DISCOVERY_BRANCH_KEY_ID).await;
 }
 
 // ─── MrDiscovery keystore — mirrors Dafny TestGetKeysForMrk ────────────────
