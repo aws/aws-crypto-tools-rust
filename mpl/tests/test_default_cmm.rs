@@ -435,6 +435,7 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
 async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
     // cmm-interface.md#decrypt-materials: keys present in both the reproduced
     // EC and the message EC with equal values MUST NOT fail.
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let mut message_ec = EncryptionContext::new();
@@ -469,6 +470,7 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
     // cmm-interface.md#decrypt-materials: "For every key that exists in both
     // Reproduced Encryption Context and Encryption Context, the values MUST
     // be equal or the operation MUST fail."
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let mut message_ec = EncryptionContext::new();
@@ -487,12 +489,15 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
 
 #[tokio::test]
 async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended() {
-    // cmm-interface.md#decrypt-materials: pairs that exist in the reproduced EC
-    // but not in the message EC are appended to the decryption materials, and
-    // their keys become Required Encryption Context Keys. Asserting only that
-    // the call succeeds would pass even if the pair were dropped — and dropping
-    // it shortens the AAD a keyring derives from the context, so the assertions
-    // below check the append itself.
+    // cmm-interface.md#decrypt-materials: the returned Required Encryption
+    // Context Keys "MUST include all keys added to the decryption materials
+    // encryption context that existed in the [request's] reproduced encryption
+    // context but did not exist in the [request's] encryption context."
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
+    //
+    // So a reproduced-only pair must appear two ways in the returned materials:
+    // added to the encryption context, and listed as a required key. The two
+    // assertions below check exactly those, not just that the call succeeded.
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let message_ec = EncryptionContext::new();
@@ -520,10 +525,15 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
 
 // ===== Reproduced Encryption Context =====
 //
-// The mock keyring copies the encryption context and required encryption
-// context keys it receives onto its output materials, so asserting on the
-// returned materials asserts on exactly what the keyring was handed. That
-// matters because a keyring uses the encryption context as AES-GCM AAD.
+// The reproduced-EC tests assert on the encryption context and required-EC-keys
+// of the materials RETURNED by decrypt_materials, treating them as a stand-in
+// for what the CMM handed the keyring. That substitution is valid because
+// MockKeyring copies both fields straight from its input materials onto its
+// output — so the returned values are exactly what the keyring received.
+//
+// This matters because a keyring derives its AES-GCM AAD from the encryption
+// context: if the CMM hands over a short context, the keyring computes the
+// wrong AAD and can't unwrap the data key.
 
 fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
