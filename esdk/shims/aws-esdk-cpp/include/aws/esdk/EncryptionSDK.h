@@ -276,9 +276,8 @@ public:
 /// inflight_ttl. Left unset, they are seconds.
 enum class TimeUnits { Seconds, Milliseconds };
 
+// TODO: expose remaining MPL cache kinds (SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
-///
-/// TODO: expose the remaining MPL cache kinds — SingleThreaded and MultiThreaded.
 class CacheType {
 public:
     /// The best choice for most situations. Probably a StormTrackingCache.
