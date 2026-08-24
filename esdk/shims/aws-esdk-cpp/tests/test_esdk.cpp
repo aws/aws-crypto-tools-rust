@@ -53,12 +53,12 @@ using TestConfig = esdk_test::TestConfig;
 
 void test_round_trip(const TestConfig& cfg) {
     auto keyring = make_hierarchical_keyring(cfg);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::EncryptionSDK esdk;
     auto plaintext = to_bytes("Hello World");
-    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+    auto ciphertext = esdk.encrypt(plaintext, keyring).ciphertext;
     ESDK_CHECK(ciphertext != plaintext);
 
-    auto decrypted = sdk.decrypt(ciphertext, keyring);
+    auto decrypted = esdk.decrypt(ciphertext, keyring);
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //= reason=Round trip would only pass consistently if plaintext was provided unmodified.
