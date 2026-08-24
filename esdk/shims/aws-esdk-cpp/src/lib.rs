@@ -1521,5 +1521,37 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
     stream.state.finish()
 }
 
+// Custom interface adoption
+//
+// A consumer builds any interface accepted by the Rust ESDK
+// converts it to a handle using these methods,
+// and adopts the pointer in its C++ with the interface's C++ `adopt` methods.
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//# - The shim MAY let the target adopt a consumer-written implementation of a
+//# core-library interface.
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=implication
+//# - Anything the core library accepts for that interface MUST be adoptable.
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=implication
+//# - Errors an adopted implementation returns during an operation MUST be
+//# reported like any core-library error (see [Delegation](#delegation)).
+//
+//= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
+//= type=exception
+//= reason=Target obligation: adopt's documentation states it, and the shim cannot detect a violation.
+//# - The target MUST adopt only values produced by the shim's conversion, and
+//# MUST adopt each at most once; the shim does not detect violations.
+
+/// Converts an ESDK Rust keyring into a C++ shim keyring handle.
+/// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
+/// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
+pub fn into_keyring_handle(keyring: aws_esdk::Keyring) -> *mut std::ffi::c_void {
+    Box::into_raw(Box::new(Keyring { client: keyring })).cast()
+}
+
 #[cfg(test)]
 mod tests;
