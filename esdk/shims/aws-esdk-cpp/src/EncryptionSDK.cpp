@@ -562,5 +562,40 @@ StreamResult DecryptStream::finish() {
     return result;
 }
 
+namespace detail {
+
+// Reads `source` in chunks, feeds each to `stream.write`, and forwards the
+// produced bytes to `sink`; then finalizes and appends the trailing output.
+template <typename Stream>
+StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
+    char buf[4096];
+    while (source.read(buf, sizeof(buf)) || source.gcount() > 0) {
+        Bytes produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
+                                      static_cast<std::size_t>(source.gcount()));
+        sink.write(reinterpret_cast<const char*>(produced.data()),
+                   static_cast<std::streamsize>(produced.size()));
+    }
+    StreamResult result = stream.finish();
+    sink.write(reinterpret_cast<const char*>(result.trailing_output.data()),
+               static_cast<std::streamsize>(result.trailing_output.size()));
+    return result;
+}
+
+}  // namespace detail
+
+StreamResult EncryptionSDK::encrypt_stream(std::istream& source, std::ostream& sink,
+                                           const Keyring& keyring,
+                                           const EncryptOptions& options) {
+    EncryptStream stream = create_encrypt_stream(keyring, options);
+    return detail::pump_stream(stream, source, sink);
+}
+
+StreamResult EncryptionSDK::decrypt_stream(std::istream& source, std::ostream& sink,
+                                           const Keyring& keyring,
+                                           const DecryptOptions& options) {
+    DecryptStream stream = create_decrypt_stream(keyring, options);
+    return detail::pump_stream(stream, source, sink);
+}
+
 }  // namespace Esdk
 }  // namespace Aws

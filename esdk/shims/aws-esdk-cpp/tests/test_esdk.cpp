@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <string>
 #include <typeinfo>
 #include <vector>
@@ -623,6 +624,30 @@ void test_streaming_signed_message_refused() {
     }
 }
 
+// Round trip through the whole-stream pump (encrypt_stream/decrypt_stream).
+void test_streaming_pump() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::string message = "stream pump round trip";
+
+    // Encrypt: stream the plaintext source into the ciphertext sink.
+    std::istringstream plaintext_in(message);
+    std::ostringstream ciphertext_out;
+    sdk.encrypt_stream(plaintext_in, ciphertext_out, keyring,
+                       Aws::Esdk::EncryptOptions().with_algorithm_suite(
+                           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey));
+    const std::string ciphertext = ciphertext_out.str();
+    ESDK_CHECK(ciphertext != message);
+
+    // Decrypt: stream the ciphertext back into a plaintext sink.
+    std::istringstream ciphertext_in(ciphertext);
+    std::ostringstream plaintext_out;
+    sdk.decrypt_stream(ciphertext_in, plaintext_out, keyring);
+    ESDK_CHECK(plaintext_out.str() == message);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -638,6 +663,7 @@ int main(int argc, char** argv) {
         test_bytes_and_string_ergonomics();
         test_streaming();
         test_streaming_signed_message_refused();
+        test_streaming_pump();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

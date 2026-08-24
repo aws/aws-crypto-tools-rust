@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <istream>
 #include <map>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -707,6 +709,29 @@ public:
     /// Creates a streaming decrypt operation.
     /// See DecryptStream documentation for the verification semantics of streamed plaintext.
     DecryptStream create_decrypt_stream(
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+    /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
+    /// each, and writes the ciphertext to `sink` until `source` is exhausted,
+    /// then flushes the final frame. Returns the message metadata. Neither the
+    /// plaintext nor the ciphertext is ever fully held in memory, so this works
+    /// on inputs too large to fit. For per-chunk control, use create_encrypt_stream.
+    StreamResult encrypt_stream(
+        std::istream& source,
+        std::ostream& sink,
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
+    /// to `sink`, and returns the message metadata.
+    /// SECURITY: `sink` receives plaintext before verification completes. On a
+    /// normal return every byte written to `sink` is authenticated; if this
+    /// throws, discard everything written to `sink`. Streamed decrypt cannot
+    /// decrypt a multi-frame message under a signing suite; use decrypt() for those.
+    StreamResult decrypt_stream(
+        std::istream& source,
+        std::ostream& sink,
         const Keyring& keyring,
         const DecryptOptions& options = {});
 
