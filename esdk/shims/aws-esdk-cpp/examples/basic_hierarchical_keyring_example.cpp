@@ -1,0 +1,50 @@
+// Encrypts and decrypts a message with a hierarchical keyring.
+//
+// Requires an existing key store with a provisioned branch key.
+
+#include <iostream>
+#include <vector>
+#include <aws/esdk/EncryptionSDK.h>
+
+int main() {
+    try {
+        // The AWS Crypto Tools CI test key store.
+        // Replace these with your own key store's table, name, and KMS key ARN. 
+        auto keystore = Aws::Esdk::KeyStore(
+            "KeyStoreDdbTable",                                                    // table_name
+            "KeyStoreDdbTable",                                                    // logical_key_store_name
+            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"  // kms_arn
+            // KMS and DynamoDB clients are optional and omitted here.
+            // The ESDK will build defaults from the standard AWS config chain (region and credentials).
+        );
+
+        auto keyring = Aws::Esdk::HierarchicalKeyring(
+            keystore,
+            "3ce7656b-e166-40f3-8c9b-a920ce6596cd",  // branch_key_id
+            4242,  // ttl_seconds: how long cached branch key material may be reused
+            // Unset options keep the library defaults.
+            Aws::Esdk::HierarchicalKeyringOptions()
+                .with_cache(Aws::Esdk::CacheType::Default(42))
+        );
+
+        Aws::Esdk::EncryptionSDK esdk;
+
+        std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+        auto encrypted = esdk.encrypt(plaintext, keyring);
+
+        auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
+
+        if (plaintext != decrypted.plaintext) {
+            std::cerr << "Decryption failed: plaintext mismatch\n";
+            return 1;
+        }
+
+        std::cout << "Success! Encryption and decryption completed successfully.\n";
+
+    } catch (const std::exception &e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        return 1;
+    }
+
+    return 0;
+}
