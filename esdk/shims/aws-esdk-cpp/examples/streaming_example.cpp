@@ -9,6 +9,10 @@
 // A non-signing suite is used so streamed decrypt works regardless of message
 // size. The ESDK rejects streamed decrypt of a multi-frame message under a
 // signing suite; decrypt those with the one-shot Aws::Esdk::decrypt instead.
+//
+// When your data is not an iostream (a socket, a reactor callback) or you must
+// withhold plaintext until it is authenticated, drive the operation chunk by
+// chunk instead; see streaming_chunks_example.cpp.
 
 #include <cstdio>
 #include <cstdint>
@@ -66,12 +70,6 @@ int main() {
                                     .with_algorithm_suite(
                                         Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
                                     .with_encryption_context(encryption_context));
-        }
-
-        // The ciphertext file differs from the plaintext file (demo check only).
-        if (files_equal(PLAINTEXT_FILE, CIPHERTEXT_FILE)) {
-            std::cerr << "Encryption failed: ciphertext matches plaintext\n";
-            return 1;
         }
 
         // Decrypt the ciphertext file back into the decrypted file.
