@@ -1,0 +1,30 @@
+# Reconcile this repo's merged known-bug fixes into the authoritative commons
+# ledger. This repo hosts two Language_Servers (native rust and the C++ shim),
+# each with its own commons-configuration.json, so the matrix reconciles each
+# independently: on a merge to the default branch touching either file, the
+# reusable commons workflow removes the bugs that target declared fixed (its
+# `knownBugFixOverrides`) from aws-crypto-tools-commons' known-bugs.json and opens a PR
+# there. A leg whose file is unchanged/absent is a no-op. All logic lives in
+# commons; this file only wires the triggers + the commons-write token.
+name: Reconcile known-bug fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "esdk-test-server/commons-configuration.json"
+      - "esdk-cpp-test-server/commons-configuration.json"
+
+jobs:
+  reconcile:
+    strategy:
+      fail-fast: false
+      matrix:
+        commons-config-path:
+          - esdk-test-server/commons-configuration.json
+          - esdk-cpp-test-server/commons-configuration.json
+    uses: aws/aws-crypto-tools-commons/.github/workflows/reconcile-known-bug-fixes.yml@main
+    with:
+      commons-config-path: ${{ matrix.commons-config-path }}
+    secrets:
+      commons-token: ${{ secrets.COMMONS_RECONCILE_TOKEN }}
