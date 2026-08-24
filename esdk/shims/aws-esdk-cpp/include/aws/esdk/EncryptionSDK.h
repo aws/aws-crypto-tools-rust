@@ -203,6 +203,8 @@ public:
 class KeyStoreOptions {
     std::optional<std::string> key_store_id_;
     std::vector<std::string> grant_tokens_;
+    std::optional<KmsClient> kms_client_;
+    std::optional<DdbClient> ddb_client_;
     friend class KeyStore;
 
 public:
@@ -210,6 +212,10 @@ public:
     KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
     /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
     KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
+    /// The KMS client this Key Store uses. Unset lets the ESDK Rust build a default one.
+    KeyStoreOptions& with_kms_client(KmsClient kms) { kms_client_ = std::move(kms); return *this; }
+    /// The DynamoDB client this Key Store uses. Unset lets the ESDK Rust build a default one.
+    KeyStoreOptions& with_ddb_client(DdbClient ddb) { ddb_client_ = std::move(ddb); return *this; }
 };
 
 /// A Branch Key Store backed by a DynamoDB table and protected by AWS KMS.
@@ -226,14 +232,11 @@ public:
     /// \param kms_arn Key Store is restricted to only this KMS Key ARN. If a different
     ///        KMS Key ARN is encountered when creating, versioning, or getting a Branch
     ///        Key or Beacon Key, KMS is never called and an exception is thrown.
-    /// \param kms The KMS client this Key Store uses to call AWS KMS.
-    /// \param ddb The DynamoDB client this Key Store uses to call Amazon DynamoDB.
-    /// \param options Optional Key Store parameters.
+    /// \param options Optional Key Store parameters, including the KMS and DynamoDB
+    ///        clients. A client left unset is built with defaults by the ESDK Rust.
     KeyStore(const std::string& table_name,
              const std::string& logical_key_store_name,
              const std::string& kms_arn,
-             KmsClient kms,
-             DdbClient ddb,
              const KeyStoreOptions& options = {});
 };
 

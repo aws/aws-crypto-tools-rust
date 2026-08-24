@@ -438,33 +438,23 @@ fn decrypt_rejects_null_keyring() {
 }
 
 #[test]
-fn create_keystore_rejects_null_clients() {
-    let err = expect_err(create_keystore(&unset_keystore_config()));
-    //= spec/shim/shim.md#handles-and-lifetimes
-    //= type=test
-    //= reason=Exercises a common `require_handle` method call, so this is universal
-    //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
-    //# and MUST return an error when a required handle is absent.
-    //
+fn create_keystore_defaults_absent_clients() {
     //= spec/shim/esdk-shim.md#create-key-store
     //= type=test
-    //# - Creating a key store MUST require a KMS client handle and a DynamoDB client
-    //# handle, checked as defined in
-    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
-    //# and MUST provide both to the core ESDK.
-    assert!(
-        err.contains("kms_client is null"),
-        "unexpected error: {err}"
-    );
-
-    let kms = create_kms_client(&unset_client_config()).expect("create kms client");
+    //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+    //# each checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+    //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+    //# left for the core ESDK to default.
+    // Neither client is supplied (both handles null); the core ESDK builds its own,
+    // so key-store creation still succeeds.
     let mut cfg = unset_keystore_config();
-    cfg.kms_client = &*kms as *const MplKmsClient;
-    let err = expect_err(create_keystore(&cfg));
-    assert!(
-        err.contains("ddb_client is null"),
-        "unexpected error: {err}"
-    );
+    cfg.ddb_table_name = "valid-table-name".to_string();
+    cfg.logical_key_store_name = "valid-table-name".to_string();
+    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsKeyArn;
+    cfg.kms_configuration_value = "arn:aws:kms:us-west-2:000000000000:key/test".to_string();
+    assert!(cfg.kms_client.is_null() && cfg.ddb_client.is_null());
+    create_keystore(&cfg).expect("key store should build with defaulted clients");
 }
 
 #[test]

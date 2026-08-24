@@ -223,7 +223,9 @@ void test_keystore_rejects_short_table_name() {
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       Aws::Esdk::KeyStore("ab", "ab",
                                           "arn:aws:kms:us-west-2:000000000000:key/test",
-                                          kms, ddb));
+                                          Aws::Esdk::KeyStoreOptions()
+                                              .with_kms_client(kms)
+                                              .with_ddb_client(ddb)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
@@ -377,12 +379,21 @@ void test_full_resource_chain(const TestConfig& cfg) {
         //= type=test
         //# - Creating a key store MUST provide the target-supplied KMS configuration to the
         //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
-        cfg.kms_key_arn, kms, ddb,
+        cfg.kms_key_arn,
         //= spec/shim/esdk-shim.md#create-key-store
         //= type=test
-        //# - Creating a key store MUST provide the target-supplied key store id and grant
-        //# tokens to the core ESDK when present; an unset value is omitted.
+        //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+        //# each checked as defined in
+        //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+        //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+        //# left for the core ESDK to default.
         Aws::Esdk::KeyStoreOptions()
+            .with_kms_client(kms)
+            .with_ddb_client(ddb)
+            //= spec/shim/esdk-shim.md#create-key-store
+            //= type=test
+            //# - Creating a key store MUST provide the target-supplied key store id and grant
+            //# tokens to the core ESDK when present; an unset value is omitted.
             .with_id("shim-integration-test")
             .with_grant_tokens({"grant-token-example"}));
 

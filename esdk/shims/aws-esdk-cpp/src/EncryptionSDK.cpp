@@ -201,11 +201,17 @@ DdbClient::DdbClient(const ClientConfig& cfg)
 KeyStore::KeyStore(const std::string& table_name,
                    const std::string& logical_key_store_name,
                    const std::string& kms_arn,
-                   KmsClient kms,
-                   DdbClient ddb,
                    const KeyStoreOptions& options)
     : impl_(std::make_shared<detail::KeyStoreImpl>(
-          detail::Retained{kms.impl_, ddb.impl_}, detail::guard([&] {
+          // Retain only the clients the caller supplied; an unset client is
+          // built by the ESDK Rust and owned by the key store itself.
+          [&] {
+              detail::Retained deps;
+              if (options.kms_client_) deps.push_back(options.kms_client_->impl_);
+              if (options.ddb_client_) deps.push_back(options.ddb_client_->impl_);
+              return deps;
+          }(),
+          detail::guard([&] {
               ::ffi::KeyStoreConfig c{};
               c.ddb_table_name = ::rust::String(table_name);
               c.logical_key_store_name = ::rust::String(logical_key_store_name);
@@ -215,8 +221,9 @@ KeyStore::KeyStore(const std::string& table_name,
               for (const auto& token : options.grant_tokens_) {
                   c.grant_tokens.push_back(::rust::String(token));
               }
-              c.kms_client = &*kms.impl_->handle;
-              c.ddb_client = &*ddb.impl_->handle;
+              // A null handle tells the shim to defer to the core ESDK's default client.
+              if (options.kms_client_) c.kms_client = &*options.kms_client_->impl_->handle;
+              if (options.ddb_client_) c.ddb_client = &*options.ddb_client_->impl_->handle;
               return ::ffi::create_keystore(c);
           }))) {}
 

@@ -121,8 +121,10 @@ inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const TestConfig
     }
     Aws::Esdk::KmsClient kms(client_config);
     Aws::Esdk::DdbClient ddb(client_config);
-    Aws::Esdk::KeyStore keystore(cfg.ddb_table, cfg.logical_keystore,
-                                 cfg.kms_key_arn, kms, ddb);
+    Aws::Esdk::KeyStore keystore(cfg.ddb_table, cfg.logical_keystore, cfg.kms_key_arn,
+                                 Aws::Esdk::KeyStoreOptions()
+                                     .with_kms_client(kms)
+                                     .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), cfg.branch_key_id, /*ttl_seconds=*/600,
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(

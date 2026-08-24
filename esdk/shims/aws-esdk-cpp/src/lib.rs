@@ -1020,16 +1020,20 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
     //= spec/shim/esdk-shim.md#create-key-store
-    //# - Creating a key store MUST require a KMS client handle and a DynamoDB client
-    //# handle, checked as defined in
-    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
-    //# and MUST provide both to the core ESDK.
-    let kms_client = require_handle(input.kms_client, "kms_client", "create_keystore")?;
-    let ddb_client = require_handle(input.ddb_client, "ddb_client", "create_keystore")?;
-
-    let mut builder = dafny_key_store::types::key_store_config::KeyStoreConfig::builder()
-        .kms_client(kms_client.client.clone())
-        .ddb_client(ddb_client.client.clone());
+    //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+    //# each checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+    //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+    //# left for the core ESDK to default.
+    let mut builder = dafny_key_store::types::key_store_config::KeyStoreConfig::builder();
+    // A null handle means "not supplied": omit it so the core ESDK builds its own
+    // default client. SAFETY: a non-null handle is a valid client borrowed for this call.
+    if let Some(kms_client) = unsafe { input.kms_client.as_ref() } {
+        builder = builder.kms_client(kms_client.client.clone());
+    }
+    if let Some(ddb_client) = unsafe { input.ddb_client.as_ref() } {
+        builder = builder.ddb_client(ddb_client.client.clone());
+    }
     //= spec/shim/esdk-shim.md#create-key-store
     //# - Creating a key store MUST provide the target-supplied table name and logical key
     //# store name to the core ESDK.
