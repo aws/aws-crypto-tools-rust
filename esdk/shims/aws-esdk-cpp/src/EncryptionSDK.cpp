@@ -326,6 +326,15 @@ CryptographicMaterialsCache::CryptographicMaterialsCache(const CacheType& cache)
 
 // Keyrings
 
+// Adopt a custom Rust keyring into the Aws::Esdk::Keyring type
+Keyring Keyring::adopt(void* raw_handle) {
+    return Keyring(std::make_shared<detail::KeyringImpl>(
+        // Custom implementations of Keyrings currently can't retain C++ resources,
+        // but support for this can be added in the future as a non-breaking change.
+        detail::Retained{},
+        ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
+}
+
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::uint32_t ttl_seconds,

@@ -735,6 +735,24 @@ fn create_sdk_config_applies_every_field() {
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
 
+// Handles
+
+// into_keyring_handle is the Rust that backs the public C++ `Keyring::adopt` path.
+// Check it yields an owned Box<Keyring> pointer. (Type only testable in Rust).
+#[test]
+fn into_keyring_handle_boxes_the_keyring() {
+    let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x2A; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("raw AES keyring should build");
+    let handle = into_keyring_handle(keyring.client.clone());
+    assert!(!handle.is_null());
+    unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
+}
+
 // Streaming internals
 //
 // Stream internals (ChannelReader/ChannelWriter and the worker thread)
