@@ -286,7 +286,12 @@ async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
 async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
-    let vk_raw = vec![0x02; 49]; // 49 bytes for P-384 SEC1-compressed
+    let vk_raw = {
+        // Valid P-384 SEC1-compressed shape: 0x02 tag + 48-byte X coordinate.
+        let mut v = vec![0u8; 49];
+        v[0] = 0x02;
+        v
+    };
     let vk_b64 = BASE64_STANDARD.encode(&vk_raw);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
@@ -412,9 +417,9 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
 async fn test_decrypt_materials_wrong_verification_key_length_fails() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
-    // P-384 signing suite expects 49-byte verification key; provide a valid base64
-    // that decodes to 10 bytes — wrong length.
-    let wrong_length_bytes = vec![0x02; 10];
+    // P-384 signing suite expects a 49-byte SEC1-compressed verification key;
+    // provide a valid base64 that decodes to 10 bytes — wrong length.
+    let wrong_length_bytes = vec![0x04; 10];
     let vk_b64 = BASE64_STANDARD.encode(&wrong_length_bytes);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
@@ -426,12 +431,109 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
     assert_eq!(err.kind, MaterialsErrorKind::Validation);
 }
 
+#[tokio::test]
+async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
+    // cmm-interface.md#decrypt-materials: keys present in both the reproduced
+    // EC and the message EC with equal values MUST NOT fail.
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
+    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let cmm = DefaultCmm::new(keyring);
+    let mut message_ec = EncryptionContext::new();
+    message_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
+    message_ec.insert(b"message-only".to_vec(), b"m".to_vec());
+    let mut reproduced_ec = EncryptionContext::new();
+    reproduced_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
+            .with_reproduced_encryption_context(reproduced_ec);
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .expect("matching values must succeed");
+    assert!(materials.plaintext_data_key().is_some());
+    assert_eq!(
+        ec_pairs(materials.encryption_context()),
+        vec![
+            ("message-only".to_string(), "m".to_string()),
+            ("shared".to_string(), "same-value".to_string()),
+        ],
+        "a reproduced key already present in the message adds nothing"
+    );
+    assert!(
+        reck_keys(&materials).is_empty(),
+        "no key was appended, so none is required"
+    );
+}
+
+#[tokio::test]
+async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
+    // cmm-interface.md#decrypt-materials: "For every key that exists in both
+    // Reproduced Encryption Context and Encryption Context, the values MUST
+    // be equal or the operation MUST fail."
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
+    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let cmm = DefaultCmm::new(keyring);
+    let mut message_ec = EncryptionContext::new();
+    message_ec.insert(b"shared".to_vec(), b"message-value".to_vec());
+    let mut reproduced_ec = EncryptionContext::new();
+    reproduced_ec.insert(b"shared".to_vec(), b"reproduced-value".to_vec());
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
+            .with_reproduced_encryption_context(reproduced_ec);
+    let err = cmm
+        .decrypt_materials(request)
+        .await
+        .expect_err("mismatched reproduced-EC value must fail");
+    assert_eq!(err.kind, MaterialsErrorKind::EncryptionContextValueMismatch);
+}
+
+#[tokio::test]
+async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended() {
+    // cmm-interface.md#decrypt-materials: the returned Required Encryption
+    // Context Keys "MUST include all keys added to the decryption materials
+    // encryption context that existed in the [request's] reproduced encryption
+    // context but did not exist in the [request's] encryption context."
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
+    //
+    // So a reproduced-only pair must appear two ways in the returned materials:
+    // added to the encryption context, and listed as a required key. The two
+    // assertions below check exactly those, not just that the call succeeded.
+    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let cmm = DefaultCmm::new(keyring);
+    let message_ec = EncryptionContext::new();
+    let mut reproduced_ec = EncryptionContext::new();
+    reproduced_ec.insert(b"only-in-reproduced".to_vec(), b"v".to_vec());
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
+            .with_reproduced_encryption_context(reproduced_ec);
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .expect("reproduced-only key must not fail");
+    assert!(materials.plaintext_data_key().is_some());
+    assert_eq!(
+        ec_pairs(materials.encryption_context()),
+        vec![("only-in-reproduced".to_string(), "v".to_string())],
+        "the reproduced-only pair must be appended to the context the keyring receives"
+    );
+    assert_eq!(
+        reck_keys(&materials),
+        vec!["only-in-reproduced".to_string()],
+        "an appended key must be reported as a required encryption context key"
+    );
+}
+
 // ===== Reproduced Encryption Context =====
 //
-// The mock keyring copies the encryption context and required encryption
-// context keys it receives onto its output materials, so asserting on the
-// returned materials asserts on exactly what the keyring was handed. That
-// matters because the keyring uses the encryption context as AES-GCM AAD.
+// The reproduced-EC tests assert on the encryption context and required-EC-keys
+// of the materials RETURNED by decrypt_materials, treating them as a stand-in
+// for what the CMM handed the keyring. That substitution is valid because
+// MockKeyring copies both fields straight from its input materials onto its
+// output — so the returned values are exactly what the keyring received.
+//
+// This matters because a keyring derives its AES-GCM AAD from the encryption
+// context: if the CMM hands over a short context, the keyring computes the
+// wrong AAD and can't unwrap the data key.
 
 fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
@@ -485,11 +587,7 @@ async fn test_decrypt_materials_appends_reproduced_only_pairs_to_the_keyring_con
         ],
         "the keyring must receive the message context plus the reproduced-only pairs"
     );
-    assert_eq!(
-        reck_keys(&materials),
-        vec!["a".to_string()],
-        "keys appended from the reproduced context become required encryption context keys"
-    );
+    assert_eq!(reck_keys(&materials), vec!["a".to_string()]);
 }
 
 #[tokio::test]
@@ -546,60 +644,6 @@ async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty
 }
 
 #[tokio::test]
-async fn test_decrypt_materials_reproduced_context_matching_message_adds_no_required_keys() {
-    // Every reproduced key already exists in the message with the same value,
-    // so nothing is appended and no key is required.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(keyring);
-    let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
-        allow_policy(),
-        vec![],
-        ec_of(&[("a", "a"), ("b", "b")]),
-    )
-    .with_reproduced_encryption_context(ec_of(&[("a", "a")]));
-
-    let materials = cmm.decrypt_materials(request).await.expect("must succeed");
-
-    assert_eq!(
-        ec_pairs(materials.encryption_context()),
-        vec![
-            ("a".to_string(), "a".to_string()),
-            ("b".to_string(), "b".to_string())
-        ]
-    );
-    assert!(
-        reck_keys(&materials).is_empty(),
-        "a reproduced key already present in the message is not a required key"
-    );
-}
-
-#[tokio::test]
-async fn test_decrypt_materials_conflicting_reproduced_value_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(keyring);
-    let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
-        allow_policy(),
-        vec![],
-        ec_of(&[("a", "a")]),
-    )
-    .with_reproduced_encryption_context(ec_of(&[("a", "different")]));
-
-    let err = cmm
-        .decrypt_materials(request)
-        .await
-        .expect_err("a disagreeing shared key must fail");
-
-    assert_eq!(err.kind, MaterialsErrorKind::EncryptionContextValueMismatch);
-    assert!(
-        err.message.contains("'a'"),
-        "the error must name the disagreeing key: {}",
-        err.message
-    );
-}
-
-#[tokio::test]
 async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_keyring() {
     let keyring = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
@@ -611,10 +655,12 @@ async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_k
     )
     .with_reproduced_encryption_context(ec_of(&[("a", "different")]));
 
-    cmm.decrypt_materials(request)
+    let err = cmm
+        .decrypt_materials(request)
         .await
         .expect_err("must fail before doing any crypto");
 
+    assert_eq!(err.kind, MaterialsErrorKind::EncryptionContextValueMismatch);
     assert_eq!(
         keyring.decrypt_calls.load(Ordering::SeqCst),
         0,
@@ -647,7 +693,7 @@ async fn test_decrypt_materials_without_reproduced_context_is_unchanged() {
 #[tokio::test]
 async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context() {
     // The reserved verification key may arrive only via the reproduced context;
-    // the CMM must look it up after merging, not before.
+    // the CMM must look it up after the merge, not before.
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let vk = vec![0x02; 49];

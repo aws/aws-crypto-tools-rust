@@ -6,9 +6,9 @@
 //! Walks through the four ways to wire a Cryptographic Materials Cache
 //! into a `HierarchicalKeyring`:
 //!
-//! 1. `CacheType::Default(DefaultCache::default())` — the spec-default
+//! 1. `CacheType::Default(DefaultCache::new(1000))` — the spec-default
 //!    1000-entry keyring-local LRU cache.
-//! 2. `CacheType::Default(DefaultCache::builder().entry_capacity(...).build())`
+//! 2. `CacheType::Default(DefaultCache::new(50))`
 //!    — a custom-sized keyring-local cache.
 //! 3. `CacheType::Shared(...)` — a single CMC built once via
 //!    `mpl.create_cryptographic_materials_cache()` and reused across
@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use aws_crypto_mpl::MaterialProviders;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{CacheType, DefaultCache, StormTrackingCache};
+use aws_crypto_mpl::{CacheType, DefaultCache, StormTrackingCache};
 
 use super::common::{Config, build_keystore, demo_encryption_context, round_trip};
 
@@ -40,7 +40,7 @@ pub async fn run(
             .key_store(Arc::clone(&keystore))
             .branch_key_id(config.branch_key_id.clone())
             .ttl_seconds(600)
-            .cache(CacheType::Default(DefaultCache::default()))
+            .cache(CacheType::Default(DefaultCache::new(1000)))
             .partition_id("mpl-example-cache-default")
             .send()?;
         round_trip(&keyring, demo_encryption_context(&[("cache", "default")])).await?;
@@ -51,10 +51,9 @@ pub async fn run(
     //    or the working set is known to be small (single tenant, single
     //    branch key per keyring).
     {
-        let custom_default = DefaultCache::builder()
-            .entry_capacity(50)
-            .entry_pruning_tail_size(8)
-            .build();
+        // `DefaultCache` carries only `entry_capacity`; the pruning tail size
+        // is an internal constant, not a customer-set knob.
+        let custom_default = DefaultCache::new(50);
         let keyring = mpl
             .create_aws_kms_hierarchical_keyring()
             .key_store(Arc::clone(&keystore))
@@ -81,9 +80,7 @@ pub async fn run(
         // multiple keyrings via CacheType::Shared.
         let shared_cmc = mpl
             .create_cryptographic_materials_cache()
-            .cache(CacheType::Default(
-                DefaultCache::builder().entry_capacity(200).build(),
-            ))
+            .cache(CacheType::Default(DefaultCache::new(200)))
             .send()?;
 
         let keyring_a = mpl

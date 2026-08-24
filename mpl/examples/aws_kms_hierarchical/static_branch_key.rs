@@ -9,7 +9,7 @@
 //! (or a single trust boundary) backs all your data.
 
 use aws_crypto_mpl::MaterialProviders;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{BranchKeySource, CacheType, DefaultCache};
+use aws_crypto_mpl::{CacheType, DefaultCache};
 
 use super::common::{Config, build_keystore, demo_encryption_context, round_trip};
 
@@ -35,20 +35,19 @@ pub async fn run(
         .branch_key_id(config.branch_key_id.clone())
         .ttl_seconds(600)
         // Equivalent to omitting `.cache(...)`; included here to make
-        // the default explicit for the reader.
-        .cache(CacheType::Default(DefaultCache::default()))
+        // the default explicit for the reader. 1000 is the entry capacity
+        // the keyring uses when no cache is configured.
+        .cache(CacheType::Default(DefaultCache::new(1000)))
         .partition_id("mpl-example-static-branch-key")
         .send()?;
 
-    // Sanity check: the keyring records the branch key id we configured.
-    match keyring.branch_key_source() {
-        BranchKeySource::Identifier(id) => {
-            assert_eq!(id, &config.branch_key_id);
-        }
-        BranchKeySource::Supplier(_) => {
-            unreachable!("static-branch-key demo configured an Identifier source")
-        }
-    }
+    // Sanity check: the keyring records the branch key id we configured, and
+    // no supplier.
+    assert_eq!(keyring.branch_key_id(), Some(config.branch_key_id.as_str()));
+    assert!(
+        keyring.branch_key_id_supplier().is_none(),
+        "static-branch-key demo configured a branch key id, not a supplier"
+    );
 
     // Encrypt-then-decrypt round trip through the keyring.
     round_trip(&keyring, demo_encryption_context(&[])).await?;

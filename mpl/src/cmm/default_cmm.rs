@@ -264,35 +264,3 @@ fn merge_reproduced_encryption_context(
 
     Ok((ec, required_keys))
 }
-
-// =====================================================================
-// Legacy MKP requirements — not implemented
-//
-// Per §Legacy of the Default CMM specification:
-//
-//     "Master key providers SHOULD NOT be included in any additional
-//     implementations."
-//
-// The Rust MPL has no master-key-provider interface and intentionally
-// omits one per that guidance. The 8 legacy `[[spec]]` entries below
-// are annotated `type=exception` with that sentence as their reason.
-// Each annotation block is anchored above a private zero-cost
-// `const _: () = ();` so duvet's "annotation immediately followed by
-// executable line" rule holds.
-// =====================================================================
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_LEGACY: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_LEGACY_BEHAVIOR: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_INIT_1: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_1: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_2: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_3: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_GEM_4: () = ();
-
-const _LEGACY_MKP_NOT_IMPLEMENTED_DM: () = ();
