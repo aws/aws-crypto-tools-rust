@@ -10,8 +10,13 @@
 //! SDK. Happy-path read coverage lives in the real-AWS integration tests in
 //! `tests/test_keystore_branch_key_store_integ.rs`.
 
+use std::error::Error as _;
+
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::error::SdkError;
+use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
+use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::{
@@ -266,6 +271,17 @@ async fn get_active_branch_key_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+
+    // The originating SDK error is attached as the cause, not merely formatted
+    // into the message, so a caller can recover it by type and inspect the
+    // concrete DynamoDB failure.
+    let cause = err
+        .source()
+        .expect("the DynamoDB SDK error must be attached as the cause");
+    assert!(
+        cause.downcast_ref::<SdkError<GetItemError>>().is_some(),
+        "the cause must be the originating GetItem SdkError; got: {cause}",
+    );
 }
 
 #[tokio::test]
@@ -281,6 +297,12 @@ async fn get_branch_key_version_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
+            .is_some(),
+        "the versioned read path must preserve the SDK error as the cause too; got: {err}",
+    );
 }
 
 #[tokio::test]
@@ -297,6 +319,15 @@ async fn create_key_store_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+
+    // A different call site than the read path above, so its cause is asserted
+    // separately: the DescribeTable error is attached rather than discarded.
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<DescribeTableError>>())
+            .is_some(),
+        "the cause must be the originating DescribeTable SdkError; got: {err}",
+    );
 }
 
 #[tokio::test]
@@ -362,6 +393,12 @@ async fn version_key_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
+            .is_some(),
+        "the SDK error must be preserved as the cause here too; got: {err}",
+    );
 }
 
 #[tokio::test]
@@ -376,4 +413,10 @@ async fn get_beacon_key_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
+            .is_some(),
+        "the SDK error must be preserved as the cause here too; got: {err}",
+    );
 }

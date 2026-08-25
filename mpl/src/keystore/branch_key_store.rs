@@ -229,12 +229,7 @@ impl BranchKeyStore {
             .key(ATTR_TYPE, AttributeValue::S(sort_key.to_string()))
             .send()
             .await
-            .map_err(|e| {
-                KeystoreError::new(
-                    KeystoreErrorKind::Dynamodb,
-                    format!("DynamoDB GetItem failed: {e}"),
-                )
-            })?;
+            .map_err(|e| map_ddb_error("GetItem", e))?;
 
         let item = response.item.ok_or_else(|| {
             KeystoreError::new(
@@ -296,10 +291,7 @@ impl Keystore for BranchKeyStore {
                     .as_service_error()
                     .is_some_and(DescribeTableError::is_resource_not_found_exception);
                 if !is_not_found {
-                    return Err(KeystoreError::new(
-                        KeystoreErrorKind::Dynamodb,
-                        format!("DynamoDB DescribeTable failed: {err}"),
-                    ));
+                    return Err(map_ddb_error("DescribeTable", err));
                 }
 
                 let resp = self
@@ -311,12 +303,7 @@ impl Keystore for BranchKeyStore {
                     .billing_mode(BillingMode::PayPerRequest)
                     .send()
                     .await
-                    .map_err(|e| {
-                        KeystoreError::new(
-                            KeystoreErrorKind::Dynamodb,
-                            format!("DynamoDB CreateTable failed: {e}"),
-                        )
-                    })?;
+                    .map_err(|e| map_ddb_error("CreateTable", e))?;
 
                 let table = resp.table_description().ok_or_else(|| {
                     KeystoreError::new(
@@ -406,12 +393,7 @@ impl Keystore for BranchKeyStore {
             .set_transact_items(Some(transact_items))
             .send()
             .await
-            .map_err(|e| {
-                KeystoreError::new(
-                    KeystoreErrorKind::Dynamodb,
-                    format!("DynamoDB TransactWriteItems failed: {e}"),
-                )
-            })?;
+            .map_err(|e| map_ddb_error("TransactWriteItems", e))?;
 
         Ok(branch_key_id)
     }
@@ -539,12 +521,7 @@ impl Keystore for BranchKeyStore {
             .set_transact_items(Some(transact_items))
             .send()
             .await
-            .map_err(|e| {
-                KeystoreError::new(
-                    KeystoreErrorKind::Dynamodb,
-                    format!("DynamoDB TransactWriteItems failed: {e}"),
-                )
-            })?;
+            .map_err(|e| map_ddb_error("TransactWriteItems", e))?;
 
         Ok(())
     }
@@ -695,10 +672,27 @@ fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, Keyst
 
 /// Map a DynamoDB request-builder `BuildError` into a `KeystoreError`.
 fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
-    KeystoreError::new(
+    KeystoreError::with_cause(
         KeystoreErrorKind::Internal,
         format!("failed to build a DynamoDB request: {e}"),
+        e,
     )
+}
+
+/// Map a failed DynamoDB SDK call into a `KeystoreError`, naming the
+/// `operation` that failed. We collapse every SDK error variant into
+/// `KeystoreErrorKind::Dynamodb` since callers only need the categorisation,
+/// not the raw SDK error type. The originating SDK error is retained as the
+/// `cause`, reachable through [`std::error::Error::source`], so a caller that
+/// needs to distinguish a specific DynamoDB exception (a
+/// `ConditionalCheckFailedException` from throttling, say) can downcast to it
+/// rather than parsing the message.
+fn map_ddb_error<E>(operation: &str, err: E) -> KeystoreError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let message = format!("DynamoDB {operation} failed: {err}");
+    KeystoreError::with_cause(KeystoreErrorKind::Dynamodb, message, err)
 }
 
 /// Current UTC time as an ISO 8601 timestamp to microsecond precision
