@@ -1752,15 +1752,15 @@ mod ondecrypt {
     }
 
     #[tokio::test]
-    async fn on_decrypt_collects_per_edk_errors_into_final_error() {
+    async fn on_decrypt_with_a_single_failing_edk_attaches_it_as_the_cause() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         // EDK that passes the filter (correct provider id + provider info)
         // but whose ciphertext is shorter than the spec's salt+iv+version
-        // overhead (28 bytes). The keyring MUST collect the per-EDK error
-        // and surface it in the final error message.
+        // overhead (28 bytes). The keyring MUST surface the per-EDK error
+        // in the final error message.
         let truncated = EncryptedDataKey::new(
             "aws-kms-hierarchy".to_string(),
             FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
@@ -1776,6 +1776,64 @@ mod ondecrypt {
             err.message.contains("ciphertext too short"),
             "final error must surface the collected per-EDK error; got: {}",
             err.message,
+        );
+
+        // Exactly one candidate EDK failed, so that failure is attached as the
+        // cause rather than only being formatted into the message.
+        let per_edk = err
+            .source()
+            .expect("the single per-EDK failure must be attached as the cause")
+            .downcast_ref::<MaterialsError>()
+            .expect("the cause must be the per-EDK MaterialsError");
+        assert!(
+            per_edk.message.contains("ciphertext too short"),
+            "the cause must be the per-EDK error itself; got: {}",
+            per_edk.message,
+        );
+    }
+
+    #[tokio::test]
+    async fn on_decrypt_with_several_failing_edks_aggregates_without_a_single_cause() {
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
+        let suite_id = non_signing_suite();
+
+        // Two candidate EDKs, both too short but by different amounts so each
+        // produces a distinguishable message in the aggregate.
+        let truncated_4 = EncryptedDataKey::new(
+            "aws-kms-hierarchy".to_string(),
+            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
+            vec![0u8; 4],
+        );
+        let truncated_8 = EncryptedDataKey::new(
+            "aws-kms-hierarchy".to_string(),
+            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
+            vec![0u8; 8],
+        );
+
+        let err = keyring
+            .on_decrypt(
+                empty_decryption_materials(suite_id),
+                &[truncated_4, truncated_8],
+            )
+            .await
+            .expect_err("on_decrypt must fail when every EDK attempt errors");
+        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+
+        // Both attempts are represented in the aggregated message.
+        assert!(
+            err.message.contains("4 bytes") && err.message.contains("8 bytes"),
+            "the aggregate must surface every per-EDK error; got: {}",
+            err.message,
+        );
+
+        // With more than one failure there is no single error to attach, so
+        // the chain stops here by design. If this starts failing, on_decrypt
+        // picked a cause among several and the choice needs to be justified.
+        assert!(
+            err.source().is_none(),
+            "an aggregate over several failures must not attach one of them as \
+             the cause; got: {err}",
         );
     }
 
@@ -1861,18 +1919,22 @@ mod ondecrypt {
             "final error must surface the keystore failure; got: {}",
             err.message,
         );
-        // No `cause` is asserted here, unlike the on_encrypt path. `on_decrypt`
-        // attempts every matching EDK and aggregates the per-EDK failures into
-        // one message, so there is no single error to attach: the chain is
-        // severed at that aggregation, not at the keystore call. The keystore
-        // failure the per-EDK path produces does carry its cause, but that
-        // error is internal to `try_decrypt_edk`.
-        assert!(
-            err.source().is_none(),
-            "the aggregated on_decrypt error intentionally has no single cause; \
-             if this starts failing, the aggregation changed and the on_encrypt-style \
-             cause assertion should replace this one",
-        );
+
+        // One candidate EDK, so on_decrypt attaches that per-EDK failure as
+        // the cause and the chain stays walkable all the way to the keystore.
+        let per_edk = err
+            .source()
+            .expect("a single failing EDK must be attached as the cause")
+            .downcast_ref::<MaterialsError>()
+            .expect("the cause must be the per-EDK MaterialsError");
+        assert_eq!(per_edk.kind, MaterialsErrorKind::KeyringFailed);
+
+        let keystore_err = per_edk
+            .source()
+            .expect("the per-EDK failure must itself carry the keystore cause")
+            .downcast_ref::<KeystoreError>()
+            .expect("the root cause must be the originating KeystoreError");
+        assert_eq!(keystore_err.kind(), &KeystoreErrorKind::RecordNotFound);
     }
 
     #[tokio::test]

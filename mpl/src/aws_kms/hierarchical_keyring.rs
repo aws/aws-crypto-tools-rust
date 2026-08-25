@@ -417,7 +417,7 @@ impl Keyring for HierarchicalKeyring {
 
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
-        let mut collected_errors: Vec<String> = Vec::new();
+        let mut collected_errors: Vec<MaterialsError> = Vec::new();
         for edk in encrypted_data_keys {
             if edk.key_provider_id != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
@@ -442,7 +442,7 @@ impl Keyring for HierarchicalKeyring {
                         materials.symmetric_signing_key().cloned(),
                     );
                 }
-                Err(e) => collected_errors.push(e.to_string()),
+                Err(e) => collected_errors.push(e),
             }
         }
 
@@ -450,10 +450,34 @@ impl Keyring for HierarchicalKeyring {
         // mutated DecryptionMaterials; reaching this line means no EDK was
         // successfully decrypted, so the input `materials` parameter (owned
         // but never mutated) is dropped without modification.
-        Err(MaterialsError::keyring_failed(format!(
-            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key (collected errors: [{}])",
-            collected_errors.join("; "),
-        )))
+        const FAILURE_PREFIX: &str =
+            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key";
+
+        // Exactly one candidate EDK was attempted and it failed: attach that
+        // failure as the `cause` so a caller can walk `source()` to the
+        // concrete error — a KMS exception, say — instead of parsing it back
+        // out of the message. With several failures there is no single cause
+        // to attach, so they stay flattened into the message.
+        //
+        // The error is wrapped rather than returned as-is to keep this
+        // operation's kind stable at `KeyringFailed`. A per-EDK failure can
+        // carry another kind (`branch_key_wrap::unwrap` rejects a malformed
+        // branch-key version with a `Validation` error), and returning it
+        // unchanged would make on_decrypt's kind depend on which EDK failed.
+        match <[MaterialsError; 1]>::try_from(collected_errors) {
+            Ok([only]) => Err(MaterialsError::keyring_failed_with_cause(
+                format!("{FAILURE_PREFIX} (collected errors: [{only}])"),
+                only,
+            )),
+            Err(collected_errors) => Err(MaterialsError::keyring_failed(format!(
+                "{FAILURE_PREFIX} (collected errors: [{}])",
+                collected_errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ))),
+        }
     }
 }
 
