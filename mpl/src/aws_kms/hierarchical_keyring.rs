@@ -26,7 +26,7 @@ use crate::cmc::{
 use crate::keystore::Keystore;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, MaterialsError, PlaintextDataKey,
+    EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
 
 /// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
@@ -450,11 +450,27 @@ impl Keyring for HierarchicalKeyring {
         // mutated DecryptionMaterials; reaching this line means no EDK was
         // successfully decrypted, so the input `materials` parameter (owned
         // but never mutated) is dropped without modification.
-        const FAILURE_PREFIX: &str =
-            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key";
 
-        // Every collected failure is carried typed on the returned error, which
-        // is what the specification requires:
+        // Nothing was attempted: every supplied EDK was filtered out before
+        // the keystore was consulted, so this is not an aggregate of failures
+        // but a distinct one — no encrypted data key matched this keyring. The
+        // Dafny implementation returns a separate error here too, rather than
+        // an empty collection, naming what it expected against what it got:
+        // ErrorMessages.IncorrectDataKeys, "Unable to decrypt data key: No
+        // Encrypted Data Keys found to match." This is the common shape of a
+        // misconfigured branch-key id, so it names both sides.
+        if collected_errors.is_empty() {
+            return Err(MaterialsError::no_matching_data_key(format!(
+                "HierarchicalKeyring::on_decrypt: no encrypted data key matched. Expected \
+                 keyProviderId {KEY_PROVIDER_ID_HIERARCHY:?} with keyProviderInfo \
+                 {branch_key_id:?}; got [{}]",
+                describe_supplied_edks(encrypted_data_keys),
+            )));
+        }
+
+        // At least one candidate was attempted and every one failed. The
+        // per-attempt errors are carried typed on the returned error, which is
+        // what the specification requires:
         //
         //   "If OnDecrypt fails to successfully decrypt any encrypted data key,
         //    then it MUST yield an error that includes all the collected
@@ -464,23 +480,13 @@ impl Keyring for HierarchicalKeyring {
         //
         // Formatting them into the message alone would satisfy the letter of
         // that but leave a caller parsing prose to find out why any given
-        // attempt failed. The Dafny implementation makes the same choice with
-        // its `CollectionOfErrors(list, message)` error variant.
-        //
-        // `keyring_failed_collection` also attaches the single failure as the
-        // `cause` when exactly one candidate was attempted, so `source()`
-        // reaches it in the common single-key case. The message is unchanged
-        // either way: a one-element join renders identically to the single
-        // error on its own.
-        Err(MaterialsError::keyring_failed_collection(
-            format!(
-                "{FAILURE_PREFIX} (collected errors: [{}])",
-                collected_errors
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            ),
+        // attempt failed. The Dafny implementation makes the same choice, with
+        // its `CollectionOfErrors(list, message)` error variant, in every
+        // keyring. Display renders them, so the message describes only the
+        // overall failure.
+        Err(MaterialsError::collection(
+            MaterialsErrorKind::KeyringFailed,
+            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key",
             collected_errors,
         ))
     }
@@ -629,6 +635,22 @@ impl HierarchicalKeyring {
 
         branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
     }
+}
+
+/// Render the supplied EDKs' provider id and provider info for a no-match
+/// error, so the message names what was offered against what was expected.
+/// Provider info is not required to be UTF-8, so it is rendered lossily.
+fn describe_supplied_edks(edks: &[EncryptedDataKey]) -> String {
+    edks.iter()
+        .map(|edk| {
+            format!(
+                "keyProviderId: {:?}, keyProviderInfo: {:?}",
+                edk.key_provider_id,
+                String::from_utf8_lossy(&edk.key_provider_info),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Generate a random plaintext data key of the algorithm suite's

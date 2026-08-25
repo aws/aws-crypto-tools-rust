@@ -1733,8 +1733,10 @@ mod ondecrypt {
     }
 
     #[tokio::test]
-    async fn on_decrypt_fails_when_no_edk_matches_filter() {
-        // Empty EDK list → nothing matches → the keyring fails per spec.
+    async fn on_decrypt_with_no_edks_reports_no_match_rather_than_an_empty_aggregate() {
+        // Nothing was attempted, so this is not an aggregate of zero failures
+        // but a distinct one: no encrypted data key matched. Dafny returns a
+        // separate error here too rather than an empty collection.
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
@@ -1743,10 +1745,45 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &[])
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
-        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+
+        assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
         assert!(
-            err.message.contains("failed to decrypt any"),
-            "error must identify the no-match path; got: {}",
+            !err.is_collection(),
+            "with nothing attempted there is nothing to collect; got: {err}",
+        );
+        // Names what it wanted, which is what makes a misconfigured branch-key
+        // id diagnosable.
+        assert!(
+            err.message.contains("aws-kms-hierarchy") && err.message.contains(FAKE_BRANCH_KEY_ID),
+            "the error must name the expected provider id and branch-key id; got: {}",
+            err.message,
+        );
+    }
+
+    #[tokio::test]
+    async fn on_decrypt_with_only_non_matching_edks_reports_what_was_supplied() {
+        // The common misconfiguration: EDKs are present but none is this
+        // keyring's, so none is attempted. The error names both sides.
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
+        let suite_id = non_signing_suite();
+
+        let foreign = EncryptedDataKey::new(
+            "some-other-provider".to_string(),
+            b"some-other-info".to_vec(),
+            vec![0u8; 64],
+        );
+
+        let err = keyring
+            .on_decrypt(empty_decryption_materials(suite_id), &[foreign])
+            .await
+            .expect_err("an EDK from another provider MUST NOT be decrypted");
+
+        assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
+        assert!(!err.is_collection());
+        assert!(
+            err.message.contains("some-other-provider") && err.message.contains("some-other-info"),
+            "the error must report the supplied provider id and info; got: {}",
             err.message,
         );
     }
@@ -1773,9 +1810,8 @@ mod ondecrypt {
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
         assert!(
-            err.message.contains("ciphertext too short"),
-            "final error must surface the collected per-EDK error; got: {}",
-            err.message,
+            err.to_string().contains("ciphertext too short"),
+            "the rendered error must surface the collected per-EDK error; got: {err}",
         );
 
         // Exactly one candidate EDK failed, so that failure is attached as the
@@ -1829,11 +1865,11 @@ mod ondecrypt {
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
 
-        // Both attempts are represented in the aggregated message.
+        // Both attempts are represented in the rendered error.
+        let rendered = err.to_string();
         assert!(
-            err.message.contains("4 bytes") && err.message.contains("8 bytes"),
-            "the aggregate must surface every per-EDK error; got: {}",
-            err.message,
+            rendered.contains("4 bytes") && rendered.contains("8 bytes"),
+            "the aggregate must surface every per-EDK error; got: {rendered}",
         );
 
         // The collected failures stay typed, not merely formatted into the
@@ -1946,10 +1982,11 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+        // The per-attempt text is rendered by Display from `collected`, not
+        // baked into `message`, so the assertion reads the rendered form.
         assert!(
-            err.message.contains("get_branch_key_version failed"),
-            "final error must surface the keystore failure; got: {}",
-            err.message,
+            err.to_string().contains("get_branch_key_version failed"),
+            "the rendered error must surface the keystore failure; got: {err}",
         );
 
         // One candidate EDK, so on_decrypt attaches that per-EDK failure as

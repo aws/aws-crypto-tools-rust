@@ -147,6 +147,56 @@ fn test_display_for_validation_kind() {
 }
 
 #[test]
+fn test_display_renders_the_collected_errors() {
+    let err = MaterialsError::collection(
+        MaterialsErrorKind::KeyringFailed,
+        "every attempt failed",
+        vec![
+            MaterialsError::keyring_failed("first attempt"),
+            MaterialsError::keyring_failed("second attempt"),
+        ],
+    );
+
+    // The collected failures live only in `collected`; Display is what renders
+    // them, so the message stays a description of the overall failure.
+    assert_eq!(err.message, "every attempt failed");
+    assert!(!err.message.contains("first attempt"));
+
+    let rendered = err.to_string();
+    assert_eq!(
+        rendered,
+        "MaterialsError(KeyringFailed): every attempt failed (collected errors: \
+         [MaterialsError(KeyringFailed): first attempt; \
+         MaterialsError(KeyringFailed): second attempt])",
+    );
+}
+
+#[test]
+fn test_display_omits_the_collected_clause_when_there_is_nothing_collected() {
+    let err = MaterialsError::keyring_failed("a single failure");
+    assert_eq!(
+        err.to_string(),
+        "MaterialsError(KeyringFailed): a single failure",
+        "an error that aggregates nothing must render exactly as before",
+    );
+}
+
+#[test]
+fn test_collection_keeps_the_kind_it_was_given() {
+    // Aggregate-ness is orthogonal to kind: a keyring whose every candidate was
+    // rejected by its own provider filter aggregates those rejections but is
+    // still categorically a no-match, not a decryption failure.
+    let err = MaterialsError::collection(
+        MaterialsErrorKind::NoMatchingDataKey,
+        "no encrypted data key matched this keyring",
+        vec![MaterialsError::no_matching_data_key("EDK 0 did not match")],
+    );
+
+    assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
+    assert!(err.is_collection());
+}
+
+#[test]
 fn test_clone_and_equality() {
     let err = MaterialsError::no_matching_data_key("none matched");
     let cloned = err.clone();
@@ -165,6 +215,7 @@ fn test_ordinary_constructors_collect_nothing() {
             .is_empty()
     );
     assert!(MaterialsError::new("invalid").collected_errors().is_empty());
+    assert!(!MaterialsError::keyring_failed("one failure").is_collection());
 }
 
 #[test]
@@ -174,9 +225,14 @@ fn test_keyring_failed_collection_keeps_every_error_typed() {
         MaterialsError::new("second attempt was invalid"),
     ];
 
-    let err = MaterialsError::keyring_failed_collection("all attempts failed", collected.clone());
+    let err = MaterialsError::collection(
+        MaterialsErrorKind::KeyringFailed,
+        "all attempts failed",
+        collected.clone(),
+    );
 
     assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+    assert!(err.is_collection());
     assert_eq!(err.message, "all attempts failed");
     // Typed and in order, including an error of a different kind — the
     // aggregate does not flatten or normalise what it collected.
@@ -189,7 +245,8 @@ fn test_keyring_failed_collection_keeps_every_error_typed() {
 
 #[test]
 fn test_keyring_failed_collection_nominates_a_cause_only_when_unambiguous() {
-    let one = MaterialsError::keyring_failed_collection(
+    let one = MaterialsError::collection(
+        MaterialsErrorKind::KeyringFailed,
         "one attempt failed",
         vec![MaterialsError::keyring_failed("the only attempt")],
     );
@@ -200,7 +257,8 @@ fn test_keyring_failed_collection_nominates_a_cause_only_when_unambiguous() {
         .expect("the cause is the collected MaterialsError");
     assert_eq!(only.message, "the only attempt");
 
-    let several = MaterialsError::keyring_failed_collection(
+    let several = MaterialsError::collection(
+        MaterialsErrorKind::KeyringFailed,
         "two attempts failed",
         vec![
             MaterialsError::keyring_failed("first"),
@@ -211,18 +269,13 @@ fn test_keyring_failed_collection_nominates_a_cause_only_when_unambiguous() {
         several.source().is_none(),
         "with several failures there is no single one to nominate as the cause",
     );
-
-    // Nothing collected means nothing to nominate either.
-    assert!(
-        MaterialsError::keyring_failed_collection("no candidates", Vec::new())
-            .source()
-            .is_none()
-    );
 }
 
 #[test]
 fn test_equality_distinguishes_different_collected_errors() {
-    let base = |collected| MaterialsError::keyring_failed_collection("same message", collected);
+    let base = |collected| {
+        MaterialsError::collection(MaterialsErrorKind::KeyringFailed, "same", collected)
+    };
 
     let first = base(vec![MaterialsError::keyring_failed("first")]);
     let second = base(vec![MaterialsError::keyring_failed("second")]);

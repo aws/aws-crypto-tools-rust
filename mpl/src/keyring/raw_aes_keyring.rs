@@ -9,7 +9,7 @@ use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes
 use crate::Keyring;
 use crate::structures::{
     AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
-    PlaintextDataKey,
+    MaterialsErrorKind, PlaintextDataKey,
 };
 
 /// Byte width of the authentication-tag-length field of the serialized key
@@ -281,21 +281,26 @@ impl Keyring for RawAesKeyring {
 
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();
 
-        let mut errors: Vec<String> = Vec::new();
+        let mut collected_errors: Vec<MaterialsError> = Vec::new();
+        // Whether any EDK got past this keyring's provider-id / provider-info
+        // filter and was actually decrypted. Distinguishes "none of these keys
+        // are mine" from "one was mine and it failed to decrypt".
+        let mut attempted_decryption = false;
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
-                errors.push(format!(
+                collected_errors.push(MaterialsError::no_matching_data_key(format!(
                     "EncryptedDataKey {index} did not match AESKeyring. Expected: keyProviderId: {}.",
                     self.key_namespace,
-                ));
+                )));
                 continue;
             };
+            attempted_decryption = true;
 
             if edk.ciphertext.len() < TAG_LENGTH {
-                errors.push(format!(
+                collected_errors.push(MaterialsError::keyring_failed(format!(
                     "EncryptedDataKey {index}: insufficient data to decrypt: ciphertext is {} bytes, need at least the {TAG_LENGTH}-byte authentication tag",
                     edk.ciphertext.len(),
-                ));
+                )));
                 continue;
             }
             let (encrypted_key, auth_tag) =
@@ -311,17 +316,18 @@ impl Keyring for RawAesKeyring {
                 &aad,
                 &mut plaintext_dk,
             ) {
-                errors.push(format!(
-                    "EncryptedDataKey {index}: AES-GCM decryption failed: {e}"
+                collected_errors.push(MaterialsError::keyring_failed_with_cause(
+                    format!("EncryptedDataKey {index}: AES-GCM decryption failed: {e}"),
+                    e,
                 ));
                 continue;
             }
 
             if plaintext_dk.len() != expected_dk_len {
-                errors.push(format!(
+                collected_errors.push(MaterialsError::keyring_failed(format!(
                     "EncryptedDataKey {index}: decrypted data key is {} bytes, expected {expected_dk_len} for the algorithm suite",
                     plaintext_dk.len(),
-                ));
+                )));
                 continue;
             }
 
@@ -338,10 +344,40 @@ impl Keyring for RawAesKeyring {
         // The early return above is the only path that produces modified
         // materials; reaching this line means no decryption succeeded, so the
         // input `materials` is dropped unmodified.
-        Err(MaterialsError::no_matching_data_key(format!(
-            "RawAesKeyring::on_decrypt: unable to decrypt any encrypted data key (collected errors: [{}])",
-            errors.join("; "),
-        )))
+
+        // Nothing reached decryption: every supplied EDK, if any, was rejected
+        // by this keyring's provider filter. That is a no-match rather than a
+        // decryption failure, so it keeps `NoMatchingDataKey` — the kind stays
+        // the category of the failure even when the error aggregates others.
+        // Unlike the hierarchical keyring, this loop records an error for a
+        // non-matching EDK rather than skipping it, so those rejections are
+        // still reported.
+        if !attempted_decryption {
+            return Err(if collected_errors.is_empty() {
+                MaterialsError::no_matching_data_key(
+                    "RawAesKeyring::on_decrypt: no encrypted data key was supplied",
+                )
+            } else {
+                MaterialsError::collection(
+                    MaterialsErrorKind::NoMatchingDataKey,
+                    "RawAesKeyring::on_decrypt: no encrypted data key matched this keyring",
+                    collected_errors,
+                )
+            });
+        }
+
+        // At least one EDK was this keyring's and decryption still failed. The
+        // per-attempt errors stay typed on the returned error rather than being
+        // flattened into the message — the same shape the hierarchical keyring
+        // uses, and the same one Dafny uses in every keyring via
+        // CollectionOfErrors(list, message). The raw AES spec states the
+        // requirement as "If no decryption succeeds, the keyring MUST fail":
+        // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
+        Err(MaterialsError::collection(
+            MaterialsErrorKind::KeyringFailed,
+            "RawAesKeyring::on_decrypt: unable to decrypt any encrypted data key",
+            collected_errors,
+        ))
     }
 }
 
