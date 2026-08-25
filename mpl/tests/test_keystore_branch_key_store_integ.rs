@@ -15,10 +15,15 @@
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
 //! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
+use std::error::Error as _;
+
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_kms::Client as KmsClient;
+use aws_sdk_kms::error::SdkError;
+use aws_sdk_kms::operation::decrypt::DecryptError;
 
 use aws_crypto_mpl::{
     BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
@@ -307,9 +312,19 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
         Ok(_) => panic!("KmsMrKeyArn(ap-south-2) MUST fail — key does not exist in AP"),
         Err(e) => e,
     };
-    // Dafny test asserts the error is a KMS opaque error; we map any
-    // KMS SDK error to KeystoreErrorKind::Kms.
+    // Dafny asserts the error is a KMS opaque error. The SDK error is nested
+    // as the cause here, so the assertion goes one level deeper than the kind.
+    // The service-error variant is deliberately not pinned: whether an absent
+    // key in a possibly-unenabled region comes back as a modeled exception or
+    // as a dispatch failure is an account-configuration detail, so only the
+    // nesting itself is asserted.
     assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
+            .is_some(),
+        "the KMS SDK error must be nested as the cause; got: {err}",
+    );
 }
 
 // ─── TestGetActiveKeyWithIncorrectKmsKeyArn ────────────────────────────────
@@ -355,6 +370,72 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+
+    // The originating SDK error is nested as the cause, so the specific KMS
+    // exception is recoverable by type. This ports the assertion Dafny makes
+    // in AwsCryptographyKeyStore/test/TestGetKeys.dfy:
+    //
+    //     match activeResult.error {
+    //       case ComAmazonawsKms(nestedError) =>
+    //         expect nestedError.InvalidCiphertextException?;
+    //
+    // Asserting only the error kind would equally admit throttling, access
+    // denied, or a disabled key.
+    let sdk_err = err
+        .source()
+        .expect("the KMS SDK error must be attached as the cause")
+        .downcast_ref::<SdkError<DecryptError>>()
+        .expect("the cause must be the originating Decrypt SdkError");
+    let service_err = sdk_err
+        .as_service_error()
+        .expect("a wrong-EC Decrypt is a modeled service error, not a dispatch failure");
+    assert!(
+        service_err.is_invalid_ciphertext_exception(),
+        "a mismatched encryption context MUST surface InvalidCiphertextException; got: {service_err:?}",
+    );
+}
+
+// ─── DynamoDB error nesting ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() {
+    // The DynamoDB half of the same guarantee: a GetItem against a table that
+    // does not exist must surface the modeled ResourceNotFoundException as the
+    // cause, not merely a Dynamodb-kind error with the SDK error formatted
+    // into the message. No Dafny counterpart — the Dafny suite does not
+    // exercise a missing table — but the nesting is what `map_ddb_error`
+    // promises, and this is the only deterministic way to reach a modeled DDB
+    // service error from the read path.
+    let store = BranchKeyStore::new(KeyStoreConfig {
+        ddb_table_name: "aws-crypto-tools-rust-table-that-does-not-exist".to_string(),
+        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
+        id: None,
+        grant_tokens: None,
+        ddb_client: Some(ddb_client_us_west_2().await),
+        kms_client: Some(kms_client_for_region("us-west-2").await),
+    })
+    .await
+    .expect("construction does not touch DynamoDB, so it must succeed");
+
+    let err = match store.get_active_branch_key(BRANCH_KEY_ID.to_string()).await {
+        Ok(_) => panic!("GetItem against a nonexistent table MUST fail"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+
+    let sdk_err = err
+        .source()
+        .expect("the DynamoDB SDK error must be attached as the cause")
+        .downcast_ref::<SdkError<GetItemError>>()
+        .expect("the cause must be the originating GetItem SdkError");
+    let service_err = sdk_err
+        .as_service_error()
+        .expect("a missing table is a modeled service error, not a dispatch failure");
+    assert!(
+        service_err.is_resource_not_found_exception(),
+        "a missing table MUST surface ResourceNotFoundException; got: {service_err:?}",
+    );
 }
 
 // ─── TestGetActiveKeyDoesNotExistFails ─────────────────────────────────────
