@@ -17,6 +17,8 @@
 //! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
 //! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
+use std::error::Error as _;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -1436,9 +1438,10 @@ mod onencrypt {
                 &self,
                 _branch_key_id: String,
             ) -> Result<BranchKeyMaterials, KeystoreError> {
-                Err(KeystoreError::new(
+                Err(KeystoreError::with_cause(
                     KeystoreErrorKind::RecordNotFound,
                     "no such branch key",
+                    IoError::new(IoErrorKind::NotFound, "ddb: item not found"),
                 ))
             }
             async fn get_branch_key_version(
@@ -1473,6 +1476,30 @@ mod onencrypt {
             Err(e) => e,
         };
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+
+        // The keystore failure is attached as the cause, not merely formatted
+        // into the message, so a caller can recover the originating
+        // `KeystoreError` by type instead of parsing text.
+        let cause = err
+            .source()
+            .expect("the keystore failure must be attached as the cause");
+        let keystore_err = cause
+            .downcast_ref::<KeystoreError>()
+            .expect("the cause must be the originating KeystoreError");
+        assert_eq!(keystore_err.kind(), &KeystoreErrorKind::RecordNotFound);
+
+        // The chain is walkable past the keystore boundary too: whatever the
+        // keystore itself wrapped stays reachable. In production this level is
+        // the AWS SDK error carrying the concrete KMS or DDB exception.
+        let root = keystore_err
+            .source()
+            .expect("the keystore's own cause must remain reachable");
+        assert_eq!(
+            root.downcast_ref::<IoError>()
+                .expect("the root cause must survive unchanged")
+                .kind(),
+            IoErrorKind::NotFound,
+        );
     }
 
     #[tokio::test]
@@ -1833,6 +1860,18 @@ mod ondecrypt {
             err.message.contains("get_branch_key_version failed"),
             "final error must surface the keystore failure; got: {}",
             err.message,
+        );
+        // No `cause` is asserted here, unlike the on_encrypt path. `on_decrypt`
+        // attempts every matching EDK and aggregates the per-EDK failures into
+        // one message, so there is no single error to attach: the chain is
+        // severed at that aggregation, not at the keystore call. The keystore
+        // failure the per-EDK path produces does carry its cause, but that
+        // error is internal to `try_decrypt_edk`.
+        assert!(
+            err.source().is_none(),
+            "the aggregated on_decrypt error intentionally has no single cause; \
+             if this starts failing, the aggregation changed and the on_encrypt-style \
+             cause assertion should replace this one",
         );
     }
 

@@ -332,9 +332,10 @@ impl Keyring for HierarchicalKeyring {
         );
 
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
-            MaterialsError::keyring_failed(format!(
-                "HierarchicalKeyring: cache get_cache_entry failed: {e}",
-            ))
+            MaterialsError::keyring_failed_with_cause(
+                format!("HierarchicalKeyring: cache get_cache_entry failed: {e}"),
+                e,
+            )
         })?;
 
         let ciphertext = match cached {
@@ -348,9 +349,10 @@ impl Keyring for HierarchicalKeyring {
                     .get_active_branch_key(branch_key_id.clone())
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: get_active_branch_key failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: get_active_branch_key failed: {e}"),
+                            e,
+                        )
                     })?;
 
                 let now = SystemTime::now();
@@ -364,9 +366,10 @@ impl Keyring for HierarchicalKeyring {
                     .put_cache_entry(&cache_id, entry)
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: cache put_cache_entry failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: cache put_cache_entry failed: {e}"),
+                            e,
+                        )
                     })?;
 
                 branch_key_wrap::wrap(
@@ -553,9 +556,10 @@ impl HierarchicalKeyring {
         );
 
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
-            MaterialsError::keyring_failed(format!(
-                "HierarchicalKeyring: cache get_cache_entry failed: {e}",
-            ))
+            MaterialsError::keyring_failed_with_cause(
+                format!("HierarchicalKeyring: cache get_cache_entry failed: {e}"),
+                e,
+            )
         })?;
 
         let bkm = match cached {
@@ -568,9 +572,10 @@ impl HierarchicalKeyring {
                     .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: get_branch_key_version failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: get_branch_key_version failed: {e}"),
+                            e,
+                        )
                     })?;
 
                 let now = SystemTime::now();
@@ -584,9 +589,10 @@ impl HierarchicalKeyring {
                     .put_cache_entry(&cache_id, entry)
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: cache put_cache_entry failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: cache put_cache_entry failed: {e}"),
+                            e,
+                        )
                     })?;
                 bkm
             }

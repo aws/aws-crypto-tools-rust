@@ -59,6 +59,7 @@
 //! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
 //! [shared-cache]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
 
+use std::error::Error as _;
 use std::sync::Arc;
 
 use aws_config::{BehaviorVersion, Region};
@@ -68,7 +69,8 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
+use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
+use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind,
@@ -310,28 +312,39 @@ async fn build_keystore_with_kms_and_logical_name(
 /// `hk2` here is built by `build_keystore_with_kms_and_logical_name`, which pins
 /// `KmsConfiguration::KmsKeyArn(KEY_ARN)` — a us-west-2 ARN — while handing the
 /// keystore a KMS client for another region, so the intended failure is the KMS
-/// `Decrypt` rejecting a key from a different region. The assertion cannot
-/// distinguish that from any other KMS-side failure (throttling, access denied,
-/// a disabled key): `map_kms_error` in `keystore/kms_ops.rs` formats the SDK
-/// error into a string without attaching it as a cause, so the typed
-/// `IncorrectKeyException` — the error Dafny asserts for this case — never
-/// reaches us. See the TODO there.
+/// `Decrypt` rejecting a key from a different region.
 ///
-/// `KeystoreError(Kms)` is still the assertion these tests need. Reaching the
-/// KMS call means the DDB record was read, which means `hk2` went to the
-/// keystore instead of being served from the shared cache — and a cache miss is
-/// the property under test. A bare `is_err()` would also be satisfied by a
-/// missing record or an unreachable table, passing without exercising the cache
-/// at all. The keyring flattens every keystore failure into `KeyringFailed`, so
-/// the keystore's own kind is matched in the message.
+/// The assertion matches a `KeystoreError` of kind `Kms` in the error chain, by
+/// type rather than by message text. It deliberately does not pin the specific
+/// KMS exception (Dafny asserts `IncorrectKeyException` for this case): the SDK
+/// error is now reachable through `source()`, but confirming which variant this
+/// fixture actually produces requires a run against the fixture account, and
+/// these tests cannot run without those credentials.
+///
+/// `KeystoreError(Kms)` is the property these tests need. Reaching the KMS call
+/// means the DDB record was read, which means `hk2` went to the keystore
+/// instead of being served from the shared cache — and a cache miss is the
+/// property under test. A bare `is_err()` would also be satisfied by a missing
+/// record or an unreachable table, passing without exercising the cache at all.
 fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, context: &str) {
     let err = match result {
         Err(e) => e,
         Ok(_) => panic!("{context}: expected on_encrypt to fail"),
     };
     assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
-    assert!(
-        err.to_string().contains("KeystoreError(Kms)"),
+
+    let keystore_err = err
+        .source()
+        .unwrap_or_else(|| {
+            panic!("{context}: the keystore failure must be attached as the cause, got: {err}")
+        })
+        .downcast_ref::<KeystoreError>()
+        .unwrap_or_else(|| {
+            panic!("{context}: the cause must be the originating KeystoreError, got: {err}")
+        });
+    assert_eq!(
+        keystore_err.kind(),
+        &KeystoreErrorKind::Kms,
         "{context}: expected the failure to come from the KMS call, got: {err}",
     );
 }
