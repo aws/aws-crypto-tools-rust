@@ -399,13 +399,18 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
 
 #[tokio::test]
 async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() {
-    // The DynamoDB half of the same guarantee: a GetItem against a table that
-    // does not exist must surface the modeled ResourceNotFoundException as the
-    // cause, not merely a Dynamodb-kind error with the SDK error formatted
-    // into the message. No Dafny counterpart — the Dafny suite does not
-    // exercise a missing table — but the nesting is what `map_ddb_error`
-    // promises, and this is the only deterministic way to reach a modeled DDB
-    // service error from the read path.
+    // The DynamoDB half of the same guarantee: a failed GetItem must surface
+    // the originating SDK error as the cause, not merely a Dynamodb-kind error
+    // with the SDK error formatted into the message. No Dafny counterpart —
+    // the Dafny suite does not exercise an unreachable table.
+    //
+    // The modeled service-error variant is deliberately not pinned, because it
+    // depends on the caller's IAM policy rather than on this code. CI's role is
+    // scoped to the fixture table, so an unknown table name is denied by IAM
+    // before DynamoDB reports on its existence and the operation error arrives
+    // as `Unhandled` carrying `AccessDeniedException`. A caller permitted on
+    // the whole table namespace instead sees `ResourceNotFoundException`. Both
+    // are the same nesting, which is what is under test here.
     let store = BranchKeyStore::new(KeyStoreConfig {
         ddb_table_name: "aws-crypto-tools-rust-table-that-does-not-exist".to_string(),
         kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
@@ -419,7 +424,7 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
     .expect("construction does not touch DynamoDB, so it must succeed");
 
     let err = match store.get_active_branch_key(BRANCH_KEY_ID.to_string()).await {
-        Ok(_) => panic!("GetItem against a nonexistent table MUST fail"),
+        Ok(_) => panic!("GetItem against an unreachable table MUST fail"),
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
@@ -429,12 +434,10 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
         .expect("the DynamoDB SDK error must be attached as the cause")
         .downcast_ref::<SdkError<GetItemError>>()
         .expect("the cause must be the originating GetItem SdkError");
-    let service_err = sdk_err
-        .as_service_error()
-        .expect("a missing table is a modeled service error, not a dispatch failure");
     assert!(
-        service_err.is_resource_not_found_exception(),
-        "a missing table MUST surface ResourceNotFoundException; got: {service_err:?}",
+        sdk_err.as_service_error().is_some(),
+        "the nested SDK error must carry the service response, so a caller can \
+         match on the DynamoDB exception; got: {sdk_err:?}",
     );
 }
 
