@@ -140,7 +140,7 @@ impl HierarchicalKeyring {
     /// as the 16-byte partition id.
     ///
     /// `cache_type` selects the cache backing — see [`CacheType`]. When
-    /// `None`, behaves as `Some(CacheType::Default(DefaultCache::default()))`.
+    /// `None`, behaves as `Some(CacheType::Default(DefaultCache::new(1000)))`.
     pub fn new(
         keystore: Arc<dyn Keystore>,
         ttl_seconds: u64,

@@ -15,11 +15,9 @@
 // TODO: finish conforming this module to the Smithy `CacheType` union, which
 // has six variants: Default, No, SingleThreaded, MultiThreaded, StormTracking
 // and Shared. `No`, `SingleThreaded` and `MultiThreaded` are not modelled here
-// yet. Also unaddressed: the model makes `entryPruningTailSize` an optional
-// member of SingleThreadedCache / MultiThreadedCache / StormTrackingCache,
-// while `StormTrackingCache` below requires it; and the model's `Default`
-// variant builds a storm-tracking cache (StormTracker.DefaultStorm) rather
-// than the plain LocalCmc built here. Follow-up PR.
+// yet. Also unaddressed: the model's `Default` variant builds a storm-tracking
+// cache (StormTracker.DefaultStorm) rather than the plain LocalCmc built here.
+// Follow-up PR.
 
 use std::sync::Arc;
 
@@ -80,7 +78,10 @@ pub struct StormTrackingCache {
     /// Maximum number of entries the underlying
     /// [`LocalCmc`](super::LocalCmc) holds.
     pub entry_capacity: usize,
-    /// Number of LRU entries scanned per get for TTL-aware pruning.
+    /// Number of LRU entries scanned per get for TTL-aware pruning. Optional
+    /// in the Smithy model; when left unset on
+    /// [`StormTrackingCacheBuilder`] it defaults to 1, the value every path
+    /// in the Dafny implementation uses.
     pub entry_pruning_tail_size: usize,
     /// Window during which a soon-to-expire entry is still served.
     pub grace_period: u64,
@@ -97,20 +98,23 @@ pub struct StormTrackingCache {
 }
 
 impl StormTrackingCache {
-    /// Start a fluent builder for `StormTrackingCache`. All numeric fields
-    /// must be supplied via the builder before [`StormTrackingCacheBuilder::build`]
-    /// is called; `time_units` is optional and defaults to seconds.
+    /// Start a fluent builder for `StormTrackingCache`. The six required
+    /// numeric fields must be supplied via the builder before
+    /// [`StormTrackingCacheBuilder::build`] is called;
+    /// `entry_pruning_tail_size` and `time_units` are optional.
     #[must_use]
     pub fn builder() -> StormTrackingCacheBuilder {
         StormTrackingCacheBuilder::default()
     }
 }
 
-/// Fluent builder for [`StormTrackingCache`]. All seven numeric fields
-/// (`entry_capacity`, `entry_pruning_tail_size`, `grace_period`,
-/// `grace_interval`, `fan_out`, `inflight_ttl`, `sleep_milli`) are
-/// required; [`StormTrackingCacheBuilder::build`] returns an error if any
-/// were left unset. `time_units` is optional.
+/// Fluent builder for [`StormTrackingCache`]. The six required numeric fields
+/// (`entry_capacity`, `grace_period`, `grace_interval`, `fan_out`,
+/// `inflight_ttl`, `sleep_milli`) must be set;
+/// [`StormTrackingCacheBuilder::build`] returns an error if any were left
+/// unset. `entry_pruning_tail_size` is optional and defaults to 1, matching
+/// the Smithy model, which does not mark it `@required`. `time_units` is
+/// optional and defaults to seconds.
 #[derive(Debug, Clone, Default)]
 pub struct StormTrackingCacheBuilder {
     entry_capacity: Option<usize>,
@@ -181,17 +185,16 @@ impl StormTrackingCacheBuilder {
     }
 
     /// Finalize the builder. Returns an error naming the first missing
-    /// required field if any of the seven numeric fields were left unset.
+    /// required field if any of the six required numeric fields were left
+    /// unset. `entry_pruning_tail_size` and `time_units` are optional.
     pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
         Ok(StormTrackingCache {
             entry_capacity: self.entry_capacity.ok_or_else(|| {
                 MaterialsError::new("StormTrackingCacheBuilder: entry_capacity is required")
             })?,
-            entry_pruning_tail_size: self.entry_pruning_tail_size.ok_or_else(|| {
-                MaterialsError::new(
-                    "StormTrackingCacheBuilder: entry_pruning_tail_size is required",
-                )
-            })?,
+            entry_pruning_tail_size: self
+                .entry_pruning_tail_size
+                .unwrap_or(CACHE_PRUNING_TAIL_SIZE),
             grace_period: self.grace_period.ok_or_else(|| {
                 MaterialsError::new("StormTrackingCacheBuilder: grace_period is required")
             })?,
