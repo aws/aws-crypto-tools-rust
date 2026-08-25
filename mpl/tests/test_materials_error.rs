@@ -6,6 +6,8 @@
 //! `mpl/src/structures/error.rs` so the project's CI gate
 //! (`cargo llvm-cov --fail-under-lines 100`) passes.
 
+use std::error::Error as _;
+
 use aws_crypto_mpl::structures::{MaterialsError, MaterialsErrorKind};
 
 #[test]
@@ -151,6 +153,86 @@ fn test_clone_and_equality() {
     assert_eq!(err, cloned);
     assert_eq!(err.kind, cloned.kind);
     assert_eq!(err.message, cloned.message);
+}
+
+#[test]
+fn test_ordinary_constructors_collect_nothing() {
+    // `collected` is only populated by the aggregate constructor, so every
+    // other error reports an empty collection rather than `Option`-wrapping it.
+    assert!(
+        MaterialsError::keyring_failed("one failure")
+            .collected_errors()
+            .is_empty()
+    );
+    assert!(MaterialsError::new("invalid").collected_errors().is_empty());
+}
+
+#[test]
+fn test_keyring_failed_collection_keeps_every_error_typed() {
+    let collected = vec![
+        MaterialsError::keyring_failed("first attempt"),
+        MaterialsError::new("second attempt was invalid"),
+    ];
+
+    let err = MaterialsError::keyring_failed_collection("all attempts failed", collected.clone());
+
+    assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+    assert_eq!(err.message, "all attempts failed");
+    // Typed and in order, including an error of a different kind — the
+    // aggregate does not flatten or normalise what it collected.
+    assert_eq!(err.collected_errors(), collected.as_slice());
+    assert_eq!(
+        err.collected_errors()[1].kind,
+        MaterialsErrorKind::Validation,
+    );
+}
+
+#[test]
+fn test_keyring_failed_collection_nominates_a_cause_only_when_unambiguous() {
+    let one = MaterialsError::keyring_failed_collection(
+        "one attempt failed",
+        vec![MaterialsError::keyring_failed("the only attempt")],
+    );
+    let only = one
+        .source()
+        .expect("a single collected error is an unambiguous cause")
+        .downcast_ref::<MaterialsError>()
+        .expect("the cause is the collected MaterialsError");
+    assert_eq!(only.message, "the only attempt");
+
+    let several = MaterialsError::keyring_failed_collection(
+        "two attempts failed",
+        vec![
+            MaterialsError::keyring_failed("first"),
+            MaterialsError::keyring_failed("second"),
+        ],
+    );
+    assert!(
+        several.source().is_none(),
+        "with several failures there is no single one to nominate as the cause",
+    );
+
+    // Nothing collected means nothing to nominate either.
+    assert!(
+        MaterialsError::keyring_failed_collection("no candidates", Vec::new())
+            .source()
+            .is_none()
+    );
+}
+
+#[test]
+fn test_equality_distinguishes_different_collected_errors() {
+    let base = |collected| MaterialsError::keyring_failed_collection("same message", collected);
+
+    let first = base(vec![MaterialsError::keyring_failed("first")]);
+    let second = base(vec![MaterialsError::keyring_failed("second")]);
+
+    // Same kind and message, different collected failures. `collected` is
+    // compared, unlike `cause`, so these are not the same error.
+    assert_eq!(first.kind, second.kind);
+    assert_eq!(first.message, second.message);
+    assert_ne!(first, second);
+    assert_eq!(first, first.clone());
 }
 
 #[test]

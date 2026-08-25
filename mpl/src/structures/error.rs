@@ -70,11 +70,35 @@ pub struct MaterialsError {
     /// through [`std::error::Error::source`] so consumers can walk the
     /// error chain. Not compared by [`PartialEq`].
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
+    /// Every error collected while attempting an operation that may fail
+    /// several times before failing overall — a keyring's `on_decrypt`
+    /// attempting each candidate encrypted data key, for instance. Empty for
+    /// errors that describe a single failure.
+    ///
+    /// This exists because the specification requires that a keyring failing
+    /// to decrypt any encrypted data key "MUST yield an error that includes
+    /// all the collected errors", and a message built by formatting each
+    /// error into a string cannot be inspected by a caller. Keeping the
+    /// errors typed here is the same choice the Dafny implementation makes
+    /// with its `CollectionOfErrors(list, message)` error variant.
+    ///
+    /// `cause` and `collected` answer different questions and are not
+    /// alternatives: `cause` is why *this* failure happened and chains
+    /// through [`std::error::Error::source`]; `collected` is what was tried
+    /// and how each attempt failed. An aggregate over several failures has no
+    /// single `cause` to nominate, so it carries only `collected`.
+    pub collected: Vec<MaterialsError>,
 }
 
 impl PartialEq for MaterialsError {
     fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.message == other.message
+        // `cause` is excluded because `dyn Error` does not implement `Eq`.
+        // `collected` is included: it is a `Vec<MaterialsError>`, so it
+        // compares recursively, and two aggregates that collected different
+        // failures are not the same error.
+        self.kind == other.kind
+            && self.message == other.message
+            && self.collected == other.collected
     }
 }
 impl Eq for MaterialsError {}
@@ -93,6 +117,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::Validation,
             message: message.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -108,6 +133,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::Validation,
             message: message.into(),
             cause: Some(Arc::new(cause)),
+            collected: Vec::new(),
         }
     }
 
@@ -118,6 +144,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::NoBehaviorAttempted,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -128,6 +155,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::PlaintextDataKeyAlreadyPresent,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -138,6 +166,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::NoMatchingDataKey,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -148,6 +177,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::KeyringFailed,
             message: reason.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -164,6 +194,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::KeyringFailed,
             message: reason.into(),
             cause: Some(Arc::new(cause)),
+            collected: Vec::new(),
         }
     }
 
@@ -174,6 +205,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::RequiredEncryptionContextKeyMissing,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -184,6 +216,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::EncryptionContextValueMismatch,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -194,6 +227,7 @@ impl MaterialsError {
             kind: MaterialsErrorKind::AwsCryptoPublicKeyMissing,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
         }
     }
 
@@ -204,12 +238,56 @@ impl MaterialsError {
             kind: MaterialsErrorKind::AwsCryptoPublicKeyUnexpected,
             message: context.into(),
             cause: None,
+            collected: Vec::new(),
+        }
+    }
+
+    /// Construct a `KeyringFailed` error carrying every error collected while
+    /// attempting each candidate encrypted data key, for a keyring that failed
+    /// to decrypt any of them.
+    ///
+    /// The collected errors stay typed and reachable through
+    /// [`MaterialsError::collected`], so a caller can inspect why each attempt
+    /// failed rather than parsing them back out of the message. `message`
+    /// should still describe the overall failure, since that is what
+    /// [`fmt::Display`] renders.
+    ///
+    /// When exactly one attempt failed there is an unambiguous cause, so that
+    /// error is attached as the `cause` as well and
+    /// [`std::error::Error::source`] reaches it — the idiomatic Rust access
+    /// path for the common single-key case. With several failures there is no
+    /// single one to nominate, so no `cause` is set and `collected` is the only
+    /// way in. Either way `collected` holds every failure, so a caller does not
+    /// have to branch on the count to find them.
+    #[track_caller]
+    pub fn keyring_failed_collection(
+        message: impl Into<String>,
+        collected: Vec<MaterialsError>,
+    ) -> Self {
+        let cause = match collected.as_slice() {
+            [only] => {
+                Some(Arc::new(only.clone()) as Arc<dyn std::error::Error + Send + Sync + 'static>)
+            }
+            _ => None,
+        };
+        Self {
+            kind: MaterialsErrorKind::KeyringFailed,
+            message: message.into(),
+            cause,
+            collected,
         }
     }
 
     /// Borrow the categorisation of this error.
     pub const fn kind(&self) -> &MaterialsErrorKind {
         &self.kind
+    }
+
+    /// Borrow the errors collected while attempting an operation that failed
+    /// several times. Empty unless this error aggregates other failures — see
+    /// [`MaterialsError::collected`].
+    pub fn collected_errors(&self) -> &[MaterialsError] {
+        &self.collected
     }
 }
 

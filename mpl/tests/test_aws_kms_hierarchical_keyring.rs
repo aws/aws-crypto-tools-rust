@@ -1790,6 +1790,15 @@ mod ondecrypt {
             "the cause must be the per-EDK error itself; got: {}",
             per_edk.message,
         );
+
+        // It is also present on `collected`, so a caller has one uniform place
+        // to read the collected failures without branching on how many there
+        // were.
+        assert_eq!(
+            err.collected_errors(),
+            std::slice::from_ref(per_edk),
+            "the single failure must also be collected",
+        );
     }
 
     #[tokio::test]
@@ -1827,9 +1836,32 @@ mod ondecrypt {
             err.message,
         );
 
-        // With more than one failure there is no single error to attach, so
-        // the chain stops here by design. If this starts failing, on_decrypt
-        // picked a cause among several and the choice needs to be justified.
+        // The collected failures stay typed, not merely formatted into the
+        // message, so a caller can inspect each attempt. This is what carries
+        // the spec's "MUST yield an error that includes all the collected
+        // errors" structurally rather than as prose.
+        let collected = err.collected_errors();
+        assert_eq!(
+            collected.len(),
+            2,
+            "both candidate EDK failures must be collected; got: {collected:?}",
+        );
+        for per_edk in collected {
+            assert_eq!(per_edk.kind, MaterialsErrorKind::KeyringFailed);
+            assert!(
+                per_edk.message.contains("ciphertext too short"),
+                "each collected error must be the per-EDK failure itself; got: {}",
+                per_edk.message,
+            );
+        }
+        // Collected in attempt order, so a caller can tell which EDK is which.
+        assert!(collected[0].message.contains("4 bytes"));
+        assert!(collected[1].message.contains("8 bytes"));
+
+        // With more than one failure there is no single error to nominate as
+        // the cause; the typed failures live on `collected` instead. If this
+        // starts failing, on_decrypt picked a cause among several and the
+        // choice needs to be justified.
         assert!(
             err.source().is_none(),
             "an aggregate over several failures must not attach one of them as \
