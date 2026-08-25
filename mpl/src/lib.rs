@@ -25,8 +25,8 @@ pub use client::*;
 pub use aws_mpl_primitives::AesGcm;
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
-    LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
-    TimeUnits, UsageMetadata,
+    LocalCmc, MessageUsage, MultiThreadedCache, SingleThreadedCache, StormTrackingCache,
+    StormTrackingCacheBuilder, StormTrackingCmc, TimeUnits, UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 pub use keyring::{Keyring, RawAesKeyring};

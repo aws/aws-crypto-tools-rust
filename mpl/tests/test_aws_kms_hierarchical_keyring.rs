@@ -18,6 +18,7 @@
 //! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -31,7 +32,9 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
-use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
+use aws_crypto_mpl::cmc::cache_config::{
+    CacheType, DefaultCache, MultiThreadedCache, SingleThreadedCache, StormTrackingCache,
+};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
@@ -40,7 +43,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc};
+use aws_crypto_mpl::{CacheEntry, CachedMaterials, Cmc, LocalCmc, UsageMetadata};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -403,6 +406,107 @@ fn new_with_cache_type_none_succeeds() {
         None,
     )
     .expect("None cache_type must default to a built-in cache");
+}
+
+/// A cache entry holding branch-key materials, for asserting whether a
+/// configured cache actually stores anything.
+fn branch_key_cache_entry() -> CacheEntry {
+    let now = SystemTime::now();
+    CacheEntry::new(
+        CachedMaterials::BranchKey(fixture_materials_empty_ec()),
+        now,
+        now + Duration::from_secs(3600),
+        UsageMetadata::default(),
+    )
+}
+
+/// Build a keyring with `cache_type` and hand back the cache it constructed.
+fn cache_for(cache_type: CacheType) -> Arc<dyn Cmc> {
+    let keyring = HierarchicalKeyring::new(
+        keystore_never_consulted(),
+        3600,
+        Some("bk".to_string()),
+        None,
+        Some(cache_type),
+        None,
+    )
+    .expect("the cache type must be accepted");
+    Arc::clone(keyring.cache())
+}
+
+#[tokio::test]
+async fn new_with_no_cache_type_builds_a_cache_that_stores_nothing() {
+    let cache = cache_for(CacheType::No);
+
+    cache
+        .put_cache_entry(b"id", branch_key_cache_entry())
+        .await
+        .expect("put on a no-store cache must succeed rather than error");
+
+    assert!(
+        cache
+            .get_cache_entry(b"id")
+            .await
+            .expect("get on a no-store cache must succeed")
+            .is_none(),
+        "CacheType::No MUST never cache anything",
+    );
+}
+
+#[tokio::test]
+async fn new_with_single_threaded_cache_stores_entries() {
+    let cache = cache_for(CacheType::SingleThreaded(SingleThreadedCache::new(8)));
+
+    cache
+        .put_cache_entry(b"id", branch_key_cache_entry())
+        .await
+        .unwrap();
+
+    assert!(
+        cache.get_cache_entry(b"id").await.unwrap().is_some(),
+        "a SingleThreaded cache with capacity 8 MUST store the entry",
+    );
+}
+
+#[tokio::test]
+async fn new_with_multi_threaded_cache_stores_entries() {
+    let cache = cache_for(CacheType::MultiThreaded(MultiThreadedCache::new(8)));
+
+    cache
+        .put_cache_entry(b"id", branch_key_cache_entry())
+        .await
+        .unwrap();
+
+    assert!(
+        cache.get_cache_entry(b"id").await.unwrap().is_some(),
+        "a MultiThreaded cache with capacity 8 MUST store the entry",
+    );
+}
+
+#[test]
+fn new_with_threaded_caches_accepts_an_explicit_pruning_tail_size() {
+    // Exercises the Some arm of the optional entry_pruning_tail_size; the
+    // constructors above leave it None.
+    for cache_type in [
+        CacheType::SingleThreaded(SingleThreadedCache {
+            entry_capacity: 8,
+            entry_pruning_tail_size: Some(4),
+        }),
+        CacheType::MultiThreaded(MultiThreadedCache {
+            entry_capacity: 8,
+            entry_pruning_tail_size: Some(4),
+        }),
+    ] {
+        HierarchicalKeyring::new(
+            keystore_never_consulted(),
+            3600,
+            Some("bk".to_string()),
+            None,
+            Some(cache_type),
+            None,
+        )
+        .expect("an explicit entry_pruning_tail_size must be accepted");
+    }
 }
 
 #[test]

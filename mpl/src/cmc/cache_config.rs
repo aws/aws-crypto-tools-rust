@@ -4,18 +4,20 @@
 //! Cache configuration for Cryptographic Materials Providers.
 //!
 //! [`CacheType`] is how a CMP is told which cache to use: one it builds and
-//! owns, or one the caller supplies and may share. The two owned variants
-//! carry the parameters for the corresponding cache — [`DefaultCache`] for a
+//! owns, or one the caller supplies and may share. The owned variants carry the
+//! parameters for the corresponding cache — [`DefaultCache`],
+//! [`SingleThreadedCache`] and [`MultiThreadedCache`] for a
 //! [`LocalCmc`](super::LocalCmc), [`StormTrackingCache`] for a
-//! [`StormTrackingCmc`](super::StormTrackingCmc).
+//! [`StormTrackingCmc`](super::StormTrackingCmc) — while
+//! [`CacheType::No`] needs none.
 //!
 //! These types are deliberately independent of any one CMP so that a keyring
 //! and a caching CMM configure a cache the same way.
-
-// TODO: finish conforming this module to the Smithy `CacheType` union, which
-// has six variants: Default, No, SingleThreaded, MultiThreaded, StormTracking
-// and Shared. `No`, `SingleThreaded` and `MultiThreaded` are not modelled here
-// yet. Follow-up PR.
+//!
+//! All six variants of the Smithy `CacheType` union are modelled here. The
+//! union is closed, so `CacheType` is deliberately not `#[non_exhaustive]`:
+//! there is no further variant expected, and leaving it exhaustive lets callers
+//! match without a catch-all arm.
 
 // `CacheType::Default` deliberately builds a plain `LocalCmc`, not a
 // storm-tracking cache. This is a known divergence from the Dafny
@@ -75,6 +77,64 @@ pub(crate) const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 /// each `entryPruningTailSize.UnwrapOr(1)` at the create-cache switch. Matching
 /// that keeps pruning behaviour identical across implementations.
 pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
+
+/// Configuration for a CMP-local cache that the model describes as not safe
+/// for use in a multi-threaded environment. Carried by
+/// [`CacheType::SingleThreaded`].
+///
+/// Mirrors the Smithy `SingleThreadedCache`: `entryCapacity` is required and
+/// `entryPruningTailSize` is optional. In this implementation it builds the
+/// same [`LocalCmc`](super::LocalCmc) as [`CacheType::MultiThreaded`] — see
+/// the note on that variant.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct SingleThreadedCache {
+    /// Maximum number of entries the cache holds.
+    pub entry_capacity: usize,
+    /// Number of LRU entries scanned per get for TTL-aware pruning. Optional
+    /// in the Smithy model; when `None` it resolves to 1, the value every path
+    /// in the Dafny implementation uses.
+    pub entry_pruning_tail_size: Option<usize>,
+}
+
+impl SingleThreadedCache {
+    /// Construct a `SingleThreadedCache` with an explicit maximum entry count
+    /// and no pruning tail size, which resolves to 1.
+    #[must_use]
+    pub const fn new(entry_capacity: usize) -> Self {
+        Self {
+            entry_capacity,
+            entry_pruning_tail_size: None,
+        }
+    }
+}
+
+/// Configuration for a CMP-local cache that is safe for use in a
+/// multi-threaded environment, with no extra behaviour beyond that. Carried by
+/// [`CacheType::MultiThreaded`].
+///
+/// Mirrors the Smithy `MultiThreadedCache`: `entryCapacity` is required and
+/// `entryPruningTailSize` is optional.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MultiThreadedCache {
+    /// Maximum number of entries the cache holds.
+    pub entry_capacity: usize,
+    /// Number of LRU entries scanned per get for TTL-aware pruning. Optional
+    /// in the Smithy model; when `None` it resolves to 1, the value every path
+    /// in the Dafny implementation uses.
+    pub entry_pruning_tail_size: Option<usize>,
+}
+
+impl MultiThreadedCache {
+    /// Construct a `MultiThreadedCache` with an explicit maximum entry count
+    /// and no pruning tail size, which resolves to 1.
+    #[must_use]
+    pub const fn new(entry_capacity: usize) -> Self {
+        Self {
+            entry_capacity,
+            entry_pruning_tail_size: None,
+        }
+    }
+}
 
 /// Configuration for a CMP-local "default" Cryptographic Materials Cache
 /// (a wrapped [`LocalCmc`](super::LocalCmc)). Carried by
@@ -262,6 +322,28 @@ pub enum CacheType {
     /// to state. Omitting the cache entirely is what selects the CMP's own
     /// default capacity.
     Default(DefaultCache),
+    /// Nothing is ever cached. Builds a [`LocalCmc`](super::LocalCmc) with an
+    /// entry capacity of zero, which stores no entries at all — the same
+    /// construction the Dafny implementation uses for this variant.
+    ///
+    /// The Smithy `NoCache` structure has no members, so this variant carries
+    /// no payload rather than an empty struct the caller would have to name.
+    No,
+    /// A CMP-local [`LocalCmc`](super::LocalCmc) configured by the carried
+    /// [`SingleThreadedCache`].
+    ///
+    /// The model distinguishes this from [`CacheType::MultiThreaded`] because
+    /// the Dafny implementation has a cache that is not thread-safe and wraps
+    /// it in a synchronizing layer for the multi-threaded case. This
+    /// implementation has no such distinction to offer: `LocalCmc` keeps all
+    /// shared state behind a `Mutex`, so it is already the synchronized one and
+    /// both variants build it identically. The variant is modelled anyway so
+    /// configuration written against the model is accepted here.
+    SingleThreaded(SingleThreadedCache),
+    /// A CMP-local [`LocalCmc`](super::LocalCmc) configured by the carried
+    /// [`MultiThreadedCache`]. Builds the same cache as
+    /// [`CacheType::SingleThreaded`] — see the note there.
+    MultiThreaded(MultiThreadedCache),
     /// Use the caller-supplied [`Cmc`] impl directly. Common when one
     /// cache is shared across multiple Hierarchical Keyrings (or other
     /// CMPs).

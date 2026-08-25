@@ -19,6 +19,7 @@ use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::cache_config::{
     CACHE_PRUNING_TAIL_SIZE, CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache,
+    MultiThreadedCache, SingleThreadedCache,
 };
 use crate::cmc::{
     CacheEntry, CachedMaterials, Cmc, LocalCmc, StormTrackingCmc, TimeUnits, UsageMetadata,
@@ -185,6 +186,40 @@ impl HierarchicalKeyring {
                             "HierarchicalKeyring: failed to initialize default LocalCmc: {e}",
                         ))
                     })?;
+                Arc::new(local)
+            }
+            CacheType::No => {
+                // Nothing is ever cached. A zero entry capacity makes LocalCmc
+                // a no-store cache, which is how Dafny builds this variant too
+                // (LocalCMC(0, 1) at CreateCryptographicMaterialsCache).
+                let local = LocalCmc::new(0, CACHE_PRUNING_TAIL_SIZE).map_err(|e| {
+                    MaterialsError::new(format!(
+                        "HierarchicalKeyring: failed to initialize no-store LocalCmc: {e}",
+                    ))
+                })?;
+                Arc::new(local)
+            }
+            // Both build the same cache: LocalCmc keeps its state behind a
+            // Mutex, so it is already the synchronized one and this
+            // implementation has no thread-unsafe variant to offer for the
+            // single-threaded case. See the note on CacheType::SingleThreaded.
+            CacheType::SingleThreaded(SingleThreadedCache {
+                entry_capacity,
+                entry_pruning_tail_size,
+            })
+            | CacheType::MultiThreaded(MultiThreadedCache {
+                entry_capacity,
+                entry_pruning_tail_size,
+            }) => {
+                let local = LocalCmc::new(
+                    entry_capacity,
+                    entry_pruning_tail_size.unwrap_or(CACHE_PRUNING_TAIL_SIZE),
+                )
+                .map_err(|e| {
+                    MaterialsError::new(format!(
+                        "HierarchicalKeyring: failed to initialize LocalCmc: {e}",
+                    ))
+                })?;
                 Arc::new(local)
             }
             CacheType::Shared(cache) => cache,

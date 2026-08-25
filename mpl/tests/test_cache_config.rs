@@ -11,7 +11,10 @@
 //! `StormTracker.DefaultStorm()`), so an unset tail must build rather than
 //! fail.
 
-use aws_crypto_mpl::cmc::{StormTrackingCache, StormTrackingCacheBuilder, TimeUnits};
+use aws_crypto_mpl::cmc::{
+    MultiThreadedCache, SingleThreadedCache, StormTrackingCache, StormTrackingCacheBuilder,
+    TimeUnits,
+};
 use aws_crypto_mpl::structures::MaterialsErrorKind;
 
 /// Value the builder resolves an absent `entry_pruning_tail_size` to.
@@ -83,6 +86,27 @@ fn build_with_time_units_unset_leaves_it_none() {
         cache.time_units, None,
         "an unset time_units stays None; the seconds default is applied by the \
          consuming CMP, not baked in here",
+    );
+}
+
+#[test]
+fn threaded_cache_constructors_leave_the_pruning_tail_unset() {
+    // The Smithy model makes entryPruningTailSize optional on both of these,
+    // so the constructor takes only the required entryCapacity and leaves the
+    // tail None for the consuming CMP to resolve.
+    assert_eq!(
+        SingleThreadedCache::new(64),
+        SingleThreadedCache {
+            entry_capacity: 64,
+            entry_pruning_tail_size: None,
+        },
+    );
+    assert_eq!(
+        MultiThreadedCache::new(64),
+        MultiThreadedCache {
+            entry_capacity: 64,
+            entry_pruning_tail_size: None,
+        },
     );
 }
 
