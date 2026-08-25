@@ -15,9 +15,43 @@
 // TODO: finish conforming this module to the Smithy `CacheType` union, which
 // has six variants: Default, No, SingleThreaded, MultiThreaded, StormTracking
 // and Shared. `No`, `SingleThreaded` and `MultiThreaded` are not modelled here
-// yet. Also unaddressed: the model's `Default` variant builds a storm-tracking
-// cache (StormTracker.DefaultStorm) rather than the plain LocalCmc built here.
-// Follow-up PR.
+// yet. Follow-up PR.
+
+// `CacheType::Default` deliberately builds a plain `LocalCmc`, not a
+// storm-tracking cache. This is a known divergence from the Dafny
+// implementation, which builds `StormTracker.DefaultStorm()` (entry capacity
+// 1000, grace period 10s, grace interval 1s, fan out 20, in-flight TTL 10s,
+// milliseconds) with the caller's entry capacity substituted, at
+// `AwsCryptographyMaterialProvidersOperations.CreateCryptographicMaterialsCache`.
+//
+// The specification is what this implementation follows. It states twice that
+// the non-`Shared` path initializes a local cryptographic-materials-cache:
+// "On initialization the Hierarchical Keyring MUST initialize a
+// cryptographic-materials-cache with the configured cache limit TTL and the max
+// cache size", and "If the Hierarchical Keyring does NOT get a `Shared` cache on
+// initialization, it MUST initialize a cryptographic-materials-cache with the
+// user provided cache limit TTL and the entry capacity", both linking the local
+// CMC. Nothing normative says `Default` means storm-tracking; the Smithy model's
+// "Probably a StormTrackingCache" javadoc on `DefaultCache` is not normative.
+// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
+//
+// Keeping `LocalCmc` also keeps this implementation self-consistent. The
+// grace-period rule — "If the cache to initialize is a Storm Tracking
+// Cryptographic Materials Cache then the Grace Period MUST be less than the
+// cache limit TTL" — is conditional on the cache being storm-tracking, so it
+// does not apply here. A 10-second default grace period would, which would make
+// every keyring with `ttl_seconds <= 10` fail to construct; `ttl_seconds = 1` is
+// currently accepted as the smallest legal TTL.
+//
+// OPEN QUESTION (needs a spec-team decision, not a code change): whether
+// cross-implementation parity on default caching behaviour matters enough to
+// change this. As it stands, callers on other implementations get thundering-herd
+// suppression by default and callers here do not. Resolving that in favour of
+// parity means changing the specification first, and then reconciling the
+// grace-period rule with the TTL floor above — note Dafny is itself
+// inconsistent, applying the TTL cross-check on its absent-cache path but not
+// when `Default` is passed explicitly, while building a 10-second grace period
+// either way.
 
 use std::sync::Arc;
 
