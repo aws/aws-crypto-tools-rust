@@ -3,12 +3,10 @@
 
 //! Helpers for inspecting the `source()` chain of an MPL error.
 //!
-//! Every error this crate returns keeps the failure that produced it as a
-//! cause, so an AWS SDK error raised inside the keystore is still reachable
-//! from the [`MaterialsError`](crate::structures::MaterialsError) a keyring
-//! hands back. These helpers exist so a consumer does not have to hand-roll
-//! the traversal, and — for the common "which service exception was it?"
-//! question — does not have to know which operation failed.
+//! An error that wraps a lower-level failure keeps it as a cause, so an AWS
+//! SDK error raised inside the keystore is still reachable from the
+//! [`MaterialsError`](crate::structures::MaterialsError) a keyring hands
+//! back.
 
 use std::error::Error;
 
@@ -34,9 +32,9 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 /// The type must be named exactly, including the `SdkError` response
 /// parameter, which defaults to the SDK's `HttpResponse`. A downcast to a
 /// type from a different version of the same SDK crate silently yields
-/// `None`, which is why this crate re-exports
-/// [`aws_sdk_kms`](crate::aws_sdk_kms) and
-/// [`aws_sdk_dynamodb`](crate::aws_sdk_dynamodb).
+/// `None`; [`aws_sdk_kms`](crate::aws_sdk_kms) and
+/// [`aws_sdk_dynamodb`](crate::aws_sdk_dynamodb) are re-exported so the
+/// version matches.
 pub fn find_source<'a, E>(err: &'a (dyn Error + 'static)) -> Option<&'a E>
 where
     E: Error + 'static,
@@ -65,14 +63,9 @@ where
 /// missing-credentials or connection failure has no code. Match on
 /// [`KeystoreError::kind`](crate::KeystoreError::kind) to separate those
 /// from a rejection by the service.
-///
-/// Matching the code string rather than an enum variant is the
-/// forward-compatible form the SDK itself prescribes: a service can add an
-/// exception the compiled SDK does not model, which arrives as its
-/// `Unhandled` variant while still carrying real metadata.
 pub fn aws_service_error_code<'a>(err: &'a (dyn Error + 'static)) -> Option<&'a str> {
-    /// Try each SDK error type this crate can produce, in turn. A downcast
-    /// is by concrete type, so every operation we invoke needs its own arm.
+    // A new arm is required for every AWS operation this crate invokes: the
+    // lookup is a downcast, which matches one concrete type.
     macro_rules! code_if_matches {
         ($e:expr, $($ty:ty),+ $(,)?) => {{
             $(

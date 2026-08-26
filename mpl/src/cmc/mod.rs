@@ -52,11 +52,9 @@ pub struct CmcError {
     /// through [`std::error::Error::source`] so consumers can walk the
     /// error chain. Not compared by [`PartialEq`] because `dyn Error` does
     /// not implement [`Eq`].
-    ///
-    /// `Cmc` is a public trait, so an out-of-crate implementation backed by
-    /// a real store (Redis, DynamoDB, a file) needs somewhere to put the
-    /// error it failed with; without this field its diagnostic detail could
-    /// only survive as text.
+    //
+    // `Cmc` is a public trait, so a cache implemented outside this crate
+    // needs a typed channel for the failure its store returned.
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
 }
 

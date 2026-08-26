@@ -1,12 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Unit tests for `CmcError`'s cause channel.
-//!
-//! `Cmc` is a public trait, so an out-of-crate cache backed by a real store
-//! needs a way to hand its own failure up without flattening it to text.
-//! These tests pin that channel and cover every executable line added to
-//! `mpl/src/cmc/mod.rs`.
+//! Unit tests for `CmcError`'s cause channel: that a wrapped store failure
+//! stays retrievable by type through `source()`, that the causeless
+//! constructors report no source, and that equality ignores the cause.
 
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
@@ -29,16 +26,10 @@ fn storage_failed_with_cause_exposes_the_cause_through_source() {
         .downcast_ref::<IoError>()
         .expect("the cause must still be the concrete io::Error, not a string");
     assert_eq!(io.kind(), IoErrorKind::PermissionDenied);
-}
 
-#[test]
-fn storage_failed_with_cause_is_reachable_through_the_cause_accessor() {
-    let root = IoError::new(IoErrorKind::TimedOut, "store timed out");
-    let err = CmcError::storage_failed_with_cause("remote cache read failed", root);
-
-    let cause = err.cause().expect("cause() must agree with source()");
+    let via_accessor = err.cause().expect("cause() must agree with source()");
     assert!(
-        cause.downcast_ref::<IoError>().is_some(),
+        via_accessor.downcast_ref::<IoError>().is_some(),
         "cause() must expose the same concrete error that source() does"
     );
 }
@@ -73,8 +64,7 @@ fn equality_ignores_the_cause() {
     let without = CmcError::storage_failed("remote cache read failed");
 
     // `dyn Error` is not `Eq`, so `PartialEq` compares `kind` and `message`
-    // only — matching `KeystoreError` and `MaterialsError`. Callers that need
-    // to assert on the cause must downcast it rather than compare errors.
+    // only, as it does on `KeystoreError` and `MaterialsError`.
     assert_eq!(
         with, without,
         "two errors with the same kind and message compare equal regardless of cause"

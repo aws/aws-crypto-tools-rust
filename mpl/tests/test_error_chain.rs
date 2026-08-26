@@ -1,15 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Unit tests for the `error_chain` helpers.
+//! Unit tests for the `error_chain` helpers over synthetic chains.
 //!
-//! These use synthetic chains built from this crate's own error types, so no
-//! AWS clients or credentials are involved. The helpers' behavior against a
-//! real `SdkError` — that the SDK error is recoverable by type from a
-//! `KeystoreError`, and that a dispatch failure has no service code — is
-//! asserted in `tests/test_keystore_branch_key_store.rs`, which has the
-//! fixtures to produce one. A real *service* code is asserted in the
-//! real-AWS integration suites.
+//! Behavior against a real `SdkError` is asserted in
+//! `tests/test_keystore_branch_key_store.rs`, which has the fixtures to
+//! produce one; a real service code is asserted in the integration suites.
 
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};

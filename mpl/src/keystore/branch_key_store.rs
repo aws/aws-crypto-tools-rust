@@ -688,12 +688,9 @@ fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
 /// `ConditionalCheckFailedException` from throttling, say) can downcast to it
 /// rather than parsing the message.
 ///
-/// The message names only this layer and deliberately does not render
-/// `err`. `SdkError`'s own `Display` resolves to a bare lifecycle label
-/// ("service error", "dispatch failure"), so interpolating it added no
-/// information while duplicating the layer that `cause` already carries.
-/// Print the whole chain with
-/// `aws_sdk_dynamodb::error::DisplayErrorContext`.
+/// `SdkError`'s `Display` is a bare lifecycle label ("service error",
+/// "dispatch failure"), so the message names this layer only.
+/// `aws_sdk_dynamodb::error::DisplayErrorContext` prints the whole chain.
 fn map_ddb_error<E>(operation: &str, err: E) -> KeystoreError
 where
     E: std::error::Error + Send + Sync + 'static,

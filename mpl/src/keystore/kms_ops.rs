@@ -199,13 +199,10 @@ pub(crate) async fn decrypt_branch_key(
 /// `IncorrectKeyException` from throttling, say) can downcast to it
 /// rather than parsing the message.
 ///
-/// The message names only this layer and deliberately does not render
-/// `err`. `SdkError`'s own `Display` resolves to a bare lifecycle label
-/// ("service error", "dispatch failure"), so interpolating it added no
-/// information while duplicating the layer that `cause` already carries.
-/// The service exception, its code, and its message live one link down
-/// the chain; print the whole chain with
-/// `aws_sdk_kms::error::DisplayErrorContext`.
+/// `SdkError`'s `Display` is a bare lifecycle label ("service error",
+/// "dispatch failure"), so the message names this layer only. The
+/// exception, its code, and its message are one link down the chain;
+/// `aws_sdk_kms::error::DisplayErrorContext` prints the whole chain.
 fn map_kms_error<E>(operation: &str, err: E) -> KeystoreError
 where
     E: std::error::Error + Send + Sync + 'static,

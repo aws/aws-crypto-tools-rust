@@ -25,14 +25,9 @@ pub use client::*;
 // `aws-mpl-primitives` directly just to name the wrapping algorithm.
 pub use aws_mpl_primitives::AesGcm;
 // Re-exported because both SDK clients appear in the public signature of
-// `KeyStoreConfig`, and because the SDK errors these crates define are
-// carried as the `cause` of a `KeystoreError`. Downcasting to an SDK error
-// requires naming its exact type from the exact same crate version, so a
-// consumer resolving a different `aws-sdk-kms` would silently get `None`;
-// re-exporting removes the need for them to declare the dependency at all.
-// `aws_sdk_kms::error` also re-exports `DisplayErrorContext`,
-// `ProvideErrorMetadata`, and `ErrorMetadata`, which is the full toolkit for
-// walking the chain.
+// `KeyStoreConfig`, and because a `KeystoreError` carries these crates' SDK
+// errors as its cause: downcasting to one requires the exact same crate
+// version, which a consumer declaring its own dependency may not resolve.
 pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 pub use cmc::{

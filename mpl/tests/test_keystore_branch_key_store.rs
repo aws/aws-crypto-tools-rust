@@ -424,10 +424,8 @@ async fn get_beacon_key_dispatches_to_dynamodb() {
 
 #[tokio::test]
 async fn the_message_does_not_render_the_sdk_errors_display() {
-    // `SdkError`'s own `Display` resolves to a bare lifecycle label, so
-    // interpolating it would put "dispatch failure" in our message and
-    // nothing more. The message names this layer and the operation; the
-    // detail lives in the cause.
+    // `SdkError`'s `Display` is a bare lifecycle label, so the message must
+    // carry this layer and the operation; the detail is in the cause.
     let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
         .await
         .unwrap();
