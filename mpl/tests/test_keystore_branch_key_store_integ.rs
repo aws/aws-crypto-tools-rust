@@ -25,6 +25,7 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
+use aws_crypto_mpl::error_chain::aws_service_error_code;
 use aws_crypto_mpl::{
     BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
 };
@@ -392,6 +393,17 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     assert!(
         service_err.is_invalid_ciphertext_exception(),
         "a mismatched encryption context MUST surface InvalidCiphertextException; got: {service_err:?}",
+    );
+
+    // The same exception is reachable without knowing which KMS operation
+    // failed, via the error code the SDK prescribes for forward-compatible
+    // matching. This is the `Some(code)` half of `aws_service_error_code`;
+    // the `None` half (a dispatch failure carries no service metadata) is
+    // covered in `tests/test_keystore_branch_key_store.rs`.
+    assert_eq!(
+        aws_service_error_code(&err),
+        Some("InvalidCiphertextException"),
+        "the service error code must be reachable from the top of the chain",
     );
 }
 
