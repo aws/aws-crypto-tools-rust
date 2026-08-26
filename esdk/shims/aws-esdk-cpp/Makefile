@@ -34,7 +34,7 @@ custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyri
 		-std=c++17 \
 		-o custom_keyring_example
 
-# Compile-only: the static_asserts fire during compilation, so no link step.
+# This test runs during compilation (static asserts)
 enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ -c enum_parity_test.cpp \
 		-Itarget/cxxbridge -Iinclude \
