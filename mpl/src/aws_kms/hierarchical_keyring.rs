@@ -289,9 +289,10 @@ impl HierarchicalKeyring {
 /// version and variant bits.
 fn generate_partition_id() -> Result<Vec<u8>, MaterialsError> {
     let mut bytes = [0u8; 16];
-    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
-        MaterialsError::new(
+    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
+        MaterialsError::new_with_cause(
             "HierarchicalKeyring: failed to obtain entropy for partition-id v4 UUID",
+            e,
         )
     })?;
     Ok(uuid::Builder::from_random_bytes(bytes)
@@ -657,9 +658,10 @@ fn describe_supplied_edks(edks: &[EncryptedDataKey]) -> String {
 /// configured encryption-key length using the `aws-mpl-primitives` CSPRNG.
 fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, MaterialsError> {
     let mut bytes = vec![0u8; suite.encryption_key_length()];
-    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
-        MaterialsError::keyring_failed(
+    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
+        MaterialsError::keyring_failed_with_cause(
             "HierarchicalKeyring: failed to obtain entropy for random plaintext data key",
+            e,
         )
     })?;
     Ok(PlaintextDataKey::new(bytes))

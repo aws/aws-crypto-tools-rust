@@ -122,9 +122,10 @@ fn derive_branch_key(
     info.extend_from_slice(&output_len_bits.to_be_bytes());
 
     let mut derived = [0u8; DERIVED_KEY_LEN];
-    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|_| {
-        MaterialsError::keyring_failed(
+    kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|e| {
+        MaterialsError::keyring_failed_with_cause(
             "Branch key wrap: KDF in Counter Mode with HMAC SHA256 derivation failed",
+            e,
         )
     })?;
     Ok(derived)
@@ -148,14 +149,20 @@ pub fn wrap(
 ) -> Result<Vec<u8>, MaterialsError> {
     // 1. Generate a 16-byte random salt.
     let mut salt = [0u8; SALT_LEN];
-    generate_random_bytes(&mut salt).map_err(|_| {
-        MaterialsError::keyring_failed("Branch key wrap: failed to obtain entropy for salt")
+    generate_random_bytes(&mut salt).map_err(|e| {
+        MaterialsError::keyring_failed_with_cause(
+            "Branch key wrap: failed to obtain entropy for salt",
+            e,
+        )
     })?;
 
     // 2. Generate a 12-byte random IV.
     let mut iv = [0u8; IV_LEN];
-    generate_random_bytes(&mut iv).map_err(|_| {
-        MaterialsError::keyring_failed("Branch key wrap: failed to obtain entropy for IV")
+    generate_random_bytes(&mut iv).map_err(|e| {
+        MaterialsError::keyring_failed_with_cause(
+            "Branch key wrap: failed to obtain entropy for IV",
+            e,
+        )
     })?;
 
     // 3. Derive the AES-256-GCM cipher key.
@@ -190,7 +197,9 @@ pub fn wrap(
         &aad_bytes,
         &mut output,
     )
-    .map_err(|_| MaterialsError::keyring_failed("Branch key wrap: AES-256-GCM seal failed"))?;
+    .map_err(|e| {
+        MaterialsError::keyring_failed_with_cause("Branch key wrap: AES-256-GCM seal failed", e)
+    })?;
 
     debug_assert_eq!(
         output.len() - pre_encrypt_len,
@@ -265,7 +274,9 @@ pub fn unwrap(
         &aad_bytes,
         &mut plaintext,
     )
-    .map_err(|_| MaterialsError::keyring_failed("Branch key unwrap: AES-256-GCM open failed"))?;
+    .map_err(|e| {
+        MaterialsError::keyring_failed_with_cause("Branch key unwrap: AES-256-GCM open failed", e)
+    })?;
 
     // Each fallible step (deserialization, KDF, AAD construction, AES open)
     // uses `?` to propagate; reaching this Ok requires every step to have
