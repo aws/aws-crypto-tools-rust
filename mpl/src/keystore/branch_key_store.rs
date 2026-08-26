@@ -687,12 +687,22 @@ fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
 /// needs to distinguish a specific DynamoDB exception (a
 /// `ConditionalCheckFailedException` from throttling, say) can downcast to it
 /// rather than parsing the message.
+///
+/// The message names only this layer and deliberately does not render
+/// `err`. `SdkError`'s own `Display` resolves to a bare lifecycle label
+/// ("service error", "dispatch failure"), so interpolating it added no
+/// information while duplicating the layer that `cause` already carries.
+/// Print the whole chain with
+/// `aws_sdk_dynamodb::error::DisplayErrorContext`.
 fn map_ddb_error<E>(operation: &str, err: E) -> KeystoreError
 where
     E: std::error::Error + Send + Sync + 'static,
 {
-    let message = format!("DynamoDB {operation} failed: {err}");
-    KeystoreError::with_cause(KeystoreErrorKind::Dynamodb, message, err)
+    KeystoreError::with_cause(
+        KeystoreErrorKind::Dynamodb,
+        format!("DynamoDB {operation} failed"),
+        err,
+    )
 }
 
 /// Current UTC time as an ISO 8601 timestamp to microsecond precision

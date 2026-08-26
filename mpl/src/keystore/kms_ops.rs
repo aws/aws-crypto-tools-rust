@@ -176,7 +176,7 @@ pub(crate) async fn decrypt_branch_key(
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(map_kms_error)?;
+        .map_err(|e| map_kms_error("Decrypt", e))?;
 
     let plaintext = response
         .plaintext
@@ -190,19 +190,31 @@ pub(crate) async fn decrypt_branch_key(
     Ok(plaintext)
 }
 
-/// Map any AWS KMS SDK error into a `KeystoreError`. We collapse all
-/// SDK error variants into `KeystoreErrorKind::Kms` since callers only
-/// need the categorisation, not the raw SDK error type. The originating
-/// SDK error is retained as the `cause`, reachable through
-/// [`std::error::Error::source`], so a caller that needs to distinguish a
-/// specific KMS exception (an `IncorrectKeyException` from throttling, say)
-/// can downcast to it rather than parsing the message.
-fn map_kms_error<E>(err: E) -> KeystoreError
+/// Map a failed AWS KMS SDK call into a `KeystoreError`, naming the
+/// `operation` that failed. We collapse all SDK error variants into
+/// `KeystoreErrorKind::Kms` since callers only need the categorisation,
+/// not the raw SDK error type. The originating SDK error is retained as
+/// the `cause`, reachable through [`std::error::Error::source`], so a
+/// caller that needs to distinguish a specific KMS exception (an
+/// `IncorrectKeyException` from throttling, say) can downcast to it
+/// rather than parsing the message.
+///
+/// The message names only this layer and deliberately does not render
+/// `err`. `SdkError`'s own `Display` resolves to a bare lifecycle label
+/// ("service error", "dispatch failure"), so interpolating it added no
+/// information while duplicating the layer that `cause` already carries.
+/// The service exception, its code, and its message live one link down
+/// the chain; print the whole chain with
+/// `aws_sdk_kms::error::DisplayErrorContext`.
+fn map_kms_error<E>(operation: &str, err: E) -> KeystoreError
 where
     E: std::error::Error + Send + Sync + 'static,
 {
-    let message = format!("AWS KMS call failed: {err}");
-    KeystoreError::with_cause(KeystoreErrorKind::Kms, message, err)
+    KeystoreError::with_cause(
+        KeystoreErrorKind::Kms,
+        format!("AWS KMS {operation} failed"),
+        err,
+    )
 }
 
 /// Generate a fresh 32-byte data key wrapped under `key_arn`, bound to
@@ -227,7 +239,7 @@ pub(crate) async fn generate_wrapped_key(
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(map_kms_error)?;
+        .map_err(|e| map_kms_error("GenerateDataKeyWithoutPlaintext", e))?;
 
     Ok(response
         .ciphertext_blob
@@ -271,7 +283,7 @@ pub(crate) async fn reencrypt_wrapped_key(
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(map_kms_error)?;
+        .map_err(|e| map_kms_error("ReEncrypt", e))?;
 
     Ok(response
         .ciphertext_blob
