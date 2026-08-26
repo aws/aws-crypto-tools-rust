@@ -105,6 +105,10 @@ impl LocalCmc {
     /// Number of currently stored entries. Useful for tests asserting
     /// capacity invariants.
     pub fn len(&self) -> Result<usize, CmcError> {
+        // Every lock site in this file keeps the poison detail in the
+        // message rather than as a cause: the error is
+        // `PoisonError<MutexGuard<'_, _>>`, which borrows the guard and so
+        // is not `'static`, while `CmcError::cause` requires `'static`.
         let inner = self
             .inner
             .lock()
