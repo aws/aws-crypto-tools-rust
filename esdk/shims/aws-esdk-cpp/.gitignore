@@ -1,0 +1,36 @@
+# Cargo build output
+/target/
+Cargo.lock
+
+# Compiled demo / test binaries (built via the Makefile)
+/basic_hierarchical_keyring_example
+/raw_aes_keyring_example
+/test_esdk
+/test_concurrency
+/test_resource_leaks
+
+# Object files / archives
+*.o
+*.a
+
+# Coverage instrumentation output
+*.profraw
+
+# Agent tooling scratch / transcripts
+.agent-reports/
+
+# CMake build output
+/build/
+/build-cmake/
+
+# Duvet: generated requirement extraction, snapshot, and reports
+.duvet/requirements/
+.duvet/snapshot.txt
+.duvet/reports/
+/zero_copy_comparison
+/adopt_keyring_test
+/custom_keyring_example
+/examples/custom-keyring/target/
+/examples/custom-keyring/Cargo.lock
+/streaming_example
+/shared_cache_example
