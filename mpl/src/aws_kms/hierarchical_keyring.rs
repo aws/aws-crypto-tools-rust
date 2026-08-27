@@ -454,12 +454,9 @@ impl Keyring for HierarchicalKeyring {
 
         // Nothing was attempted: every supplied EDK was filtered out before
         // the keystore was consulted, so this is not an aggregate of failures
-        // but a distinct one — no encrypted data key matched this keyring. The
-        // Dafny implementation returns a separate error here too, rather than
-        // an empty collection, naming what it expected against what it got:
-        // ErrorMessages.IncorrectDataKeys, "Unable to decrypt data key: No
-        // Encrypted Data Keys found to match." This is the common shape of a
-        // misconfigured branch-key id, so it names both sides.
+        // but a distinct one — no encrypted data key matched this keyring.
+        // This is the common shape of a misconfigured branch-key id, so the
+        // message names what was expected against what was supplied.
         if collected_errors.is_empty() {
             return Err(MaterialsError::no_matching_data_key(format!(
                 "HierarchicalKeyring::on_decrypt: no encrypted data key matched. Expected \
@@ -481,10 +478,8 @@ impl Keyring for HierarchicalKeyring {
         //
         // Formatting them into the message alone would satisfy the letter of
         // that but leave a caller parsing prose to find out why any given
-        // attempt failed. The Dafny implementation makes the same choice, with
-        // its `CollectionOfErrors(list, message)` error variant, in every
-        // keyring. Display renders them, so the message describes only the
-        // overall failure.
+        // attempt failed. Display renders them, so the message describes only
+        // the overall failure.
         Err(MaterialsError::collection(
             MaterialsErrorKind::KeyringFailed,
             "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key",
@@ -640,7 +635,10 @@ impl HierarchicalKeyring {
 
 /// Render the supplied EDKs' provider id and provider info for a no-match
 /// error, so the message names what was offered against what was expected.
-/// Provider info is not required to be UTF-8, so it is rendered lossily.
+/// This runs only when nothing matched, so the EDKs here belong to other
+/// keyrings: a raw AES EDK's provider info is `key name || tag length(u32) ||
+/// iv length(u32) || iv`, which is not UTF-8, hence the lossy render. This
+/// keyring's own provider info is required to be UTF-8.
 fn describe_supplied_edks(edks: &[EncryptedDataKey]) -> String {
     edks.iter()
         .map(|edk| {

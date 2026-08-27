@@ -369,9 +369,8 @@ impl Keyring for RawAesKeyring {
         // At least one EDK was this keyring's and decryption still failed. The
         // per-attempt errors stay typed on the returned error rather than being
         // flattened into the message — the same shape the hierarchical keyring
-        // uses, and the same one Dafny uses in every keyring via
-        // CollectionOfErrors(list, message). The raw AES spec states the
-        // requirement as "If no decryption succeeds, the keyring MUST fail":
+        // uses. The raw AES spec states the requirement as "If no decryption
+        // succeeds, the keyring MUST fail":
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
         Err(MaterialsError::collection(
             MaterialsErrorKind::KeyringFailed,

@@ -823,7 +823,7 @@ fn wrap_unwrap_round_trip_recovers_plaintext() {
     let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
         .expect("unwrap must succeed");
 
-    // Round-trip success requires the IV value passed to AES-GCM seal on
+    // Round-trip success requires the IV value passed to AES-GCM encrypt on
     // wrap to match the IV bytes stored on-wire (which unwrap reads via
     // `Nonce::assume_unique_for_key(iv_bytes)`). If wrap had passed a
     // different IV to AES-GCM than the one written into the layout, the

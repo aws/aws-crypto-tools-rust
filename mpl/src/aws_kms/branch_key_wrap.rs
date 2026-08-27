@@ -177,7 +177,7 @@ pub fn wrap(
 
     let version_bytes = uuid_str_to_16_bytes(materials.branch_key_version())?;
 
-    // 5. Assemble the on-wire layout and AES-256-GCM seal directly into it.
+    // 5. Assemble the on-wire layout and AES-256-GCM encrypt directly into it.
     //
     // `aes_encrypt` appends `ciphertext || tag` to the buffer, which is
     // exactly the tail of the wire format:
@@ -198,7 +198,7 @@ pub fn wrap(
         &mut output,
     )
     .map_err(|e| {
-        MaterialsError::keyring_failed_with_cause("Branch key wrap: AES-256-GCM seal failed", e)
+        MaterialsError::keyring_failed_with_cause("Branch key wrap: AES-256-GCM encrypt failed", e)
     })?;
 
     debug_assert_eq!(
@@ -207,7 +207,7 @@ pub fn wrap(
         "AES-256-GCM output must be ciphertext (pt_len) + tag ({TAG_LEN} bytes)",
     );
 
-    // Each fallible step (entropy, KDF, AAD construction, AES seal) uses `?`
+    // Each fallible step (entropy, KDF, AAD construction, AES encrypt) uses `?`
     // to propagate; reaching this Ok requires every step to have succeeded.
     Ok(output)
 }
@@ -275,10 +275,13 @@ pub fn unwrap(
         &mut plaintext,
     )
     .map_err(|e| {
-        MaterialsError::keyring_failed_with_cause("Branch key unwrap: AES-256-GCM open failed", e)
+        MaterialsError::keyring_failed_with_cause(
+            "Branch key unwrap: AES-256-GCM decrypt failed",
+            e,
+        )
     })?;
 
-    // Each fallible step (deserialization, KDF, AAD construction, AES open)
+    // Each fallible step (deserialization, KDF, AAD construction, AES decrypt)
     // uses `?` to propagate; reaching this Ok requires every step to have
     // succeeded.
     Ok(plaintext)
