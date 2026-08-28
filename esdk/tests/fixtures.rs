@@ -153,21 +153,3 @@ pub fn namespace_and_name(n: u8) -> (String, String) {
     (s, t)
 }
 
-pub async fn generate_key_pair(
-    key_modulus_length: aws_mpl_legacy::dafny::aes_gcm::AESEncryption::RSAModulusLengthBitsToGenerate,
-) -> aws_mpl_legacy::dafny::aws_cryptography_primitives::operation::generate_rsa_key_pair::GenerateRsaKeyPairOutput
-{
-    let crypto = aws_mpl_legacy::dafny::aws_cryptography_primitives::client::Client::from_conf(
-        aws_mpl_legacy::dafny::aws_cryptography_primitives::types::CryptoConfig::builder()
-            .build()
-            .unwrap(),
-    )
-    .unwrap();
-
-    crypto
-        .generate_rsa_key_pair()
-        .length_bits(key_modulus_length)
-        .send()
-        .await
-        .unwrap()
-}
