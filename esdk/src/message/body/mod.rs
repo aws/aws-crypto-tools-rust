@@ -11,8 +11,8 @@ pub(crate) use body_decrypt::*;
 pub(crate) use body_encrypt::*;
 
 use crate::error::{Error, val_err};
-use aws_mpl_primitives::AesGcm;
 use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_mpl_primitives::AesGcm;
 
 pub(crate) fn get_alg_suite(info: &AlgorithmSuite) -> Result<AesGcm, Error> {
     match info.encryption_key_length() {

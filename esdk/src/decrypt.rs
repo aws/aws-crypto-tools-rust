@@ -318,9 +318,7 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        algorithm_suite_id: crate::suites::algorithm_suite_id_from_bytes(
-            state.header.suite.id(),
-        )?,
+        algorithm_suite_id: crate::suites::algorithm_suite_id_from_bytes(state.header.suite.id())?,
     })
 }
 
@@ -663,12 +661,12 @@ fn build_encryption_context_to_only_authenticate(
         .encryption_context()
         .iter()
         .filter(|(k, _)| required.contains(*k))
-        .filter_map(|(k, v)| {
-            match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
+        .filter_map(
+            |(k, v)| match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
                 (Ok(k), Ok(v)) => Some((k, v)),
                 _ => None,
-            }
-        })
+            },
+        )
         .collect()
 }
 

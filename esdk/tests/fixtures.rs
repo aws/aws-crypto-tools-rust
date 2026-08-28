@@ -152,4 +152,3 @@ pub fn namespace_and_name(n: u8) -> (String, String) {
     let t = "child".to_string() + &n.to_string() + " Name";
     (s, t)
 }
-

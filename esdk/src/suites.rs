@@ -76,9 +76,7 @@ pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error
         KeyDerivationAlgorithm::HkdfSha256 => Ok(DigestAlg::Sha256),
         KeyDerivationAlgorithm::HkdfSha384 => Ok(DigestAlg::Sha384),
         KeyDerivationAlgorithm::HkdfSha512 => Ok(DigestAlg::Sha512),
-        KeyDerivationAlgorithm::IdentityKdf => Err(val_err(
-            "Identity KDF has no hash function",
-        )),
+        KeyDerivationAlgorithm::IdentityKdf => Err(val_err("Identity KDF has no hash function")),
     }
 }
 

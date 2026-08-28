@@ -10,11 +10,11 @@ use crate::message::serializable_types::{
     from_canonical_pairs, is_esdk_encrypted_data_keys, is_esdk_encryption_context,
 };
 use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
-use aws_crypto_mpl::cmm::{Cmm as MplCmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::cmm::DefaultCmm;
+use aws_crypto_mpl::cmm::{Cmm as MplCmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
-    EncryptionContext as MplEncryptionContext,
+    AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey,
+    EncryptionContext as MplEncryptionContext, EncryptionMaterials,
 };
 
 /// A cryptographic materials manager resolved from the caller's input.
@@ -91,7 +91,8 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
-    let mut request = DecryptMaterialsRequest::new(algorithm_suite_id, policy, edks, encryption_context);
+    let mut request =
+        DecryptMaterialsRequest::new(algorithm_suite_id, policy, edks, encryption_context);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.

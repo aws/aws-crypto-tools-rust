@@ -443,11 +443,7 @@ impl<'a> EncryptInput<'a> {
     }
     /// Construct an `EncryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_cmm(
-        plaintext: &'a [u8],
-        ec: EncryptionContext,
-        cmm: Arc<dyn MplCmm>,
-    ) -> Self {
+    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
@@ -457,7 +453,11 @@ impl<'a> EncryptInput<'a> {
     }
     /// Construct an `EncryptInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_keyring(plaintext: &'a [u8], ec: EncryptionContext, keyring: Arc<dyn MplKeyring>) -> Self {
+    pub fn with_keyring(
+        plaintext: &'a [u8],
+        ec: EncryptionContext,
+        keyring: Arc<dyn MplKeyring>,
+    ) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
@@ -615,11 +615,7 @@ impl<'a> DecryptInput<'a> {
     }
     /// Construct a `DecryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_cmm(
-        ciphertext: &'a [u8],
-        ec: EncryptionContext,
-        cmm: Arc<dyn MplCmm>,
-    ) -> Self {
+    pub fn with_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
@@ -629,7 +625,11 @@ impl<'a> DecryptInput<'a> {
     }
     /// Construct a `DecryptInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_keyring(ciphertext: &'a [u8], ec: EncryptionContext, keyring: Arc<dyn MplKeyring>) -> Self {
+    pub fn with_keyring(
+        ciphertext: &'a [u8],
+        ec: EncryptionContext,
+        keyring: Arc<dyn MplKeyring>,
+    ) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,

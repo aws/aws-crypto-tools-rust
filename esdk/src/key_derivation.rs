@@ -129,13 +129,7 @@ pub(crate) fn derive_key_v1(
             //= type=implication
             //= reason=primitives::hkdf bundles HKDF-Extract and HKDF-Expand; the PRK input to expand is the extract output by construction of the helper
             //# - The input pseudorandom key MUST be the output from the extract step.
-            aws_mpl_primitives::hkdf(
-                alg,
-                &salt,
-                plaintext_data_key,
-                &info,
-                &mut derived_key[..],
-            )?;
+            aws_mpl_primitives::hkdf(alg, &salt, plaintext_data_key, &info, &mut derived_key[..])?;
 
             Ok(ExpandedKeyMaterial {
                 data_key: derived_key,
@@ -214,7 +208,10 @@ pub fn derive_key_v2(
     //= reason=Hash is destructured directly from suite.commitment; both V2 committing suites (0x0478, 0x0578) carry SHA-512, so no observable runtime differential exists to falsify
     //# - The hash function MUST be specified by the [algorithm suite commitment settings](#algorithm-suites-commit-key-derivation-settings).
     let (alg, commit_len) = match suite.commit_kdf() {
-        Some(commit_kdf) => (kdf_digest(commit_kdf)?, suite.algorithm_suite_data_length() as u32),
+        Some(commit_kdf) => (
+            kdf_digest(commit_kdf)?,
+            suite.algorithm_suite_data_length() as u32,
+        ),
         None => {
             return Err(val_err("Algorithm suite has no commitment KDF"));
         }
@@ -240,8 +237,7 @@ pub fn derive_key_v2(
     //# the AWS Encryption SDK SHOULD only perform the extract step once
     //# and use the same output from the extract step
     //# for both the encryption key and the commitment key.
-    let pseudo_random_key =
-        aws_mpl_primitives::hkdf_extract(alg, message_id, plaintext_data_key);
+    let pseudo_random_key = aws_mpl_primitives::hkdf_extract(alg, message_id, plaintext_data_key);
 
     let Ok(encrypt_key_len) = usize::try_from(kdf_output_len) else {
         return Err(val_err(format!(

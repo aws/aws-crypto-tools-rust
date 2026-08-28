@@ -221,12 +221,12 @@ async fn internal_encrypt(
         .materials
         .encryption_context()
         .iter()
-        .filter_map(|(k, v)| {
-            match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
+        .filter_map(
+            |(k, v)| match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
                 (Ok(k), Ok(v)) => Some((k, v)),
                 _ => None,
-            }
-        })
+            },
+        )
         .collect();
     let required_keys: Vec<String> = mat_result
         .materials
@@ -502,17 +502,23 @@ fn step_construct_signature(
         //= spec/client-apis/encrypt.md#construct-the-signature
         //# To calculate a signature, this operation MUST use the [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
         //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following input:
-        let mut signature_bytes =
-            vec![0u8; aws_mpl_primitives::signature_len(ecdsa_params)];
+        let mut signature_bytes = vec![0u8; aws_mpl_primitives::signature_len(ecdsa_params)];
         ecdsa_sign_digest(
             ecdsa_params,
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# - the signature key MUST be the [signing key](../framework/structures.md#signing-key) in the [encryption materials](../framework/structures.md#encryption-materials)
-            materials.signing_key()
-                .ok_or_else(|| esdk_err("Encryption materials must contain a signing key for signature algorithm"))?.as_bytes(),
+            materials
+                .signing_key()
+                .ok_or_else(|| {
+                    esdk_err(
+                        "Encryption materials must contain a signing key for signature algorithm",
+                    )
+                })?
+                .as_bytes(),
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# - the input to sign MUST be the concatenation of the serialization of the [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md)
-            sig_digest.context
+            sig_digest
+                .context
                 .ok_or_else(|| esdk_err("Signature digest context must be present for signing"))?,
             &mut signature_bytes,
         )?;

@@ -15,8 +15,8 @@ use super::v2_header_body::{
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
 use crate::error::val_err;
 use crate::types::{SafeRead, SafeWrite};
-use aws_lc_rs::constant_time;
 use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_lc_rs::constant_time;
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 

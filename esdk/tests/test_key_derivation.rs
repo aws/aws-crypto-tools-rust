@@ -8,10 +8,10 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::__test_internals::{derive_key_v2, derive_keys};
+use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_esdk::__test_internals::{algorithm_suite_from_bytes, derive_key_v2, derive_keys};
 use aws_esdk::ErrorKind;
-use aws_mpl_legacy::primitives::{hkdf_expand, hkdf_extract};
-use aws_mpl_legacy::suites::{AlgorithmSuite, get_algorithm_suite_info};
+use aws_mpl_primitives::{hkdf_expand, hkdf_extract};
 
 // AES-256 data key length, required by the `derive_keys` length precondition.
 const AES_256_KEY_LEN: usize = 32;
@@ -32,8 +32,8 @@ const HKDF_SHA512_COMMIT_AES_256: [u8; 2] = [0x04, 0x78];
 const KEY_LABEL: &[u8] = b"DERIVEKEY";
 const COMMIT_LABEL: &[u8] = b"COMMITKEY";
 
-fn suite(binary_id: [u8; 2]) -> &'static AlgorithmSuite {
-    get_algorithm_suite_info(binary_id).expect("known algorithm suite id")
+fn suite(binary_id: [u8; 2]) -> AlgorithmSuite {
+    algorithm_suite_from_bytes(binary_id).expect("known algorithm suite id")
 }
 
 // A deterministic plaintext data key of the AES-256 key length.
@@ -52,7 +52,7 @@ fn test_identity_kdf_derived_key_equals_plaintext_key() {
     let pdk = sample_key();
     let message_id = [0u8; 16];
 
-    let derived = derive_keys(&message_id, &pdk, suite(NO_KDF_AES_256)).unwrap();
+    let derived = derive_keys(&message_id, &pdk, &suite(NO_KDF_AES_256)).unwrap();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -79,9 +79,9 @@ fn test_kdf_algorithm_is_selected_from_suite() {
     let pdk = sample_key();
     let message_id = [7u8; 16];
 
-    let identity = derive_keys(&message_id, &pdk, suite(NO_KDF_AES_256)).unwrap();
-    let hkdf_sha256 = derive_keys(&message_id, &pdk, suite(HKDF_SHA256_AES_256)).unwrap();
-    let hkdf_sha384 = derive_keys(&message_id, &pdk, suite(HKDF_SHA384_AES_256_SIG)).unwrap();
+    let identity = derive_keys(&message_id, &pdk, &suite(NO_KDF_AES_256)).unwrap();
+    let hkdf_sha256 = derive_keys(&message_id, &pdk, &suite(HKDF_SHA256_AES_256)).unwrap();
+    let hkdf_sha384 = derive_keys(&message_id, &pdk, &suite(HKDF_SHA384_AES_256_SIG)).unwrap();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -134,9 +134,9 @@ fn test_hkdf_derivation_process() {
     let message_id_a = [1u8; 16];
     let message_id_b = [2u8; 16];
 
-    let a1 = derive_keys(&message_id_a, &pdk, suite).unwrap();
-    let a2 = derive_keys(&message_id_a, &pdk, suite).unwrap();
-    let b = derive_keys(&message_id_b, &pdk, suite).unwrap();
+    let a1 = derive_keys(&message_id_a, &pdk, &suite).unwrap();
+    let a2 = derive_keys(&message_id_a, &pdk, &suite).unwrap();
+    let b = derive_keys(&message_id_b, &pdk, &suite).unwrap();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -197,11 +197,12 @@ fn test_v2_hkdf_derivation_process() {
     let pdk = sample_key();
     let message_id = [0x42u8; V2_MESSAGE_ID_LEN];
 
-    let derived = derive_keys(&message_id, &pdk, alg_suite).unwrap();
+    let derived = derive_keys(&message_id, &pdk, &alg_suite).unwrap();
 
     // Compute the expected encryption key using the same primitives the SDK uses.
+    let suite_id = alg_suite.id();
     let prk = hkdf_extract(alg_suite.kdf_digest(), &message_id, &pdk);
-    let info = [&alg_suite.binary_id[..], KEY_LABEL];
+    let info = [&suite_id[..], KEY_LABEL];
     let mut expected_encrypt_key = vec![0u8; AES_256_KEY_LEN];
     hkdf_expand(&prk, &info, &mut expected_encrypt_key).expect("hkdf_expand");
 
@@ -222,7 +223,7 @@ fn test_v2_hkdf_derivation_process() {
     // through the public API rather than by re-running the underlying primitive.
     assert_ne!(derived.data_key.as_slice(), wrong_salt_key.as_slice());
 
-    let wrong_info = [&alg_suite.binary_id[..], b"WRONGLABEL"];
+    let wrong_info = [&suite_id[..], b"WRONGLABEL"];
     let mut wrong_info_key = vec![0u8; AES_256_KEY_LEN];
     hkdf_expand(&prk, &wrong_info, &mut wrong_info_key).expect("hkdf_expand");
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
@@ -249,7 +250,7 @@ fn test_v2_hkdf_commit_key_derivation_process() {
     let pdk = sample_key();
     let message_id = [0x42u8; V2_MESSAGE_ID_LEN];
 
-    let derived = derive_keys(&message_id, &pdk, alg_suite).unwrap();
+    let derived = derive_keys(&message_id, &pdk, &alg_suite).unwrap();
     let commit_key = derived
         .commitment_key
         .as_ref()
@@ -294,7 +295,7 @@ fn test_kdf_input_length_validation() {
 
     // Suite expects 32-byte PDK; pass 31 bytes.
     let too_short_pdk = vec![0u8; AES_256_KEY_LEN - 1];
-    let result = derive_key_v2(&message_id, &too_short_pdk, alg_suite);
+    let result = derive_key_v2(&message_id, &too_short_pdk, &alg_suite);
 
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //= type=test
@@ -330,7 +331,7 @@ fn test_kdf_input_length_validation_too_long() {
 
     // Suite expects 32-byte PDK; pass 33 bytes.
     let too_long_pdk = vec![0u8; AES_256_KEY_LEN + 1];
-    let result = derive_key_v2(&message_id, &too_long_pdk, alg_suite);
+    let result = derive_key_v2(&message_id, &too_long_pdk, &alg_suite);
 
     let err = result.expect_err("over-length PDK must be rejected");
     assert_eq!(
@@ -356,7 +357,7 @@ fn test_v2_message_id_length_validation() {
 
     // Suite expects a 32-byte (256-bit) message ID; pass 31 bytes.
     let short_message_id = [0x42u8; V2_MESSAGE_ID_LEN - 1];
-    let result = derive_key_v2(&short_message_id, &pdk, alg_suite);
+    let result = derive_key_v2(&short_message_id, &pdk, &alg_suite);
 
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //= type=test
@@ -391,8 +392,8 @@ fn test_message_id_binds_derived_keys_v2() {
     let message_id_a = [0x01u8; V2_MESSAGE_ID_LEN];
     let message_id_b = [0x02u8; V2_MESSAGE_ID_LEN];
 
-    let a = derive_keys(&message_id_a, &pdk, alg_suite).unwrap();
-    let b = derive_keys(&message_id_b, &pdk, alg_suite).unwrap();
+    let a = derive_keys(&message_id_a, &pdk, &alg_suite).unwrap();
+    let b = derive_keys(&message_id_b, &pdk, &alg_suite).unwrap();
 
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //= type=test
@@ -413,14 +414,18 @@ fn test_message_id_binds_derived_keys_v2() {
 // Helper: the kdf hash on the V2 suites equals the commitment hash by construction.
 // We rely on this to compute expected vectors via the underlying primitive directly.
 trait KdfDigestExt {
-    fn kdf_digest(&self) -> aws_mpl_legacy::primitives::DigestAlg;
+    fn kdf_digest(&self) -> aws_mpl_primitives::DigestAlg;
 }
 
 impl KdfDigestExt for AlgorithmSuite {
-    fn kdf_digest(&self) -> aws_mpl_legacy::primitives::DigestAlg {
-        match self.kdf {
-            aws_mpl_legacy::suites::DerivationAlgorithm::Hkdf(h) => h.hmac,
-            other => panic!("expected HKDF-based suite, got {other:?}"),
+    fn kdf_digest(&self) -> aws_mpl_primitives::DigestAlg {
+        use aws_crypto_mpl::structures::KeyDerivationAlgorithm as Kdf;
+        use aws_mpl_primitives::DigestAlg;
+        match self.encryption_kdf() {
+            Kdf::HkdfSha256 => DigestAlg::Sha256,
+            Kdf::HkdfSha384 => DigestAlg::Sha384,
+            Kdf::HkdfSha512 => DigestAlg::Sha512,
+            Kdf::IdentityKdf => panic!("expected HKDF-based suite, got IdentityKdf"),
         }
     }
 }

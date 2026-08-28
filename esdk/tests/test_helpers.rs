@@ -19,21 +19,20 @@ pub enum Version {
 
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
+use aws_crypto_mpl::keyring::{Keyring as MplKeyring, RawAesKeyring};
 use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::EsdkCommitmentPolicy;
-use aws_esdk::Keyring as EsdkKeyring;
-use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_mpl_primitives::AesGcm;
 use std::sync::Arc;
 
 /// A caller-supplied keyring handle, as accepted by `EncryptInput::with_keyring`.
-pub type KeyringRef = EsdkKeyring;
+pub type KeyringRef = Arc<dyn MplKeyring>;
 
-/// Build an ESDK keyring wrapper around a native raw-AES keyring.
+/// Build a native raw-AES keyring handle.
 fn raw_aes(ns: String, name: String, key: [u8; 32]) -> KeyringRef {
     let keyring = RawAesKeyring::new(ns, name, key.to_vec(), AesGcm::Aes256Gcm)
         .expect("raw AES keyring construction must succeed for test key material");
-    EsdkKeyring::from(Arc::new(keyring) as Arc<dyn aws_crypto_mpl::keyring::Keyring>)
+    Arc::new(keyring) as KeyringRef
 }
 
 /// Create a raw AES keyring for testing (no KMS needed).
@@ -309,8 +308,7 @@ pub async fn try_decrypt_v1_with_keyring(
 /// Decrypt ciphertext with the default test keyring, return full DecryptOutput.
 pub async fn decrypt_ciphertext(ciphertext: &[u8]) -> DecryptOutput {
     let keyring = test_keyring().await;
-    let dec_input =
-        DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
     decrypt(&dec_input).await.unwrap()
 }
 
@@ -318,8 +316,7 @@ pub async fn decrypt_ciphertext(ciphertext: &[u8]) -> DecryptOutput {
 /// (for negative/tamper tests that expect failure).
 pub async fn decrypt_ciphertext_result(ciphertext: &[u8]) -> Result<DecryptOutput, Error> {
     let keyring = test_keyring().await;
-    let dec_input =
-        DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
     decrypt(&dec_input).await
 }
 
@@ -341,8 +338,7 @@ pub async fn decrypt_with(
 /// `encryption_context`.
 pub async fn decrypt_with_version(ciphertext: &[u8], version: Version) -> DecryptOutput {
     let keyring = test_keyring().await;
-    let mut dec_input =
-        DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
+    let mut dec_input = DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
     if let Version::V1 = version {
         dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     }

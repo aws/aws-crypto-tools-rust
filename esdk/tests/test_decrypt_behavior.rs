@@ -7,8 +7,8 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::*;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -18,7 +18,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     let ec = EncryptionContext::new();
 
     // Encrypt with a non-signing algorithm suite
-    let mut encrypt_input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring.clone());
+    let mut encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring.clone());
     encrypt_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let ct = encrypt(&encrypt_input).await.unwrap().ciphertext;
 
@@ -45,16 +45,16 @@ async fn test_decrypt_halts_on_incomplete_message() {
     let keyring = test_keyring().await;
     let plaintext = b"truncation test data";
     let enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Truncate to ~60% of the message — enough for the header but not the full body.
     let truncated_ct = valid_ct[..valid_ct.len() * 3 / 5].to_vec();
 
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let truncated_input =
-        DecryptInput::with_legacy_keyring(&truncated_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&truncated_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
@@ -75,7 +75,7 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     let keyring = test_keyring().await;
     let plaintext = b"trailing bytes test";
     let enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Append extra bytes after the valid message.
@@ -83,9 +83,9 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     trailing_ct.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
 
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let trailing_input =
-        DecryptInput::with_legacy_keyring(&trailing_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&trailing_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
@@ -110,13 +110,13 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     // 30 bytes with frame_length=10 → 3 frames (2 regular + 1 final)
     let plaintext = vec![0xAAu8; 30];
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
     enc_input.frame_length = FrameLength::new(10).unwrap();
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
-    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+    let stream_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
@@ -142,7 +142,7 @@ async fn test_signing_suite_must_perform_signature_step() {
 
     // Encrypt with a signing algorithm suite (ECDSA P384)
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;

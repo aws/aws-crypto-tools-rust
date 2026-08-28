@@ -8,8 +8,8 @@ use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, wri
 use super::{Error, ser_err};
 use crate::error::val_err_with_cause;
 use crate::types::{SafeRead, SafeWrite};
-use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::structures::EncryptedDataKey;
 
 pub(crate) type MessageId = Vec<u8>;
 
