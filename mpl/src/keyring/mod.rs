@@ -18,6 +18,9 @@ use crate::structures::{
 };
 
 #[async_trait]
+//= spec/framework/keyring-interface.md#overview
+//= type=implication
+//# The keyring interface specified in this document describes the interface all keyrings MUST implement.
 pub trait Keyring: Send + Sync {
     /// Modify the supplied [`EncryptionMaterials`] by generating and/or
     /// encrypting a data key. See the

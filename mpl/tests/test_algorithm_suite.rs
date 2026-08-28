@@ -65,6 +65,9 @@ fn test_signing_key_debug_redacts() {
         debug_output.contains("12 bytes"),
         "Debug must show byte count, got: {debug_output}"
     );
+    //= spec/framework/structures.md#signing-key
+    //= type=test
+    //# The value of this key MUST be kept secret.
     assert!(
         !debug_output.contains("super-secret"),
         "Debug must NOT reveal key material, got: {debug_output}"
@@ -140,6 +143,9 @@ fn test_symmetric_signing_key_debug_redacts() {
         debug_output.contains("17 bytes"),
         "Debug must show byte count, got: {debug_output}"
     );
+    //= spec/framework/structures.md#symmetric-signing-key
+    //= type=test
+    //# This value MUST be kept secret.
     assert!(
         !debug_output.contains("super-secret-hmac"),
         "Debug must NOT reveal key material, got: {debug_output}"

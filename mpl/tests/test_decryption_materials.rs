@@ -63,6 +63,10 @@ fn test_required_ec_keys_must_be_subset() {
     let reck = BTreeSet::from([b"missing".to_vec()]);
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None);
+    //= spec/framework/structures.md#required-encryption-context-keys-1
+    //= type=test
+    //# Every key in Required Encryption Context Keys
+    //# MUST be a key in the [encryption context](#encryption-context-2).
     assert!(result.is_err());
     assert!(
         result
@@ -79,6 +83,10 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
     let ssk = SymmetricSigningKey::new(b"sym".to_vec());
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, Some(ssk));
+    //= spec/framework/structures.md#symmetric-signing-key
+    //= type=test
+    //# If the algorithm suite does not contain a symmetric signing algorithm,
+    //# the symmetric signing key MUST NOT be included in the materials.
     assert!(result.is_err());
     assert!(
         result
@@ -109,6 +117,10 @@ fn test_verification_key_length_must_match_algorithm_suite() {
         let err = result.expect_err(&format!(
             "{suite_id:?} with {bad_len}-byte verification key must fail"
         ));
+        //= spec/framework/structures.md#verification-key
+        //= type=test
+        //# The verification key MUST fit the specification for the [asymmetric signature algorithm](algorithm-suites.md#asymmetric-signature-algorithm)
+        //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
         assert!(
             err.message.contains("Verification key length"),
             "{suite_id:?} @ {bad_len}: unexpected error message: {}",
@@ -169,6 +181,10 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
     let reck = BTreeSet::new();
 
     let mat = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None).unwrap();
+    //= spec/framework/structures.md#encryption-context-2
+    //= type=test
+    //# If a [decryption materials](#decryption-materials) does not contain a [verification key](#verification-key),
+    //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
     assert!(
         mat.validate_aws_crypto_public_key()
             .unwrap_err()
@@ -194,6 +210,9 @@ fn test_plaintext_data_key_immutability_decryption() {
 fn test_plaintext_data_key_zeroize_decryption() {
     let mut pdk = PlaintextDataKey::new(b"secret-dec".to_vec());
     pdk.zeroize();
+    //= spec/framework/structures.md#plaintext-data-key-1
+    //= type=test
+    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     assert!(pdk.as_bytes().iter().all(|&b| b == 0));
 }
 
@@ -270,6 +289,10 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
 
     let mat = DecryptionMaterials::new(SIGN_SUITE, ec, reck, None, Some(vk), None).unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
+    //= spec/framework/structures.md#encryption-context-2
+    //= type=test
+    //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
+    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
     assert!(err.to_string().contains("MUST include"));
 }
 

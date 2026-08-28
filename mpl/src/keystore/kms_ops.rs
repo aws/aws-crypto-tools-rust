@@ -48,6 +48,23 @@ pub(crate) fn build_authenticated_encryption_context(
 ) -> BTreeMap<String, String> {
     let mut ec = BTreeMap::new();
 
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //# Every attribute except for `enc` on the AWS DDB response item
+    //# MUST be authenticated in the decryption of `enc`
+    //
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //# Every key in the constructed [encryption context](#encryption-context)
+    //# except `tableName`
+    //# MUST exist as a string attribute in the AWS DDB response item.
+    //
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //# Every value in the constructed [encryption context](#encryption-context)
+    //# except the logical table name
+    //# MUST equal the value with the same key in the AWS DDB response item.
+    //
+    //= spec/framework/branch-key-store.md#encryption-context
+    //# Any additionally attributes on the DynamoDB item
+    //# MUST be added to the encryption context.
     for (k, v) in record_attributes {
         ec.insert(k.clone(), v.clone());
     }
@@ -63,6 +80,8 @@ pub(crate) fn build_authenticated_encryption_context(
     // `EncryptedRecord::attributes` does not contain `enc` by construction
     // — `enc` is the binary `EncryptedRecord::enc` field — so the EC built
     // above cannot contain an `enc` key.
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //# The key `enc` MUST NOT exist in the constructed [encryption context](#encryption-context).
     debug_assert!(
         !ec.contains_key(ATTR_ENC),
         "constructed EC must not contain 'enc'"
@@ -87,6 +106,12 @@ pub(crate) fn resolve_keystore_arn(
 ) -> Result<String, KeystoreError> {
     match kms_config {
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
+            //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+            //# If the Keystore's [AWS KMS Configuration](#aws-kms-configuration) is `KMS Key ARN` or `KMS MRKey ARN`,
+            //# the `kms-arn` field of the DDB response item MUST be
+            //# [compatible with](#aws-key-arn-compatibility) the configured KMS Key in
+            //# the [AWS KMS Configuration](#aws-kms-configuration) for this keystore,
+            //# or the operation MUST fail.
             if !is_arn_compatible(kms_config, record_kms_arn) {
                 return Err(KeystoreError::new(
                     KeystoreErrorKind::Authentication,
@@ -95,14 +120,32 @@ pub(crate) fn resolve_keystore_arn(
                     ),
                 ));
             }
+            //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+            //# Otherwise, it MUST BE the Keystore's configured KMS Key.
             Ok(configured.clone())
         }
         KmsConfiguration::Discovery => {
             reject_alias_arn(record_kms_arn)?;
+            //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+            //# - `KeyId`, if the KMS Configuration is Discovery, MUST be the `kms-arn` attribute value of the AWS DDB response item.
+            //
+            //= spec/framework/branch-key-store.md#discovery
+            //# The Keystore MAY use the KMS Key ARNs already
+            //# persisted to the backing DynamoDB table,
+            //# provided they are in records created
+            //# with an identical Logical Keystore Name.
             Ok(record_kms_arn.to_string())
         }
         KmsConfiguration::MrDiscovery { region } => {
             reject_alias_arn(record_kms_arn)?;
+            //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+            //# If the KMS Configuration is MRDiscovery, `KeyId` MUST be the `kms-arn` attribute value of the AWS DDB response item, with the region replaced by the configured region.
+            //
+            //= spec/framework/branch-key-store.md#mrdiscovery
+            //# The Keystore MAY use the KMS Key ARNs already
+            //# persisted to the backing DynamoDB table,
+            //# provided they are in records created
+            //# with an identical Logical Keystore Name.
             rewrite_arn_region(record_kms_arn, region)
         }
     }
@@ -118,6 +161,10 @@ fn reject_alias_arn(arn: &str) -> Result<(), KeystoreError> {
         )
     })?;
     if parts.resource_type == "alias" {
+        //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+        //# If the Keystore's [AWS KMS Configuration](#aws-kms-configuration) is `Discovery` or `MRDiscovery`,
+        //# the `kms-arn` field of DDB response item MUST NOT be an Alias
+        //# or the operation MUST fail.
         return Err(KeystoreError::new(
             KeystoreErrorKind::Authentication,
             format!("Record kms-arn must not be an alias: {arn}"),
@@ -168,11 +215,23 @@ pub(crate) async fn decrypt_branch_key(
 
     let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
 
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //# The operation MUST use the configured `KMS SDK Client` to decrypt the value of the branch key field.
+    //
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //# When calling [AWS KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html),
+    //# the keystore operation MUST call with a request constructed as follows:
     let response = kms_client
         .decrypt()
         .key_id(resolved_key_id)
+        //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+        //# - `CiphertextBlob` MUST be the `enc` attribute value on the AWS DDB response item
         .ciphertext_blob(Blob::new(record.enc.clone()))
+        //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+        //# - `EncryptionContext` MUST be the [encryption context](#encryption-context) constructed above
         .set_encryption_context(Some(ec.into_iter().collect()))
+        //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+        //# - `GrantTokens` MUST be this keystore's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
@@ -221,9 +280,30 @@ pub(crate) async fn generate_wrapped_key(
     encryption_context: &BTreeMap<String, String>,
     grant_tokens: &[String],
 ) -> Result<Vec<u8>, KeystoreError> {
+    //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+    //# The call to AWS KMS GenerateDataKeyWithoutPlaintext MUST use the configured AWS KMS client to make the call.
+    //
+    //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+    //# The call to AWS KMS GenerateDataKeyWithoutPlaintext MUST use the configured AWS KMS client to make the call.
     let response = kms_client
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# The operation MUST call [AWS KMS API GenerateDataKeyWithoutPlaintext](https://docs.aws.amazon.com/kms/latest/APIReference/API_GenerateDataKeyWithoutPlaintext.html).
+        //
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# The operation MUST call [AWS KMS API GenerateDataKeyWithoutPlaintext](https://docs.aws.amazon.com/kms/latest/APIReference/API_GenerateDataKeyWithoutPlaintext.html).
+        //
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# The operation MUST call AWS KMS GenerateDataKeyWithoutPlaintext with a request constructed as follows:
+        //
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# The operation MUST call AWS KMS GenerateDataKeyWithoutPlaintext with a request constructed as follows:
         .generate_data_key_without_plaintext()
         .key_id(key_arn)
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# - `NumberOfBytes` MUST be 32.
+        //
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# - `NumberOfBytes` MUST be 32.
         .number_of_bytes(32)
         .set_encryption_context(Some(
             encryption_context
@@ -231,11 +311,24 @@ pub(crate) async fn generate_wrapped_key(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
         ))
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# - GenerateDataKeyWithoutPlaintext `GrantTokens` MUST be this keystore's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
+        //
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# - `GrantTokens` MUST be this keystore's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
         .map_err(map_kms_error)?;
 
+    //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+    //# If the call to AWS KMS GenerateDataKeyWithoutPlaintext succeeds,
+    //# the operation MUST use the GenerateDataKeyWithoutPlaintext result `CiphertextBlob`
+    //# as the wrapped DECRYPT_ONLY Branch Key.
+    //
+    //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+    //# If the call to AWS KMS GenerateDataKeyWithoutPlaintext succeeds,
+    //# the operation MUST use the `CiphertextBlob` as the wrapped Beacon Key.
     Ok(response
         .ciphertext_blob
         .ok_or_else(|| {
@@ -258,6 +351,13 @@ pub(crate) async fn reencrypt_wrapped_key(
     destination_encryption_context: &BTreeMap<String, String>,
     grant_tokens: &[String],
 ) -> Result<Vec<u8>, KeystoreError> {
+    //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+    //# The operation MUST call [AWS KMS API ReEncrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_ReEncrypt.html)
+    //# with a request constructed as follows:
+    //
+    //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+    //# The operation MUST call [AWS KMS API ReEncrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_ReEncrypt.html)
+    //# with a request constructed as follows:
     let response = kms_client
         .re_encrypt()
         .ciphertext_blob(Blob::new(ciphertext.to_vec()))
@@ -275,11 +375,20 @@ pub(crate) async fn reencrypt_wrapped_key(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
         ))
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# - ReEncrypt `GrantTokens` MUST be this keystore's [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
+        //
+        //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+        //# - `GrantTokens` MUST be the configured [grant tokens](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#grant_token).
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
         .map_err(map_kms_error)?;
 
+    //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+    //# If the call to AWS KMS ReEncrypt succeeds,
+    //# the operation MUST use the ReEncrypt result `CiphertextBlob`
+    //# as the wrapped ACTIVE Branch Key.
     Ok(response
         .ciphertext_blob
         .ok_or_else(|| {

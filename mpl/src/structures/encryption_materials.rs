@@ -14,12 +14,18 @@ use super::error::MaterialsError;
 
 /// Materials needed for encryption.
 ///
+//= spec/framework/structures.md#structure-2
+//= type=implication
+//# This structure MUST include the following fields:
 #[derive(Debug)]
 pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
     encryption_context: EncryptionContext,
     required_encryption_context_keys: BTreeSet<Vec<u8>>,
+    //= spec/framework/structures.md#structure-2
+    //= type=implication
+    //# This structure MAY include any of the following fields:
     plaintext_data_key: Option<PlaintextDataKey>,
     signing_key: Option<SigningKey>,
     symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
@@ -38,6 +44,9 @@ impl EncryptionMaterials {
     ) -> Result<Self, MaterialsError> {
         // Required encryption context keys must be a subset of encryption context keys
         for key in &required_encryption_context_keys {
+            //= spec/framework/structures.md#required-encryption-context-keys
+            //# Every key in Required Encryption Context Keys
+            //# MUST be a key in the [encryption context](#encryption-context-1).
             if !encryption_context.contains_key(key) {
                 return Err(MaterialsError::new(format!(
                     "Required encryption context key {:?} not found in encryption context",
@@ -47,6 +56,8 @@ impl EncryptionMaterials {
         }
 
         // If no plaintext data key, encrypted data keys must be empty
+        //= spec/framework/structures.md#encrypted-data-keys
+        //# If the plaintext data key is not included in this set of encryption materials, this list MUST be empty.
         if plaintext_data_key.is_none() && !encrypted_data_keys.is_empty() {
             return Err(MaterialsError::new(
                 "Encrypted data keys must be empty when plaintext data key is not present",
@@ -54,6 +65,8 @@ impl EncryptionMaterials {
         }
 
         // If no asymmetric signing, signing key must not be present
+        //= spec/framework/structures.md#signing-key
+        //# If the algorithm suite does not contain an asymmetric signing algorithm, the signing key MUST NOT be present.
         if !algorithm_suite_id.has_asymmetric_signing() && signing_key.is_some() {
             return Err(MaterialsError::new(
                 "Signing key must not be present when algorithm suite has no asymmetric signing",
@@ -73,6 +86,8 @@ impl EncryptionMaterials {
         // that can actually be signed with.
 
         // If no symmetric signing, symmetric signing keys must not be included
+        //= spec/framework/structures.md#symmetric-signing-keys
+        //# If the algorithm suite does not contain a symmetric signing algorithm, this list MUST NOT be included in the materials.
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_keys.is_some() {
             return Err(MaterialsError::new(
                 "Symmetric signing keys must not be present when algorithm suite has no symmetric signing",
@@ -127,11 +142,17 @@ impl EncryptionMaterials {
         let has_key = self
             .encryption_context
             .contains_key(b"aws-crypto-public-key");
+        //= spec/framework/structures.md#encryption-context-1
+        //# If an [encryption material](#encryption-materials) contains a [signing key](#signing-key),
+        //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
         if self.signing_key.is_some() && !has_key {
             return Err(MaterialsError::new(
                 "Encryption context MUST include 'aws-crypto-public-key' when signing key is present",
             ));
         }
+        //= spec/framework/structures.md#encryption-context-1
+        //# If an [encryption material](#encryption-materials) does not contains a [signing key](#signing-key),
+        //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
         if self.signing_key.is_none() && has_key {
             return Err(MaterialsError::new(
                 "Encryption context MUST NOT include 'aws-crypto-public-key' when signing key is absent",

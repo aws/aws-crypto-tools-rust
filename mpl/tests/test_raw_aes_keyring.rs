@@ -124,11 +124,23 @@ async fn test_on_encrypt_on_decrypt_generate_data_key() {
 
     // No plaintext data key was supplied, so on_encrypt generated one and set
     // it on the output materials.
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# OnEncrypt MUST output the modified [encryption materials](structures.md#encryption-materials).
     let generated_pdk = encrypt_output
         .plaintext_data_key()
         .expect("on_encrypt must set a plaintext data key")
         .as_bytes()
         .to_vec();
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# If the [encryption materials](structures.md#encryption-materials) do not contain a plaintext data key,
+    //# OnEncrypt MUST generate a random plaintext data key and set it on the [encryption materials](structures.md#encryption-materials).
+    //
+    //= spec/framework/keyring-interface.md#generate-data-key
+    //= type=test
+    //# If the [encryption materials](structures.md#encryption-materials) do not contain a plaintext data key,
+    //# OnEncrypt MUST generate a data key.
     assert_eq!(
         generated_pdk.len(),
         SUITE.specification().encryption_key_length(),
@@ -136,6 +148,10 @@ async fn test_on_encrypt_on_decrypt_generate_data_key() {
     );
 
     // The constructed EDK was appended to the encrypted data key list.
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# The keyring MUST append the constructed encrypted data key to the encrypted data key list in the
+    //# [encryption materials](structures.md#encryption-materials).
     assert_eq!(
         encrypt_output.encrypted_data_keys().len(),
         1,
@@ -148,6 +164,30 @@ async fn test_on_encrypt_on_decrypt_generate_data_key() {
         .await
         .expect("on_decrypt succeeds");
 
+    // The round trip recovers the generated key, proving on_encrypt encrypted
+    // it with AES-GCM and on_decrypt deserialized and decrypted the EDK.
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# The keyring MUST encrypt the plaintext data key in the [encryption materials](structures.md#encryption-materials)
+    //# using AES-GCM.
+    //
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# For each [encrypted data key](structures.md#encrypted-data-key),
+    //# the keyring MUST first attempt to deserialize the [serialized ciphertext](#ciphertext)
+    //# to obtain the [encrypted key](#encrypted-key) and [authentication tag](#authentication-tag), and
+    //# deserialize the [serialized key provider info](#key-provider-information) to obtain the [key name](./keyring-interface.md#key-name),
+    //# [IV](#iv), [IV length](#iv-length), and [authentication tag length](#authentication-tag-length).
+    //
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# If a decryption succeeds, this keyring MUST
+    //# add the resulting plaintext data key to the decryption materials and return the modified materials.
+    //
+    //= spec/framework/keyring-interface.md#decrypt-data-key
+    //= type=test
+    //# If the [decryption materials](structures.md#decryption-materials) do not include a plaintext data key,
+    //# OnDecrypt MUST decrypt a data key.
     assert_eq!(
         decrypt_output
             .plaintext_data_key()
@@ -172,6 +212,14 @@ async fn test_on_encrypt_on_decrypt_supplied_data_key() {
         .await
         .expect("on_encrypt succeeds");
 
+    //= spec/framework/keyring-interface.md#generate-data-key
+    //= type=test
+    //# If the encryption materials contain a plaintext data key, OnEncrypt MUST NOT generate a data key.
+    //
+    //= spec/framework/keyring-interface.md#encrypt-data-key
+    //= type=test
+    //# If the [encryption materials](structures.md#encryption-materials) contain a plaintext data key,
+    //# OnEncrypt MUST encrypt a data key.
     assert_eq!(
         encrypt_output
             .plaintext_data_key()
@@ -217,6 +265,9 @@ async fn test_on_decrypt_key_name_mismatch() {
         .await;
 
     let err = result.expect_err("a key name mismatch must not decrypt");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - The key name obtained from the encrypted data key's key provider information MUST have a value equal to this keyring's [key name](./keyring-interface.md#key-name).
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
     assert!(
         err.message.contains("EncryptedDataKey 0 did not match"),
@@ -255,6 +306,21 @@ async fn test_on_decrypt_bad_and_good_edk_succeeds() {
         .await
         .expect("on_decrypt must keep going after a failing EDK and succeed on the next");
 
+    // The first EDK's ciphertext (encrypted key and authentication tag) was
+    // zeroed, so AES-GCM authentication fails on it; the keyring moves on to
+    // the good EDK and succeeds.
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# The keyring MUST perform the following actions on each [encrypted data key](structures.md#encrypted-data-key)
+    //# in the input encrypted data key list, serially, until it successfully decrypts one.
+    //
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - It MUST use the [encrypt key](#encrypted-key) obtained from deserialization as the AES-GCM input ciphertext.
+    //
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - It MUST use the [authentication tag](#authentication-tag) obtained from deserialization as the AES-GCM input authentication tag.
     assert_eq!(
         decrypt_output
             .plaintext_data_key()
@@ -278,6 +344,11 @@ async fn test_on_decrypt_no_edks() {
         .await;
 
     let err = result.expect_err("an empty encrypted data key list must fail");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# If no decryption succeeds,
+    //# the keyring MUST fail
+    //# and MUST NOT modify the [decryption materials](structures.md#decryption-materials).
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
@@ -294,7 +365,14 @@ async fn test_on_encrypt_unserializable_encryption_context() {
         .await;
 
     let err = result.expect_err("an unserializable encryption context must fail on_encrypt");
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# If the keyring cannot serialize the encryption context, OnEncrypt MUST fail.
     assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# The keyring MUST attempt to serialize the [encryption materials'](structures.md#encryption-materials)
+    //# [encryption context](structures.md#encryption-context-1) according to the [encryption context serialization specification](structures.md#serialization).
     assert!(
         err.message
             .contains("failed to serialize the encryption context"),
@@ -322,6 +400,9 @@ async fn test_on_decrypt_unserializable_encryption_context() {
         .await;
 
     let err = result.expect_err("an unserializable encryption context must fail on_decrypt");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# If the keyring cannot serialize the encryption context, OnDecrypt MUST fail.
     assert_kind(&err, MaterialsErrorKind::KeyringFailed);
     assert!(
         err.message
@@ -352,6 +433,11 @@ async fn test_on_decrypt_with_existing_plaintext_data_key_fails() {
         .await;
 
     let err = result.expect_err("materials that already carry a plaintext data key must fail");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# If the decryption materials already contain a plaintext data key,
+    //# the keyring MUST fail
+    //# and MUST NOT modify the [decryption materials](structures.md#decryption-materials).
     assert_kind(&err, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
 }
 
@@ -374,6 +460,10 @@ async fn test_on_decrypt_unserializable_encryption_context_fails_before_edk_loop
         .await;
 
     let err = result.expect_err("serialization must be attempted before the EDK loop");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# The keyring MUST attempt to serialize the [decryption materials'](structures.md#decryption-materials)
+    //# [encryption context](structures.md#encryption-context-1) according to the [encryption context serialization specification](structures.md#serialization).
     assert_kind(&err, MaterialsErrorKind::KeyringFailed);
     assert!(
         err.message
@@ -399,6 +489,15 @@ async fn test_encrypted_data_key_wire_format() {
         .as_bytes()
         .len();
 
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# Based on the ciphertext output of the AES-GCM decryption,
+    //# the keyring MUST construct an [encrypted data key](structures.md#encrypted-data-key) with the following specifics:
+    //
+    //= spec/framework/keyring-interface.md#key-provider-id
+    //= type=test
+    //# The key provider ID MUST be a binary value
+    //# and SHOULD be equal to a UTF-8 encoding of the key namespace.
     assert_eq!(
         edk.key_provider_id, namespace,
         "the key provider ID is the keyring's key namespace"
@@ -418,6 +517,9 @@ async fn test_encrypted_data_key_wire_format() {
         "key provider info begins with the UTF-8 key name"
     );
     let tag_bits_offset = name_bytes.len();
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# - It MUST use an authentication tag bit of length specified by this keyring's [wrapping algorithm](#wrapping-algorithm).
     assert_eq!(
         &edk.key_provider_info[tag_bits_offset..tag_bits_offset + 4],
         &128u32.to_be_bytes(),
@@ -463,6 +565,16 @@ async fn test_round_trip_every_wrapping_algorithm() {
             .await
             .unwrap_or_else(|e| panic!("on_decrypt for {alg:?}: {e}"));
 
+        // Each algorithm uses a distinct wrapping key length, and the round
+        // trip only recovers the data key if that same wrapping key is used as
+        // the AES-GCM cipher key on both encrypt and decrypt.
+        //= spec/framework/raw-aes-keyring.md#onencrypt
+        //= type=test
+        //# - It MUST use this keyring's [wrapping key](#wrapping-key) as the AES-GCM cipher key.
+        //
+        //= spec/framework/raw-aes-keyring.md#ondecrypt
+        //= type=test
+        //# - It MUST use this keyring's [wrapping key](#wrapping-key) as the AES-GCM cipher key.
         assert_eq!(
             decrypt_output
                 .plaintext_data_key()
@@ -494,6 +606,16 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
         .await;
 
     let err = result.expect_err("a mismatched encryption context must fail authentication");
+    // Encrypting bound the original encryption context as the AES-GCM AAD, so
+    // decrypting with a different context fails authentication. This exercises
+    // the AAD on both the encrypt and decrypt sides.
+    //= spec/framework/raw-aes-keyring.md#onencrypt
+    //= type=test
+    //# - It MUST use the serialized [encryption context](structures.md#encryption-context-1) as the additional authenticated data (AAD).
+    //
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - It MUST use the serialized [encryption context](structures.md#encryption-context-1) as the AES-GCM AAD.
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
@@ -524,6 +646,9 @@ async fn test_on_decrypt_rejects_tampered_iv() {
         .await;
 
     let err = result.expect_err("a tampered IV must fail authentication");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - It MUST use the [IV](#iv) obtained from deserialization as the AES-GCM IV.
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
@@ -549,6 +674,9 @@ async fn test_on_decrypt_skips_edk_with_wrong_key_provider_id() {
         .await;
 
     let err = result.expect_err("an EDK from another provider must not be decrypted");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - The key provider ID of the encrypted data key MUST have a value equal to this keyring's [key namespace](./keyring-interface.md#key-namespace).
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
@@ -580,6 +708,9 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
         .await;
 
     let err = result.expect_err("a mismatched authentication tag length must not be decrypted");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - The [authentication tag length](#authentication-tag-length) obtained from the key provider information MUST have a value equal to the length specified by this keyring's [wrapping algorithm](#wrapping-algorithm).
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
@@ -610,6 +741,9 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
         .await;
 
     let err = result.expect_err("a mismatched IV length must not be decrypted");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - The [IV length](#iv-length) obtained from the encrypted data key's key provider information MUST have a value equal to the length specified by this keyring's [wrapping algorithm](#wrapping-algorithm).
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
@@ -635,6 +769,9 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
         .await;
 
     let err = result.expect_err("a ciphertext shorter than the tag must fail");
+    //= spec/framework/raw-aes-keyring.md#ondecrypt
+    //= type=test
+    //# - The [ciphertext](#ciphertext) and [key provider information](#key-provider-information) MUST be successfully deserialized.
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
     assert!(
         err.message.contains("insufficient data to decrypt"),
@@ -649,6 +786,9 @@ fn test_new_rejects_wrapping_key_length_mismatch() {
     // 16 bytes supplied for an algorithm that specifies 32.
     let err = RawAesKeyring::new(namespace, name, vec![0u8; 16], AesGcm::Aes256Gcm)
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
+    //= spec/framework/raw-aes-keyring.md#wrapping-algorithm
+    //= type=test
+    //# Initialization MUST fail if the length of the [wrapping key](#wrapping-key) does not match the length specified by the wrapping algorithm.
     assert_kind(&err, MaterialsErrorKind::Validation);
     assert!(
         err.message
@@ -666,6 +806,9 @@ fn test_new_accepts_every_wrapping_key_length() {
         (AesGcm::Aes192Gcm, 24),
         (AesGcm::Aes256Gcm, 32),
     ] {
+        //= spec/framework/raw-aes-keyring.md#wrapping-key
+        //= type=test
+        //# The length of the wrapping key MUST be 128, 192, or 256.
         assert_eq!(
             usize::from(alg.key_len()),
             expected_len,
@@ -686,6 +829,9 @@ fn test_new_rejects_reserved_aws_kms_key_namespace() {
     let (_, name) = namespace_and_name();
     let err = RawAesKeyring::new("aws-kms", name, vec![0u8; 32], AesGcm::Aes256Gcm)
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
+    //= spec/framework/raw-aes-keyring.md#changelog
+    //= type=test
+    //# - [Raw AES keyring MUST NOT accept a key namespace of "aws-kms".](https://github.com/awslabs/aws-encryption-sdk-specification/issues/101)
     assert_kind(&err, MaterialsErrorKind::Validation);
     assert!(
         err.message.contains("must not be or start with `aws-kms`"),
@@ -715,6 +861,10 @@ fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
         else {
             panic!("`{namespace}` must be rejected as reserved");
         };
+        //= spec/framework/keyring-interface.md#key-provider-id
+        //= type=test
+        //# This value MUST NOT be or start with "aws-kms"
+        //# unless this encrypted data key was produced by one of the [AWS KMS Keyrings](./aws-kms/).
         assert_kind(&err, MaterialsErrorKind::Validation);
     }
 }

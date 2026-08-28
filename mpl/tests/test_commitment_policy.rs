@@ -82,6 +82,9 @@ fn test_union_commitment_policy_enum_exposes_all_variants() {
 fn test_forbid_encrypt_allow_decrypt_default_is_alg_aes_256_gcm_iv12_tag16_no_kdf() {
     let default =
         CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt).default_algorithm_suite_id();
+    //= spec/framework/commitment-policy.md#esdk-forbid-encrypt-allow-decrypt
+    //= type=test
+    //# - `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` MUST be the default algorithm suite
     assert_eq!(default, AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
     // The spec also identifies this suite by raw bytes (`00 78`); cross-check.
     assert_eq!(default.specification().id(), [0x00, 0x78]);
@@ -91,6 +94,9 @@ fn test_forbid_encrypt_allow_decrypt_default_is_alg_aes_256_gcm_iv12_tag16_no_kd
 fn test_forbid_encrypt_allow_decrypt_encrypt_only_non_committing_suites() {
     let policy = CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt);
     // Positive: a suite with Key Commitment value False is allowed.
+    //= spec/framework/commitment-policy.md#esdk-forbid-encrypt-allow-decrypt
+    //= type=test
+    //# - [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of False
     assert!(
         policy.allows_for_encrypt(NON_COMMITTING),
         "non-committing suite must be allowed under FORBID_ENCRYPT"
@@ -114,6 +120,9 @@ fn test_forbid_encrypt_allow_decrypt_encrypt_only_non_committing_suites() {
 fn test_forbid_encrypt_allow_decrypt_decrypt_supports_all_suites() {
     let policy = CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt);
     // Both committing and non-committing suites must be allowed for decrypt.
+    //= spec/framework/commitment-policy.md#esdk-forbid-encrypt-allow-decrypt
+    //= type=test
+    //# - [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST support all algorithm suites
     assert!(policy.allows_for_decrypt(NON_COMMITTING));
     assert!(policy.allows_for_decrypt(NON_COMMITTING_HKDF));
     assert!(policy.allows_for_decrypt(COMMITTING));
@@ -130,6 +139,9 @@ fn test_require_encrypt_allow_decrypt_default_id_is_05_78() {
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
     );
     // Raw byte assertion — the spec quote uses the byte id directly.
+    //= spec/framework/commitment-policy.md#esdk-require-encrypt-allow-decrypt
+    //= type=test
+    //# - `05 78` MUST be the default algorithm suite
     assert_eq!(default.specification().id(), [0x05, 0x78]);
 }
 
@@ -137,6 +149,9 @@ fn test_require_encrypt_allow_decrypt_default_id_is_05_78() {
 fn test_require_encrypt_allow_decrypt_encrypt_only_committing_suites() {
     let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt);
     // Positive: committing suites are allowed.
+    //= spec/framework/commitment-policy.md#esdk-require-encrypt-allow-decrypt
+    //= type=test
+    //# - [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of True
     assert!(
         policy.allows_for_encrypt(COMMITTING),
         "committing suite must be allowed under REQUIRE_ENCRYPT"
@@ -159,6 +174,9 @@ fn test_require_encrypt_allow_decrypt_encrypt_only_committing_suites() {
 #[test]
 fn test_require_encrypt_allow_decrypt_decrypt_supports_all_suites() {
     let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt);
+    //= spec/framework/commitment-policy.md#esdk-require-encrypt-allow-decrypt
+    //= type=test
+    //# - [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST support all algorithm suites
     assert!(policy.allows_for_decrypt(NON_COMMITTING));
     assert!(policy.allows_for_decrypt(NON_COMMITTING_HKDF));
     assert!(policy.allows_for_decrypt(COMMITTING));
@@ -173,12 +191,18 @@ fn test_require_encrypt_require_decrypt_default_id_is_05_78() {
         default,
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
     );
+    //= spec/framework/commitment-policy.md#esdk-require-encrypt-require-decrypt
+    //= type=test
+    //# - `05 78` MUST be the default algorithm suite
     assert_eq!(default.specification().id(), [0x05, 0x78]);
 }
 
 #[test]
 fn test_require_encrypt_require_decrypt_encrypt_only_committing_suites() {
     let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt);
+    //= spec/framework/commitment-policy.md#esdk-require-encrypt-require-decrypt
+    //= type=test
+    //# - [Get Encryption Materials](./cmm-interface.md#get-encryption-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of True
     assert!(policy.allows_for_encrypt(COMMITTING));
     assert!(policy.allows_for_encrypt(COMMITTING_NO_SIG));
     assert!(!policy.allows_for_encrypt(NON_COMMITTING));
@@ -189,6 +213,9 @@ fn test_require_encrypt_require_decrypt_encrypt_only_committing_suites() {
 fn test_require_encrypt_require_decrypt_decrypt_only_committing_suites() {
     let policy = CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt);
     // Positive: committing suites are allowed.
+    //= spec/framework/commitment-policy.md#esdk-require-encrypt-require-decrypt
+    //= type=test
+    //# - [Decrypt Materials](./cmm-interface.md#decrypt-materials) MUST only support algorithm suites that have a [Key Commitment](./algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) value of True
     assert!(policy.allows_for_decrypt(COMMITTING));
     assert!(policy.allows_for_decrypt(COMMITTING_NO_SIG));
     // Negative: non-committing suites are forbidden.

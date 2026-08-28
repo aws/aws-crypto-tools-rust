@@ -67,6 +67,9 @@ impl EncryptionContext {
     /// Serialize the encryption context to bytes.
     ///
     pub fn serialize(&self) -> Result<Vec<u8>, MaterialsError> {
+        //= spec/framework/structures.md#serialization
+        //# If the encryption context is empty, its serialization MUST be
+        //# an empty byte sequence.
         if self.0.is_empty() {
             return Ok(Vec::new());
         }
@@ -81,8 +84,16 @@ impl EncryptionContext {
                 self.0.len()
             )));
         };
+        //= spec/framework/structures.md#serialization
+        //# If the encryption context is not empty, its serialization MUST
+        //# take the following form:
         result.extend_from_slice(&count.to_be_bytes());
 
+        // BTreeMap iterates keys in ascending byte order, equal to ascending
+        // UTF-8 encoded binary value.
+        //= spec/framework/structures.md#key-value-pair-entries
+        //# These entries MUST be sorted, by key,
+        //# in ascending order according to the UTF-8 encoded binary value.
         for (key, value) in &self.0 {
             let Ok(key_len) = u16::try_from(key.len()) else {
                 return Err(MaterialsError::new(format!(
@@ -116,6 +127,8 @@ impl EncryptionContext {
         }
 
         let count = u16::from_be_bytes([bytes[0], bytes[1]]);
+        //= spec/framework/structures.md#key-value-pair-count
+        //# The value of this field MUST be greater than 0.
         if count == 0 {
             return Err(MaterialsError::new(
                 "Key-value pair count must be greater than 0",
@@ -152,6 +165,8 @@ impl EncryptionContext {
             let value = bytes[offset..val_end].to_vec();
             offset = val_end;
 
+            //= spec/framework/structures.md#key-value-pair-entries
+            //# This sequence MUST NOT contain duplicate entries.
             match map.entry(key) {
                 Entry::Occupied(occupied) => {
                     return Err(MaterialsError::new(format!(

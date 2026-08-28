@@ -145,6 +145,11 @@ async fn test_get_encryption_materials_does_not_mutate_callers_ec() {
         .with_algorithm_suite_id(signing_suite());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let returned_ec = materials.encryption_context();
+    // The caller's original EC entry survives in the returned materials, proving the CMM added to a copy.
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# Adding the key `aws-crypto-public-key` SHOULD be done to a copy of the encryption context
+    //# so that the caller's encryption context is not mutated.
     assert_eq!(
         returned_ec.get(b"user-key").map(Vec::as_slice),
         Some(b"user-value".as_slice()),
@@ -167,6 +172,11 @@ async fn test_get_encryption_materials_fails_when_ec_already_has_aws_crypto_publ
         .get_encryption_materials(request)
         .await
         .expect_err("must fail");
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# If the encryption context included in the [encryption materials request](cmm-interface.md#encryption-materials-request)
+    //# already contains the `aws-crypto-public-key` key,
+    //# this operation MUST fail rather than overwrite the associated value.
     assert_eq!(err.kind, MaterialsErrorKind::Validation);
     assert_eq!(keyring.encrypt_calls.load(Ordering::SeqCst), 0);
 }
@@ -177,6 +187,11 @@ async fn test_get_encryption_materials_no_suite_uses_commitment_policy_default()
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# - If the [encryption materials request](cmm-interface.md#encryption-materials-request) does not contain an algorithm suite,
+    //# the operation MUST add the default algorithm suite for the [commitment policy](./commitment-policy.md#supported-commitment-policy-enum)
+    //# as the algorithm suite in the encryption materials returned.
     assert_eq!(
         materials.algorithm_suite_id(),
         allow_policy().default_algorithm_suite_id()
@@ -197,6 +212,10 @@ async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
         .get_encryption_materials(request)
         .await
         .expect_err("must fail");
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# - If the [encryption materials request](cmm-interface.md#encryption-materials-request) does contain an algorithm suite,
+    //# the request MUST fail if the algorithm suite is not supported by the [commitment policy](./commitment-policy.md#supported-commitment-policy-enum) on the request.
     assert_eq!(err.kind, MaterialsErrorKind::Validation);
 }
 
@@ -208,6 +227,10 @@ async fn test_get_encryption_materials_returns_same_suite_when_request_specifies
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(suite);
     let materials = cmm.get_encryption_materials(request).await.unwrap();
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# - If the [encryption materials request](cmm-interface.md#encryption-materials-request) does contain an algorithm suite,
+    //# the encryption materials returned MUST contain the same algorithm suite.
     assert_eq!(materials.algorithm_suite_id(), suite);
 }
 
@@ -227,6 +250,11 @@ async fn test_get_encryption_materials_signing_suite_attaches_generated_signing_
         .expect("must have aws-crypto-public-key")
         .clone();
     let vk = BASE64_STANDARD.decode(&vk_b64).unwrap();
+    // Signing with the generated key then verifying with the published key proves a signing key was generated.
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# If the algorithm suite contains a [signing algorithm](algorithm-suites.md#signature-algorithm),
+    //# the default CMM MUST Generate a [signing key](structures.md#signing-key).
     assert_signing_key_composes(EcdsaSignatureAlgorithm::EcdsaP384, sk.as_bytes(), &vk);
 }
 
@@ -238,6 +266,13 @@ async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_k
         .with_algorithm_suite_id(signing_suite());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let ec = materials.encryption_context();
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# If the algorithm suite contains a [signing algorithm](algorithm-suites.md#signature-algorithm),
+    //# the default CMM MUST Add the key-value pair of
+    //# key `aws-crypto-public-key`,
+    //# value `base64-encoded public verification key`
+    //# to the [encryption context](structures.md#encryption-context).
     let vk_b64 = ec
         .get(b"aws-crypto-public-key")
         .expect("must have aws-crypto-public-key");
@@ -252,6 +287,11 @@ async fn test_get_encryption_materials_calls_keyring_on_encrypt_once() {
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(non_signing_suite());
     cmm.get_encryption_materials(request).await.unwrap();
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# On each call to Get Encryption Materials,
+    //# the default CMM MUST make a call to its [keyring's](#keyring)
+    //# [On Encrypt](keyring-interface.md#onencrypt) operation.
     assert_eq!(keyring.encrypt_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -264,6 +304,11 @@ async fn test_get_encryption_materials_returns_pdk_set_by_keyring() {
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     // Mock keyring sets sentinel 0xAA PDK; assertion proves CMM passed it through unchanged.
     let pdk = materials.plaintext_data_key().expect("PDK must be present");
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# The default CMM MUST obtain the Plaintext Data Key from the
+    //# On Encrypt Response and include it in the
+    //# [encryption materials](structures.md#encryption-materials) returned.
     assert_eq!(pdk.as_bytes(), vec![0xAA; 32]);
 }
 
@@ -276,6 +321,12 @@ async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     // Mock keyring injects EDK with known provider ID; assertion proves CMM passed it through unchanged.
     assert_eq!(materials.encrypted_data_keys().len(), 1);
+    //= spec/framework/default-cmm.md#get-encryption-materials
+    //= type=test
+    //# The default CMM MUST obtain the
+    //# [Encrypted Data Keys](structures.md#encrypted-data-keys)
+    //# from the On Encrypt Response and include it
+    //# in the [encryption materials](structures.md#encryption-materials) returned.
     assert_eq!(
         materials.encrypted_data_keys()[0].key_provider_id,
         "mock-keyring"
@@ -300,6 +351,12 @@ async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
     let vk = materials
         .verification_key()
         .expect("verification key must be present");
+    // The VK placed in the EC is recovered on the materials, proving the CMM extracted it from aws-crypto-public-key.
+    //= spec/framework/default-cmm.md#decrypt-materials
+    //= type=test
+    //# If the algorithm suite contains a [signing algorithm](algorithm-suites.md#signature-algorithm),
+    //# the default CMM MUST extract the verification key
+    //# from the encryption context under the reserved `aws-crypto-public-key` key.
     assert_eq!(vk.as_bytes(), &vk_raw);
 }
 
@@ -314,6 +371,10 @@ async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
         EncryptionContext::new(),
     );
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
+    //= spec/framework/default-cmm.md#decrypt-materials
+    //= type=test
+    //# If this key is not present in the encryption context, the operation MUST fail
+    //# without returning any decryption materials.
     assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyMissing);
 }
 
@@ -325,6 +386,11 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
     ec.insert(b"aws-crypto-public-key".to_vec(), b"some-value".to_vec());
     let request = DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], ec);
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
+    //= spec/framework/default-cmm.md#decrypt-materials
+    //= type=test
+    //# If the algorithm suite does not contain a [signing algorithm](algorithm-suites.md#signature-algorithm),
+    //# but the encryption context includes the reserved `aws-crypto-public-key` key,
+    //# the operation MUST fail without returning any decryption materials.
     assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyUnexpected);
 }
 
@@ -340,6 +406,9 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
         EncryptionContext::new(),
     );
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
+    //= spec/framework/default-cmm.md#decrypt-materials
+    //= type=test
+    //# The request MUST fail if the algorithm suite on the request is not supported by the [commitment policy](./commitment-policy.md#supported-commitment-policy-enum) on the request.
     assert_eq!(err.kind, MaterialsErrorKind::Validation);
 }
 
@@ -354,6 +423,11 @@ async fn test_decrypt_materials_calls_keyring_on_decrypt_once() {
         EncryptionContext::new(),
     );
     cmm.decrypt_materials(request).await.unwrap();
+    //= spec/framework/default-cmm.md#decrypt-materials
+    //= type=test
+    //# On each call to Decrypt Materials,
+    //# the default CMM MUST make a call to its [keyring's](#keyring)
+    //# [On Decrypt](keyring-interface.md#ondecrypt) operation.
     assert_eq!(keyring.decrypt_calls.load(Ordering::SeqCst), 1);
 }
 
@@ -370,6 +444,11 @@ async fn test_decrypt_materials_returns_pdk_set_by_keyring() {
     let materials = cmm.decrypt_materials(request).await.unwrap();
     // Mock keyring sets sentinel 0xAA PDK; assertion proves CMM passed it through unchanged.
     let pdk = materials.plaintext_data_key().expect("PDK must be present");
+    //= spec/framework/default-cmm.md#decrypt-materials
+    //= type=test
+    //# The default CMM MUST obtain the Plaintext Data Key from
+    //# the On Decrypt response and include it in the decrypt
+    //# materials returned.
     assert_eq!(pdk.as_bytes(), vec![0xAA; 32]);
 }
 
@@ -393,6 +472,10 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
         33,
         "P-256 compressed point must be 33 bytes"
     );
+    // Verifying with the published aws-crypto-public-key succeeds for a signature from the signing key, proving they correspond.
+    //= spec/framework/cmm-interface.md#get-encryption-materials
+    //= type=test
+    //# If it does, the mapped value SHOULD be the signature verification key corresponding to the signing key.
     assert_signing_key_composes(EcdsaSignatureAlgorithm::EcdsaP256, sk.as_bytes(), &vk_bytes);
 }
 
@@ -450,6 +533,7 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
         .decrypt_materials(request)
         .await
         .expect("matching values must succeed");
+    // Matching reproduced-EC values pass the comparison, so decryption materials are produced.
     assert!(materials.plaintext_data_key().is_some());
     assert_eq!(
         ec_pairs(materials.encryption_context()),
@@ -484,6 +568,17 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
         .decrypt_materials(request)
         .await
         .expect_err("mismatched reproduced-EC value must fail");
+    //= spec/framework/cmm-interface.md#decrypt-materials
+    //= type=test
+    //# The CMM MUST validate the [Encryption Context](structures.md#encryption-context)
+    //# by comparing it to the customer supplied [Reproduced Encryption Context](structures.md#encryption-context)
+    //# in [decrypt materials request](#decrypt-materials-request).
+    //
+    //= spec/framework/cmm-interface.md#decrypt-materials
+    //= type=test
+    //# For every key that exists in both [Reproduced Encryption Context](structures.md#encryption-context)
+    //# and [Encryption Context](structures.md#encryption-context),
+    //# the values MUST be equal or the operation MUST fail.
     assert_eq!(err.kind, MaterialsErrorKind::EncryptionContextValueMismatch);
 }
 
@@ -511,11 +606,21 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
         .await
         .expect("reproduced-only key must not fail");
     assert!(materials.plaintext_data_key().is_some());
+    //= spec/framework/cmm-interface.md#decrypt-materials
+    //= type=test
+    //# - All key-value pairs that exist in [Reproduced Encryption Context](structures.md#encryption-context)
+    //# but do not exist in encryption context on the [decrypt materials request](#decrypt-materials-request)
+    //# SHOULD be appended to the decryption materials.
     assert_eq!(
         ec_pairs(materials.encryption_context()),
         vec![("only-in-reproduced".to_string(), "v".to_string())],
         "the reproduced-only pair must be appended to the context the keyring receives"
     );
+    //= spec/framework/cmm-interface.md#decrypt-materials
+    //= type=test
+    //# - This set MUST include all keys added to the decryption materials encryption context
+    //# that existed in the [decrypt materials request's](#decrypt-materials-request) reproduced encryption context
+    //# but did not exist in the [decrypt materials request's](#decrypt-materials-request) encryption context.
     assert_eq!(
         reck_keys(&materials),
         vec!["only-in-reproduced".to_string()],

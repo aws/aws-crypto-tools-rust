@@ -16,11 +16,17 @@ use crate::structures::{AlgorithmSuiteId, CommitmentPolicy, EncryptedDataKey, En
 #[derive(Debug, Clone)]
 pub struct EncryptionMaterialsRequest {
     /// Encryption context provided by the customer. MAY be empty.
+    //= spec/framework/cmm-interface.md#encryption-materials-request
+    //= type=implication
+    //# - The encryption context provided MAY be empty.
     encryption_context: EncryptionContext,
     /// Commitment policy to enforce when selecting the algorithm suite.
     commitment_policy: CommitmentPolicy,
     /// Optional explicit algorithm suite. If `None`, the CMM picks based on
     /// the commitment policy.
+    //= spec/framework/cmm-interface.md#encryption-materials-request
+    //= type=implication
+    //# The encryption request MAY include the following:
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     /// Optional set of encryption context keys that MUST be reproducible at
     /// decrypt time.
@@ -35,6 +41,8 @@ impl EncryptionMaterialsRequest {
     /// fields. Optional fields default to `None`; chain `with_*` setters to
     /// supply them.
     pub fn new(encryption_context: EncryptionContext, commitment_policy: CommitmentPolicy) -> Self {
+        //= spec/framework/cmm-interface.md#encryption-materials-request
+        //# The encryption materials request MUST include the following:
         Self {
             encryption_context,
             commitment_policy,
@@ -104,9 +112,15 @@ pub struct DecryptMaterialsRequest {
     /// Encrypted data keys parsed from the message header.
     encrypted_data_keys: Vec<EncryptedDataKey>,
     /// Encryption context parsed from the message header. MAY be empty.
+    //= spec/framework/cmm-interface.md#decrypt-materials-request
+    //= type=implication
+    //# - The encryption context provided MAY be empty.
     encryption_context: EncryptionContext,
     /// Optional reproduced encryption context the customer expects to match
     /// the message's.
+    //= spec/framework/cmm-interface.md#decrypt-materials-request
+    //= type=implication
+    //# The decrypt materials request MAY include the following:
     reproduced_encryption_context: Option<EncryptionContext>,
 }
 
@@ -120,6 +134,8 @@ impl DecryptMaterialsRequest {
         encrypted_data_keys: Vec<EncryptedDataKey>,
         encryption_context: EncryptionContext,
     ) -> Self {
+        //= spec/framework/cmm-interface.md#decrypt-materials-request
+        //# The decrypt materials request MUST include the following:
         Self {
             algorithm_suite_id,
             commitment_policy,

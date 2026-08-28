@@ -14,6 +14,16 @@ use std::fmt;
 /// This enum exposes only the ESDK supported formats; DBE and S3EC suites are
 /// not implemented (see the `type=exception` annotations on this declaration).
 /// Construct an `AlgorithmSuite` from a variant via [`Self::specification`].
+//= spec/framework/algorithm-suites.md#supported-algorithm-suites-enum
+//= type=implication
+//# The Material Providers Library MUST provide
+//# an ENUM that is the super set of all the [supported format algorithm suites enum](#supported-format-algorithm-suites-enum)
+//# called the Algorithm Suite ENUM.
+//
+//= spec/framework/algorithm-suites.md#supported-format-algorithm-suites-enum
+//= type=implication
+//# The Material Providers Library MUST provide
+//# a set of algorithm suite ENUM for each [supported format](#supported-format).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlgorithmSuiteId {
     /// 00 14 — ESDK.ALG_AES_128_GCM_IV12_TAG16_NO_KDF
@@ -59,6 +69,8 @@ impl AlgorithmSuiteId {
                 asymmetric_signature_algorithm: None,
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x01,
+                //= spec/framework/algorithm-suites.md#algorithm-suite-data-length
+                //# The field MAY be length 0.
                 algorithm_suite_data_length: 0,
             },
             Self::AlgAes192GcmIv12Tag16NoKdf => AlgorithmSuite {
@@ -186,6 +198,8 @@ impl AlgorithmSuiteId {
                 asymmetric_signature_algorithm: None,
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
+                //= spec/framework/algorithm-suites.md#supported-algorithm-suite-data
+                //# - Algorithm Suite 04 78 MUST store the commit key in the suite data
                 algorithm_suite_data_length: 32,
             },
             Self::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => AlgorithmSuite {
@@ -200,6 +214,8 @@ impl AlgorithmSuiteId {
                 asymmetric_signature_algorithm: Some(AsymmetricSignatureAlgorithm::EcdsaP384),
                 symmetric_signature_algorithm: None,
                 message_format_version: 0x02,
+                //= spec/framework/algorithm-suites.md#supported-algorithm-suite-data
+                //# - Algorithm Suite 05 78 MUST store the commit key in the suite data
                 algorithm_suite_data_length: 32,
             },
         }
@@ -211,6 +227,16 @@ impl AlgorithmSuiteId {
     /// value `00 00` is never produced.
     //
     pub const fn id_bytes(self) -> [u8; 2] {
+        //= spec/framework/algorithm-suites.md#algorithm-suite-id
+        //# A 2-byte hex value that MUST uniquely identify an algorithm suite.
+        //
+        //= spec/framework/algorithm-suites.md#supported-algorithm-suites
+        //# Algorithm Suite ID MUST be a unique hex value across all supported algorithm suites.
+        //
+        //= spec/framework/algorithm-suites.md#supported-algorithm-suites
+        //# The value `00 00` is reserved
+        //# and MUST NOT be used
+        //# as an Algorithm Suite ID in the future.
         self.specification().id
     }
 
@@ -240,6 +266,9 @@ impl AlgorithmSuiteId {
 ///
 /// This struct is opaque: there is no public constructor. Construct one by
 /// calling [`AlgorithmSuiteId::specification`] on a chosen suite.
+//= spec/framework/algorithm-suites.md#structure
+//= type=implication
+//# The fields described below are REQUIRED to be specified by algorithm suites, unless otherwise specified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlgorithmSuite {
     id: [u8; 2],
@@ -250,7 +279,13 @@ pub struct AlgorithmSuite {
     authentication_tag_length: usize,
     encryption_kdf: KeyDerivationAlgorithm,
     commit_kdf: Option<KeyDerivationAlgorithm>,
+    //= spec/framework/algorithm-suites.md#asymmetric-signature-algorithm
+    //= type=implication
+    //# This field is OPTIONAL.
     asymmetric_signature_algorithm: Option<AsymmetricSignatureAlgorithm>,
+    //= spec/framework/algorithm-suites.md#symmetric-signature-algorithm
+    //= type=implication
+    //# This field is OPTIONAL.
     symmetric_signature_algorithm: Option<SymmetricSignatureAlgorithm>,
     message_format_version: u8,
     algorithm_suite_data_length: usize,
@@ -384,6 +419,9 @@ pub enum SymmetricSignatureAlgorithm {
 
 /// Cryptographic format identifier. Only the ESDK format is implemented in this
 /// MPL — uniqueness of short and long name is trivial (single variant).
+//= spec/framework/algorithm-suites.md#supported-formats
+//= type=implication
+//# Both short and long name MUST be unique.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
     /// AWS Encryption SDK Message Format / "ESDK".
@@ -409,6 +447,13 @@ impl Format {
 // ============================================================================
 
 /// Plaintext data key (secret).
+//= spec/framework/structures.md#plaintext-data-key
+//= type=implication
+//# The plaintext data key SHOULD be stored as immutable data.
+//
+//= spec/framework/structures.md#plaintext-data-key-1
+//= type=implication
+//# The plaintext data key SHOULD be stored as immutable data.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PlaintextDataKey(Vec<u8>);
 
@@ -432,6 +477,11 @@ impl PlaintextDataKey {
     /// Zero the plaintext data key material.
     //
     pub fn zeroize(&mut self) {
+        //= spec/framework/structures.md#plaintext-data-key
+        //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
+        //
+        //= spec/framework/structures.md#plaintext-data-key-1
+        //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
         let ptr = self.0.as_mut_ptr();
         let len = self.0.len();
         for i in 0..len {
@@ -473,6 +523,8 @@ impl SigningKey {
 
 impl fmt::Debug for SigningKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //= spec/framework/structures.md#signing-key
+        //# The value of this key MUST be kept secret.
         write!(f, "SigningKey([REDACTED; {} bytes])", self.0.len())
     }
 }
@@ -524,6 +576,11 @@ impl SymmetricSigningKey {
 impl fmt::Debug for SymmetricSigningKey {
     //
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //= spec/framework/structures.md#symmetric-signing-key
+        //# This value MUST be kept secret.
+        //
+        //= spec/framework/structures.md#symmetric-signing-keys
+        //# The value of keys in this list MUST be kept secret.
         write!(f, "SymmetricSigningKey([REDACTED; {} bytes])", self.0.len())
     }
 }

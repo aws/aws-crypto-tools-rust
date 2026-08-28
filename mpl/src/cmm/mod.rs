@@ -19,6 +19,15 @@ pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
 
 #[async_trait]
+//= spec/framework/cmm-interface.md#overview
+//# The CMM interface describes the interface that all CMMs MUST implement.
+//
+//= spec/framework/cmm-interface.md#behaviors
+//# The CMM Interface MUST support the following behaviors:
+//
+//= spec/framework/cmm-interface.md#supported-cmms
+//= type=implication
+//# Note: A user MAY create their own custom CMM.
 pub trait Cmm: Send + Sync {
     /// Assemble encryption materials for an encrypt request. Mirrors the
     /// `Get Encryption Materials` behavior of the

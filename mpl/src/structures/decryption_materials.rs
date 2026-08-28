@@ -13,11 +13,17 @@ use super::error::MaterialsError;
 
 /// Materials needed for decryption.
 ///
+//= spec/framework/structures.md#fields
+//= type=implication
+//# This structure MUST include the following fields:
 #[derive(Debug)]
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
     required_encryption_context_keys: BTreeSet<Vec<u8>>,
+    //= spec/framework/structures.md#fields
+    //= type=implication
+    //# This structure MAY include any of the following fields:
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -37,6 +43,9 @@ impl DecryptionMaterials {
 
         // Required encryption context keys must be a subset of encryption context keys
         for key in &required_encryption_context_keys {
+            //= spec/framework/structures.md#required-encryption-context-keys-1
+            //# Every key in Required Encryption Context Keys
+            //# MUST be a key in the [encryption context](#encryption-context-2).
             if !encryption_context.contains_key(key) {
                 return Err(MaterialsError::new(format!(
                     "Required encryption context key {:?} not found in encryption context",
@@ -54,6 +63,9 @@ impl DecryptionMaterials {
 
         // If asymmetric signing, the verification key (when present) MUST match
         // the suite's asymmetric signature algorithm SEC1-compressed length.
+        //= spec/framework/structures.md#verification-key
+        //# The verification key MUST fit the specification for the [asymmetric signature algorithm](algorithm-suites.md#asymmetric-signature-algorithm)
+        //# included in this decryption material's [algorithm suite](#algorithm-suite-1).
         if let Some(ref vk) = verification_key
             && let Some(expected_len) = suite.verification_key_length()
             && vk.len() != expected_len
@@ -66,6 +78,9 @@ impl DecryptionMaterials {
         }
 
         // If no symmetric signing, symmetric signing key must not be included
+        //= spec/framework/structures.md#symmetric-signing-key
+        //# If the algorithm suite does not contain a symmetric signing algorithm,
+        //# the symmetric signing key MUST NOT be included in the materials.
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_key.is_some() {
             return Err(MaterialsError::new(
                 "Symmetric signing key must not be present when algorithm suite has no symmetric signing",
@@ -115,11 +130,17 @@ impl DecryptionMaterials {
         let has_key = self
             .encryption_context
             .contains_key(b"aws-crypto-public-key");
+        //= spec/framework/structures.md#encryption-context-2
+        //# If a [decryption materials](#decryption-materials) contains a [verification key](#verification-key),
+        //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
         if self.verification_key.is_some() && !has_key {
             return Err(MaterialsError::new(
                 "Encryption context MUST include 'aws-crypto-public-key' when verification key is present",
             ));
         }
+        //= spec/framework/structures.md#encryption-context-2
+        //# If a [decryption materials](#decryption-materials) does not contain a [verification key](#verification-key),
+        //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
         if self.verification_key.is_none() && has_key {
             return Err(MaterialsError::new(
                 "Encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",

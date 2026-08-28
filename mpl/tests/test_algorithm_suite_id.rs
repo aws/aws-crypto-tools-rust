@@ -89,6 +89,13 @@ fn test_hex_ids_are_unique_across_all_suites() {
     let mut seen = HashSet::new();
     for suite in ALL_SUITES {
         let id = suite.id_bytes();
+        //= spec/framework/algorithm-suites.md#algorithm-suite-id
+        //= type=test
+        //# A 2-byte hex value that MUST uniquely identify an algorithm suite.
+        //
+        //= spec/framework/algorithm-suites.md#supported-algorithm-suites
+        //= type=test
+        //# Algorithm Suite ID MUST be a unique hex value across all supported algorithm suites.
         assert!(
             seen.insert(id),
             "hex id {:02X?} appears more than once across the suite enum",
@@ -102,6 +109,11 @@ fn test_hex_ids_are_unique_across_all_suites() {
 fn test_reserved_id_00_00_is_not_used() {
     for suite in ALL_SUITES {
         let id = suite.id_bytes();
+        //= spec/framework/algorithm-suites.md#supported-algorithm-suites
+        //= type=test
+        //# The value `00 00` is reserved
+        //# and MUST NOT be used
+        //# as an Algorithm Suite ID in the future.
         assert_ne!(
             id,
             [0x00, 0x00],
@@ -456,6 +468,9 @@ fn test_suite_04_78_stores_commit_key_in_suite_data() {
     // also 32 bytes, matching the commit-key output width.
     assert_eq!(spec.encryption_key_length(), 32);
     assert_eq!(spec.commit_kdf(), Some(KeyDerivationAlgorithm::HkdfSha512));
+    //= spec/framework/algorithm-suites.md#supported-algorithm-suite-data
+    //= type=test
+    //# - Algorithm Suite 04 78 MUST store the commit key in the suite data
     assert_eq!(spec.algorithm_suite_data_length(), 32);
 }
 
@@ -465,6 +480,9 @@ fn test_suite_05_78_stores_commit_key_in_suite_data() {
     assert_eq!(spec.id(), [0x05, 0x78]);
     assert_eq!(spec.encryption_key_length(), 32);
     assert_eq!(spec.commit_kdf(), Some(KeyDerivationAlgorithm::HkdfSha512));
+    //= spec/framework/algorithm-suites.md#supported-algorithm-suite-data
+    //= type=test
+    //# - Algorithm Suite 05 78 MUST store the commit key in the suite data
     assert_eq!(spec.algorithm_suite_data_length(), 32);
 }
 
@@ -483,6 +501,9 @@ fn test_algorithm_suite_data_length_may_be_zero() {
         AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
     ];
     for suite in zero_length_suites {
+        //= spec/framework/algorithm-suites.md#algorithm-suite-data-length
+        //= type=test
+        //# The field MAY be length 0.
         assert_eq!(
             suite.specification().algorithm_suite_data_length(),
             0,

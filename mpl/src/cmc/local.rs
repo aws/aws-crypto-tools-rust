@@ -83,9 +83,19 @@ impl LocalCmc {
         // `NonZeroUsize::new` returns `None` for `0`; the resulting
         // `Option<LruCache>` is `None` for the no-store cache and
         // `Some(LruCache::new(cap))` otherwise.
+        //= spec/framework/local-cryptographic-materials-cache.md#entry-capacity
+        //# The local CMC MUST accept entry capacity values between zero
+        //# and an implementation-defined maximum, inclusive.
         let inner = NonZeroUsize::new(entry_capacity).map(LruCache::new);
         Ok(Self {
+            //= spec/framework/local-cryptographic-materials-cache.md#initialization
+            //= type=implication
+            //# On initialization of the local CMC,
+            //# the caller MUST provide the following:
             entry_capacity,
+            //= spec/framework/local-cryptographic-materials-cache.md#initialization
+            //= type=implication
+            //# The local CMC MUST also define the following:
             entry_pruning_tail_size,
             inner: Mutex::new(inner),
             now: Arc::new(now),
@@ -125,11 +135,21 @@ impl LocalCmc {
     /// and is a `DoubleEndedIterator`, so `iter().rev().take(N)` gives
     /// the `N` least-recently-used entries.
     fn prune_tail(&self, cache: &mut Inner) {
+        //= spec/framework/local-cryptographic-materials-cache.md#entry-pruning-tail-size
+        //# The _entry pruning tail size_
+        //# is the number of least recently used entries that the local CMC
+        //# MUST check during [pruning](#pruning)
+        //# for TTL-expired entries to evict.
         let take_n = self.entry_pruning_tail_size.min(cache.len());
         if take_n == 0 {
             return;
         }
         let now = (self.now)();
+        //= spec/framework/local-cryptographic-materials-cache.md#pruning
+        //# To prune TTL-expired cache entries,
+        //# the local CMC MUST evict all TTL-expired entries
+        //# among the `N` least recently used entries,
+        //# where `N` is the [Entry Pruning Tail Size](#entry-pruning-tail-size).
         let to_remove: Vec<Vec<u8>> = cache
             .iter()
             .rev()
@@ -146,6 +166,8 @@ impl LocalCmc {
 #[async_trait]
 impl Cmc for LocalCmc {
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+        //= spec/framework/cryptographic-materials-cache.md#usage-metadata
+        //# Updating usage metadata SHOULD be atomic.
         let mut inner = self
             .inner
             .lock()
@@ -158,6 +180,20 @@ impl Cmc for LocalCmc {
         // `LruCache::put` evicts the LRU entry before insertion when the
         // cache is at capacity, keeping `len <= entry_capacity` at all
         // observation points.
+        //= spec/framework/cryptographic-materials-cache.md#put-cache-entry
+        //# The CMC MUST create a new cache entry for the specified cache ID.
+        //
+        //= spec/framework/cryptographic-materials-cache.md#put-cache-entry
+        //# The cache entry MUST include all [usage metadata](#usage-metadata)
+        //# since this information can not be updated after the put operation.
+        //
+        //= spec/framework/local-cryptographic-materials-cache.md#entry-capacity
+        //# The local CMC MUST NOT store more entries than this value,
+        //# except temporarily while performing a Put Cache Entry operation.
+        //
+        //= spec/framework/local-cryptographic-materials-cache.md#put-cache-entry
+        //# However, before returning, the local CMC MUST evict least-recently used entries
+        //# until the number of stored entries does not exceed the entry capacity.
         cache.put(cache_id.to_vec(), Arc::new(entry));
         Ok(())
     }
@@ -171,11 +207,17 @@ impl Cmc for LocalCmc {
             return Ok(None);
         };
 
+        //= spec/framework/local-cryptographic-materials-cache.md#get-cache-entry
+        //# When performing a Get Cache Entry operation,
+        //# the local CMC MUST [prune TTL-expired cache entries](#pruning).
         self.prune_tail(cache);
 
         let now = (self.now)();
         // Peek first (no LRU promotion) so a TTL-expired entry is not
         // promoted before being evicted.
+        //= spec/framework/cryptographic-materials-cache.md#get-cache-entry
+        //# The CMC MUST validate that the cache entry
+        //# has not exceeded it's stored [TTL](#time-to-live-ttl).
         let is_fresh = cache.peek(cache_id).map(|entry| entry.expiry_time > now);
         match is_fresh {
             // Fresh: promote to MRU via `get` and hand back an Arc clone.
@@ -184,6 +226,13 @@ impl Cmc for LocalCmc {
             // have already removed this entry if it was in the tail
             // window; if so, `pop` is a no-op.
             Some(false) => {
+                //= spec/framework/cryptographic-materials-cache.md#time-to-live-ttl
+                //# After a cache entry's TTL has elapsed,
+                //# we say that the entry is _TTL-expired_,
+                //# and a CMC MUST NOT return the entry to any caller.
+                //
+                //= spec/framework/local-cryptographic-materials-cache.md#get-cache-entry
+                //# The local CMC MUST NOT return any TTL-expired entry.
                 cache.pop(cache_id);
                 Ok(None)
             }

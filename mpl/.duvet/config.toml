@@ -1,0 +1,54 @@
+'$schema' = "https://awslabs.github.io/duvet/config/v0.4.0.json"
+
+[[source]]
+pattern = "./src/**/*.rs"
+
+[[source]]
+pattern = "./tests/**/*.rs"
+
+[[specification]]
+source = "spec/framework/algorithm-suites.md"
+
+[[specification]]
+source = "spec/framework/aws-kms/aws-kms-hierarchical-keyring.md"
+
+[[specification]]
+source = "spec/framework/aws-kms/aws-kms-mrk-match-for-decrypt.md"
+
+[[specification]]
+source = "spec/framework/branch-key-store.md"
+
+[[specification]]
+source = "spec/framework/cmm-interface.md"
+
+[[specification]]
+source = "spec/framework/commitment-policy.md"
+
+[[specification]]
+source = "spec/framework/cryptographic-materials-cache.md"
+
+[[specification]]
+source = "spec/framework/default-cmm.md"
+
+[[specification]]
+source = "spec/framework/keyring-interface.md"
+
+[[specification]]
+source = "spec/framework/local-cryptographic-materials-cache.md"
+
+[[specification]]
+source = "spec/framework/storm-tracking-cryptographic-materials-cache.md"
+
+[[specification]]
+source = "spec/framework/structures.md"
+
+[[specification]]
+source = "spec/framework/raw-aes-keyring.md"
+
+[report.html]
+enabled = true
+
+# Snapshot checking requires a committed snapshot file; this repo does not
+# commit one, so the CI duvet run generates and uploads the HTML report only.
+[report.snapshot]
+enabled = false

@@ -8,8 +8,14 @@ use super::error::MaterialsError;
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
+//= spec/framework/structures.md#structure-3
+//= type=implication
+//# This structure MUST include all of the following fields:
 #[derive(Clone)]
 pub struct BranchKeyMaterials {
+    //= spec/framework/structures.md#branch-key
+    //= type=implication
+    //# This key MUST be 32 bytes long.
     branch_key: [u8; 32],
     branch_key_id: String,
     branch_key_version: String,

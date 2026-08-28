@@ -58,6 +58,9 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
 
 /// Validates that an ARN is a usable AWS KMS Key ARN per the spec.
 pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
+    //= spec/framework/branch-key-store.md#aws-kms-configuration
+    //# This ARN MUST be a valid
+    //# [AWS KMS Key ARN](./aws-kms/aws-kms-key-arn.md#a-valid-aws-kms-arn).
     let parts = parse_arn(arn)?;
 
     if parts.service != "kms" {
@@ -67,6 +70,8 @@ pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
         ));
     }
 
+    //= spec/framework/branch-key-store.md#aws-kms-configuration
+    //# This ARN MUST NOT be an Alias.
     if parts.resource_type == "alias" {
         return Err(KeystoreError::new(
             KeystoreErrorKind::Configuration,
@@ -96,6 +101,9 @@ impl KmsConfiguration {
     /// Validates the configuration's ARN (if any) per the branch-key-store spec.
     pub fn validate(&self) -> Result<(), KeystoreError> {
         match self {
+            //= spec/framework/branch-key-store.md#aws-kms-configuration
+            //# To be clear, an KMS ARN for a Multi-Region Key MAY be provided to the `KMS Key ARN` configuration,
+            //# and a KMS ARN for non Multi-Region Key MAY be provided to the `KMS MRKey ARN` configuration.
             KmsConfiguration::KmsKeyArn(a) | KmsConfiguration::KmsMrKeyArn(a) => {
                 validate_kms_key_arn(a).map(|_| ())
             }

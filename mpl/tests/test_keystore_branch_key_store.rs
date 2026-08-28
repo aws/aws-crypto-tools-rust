@@ -120,6 +120,9 @@ async fn new_without_keystore_id_generates_v4_uuid() {
         .await
         .expect("construction with valid config must succeed");
 
+    //= spec/framework/branch-key-store.md#keystore-id
+    //= type=test
+    //# If one is not supplied, then a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt) MUST be used.
     let id = store.keystore_id();
     assert_eq!(id.len(), 36, "v4 UUID canonical form is 36 chars");
     let bytes = id.as_bytes();
@@ -221,6 +224,13 @@ async fn get_key_store_info_returns_configured_values() {
     let store = BranchKeyStore::new(cfg).await.unwrap();
 
     let info = store.get_key_store_info().unwrap();
+    //= spec/framework/branch-key-store.md#getkeystoreinfo
+    //= type=test
+    //# This operation MUST return the keystore information in this keystore configuration.
+    //
+    //= spec/framework/branch-key-store.md#getkeystoreinfo
+    //= type=test
+    //# This MUST include:
     assert_eq!(info.keystore_id, "my-id");
     assert_eq!(info.keystore_name, "my-table");
     assert_eq!(info.logical_keystore_name, "my-logical");
@@ -304,6 +314,10 @@ async fn create_key_with_branch_key_id_but_no_ec_fails() {
     let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
         .await
         .unwrap();
+    //= spec/framework/branch-key-store.md#createkey
+    //= type=test
+    //# If an optional branch key id is provided
+    //# and no encryption context is provided this operation MUST fail.
     let err = match store.create_key(Some("bk-1".to_string()), None).await {
         Ok(_) => panic!("create_key with a branch key id and no EC must fail"),
         Err(e) => e,
@@ -316,6 +330,10 @@ async fn create_key_with_discovery_config_fails() {
     let mut cfg = fixture_config_with_id("id-x");
     cfg.kms_configuration = KmsConfiguration::Discovery;
     let store = BranchKeyStore::new(cfg).await.unwrap();
+    //= spec/framework/branch-key-store.md#createkey
+    //= type=test
+    //# If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`,
+    //# this operation MUST fail.
     let err = match store.create_key(None, None).await {
         Ok(_) => panic!("create_key under a Discovery configuration must fail"),
         Err(e) => e,
@@ -343,6 +361,10 @@ async fn version_key_with_discovery_config_fails() {
     let mut cfg = fixture_config_with_id("id-x");
     cfg.kms_configuration = KmsConfiguration::Discovery;
     let store = BranchKeyStore::new(cfg).await.unwrap();
+    //= spec/framework/branch-key-store.md#versionkey
+    //= type=test
+    //# If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`,
+    //# this operation MUST immediately fail.
     let err = match store.version_key("bk-1".to_string()).await {
         Ok(_) => panic!("version_key under a Discovery configuration must fail"),
         Err(e) => e,

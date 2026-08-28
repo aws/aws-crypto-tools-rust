@@ -29,6 +29,9 @@ pub use error::{KeystoreError, KeystoreErrorKind};
 
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
+//= spec/framework/branch-key-store.md#operations
+//= type=implication
+//# The Keystore MUST support the following operations:
 #[async_trait]
 pub trait Keystore: Send + Sync {
     /// Returns the keystore information for this keystore.

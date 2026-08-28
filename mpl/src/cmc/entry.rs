@@ -64,6 +64,10 @@ impl UsageMetadata {
 /// identifier. Its fields are exactly the four pieces of state that the CMC
 /// spec's `#cache-entry` section enumerates: the materials, the creation
 /// time, the expiry time (TTL), and the usage metadata.
+//= spec/framework/cryptographic-materials-cache.md#cache-entry
+//= type=implication
+//# A cache entry represents an entry in the cryptographic materials cache
+//# and MUST have the following information.
 #[derive(Debug)]
 pub struct CacheEntry {
     /// Cached cryptographic materials (encryption, decryption, branch-key,
@@ -73,6 +77,11 @@ pub struct CacheEntry {
     pub creation_time: SystemTime,
     /// Time-to-live (TTL) — wall-clock instant after which the entry is
     /// considered TTL-expired and MUST NOT be returned to any caller.
+    //= spec/framework/cryptographic-materials-cache.md#time-to-live-ttl
+    //= type=implication
+    //# Each cache entry has a time-to-live (TTL)
+    //# that represents a point in time at which the cache entry
+    //# MUST be considered invalid.
     pub expiry_time: SystemTime,
     /// Usage counters tracked alongside the cached materials.
     pub usage_metadata: UsageMetadata,

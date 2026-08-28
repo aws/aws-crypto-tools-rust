@@ -69,6 +69,10 @@ fn test_required_ec_keys_must_be_subset() {
     let reck = BTreeSet::from([b"missing".to_vec()]);
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None);
+    //= spec/framework/structures.md#required-encryption-context-keys
+    //= type=test
+    //# Every key in Required Encryption Context Keys
+    //# MUST be a key in the [encryption context](#encryption-context-1).
     assert!(result.is_err());
     assert!(
         result
@@ -85,6 +89,9 @@ fn test_edks_must_be_empty_without_pdk() {
     let edk = make_edk();
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![edk], ec, reck, None, None, None);
+    //= spec/framework/structures.md#encrypted-data-keys
+    //= type=test
+    //# If the plaintext data key is not included in this set of encryption materials, this list MUST be empty.
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("must be empty"));
 }
@@ -96,6 +103,9 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
     let sk = SigningKey::new(b"sign".to_vec());
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, Some(sk), None);
+    //= spec/framework/structures.md#signing-key
+    //= type=test
+    //# If the algorithm suite does not contain an asymmetric signing algorithm, the signing key MUST NOT be present.
     assert!(result.is_err());
     assert!(
         result
@@ -152,6 +162,9 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
         None,
         Some(ssk),
     );
+    //= spec/framework/structures.md#symmetric-signing-keys
+    //= type=test
+    //# If the algorithm suite does not contain a symmetric signing algorithm, this list MUST NOT be included in the materials.
     assert!(result.is_err());
     assert!(
         result
@@ -180,6 +193,10 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
     let reck = BTreeSet::new();
 
     let mat = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None).unwrap();
+    //= spec/framework/structures.md#encryption-context-1
+    //= type=test
+    //# If an [encryption material](#encryption-materials) does not contains a [signing key](#signing-key),
+    //# the [encryption context](#encryption-context) SHOULD NOT include the reserved key `aws-crypto-public-key`.
     assert!(
         mat.validate_aws_crypto_public_key()
             .unwrap_err()
@@ -205,6 +222,9 @@ fn test_plaintext_data_key_immutability() {
 fn test_plaintext_data_key_zeroize() {
     let mut pdk = PlaintextDataKey::new(b"secret".to_vec());
     pdk.zeroize();
+    //= spec/framework/structures.md#plaintext-data-key
+    //= type=test
+    //# The plaintext data key SHOULD offer an interface to zero the plaintext data key.
     assert!(pdk.as_bytes().iter().all(|&b| b == 0));
 }
 
@@ -220,6 +240,9 @@ fn test_signing_key_debug_redacted() {
 fn test_symmetric_signing_key_debug_redacted() {
     let ssk = SymmetricSigningKey::new(b"symmetric-secret".to_vec());
     let debug_output = format!("{:?}", ssk);
+    //= spec/framework/structures.md#symmetric-signing-keys
+    //= type=test
+    //# The value of keys in this list MUST be kept secret.
     assert!(!debug_output.contains("symmetric-secret"));
     assert!(debug_output.contains("REDACTED"));
 }
@@ -296,6 +319,10 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
+    //= spec/framework/structures.md#encryption-context-1
+    //= type=test
+    //# If an [encryption material](#encryption-materials) contains a [signing key](#signing-key),
+    //# the [encryption context](#encryption-context) SHOULD include the reserved key `aws-crypto-public-key`.
     assert!(err.to_string().contains("MUST include"));
 }
 

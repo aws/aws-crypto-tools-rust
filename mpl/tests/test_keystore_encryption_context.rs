@@ -31,16 +31,34 @@ fn active_encryption_context_contains_required_keys() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1-uuid").unwrap();
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST have a `branch-key-id` attribute
     assert!(ec.contains_key(ATTR_BRANCH_KEY_ID));
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST have a `type` attribute
     assert!(ec.contains_key(ATTR_TYPE));
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST have a `create-time` attribute
     assert!(ec.contains_key(ATTR_CREATE_TIME));
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST have a `tablename` attribute to store the logicalKeyStoreName
     assert!(ec.contains_key(ATTR_TABLENAME));
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST have a `kms-arn` attribute
     assert!(ec.contains_key(ATTR_KMS_ARN));
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST have a `hierarchy-version`
     assert!(ec.contains_key(ATTR_HIERARCHY_VERSION));
 }
 
@@ -49,6 +67,9 @@ fn active_encryption_context_type_is_branch_active() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1-uuid").unwrap();
 
+    //= spec/framework/branch-key-store.md#active-encryption-context
+    //= type=test
+    //# The ACTIVE encryption context value of the `type` attribute MUST equal to `"branch:ACTIVE"`.
     assert_eq!(ec[ATTR_TYPE], TYPE_BRANCH_ACTIVE);
 }
 
@@ -58,9 +79,15 @@ fn active_encryption_context_version_is_prefixed() {
     let version = "a1b2c3d4-5678-90ab-cdef-111213141516";
     let ec = active_encryption_context(&input, version).unwrap();
 
+    //= spec/framework/branch-key-store.md#active-encryption-context
+    //= type=test
+    //# The ACTIVE encryption context MUST have a `version` attribute.
     assert!(ec.contains_key(ATTR_VERSION));
 
     let expected = format!("{TYPE_BRANCH_VERSION_PREFIX}{version}");
+    //= spec/framework/branch-key-store.md#active-encryption-context
+    //= type=test
+    //# The `version` attribute MUST store the branch key version formatted like `"branch:version:"` + `version`.
     assert_eq!(ec[ATTR_VERSION], expected);
 }
 
@@ -69,6 +96,9 @@ fn decrypt_only_encryption_context_omits_version_attribute() {
     let input = sample_input();
     let ec = decrypt_only_encryption_context(&input, "v1-uuid").unwrap();
 
+    //= spec/framework/branch-key-store.md#decrypt-only-encryption-context
+    //= type=test
+    //# The DECRYPT_ONLY encryption context MUST NOT have a `version` attribute.
     assert!(!ec.contains_key(ATTR_VERSION));
 }
 
@@ -79,6 +109,9 @@ fn decrypt_only_encryption_context_type_is_branch_version_prefix() {
     let ec = decrypt_only_encryption_context(&input, version).unwrap();
 
     let expected = format!("{TYPE_BRANCH_VERSION_PREFIX}{version}");
+    //= spec/framework/branch-key-store.md#decrypt-only-encryption-context
+    //= type=test
+    //# The `type` attribute MUST stores the branch key version formatted like `"branch:version:"` + `version`.
     assert_eq!(ec[ATTR_TYPE], expected);
 }
 
@@ -87,6 +120,9 @@ fn beacon_key_encryption_context_type_is_beacon_active() {
     let input = sample_input();
     let ec = beacon_key_encryption_context(&input).unwrap();
 
+    //= spec/framework/branch-key-store.md#beacon-key-encryption-context
+    //= type=test
+    //# The Beacon key encryption context value of the `type` attribute MUST equal to `"beacon:ACTIVE"`.
     assert_eq!(ec[ATTR_TYPE], TYPE_BEACON_ACTIVE);
 }
 
@@ -95,6 +131,9 @@ fn beacon_key_encryption_context_omits_version_attribute() {
     let input = sample_input();
     let ec = beacon_key_encryption_context(&input).unwrap();
 
+    //= spec/framework/branch-key-store.md#beacon-key-encryption-context
+    //= type=test
+    //# The Beacon key encryption context MUST NOT have a `version` attribute.
     assert!(!ec.contains_key(ATTR_VERSION));
 }
 
@@ -103,6 +142,9 @@ fn encryption_context_includes_tablename_from_logical_keystore_name() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
+    //= spec/framework/branch-key-store.md#logical-keystore-name
+    //= type=test
+    //# The logical keystore name MUST be bound to every created key.
     assert_eq!(ec[ATTR_TABLENAME], "my-keystore-table");
 }
 
@@ -119,6 +161,9 @@ fn encryption_context_omits_enc_attribute() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - MUST NOT have a `enc` attribute
     assert!(!ec.contains_key(ATTR_ENC));
 }
 
@@ -139,6 +184,10 @@ fn custom_ec_keys_are_prefixed_with_aws_crypto_ec() {
 
     let ec = active_encryption_context(&input, "v1").unwrap();
 
+    //= spec/framework/branch-key-store.md#custom-encryption-context
+    //= type=test
+    //# To avoid name collisions each added attribute from the custom [encryption context](./structures.md#encryption-context-3)
+    //# MUST be prefixed with `aws-crypto-ec:`.
     assert!(ec.contains_key(&format!("{CUSTOM_EC_PREFIX}tenant-id")));
     assert!(ec.contains_key(&format!("{CUSTOM_EC_PREFIX}department")));
     // Original keys without prefix must NOT exist
@@ -162,6 +211,10 @@ fn custom_ec_values_are_preserved() {
 
     let ec = active_encryption_context(&input, "v1").unwrap();
 
+    //= spec/framework/branch-key-store.md#custom-encryption-context
+    //= type=test
+    //# If custom [encryption context](./structures.md#encryption-context-3)
+    //# is associated with the branch key these values MUST be added to the AWS KMS encryption context.
     assert_eq!(ec[&format!("{CUSTOM_EC_PREFIX}tenant-id")], "acme-corp");
 }
 
@@ -176,6 +229,9 @@ fn empty_branch_key_id_is_rejected() {
         custom_ec: None,
     };
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - The `branch-key-id` field MUST not be an empty string
     let err =
         active_encryption_context(&input, "v1").expect_err("should reject empty branch-key-id");
 
@@ -187,6 +243,9 @@ fn type_field_is_never_empty_in_active() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
+    //= spec/framework/branch-key-store.md#encryption-context
+    //= type=test
+    //# - The `type` field MUST not be an empty string
     assert!(!ec[ATTR_TYPE].is_empty());
 }
 

@@ -79,13 +79,17 @@ impl fmt::Display for CmcError {
 
 impl std::error::Error for CmcError {}
 
-//
+//= spec/framework/cryptographic-materials-cache.md#overview
+//= type=implication
+//# This document describes the interface that all CMCs MUST implement.
 #[async_trait]
 pub trait Cmc: Send + Sync {
     /// Insert (or replace) the cache entry for the supplied cache identifier.
     /// Mirrors the `Put Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#put-cache-entry).
-    //
+    //= spec/framework/cryptographic-materials-cache.md#put-cache-entry
+    //= type=implication
+    //# This operation MUST NOT return the inserted cache entry.
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError>;
 
     /// Retrieve the cache entry for the supplied cache identifier, returning

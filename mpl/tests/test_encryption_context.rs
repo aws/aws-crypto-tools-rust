@@ -7,6 +7,10 @@ use aws_crypto_mpl::structures::EncryptionContext;
 fn test_empty_serializes_to_empty_bytes() {
     let ec = EncryptionContext::new();
 
+    //= spec/framework/structures.md#serialization
+    //= type=test
+    //# If the encryption context is empty, its serialization MUST be
+    //# an empty byte sequence.
     assert!(ec.serialize().unwrap().is_empty());
 }
 
@@ -37,6 +41,10 @@ fn test_multiple_entries_serialized_in_sorted_order() {
     // Parse first key — should be "apple" (sorted first)
     let key_len = u16::from_be_bytes([serialized[2], serialized[3]]);
     assert_eq!(key_len, 5);
+    //= spec/framework/structures.md#key-value-pair-entries
+    //= type=test
+    //# These entries MUST be sorted, by key,
+    //# in ascending order according to the UTF-8 encoded binary value.
     assert_eq!(&serialized[4..9], b"apple");
 }
 
@@ -58,6 +66,9 @@ fn test_duplicate_key_rejected_on_deserialize() {
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let result = EncryptionContext::deserialize(&bytes);
+    //= spec/framework/structures.md#key-value-pair-entries
+    //= type=test
+    //# This sequence MUST NOT contain duplicate entries.
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("Duplicate key"));
 }
@@ -81,6 +92,9 @@ fn test_key_value_pair_count_must_be_greater_than_zero() {
     let bytes = 0u16.to_be_bytes();
 
     let result = EncryptionContext::deserialize(&bytes);
+    //= spec/framework/structures.md#key-value-pair-count
+    //= type=test
+    //# The value of this field MUST be greater than 0.
     assert!(result.is_err());
     assert!(result.unwrap_err().message.contains("greater than 0"),);
 }
@@ -330,6 +344,10 @@ fn test_serialize_produces_known_bytes() {
         0x00, 0x01, // val_len = 1
         b'1', // value
     ];
+    //= spec/framework/structures.md#serialization
+    //= type=test
+    //# If the encryption context is not empty, its serialization MUST
+    //# take the following form:
     assert_eq!(ec.serialize().unwrap().as_slice(), expected);
 }
 

@@ -9,12 +9,18 @@ use aws_sdk_kms::Client as KmsClient;
 /// Configuration for constructing a [`Keystore`](super::Keystore).
 #[derive(Debug, Clone)]
 pub struct KeyStoreConfig {
+    //= spec/framework/branch-key-store.md#initialization
+    //= type=implication
+    //# The following inputs MUST be specified to create a KeyStore:
     /// The DynamoDB table name backing this keystore.
     pub ddb_table_name: String,
     /// The KMS key configuration governing encryption/decryption.
     pub kms_configuration: KmsConfiguration,
     /// Logical name cryptographically bound to all keys in this table.
     pub logical_keystore_name: String,
+    //= spec/framework/branch-key-store.md#initialization
+    //= type=implication
+    //# The following inputs MAY be specified to create a KeyStore:
     /// Optional keystore identifier.
     pub id: Option<String>,
     /// Optional AWS KMS grant tokens.
@@ -48,12 +54,19 @@ pub struct KeyStoreInfo {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum KmsConfiguration {
+    //= spec/framework/branch-key-store.md#aws-kms-configuration
+    //= type=implication
+    //# `KMS Key ARN` and `KMS MRKey ARN` MUST take an additional argument
+    //# that is a KMS ARN.
     /// Single-region KMS Key ARN compatibility. ARN may be MRK or non-MRK.
     KmsKeyArn(String),
     /// MRK ARN compatibility. ARN may be MRK or non-MRK.
     KmsMrKeyArn(String),
     /// Discovery configuration; KMS Key ARN is read from each DDB record.
     Discovery,
+    //= spec/framework/branch-key-store.md#aws-kms-configuration
+    //= type=implication
+    //# `MRDiscovery` MUST take an additional argument, which is a region.
     /// MRDiscovery configuration with required region argument.
     MrDiscovery {
         /// The region to use for MRK ARN rewrites.

@@ -15,6 +15,11 @@
 
 use aws_mpl_primitives::{DigestAlg, digest};
 
+//= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+//# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
+//
+//= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+//# - MUST be the Resource ID for the Hierarchical Keyring (0x02)
 const RESOURCE_ID_HIERARCHICAL_KEYRING: u8 = 0x02;
 
 const NULL_BYTE: u8 = 0x00;
@@ -39,6 +44,10 @@ pub fn build_cache_identifier(
     branch_key_id: &str,
     branch_key_version: Option<&str>,
 ) -> [u8; DigestAlg::Sha384.output_len()] {
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
+    //# When accessing the underlying cryptographic materials cache,
+    //# the hierarchical keyring MUST use the formulas specified in this appendix
+    //# in order to compute the [cache entry identifier](../cryptographic-materials-cache.md#cache-identifier).
     let mut buf: Vec<u8> = vec![
         RESOURCE_ID_HIERARCHICAL_KEYRING,
         NULL_BYTE,
@@ -46,20 +55,56 @@ pub fn build_cache_identifier(
         NULL_BYTE,
     ];
 
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //# - MUST be the Partition ID for the Hierarchical Keyring
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //# - MUST be the Partition ID for the Hierarchical Keyring
     buf.extend_from_slice(partition_id);
     buf.push(NULL_BYTE);
 
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //# - MUST be the UTF8 encoded Logical Key Store Name of the keystore for the Hierarchical Keyring
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //# - MUST be the UTF8 encoded Logical Key Store Name of the keystore for the Hierarchical Keyring
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#logical-key-store-name
+    //# Logical Key Store Name MUST be converted to UTF8 Bytes to be used in
+    //# the cache identifiers.
     buf.extend_from_slice(logical_key_store_name.as_bytes());
     buf.push(NULL_BYTE);
 
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //# - MUST be the UTF8 encoded branch-key-id
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //# - MUST be the UTF8 encoded branch-key-id
     buf.extend_from_slice(branch_key_id.as_bytes());
 
     if let Some(version) = branch_key_version {
         buf.push(NULL_BYTE);
+        //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+        //# - MUST be the UTF8 encoded branch-key-version
         buf.extend_from_slice(version.as_bytes());
     }
 
     let mut output = [0u8; DigestAlg::Sha384.output_len()];
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#encryption-materials
+    //# When the hierarchical keyring receives an OnEncrypt request,
+    //# the cache entry identifier MUST be calculated as the
+    //# SHA-384 hash of the following byte strings, in the order listed:
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#decryption-materials
+    //# When the hierarchical keyring receives an OnDecrypt request,
+    //# it MUST calculate the cache entry identifier as the
+    //# SHA-384 hash of the following byte strings, in the order listed:
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#resource-suffix
+    //# The aforementioned 4 definitions ([Resource Identifier](#resource-identifier),
+    //# [Scope Identifier](#scope-identifier), [Partition ID](#partition-id-1), and
+    //# [Resource Suffix](#resource-suffix)) MUST be appended together with the null byte, 0x00,
+    //# and the SHA384 of the result should be taken as the final cache identifier.
     digest(DigestAlg::Sha384, &buf, &mut output)
         .expect("output is exactly DigestAlg::Sha384.output_len() bytes");
     output

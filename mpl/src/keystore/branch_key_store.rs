@@ -135,6 +135,8 @@ impl BranchKeyStore {
             ));
         }
 
+        //= spec/framework/branch-key-store.md#keystore-id
+        //# If one is not supplied, then a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt) MUST be used.
         let keystore_id = config
             .id
             .clone()
@@ -195,6 +197,18 @@ impl BranchKeyStore {
     /// to the configured logical keystore name. The `enc` ciphertext is
     /// not part of the EC by `EncryptedRecord`'s shape.
     fn build_auth_ec(&self, record: &EncryptedRecord) -> BTreeMap<String, String> {
+        //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+        //# Every key in the constructed [encryption context](#encryption-context)
+        //# except `tableName`
+        //# MUST exist as a string attribute in the AWS DDB response item.
+        //
+        //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+        //# Every value in the constructed [encryption context](#encryption-context)
+        //# except the logical table name
+        //# MUST equal the value with the same key in the AWS DDB response item.
+        //
+        //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+        //# The key `enc` MUST NOT exist in the constructed [encryption context](#encryption-context).
         let mut ec = record.attributes.clone();
         ec.insert(
             "tablename".to_string(),
@@ -250,6 +264,11 @@ impl BranchKeyStore {
 #[async_trait]
 impl Keystore for BranchKeyStore {
     fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+        //= spec/framework/branch-key-store.md#getkeystoreinfo
+        //# This operation MUST return the keystore information in this keystore configuration.
+        //
+        //= spec/framework/branch-key-store.md#getkeystoreinfo
+        //# This MUST include:
         Ok(KeyStoreInfo {
             keystore_id: self.keystore_id.clone(),
             keystore_name: self.config.ddb_table_name.clone(),
@@ -263,6 +282,8 @@ impl Keystore for BranchKeyStore {
         let table_name = &self.config.ddb_table_name;
 
         // Per branch-key-store.md#createkeystore: first DescribeTable.
+        //= spec/framework/branch-key-store.md#createkeystore
+        //# This operation MUST first calls the DDB::DescribeTable API with the configured `tableName`.
         match self
             .ddb_client()
             .describe_table()
@@ -279,6 +300,9 @@ impl Keystore for BranchKeyStore {
                         "DescribeTable succeeded but returned no table description",
                     )
                 })?;
+                //= spec/framework/branch-key-store.md#createkeystore
+                //# If the [KeySchema](#keyschema) does not match
+                //# this operation MUST yield an error.
                 if !table_has_expected_schema(table) {
                     return Err(KeystoreError::new(
                         KeystoreErrorKind::Configuration,
@@ -287,6 +311,9 @@ impl Keystore for BranchKeyStore {
                         ),
                     ));
                 }
+                //= spec/framework/branch-key-store.md#createkeystore
+                //# If the operation successfully creates a table, the operation MUST return the AWS DDB Table Arn
+                //# back to the caller.
                 table_arn(table, table_name)
             }
             // ResourceNotFoundException: create the table with the expected
@@ -302,6 +329,11 @@ impl Keystore for BranchKeyStore {
                     ));
                 }
 
+                //= spec/framework/branch-key-store.md#createkeystore
+                //# If the client responds with a `ResourceNotFoundException`,
+                //# then this operation MUST continue and
+                //# MUST call [AWS DDB CreateTable](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html)
+                //# with the following specifics:
                 let resp = self
                     .ddb_client()
                     .create_table()
@@ -311,6 +343,8 @@ impl Keystore for BranchKeyStore {
                     .billing_mode(BillingMode::PayPerRequest)
                     .send()
                     .await
+                    //= spec/framework/branch-key-store.md#createkeystore
+                    //# If the operation fails to create table, the operation MUST fail.
                     .map_err(|e| {
                         KeystoreError::new(
                             KeystoreErrorKind::Dynamodb,
@@ -336,6 +370,17 @@ impl Keystore for BranchKeyStore {
     ) -> Result<String, KeystoreError> {
         // A caller-supplied branch key id requires an explicit encryption
         // context (branch-key-store.md#createkey).
+        //= spec/framework/branch-key-store.md#createkey
+        //= type=implication
+        //# The CreateKey caller MUST provide:
+        //
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //= type=implication
+        //# To create a branch key, this operation MUST take the following:
+        //
+        //= spec/framework/branch-key-store.md#createkey
+        //# If an optional branch key id is provided
+        //# and no encryption context is provided this operation MUST fail.
         if branch_key_id.is_some() && encryption_context.is_none() {
             return Err(KeystoreError::new(
                 KeystoreErrorKind::Configuration,
@@ -344,10 +389,29 @@ impl Keystore for BranchKeyStore {
         }
 
         // CreateKey requires a single-key KMS configuration.
+        //= spec/framework/branch-key-store.md#createkey
+        //# If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`,
+        //# this operation MUST fail.
+        //
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# - `KeyId` MUST be the configured `AWS KMS Key ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
+        //
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# - `KeyId` MUST be the configured `AWS KMS Key ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
         let key_arn = self.configured_kms_key_arn()?.to_string();
 
+        //= spec/framework/branch-key-store.md#createkey
+        //# If no branch key id is provided,
+        //# then this operation MUST create a [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt)
+        //# to be used as the branch key id.
         let branch_key_id = branch_key_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# This guid MUST be [version 4 UUID](https://www.ietf.org/rfc/rfc4122.txt)
         let version = Uuid::new_v4().to_string();
+
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# This timestamp MUST be in ISO 8601 format in UTC, to microsecond precision (e.g.
         let timestamp = now_iso8601_micros()?;
 
         let ec_input = EncryptionContextInput {
@@ -359,22 +423,43 @@ impl Keystore for BranchKeyStore {
             custom_ec: encryption_context.as_ref(),
         };
 
+        //= spec/framework/branch-key-store.md#createkey
+        //# This operation MUST create a [branch key](structures.md#branch-key) and a [beacon key](structures.md#beacon-key) according to
+        //# the [Branch Key and Beacon Key Creation](#branch-key-and-beacon-key-creation) section.
+        //
+        //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+        //# - `EncryptionContext` MUST be the [DECRYPT_ONLY encryption context for branch keys](#decrypt_only-encryption-context).
         let decrypt_only_ec = decrypt_only_encryption_context(&ec_input, &version)?;
         let active_ec = active_encryption_context(&ec_input, &version)?;
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# - `EncryptionContext` MUST be the [encryption context for beacon keys](#beacon-key-encryption-context).
         let beacon_ec = beacon_key_encryption_context(&ec_input)?;
 
         let grant_tokens = self.grant_tokens();
         let kms = self.kms_client();
 
         // Wrapped DECRYPT_ONLY branch key.
+        //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+        //# The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to [Wrapped Branch Key Creation](#wrapped-branch-key-creation).
         let decrypt_only_blob =
             generate_wrapped_key(kms, &key_arn, &decrypt_only_ec, grant_tokens).await?;
         // Wrapped ACTIVE branch key: ReEncrypt DECRYPT_ONLY -> ACTIVE.
         let active_blob = reencrypt_wrapped_key(
             kms,
+            //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+            //# - `SourceKeyId` MUST be the configured `AWS KMS Key ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
+            //
+            //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+            //# - `DestinationKeyId` MUST be the configured `AWS KMS Key ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
             &key_arn,
+            //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+            //# - `CiphertextBlob` MUST be the wrapped DECRYPT_ONLY Branch Key.
             &decrypt_only_blob,
+            //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+            //# - `SourceEncryptionContext` MUST be the [DECRYPT_ONLY encryption context for branch keys](#decrypt_only-encryption-context).
             &decrypt_only_ec,
+            //= spec/framework/branch-key-store.md#wrapped-branch-key-creation
+            //# - `DestinationEncryptionContext` MUST be the [ACTIVE encryption context for branch keys](#active-encryption-context).
             &active_ec,
             grant_tokens,
         )
@@ -401,11 +486,29 @@ impl Keystore for BranchKeyStore {
             transact_items.push(TransactWriteItem::builder().put(put).build());
         }
 
+        //= spec/framework/branch-key-store.md#createkey
+        //# If creation of the keys are successful,
+        //# the operation MUST call Amazon DynamoDB TransactWriteItems according to the [write key material](#writing-branch-key-and-beacon-key-to-keystore) section.
+        //
+        //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+        //# To add the branch keys and a beacon key to the keystore the
+        //# operation MUST call [Amazon DynamoDB API TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+        //
+        //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+        //# The call to Amazon DynamoDB TransactWriteItems MUST use the configured Amazon DynamoDB Client to make the call.
+        //
+        //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+        //# The operation MUST call Amazon DynamoDB TransactWriteItems with a request constructed as follows:
         self.ddb_client()
             .transact_write_items()
             .set_transact_items(Some(transact_items))
             .send()
             .await
+            //= spec/framework/branch-key-store.md#createkey
+            //# Otherwise, this operation MUST yield an error.
+            //
+            //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+            //# Otherwise, this operation MUST yield an error.
             .map_err(|e| {
                 KeystoreError::new(
                     KeystoreErrorKind::Dynamodb,
@@ -413,14 +516,32 @@ impl Keystore for BranchKeyStore {
                 )
             })?;
 
+        //= spec/framework/branch-key-store.md#createkey
+        //# If writing to the keystore succeeds,
+        //# the operation MUST return the branch-key-id that maps to both
+        //# the branch key and the beacon key.
+        //
+        //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+        //# If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data.
         Ok(branch_key_id)
     }
 
     async fn version_key(&self, branch_key_id: String) -> Result<(), KeystoreError> {
+        //= spec/framework/branch-key-store.md#versionkey
+        //= type=implication
+        //# - MUST supply a `branch-key-id`
+        //
         // VersionKey requires a single-key KMS configuration.
+        //= spec/framework/branch-key-store.md#versionkey
+        //# If the Keystore's KMS Configuration is `Discovery` or `MRDiscovery`,
+        //# this operation MUST immediately fail.
         let configured_arn = self.configured_kms_key_arn()?.to_string();
 
         // Fetch the current ACTIVE record.
+        //= spec/framework/branch-key-store.md#versionkey
+        //# VersionKey MUST first get the active version for the branch key from the keystore
+        //# by calling AWS DDB `GetItem`
+        //# using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
         let record = self
             .fetch_record(&branch_key_id, TYPE_BRANCH_ACTIVE)
             .await?;
@@ -439,6 +560,9 @@ impl Keystore for BranchKeyStore {
                 )
             })?
             .clone();
+        //= spec/framework/branch-key-store.md#versionkey
+        //# The `kms-arn` field of DDB response item MUST be [compatible with](#aws-key-arn-compatibility)
+        //# the configured `KMS ARN` in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
         let resolved_arn = resolve_keystore_arn(&self.config.kms_configuration, &stored_kms_arn)?;
 
         // The encryption context reconstructed from the stored item (the
@@ -450,15 +574,34 @@ impl Keystore for BranchKeyStore {
         // Authenticate the stored item: a successful ReEncrypt with the
         // reconstructed EC as both source and destination proves the item
         // has not been tampered with. The result ciphertext is discarded.
+        //= spec/framework/branch-key-store.md#versionkey
+        //# The values on the AWS DDB response item
+        //# MUST be authenticated according to [authenticating a keystore item](#authenticating-a-keystore-item).
+        //
+        //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+        //# The operation MUST use the configured `KMS SDK Client` to authenticate the value of the keystore item.
         reencrypt_wrapped_key(
             kms,
+            //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+            //# - `SourceKeyId` MUST be [compatible with](#aws-key-arn-compatibility) the configured KMS Key in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
+            //
+            //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+            //# - `DestinationKeyId` MUST be [compatible with](#aws-key-arn-compatibility) the configured KMS Key in the [AWS KMS Configuration](#aws-kms-configuration) for this keystore.
             &resolved_arn,
+            //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+            //# - `CiphertextBlob` MUST be the `enc` attribute value on the AWS DDB response item
             &record.enc,
+            //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+            //# - `SourceEncryptionContext` MUST be the [encryption context](#encryption-context) constructed above
             &old_active_ec,
+            //= spec/framework/branch-key-store.md#authenticating-a-keystore-item
+            //# - `DestinationEncryptionContext` MUST be the [encryption context](#encryption-context) constructed above
             &old_active_ec,
             grant_tokens,
         )
         .await
+        //= spec/framework/branch-key-store.md#versionkey
+        //# If the item fails to authenticate this operation MUST fail.
         .map_err(|e| {
             KeystoreError::with_cause(
                 KeystoreErrorKind::Authentication,
@@ -473,6 +616,12 @@ impl Keystore for BranchKeyStore {
         let version = Uuid::new_v4().to_string();
         let timestamp = now_iso8601_micros()?;
 
+        //= spec/framework/branch-key-store.md#versionkey
+        //# The `kms-arn` stored in the DDB table MUST NOT change as a result of this operation,
+        //# even if the KeyStore is configured with a `KMS MRKey ARN` that does not exactly match the stored ARN.
+        //
+        //= spec/framework/branch-key-store.md#custom-encryption-context
+        //# Across all versions of a Branch Key, the custom encryption context MUST be equal.
         let mut new_decrypt_only_ec = old_active_ec;
         new_decrypt_only_ec.insert(
             ATTR_TYPE.to_string(),
@@ -492,6 +641,8 @@ impl Keystore for BranchKeyStore {
 
         // Wrap a fresh branch key for the new version (DECRYPT_ONLY, then
         // ReEncrypt to ACTIVE) under the configured KMS key.
+        //= spec/framework/branch-key-store.md#versionkey
+        //# The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to [Wrapped Branch Key Creation](#wrapped-branch-key-creation).
         let wrapped_decrypt_only =
             generate_wrapped_key(kms, &configured_arn, &new_decrypt_only_ec, grant_tokens).await?;
         let wrapped_active = reencrypt_wrapped_key(
@@ -534,11 +685,22 @@ impl Keystore for BranchKeyStore {
             TransactWriteItem::builder().put(active_put).build(),
         ];
 
+        //= spec/framework/branch-key-store.md#versionkey
+        //# To add the new branch key to the keystore,
+        //# the operation MUST call [Amazon DynamoDB API TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+        //
+        //= spec/framework/branch-key-store.md#versionkey
+        //# The call to Amazon DynamoDB TransactWriteItems MUST use the configured Amazon DynamoDB Client to make the call.
+        //
+        //= spec/framework/branch-key-store.md#versionkey
+        //# The operation MUST call Amazon DynamoDB TransactWriteItems with a request constructed as follows:
         self.ddb_client()
             .transact_write_items()
             .set_transact_items(Some(transact_items))
             .send()
             .await
+            //= spec/framework/branch-key-store.md#versionkey
+            //# Otherwise, this operation MUST yield an error.
             .map_err(|e| {
                 KeystoreError::new(
                     KeystoreErrorKind::Dynamodb,
@@ -546,6 +708,8 @@ impl Keystore for BranchKeyStore {
                 )
             })?;
 
+        //= spec/framework/branch-key-store.md#versionkey
+        //# If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data.
         Ok(())
     }
 
@@ -553,10 +717,23 @@ impl Keystore for BranchKeyStore {
         &self,
         branch_key_id: String,
     ) -> Result<BranchKeyMaterials, KeystoreError> {
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //= type=implication
+        //# - MUST supply a `branch-key-id`
+        //
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# To get the active version for the branch key id from the keystore
+        //# this operation MUST call AWS DDB `GetItem`
+        //# using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
         let record = self
             .fetch_record(&branch_key_id, TYPE_BRANCH_ACTIVE)
             .await?;
 
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+        //
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# If the branch key fails to decrypt, GetActiveBranchKey MUST fail.
         let plaintext = decrypt_branch_key(
             self.kms_client(),
             &self.config.kms_configuration,
@@ -568,6 +745,18 @@ impl Keystore for BranchKeyStore {
 
         let auth_ec = self.build_auth_ec(&record);
 
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+        //
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# If the record does not contain the defined fields, this operation MUST fail.
+        //
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# This GetActiveBranchKey MUST construct [branch key materials](./structures.md#branch-key-materials)
+        //# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
+        //
+        //= spec/framework/branch-key-store.md#getactivebranchkey
+        //# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
@@ -576,9 +765,24 @@ impl Keystore for BranchKeyStore {
         branch_key_id: String,
         branch_key_version: String,
     ) -> Result<BranchKeyMaterials, KeystoreError> {
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //= type=implication
+        //# - MUST supply a `branch-key-id`
+        //
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //= type=implication
+        //# - MUST supply a `branchKeyVersion`
         let sort_key = format!("{TYPE_BRANCH_VERSION_PREFIX}{branch_key_version}");
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
+        //# using the `branch-key-id` as the Partition Key and "branch:version:" + `branchKeyVersion` value as the Sort Key.
         let record = self.fetch_record(&branch_key_id, &sort_key).await?;
 
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+        //
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# If the branch key fails to decrypt, this operation MUST fail.
         let plaintext = decrypt_branch_key(
             self.kms_client(),
             &self.config.kms_configuration,
@@ -590,6 +794,18 @@ impl Keystore for BranchKeyStore {
 
         let auth_ec = self.build_auth_ec(&record);
 
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+        //
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# If the record does not contain the defined fields, this operation MUST fail.
+        //
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# This GetBranchKeyVersion MUST construct [branch key materials](./structures.md#branch-key-materials)
+        //# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
+        //
+        //= spec/framework/branch-key-store.md#getbranchkeyversion
+        //# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
@@ -597,10 +813,28 @@ impl Keystore for BranchKeyStore {
         &self,
         branch_key_id: String,
     ) -> Result<BeaconKeyMaterials, KeystoreError> {
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //= type=implication
+        //# - MUST supply a `branch-key-id`
+        //
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
+        //# using the `branch-key-id` as the Partition Key and "beacon:ACTIVE" value as the Sort Key.
         let record = self
             .fetch_record(&branch_key_id, TYPE_BEACON_ACTIVE)
             .await?;
 
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+        //
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# If the record does not contain the defined fields, this operation MUST fail.
+        //
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# The operation MUST decrypt the beacon key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+        //
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# If the beacon key fails to decrypt, this operation MUST fail.
         let plaintext = decrypt_branch_key(
             self.kms_client(),
             &self.config.kms_configuration,
@@ -618,6 +852,12 @@ impl Keystore for BranchKeyStore {
             .cloned()
             .unwrap_or(branch_key_id);
 
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# This GetBeaconKey MUST construct [beacon key materials](./structures.md#beacon-key-materials) from the decrypted branch key material
+        //# and the `branchKeyId` from the returned `branch-key-id` field.
+        //
+        //= spec/framework/branch-key-store.md#getbeaconkey
+        //# This operation MUST return the constructed [beacon key materials](./structures.md#beacon-key-materials).
         Ok(BeaconKeyMaterials::new(
             beacon_key_id,
             custom_ec,
@@ -647,6 +887,8 @@ fn expected_attribute_definitions() -> Result<Vec<AttributeDefinition>, Keystore
 /// The `KeySchema` a branch-key-store table MUST have: `branch-key-id`
 /// as the partition (HASH) key and `type` as the sort (RANGE) key.
 fn expected_key_schema() -> Result<Vec<KeySchemaElement>, KeystoreError> {
+    //= spec/framework/branch-key-store.md#keyschema
+    //# The following KeySchema MUST be configured on the table:
     let hash = KeySchemaElement::builder()
         .attribute_name(ATTR_BRANCH_KEY_ID)
         .key_type(KeyType::Hash)
@@ -680,6 +922,9 @@ fn table_has_expected_schema(table: &TableDescription) -> bool {
         .iter()
         .any(|a| a.attribute_name() == ATTR_TYPE && *a.attribute_type() == ScalarAttributeType::S);
 
+    //= spec/framework/branch-key-store.md#createkeystore
+    //# The table MAY have additional information,
+    //# like GlobalSecondaryIndex defined.
     has_hash && has_range && has_bkid_attr && has_type_attr
 }
 
@@ -725,6 +970,19 @@ fn item_from_ec_and_enc(
     enc: Vec<u8>,
 ) -> HashMap<String, AttributeValue> {
     let mut item: HashMap<String, AttributeValue> = HashMap::new();
+    //= spec/framework/branch-key-store.md#record-format
+    //# A branch key record MUST include the following key-value pairs:
+    //
+    //= spec/framework/branch-key-store.md#record-format
+    //# A branch key record MAY include [custom encryption context](#custom-encryption-context) key-value pairs.
+    //
+    //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+    //# - Every key-value pair of the custom [encryption context](./structures.md#encryption-context-3) that is associated with the branch key
+    //# MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value.
+    //
+    //= spec/framework/branch-key-store.md#versionkey
+    //# - Every key-value pair of the custom [encryption context](./structures.md#encryption-context-3) that is associated with the branch key
+    //# MUST be added with an Attribute Name of `aws-crypto-ec:` + the Key and Attribute Value (S) of the value.
     for (key, value) in encryption_context {
         if key == ATTR_TABLENAME {
             continue;
@@ -746,10 +1004,43 @@ fn item_from_ec_and_enc(
 /// SDK's default region provider chain is used).
 fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
     match config {
+        //= spec/framework/branch-key-store.md#dynamodb-client
+        //# If the AWS KMS Configuration is KMS Key ARN or KMS MRKey ARN,
+        //# and no DynamoDb Client is provided,
+        //# a new DynamoDb Client MUST be created
+        //# with the region of the supplied KMS ARN.
+        //
+        //= spec/framework/branch-key-store.md#kms-client
+        //# If the AWS KMS Configuration is KMS Key ARN or KMS MRKey ARN,
+        //# and no KMS Client is provided,
+        //# a new KMS Client MUST be created
+        //# with the region of the supplied KMS ARN.
         KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => {
             parse_arn(arn).ok().map(|parts| parts.region)
         }
+        //= spec/framework/branch-key-store.md#dynamodb-client
+        //# If the AWS KMS Configuration is MRDiscovery,
+        //# and no DynamoDb Client is provided,
+        //# a new DynamoDb Client MUST be created
+        //# with the region configured in the MRDiscovery.
+        //
+        //= spec/framework/branch-key-store.md#kms-client
+        //# If the AWS KMS Configuration is MRDiscovery,
+        //# and no KMS Client is provided,
+        //# a new KMS Client MUST be created
+        //# with the region configured in the MRDiscovery.
         KmsConfiguration::MrDiscovery { region } => Some(region.clone()),
+        //= spec/framework/branch-key-store.md#dynamodb-client
+        //# If the AWS KMS Configuration is Discovery,
+        //# and no DynamoDb Client is provided,
+        //# a new DynamoDb Client MUST be created
+        //# with the default configuration.
+        //
+        //= spec/framework/branch-key-store.md#kms-client
+        //# If the AWS KMS Configuration is Discovery,
+        //# and no KMS Client is provided,
+        //# a new KMS Client MUST be created
+        //# with the default configuration.
         KmsConfiguration::Discovery => None,
     }
 }

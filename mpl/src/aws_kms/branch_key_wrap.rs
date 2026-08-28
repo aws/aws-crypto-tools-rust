@@ -26,6 +26,9 @@ const VERSION_LEN: usize = 16;
 
 /// AES-GCM authentication tag length. AES-256-GCM always produces a
 /// 16-byte tag.
+//= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+//= type=implication
+//# - MUST use an authentication tag byte of length 16.
 const TAG_LEN: usize = 16;
 
 /// Length of the derived branch key produced by the KDF in Counter Mode with
@@ -60,14 +63,21 @@ pub fn compute_aad(
     branch_key_version: &str,
     encryption_context: &EncryptionContext,
 ) -> Result<Vec<u8>, MaterialsError> {
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
+    //# To Encrypt and Decrypt the `wrappedDerivedBranchKey` the keyring MUST include the following values as part of the AAD for
+    //# the AES Encrypt/Decrypt calls.
     let version_bytes = uuid_str_to_16_bytes(branch_key_version)?;
 
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
+    //# If the keyring cannot serialize the encryption context, the operation MUST fail.
     let serialized_ec = encryption_context.serialize()?;
 
     let mut aad = Vec::with_capacity(
         HIERARCHY_LABEL.len() + branch_key_id.len() + VERSION_LEN + serialized_ec.len(),
     );
 
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
+    //# To construct the AAD, the keyring MUST concatenate the following values
     aad.extend_from_slice(HIERARCHY_LABEL);
     aad.extend_from_slice(branch_key_id.as_bytes());
     aad.extend_from_slice(&version_bytes);
@@ -147,6 +157,8 @@ pub fn wrap(
     plaintext_data_key: &[u8],
 ) -> Result<Vec<u8>, MaterialsError> {
     // 1. Generate a 16-byte random salt.
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+    //# The hierarchical keyring MUST:
     let mut salt = [0u8; SALT_LEN];
     generate_random_bytes(&mut salt).map_err(|_| {
         MaterialsError::keyring_failed("Branch key wrap: failed to obtain entropy for salt")
@@ -182,6 +194,29 @@ pub fn wrap(
     output.extend_from_slice(&version_bytes);
     let pre_encrypt_len = output.len();
 
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+    //# - MUST use the `derivedBranchKey` as the AES-GCM cipher key.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+    //# - MUST use the plain text data key that will be wrapped by the `derivedBranchKey` as the AES-GCM message.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+    //# - MUST use the derived `IV` as the AES-GCM IV.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+    //# - MUST use the serialized [AAD](#branch-key-wrapping-and-unwrapping-aad) as the AES-GCM AAD.
+    //
+    //= spec/framework/keyring-interface.md#security-considerations
+    //# Keyring implementations SHOULD provide integrity guarantees for the [encrypted data keys](structures.md#encrypted-data-key)
+    //# they return on [OnEncrypt](#onencrypt) such that tampered versions of those encrypted data keys,
+    //# if input into [OnDecrypt](#ondecrypt), are overwhelmingly likely to cause a decryption failure
+    //# (i.e.
+    //
+    //= spec/framework/keyring-interface.md#security-considerations
+    //# Such integrity guarantees SHOULD include the integrity of the [encryption context](structures.md#encryption-context)
+    //# such that, if the encryption context used as input to OnEncrypt to produce an encrypted data key is
+    //# different than the encryption context input to OnDecrypt to decrypt that encrypted data key,
+    //# the decryption is overwhelmingly likely to fail.
     aes_encrypt(
         AesGcm::Aes256Gcm,
         &iv,
@@ -200,6 +235,8 @@ pub fn wrap(
 
     // Each fallible step (entropy, KDF, AAD construction, AES seal) uses `?`
     // to propagate; reaching this Ok requires every step to have succeeded.
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping
+    //# If OnEncrypt fails to do any of the above, OnEncrypt MUST fail.
     Ok(output)
 }
 
@@ -227,6 +264,8 @@ pub fn unwrap(
     }
 
     // Deserialize the layout.
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# To decrypt an encrypted data key with a branch key, the hierarchical keyring MUST:
     let salt: [u8; SALT_LEN] = ciphertext[0..SALT_LEN]
         .try_into()
         .expect("16-byte slice into [u8; 16]");
@@ -256,6 +295,20 @@ pub fn unwrap(
     )?;
 
     let mut plaintext = vec![0u8; encrypted_key.len()];
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# - It MUST use the `encrypted key` obtained from deserialization as the AES-GCM input ciphertext.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# - It MUST use the `authentication tag` obtained from deserialization as the AES-GCM input authentication tag.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# - It MUST use the `derivedBranchKey` as the AES-GCM cipher key.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# - It MUST use the `IV` obtained from deserialization as the AES-GCM input IV.
+    //
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# - It MUST use the serialized [encryption context](#branch-key-wrapping-and-unwrapping-aad) as the AES-GCM AAD.
     aes_decrypt(
         AesGcm::Aes256Gcm,
         &derived_branch_key,
@@ -270,5 +323,7 @@ pub fn unwrap(
     // Each fallible step (deserialization, KDF, AAD construction, AES open)
     // uses `?` to propagate; reaching this Ok requires every step to have
     // succeeded.
+    //= spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping
+    //# If OnDecrypt fails to do any of the above, OnDecrypt MUST fail.
     Ok(plaintext)
 }

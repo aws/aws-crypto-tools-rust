@@ -108,11 +108,36 @@ async fn integ_get_active_branch_key_returns_expected_materials() {
     )
     .await;
 
+    //= spec/framework/branch-key-store.md#getactivebranchkey
+    //= type=test
+    //# To get the active version for the branch key id from the keystore
+    //# this operation MUST call AWS DDB `GetItem`
+    //# using the `branch-key-id` as the Partition Key and `"branch:ACTIVE"` value as the Sort Key.
+    //
+    //= spec/framework/branch-key-store.md#getactivebranchkey
+    //= type=test
+    //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+    //
+    //= spec/framework/branch-key-store.md#getactivebranchkey
+    //= type=test
+    //# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
+    //
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //= type=test
+    //# The operation MUST use the configured `KMS SDK Client` to decrypt the value of the branch key field.
     let materials = store
         .get_active_branch_key(BRANCH_KEY_ID.to_string())
         .await
         .expect("active branch key fetch must succeed");
 
+    //= spec/framework/branch-key-store.md#getactivebranchkey
+    //= type=test
+    //# This GetActiveBranchKey MUST construct [branch key materials](./structures.md#branch-key-materials)
+    //# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
+    //
+    //= spec/framework/branch-key-store.md#getactivebranchkey
+    //= type=test
+    //# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
     assert_eq!(materials.branch_key_id(), BRANCH_KEY_ID);
     assert_eq!(materials.branch_key_version(), BRANCH_KEY_ACTIVE_VERSION);
     assert_eq!(materials.branch_key().len(), 32);
@@ -130,6 +155,18 @@ async fn integ_get_branch_key_version_returns_expected_materials() {
     )
     .await;
 
+    //= spec/framework/branch-key-store.md#getbranchkeyversion
+    //= type=test
+    //# To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
+    //# using the `branch-key-id` as the Partition Key and "branch:version:" + `branchKeyVersion` value as the Sort Key.
+    //
+    //= spec/framework/branch-key-store.md#getbranchkeyversion
+    //= type=test
+    //# The AWS DDB response MUST contain the fields defined in the [branch keystore record format](#record-format).
+    //
+    //= spec/framework/branch-key-store.md#getbranchkeyversion
+    //= type=test
+    //# The operation MUST decrypt the branch key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
     let materials = store
         .get_branch_key_version(
             BRANCH_KEY_ID.to_string(),
@@ -138,6 +175,14 @@ async fn integ_get_branch_key_version_returns_expected_materials() {
         .await
         .expect("branch key version fetch must succeed");
 
+    //= spec/framework/branch-key-store.md#getbranchkeyversion
+    //= type=test
+    //# This GetBranchKeyVersion MUST construct [branch key materials](./structures.md#branch-key-materials)
+    //# according to [Branch Key Materials From Authenticated Encryption Context](#branch-key-materials-from-authenticated-encryption-context).
+    //
+    //= spec/framework/branch-key-store.md#getbranchkeyversion
+    //= type=test
+    //# This operation MUST return the constructed [branch key materials](./structures.md#branch-key-materials).
     assert_eq!(materials.branch_key_id(), BRANCH_KEY_ID);
     assert_eq!(materials.branch_key_version(), BRANCH_KEY_ACTIVE_VERSION);
     assert_eq!(materials.branch_key().len(), 32);
@@ -326,6 +371,13 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
         ddb_client_us_west_2().await,
     )
     .await;
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //= type=test
+    //# If the Keystore's [AWS KMS Configuration](#aws-kms-configuration) is `KMS Key ARN` or `KMS MRKey ARN`,
+    //# the `kms-arn` field of the DDB response item MUST be
+    //# [compatible with](#aws-key-arn-compatibility) the configured KMS Key in
+    //# the [AWS KMS Configuration](#aws-kms-configuration) for this keystore,
+    //# or the operation MUST fail.
     let err = match store
         .get_active_branch_key(DISCOVERY_BRANCH_KEY_ID.to_string())
         .await
@@ -350,6 +402,14 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
         ddb_client_us_west_2().await,
     )
     .await;
+    //= spec/framework/branch-key-store.md#aws-kms-branch-key-decryption
+    //= type=test
+    //# Every attribute except for `enc` on the AWS DDB response item
+    //# MUST be authenticated in the decryption of `enc`
+    //
+    //= spec/framework/branch-key-store.md#getactivebranchkey
+    //= type=test
+    //# If the branch key fails to decrypt, GetActiveBranchKey MUST fail.
     let err = match store.get_active_branch_key(BRANCH_KEY_ID.to_string()).await {
         Ok(_) => panic!("Wrong logical name MUST fail at KMS"),
         Err(e) => e,
@@ -427,6 +487,13 @@ async fn integ_create_key_store_returns_existing_table_arn() {
     )
     .await;
 
+    //= spec/framework/branch-key-store.md#createkeystore
+    //= type=test
+    //# This operation MUST first calls the DDB::DescribeTable API with the configured `tableName`.
+    //
+    //= spec/framework/branch-key-store.md#keyschema
+    //= type=test
+    //# The following KeySchema MUST be configured on the table:
     let arn = store
         .create_key_store()
         .await
@@ -449,6 +516,24 @@ async fn integ_create_key_round_trips() {
     let cleanup_ddb = ddb_client_us_west_2().await;
 
     // Create a brand-new branch key (random id) with no custom EC.
+    //= spec/framework/branch-key-store.md#createkey
+    //= type=test
+    //# This operation MUST create a [branch key](structures.md#branch-key) and a [beacon key](structures.md#beacon-key) according to
+    //# the [Branch Key and Beacon Key Creation](#branch-key-and-beacon-key-creation) section.
+    //
+    //= spec/framework/branch-key-store.md#createkey
+    //= type=test
+    //# If creation of the keys are successful,
+    //# the operation MUST call Amazon DynamoDB TransactWriteItems according to the [write key material](#writing-branch-key-and-beacon-key-to-keystore) section.
+    //
+    //= spec/framework/branch-key-store.md#writing-branch-key-and-beacon-key-to-keystore
+    //= type=test
+    //# To add the branch keys and a beacon key to the keystore the
+    //# operation MUST call [Amazon DynamoDB API TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
+    //
+    //= spec/framework/branch-key-store.md#branch-key-and-beacon-key-creation
+    //= type=test
+    //# The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to [Wrapped Branch Key Creation](#wrapped-branch-key-creation).
     let branch_key_id = store
         .create_key(None, None)
         .await
@@ -468,11 +553,24 @@ async fn integ_create_key_round_trips() {
         ),
         None => None,
     };
+    //= spec/framework/branch-key-store.md#getbeaconkey
+    //= type=test
+    //# To get a branch key from the keystore this operation MUST call AWS DDB `GetItem`
+    //# using the `branch-key-id` as the Partition Key and "beacon:ACTIVE" value as the Sort Key.
+    //
+    //= spec/framework/branch-key-store.md#getbeaconkey
+    //= type=test
+    //# The operation MUST decrypt the beacon key according to the [AWS KMS Branch Key Decryption](#aws-kms-branch-key-decryption) section.
     let beacon = store.get_beacon_key(branch_key_id.clone()).await;
 
     cleanup_branch_key(&cleanup_ddb, BRANCH_KEY_STORE_NAME, &branch_key_id).await;
 
     let active = active.expect("get_active_branch_key must succeed after create_key");
+    //= spec/framework/branch-key-store.md#createkey
+    //= type=test
+    //# If writing to the keystore succeeds,
+    //# the operation MUST return the branch-key-id that maps to both
+    //# the branch key and the beacon key.
     assert_eq!(active.branch_key_id(), branch_key_id);
     assert_eq!(active.branch_key().len(), 32);
 
@@ -488,6 +586,14 @@ async fn integ_create_key_round_trips() {
     );
 
     let beacon = beacon.expect("get_beacon_key must succeed after create_key");
+    //= spec/framework/branch-key-store.md#getbeaconkey
+    //= type=test
+    //# This GetBeaconKey MUST construct [beacon key materials](./structures.md#beacon-key-materials) from the decrypted branch key material
+    //# and the `branchKeyId` from the returned `branch-key-id` field.
+    //
+    //= spec/framework/branch-key-store.md#getbeaconkey
+    //= type=test
+    //# This operation MUST return the constructed [beacon key materials](./structures.md#beacon-key-materials).
     assert_eq!(beacon.beacon_key_id(), branch_key_id);
     assert_eq!(beacon.beacon_key().map(<[u8]>::len), Some(32));
 }
@@ -516,6 +622,19 @@ async fn integ_version_key_round_trips() {
         .to_string();
 
     // Rotate the ACTIVE branch key to a new version.
+    //= spec/framework/branch-key-store.md#versionkey
+    //= type=test
+    //# The values on the AWS DDB response item
+    //# MUST be authenticated according to [authenticating a keystore item](#authenticating-a-keystore-item).
+    //
+    //= spec/framework/branch-key-store.md#versionkey
+    //= type=test
+    //# The wrapped Branch Keys, DECRYPT_ONLY and ACTIVE, MUST be created according to [Wrapped Branch Key Creation](#wrapped-branch-key-creation).
+    //
+    //= spec/framework/branch-key-store.md#versionkey
+    //= type=test
+    //# To add the new branch key to the keystore,
+    //# the operation MUST call [Amazon DynamoDB API TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
     let version_result = store.version_key(branch_key_id.clone()).await;
 
     // After versioning, ACTIVE points at a new version, and the original
@@ -527,6 +646,9 @@ async fn integ_version_key_round_trips() {
 
     cleanup_branch_key(&cleanup_ddb, BRANCH_KEY_STORE_NAME, &branch_key_id).await;
 
+    //= spec/framework/branch-key-store.md#versionkey
+    //= type=test
+    //# If DDB TransactWriteItems is successful, this operation MUST return a successful response containing no additional data.
     version_result.expect("version_key must succeed");
 
     let new_active = new_active.expect("get_active_branch_key must succeed after version_key");
