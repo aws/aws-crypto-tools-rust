@@ -122,7 +122,6 @@ mod client;
 pub use client::*;
 
 pub(crate) mod key_derivation;
-pub(crate) mod legacy_compat;
 pub(crate) mod materials;
 pub(crate) mod message;
 
@@ -140,5 +139,7 @@ pub mod __test_internals {
     pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
     pub use crate::message::header_auth::read_header_auth_tag;
     pub use crate::message::header_types::HeaderBody;
-    pub use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
+    pub use crate::suites::{
+        algorithm_suite_from_bytes, algorithm_suite_id_from_bytes, get_ecdsa_alg,
+    };
 }

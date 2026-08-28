@@ -24,7 +24,7 @@ use crate::types::{
     EncryptOutput, EncryptStreamInput, EncryptStreamOutput, SafeRead, SafeWrite,
 };
 use crate::{Error, val_err};
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
+use crate::types::EsdkCommitmentPolicy;
 use std::num::NonZeroUsize;
 
 /// Cross-call configuration for the optional [`Esdk`] client.

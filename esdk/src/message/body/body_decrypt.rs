@@ -12,7 +12,7 @@ use crate::message::serialize_functions::{
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::primitives::aes_decrypt;
+use aws_mpl_primitives::aes_decrypt;
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 fn release_previous_frame(

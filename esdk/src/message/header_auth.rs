@@ -8,14 +8,14 @@ use super::serializable_types::{get_iv_length, get_tag_length};
 use super::serialize_functions::{read_vec, write_bytes};
 use super::{Error, ser_err};
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::suites::AlgorithmSuite;
+use aws_crypto_mpl::structures::AlgorithmSuite;
 
 pub(crate) fn write_header_auth_tag(
     w: &mut dyn SafeWrite,
     header_auth: &HeaderAuth,
     suite: &AlgorithmSuite,
 ) -> Result<(), Error> {
-    match suite.message_version {
+    match suite.message_format_version() {
         //= spec/client-apis/encrypt.md#v1-authentication-tag
         //# With the authentication tag calculated,
         //# if the message format version associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites) is 1.0
@@ -112,7 +112,7 @@ pub fn read_header_auth_tag(
     suite: &AlgorithmSuite,
     raw: &mut dyn SafeWrite,
 ) -> Result<HeaderAuth, Error> {
-    match suite.message_version {
+    match suite.message_format_version() {
         //= spec/client-apis/decrypt.md#v1-header-deserialization
         //# The Decrypt operation MUST then deserialize the
         //# [Header Authentication Version 1.0](../data-format/message-header.md#header-authentication-version-10):

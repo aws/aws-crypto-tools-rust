@@ -14,13 +14,13 @@ use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
-use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
+use crate::suites::get_ecdsa_alg;
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptionContext,
-    MaterialSource, SafeRead, SafeWrite,
+    EsdkCommitmentPolicy, MaterialSource, SafeRead, SafeWrite,
 };
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
+use aws_crypto_mpl::structures::DecryptionMaterials;
+use aws_mpl_primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DecryptMode {
@@ -197,7 +197,7 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
 /// Intermediate state passed between decrypt steps.
 struct DecryptState {
     header: header::HeaderInfo,
-    dec_mat: aws_mpl_legacy::DecryptionMaterials,
+    dec_mat: DecryptionMaterials,
     derived_data_keys: key_derivation::ExpandedKeyMaterial,
     sig_digest: DigestWriter,
     encryption_context_to_only_authenticate: EncryptionContext,
@@ -242,18 +242,19 @@ async fn internal_decrypt(
     )
     .await?;
 
-    get_esdk_algorithm_suite_id(state.header.suite.id)?;
+    crate::suites::algorithm_suite_id_from_bytes(state.header.suite.id())?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= reason=verification_key presence must match suite's signature algorithm; mismatch means misbehaving CMM
     //# - If the message header contains an algorithm suite including a
     //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# the Decrypt operation MUST perform this step.
-    let suite_has_signature = !matches!(
-        state.header.suite.signature,
-        aws_mpl_legacy::suites::SignatureAlgorithm::None
-    );
-    if suite_has_signature != state.dec_mat.verification_key.is_some() {
+    let suite_has_signature = state
+        .header
+        .suite
+        .asymmetric_signature_algorithm()
+        .is_some();
+    if suite_has_signature != state.dec_mat.verification_key().is_some() {
         return Err(val_err(
             "Decryption materials verification_key presence must match algorithm suite signature algorithm",
         ));
@@ -317,7 +318,9 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        algorithm_suite_id: get_esdk_algorithm_suite_id(state.header.suite.id)?,
+        algorithm_suite_id: crate::suites::algorithm_suite_id_from_bytes(
+            state.header.suite.id(),
+        )?,
     })
 }
 
@@ -347,7 +350,7 @@ fn step_parse_header(
     //= reason=sig_digest is fed header bytes immediately; raw header not retained for later
     //# - The streamed Decrypt operation SHOULD input the serialized header to the signature algorithm as soon as it is deserialized,
     //# such that the serialized header isn't required to remain in memory to [verify the signature](#verify-the-signature).
-    let mut sig_digest = DigestWriter::from_old_ecdsa(header_body.algorithm_suite().signature)?;
+    let mut sig_digest = DigestWriter::from_suite(&header_body.algorithm_suite())?;
     serialize_functions::write_bytes(&mut sig_digest, &raw_header)?;
 
     Ok((header_body, raw_header, sig_digest))
@@ -369,22 +372,24 @@ async fn step_get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If a CMM is not supplied as the input, the decrypt operation MUST construct a [default CMM](../framework/default-cmm.md)
     //# from the input [keyring](../framework/keyring-interface.md).
-    let cmm = materials::create_cmm_from_input(input_source).await?;
+    let cmm = materials::create_cmm_from_input(input_source)?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
-    aws_mpl_legacy::commitment::validate_commitment_policy_on_decrypt(
-        aws_mpl_legacy::commitment::ValidateCommitmentPolicyOnDecryptInput::new(
-            header_body.algorithm_suite().id,
-            aws_mpl_legacy::commitment::CommitmentPolicy::Esdk(commitment_policy),
-        ),
-    )?;
+    let algorithm_suite_id =
+        crate::suites::algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
+    let policy: aws_crypto_mpl::structures::CommitmentPolicy = commitment_policy.into();
+    if !policy.allows_for_decrypt(algorithm_suite_id) {
+        return Err(val_err(
+            "Parsed algorithm suite is not supported by the configured commitment policy for decryption",
+        ));
+    }
 
     let dec_mat = materials::get_decryption_materials(
         cmm,
-        header_body.algorithm_suite().id,
+        algorithm_suite_id,
         header_body,
         encryption_context,
         commitment_policy,
@@ -394,9 +399,9 @@ async fn step_get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
-    let suite = &dec_mat.algorithm_suite;
+    let suite = dec_mat.algorithm_suite();
 
-    if suite != header_body.algorithm_suite() {
+    if &suite != header_body.algorithm_suite() {
         return Err(val_err(
             "Stored header algorithm suite does not match decryption algorithm suite",
         ));
@@ -408,7 +413,7 @@ async fn step_get_decryption_materials(
         //
         //= spec/client-apis/decrypt.md#v2-header-deserialization
         //# - MUST deserialize the [Authentication Tag](../data-format/message-header.md#authentication-tag).
-        header_auth::read_header_auth_tag(ciphertext, suite, &mut sig_digest)?;
+        header_auth::read_header_auth_tag(ciphertext, &suite, &mut sig_digest)?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=implication
@@ -433,14 +438,13 @@ async fn step_get_decryption_materials(
         //= reason=dec_mat.plaintext_data_key is set by the keyring/CMM in the preceding decrypt-materials step; the IKM passed to derive_keys is that provider-supplied value by data dependency
         //# - The input keying material MUST be the data key generated by the key provider.
         dec_mat
-            .plaintext_data_key
-            .as_ref()
+            .plaintext_data_key()
             .ok_or_else(|| val_err("Decryption materials must contain a plaintext data key"))?
             .as_bytes(),
-        suite,
+        &suite,
     )?;
 
-    if !header::header_version_supports_commitment(suite, header_body) {
+    if !header::header_version_supports_commitment(&suite, header_body) {
         return Err(val_err("Invalid commitment values found in header body"));
     }
 
@@ -448,11 +452,11 @@ async fn step_get_decryption_materials(
     //# If the [algorithm suite](../framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) supports [key commitment](../framework/algorithm-suites.md#key-commitment)
     //# then the [commit key](../framework/algorithm-suites.md#commit-key) MUST be derived from the plaintext data key
     //# using the [commit key derivation](../framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings).
-    if v2_header_body::has_hkdf(&suite.commitment) {
+    if v2_header_body::has_commitment(&suite) {
         //= spec/client-apis/decrypt.md#get-the-decryption-materials
         //# The derived commit key MUST equal the commit key stored in the message header.
         header::validate_suite_data(
-            suite,
+            &suite,
             header_body,
             derived_data_keys.commitment_key.as_ref().ok_or_else(|| {
                 val_err("Derived key material must contain a commitment key for HKDF commitment")
@@ -592,7 +596,7 @@ fn step_decrypt_body(
         }
         ContentType::Framed => {
             let fail_if_multi_frame =
-                state.dec_mat.verification_key.is_some() && mode.is_streaming();
+                state.dec_mat.verification_key().is_some() && mode.is_streaming();
             body::read_and_decrypt_framed_message_body(
                 ciphertext,
                 plaintext,
@@ -617,7 +621,7 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
     //= reason=step_verify_signature reads from the same SafeRead cursor the body decode left positioned past the body, so the next bytes read are the footer by construction
     //# After deserializing the body, the Decrypt operation MUST deserialize the next encrypted message bytes
     //# as the [message footer](../data-format/message-footer.md).
-    if state.dec_mat.verification_key.is_some() {
+    if state.dec_mat.verification_key().is_some() {
         let mut noop = NoopWriter;
 
         //= spec/client-apis/decrypt.md#verify-the-signature
@@ -652,20 +656,26 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
 // to only contain key value pairs listed
 // in the decryption material's required encryption context keys.
 fn build_encryption_context_to_only_authenticate(
-    dec_mat: &aws_mpl_legacy::DecryptionMaterials,
+    dec_mat: &DecryptionMaterials,
 ) -> EncryptionContext {
+    let required = dec_mat.required_encryption_context_keys();
     dec_mat
-        .encryption_context
+        .encryption_context()
         .iter()
-        .filter(|(k, _)| dec_mat.required_encryption_context_keys.contains(k))
-        .map(|(k, v)| (k.clone(), v.clone()))
+        .filter(|(k, _)| required.contains(*k))
+        .filter_map(|(k, v)| {
+            match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
+                (Ok(k), Ok(v)) => Some((k, v)),
+                _ => None,
+            }
+        })
         .collect()
 }
 
 fn verify_signature(
     r: &mut dyn SafeRead,
     context: DigestContext,
-    dec_mat: &aws_mpl_legacy::DecryptionMaterials,
+    dec_mat: &DecryptionMaterials,
     sig_digest: &mut dyn SafeWrite,
 ) -> Result<(), Error> {
     //= spec/client-apis/decrypt.md#verify-the-signature
@@ -675,14 +685,13 @@ fn verify_signature(
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
     //# to indicate an end to the encrypted message.
     let signature = footer::read_footer(r, sig_digest)?;
-    let ecdsa_params = get_ecdsa_alg(dec_mat.algorithm_suite.signature)?;
+    let ecdsa_params = get_ecdsa_alg(&dec_mat.algorithm_suite())?;
 
     let valid = ecdsa_verify_context(
         ecdsa_params,
-        &dec_mat.verification_key
-            .as_ref()
+        dec_mat.verification_key()
             .ok_or_else(|| val_err("Decryption materials must contain a verification key for signature verification"))?
-            .0,
+            .as_bytes(),
         context,
         &signature,
     )?;

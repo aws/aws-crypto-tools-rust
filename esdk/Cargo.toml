@@ -18,9 +18,10 @@ tokio = { version = "1.49.0", features = ["full"] }
 aws-smithy-types = "1.3.6"
 aws-sdk-kms = "1.98.0"
 aws-sdk-dynamodb = "1.103.0"
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../unsafe-unreviewed-mpl/mpl" }
+aws-crypto-mpl = { path = "../mpl" }
+aws-mpl-primitives = { path = "../prim" }
 aws-lc-rs = { version = "1.15.4", default-features = false }
-async-trait = "0.1.89"
+async-trait = "=0.1.83"
 zeroize = "1.8.2"
 
 # Necessary for examples

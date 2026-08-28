@@ -4,8 +4,8 @@
 //! Type aliases and helper functions for message serialization.
 
 use crate::types::EncryptionContext;
-use aws_mpl_legacy::EncryptedDataKey;
-use aws_mpl_legacy::suites::AlgorithmSuite;
+use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::structures::EncryptedDataKey;
 
 /// Unordered encryption context from the public API.
 pub(crate) type ESDKEncryptionContext = EncryptionContext;
@@ -19,24 +19,15 @@ pub(crate) type ESDKCanonicalEncryptionContext = Vec<ESDKEncryptionContextPair>;
 const ESDK_CANONICAL_ENCRYPTION_CONTEXT_MAX_LENGTH: u64 = u16::MAX as u64 - 2;
 
 pub(crate) const fn get_iv_length(a: &AlgorithmSuite) -> u8 {
-    match a.encrypt {
-        aws_mpl_legacy::suites::Encrypt::AesGcm(_e) => 12,
-        _ => 0,
-    }
+    a.iv_length() as u8
 }
 
 pub(crate) const fn get_tag_length(a: &AlgorithmSuite) -> u8 {
-    match a.encrypt {
-        aws_mpl_legacy::suites::Encrypt::AesGcm(_e) => 16,
-        _ => 0,
-    }
+    a.authentication_tag_length() as u8
 }
 
 pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> u8 {
-    match a.encrypt {
-        aws_mpl_legacy::suites::Encrypt::AesGcm(e) => e.key_len(),
-        _ => 0,
-    }
+    a.encryption_key_length() as u8
 }
 
 // Length properties of the Encryption Context.

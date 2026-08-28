@@ -9,12 +9,14 @@ use super::header_types::{
 };
 use super::serializable_types::ESDKEncryptionContext;
 use super::v1_header_body::{read_v1_header_body, write_v1_header_body};
-use super::v2_header_body::{get_hkdf, read_v2_header_body, write_v2_header_body};
+use super::v2_header_body::{
+    commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
+};
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
 use crate::error::val_err;
 use crate::types::{SafeRead, SafeWrite};
 use aws_lc_rs::constant_time;
-use aws_mpl_legacy::suites::{AlgorithmSuite, DerivationAlgorithm};
+use aws_crypto_mpl::structures::AlgorithmSuite;
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 
@@ -45,8 +47,8 @@ pub(crate) fn write_header_body(w: &mut dyn SafeWrite, body: &HeaderBody) -> Res
     // is a dev-time guard against future drift; the invariant is enforced at the call site.
     debug_assert!(
         match body {
-            HeaderBody::V1Body(b) => b.algorithm_suite.message_version == 1,
-            HeaderBody::V2Body(b) => b.algorithm_suite.message_version == 2,
+            HeaderBody::V1Body(b) => b.algorithm_suite.message_format_version() == 1,
+            HeaderBody::V2Body(b) => b.algorithm_suite.message_format_version() == 2,
         },
         "header body variant does not match its embedded algorithm suite's message_version",
     );
@@ -139,18 +141,17 @@ pub(crate) fn header_version_supports_commitment(
     suite: &AlgorithmSuite,
     body: &HeaderBody,
 ) -> bool {
-    match (suite.commitment, body) {
-        (DerivationAlgorithm::Hkdf(header), HeaderBody::V2Body(body)) => {
-            usize::try_from(header.output_key_length).is_ok_and(|n| body.suite_data.len() == n)
+    match body {
+        HeaderBody::V2Body(body) => {
+            has_commitment(suite) && body.suite_data.len() == commit_key_length(suite)
         }
-        (_, HeaderBody::V1Body(_)) => true,
-        _ => false,
+        HeaderBody::V1Body(_) => true,
     }
 }
 
 pub(crate) fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    edks: &[aws_mpl_legacy::EncryptedDataKey],
+    edks: &[aws_crypto_mpl::structures::EncryptedDataKey],
 ) -> Result<(), Error> {
     if edks.is_empty() {
         //= spec/data-format/message-header.md#encrypted-data-key-count
@@ -182,7 +183,7 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
     // (suites are sourced from the static algorithm-suites table), but match explicitly
     // so a hypothetical future or malformed value fails loudly instead of silently
     // falling through to the V2 length.
-    let length = match suite.message_version {
+    let length = match suite.message_format_version() {
         1 => MESSAGE_ID_LEN_V1,
         2 => MESSAGE_ID_LEN_V2,
         v => {
@@ -198,7 +199,7 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
     //# While implementations cannot guarantee complete uniqueness,
     //# implementations MUST use a good source of randomness when generating message IDs in order to make
     //# the chance of duplicate IDs negligible.
-    aws_mpl_legacy::primitives::generate_random_bytes(&mut rand_bytes)?;
+    aws_mpl_primitives::generate_random_bytes(&mut rand_bytes)?;
     Ok(rand_bytes)
 }
 
@@ -219,13 +220,10 @@ pub(crate) fn validate_suite_data(
         ));
     }
 
-    let Ok(suite_data_len) = u32::try_from(expected_suite_data.len()) else {
-        return Err(val_err("Algorithm suite data length exceeds u32::MAX"));
-    };
     //= spec/data-format/message-header.md#algorithm-suite-data
     //# The length of the suite data field MUST be equal to the [Algorithm Suite Data Length](../framework/algorithm-suites.md#algorithm-suite-data-length) value
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    if get_hkdf(&suite.commitment)?.output_key_length != suite_data_len {
+    if commit_key_length(suite) != expected_suite_data.len() {
         return Err(val_err(
             "Algorithm suite data length does not match the algorithm suite's declared suite-data length",
         ));
