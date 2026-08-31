@@ -25,24 +25,24 @@ pub struct ExpandedKeyMaterial {
 
 // Returns the HKDF-derived (output) key length defined by the algorithm suite.
 // Only HKDF suites carry this length; any other KDF reaching here is a config error.
-fn get_kdf_output_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
+fn get_kdf_output_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
     match suite.encryption_kdf() {
         KeyDerivationAlgorithm::IdentityKdf => Err(val_err(
             "Algorithm suite KDF must be HKDF to derive output key length, got IdentityKdf",
         )),
-        _ => Ok(suite.encryption_key_length() as u32),
+        _ => Ok(suite.encryption_key_length()),
     }
 }
 
 // Returns the HKDF input (plaintext data key) length defined by the algorithm suite.
 // Only HKDF suites carry this length; any other KDF reaching here is a config error.
 // For every ESDK HKDF suite the input key length equals the encryption key length.
-fn get_kdf_input_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
+fn get_kdf_input_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
     match suite.encryption_kdf() {
         KeyDerivationAlgorithm::IdentityKdf => Err(val_err(
             "Algorithm suite KDF must be HKDF to derive input key length, got IdentityKdf",
         )),
-        _ => Ok(suite.encryption_key_length() as u32),
+        _ => Ok(suite.encryption_key_length()),
     }
 }
 
@@ -83,7 +83,7 @@ pub(crate) fn derive_key_v1(
         KeyDerivationAlgorithm::IdentityKdf => {
             // The identity KDF uses the plaintext data key verbatim, so its length
             // must already equal the suite's encryption key length.
-            let encrypt_key_len = usize::from(get_encrypt_key_length(suite));
+            let encrypt_key_len = get_encrypt_key_length(suite);
             if plaintext_data_key.len() != encrypt_key_len {
                 return Err(val_err(format!(
                     "Identity KDF plaintext data key length {} does not match the suite encryption key length {encrypt_key_len}",
@@ -167,7 +167,7 @@ pub fn derive_key_v2(
     // For V2 algorithms the KDF can only be HKDF, and the encryption key length must
     // match the KDF output length.
     let kdf_output_len = get_kdf_output_len(suite)?;
-    let encrypt_key_len = u32::from(get_encrypt_key_length(suite));
+    let encrypt_key_len = get_encrypt_key_length(suite);
     if encrypt_key_len != kdf_output_len {
         return Err(val_err(format!(
             "Encryption key length {encrypt_key_len} does not match KDF output key length {kdf_output_len}"
@@ -180,11 +180,6 @@ pub fn derive_key_v2(
         )));
     }
     let kdf_input_len = get_kdf_input_len(suite)?;
-    let Ok(kdf_input_len) = usize::try_from(kdf_input_len) else {
-        return Err(val_err(format!(
-            "KDF input_key_length {kdf_input_len} exceeds usize"
-        )));
-    };
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //# - The length of the input keying material MUST equal the [key derivation input length](#key-derivation-input-length)
     //# specified by the [algorithm suite encryption key derivation settings](#algorithm-suites-encryption-key-derivation-settings).
@@ -208,10 +203,7 @@ pub fn derive_key_v2(
     //= reason=Hash is destructured directly from suite.commitment; both V2 committing suites (0x0478, 0x0578) carry SHA-512, so no observable runtime differential exists to falsify
     //# - The hash function MUST be specified by the [algorithm suite commitment settings](#algorithm-suites-commit-key-derivation-settings).
     let (alg, commit_len) = match suite.commit_kdf() {
-        Some(commit_kdf) => (
-            kdf_digest(commit_kdf)?,
-            suite.algorithm_suite_data_length() as u32,
-        ),
+        Some(commit_kdf) => (kdf_digest(commit_kdf)?, suite.algorithm_suite_data_length()),
         None => {
             return Err(val_err("Algorithm suite has no commitment KDF"));
         }
@@ -239,21 +231,11 @@ pub fn derive_key_v2(
     //# for both the encryption key and the commitment key.
     let pseudo_random_key = aws_mpl_primitives::hkdf_extract(alg, message_id, plaintext_data_key);
 
-    let Ok(encrypt_key_len) = usize::try_from(kdf_output_len) else {
-        return Err(val_err(format!(
-            "KDF output_key_length {kdf_output_len} exceeds usize"
-        )));
-    };
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //# - The length of the output keying material MUST equal the [encryption key length](#encryption-key-length)
     //# specified by the [algorithm suite encryption settings](#algorithm-suites-encryption-settings).
-    let mut encrypt_key = Zeroizing::new(vec![0u8; encrypt_key_len]);
+    let mut encrypt_key = Zeroizing::new(vec![0u8; kdf_output_len]);
 
-    let Ok(commit_len) = usize::try_from(commit_len) else {
-        return Err(val_err(format!(
-            "Commit key length {commit_len} exceeds usize"
-        )));
-    };
     //= spec/client-apis/key-derivation.md#hkdf-commit-key
     //# - The length of the output keying material MUST equal the [algorithm suite data length](#algorithm-suite-data-length)
     //# specified by the [supported algorithm suites](#supported-algorithm-suites).
@@ -301,10 +283,7 @@ pub fn derive_keys(
     suite: &AlgorithmSuite,
 ) -> Result<ExpandedKeyMaterial, Error> {
     debug_assert!(!message_id.is_empty());
-    debug_assert_eq!(
-        usize::from(get_encrypt_key_length(suite)),
-        plaintext_data_key.len()
-    );
+    debug_assert_eq!(get_encrypt_key_length(suite), plaintext_data_key.len());
 
     match suite.message_format_version() {
         1 => derive_key_v1(message_id, plaintext_data_key, suite),

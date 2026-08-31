@@ -604,7 +604,7 @@ async fn test_cmm_request_no_algorithm_suite_field() {
     let output = encrypt(&enc_input).await.unwrap();
 
     // Verify spy observed None for algorithm_suite_id
-    let observed = observed_suite.lock().unwrap().clone();
+    let observed = *observed_suite.lock().unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //= reason=Spy CMM directly observes the call was constructed with expected fields

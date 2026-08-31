@@ -289,8 +289,8 @@ pub(crate) fn encrypt_and_serialize_body(
             header.body.frame_length()
         ));
     };
-    let iv_len = usize::from(get_iv_length(&header.suite));
-    let auth_len = usize::from(get_tag_length(&header.suite));
+    let iv_len = get_iv_length(&header.suite);
+    let auth_len = get_tag_length(&header.suite);
     let frame_len = frame_length + iv_len + auth_len + 4;
     let mut frame_buf = Vec::with_capacity(frame_len);
 

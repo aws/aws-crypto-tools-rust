@@ -18,16 +18,16 @@ pub(crate) type ESDKCanonicalEncryptionContext = Vec<ESDKEncryptionContextPair>;
 /// `u16::MAX` - 2 for the payload.
 const ESDK_CANONICAL_ENCRYPTION_CONTEXT_MAX_LENGTH: u64 = u16::MAX as u64 - 2;
 
-pub(crate) const fn get_iv_length(a: &AlgorithmSuite) -> u8 {
-    a.iv_length() as u8
+pub(crate) const fn get_iv_length(a: &AlgorithmSuite) -> usize {
+    a.iv_length()
 }
 
-pub(crate) const fn get_tag_length(a: &AlgorithmSuite) -> u8 {
-    a.authentication_tag_length() as u8
+pub(crate) const fn get_tag_length(a: &AlgorithmSuite) -> usize {
+    a.authentication_tag_length()
 }
 
-pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> u8 {
-    a.encryption_key_length() as u8
+pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> usize {
+    a.encryption_key_length()
 }
 
 // Length properties of the Encryption Context.

@@ -196,7 +196,7 @@ pub(crate) fn read_v2_header_body(
     //# the caller indicates an end to the encrypted message.
 
     Ok(V2HeaderBody {
-        algorithm_suite: algorithm_suite.clone(),
+        algorithm_suite,
         message_id,
         encryption_context,
         encrypted_data_keys,

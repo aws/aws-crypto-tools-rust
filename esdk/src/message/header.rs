@@ -137,7 +137,7 @@ pub fn read_header_body(
     Ok(result)
 }
 
-pub(crate) fn header_version_supports_commitment(
+pub(crate) const fn header_version_supports_commitment(
     suite: &AlgorithmSuite,
     body: &HeaderBody,
 ) -> bool {

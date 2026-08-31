@@ -628,7 +628,7 @@ fn build_header_for_encrypt(
     )?;
 
     Ok(header::HeaderInfo {
-        suite: suite.clone(),
+        suite: *suite,
         body,
         encryption_context: encryption_context.clone(),
         header_auth,
@@ -670,6 +670,12 @@ fn build_header_body(
             suite_data: sd,
         }))
     } else {
+        let header_iv_length_usize = get_iv_length(suite);
+        let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
+            return ser_err(&format!(
+                "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
+            ));
+        };
         Ok(HeaderBody::V1Body(V1HeaderBody {
             message_type: MessageType::TypeCustomerAed,
             algorithm_suite: *suite,
@@ -677,7 +683,7 @@ fn build_header_body(
             encryption_context: encryption_context.clone(),
             encrypted_data_keys: encrypted_data_keys.into(),
             content_type: ContentType::Framed,
-            header_iv_length: get_iv_length(suite),
+            header_iv_length,
             frame_length,
         }))
     }
@@ -690,7 +696,7 @@ fn build_header_auth_tag(
     serialized_req_encryption_context: &[u8],
 ) -> Result<HeaderAuth, Error> {
     let key_length = get_encrypt_key_length(suite);
-    if data_key.len() != usize::from(key_length) {
+    if data_key.len() != key_length {
         return ser_err(&format!(
             "Incorrect data key length: got {}, expected {}",
             data_key.len(),
@@ -700,7 +706,7 @@ fn build_header_auth_tag(
 
     //= spec/client-apis/encrypt.md#authentication-tag
     //# - The IV MUST have a value of 0.
-    let iv = vec![0; usize::from(get_iv_length(suite))];
+    let iv = vec![0; get_iv_length(suite)];
     let mut auth_tag = Vec::new();
 
     //= spec/client-apis/encrypt.md#authentication-tag

@@ -127,7 +127,12 @@ pub(crate) fn write_v1_header_body(
     //= spec/client-apis/encrypt.md#v1-header
     //# The value MUST match the [IV length](../framework/algorithm-suites.md#iv-length)
     //# specified by the [algorithm suite](../framework/algorithm-suites.md).
-    let iv_length = get_iv_length(&body.algorithm_suite);
+    let iv_length_usize = get_iv_length(&body.algorithm_suite);
+    let Ok(iv_length) = u8::try_from(iv_length_usize) else {
+        return ser_err(&format!(
+            "IV length {iv_length_usize} exceeds the UInt8 IV-length field"
+        ));
+    };
 
     //= spec/client-apis/encrypt.md#v1-header
     //# - MUST serialize the [IV Length](../data-format/message-header.md#iv-length).
@@ -180,7 +185,7 @@ pub(crate) fn read_v1_header_iv_length(
     //= spec/data-format/message-header.md#iv-length
     //# This value MUST be equal to the [IV length](../framework/algorithm-suites.md#iv-length) value of the
     //# [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    if iv_len == get_iv_length(suite) {
+    if usize::from(iv_len) == get_iv_length(suite) {
         Ok(iv_len)
     } else {
         ser_err("Header IV length does not match algorithm suite")

@@ -348,7 +348,7 @@ fn step_parse_header(
     //= reason=sig_digest is fed header bytes immediately; raw header not retained for later
     //# - The streamed Decrypt operation SHOULD input the serialized header to the signature algorithm as soon as it is deserialized,
     //# such that the serialized header isn't required to remain in memory to [verify the signature](#verify-the-signature).
-    let mut sig_digest = DigestWriter::from_suite(&header_body.algorithm_suite())?;
+    let mut sig_digest = DigestWriter::from_suite(header_body.algorithm_suite())?;
     serialize_functions::write_bytes(&mut sig_digest, &raw_header)?;
 
     Ok((header_body, raw_header, sig_digest))
@@ -470,7 +470,7 @@ async fn step_get_decryption_materials(
         body: header_body.clone(),
         raw_header,
         encryption_context: header_encryption_context,
-        suite: suite.clone(),
+        suite,
         header_auth,
     };
 
