@@ -124,7 +124,6 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
-use aws_mpl_legacy::dafny;
 use std::sync::LazyLock;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
@@ -193,7 +192,6 @@ mod ffi {
         SerializationError,
         CryptographicError,
         MplError,
-        LegacyError,
         ValidationError,
     }
 
@@ -311,7 +309,7 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
         ErrorKind::SerializationError => ffi::ShimErrorKind::SerializationError,
         ErrorKind::CryptographicError => ffi::ShimErrorKind::CryptographicError,
         ErrorKind::MplError => ffi::ShimErrorKind::MplError,
-        ErrorKind::LegacyError(_) => ffi::ShimErrorKind::LegacyError,
+        ErrorKind::KeystoreError | ErrorKind::CacheError => ffi::ShimErrorKind::MplError,
         ErrorKind::ValidationError => ffi::ShimErrorKind::ValidationError,
         _ => ffi::ShimErrorKind::Esdk,
     }
@@ -342,8 +340,8 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
 //# algorithm suite that has the same two-byte ID.
 fn alg_id_target_to_core(
     e: ffi::EsdkAlgorithmSuiteId,
-) -> Result<aws_mpl_legacy::suites::EsdkAlgorithmSuiteId, String> {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as Core;
+) -> Result<aws_esdk::EsdkAlgorithmSuiteId, String> {
+    use aws_esdk::EsdkAlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Target::AlgAes128GcmIv12Tag16NoKdf => Ok(Core::AlgAes128GcmIv12Tag16NoKdf),
@@ -381,9 +379,9 @@ fn alg_id_target_to_core(
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
 fn alg_id_core_to_target(
-    e: aws_mpl_legacy::suites::EsdkAlgorithmSuiteId,
+    e: aws_esdk::EsdkAlgorithmSuiteId,
 ) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as Core;
+    use aws_esdk::EsdkAlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Core::AlgAes128GcmIv12Tag16NoKdf => Ok(Target::AlgAes128GcmIv12Tag16NoKdf),
@@ -405,17 +403,12 @@ fn alg_id_core_to_target(
         Core::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
             Ok(Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         }
-        //= spec/shim/esdk-shim.md#algorithm-suite-identifier
-        //= type=implication
-        //= reason=The core ESDK enum is exhaustive over its defined suites; a value it does not define cannot be constructed, so this defensive arm cannot be reached by a runtime test.
-        //# - The shim MUST return an error when the core ESDK produces an algorithm suite
-        //# the shim does not define.
-        _ => Err(shim_err(
-            ffi::ShimErrorKind::Esdk,
-            "algorithm suite translation",
-            "core returned an algorithm suite id unknown to the C++ bindings",
-        )),
     }
+    //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+    //= type=implication
+    //= reason=aws_esdk::EsdkAlgorithmSuiteId is a closed enum and every variant is mapped above, so a core algorithm suite the shim does not define is unrepresentable; no error arm can exist.
+    //# - The shim MUST return an error when the core ESDK produces an algorithm suite
+    //# the shim does not define.
 }
 
 // C++ to Rust for Commitment Policy
@@ -424,8 +417,8 @@ fn alg_id_core_to_target(
 //# commitment policy of the same meaning.
 fn commitment_policy_target_to_core(
     x: ffi::EsdkCommitmentPolicy,
-) -> Result<aws_mpl_legacy::commitment::EsdkCommitmentPolicy, String> {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as Core;
+) -> Result<aws_esdk::EsdkCommitmentPolicy, String> {
+    use aws_esdk::EsdkCommitmentPolicy as Core;
     use ffi::EsdkCommitmentPolicy as Target;
     match x {
         Target::ForbidEncryptAllowDecrypt => Ok(Core::ForbidEncryptAllowDecrypt),
@@ -625,22 +618,16 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
 //# wrapping algorithm of the same meaning.
 fn wrapping_alg_target_to_core(
     alg: ffi::AesWrappingAlg,
-) -> Result<dafny::types::AesWrappingAlg, String> {
+) -> Result<aws_mpl_primitives::AesGcm, String> {
     match alg {
         ffi::AesWrappingAlg::Unset => Err(shim_err(
             ffi::ShimErrorKind::ValidationError,
             "create_raw_aes_keyring",
             "wrapping_alg is unset",
         )),
-        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => {
-            Ok(dafny::types::AesWrappingAlg::AlgAes128GcmIv12Tag16)
-        }
-        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => {
-            Ok(dafny::types::AesWrappingAlg::AlgAes192GcmIv12Tag16)
-        }
-        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => {
-            Ok(dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        }
+        ffi::AesWrappingAlg::AlgAes128GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes128Gcm),
+        ffi::AesWrappingAlg::AlgAes192GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes192Gcm),
+        ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16 => Ok(aws_mpl_primitives::AesGcm::Aes256Gcm),
         //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
         //# - The shim MUST return an error when the target wrapping algorithm is not a
         //# supported value.
@@ -656,39 +643,28 @@ fn wrapping_alg_target_to_core(
 //# - The shim MUST provide an operation that creates a raw AES keyring backed by
 //# the core ESDK.
 fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring>, String> {
-    let mpl_config = dafny::types::MaterialProvidersConfig::builder()
-        .build()
-        .map_err(|e| {
-            shim_err(
-                ffi::ShimErrorKind::Esdk,
-                "create_keyring",
-                format!("failed to build MaterialProvidersConfig: {e:?}"),
-            )
-        })?;
-    let mpl = dafny::Client::from_conf(mpl_config)
-        .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, "create_keyring", e))?;
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
+    //# key name to the core ESDK.
+    //
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
+    //# core ESDK unmodified.
+    //
+    //= spec/shim/esdk-shim.md#create-raw-aes-keyring
+    //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
+    //# to the core ESDK, converted as defined in
+    //# [AES wrapping algorithm](#aes-wrapping-algorithm).
+    let keyring = aws_crypto_mpl::keyring::RawAesKeyring::new(
+        input.key_namespace.clone(),
+        input.key_name.clone(),
+        input.wrapping_key.to_vec(),
+        wrapping_alg_target_to_core(input.wrapping_alg)?,
+    )
+    .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, "create_raw_aes_keyring", e))?;
 
-    let keyring = TOKIO_RUNTIME
-        .block_on(
-            mpl.create_raw_aes_keyring()
-                //= spec/shim/esdk-shim.md#create-raw-aes-keyring
-                //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
-                //# key name to the core ESDK.
-                .key_namespace(input.key_namespace.clone())
-                .key_name(input.key_name.clone())
-                //= spec/shim/esdk-shim.md#create-raw-aes-keyring
-                //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
-                //# core ESDK unmodified.
-                .wrapping_key(input.wrapping_key.to_vec())
-                //= spec/shim/esdk-shim.md#create-raw-aes-keyring
-                //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
-                //# to the core ESDK, converted as defined in
-                //# [AES wrapping algorithm](#aes-wrapping-algorithm).
-                .wrapping_alg(wrapping_alg_target_to_core(input.wrapping_alg)?)
-                .send(),
-        )
-        .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, "create_raw_aes_keyring", e))?;
-
+    let keyring: std::sync::Arc<dyn aws_crypto_mpl::keyring::Keyring> =
+        std::sync::Arc::new(keyring);
     Ok(Box::new(Keyring {
         client: keyring.into(),
     }))

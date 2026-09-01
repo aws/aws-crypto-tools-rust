@@ -90,7 +90,7 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn alg_id_target_to_core_maps_each_repr_to_matching_variant() {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
+    use aws_esdk::EsdkAlgorithmSuiteId as C;
     let pairs: [(u16, C); 11] = [
         (0x0014, C::AlgAes128GcmIv12Tag16NoKdf),
         (0x0046, C::AlgAes192GcmIv12Tag16NoKdf),
@@ -126,7 +126,7 @@ fn alg_id_target_to_core_rejects_unknown() {
 
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
+    use aws_esdk::EsdkAlgorithmSuiteId as C;
     let pairs: [(C, u16); 11] = [
         (C::AlgAes128GcmIv12Tag16NoKdf, 0x0014),
         (C::AlgAes192GcmIv12Tag16NoKdf, 0x0046),
@@ -160,7 +160,7 @@ fn alg_id_round_trips_through_both_conversions() {
 
 #[test]
 fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use aws_esdk::EsdkCommitmentPolicy as C;
     let pairs: [(P, C); 3] = [
         (P::ForbidEncryptAllowDecrypt, C::ForbidEncryptAllowDecrypt),
         (P::RequireEncryptAllowDecrypt, C::RequireEncryptAllowDecrypt),
@@ -336,7 +336,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
 
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use aws_esdk::EsdkCommitmentPolicy as C;
     let input = ffi::EncryptInput {
         algorithm_suite_id: set_alg_id(F { repr: 0x0578 }),
         encryption_context: Vec::new(),
@@ -371,7 +371,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
 
 #[test]
 fn apply_decrypt_options_forwards_every_optional_input() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use aws_esdk::EsdkCommitmentPolicy as C;
     let input = ffi::DecryptInput {
         ciphertext: &[],
         encryption_context: Vec::new(),
