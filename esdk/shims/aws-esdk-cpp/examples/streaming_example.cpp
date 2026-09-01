@@ -1,18 +1,13 @@
-// Streams encryption and decryption through files.
+// Example demonstrating use of streaming APIs.
 //
-// File streaming is for data too large to hold in memory at once. encrypt_stream
-// and decrypt_stream read from a std::istream source and write to a std::ostream
-// sink in bounded memory, so you can stream a whole file (or socket) straight
-// through. This example encrypts a plaintext file to a ciphertext file, then
-// decrypts that back to a third file.
+// Streamed encrypt/decrypt is for data too large to hold in memory at once.
+// encrypt_stream and decrypt_stream read from a std::istream source and write to a std::ostream sink,
+// so you can stream a whole file (or socket) straight through.
+// 
+// This example encrypts a plaintext file to a ciphertext file, then decrypts that back to a third file.
 //
-// A non-signing suite is used so streamed decrypt works regardless of message
-// size. The ESDK rejects streamed decrypt of a multi-frame message under a
-// signing suite; decrypt those with the one-shot Aws::Esdk::decrypt instead.
-//
-// When your data is not an iostream (a socket, a reactor callback) or you must
-// withhold plaintext until it is authenticated, drive the operation chunk by
-// chunk instead; see streaming_chunks_example.cpp.
+// A non-signing suite is used so streamed decrypt works regardless of message size;
+// the ESDK refuses streamed decrypt of a multi-frame signed message.
 
 #include <cstdio>
 #include <cstdint>
@@ -73,9 +68,9 @@ int main() {
         }
 
         // Decrypt the ciphertext file back into the decrypted file.
-        // SECURITY: decrypt_stream writes plaintext to the sink before
-        // verification completes. It returns normally only if the whole message
-        // authenticated; if it throws, discard the decrypted file.
+        // Note: decrypt_stream writes plaintext to the sink before verification completes.
+        // The function returns normally only if the whole message authenticates.
+        // If the function throws, you MUST discard the decrypted file/output.
         {
             std::ifstream in(CIPHERTEXT_FILE, std::ios::binary);
             std::ofstream out(DECRYPTED_FILE, std::ios::binary);
