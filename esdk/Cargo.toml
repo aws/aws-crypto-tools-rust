@@ -21,7 +21,7 @@ aws-sdk-dynamodb = "1.103.0"
 aws-crypto-mpl = { path = "../mpl" }
 aws-mpl-primitives = { path = "../prim" }
 aws-lc-rs = { version = "1.15.4", default-features = false }
-async-trait = "=0.1.83"
+async-trait = "0.1.83"
 zeroize = "1.8.2"
 
 # Necessary for examples
