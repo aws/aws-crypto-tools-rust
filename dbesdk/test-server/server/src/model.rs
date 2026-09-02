@@ -112,6 +112,8 @@ pub enum CryptoAction {
     EncryptAndSign,
     #[serde(rename = "SIGN_ONLY")]
     SignOnly,
+    #[serde(rename = "SIGN_AND_INCLUDE_IN_ENCRYPTION_CONTEXT")]
+    SignAndIncludeInEncryptionContext,
     #[serde(rename = "DO_NOTHING")]
     DoNothing,
 }

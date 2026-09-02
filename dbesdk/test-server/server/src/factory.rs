@@ -92,6 +92,8 @@ fn crypto_actions(
             let native = match action {
                 model::CryptoAction::EncryptAndSign => DbeCryptoAction::EncryptAndSign,
                 model::CryptoAction::SignOnly => DbeCryptoAction::SignOnly,
+                model::CryptoAction::SignAndIncludeInEncryptionContext =>
+                    DbeCryptoAction::SignAndIncludeInEncryptionContext,
                 model::CryptoAction::DoNothing => DbeCryptoAction::DoNothing,
             };
             (name.clone(), native)
