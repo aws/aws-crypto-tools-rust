@@ -46,8 +46,10 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 const WEST_BRANCH_KEY: &str = "MyWestBranch2";
 
 /// A branch-key id whose `kms-arn` field intentionally does NOT match
-/// `KEY_ARN` — used to exercise the ARN-disagreement path.
-const POSTAL_HORN_BRANCH_KEY_ID: &str = "682dfba7-4c35-491d-8d6a-5a9c56194061";
+/// `KEY_ARN` — used to exercise the ARN-disagreement path. This is Dafny's
+/// `postalHornBranchKeyId` fixture in
+/// AwsCryptographyKeyStore/test/Fixtures.dfy.
+const DISCOVERY_BRANCH_KEY_ID: &str = "682dfba7-4c35-491d-8d6a-5a9c56194061";
 
 const INCORRECT_LOGICAL_NAME: &str = "MySuperAwesomeTableName";
 
@@ -314,7 +316,7 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
 
 #[tokio::test]
 async fn integ_get_active_key_with_arn_disagreement_fails() {
-    // KEY_ARN is configured but POSTAL_HORN_BRANCH_KEY_ID's record was
+    // KEY_ARN is configured but DISCOVERY_BRANCH_KEY_ID's record was
     // created with a different KMS ARN — the kms-arn-compat check in
     // resolve_keystore_arn rejects with Authentication errkind.
     let store = build_store(
@@ -325,10 +327,10 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
     )
     .await;
     let err = match store
-        .get_active_branch_key(POSTAL_HORN_BRANCH_KEY_ID.to_string())
+        .get_active_branch_key(DISCOVERY_BRANCH_KEY_ID.to_string())
         .await
     {
-        Ok(_) => panic!("Configured KEY_ARN + postalHornBranchKeyId MUST fail (ARN mismatch)"),
+        Ok(_) => panic!("Configured KEY_ARN + DISCOVERY_BRANCH_KEY_ID MUST fail (ARN mismatch)"),
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Authentication);

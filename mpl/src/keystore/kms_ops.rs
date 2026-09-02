@@ -193,6 +193,15 @@ pub(crate) async fn decrypt_branch_key(
 /// Map any AWS KMS SDK error into a `KeystoreError`. We collapse all
 /// SDK error variants into `KeystoreErrorKind::Kms` since callers only
 /// need the categorisation, not the raw SDK error type.
+// TODO: attach the SDK error as the `cause` instead of only formatting it into
+// the message. Collapsing to a kind is right for callers that just branch on
+// category, but discarding the error loses the KMS exception name, so nothing
+// downstream can tell an IncorrectKeyException from throttling or access
+// denied. `KeystoreError` already carries a `cause` field for this; the
+// blocker is the `E: std::error::Error` bound here, which needs
+// `Send + Sync + 'static` to be storable. Tests currently have to settle for
+// asserting the kind — see `assert_failed_at_kms` in
+// tests/test_aws_kms_hierarchical_keyring_integ.rs.
 fn map_kms_error<E>(err: E) -> KeystoreError
 where
     E: std::error::Error,
