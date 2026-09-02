@@ -24,4 +24,4 @@ default = []
 test-utils = []
 
 [dev-dependencies]
-tokio = { version = "=1.49.0", features = ["rt", "macros"], default-features = false }
+tokio = { version = "=1.49.0", features = ["rt", "macros", "test-util", "time"], default-features = false }
