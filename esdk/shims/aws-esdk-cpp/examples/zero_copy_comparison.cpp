@@ -20,11 +20,7 @@
 // You only need to copy the output to an std::vector if you must modify the bytes
 // or feed an API that insists on owning a vector.
 //
-// This example runs the same job (encrypt 32 MiB, write it to a file, read it
-// back, decrypt) twice: first copying at every hand-off, then with no copies.
-// For measured numbers, see performance-tests/.
-//
-// Run: `make zero_copy_example && ./zero_copy_comparison`.
+// This example demonstrates using the zero-copy APIs to encrypt and decrypt data.
 
 #include <aws/esdk/EncryptionSDK.h>
 
@@ -44,8 +40,8 @@ namespace {
 constexpr std::size_t PAYLOAD_BYTES = 32u * 1024 * 1024;  // 32 MiB
 const char* CIPHERTEXT_FILE = "zero_copy_example_ciphertext.bin";
 
-// Your application's data, in its own buffer.
-// NOT a std::vector, demonstrating the faster zero-copy APIs.
+// Stand-in for your application's data.
+// Notably not a std::vector, to demonstrate the faster zero-copy APIs.
 std::unique_ptr<std::uint8_t[]> make_payload() {
     auto buf = std::make_unique<std::uint8_t[]>(PAYLOAD_BYTES);
     for (std::size_t i = 0; i < PAYLOAD_BYTES; ++i) {
