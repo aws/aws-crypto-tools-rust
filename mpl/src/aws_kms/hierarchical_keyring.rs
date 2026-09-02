@@ -177,8 +177,7 @@ impl HierarchicalKeyring {
                 // non-`Shared` path initializes a local
                 // cryptographic-materials-cache; Dafny's DefaultStorm()
                 // construction is a known divergence. See the note at the top
-                // of `cmc/cache_config.rs`, which also records the open
-                // cross-implementation parity question.
+                // of `cmc/cache_config.rs`.
                 let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
                     .map_err(|e| {
                         MaterialsError::new(format!(
