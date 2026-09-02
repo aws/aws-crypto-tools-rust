@@ -1,7 +1,8 @@
 # Reusable workflow that runs duvet for a single project (subdirectory) and
 # uploads the HTML compliance report as a build artifact. Callers pass the
-# project directory name via the `project` input (e.g. "esdk"). The project
-# must have a `.duvet/config.toml` and a `make duvet` target.
+# project directory name via the `project` input (e.g. "esdk", or a nested path
+# like "esdk/shims/aws-esdk-cpp"). The project must have a `.duvet/config.toml`
+# and a `make duvet` target.
 name: Duvet Report
 
 on:
@@ -11,6 +12,14 @@ on:
         description: "Project subdirectory to run duvet in (e.g. esdk)."
         required: true
         type: string
+      artifact-name:
+        description: >
+          Name for the uploaded report artifact. Defaults to
+          "<project>-duvet-report". Set this for nested project paths, whose
+          slashes are not allowed in an artifact name.
+        required: false
+        type: string
+        default: ""
 
 jobs:
   duvet:
@@ -40,6 +49,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.project }}-duvet-report
+          name: ${{ inputs.artifact-name != '' && inputs.artifact-name || format('{0}-duvet-report', inputs.project) }}
           include-hidden-files: true
           path: ${{ inputs.project }}/.duvet/reports/report.html
