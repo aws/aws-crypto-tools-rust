@@ -71,6 +71,11 @@ impl MockCmm {
 
 const RESERVED_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 
+// Length of the mock's stand-in signing key. Arbitrary: a signing key is an
+// opaque blob whose encoding belongs to the signer, so neither the suite nor
+// `EncryptionMaterials::new` constrains its length.
+const MOCK_SIGNING_KEY_LEN: usize = 48;
+
 #[async_trait]
 impl Cmm for MockCmm {
     async fn get_encryption_materials(
@@ -98,10 +103,7 @@ impl Cmm for MockCmm {
         let mut signing_key: Option<SigningKey> = None;
         if suite_id.has_asymmetric_signing() {
             if self.behaviors.attach_signing_key {
-                let signing_len = suite
-                    .signing_key_length()
-                    .expect("signing suite has signing-key length");
-                signing_key = Some(SigningKey::new(vec![0xBB; signing_len]));
+                signing_key = Some(SigningKey::new(vec![0xBB; MOCK_SIGNING_KEY_LEN]));
             }
             if self.behaviors.add_public_key_to_ec {
                 let verification_len = suite
@@ -325,17 +327,13 @@ async fn test_get_encryption_materials_signing_suite_attaches_signing_key() {
         .await
         .expect("get_encryption_materials succeeds for signing suite with attach=true");
 
-    let expected_signing_len = SIGNING_SUITE
-        .specification()
-        .signing_key_length()
-        .expect("signing suite has a signing-key length");
     assert_eq!(
         materials
             .signing_key()
             .expect("signing key must be attached")
             .len(),
-        expected_signing_len,
-        "signing key length matches the suite's signing-key length ({expected_signing_len})"
+        MOCK_SIGNING_KEY_LEN,
+        "the attached signing key is passed through to the materials unchanged"
     );
 }
 

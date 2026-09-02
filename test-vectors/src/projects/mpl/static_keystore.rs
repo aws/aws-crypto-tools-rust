@@ -145,7 +145,7 @@ fn unsupported(op: &'static str) -> KeystoreError {
 
 #[async_trait]
 impl Keystore for StaticKeyStore {
-    async fn get_key_store_info(&self) -> std::result::Result<KeyStoreInfo, KeystoreError> {
+    fn get_key_store_info(&self) -> std::result::Result<KeyStoreInfo, KeystoreError> {
         Ok(KeyStoreInfo {
             keystore_id: STUB_KEYSTORE_ID.to_string(),
             keystore_name: STUB_KEYSTORE_NAME.to_string(),
@@ -314,12 +314,12 @@ mod tests {
         assert_eq!(materials.beacon_key(), Some(store.beacon_key.as_slice()));
     }
 
-    #[tokio::test]
-    async fn get_key_store_info_returns_dafny_stub_values() {
+    #[test]
+    fn get_key_store_info_returns_dafny_stub_values() {
         // Values must match CreateStaticKeyStores.dfy byte-for-byte for
         // cross-language artifact interop.
         let store = StaticKeyStore::from_entry(reference_entry()).unwrap();
-        let info = store.get_key_store_info().await.unwrap();
+        let info = store.get_key_store_info().unwrap();
         assert_eq!(info.keystore_id, "key-store-id");
         assert_eq!(info.keystore_name, "key-store-name");
         assert_eq!(info.logical_keystore_name, "logical-key-store-name");

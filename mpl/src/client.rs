@@ -30,10 +30,9 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_mpl_primitives::AesGcm;
 
-use crate::aws_kms::hierarchical_keyring::{
-    BranchKeySource, BranchKeySupplier, CacheType, HierarchicalKeyring,
-};
-use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc};
+use crate::aws_kms::hierarchical_keyring::{BranchKeySupplier, HierarchicalKeyring};
+use crate::cmc::cache_config::CACHE_PRUNING_TAIL_SIZE;
+use crate::cmc::{CacheType, Cmc, LocalCmc, StormTrackingCmc};
 use crate::keyring::RawAesKeyring;
 use crate::keystore::{BranchKeyStore, KeyStoreConfig, Keystore, KeystoreError};
 use crate::structures::MaterialsError;
@@ -181,15 +180,15 @@ impl CreateCryptographicMaterialsCacheFluentBuilder {
         })?;
         match cache {
             CacheType::Default(default_cache) => {
-                let local = LocalCmc::new(
-                    default_cache.entry_capacity,
-                    default_cache.entry_pruning_tail_size,
-                )
-                .map_err(|e| {
-                    MaterialsError::new(format!(
-                        "create_cryptographic_materials_cache: failed to initialize LocalCmc: {e}",
-                    ))
-                })?;
+                // `DefaultCache` exposes only `entryCapacity` per the Smithy
+                // model; the pruning tail size is an internal constant shared
+                // with `HierarchicalKeyring::new`.
+                let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
+                    .map_err(|e| {
+                        MaterialsError::new(format!(
+                            "create_cryptographic_materials_cache: failed to initialize LocalCmc: {e}",
+                        ))
+                    })?;
                 Ok(Arc::new(local))
             }
             CacheType::Shared(arc) => Ok(arc),
@@ -365,24 +364,30 @@ impl CreateAwsKmsHierarchicalKeyringFluentBuilder {
                 "create_aws_kms_hierarchical_keyring: ttl_seconds is required (call .ttl_seconds(...))",
             )
         })?;
-        let branch_key_source = match (self.branch_key_id, self.branch_key_id_supplier) {
+        // `HierarchicalKeyring::new` enforces this same both/neither rule, but
+        // check it here so the message names the builder methods the caller
+        // actually used rather than the constructor's positional parameters.
+        let (branch_key_id, branch_key_id_supplier) = match (
+            self.branch_key_id,
+            self.branch_key_id_supplier,
+        ) {
             (Some(_), Some(_)) => {
                 return Err(MaterialsError::new(
                     "create_aws_kms_hierarchical_keyring: only one of branch_key_id or branch_key_id_supplier may be set",
                 ));
             }
-            (Some(id), None) => BranchKeySource::Identifier(id),
-            (None, Some(supplier)) => BranchKeySource::Supplier(supplier),
             (None, None) => {
                 return Err(MaterialsError::new(
                     "create_aws_kms_hierarchical_keyring: one of branch_key_id or branch_key_id_supplier must be set",
                 ));
             }
+            (id, supplier) => (id, supplier),
         };
         HierarchicalKeyring::new(
             key_store,
             ttl_seconds,
-            branch_key_source,
+            branch_key_id,
+            branch_key_id_supplier,
             self.cache,
             self.partition_id,
         )

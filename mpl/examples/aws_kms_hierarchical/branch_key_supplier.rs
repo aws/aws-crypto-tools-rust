@@ -11,7 +11,6 @@
 use std::sync::Arc;
 
 use aws_crypto_mpl::MaterialProviders;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySource;
 
 use super::common::{
     Config, build_keystore, demo_encryption_context, empty_decryption_materials,
@@ -49,11 +48,12 @@ pub async fn run(
         .send()?;
 
     assert!(
-        matches!(
-            supplier_keyring.branch_key_source(),
-            BranchKeySource::Supplier(_)
-        ),
-        "supplier-path keyring must record a Supplier branch_key_source",
+        supplier_keyring.branch_key_id_supplier().is_some(),
+        "supplier-path keyring must record a branch key id supplier",
+    );
+    assert!(
+        supplier_keyring.branch_key_id().is_none(),
+        "supplier-path keyring must not also record a static branch key id",
     );
 
     // Round-trip TenantA traffic and TenantB traffic via the same keyring.

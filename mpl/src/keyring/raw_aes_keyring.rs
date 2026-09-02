@@ -8,8 +8,8 @@ use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes
 
 use crate::Keyring;
 use crate::structures::{
-    AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
-    MaterialsError, PlaintextDataKey,
+    AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
+    PlaintextDataKey,
 };
 
 /// Byte width of the authentication-tag-length field of the serialized key
@@ -36,10 +36,14 @@ const TAG_LENGTH: usize = 16;
 /// information.
 const TAG_LENGTH_BITS: u32 = 128;
 
-/// Key namespace reserved for the AWS KMS keyrings. A raw AES keyring MUST NOT
-/// accept it, because the key namespace becomes the EDK's key provider ID and
-/// that value must not claim to be AWS KMS.
-const RESERVED_KEY_NAMESPACE: &str = "aws-kms";
+/// Key namespace prefix reserved for the AWS KMS keyrings. A raw AES keyring
+/// MUST NOT accept a key namespace equal to or starting with this value,
+/// because the key namespace becomes the EDK's key provider ID and that value
+/// must not claim to have been produced by an AWS KMS keyring. The prefix, not
+/// just the exact string, is reserved: the AWS KMS keyrings use `aws-kms`,
+/// `aws-kms-hierarchy`, `aws-kms-rsa` and `aws-kms-ecdh` as their key provider
+/// IDs.
+const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 
 /// A keyring that wraps and unwraps data keys with a local AES-GCM wrapping key.
 ///
@@ -79,8 +83,8 @@ impl RawAesKeyring {
     /// # Errors
     ///
     /// Returns [`MaterialsError`] when `wrapping_key`'s length does not match
-    /// the length specified by `wrapping_alg`, or when `key_namespace` is the
-    /// reserved value `aws-kms`.
+    /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
+    /// to or starts with the reserved value `aws-kms`.
     pub fn new(
         key_namespace: impl Into<String>,
         key_name: impl Into<String>,
@@ -88,9 +92,13 @@ impl RawAesKeyring {
         wrapping_alg: AesGcm,
     ) -> Result<Self, MaterialsError> {
         let key_namespace = key_namespace.into();
-        if key_namespace == RESERVED_KEY_NAMESPACE {
+        // A prefix check, not an equality check: `aws-kms-hierarchy`,
+        // `aws-kms-rsa` and `aws-kms-ecdh` are the key provider IDs of other
+        // AWS KMS keyrings, and an equality check would let this keyring emit
+        // encrypted data keys that impersonate them.
+        if key_namespace.starts_with(RESERVED_KEY_NAMESPACE_PREFIX) {
             return Err(MaterialsError::new(format!(
-                "RawAesKeyring: key namespace must not be `{RESERVED_KEY_NAMESPACE}`"
+                "RawAesKeyring: key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
             )));
         }
 
@@ -191,7 +199,12 @@ impl Keyring for RawAesKeyring {
     ) -> Result<EncryptionMaterials, MaterialsError> {
         // Serialized before any encryption is attempted, so an unserializable
         // encryption context fails the operation rather than producing an EDK.
-        let aad = serialize_aad(materials.encryption_context(), "on_encrypt")?;
+        let aad = materials.encryption_context().serialize().map_err(|e| {
+            MaterialsError::keyring_failed_with_cause(
+                "RawAesKeyring::on_encrypt: failed to serialize the encryption context",
+                e,
+            )
+        })?;
 
         let plaintext_dk = match materials.plaintext_data_key() {
             Some(pdk) => pdk.clone(),
@@ -259,7 +272,12 @@ impl Keyring for RawAesKeyring {
 
         // Serialized before the EDK loop, so an unserializable encryption
         // context fails the operation even when no EDK matches this keyring.
-        let aad = serialize_aad(materials.encryption_context(), "on_decrypt")?;
+        let aad = materials.encryption_context().serialize().map_err(|e| {
+            MaterialsError::keyring_failed_with_cause(
+                "RawAesKeyring::on_decrypt: failed to serialize the encryption context",
+                e,
+            )
+        })?;
 
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();
 
@@ -325,21 +343,6 @@ impl Keyring for RawAesKeyring {
             errors.join("; "),
         )))
     }
-}
-
-/// Serialize an encryption context for use as AES-GCM additional
-/// authenticated data, failing the keyring operation when it cannot be
-/// serialized.
-fn serialize_aad(
-    encryption_context: &EncryptionContext,
-    operation: &str,
-) -> Result<Vec<u8>, MaterialsError> {
-    encryption_context.serialize().map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            format!("RawAesKeyring::{operation}: failed to serialize the encryption context"),
-            e,
-        )
-    })
 }
 
 /// Generate a random plaintext data key of the algorithm suite's configured

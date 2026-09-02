@@ -36,7 +36,7 @@ impl DigestContext {
     /// algorithm that requires runtime availability checks does not become a
     /// breaking change.
     pub fn new(alg: DigestAlg) -> Result<Self, Error> {
-        let alg = get_digest_alg(alg);
+        let alg = crate::get_digest_alg(alg);
         Ok(Self {
             context: aws_lc_rs::digest::Context::new(alg),
         })
@@ -62,10 +62,30 @@ impl DigestContext {
         self.context.update(data);
     }
 
-    /// finalize and return the signature
+    /// Length in bytes of the digest [`DigestContext::finish`] produces.
     #[must_use]
-    pub fn finish(self) -> Vec<u8> {
-        self.context.finish().as_ref().to_vec()
+    pub fn output_len(&self) -> usize {
+        self.context.algorithm().output_len()
+    }
+
+    /// Finalize and write the digest into `out`.
+    ///
+    /// `out` must be exactly [`DigestContext::output_len`] bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if `out` is not exactly
+    /// [`DigestContext::output_len`] bytes.
+    pub fn finish(self, out: &mut [u8]) -> Result<(), Error> {
+        let want_len = self.output_len();
+        if out.len() != want_len {
+            return err(format!(
+                "DigestContext::finish : output buffer length of {} does not match the {want_len} byte digest.",
+                out.len()
+            ));
+        }
+        out.copy_from_slice(self.context.finish().as_ref());
+        Ok(())
     }
 
     fn digest(self) -> aws_lc_rs::digest::Digest {
@@ -82,14 +102,6 @@ pub enum EcdsaSignatureAlgorithm {
     EcdsaP384,
     /// 256 bit ECDSA
     EcdsaP256,
-}
-
-const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
-    match x {
-        DigestAlg::Sha256 => &aws_lc_rs::digest::SHA256,
-        DigestAlg::Sha384 => &aws_lc_rs::digest::SHA384,
-        DigestAlg::Sha512 => &aws_lc_rs::digest::SHA512,
-    }
 }
 
 const fn get_digest_alg_from_ecdsa(
@@ -118,18 +130,29 @@ const fn get_ver_alg(x: EcdsaSignatureAlgorithm) -> &'static EcdsaVerificationAl
 /// Maximum number of signing attempts made while looking for a DER
 /// signature of the canonical length (see [`sign_fixed_len`]).
 ///
-/// Each attempt succeeds with probability ~0.51, measured over 4000
-/// signatures per curve, so 32 attempts leaves a spurious-failure
-/// probability of ~1.3e-10.
-const MAX_SIGN_ATTEMPTS: u32 = 32;
+/// Each attempt succeeds with probability 1/2, which follows from the
+/// encoding rather than from measurement. `r` and `s` are each encoded as a
+/// DER INTEGER, and each independently takes a leading `0x00` byte exactly
+/// when its high bit is set — probability 1/2 apiece. So a signature runs
+/// one byte long when both take the pad (1/4), one byte short when neither
+/// does (1/4), and lands on the canonical length when exactly one does
+/// (1/2). An `r` or `s` whose top byte is zero shortens it further, which
+/// shifts the rate by about 1/256.
+///
+/// At p = 1/2, exhausting 128 attempts has probability 2^-128, negligible
+/// against the other failure modes of signing. The expected number of
+/// attempts is 2, so a bound this loose costs nothing in practice.
+const MAX_SIGN_ATTEMPTS: u32 = 128;
 
-/// The DER-encoded signature length this crate emits for `alg`.
+/// The DER-encoded signature length [`ecdsa_sign`] emits for `alg`: 71
+/// bytes for P-256, 103 for P-384.
 ///
 /// A `match` on the algorithm rather than a comparison against the
 /// `aws-lc-rs` constants, so adding a curve to the `#[non_exhaustive]`
 /// [`EcdsaSignatureAlgorithm`] is a compile error instead of a signing
 /// operation that can never satisfy its length check.
-const fn der_sig_len(alg: EcdsaSignatureAlgorithm) -> usize {
+#[must_use]
+pub const fn signature_len(alg: EcdsaSignatureAlgorithm) -> usize {
     match alg {
         EcdsaSignatureAlgorithm::EcdsaP256 => 71,
         EcdsaSignatureAlgorithm::EcdsaP384 => 103,
@@ -137,7 +160,8 @@ const fn der_sig_len(alg: EcdsaSignatureAlgorithm) -> usize {
 }
 
 /// Call `sign_once` until it produces a DER signature of exactly
-/// `want_len` bytes, giving up after [`MAX_SIGN_ATTEMPTS`].
+/// `signature.len()` bytes, writing it into `signature` and giving up after
+/// [`MAX_SIGN_ATTEMPTS`].
 ///
 /// The DER encoding of an ECDSA signature varies in length because `r` and
 /// `s` each need a leading `0x00` when their high bit is set, so a fresh
@@ -149,15 +173,17 @@ const fn der_sig_len(alg: EcdsaSignatureAlgorithm) -> usize {
 /// # Errors
 ///
 /// Returns an [`Error`] if `sign_once` fails, or if no signature of
-/// `want_len` bytes is produced within [`MAX_SIGN_ATTEMPTS`].
+/// `signature.len()` bytes is produced within [`MAX_SIGN_ATTEMPTS`].
 fn sign_fixed_len(
-    want_len: usize,
+    signature: &mut [u8],
     mut sign_once: impl FnMut() -> Result<aws_lc_rs::signature::Signature, Error>,
-) -> Result<Vec<u8>, Error> {
+) -> Result<(), Error> {
+    let want_len = signature.len();
     for _ in 0..MAX_SIGN_ATTEMPTS {
-        let signature = sign_once()?;
-        if signature.as_ref().len() == want_len {
-            return Ok(signature.as_ref().into());
+        let candidate = sign_once()?;
+        if candidate.as_ref().len() == want_len {
+            signature.copy_from_slice(candidate.as_ref());
+            return Ok(());
         }
     }
     err(format!(
@@ -165,47 +191,73 @@ fn sign_fixed_len(
     ))
 }
 
-/// Sign the message with the key using the given algorithm
+/// Check that a caller-supplied signature buffer is the length `alg`
+/// produces, so a wrong-sized buffer fails immediately rather than after
+/// [`MAX_SIGN_ATTEMPTS`] signatures that can never match.
+fn check_sig_len(alg: EcdsaSignatureAlgorithm, signature: &[u8]) -> Result<(), Error> {
+    if signature.len() != signature_len(alg) {
+        return err(format!(
+            "ecdsa_sign : signature buffer length of {} does not match the {} byte {:?} DER signature.",
+            signature.len(),
+            signature_len(alg),
+            alg
+        ));
+    }
+    Ok(())
+}
+
+/// Sign the message with the key using the given algorithm, writing the
+/// DER-encoded signature into `signature`.
 ///
-/// The key must be in DER format
+/// The key must be in DER format. `signature` must be exactly
+/// [`signature_len`] bytes for `alg`.
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `key` is not a valid DER-encoded private key for
-/// `alg`, if the signing operation fails, or if no canonical-length
-/// signature is produced within [`MAX_SIGN_ATTEMPTS`].
-// FIXME - pass in &mut[u8] instead of returning Vec
-pub fn ecdsa_sign(alg: EcdsaSignatureAlgorithm, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, Error> {
-    let want_len = der_sig_len(alg);
+/// Returns an [`Error`] if `signature` is not [`signature_len`] bytes for
+/// `alg`, if `key` is not a valid DER-encoded private key for `alg`, if the
+/// signing operation fails, or if no canonical-length signature is produced
+/// within [`MAX_SIGN_ATTEMPTS`].
+pub fn ecdsa_sign(
+    alg: EcdsaSignatureAlgorithm,
+    key: &[u8],
+    msg: &[u8],
+    signature: &mut [u8],
+) -> Result<(), Error> {
+    check_sig_len(alg, signature)?;
     let private_key: EcdsaKeyPair = EcdsaKeyPair::from_private_key_der(get_sign_alg(alg), key)
         .map_err(|e| serr(format!("{e:?}")))?;
     let rng = SystemRandom::new();
-    sign_fixed_len(want_len, || {
+    sign_fixed_len(signature, || {
         private_key
             .sign(&rng, msg)
             .map_err(|e| serr(format!("{e:?}")))
     })
 }
 
-/// Sign the accumulated digest with the key using the given algorithm
+/// Sign the accumulated digest with the key using the given algorithm,
+/// writing the DER-encoded signature into `signature`.
 ///
-/// The key must be in DER format
+/// The key must be in DER format. `signature` must be exactly
+/// [`signature_len`] bytes for `alg`.
 ///
 /// # Errors
 ///
-/// Returns an [`Error`] if `key` is not a valid DER-encoded private key for
-/// `alg`, if the signing operation fails, or if no canonical-length
-/// signature is produced within [`MAX_SIGN_ATTEMPTS`].
+/// Returns an [`Error`] if `signature` is not [`signature_len`] bytes for
+/// `alg`, if `key` is not a valid DER-encoded private key for `alg`, if the
+/// signing operation fails, or if no canonical-length signature is produced
+/// within [`MAX_SIGN_ATTEMPTS`].
 pub fn ecdsa_sign_digest(
     alg: EcdsaSignatureAlgorithm,
     key: &[u8],
     context: DigestContext,
-) -> Result<Vec<u8>, Error> {
-    let want_len = der_sig_len(alg);
+    signature: &mut [u8],
+) -> Result<(), Error> {
+    check_sig_len(alg, signature)?;
     let private_key: EcdsaKeyPair = EcdsaKeyPair::from_private_key_der(get_sign_alg(alg), key)
         .map_err(|e| serr(format!("{e:?}")))?;
     let digest = context.digest();
-    sign_fixed_len(want_len, || {
+    sign_fixed_len(signature, || {
         private_key
             .sign_digest(&digest)
             .map_err(|e| serr(format!("{e:?}")))

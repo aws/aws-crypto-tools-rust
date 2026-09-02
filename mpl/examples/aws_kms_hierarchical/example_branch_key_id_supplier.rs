@@ -11,10 +11,10 @@
 //! be allocation-free on the hot path; this example uses cheap clones
 //! for clarity.
 
-use async_trait::async_trait;
-
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
-use aws_crypto_mpl::structures::{EncryptionContext, MaterialsError};
+use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
+    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
+};
+use aws_crypto_mpl::structures::MaterialsError;
 
 /// Maps `tenant=A` → `branch_key_id_for_tenant_a` and
 /// `tenant=B` → `branch_key_id_for_tenant_b`. Any other tenant value
@@ -34,13 +34,13 @@ impl ExampleBranchKeyIdSupplier {
     }
 }
 
-#[async_trait]
 impl BranchKeySupplier for ExampleBranchKeyIdSupplier {
-    async fn get_branch_key_id(
+    fn get_branch_key_id(
         &self,
-        encryption_context: &EncryptionContext,
-    ) -> Result<String, MaterialsError> {
-        let tenant_value = encryption_context
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+        let tenant_value = input
+            .encryption_context()
             .get(b"tenant".as_slice())
             .ok_or_else(|| {
                 MaterialsError::new(
@@ -48,8 +48,12 @@ impl BranchKeySupplier for ExampleBranchKeyIdSupplier {
                 )
             })?;
         match tenant_value.as_slice() {
-            b"TenantA" => Ok(self.branch_key_id_for_tenant_a.clone()),
-            b"TenantB" => Ok(self.branch_key_id_for_tenant_b.clone()),
+            b"TenantA" => Ok(GetBranchKeyIdOutput::new(
+                self.branch_key_id_for_tenant_a.clone(),
+            )),
+            b"TenantB" => Ok(GetBranchKeyIdOutput::new(
+                self.branch_key_id_for_tenant_b.clone(),
+            )),
             other => {
                 let display = std::str::from_utf8(other).unwrap_or("<non-utf8>");
                 Err(MaterialsError::new(format!(

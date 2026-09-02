@@ -6,15 +6,11 @@
 //! entry points), plus the tampered-message negative case that Dafny
 //! asserts.
 //!
-//! Key formats follow the Dafny MPL: `ecdsa_generate_keypair` yields an
-//! X9.62 compressed verification key and a DER-encoded signing key, so a
-//! generated key pair feeds `ecdsa_sign` and `ecdsa_verify` directly.
-//!
 //! [`TestSignature.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestSignature.dfy
 
 use aws_mpl_primitives::{
     DigestAlg, DigestContext, EcdsaSignatureAlgorithm, Error, digest, ecdsa_generate_keypair,
-    ecdsa_sign, ecdsa_sign_digest, ecdsa_verify, ecdsa_verify_context, field_size,
+    ecdsa_sign, ecdsa_sign_digest, ecdsa_verify, ecdsa_verify_context, field_size, signature_len,
 };
 
 fn verify_message_round_trip(alg: EcdsaSignatureAlgorithm) -> Result<(), Error> {
@@ -24,13 +20,15 @@ fn verify_message_round_trip(alg: EcdsaSignatureAlgorithm) -> Result<(), Error> 
     let message = b"Hello, World!";
 
     // Raw-message sign + verify (positive).
-    let sig_raw = ecdsa_sign(alg, &private_key, message)?;
+    let mut sig_raw = vec![0u8; signature_len(alg)];
+    ecdsa_sign(alg, &private_key, message, &mut sig_raw)?;
     assert!(ecdsa_verify(alg, &public_key, message, &sig_raw)?);
 
     // Streaming-digest sign + verify (positive), same algorithm.
     let mut ctx_sign = DigestContext::new_from_ecdsa(alg)?;
     ctx_sign.update(message);
-    let sig_digest = ecdsa_sign_digest(alg, &private_key, ctx_sign)?;
+    let mut sig_digest = vec![0u8; signature_len(alg)];
+    ecdsa_sign_digest(alg, &private_key, ctx_sign, &mut sig_digest)?;
     assert!(ecdsa_verify(alg, &public_key, message, &sig_digest)?);
 
     // Cross-verify raw-signature through the digest-context verifier.
@@ -86,7 +84,8 @@ fn assert_keypair_shape(alg: EcdsaSignatureAlgorithm, expected_field: usize) -> 
     // X9.62 compressed points carry a 0x02 or 0x03 parity tag.
     assert!(matches!(keys.verification_key[0], 0x02 | 0x03));
     // The signing key is usable by prim's own signer without conversion.
-    let sig = ecdsa_sign(alg, &keys.signing_key, b"m")?;
+    let mut sig = vec![0u8; signature_len(alg)];
+    ecdsa_sign(alg, &keys.signing_key, b"m", &mut sig)?;
     assert!(ecdsa_verify(alg, &keys.verification_key, b"m", &sig)?);
     Ok(())
 }
@@ -114,21 +113,53 @@ fn test_signature_key_pair_debug_redacts_signing_key() -> Result<(), Error> {
 }
 
 // Signature-length invariants. `ecdsa_sign` loops until the DER-encoded
-// signature has a specific length (71 for P-256, 103 for P-384).
+// signature has exactly `signature_len` bytes, so signing successfully into
+// a buffer of that size is itself the proof that the emitted DER is that
+// length — a wrong `signature_len` would exhaust the retries and error.
 
 #[test]
 fn test_ecdsa_p256_signature_length_is_71() -> Result<(), Error> {
-    let keys = ecdsa_generate_keypair(EcdsaSignatureAlgorithm::EcdsaP256)?;
-    let sig = ecdsa_sign(EcdsaSignatureAlgorithm::EcdsaP256, &keys.signing_key, b"m")?;
-    assert_eq!(sig.len(), 71);
+    let alg = EcdsaSignatureAlgorithm::EcdsaP256;
+    assert_eq!(signature_len(alg), 71);
+    let keys = ecdsa_generate_keypair(alg)?;
+    let mut sig = [0u8; 71];
+    ecdsa_sign(alg, &keys.signing_key, b"m", &mut sig)?;
+    assert!(ecdsa_verify(alg, &keys.verification_key, b"m", &sig)?);
     Ok(())
 }
 
 #[test]
 fn test_ecdsa_p384_signature_length_is_103() -> Result<(), Error> {
-    let keys = ecdsa_generate_keypair(EcdsaSignatureAlgorithm::EcdsaP384)?;
-    let sig = ecdsa_sign(EcdsaSignatureAlgorithm::EcdsaP384, &keys.signing_key, b"m")?;
-    assert_eq!(sig.len(), 103);
+    let alg = EcdsaSignatureAlgorithm::EcdsaP384;
+    assert_eq!(signature_len(alg), 103);
+    let keys = ecdsa_generate_keypair(alg)?;
+    let mut sig = [0u8; 103];
+    ecdsa_sign(alg, &keys.signing_key, b"m", &mut sig)?;
+    assert!(ecdsa_verify(alg, &keys.verification_key, b"m", &sig)?);
+    Ok(())
+}
+
+#[test]
+fn test_ecdsa_sign_rejects_wrong_length_buffer() -> Result<(), Error> {
+    let alg = EcdsaSignatureAlgorithm::EcdsaP256;
+    let keys = ecdsa_generate_keypair(alg)?;
+    // 103 is the P-384 length, so this also covers passing the right buffer
+    // for the wrong curve.
+    let mut sig = [0u8; 103];
+    let err = ecdsa_sign(alg, &keys.signing_key, b"m", &mut sig).unwrap_err();
+    assert!(err.message.contains("signature buffer length of 103"));
+    Ok(())
+}
+
+#[test]
+fn test_ecdsa_sign_digest_rejects_wrong_length_buffer() -> Result<(), Error> {
+    let alg = EcdsaSignatureAlgorithm::EcdsaP256;
+    let keys = ecdsa_generate_keypair(alg)?;
+    let mut ctx = DigestContext::new_from_ecdsa(alg)?;
+    ctx.update(b"m");
+    let mut sig = [0u8; 70];
+    let err = ecdsa_sign_digest(alg, &keys.signing_key, ctx, &mut sig).unwrap_err();
+    assert!(err.message.contains("signature buffer length of 70"));
     Ok(())
 }
 
@@ -137,15 +168,19 @@ fn test_ecdsa_p384_signature_length_is_103() -> Result<(), Error> {
 
 #[test]
 fn test_ecdsa_sign_with_bad_private_key() {
-    let err = ecdsa_sign(EcdsaSignatureAlgorithm::EcdsaP256, &[0u8; 8], b"m").unwrap_err();
+    let alg = EcdsaSignatureAlgorithm::EcdsaP256;
+    let mut sig = vec![0u8; signature_len(alg)];
+    let err = ecdsa_sign(alg, &[0u8; 8], b"m", &mut sig).unwrap_err();
     assert!(!err.message.is_empty());
 }
 
 #[test]
 fn test_ecdsa_sign_digest_with_bad_private_key() -> Result<(), Error> {
-    let mut ctx = DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP256)?;
+    let alg = EcdsaSignatureAlgorithm::EcdsaP256;
+    let mut ctx = DigestContext::new_from_ecdsa(alg)?;
     ctx.update(b"m");
-    let err = ecdsa_sign_digest(EcdsaSignatureAlgorithm::EcdsaP256, &[0u8; 8], ctx).unwrap_err();
+    let mut sig = vec![0u8; signature_len(alg)];
+    let err = ecdsa_sign_digest(alg, &[0u8; 8], ctx, &mut sig).unwrap_err();
     assert!(!err.message.is_empty());
     Ok(())
 }
@@ -156,8 +191,11 @@ fn test_ecdsa_sign_digest_with_bad_private_key() -> Result<(), Error> {
 fn test_digest_context_new_and_finish() -> Result<(), Error> {
     let mut ctx = DigestContext::new(DigestAlg::Sha256)?;
     ctx.update(b"asdf");
-    let out = ctx.finish();
-    assert_eq!(out, digest(DigestAlg::Sha256, b"asdf"));
+    let mut out = vec![0u8; ctx.output_len()];
+    ctx.finish(&mut out)?;
+    let mut expected = [0u8; 32];
+    digest(DigestAlg::Sha256, b"asdf", &mut expected)?;
+    assert_eq!(out, expected);
     Ok(())
 }
 
@@ -166,8 +204,12 @@ fn test_digest_context_new_for_all_algs() -> Result<(), Error> {
     for alg in [DigestAlg::Sha256, DigestAlg::Sha384, DigestAlg::Sha512] {
         let mut ctx = DigestContext::new(alg)?;
         ctx.update(b"asdf");
-        let out = ctx.finish();
-        assert_eq!(out, digest(alg, b"asdf"));
+        assert_eq!(ctx.output_len(), alg.output_len());
+        let mut out = vec![0u8; ctx.output_len()];
+        ctx.finish(&mut out)?;
+        let mut expected = vec![0u8; alg.output_len()];
+        digest(alg, b"asdf", &mut expected)?;
+        assert_eq!(out, expected);
     }
     Ok(())
 }
@@ -176,7 +218,11 @@ fn test_digest_context_new_for_all_algs() -> Result<(), Error> {
 fn test_digest_context_new_from_ecdsa_p256_matches_sha256() -> Result<(), Error> {
     let mut ctx = DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP256)?;
     ctx.update(b"asdf");
-    assert_eq!(ctx.finish(), digest(DigestAlg::Sha256, b"asdf"));
+    let mut out = [0u8; 32];
+    ctx.finish(&mut out)?;
+    let mut expected = [0u8; 32];
+    digest(DigestAlg::Sha256, b"asdf", &mut expected)?;
+    assert_eq!(out, expected);
     Ok(())
 }
 
@@ -184,7 +230,11 @@ fn test_digest_context_new_from_ecdsa_p256_matches_sha256() -> Result<(), Error>
 fn test_digest_context_new_from_ecdsa_p384_matches_sha384() -> Result<(), Error> {
     let mut ctx = DigestContext::new_from_ecdsa(EcdsaSignatureAlgorithm::EcdsaP384)?;
     ctx.update(b"asdf");
-    assert_eq!(ctx.finish(), digest(DigestAlg::Sha384, b"asdf"));
+    let mut out = [0u8; 48];
+    ctx.finish(&mut out)?;
+    let mut expected = [0u8; 48];
+    digest(DigestAlg::Sha384, b"asdf", &mut expected)?;
+    assert_eq!(out, expected);
     Ok(())
 }
 
@@ -193,7 +243,11 @@ fn test_digest_context_clone_and_debug() -> Result<(), Error> {
     let mut ctx = DigestContext::new(DigestAlg::Sha256)?;
     ctx.update(b"asdf");
     let cloned = ctx.clone();
-    assert_eq!(ctx.finish(), cloned.finish());
+    let mut from_ctx = [0u8; 32];
+    let mut from_clone = [0u8; 32];
+    ctx.finish(&mut from_ctx)?;
+    cloned.finish(&mut from_clone)?;
+    assert_eq!(from_ctx, from_clone);
 
     let ctx2 = DigestContext::new(DigestAlg::Sha256)?;
     let debug_str = format!("{ctx2:?}");

@@ -34,11 +34,10 @@ fn test_mpl_builder_with_config() {
 mod cache_factory {
     use std::sync::Arc;
 
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-        CacheType, DefaultCache, StormTrackingCache,
-    };
     use aws_crypto_mpl::cmc::Cmc;
-    use aws_crypto_mpl::{LocalCmc, MaterialProviders};
+    use aws_crypto_mpl::{
+        CacheType, DefaultCache, LocalCmc, MaterialProviders, StormTrackingCache,
+    };
 
     /// `Default` variant builds a fresh `LocalCmc`.
     #[test]
@@ -46,7 +45,7 @@ mod cache_factory {
         let mpl = MaterialProviders::builder().build();
         let cache = mpl
             .create_cryptographic_materials_cache()
-            .cache(CacheType::Default(DefaultCache::default()))
+            .cache(CacheType::Default(DefaultCache::new(1000)))
             .send()
             .expect("default cache must build");
         // Smoke-test that the returned Arc<dyn Cmc> is functional.
@@ -57,12 +56,8 @@ mod cache_factory {
     #[test]
     fn default_variant_honors_explicit_default_cache() {
         let mpl = MaterialProviders::default();
-        let cfg = DefaultCache::builder()
-            .entry_capacity(7)
-            .entry_pruning_tail_size(2)
-            .build();
+        let cfg = DefaultCache::new(7);
         assert_eq!(cfg.entry_capacity, 7);
-        assert_eq!(cfg.entry_pruning_tail_size, 2);
         let _ = mpl
             .create_cryptographic_materials_cache()
             .cache(CacheType::Default(cfg))
@@ -231,27 +226,14 @@ mod cache_factory {
         assert_eq!(cache.time_units, Some(TimeUnits::Milliseconds));
     }
 
-    /// `DefaultCache::default()` matches the spec capacity of 1000.
+    /// `DefaultCache::new` records the supplied capacity verbatim. Capacity is
+    /// the struct's only member: the pruning tail size is an internal constant,
+    /// not a customer-set knob, and there is no `Default` impl because the
+    /// Smithy model makes `entryCapacity` required.
     #[test]
-    fn default_cache_default_matches_spec() {
-        let d = DefaultCache::default();
-        assert_eq!(d.entry_capacity, 1000);
-        assert_eq!(d.entry_pruning_tail_size, 64);
-    }
-
-    /// `DefaultCache::new` records the supplied fields verbatim.
-    #[test]
-    fn default_cache_new_records_fields_verbatim() {
-        let d = DefaultCache::new(42, 7);
+    fn default_cache_new_records_capacity_verbatim() {
+        let d = DefaultCache::new(42);
         assert_eq!(d.entry_capacity, 42);
-        assert_eq!(d.entry_pruning_tail_size, 7);
-    }
-
-    /// `DefaultCache::builder()` with no fields set matches `default()`.
-    #[test]
-    fn default_cache_builder_unset_matches_default() {
-        let built = DefaultCache::builder().build();
-        assert_eq!(built, DefaultCache::default());
     }
 }
 
@@ -348,17 +330,19 @@ mod keyring_factory {
 
     use async_trait::async_trait;
 
-    use aws_crypto_mpl::MaterialProviders;
     use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-        BranchKeySupplier, CacheType, DefaultCache,
+        BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput,
     };
-    use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError};
+    use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration};
     use aws_crypto_mpl::structures::{
         BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext, MaterialsError,
     };
+    use aws_crypto_mpl::{CacheType, DefaultCache, MaterialProviders};
 
-    /// Minimal stub keystore that errors on every method. Construction
-    /// requires no AWS calls; it's only used to satisfy the
+    /// Minimal stub keystore. Every data-plane method errors; only
+    /// `get_key_store_info` is real, because `HierarchicalKeyring::new`
+    /// resolves the logical keystore name from it at construction time.
+    /// Construction requires no AWS calls; it's only used to satisfy the
     /// `Arc<dyn Keystore>` parameter on `HierarchicalKeyring::new`.
     struct StubKeystore;
 
@@ -396,8 +380,14 @@ mod keyring_factory {
         async fn create_key_store(&self) -> Result<String, KeystoreError> {
             unimplemented!()
         }
-        async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-            unimplemented!()
+        fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            Ok(KeyStoreInfo {
+                keystore_id: "stub-id".to_string(),
+                keystore_name: "stub-table".to_string(),
+                logical_keystore_name: "stub-logical-name".to_string(),
+                grant_tokens: Vec::new(),
+                kms_configuration: KmsConfiguration::Discovery,
+            })
         }
     }
 
@@ -410,11 +400,11 @@ mod keyring_factory {
 
     #[async_trait]
     impl BranchKeySupplier for StubSupplier {
-        async fn get_branch_key_id(
+        fn get_branch_key_id(
             &self,
-            _ec: &EncryptionContext,
-        ) -> Result<String, MaterialsError> {
-            Ok("bk".to_string())
+            _input: GetBranchKeyIdInput,
+        ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+            Ok(GetBranchKeyIdOutput::new("bk".to_string()))
         }
     }
 
@@ -438,7 +428,7 @@ mod keyring_factory {
             .key_store(stub_keystore())
             .branch_key_id_supplier(Arc::new(StubSupplier))
             .ttl_seconds(60)
-            .cache(CacheType::Default(DefaultCache::default()))
+            .cache(CacheType::Default(DefaultCache::new(1000)))
             .partition_id("p-id")
             .send()
             .expect("supplier path with full options must succeed");

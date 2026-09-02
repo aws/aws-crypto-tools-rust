@@ -3,110 +3,119 @@
 
 //! Tests for `aws_kms::hierarchical_keyring`.
 //!
-//! Covers the construction / configuration surface only (cycle 1, slice 1):
-//! - TTL > 0 validation
-//! - 16-byte v4 UUID partition-id default
-//! - UTF-8 partition-id round-trip (regression coverage for the
-//!   `If provided, it MUST be interpreted as UTF8 bytes` implication)
+//! Covers, in order: construction and configuration validation (TTL,
+//! partition id, cache wiring), the cache entry identifier formulas, the
+//! branch-key wrap / unwrap / AAD functions, and the OnEncrypt / OnDecrypt
+//! operations against keystore doubles.
+//!
+//! Where a test builds an expected byte sequence by hand, it is transcribed
+//! from the AWS KMS Hierarchical Keyring specification:
+//!
+//! - [Appendix A: Cache Entry Identifier Formulas][appendix-a]
+//! - [Branch Key Wrapping and Unwrapping AAD][aad]
+//!
+//! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
+//! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use aws_config::{BehaviorVersion, SdkConfig};
+use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::aws_kms::__test_internals::{
-    compute_aad, for_decrypt, for_encrypt, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
+    build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
-    BranchKeySource, CacheType, DefaultCache, HierarchicalKeyring,
+    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
+use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{KeyStoreInfo, Keystore, KeystoreError};
-use aws_crypto_mpl::structures::{
-    BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext, MaterialsErrorKind,
+use aws_crypto_mpl::keystore::{
+    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
 };
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
+    EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+};
+use aws_crypto_mpl::{Cmc, LocalCmc};
 
-/// Minimal mock keystore that returns "not implemented" errors for every
-/// operation. Cycle 1, slice 1 only exercises construction-time configuration;
-/// no test in this file invokes a keystore method.
-struct StubKeystore;
+/// Construct a pair of zero-config AWS SDK clients suitable for tests that
+/// never invoke a remote operation. `BehaviorVersion::latest()` is required by
+/// the SDK at client-construction time; no IO occurs at construction itself.
+fn dummy_clients() -> (KmsClient, DynamoDbClient) {
+    let cfg = SdkConfig::builder()
+        .behavior_version(BehaviorVersion::latest())
+        .build();
+    (KmsClient::new(&cfg), DynamoDbClient::new(&cfg))
+}
 
-#[async_trait]
-impl Keystore for StubKeystore {
-    async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_key_store_info",
-        ))
-    }
+/// The branch key id and active version of the real keystore fixture the
+/// integration tests use (DDB table `KeyStoreDdbTable`, account
+/// `370957321024`). Nothing here contacts a keystore — `wrap` / `unwrap` /
+/// `compute_aad` are pure — but using the real values keeps these fixtures
+/// recognizable against the integ suite and against the other MPL
+/// implementations' test vectors.
+const FIXTURE_BRANCH_KEY_ID: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
+const FIXTURE_VERSION: &str = "caf0c508-e64d-4b6c-bffe-381cbc546c02";
 
-    async fn create_key_store(&self) -> Result<String, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::create_key_store",
-        ))
-    }
+/// Logical keystore name of that same fixture keystore.
+const LOGICAL_KEY_STORE_NAME: &str = "KeyStoreDdbTable";
 
-    async fn create_key(
+/// Reusable [`BranchKeySupplier`] fixture: always answers with the branch key
+/// id it was constructed with, ignoring the encryption context. Enough for any
+/// test that needs a supplier-configured keyring without caring how the
+/// decision is made.
+struct FixedBranchKeySupplier(&'static str);
+
+impl BranchKeySupplier for FixedBranchKeySupplier {
+    fn get_branch_key_id(
         &self,
-        _branch_key_id: Option<String>,
-        _encryption_context: Option<EncryptionContext>,
-    ) -> Result<String, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::create_key",
-        ))
-    }
-
-    async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::version_key",
-        ))
-    }
-
-    async fn get_active_branch_key(
-        &self,
-        _branch_key_id: String,
-    ) -> Result<BranchKeyMaterials, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_active_branch_key",
-        ))
-    }
-
-    async fn get_branch_key_version(
-        &self,
-        _branch_key_id: String,
-        _branch_key_version: String,
-    ) -> Result<BranchKeyMaterials, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_branch_key_version",
-        ))
-    }
-
-    async fn get_beacon_key(
-        &self,
-        _branch_key_id: String,
-    ) -> Result<BeaconKeyMaterials, KeystoreError> {
-        Err(KeystoreError::new(
-            KeystoreErrorKind::Internal,
-            "StubKeystore::get_beacon_key",
-        ))
+        _input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+        Ok(GetBranchKeyIdOutput::new(self.0.to_string()))
     }
 }
 
-fn stub_keystore() -> Arc<dyn Keystore> {
-    Arc::new(StubKeystore)
+/// A real [`BranchKeyStore`] that is never consulted.
+///
+/// The type is the one callers actually pass to the keyring, but it points at
+/// a table and KMS key that do not exist, so any keystore call would fail.
+/// That is safe here because no test using this helper makes one:
+/// `HierarchicalKeyring::new` only stores the handle, and the keystore is
+/// first consulted inside OnEncrypt / OnDecrypt. Tests that do exercise those
+/// operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod
+/// ondecrypt` instead. Both SDK clients are supplied, so this goes through the
+/// synchronous [`BranchKeyStore::with_clients`] — there is nothing to resolve
+/// and so nothing to await.
+fn keystore_never_consulted() -> Arc<dyn Keystore> {
+    let (kms, ddb) = dummy_clients();
+    let store = BranchKeyStore::with_clients(KeyStoreConfig {
+        ddb_table_name: "test-table".to_string(),
+        kms_configuration: KmsConfiguration::KmsKeyArn(
+            "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                .to_string(),
+        ),
+        logical_keystore_name: "test-logical".to_string(),
+        id: None,
+        grant_tokens: None,
+        ddb_client: Some(ddb),
+        kms_client: Some(kms),
+    })
+    .expect("BranchKeyStore construction with a valid config must succeed");
+    Arc::new(store)
 }
 
 #[test]
 fn new_with_zero_ttl_returns_validation_error() {
-    let keystore = stub_keystore();
+    let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::new(
         keystore,
         0, // zero TTL — must be rejected
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None,
     );
@@ -128,13 +137,55 @@ fn new_with_zero_ttl_returns_validation_error() {
 }
 
 #[test]
+fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
+    // The keyring takes branchKeyId and branchKeyIdSupplier as two optional
+    // inputs, mirroring CreateAwsKmsHierarchicalKeyringInput, so the "exactly
+    // one" rule is enforced here rather than by the type system.
+    let err = match HierarchicalKeyring::new(
+        keystore_never_consulted(),
+        3600,
+        Some("branch-key-id".to_string()),
+        Some(Arc::new(FixedBranchKeySupplier("unused")) as Arc<dyn BranchKeySupplier>),
+        None,
+        None,
+    ) {
+        Err(e) => e,
+        Ok(_) => panic!("supplying both a branch_key_id and a supplier MUST be rejected"),
+    };
+
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(
+        err.message.contains("both"),
+        "error should identify the both-supplied case; got: {}",
+        err.message,
+    );
+}
+
+#[test]
+fn new_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
+    let err =
+        match HierarchicalKeyring::new(keystore_never_consulted(), 3600, None, None, None, None) {
+            Err(e) => e,
+            Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
+        };
+
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(
+        err.message.contains("either"),
+        "error should identify the neither-supplied case; got: {}",
+        err.message,
+    );
+}
+
+#[test]
 fn new_with_positive_ttl_succeeds() {
-    let keystore = stub_keystore();
+    let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::new(
         keystore,
         1, // smallest legal TTL
-        BranchKeySource::Identifier("branch-key-id".to_string()),
-        Some(CacheType::Default(DefaultCache::default())),
+        Some("branch-key-id".to_string()),
+        None,
+        Some(CacheType::Default(DefaultCache::new(1000))),
         None,
     );
 
@@ -144,11 +195,12 @@ fn new_with_positive_ttl_succeeds() {
 
 #[test]
 fn partition_id_default_is_16_byte_v4_uuid() {
-    let keystore = stub_keystore();
+    let keystore = keystore_never_consulted();
     let keyring = HierarchicalKeyring::new(
         keystore,
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None, // no partition id supplied → must default to v4 UUID bytes
     )
@@ -185,18 +237,20 @@ fn partition_id_default_two_calls_are_distinct() {
     // default — a stub that returned all-zero bytes would still pass the
     // length / version-bit checks.
     let a = HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None,
     )
     .expect("first constructor call must succeed");
 
     let b = HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
+        Some("branch-key-id".to_string()),
+        None,
         None,
         None,
     )
@@ -215,98 +269,152 @@ fn partition_id_provided_is_utf8_round_tripped() {
     // a `type=implication` on the source side (Rust's `String::into_bytes` is
     // UTF-8 by construction of the `String` type). This test exists as
     // regression coverage to confirm the bytes are the original UTF-8 bytes
-    // and have not been re-encoded or truncated.
-    let original = "hello-世界";
-    let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
-        3600,
-        BranchKeySource::Identifier("branch-key-id".to_string()),
-        None,
-        Some(original.to_string()),
-    )
-    .expect("constructor with explicit partition id must succeed");
+    // and have not been re-encoded, normalized, or truncated.
+    //
+    // Table-driven across the UTF-8 shapes that could break a naive
+    // implementation: every encoded length, a character outside the BMP, a
+    // string that is not in normal form, and a lone combining mark.
+    let cases: &[(&str, &str)] = &[
+        ("ascii only", "partition-id"),
+        ("2-byte: precomposed e-acute", "café"),
+        ("3-byte: CJK", "hello-世界"),
+        ("4-byte: astral plane emoji", "partition-😀"),
+        ("mixed widths", "hello-aé世😀"),
+        // NFD: "a" followed by COMBINING ACUTE ACCENT. Must survive as two
+        // scalars — normalizing to U+00E1 would change the byte length.
+        ("decomposed: a + U+0301", "hello-a\u{0301}"),
+        ("combining mark with no base", "\u{0301}"),
+        (
+            "emoji ZWJ sequence",
+            "family-\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        ),
+        ("right-to-left", "قسم"),
+        ("empty", ""),
+    ];
 
-    assert_eq!(keyring.partition_id_bytes(), original.as_bytes());
+    for (label, original) in cases {
+        let keyring = HierarchicalKeyring::new(
+            keystore_never_consulted(),
+            3600,
+            Some("branch-key-id".to_string()),
+            None,
+            None,
+            Some((*original).to_string()),
+        )
+        .unwrap_or_else(|e| {
+            panic!("{label}: constructor with explicit partition id must succeed: {e}")
+        });
+
+        assert_eq!(
+            keyring.partition_id_bytes(),
+            original.as_bytes(),
+            "{label}: partition id bytes MUST be the caller's UTF-8 bytes verbatim",
+        );
+    }
 }
 
 #[test]
-fn branch_key_source_supplier_variant_compiles() {
-    // Smoke test that the BranchKeySource::Supplier variant is usable —
-    // construct a no-op supplier, store it in the enum, and confirm the
-    // keyring can be built with it. The trait object existence proves the
-    // "MUST provide either a Branch Key Identifier or a Branch Key Supplier"
-    // requirement at the type level.
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
-    use aws_crypto_mpl::structures::MaterialsError;
+fn partition_id_is_not_unicode_normalized() {
+    // The two strings below are canonically equivalent under Unicode
+    // normalization but are different byte sequences. The partition id
+    // separates cache entries, so collapsing them would let two keyrings a
+    // caller intended to keep apart share entries in a `Shared` cache.
+    let precomposed = "caf\u{00E9}"; // é as one scalar
+    let decomposed = "cafe\u{0301}"; // e + combining acute
 
-    struct ConstSupplier(&'static str);
+    let id_of = |partition: &str| {
+        HierarchicalKeyring::new(
+            keystore_never_consulted(),
+            3600,
+            Some("branch-key-id".to_string()),
+            None,
+            None,
+            Some(partition.to_string()),
+        )
+        .expect("constructor must succeed")
+        .partition_id_bytes()
+        .to_vec()
+    };
 
-    #[async_trait]
-    impl BranchKeySupplier for ConstSupplier {
-        async fn get_branch_key_id(
-            &self,
-            _ec: &EncryptionContext,
-        ) -> Result<String, MaterialsError> {
-            Ok(self.0.to_string())
-        }
-    }
+    assert_eq!(id_of(precomposed), precomposed.as_bytes());
+    assert_eq!(id_of(decomposed), decomposed.as_bytes());
+    assert_ne!(
+        id_of(precomposed),
+        id_of(decomposed),
+        "canonically-equivalent partition ids MUST stay distinct byte sequences",
+    );
+}
 
-    let supplier: Arc<dyn BranchKeySupplier> = Arc::new(ConstSupplier("branch-id-from-supplier"));
+#[test]
+fn new_with_branch_key_id_supplier_succeeds() {
+    // Smoke test that configuring a supplier instead of a static branch key
+    // id is usable — construct a no-op supplier, pass it as the
+    // branch_key_id_supplier, and confirm the keyring can be built with it.
+    let supplier: Arc<dyn BranchKeySupplier> =
+        Arc::new(FixedBranchKeySupplier("branch-id-from-supplier"));
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         3600,
-        BranchKeySource::Supplier(supplier),
+        None,
+        Some(supplier),
         None,
         None,
     )
     .expect("constructor with supplier variant must succeed");
 
-    assert!(matches!(
-        keyring.branch_key_source(),
-        BranchKeySource::Supplier(_)
-    ));
+    assert!(
+        keyring.branch_key_id().is_none(),
+        "a supplier-configured keyring MUST NOT carry a static branch key id"
+    );
+    assert!(keyring.branch_key_id_supplier().is_some());
 }
 
-// ─── Cache wiring tests (slice 2) ───────────────────────────────────────────
+// ─── Cache wiring tests: which Cmc a given CacheType produces ───────────────
+//
+// The keyring's only responsibility here is turning a `CacheType` into a
+// `Cmc`, so for the variants it builds itself, successful construction IS the
+// assertion. Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to
+// the cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
+// and is deliberately not re-derived through the keyring. The one exception is
+// `CacheType::Shared`, where the keyring must store the caller's `Arc` verbatim
+// rather than build its own; nothing but a keyring test can check that.
 
 #[test]
 fn new_with_default_cache_succeeds() {
-    let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+    HierarchicalKeyring::new(
+        keystore_never_consulted(),
         3600,
-        BranchKeySource::Identifier("bk".to_string()),
-        Some(CacheType::Default(DefaultCache::default())),
+        Some("bk".to_string()),
+        None,
+        Some(CacheType::Default(DefaultCache::new(1))),
         None,
     )
-    .expect("CacheType::Default(DefaultCache::default()) must succeed");
-    // Construction succeeded — a Cmc was built and stored.
-    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
+    .expect("CacheType::Default must build a keyring-local cache");
 }
 
 #[test]
-fn new_with_cache_type_none_uses_default() {
-    let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+fn new_with_cache_type_none_succeeds() {
+    HierarchicalKeyring::new(
+        keystore_never_consulted(),
         3600,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         None,
         None,
     )
     .expect("None cache_type must default to a built-in cache");
-    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
 
 #[test]
 fn new_with_shared_cache_round_trips_provided_arc() {
-    use aws_crypto_mpl::{Cmc, LocalCmc};
-
     let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
     let supplied_for_compare = Arc::clone(&supplied);
 
     let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         3600,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::Shared(supplied)),
         None,
     )
@@ -324,8 +432,6 @@ fn new_with_shared_cache_round_trips_provided_arc() {
 
 #[test]
 fn new_with_storm_tracking_cache_succeeds() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
-
     let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
@@ -336,21 +442,19 @@ fn new_with_storm_tracking_cache_succeeds() {
         sleep_milli: 10,
         time_units: None,
     };
-    let keyring = HierarchicalKeyring::new(
-        stub_keystore(),
+    HierarchicalKeyring::new(
+        keystore_never_consulted(),
         3600, // ttl_seconds — strictly greater than grace_period (60).
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     )
     .expect("CacheType::StormTracking with grace_period < ttl must succeed");
-    let _cache: &Arc<dyn aws_crypto_mpl::Cmc> = keyring.cache();
 }
 
 #[test]
 fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
-
     let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
@@ -362,9 +466,10 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         time_units: None,
     };
     let err = match HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         60, // ttl_seconds == grace_period — must fail.
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     ) {
@@ -380,8 +485,6 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
 
 #[test]
 fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
-
     let params = StormTrackingCache {
         entry_capacity: 16,
         entry_pruning_tail_size: 4,
@@ -393,9 +496,10 @@ fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         time_units: None,
     };
     let err = match HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         60,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     ) {
@@ -412,8 +516,6 @@ fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 #[test]
 fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     use aws_crypto_mpl::TimeUnits;
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::StormTrackingCache;
-
     // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
     let params = StormTrackingCache {
@@ -427,16 +529,20 @@ fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
         time_units: Some(TimeUnits::Milliseconds),
     };
     HierarchicalKeyring::new(
-        stub_keystore(),
+        keystore_never_consulted(),
         60,
-        BranchKeySource::Identifier("bk".to_string()),
+        Some("bk".to_string()),
+        None,
         Some(CacheType::StormTracking(params)),
         None,
     )
     .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
 }
 
-// ─── Cache entry identifier formula tests (Appendix A) ──────────────────────
+// ─── Cache entry identifier formula tests ───────────────────────────────────
+//
+// Byte layouts below are transcribed from Appendix A of the specification;
+// see the module doc for the link.
 
 /// SHA-384 digest of a single concatenated byte sequence. Local helper used to
 /// derive the *expected* cache identifier from an explicitly-laid-out byte
@@ -455,10 +561,10 @@ fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
     // wire-shape per Appendix A; if the implementation deviates, SHA-384
     // diverges.
     let partition_id: &[u8] = b"\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff\x00";
-    let logical_key_store_name = "logical-store";
-    let branch_key_id = "branch-key-1";
+    let logical_key_store_name = LOGICAL_KEY_STORE_NAME;
+    let branch_key_id = FIXTURE_BRANCH_KEY_ID;
 
-    // Manually build the byte sequence the spec dictates:
+    // Manually build the byte sequence Appendix A dictates:
     //   [resource_id=0x02, NULL, scope_id_encrypt=0x01, NULL,
     //    partition_id..., NULL,
     //    UTF8(logical_key_store_name), NULL,
@@ -471,21 +577,23 @@ fn cache_entry_identifier_for_encrypt_matches_manual_sha384() {
     expected_input.extend_from_slice(branch_key_id.as_bytes());
     let expected = sha384(&expected_input);
 
-    let actual = for_encrypt(partition_id, logical_key_store_name, branch_key_id);
+    let actual = build_cache_identifier(
+        SCOPE_ID_ENCRYPT,
+        partition_id,
+        logical_key_store_name,
+        branch_key_id,
+        None,
+    );
 
-    //
-    //
-    //
-    //
     assert_eq!(actual, expected);
 }
 
 #[test]
 fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
     let partition_id: &[u8] = b"\xde\xad\xbe\xef\xfe\xed\xfa\xce\x01\x02\x03\x04\x05\x06\x07\x08";
-    let logical_key_store_name = "logical-store-2";
-    let branch_key_id = "branch-key-2";
-    let branch_key_version = "ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb";
+    let logical_key_store_name = LOGICAL_KEY_STORE_NAME;
+    let branch_key_id = FIXTURE_BRANCH_KEY_ID;
+    let branch_key_version = FIXTURE_VERSION;
 
     let mut expected_input = vec![0x02_u8, 0x00_u8, 0x02_u8, 0x00_u8];
     expected_input.extend_from_slice(partition_id);
@@ -497,23 +605,21 @@ fn cache_entry_identifier_for_decrypt_matches_manual_sha384() {
     expected_input.extend_from_slice(branch_key_version.as_bytes());
     let expected = sha384(&expected_input);
 
-    let actual = for_decrypt(
+    let actual = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
         partition_id,
         logical_key_store_name,
         branch_key_id,
-        branch_key_version,
+        Some(branch_key_version),
     );
 
-    //
-    //
-    //
     assert_eq!(actual, expected);
 }
 
 #[test]
 fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
     // Same partition / logical name / branch key id; the only difference
-    // between for_encrypt and for_decrypt's hash inputs is:
+    // between the encrypt and decrypt hash inputs is:
     //   - scope_id (0x01 vs 0x02)
     //   - presence of branch_key_version (absent vs present)
     // The hashes MUST therefore differ. This is the regression check that
@@ -523,8 +629,14 @@ fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
     let branch_id = "shared-branch";
     let version = "1.0";
 
-    let enc = for_encrypt(partition_id, logical, branch_id);
-    let dec = for_decrypt(partition_id, logical, branch_id, version);
+    let enc = build_cache_identifier(SCOPE_ID_ENCRYPT, partition_id, logical, branch_id, None);
+    let dec = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
+        partition_id,
+        logical,
+        branch_id,
+        Some(version),
+    );
 
     assert_ne!(
         enc, dec,
@@ -535,43 +647,66 @@ fn cache_entry_identifier_encrypt_and_decrypt_differ_for_same_inputs() {
 #[test]
 fn cache_entry_identifier_distinct_branch_key_ids_produce_distinct_outputs() {
     // Negative-collision regression: changing the branch_key_id MUST
-    // change the cache identifier. Both for_encrypt and for_decrypt
-    // checked.
+    // change the cache identifier. Both scopes checked.
     let partition_id: &[u8] = b"some-partition-bytes";
     let logical = "logical-name";
 
-    let enc_a = for_encrypt(partition_id, logical, "branch-a");
-    let enc_b = for_encrypt(partition_id, logical, "branch-b");
+    let enc_a = build_cache_identifier(SCOPE_ID_ENCRYPT, partition_id, logical, "branch-a", None);
+    let enc_b = build_cache_identifier(SCOPE_ID_ENCRYPT, partition_id, logical, "branch-b", None);
     assert_ne!(
         enc_a, enc_b,
-        "for_encrypt must produce distinct outputs for distinct branch key ids"
+        "the encrypt scope must produce distinct outputs for distinct branch key ids"
     );
 
-    let dec_a = for_decrypt(partition_id, logical, "branch-a", "v1");
-    let dec_b = for_decrypt(partition_id, logical, "branch-b", "v1");
+    let dec_a = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
+        partition_id,
+        logical,
+        "branch-a",
+        Some("v1"),
+    );
+    let dec_b = build_cache_identifier(
+        SCOPE_ID_DECRYPT,
+        partition_id,
+        logical,
+        "branch-b",
+        Some("v1"),
+    );
     assert_ne!(
         dec_a, dec_b,
-        "for_decrypt must produce distinct outputs for distinct branch key ids"
+        "the decrypt scope must produce distinct outputs for distinct branch key ids"
     );
 }
 
 #[test]
 fn cache_entry_identifier_distinct_versions_produce_distinct_outputs() {
     // Decrypt-only: the branch_key_version field MUST contribute to the
-    // hash. Two for_decrypt calls that differ only in branch_key_version
+    // hash. Two decrypt-scope calls that differ only in branch_key_version
     // MUST produce distinct outputs.
     let partition_id: &[u8] = b"another-partition";
     let logical = "logical-name";
     let branch_id = "branch-id";
 
     assert_ne!(
-        for_decrypt(partition_id, logical, branch_id, "v1"),
-        for_decrypt(partition_id, logical, branch_id, "v2"),
-        "for_decrypt must produce distinct outputs for distinct branch key versions"
+        build_cache_identifier(
+            SCOPE_ID_DECRYPT,
+            partition_id,
+            logical,
+            branch_id,
+            Some("v1")
+        ),
+        build_cache_identifier(
+            SCOPE_ID_DECRYPT,
+            partition_id,
+            logical,
+            branch_id,
+            Some("v2")
+        ),
+        "the decrypt scope must produce distinct outputs for distinct branch key versions"
     );
 }
 
-// ─── Branch-key wrapping / unwrapping / AAD tests (cycle 3) ─────────────────
+// ─── Branch-key wrapping / unwrapping / AAD tests ───────────────────────────
 
 /// Stable test fixtures for the wrap/unwrap round-trip tests. The branch_key
 /// bytes are arbitrary but fixed so the round-trip is deterministic across
@@ -584,9 +719,6 @@ fn fixed_branch_key() -> [u8; 32] {
     }
     bk
 }
-
-const FIXTURE_VERSION: &str = "01234567-0123-4123-8123-0123456789ab";
-const FIXTURE_BRANCH_KEY_ID: &str = "branch-key-id-1";
 
 fn fixture_materials_with_ec(ec: EncryptionContext) -> BranchKeyMaterials {
     BranchKeyMaterials::new(
@@ -604,9 +736,10 @@ fn fixture_materials_empty_ec() -> BranchKeyMaterials {
 
 #[test]
 fn compute_aad_layout_for_known_inputs() {
-    // Independently-constructed expected AAD byte vector. Built here from
-    // the spec's bullet list so a drift in the implementation's order or
-    // separator bytes is detected.
+    // Independently-constructed expected AAD byte vector. Built here from the
+    // bullet list in the specification's Branch Key Wrapping and Unwrapping
+    // AAD section (linked in the module doc) so a drift in the
+    // implementation's order or separator bytes is detected.
     let branch_key_id = "ek1";
     let version = "01234567-0123-4123-8123-0123456789ab";
     let ec = EncryptionContext::new();
@@ -625,9 +758,9 @@ fn compute_aad_layout_for_known_inputs() {
         ])
         .collect();
 
-    // The expected bytes are independently constructed from the spec's bullet
-    // list (label || branch-key-id || version || serialized-EC); a drift in
-    // concatenation order or content fails this assertion.
+    // The expected bytes are independently constructed from the AAD section's
+    // bullet list (label || branch-key-id || version || serialized-EC); a
+    // drift in concatenation order or content fails this assertion.
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
     assert_eq!(aad, expected, "AAD must equal label || id || version || ec");
     assert_eq!(
@@ -867,7 +1000,6 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     // Different branch_key bytes derive a different AES-256-GCM cipher key
     // on each side, so AES-GCM authentication fails on unwrap; this proves
     // the cipher key on both wrap and unwrap was the derivedBranchKey.
-    //
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -910,7 +1042,6 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     // was the AES-GCM AAD on the wrap side, and that the keyring
     // included branch_key_id as part of the AAD for both Encrypt and
     // Decrypt calls.
-    //
     assert_eq!(
         err.kind,
         MaterialsErrorKind::KeyringFailed,
@@ -1057,7 +1188,7 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     );
 }
 
-// ─── OnEncrypt tests (slice 3) ──────────────────────────────────────────────
+// ─── OnEncrypt tests ────────────────────────────────────────────────────────
 //
 // These tests exercise the [`Keyring::on_encrypt`] body via a
 // `FakeKeystore` that returns canned BranchKeyMaterials. The KMS / DDB
@@ -1065,146 +1196,185 @@ fn wrap_fails_when_encryption_context_value_too_large() {
 // helpers under `aws_kms::__test_internals`, so a successful round-trip
 // proves the EDK's wire format and the AAD / KDF derivation match.
 
+// ─── Keystore double shared by the OnEncrypt / OnDecrypt suites ─────────────
+//
+// The `FAKE_*` fixtures here are placeholders for exercising the keyring's own
+// logic. They are deliberately distinct from the `FIXTURE_*` constants above,
+// which carry the real integration-keystore values used by the
+// cache-identifier and wrap / unwrap tests.
+
+const FAKE_BRANCH_KEY: [u8; 32] = [
+    0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51,
+    0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x61,
+];
+const FAKE_BRANCH_KEY_ID: &str = "test-branch-key-id";
+const FAKE_BRANCH_KEY_VERSION: &str = "11111111-2222-4333-8444-555555555555";
+const FAKE_LOGICAL_KEYSTORE_NAME: &str = "test-logical-name";
+
+/// A keystore double that returns canned [`BranchKeyMaterials`] from both
+/// `get_active_branch_key` and `get_branch_key_version`, and counts
+/// call-throughs so cache-hit / cache-miss tests can assert keystore behaviour
+/// from the outside.
+///
+/// One double serves both suites: they need the same canned materials and the
+/// same `KeyStoreInfo`, and differ only in which counter they read. The
+/// counters are `Mutex<..>` rather than `Cell<..>` because `Keystore` requires
+/// `Send + Sync`; each lock is taken and released inside a single statement, so
+/// no guard is ever held across an `.await`.
+struct FakeKeystore {
+    materials: BranchKeyMaterials,
+    get_active_calls: Mutex<u32>,
+    get_version_calls: Mutex<u32>,
+    last_version_arg: Mutex<Option<String>>,
+}
+
+impl FakeKeystore {
+    fn new(materials: BranchKeyMaterials) -> Arc<Self> {
+        Arc::new(Self {
+            materials,
+            get_active_calls: Mutex::new(0),
+            get_version_calls: Mutex::new(0),
+            last_version_arg: Mutex::new(None),
+        })
+    }
+
+    fn get_active_calls(&self) -> u32 {
+        *self.get_active_calls.lock().unwrap()
+    }
+
+    fn get_version_calls(&self) -> u32 {
+        *self.get_version_calls.lock().unwrap()
+    }
+
+    fn last_version_arg(&self) -> Option<String> {
+        self.last_version_arg.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl Keystore for FakeKeystore {
+    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+        Ok(KeyStoreInfo {
+            keystore_id: "test-id".to_string(),
+            keystore_name: "test-table".to_string(),
+            logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
+            grant_tokens: Vec::new(),
+            kms_configuration: KmsConfiguration::Discovery,
+        })
+    }
+
+    async fn create_key_store(&self) -> Result<String, KeystoreError> {
+        unimplemented!("FakeKeystore::create_key_store")
+    }
+    async fn create_key(
+        &self,
+        _branch_key_id: Option<String>,
+        _encryption_context: Option<EncryptionContext>,
+    ) -> Result<String, KeystoreError> {
+        unimplemented!("FakeKeystore::create_key")
+    }
+    async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
+        unimplemented!("FakeKeystore::version_key")
+    }
+
+    async fn get_active_branch_key(
+        &self,
+        _branch_key_id: String,
+    ) -> Result<BranchKeyMaterials, KeystoreError> {
+        *self.get_active_calls.lock().unwrap() += 1;
+        Ok(self.materials.clone())
+    }
+
+    async fn get_branch_key_version(
+        &self,
+        _branch_key_id: String,
+        branch_key_version: String,
+    ) -> Result<BranchKeyMaterials, KeystoreError> {
+        *self.get_version_calls.lock().unwrap() += 1;
+        *self.last_version_arg.lock().unwrap() = Some(branch_key_version);
+        Ok(self.materials.clone())
+    }
+    async fn get_beacon_key(
+        &self,
+        _branch_key_id: String,
+    ) -> Result<BeaconKeyMaterials, KeystoreError> {
+        unimplemented!("FakeKeystore::get_beacon_key")
+    }
+}
+
+/// Canned branch-key materials with an empty encryption context. The wrap /
+/// unwrap AAD binds the *input* materials' EC, not this one.
+fn fake_branch_key_materials() -> BranchKeyMaterials {
+    BranchKeyMaterials::new(
+        FAKE_BRANCH_KEY,
+        FAKE_BRANCH_KEY_ID.to_string(),
+        FAKE_BRANCH_KEY_VERSION.to_string(),
+        EncryptionContext::new(),
+    )
+    .unwrap()
+}
+
+/// Empty encryption materials for `suite_id`. Suite choice is arbitrary unless
+/// a test depends on `encryption_key_length`.
+fn empty_encryption_materials(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
+    EncryptionMaterials::new(
+        suite_id,
+        Vec::new(),
+        EncryptionContext::new(),
+        Default::default(),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+/// Empty decryption materials for `suite_id`. Used only by the OnDecrypt
+/// suite; there is no OnEncrypt counterpart.
+fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials {
+    DecryptionMaterials::new(
+        suite_id,
+        EncryptionContext::new(),
+        Default::default(),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+/// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
+/// keyring-local default cache.
+fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> HierarchicalKeyring {
+    HierarchicalKeyring::new(
+        keystore,
+        3600,
+        Some(branch_key_id.to_string()),
+        None,
+        Some(CacheType::Default(DefaultCache::new(1000))),
+        Some("partition-id".to_string()),
+    )
+    .unwrap()
+}
+
+/// Pick a non-signing suite so `signing_key` / `symmetric_signing_keys`
+/// invariants don't intrude on the test.
+fn non_signing_suite() -> AlgorithmSuiteId {
+    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+}
+
 mod onencrypt {
     use super::*;
-    use std::sync::Mutex;
-
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
-    use aws_crypto_mpl::structures::{AlgorithmSuiteId, EncryptionMaterials, MaterialsError};
-    use aws_crypto_mpl::{Keyring, KmsConfiguration};
-
-    /// Stable test fixtures.
-    const FIXED_BRANCH_KEY: [u8; 32] = [
-        0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
-        0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
-        0x60, 0x61,
-    ];
-    const FIXED_BRANCH_KEY_ID: &str = "test-branch-key-id";
-    const FIXED_BRANCH_KEY_VERSION: &str = "11111111-2222-4333-8444-555555555555";
-    const LOGICAL_KEYSTORE_NAME: &str = "test-logical-name";
-
-    /// A keystore double that returns canned `BranchKeyMaterials` and
-    /// counts call-throughs so cache-hit / cache-miss tests can assert
-    /// keystore behaviour from the outside.
-    struct FakeKeystore {
-        materials: BranchKeyMaterials,
-        get_active_calls: Mutex<u32>,
-    }
-
-    impl FakeKeystore {
-        fn new(materials: BranchKeyMaterials) -> Arc<Self> {
-            Arc::new(Self {
-                materials,
-                get_active_calls: Mutex::new(0),
-            })
-        }
-
-        fn get_active_calls(&self) -> u32 {
-            *self.get_active_calls.lock().unwrap()
-        }
-    }
-
-    #[async_trait]
-    impl Keystore for FakeKeystore {
-        async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-            Ok(KeyStoreInfo {
-                keystore_id: "test-id".to_string(),
-                keystore_name: "test-table".to_string(),
-                logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
-                grant_tokens: Vec::new(),
-                kms_configuration: KmsConfiguration::Discovery,
-            })
-        }
-
-        async fn create_key_store(&self) -> Result<String, KeystoreError> {
-            unimplemented!("FakeKeystore::create_key_store")
-        }
-        async fn create_key(
-            &self,
-            _branch_key_id: Option<String>,
-            _encryption_context: Option<EncryptionContext>,
-        ) -> Result<String, KeystoreError> {
-            unimplemented!("FakeKeystore::create_key")
-        }
-        async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
-            unimplemented!("FakeKeystore::version_key")
-        }
-
-        async fn get_active_branch_key(
-            &self,
-            _branch_key_id: String,
-        ) -> Result<BranchKeyMaterials, KeystoreError> {
-            *self.get_active_calls.lock().unwrap() += 1;
-            Ok(self.materials.clone())
-        }
-
-        async fn get_branch_key_version(
-            &self,
-            _branch_key_id: String,
-            _branch_key_version: String,
-        ) -> Result<BranchKeyMaterials, KeystoreError> {
-            unimplemented!("FakeKeystore::get_branch_key_version")
-        }
-        async fn get_beacon_key(
-            &self,
-            _branch_key_id: String,
-        ) -> Result<BeaconKeyMaterials, KeystoreError> {
-            unimplemented!("FakeKeystore::get_beacon_key")
-        }
-    }
-
-    /// Build canned `BranchKeyMaterials` with an empty encryption context.
-    fn fixture_materials_empty_ec() -> BranchKeyMaterials {
-        BranchKeyMaterials::new(
-            FIXED_BRANCH_KEY,
-            FIXED_BRANCH_KEY_ID.to_string(),
-            FIXED_BRANCH_KEY_VERSION.to_string(),
-            EncryptionContext::new(),
-        )
-        .unwrap()
-    }
-
-    /// Build empty encryption materials for the AES-256-GCM/HKDF-SHA512
-    /// committed suite (encryption-key-length = 32). Suite choice is
-    /// arbitrary — the test only depends on `encryption_key_length`.
-    fn fixture_empty_materials_with_id(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
-        EncryptionMaterials::new(
-            suite_id,
-            Vec::new(),
-            EncryptionContext::new(),
-            Default::default(),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-
-    fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> HierarchicalKeyring {
-        HierarchicalKeyring::new(
-            keystore,
-            3600,
-            BranchKeySource::Identifier(branch_key_id.to_string()),
-            Some(CacheType::Default(DefaultCache::default())),
-            Some("partition-id".to_string()),
-        )
-        .unwrap()
-    }
-
-    /// Pick a non-signing suite so `signing_key`/`symmetric_signing_keys`
-    /// invariants don't intrude on the test.
-    fn non_signing_suite() -> AlgorithmSuiteId {
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
-    }
+    use aws_crypto_mpl::Keyring;
 
     #[tokio::test]
     async fn on_encrypt_caches_branch_key_materials_after_keystore_call() {
-        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
 
         // First call: cache miss → keystore is called.
         keyring
-            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .on_encrypt(empty_encryption_materials(non_signing_suite()))
             .await
             .unwrap();
         assert_eq!(
@@ -1213,15 +1383,24 @@ mod onencrypt {
             "first on_encrypt must call keystore.get_active_branch_key once"
         );
 
-        //
         keyring
-            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .on_encrypt(empty_encryption_materials(non_signing_suite()))
             .await
             .unwrap();
         assert_eq!(
             keystore.get_active_calls(),
             1,
             "second on_encrypt must hit the cache and NOT call keystore.get_active_branch_key again"
+        );
+
+        // Asserted explicitly because the shared keystore double implements
+        // `get_branch_key_version`. The per-suite double this replaced left it
+        // as `unimplemented!`, so an OnEncrypt path that reached it panicked;
+        // that guarantee is now a named assertion rather than a side effect.
+        assert_eq!(
+            keystore.get_version_calls(),
+            0,
+            "on_encrypt must never call keystore.get_branch_key_version"
         );
     }
 
@@ -1231,11 +1410,11 @@ mod onencrypt {
 
         #[async_trait]
         impl Keystore for FailingKeystore {
-            async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
                 Ok(KeyStoreInfo {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
-                    logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
+                    logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
                     kms_configuration: KmsConfiguration::Discovery,
                 })
@@ -1279,14 +1458,15 @@ mod onencrypt {
         let keyring = HierarchicalKeyring::new(
             Arc::new(FailingKeystore) as Arc<dyn Keystore>,
             3600,
-            BranchKeySource::Identifier("bk".to_string()),
-            Some(CacheType::Default(DefaultCache::default())),
+            Some("bk".to_string()),
+            None,
+            Some(CacheType::Default(DefaultCache::new(1000))),
             None,
         )
         .unwrap();
 
         let err = match keyring
-            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .on_encrypt(empty_encryption_materials(non_signing_suite()))
             .await
         {
             Ok(_) => panic!("on_encrypt must fail when keystore.get_active_branch_key fails"),
@@ -1297,36 +1477,28 @@ mod onencrypt {
 
     #[tokio::test]
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
-        struct FixedSupplier(&'static str);
-        #[async_trait]
-        impl BranchKeySupplier for FixedSupplier {
-            async fn get_branch_key_id(
-                &self,
-                _ec: &EncryptionContext,
-            ) -> Result<String, MaterialsError> {
-                Ok(self.0.to_string())
-            }
-        }
-
-        let keystore = FakeKeystore::new(fixture_materials_empty_ec());
-        let keyring = HierarchicalKeyring::new(
-            Arc::clone(&keystore) as Arc<dyn Keystore>,
-            3600,
-            BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
-            Some(CacheType::Default(DefaultCache::default())),
-            None,
-        )
-        .unwrap();
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring =
+            HierarchicalKeyring::new(
+                Arc::clone(&keystore) as Arc<dyn Keystore>,
+                3600,
+                None,
+                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                    as Arc<dyn BranchKeySupplier>),
+                Some(CacheType::Default(DefaultCache::new(1000))),
+                None,
+            )
+            .unwrap();
 
         let materials_out = keyring
-            .on_encrypt(fixture_empty_materials_with_id(non_signing_suite()))
+            .on_encrypt(empty_encryption_materials(non_signing_suite()))
             .await
             .unwrap();
 
         let edk = &materials_out.encrypted_data_keys()[0];
         assert_eq!(
             edk.key_provider_info.as_slice(),
-            FIXED_BRANCH_KEY_ID.as_bytes()
+            FAKE_BRANCH_KEY_ID.as_bytes()
         );
         assert_eq!(keystore.get_active_calls(), 1);
     }
@@ -1334,174 +1506,16 @@ mod onencrypt {
 
 mod ondecrypt {
     use super::*;
-    use std::sync::Mutex;
+    use aws_crypto_mpl::Keyring;
+    use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
 
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::BranchKeySupplier;
-    use aws_crypto_mpl::structures::{
-        AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
-        MaterialsError, PlaintextDataKey,
-    };
-    use aws_crypto_mpl::{Keyring, KmsConfiguration};
-
-    /// Stable test fixtures (mirror `mod onencrypt`'s fixtures so the
-    /// encrypt-then-decrypt round-trip tests below see the same
-    /// branch-key materials on both halves).
-    const FIXED_BRANCH_KEY: [u8; 32] = [
-        0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
-        0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
-        0x60, 0x61,
-    ];
-    const FIXED_BRANCH_KEY_ID: &str = "test-branch-key-id";
-    const FIXED_BRANCH_KEY_VERSION: &str = "11111111-2222-4333-8444-555555555555";
-    const LOGICAL_KEYSTORE_NAME: &str = "test-logical-name";
-
-    /// The 16-byte representation of `FIXED_BRANCH_KEY_VERSION`. Hard-
+    /// The 16-byte representation of `FAKE_BRANCH_KEY_VERSION`. Hard-
     /// coded so the on-wire-byte tests below don't depend on the
     /// `uuid` crate.
-    const FIXED_BRANCH_KEY_VERSION_BYTES: [u8; 16] = [
+    const FAKE_BRANCH_KEY_VERSION_BYTES: [u8; 16] = [
         0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x43, 0x33, 0x84, 0x44, 0x55, 0x55, 0x55, 0x55, 0x55,
         0x55,
     ];
-
-    /// Keystore double that returns canned `BranchKeyMaterials` for both
-    /// `get_active_branch_key` and `get_branch_key_version`, and tracks
-    /// per-method call counts plus the last `branch_key_version` argument
-    /// passed to `get_branch_key_version` so cache-fallthrough tests can
-    /// observe what the keyring extracted from the EDK ciphertext.
-    struct FakeKeystore {
-        materials: BranchKeyMaterials,
-        get_active_calls: Mutex<u32>,
-        get_version_calls: Mutex<u32>,
-        last_version_arg: Mutex<Option<String>>,
-    }
-
-    impl FakeKeystore {
-        fn new(materials: BranchKeyMaterials) -> Arc<Self> {
-            Arc::new(Self {
-                materials,
-                get_active_calls: Mutex::new(0),
-                get_version_calls: Mutex::new(0),
-                last_version_arg: Mutex::new(None),
-            })
-        }
-
-        fn get_version_calls(&self) -> u32 {
-            *self.get_version_calls.lock().unwrap()
-        }
-
-        fn last_version_arg(&self) -> Option<String> {
-            self.last_version_arg.lock().unwrap().clone()
-        }
-    }
-
-    #[async_trait]
-    impl Keystore for FakeKeystore {
-        async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
-            Ok(KeyStoreInfo {
-                keystore_id: "test-id".to_string(),
-                keystore_name: "test-table".to_string(),
-                logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
-                grant_tokens: Vec::new(),
-                kms_configuration: KmsConfiguration::Discovery,
-            })
-        }
-
-        async fn create_key_store(&self) -> Result<String, KeystoreError> {
-            unimplemented!("FakeKeystore::create_key_store")
-        }
-        async fn create_key(
-            &self,
-            _branch_key_id: Option<String>,
-            _encryption_context: Option<EncryptionContext>,
-        ) -> Result<String, KeystoreError> {
-            unimplemented!("FakeKeystore::create_key")
-        }
-        async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
-            unimplemented!("FakeKeystore::version_key")
-        }
-
-        async fn get_active_branch_key(
-            &self,
-            _branch_key_id: String,
-        ) -> Result<BranchKeyMaterials, KeystoreError> {
-            *self.get_active_calls.lock().unwrap() += 1;
-            Ok(self.materials.clone())
-        }
-
-        async fn get_branch_key_version(
-            &self,
-            _branch_key_id: String,
-            branch_key_version: String,
-        ) -> Result<BranchKeyMaterials, KeystoreError> {
-            *self.get_version_calls.lock().unwrap() += 1;
-            *self.last_version_arg.lock().unwrap() = Some(branch_key_version);
-            Ok(self.materials.clone())
-        }
-        async fn get_beacon_key(
-            &self,
-            _branch_key_id: String,
-        ) -> Result<BeaconKeyMaterials, KeystoreError> {
-            unimplemented!("FakeKeystore::get_beacon_key")
-        }
-    }
-
-    /// Build canned `BranchKeyMaterials` with an empty encryption
-    /// context. The wrap/unwrap AAD uses the input materials' EC, not
-    /// the BKM's EC, so this empty value is safe to share across all
-    /// round-trip tests below.
-    fn fixture_materials() -> BranchKeyMaterials {
-        BranchKeyMaterials::new(
-            FIXED_BRANCH_KEY,
-            FIXED_BRANCH_KEY_ID.to_string(),
-            FIXED_BRANCH_KEY_VERSION.to_string(),
-            EncryptionContext::new(),
-        )
-        .unwrap()
-    }
-
-    /// Build empty encryption materials for the chosen suite.
-    fn fixture_empty_encryption_materials(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
-        EncryptionMaterials::new(
-            suite_id,
-            Vec::new(),
-            EncryptionContext::new(),
-            Default::default(),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-
-    /// Build empty decryption materials for the chosen suite.
-    fn fixture_empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials {
-        DecryptionMaterials::new(
-            suite_id,
-            EncryptionContext::new(),
-            Default::default(),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-
-    fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> HierarchicalKeyring {
-        HierarchicalKeyring::new(
-            keystore,
-            3600,
-            BranchKeySource::Identifier(branch_key_id.to_string()),
-            Some(CacheType::Default(DefaultCache::default())),
-            Some("partition-id".to_string()),
-        )
-        .unwrap()
-    }
-
-    /// Pick a non-signing suite so signing-key invariants don't intrude
-    /// on the test (matches `mod onencrypt`'s choice).
-    fn non_signing_suite() -> AlgorithmSuiteId {
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
-    }
 
     /// Encrypt fresh empty materials through the keyring and return the
     /// resulting (plaintext_data_key, edks) pair. Used to seed every
@@ -1510,7 +1524,7 @@ mod ondecrypt {
         keyring: &HierarchicalKeyring,
         suite_id: AlgorithmSuiteId,
     ) -> (PlaintextDataKey, Vec<EncryptedDataKey>) {
-        let materials_in = fixture_empty_encryption_materials(suite_id);
+        let materials_in = empty_encryption_materials(suite_id);
         let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
         let pdk = materials_out
             .plaintext_data_key()
@@ -1525,8 +1539,8 @@ mod ondecrypt {
 
     #[tokio::test]
     async fn on_decrypt_fails_when_materials_already_have_plaintext_data_key() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         // First produce a real EDK so the input is non-empty; otherwise
@@ -1560,8 +1574,8 @@ mod ondecrypt {
         // cache and call get_branch_key_version. The version it passes
         // MUST be the canonical UUID string parsed from the 16 raw bytes
         // at offset salt+iv inside the EDK ciphertext.
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (_, edks) = produce_edk(&keyring, suite_id).await;
@@ -1571,32 +1585,31 @@ mod ondecrypt {
         // independently of the on_decrypt parsing logic.
         const VERSION_OFFSET: usize = 16 + 12;
         let on_wire_version = &edks[0].ciphertext[VERSION_OFFSET..VERSION_OFFSET + 16];
-        assert_eq!(on_wire_version, &FIXED_BRANCH_KEY_VERSION_BYTES);
+        assert_eq!(on_wire_version, &FAKE_BRANCH_KEY_VERSION_BYTES);
 
         let _ = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .unwrap();
 
-        //
         assert_eq!(keystore.get_version_calls(), 1);
         assert_eq!(
             keystore.last_version_arg().as_deref(),
-            Some(FIXED_BRANCH_KEY_VERSION),
+            Some(FAKE_BRANCH_KEY_VERSION),
         );
     }
 
     #[tokio::test]
     async fn on_decrypt_caches_branch_key_after_keystore_call() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (_, edks) = produce_edk(&keyring, suite_id).await;
 
         // First on_decrypt: cache MISS → keystore is called.
         let _ = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .unwrap();
         assert_eq!(
@@ -1605,9 +1618,8 @@ mod ondecrypt {
             "first on_decrypt must call get_branch_key_version once",
         );
 
-        //
         let _ = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .unwrap();
         assert_eq!(
@@ -1619,8 +1631,8 @@ mod ondecrypt {
 
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_wrong_provider_id() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1628,13 +1640,13 @@ mod ondecrypt {
         // skip it and continue to the next (matching) EDK.
         let bogus = EncryptedDataKey::new(
             "some-other-provider".to_string(),
-            FIXED_BRANCH_KEY_ID.as_bytes().to_vec(),
+            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
             vec![0xAA; 64],
         );
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK");
         assert_eq!(
@@ -1645,8 +1657,8 @@ mod ondecrypt {
 
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_non_utf8_provider_info() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1660,7 +1672,7 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK");
         assert_eq!(
@@ -1671,8 +1683,8 @@ mod ondecrypt {
 
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_wrong_branch_key_id() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1684,7 +1696,7 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK");
         assert_eq!(
@@ -1696,12 +1708,12 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_fails_when_no_edk_matches_filter() {
         // Empty EDK list → nothing matches → the keyring fails per spec.
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let err = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &[])
+            .on_decrypt(empty_decryption_materials(suite_id), &[])
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
@@ -1714,8 +1726,8 @@ mod ondecrypt {
 
     #[tokio::test]
     async fn on_decrypt_collects_per_edk_errors_into_final_error() {
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = build_keyring(keystore, FIXED_BRANCH_KEY_ID);
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         // EDK that passes the filter (correct provider id + provider info)
@@ -1724,12 +1736,12 @@ mod ondecrypt {
         // and surface it in the final error message.
         let truncated = EncryptedDataKey::new(
             "aws-kms-hierarchy".to_string(),
-            FIXED_BRANCH_KEY_ID.as_bytes().to_vec(),
+            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
             vec![0u8; 4],
         );
 
         let err = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &[truncated])
+            .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
@@ -1746,11 +1758,11 @@ mod ondecrypt {
 
         #[async_trait]
         impl Keystore for FailingKeystore {
-            async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
                 Ok(KeyStoreInfo {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
-                    logical_keystore_name: LOGICAL_KEYSTORE_NAME.to_string(),
+                    logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
                     kms_configuration: KmsConfiguration::Discovery,
                 })
@@ -1795,23 +1807,25 @@ mod ondecrypt {
         // Build a real EDK first, then swap in a keystore whose
         // get_branch_key_version returns an error so the on_decrypt
         // keystore-fallthrough path lights up.
-        let priming_keyring =
-            build_keyring(FakeKeystore::new(fixture_materials()), FIXED_BRANCH_KEY_ID);
+        let priming_keyring = build_keyring(
+            FakeKeystore::new(fake_branch_key_materials()),
+            FAKE_BRANCH_KEY_ID,
+        );
         let suite_id = non_signing_suite();
         let (_, edks) = produce_edk(&priming_keyring, suite_id).await;
 
         let keyring = HierarchicalKeyring::new(
             Arc::new(FailingKeystore) as Arc<dyn Keystore>,
             3600,
-            BranchKeySource::Identifier(FIXED_BRANCH_KEY_ID.to_string()),
-            Some(CacheType::Default(DefaultCache::default())),
+            Some(FAKE_BRANCH_KEY_ID.to_string()),
+            None,
+            Some(CacheType::Default(DefaultCache::new(1000))),
             Some("partition-id".to_string()),
         )
         .unwrap();
 
-        //
         let err = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
@@ -1824,32 +1838,24 @@ mod ondecrypt {
 
     #[tokio::test]
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
-        struct FixedSupplier(&'static str);
-        #[async_trait]
-        impl BranchKeySupplier for FixedSupplier {
-            async fn get_branch_key_id(
-                &self,
-                _ec: &EncryptionContext,
-            ) -> Result<String, MaterialsError> {
-                Ok(self.0.to_string())
-            }
-        }
-
-        let keystore = FakeKeystore::new(fixture_materials());
-        let keyring = HierarchicalKeyring::new(
-            Arc::clone(&keystore) as Arc<dyn Keystore>,
-            3600,
-            BranchKeySource::Supplier(Arc::new(FixedSupplier(FIXED_BRANCH_KEY_ID))),
-            Some(CacheType::Default(DefaultCache::default())),
-            Some("partition-id".to_string()),
-        )
-        .unwrap();
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring =
+            HierarchicalKeyring::new(
+                Arc::clone(&keystore) as Arc<dyn Keystore>,
+                3600,
+                None,
+                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                    as Arc<dyn BranchKeySupplier>),
+                Some(CacheType::Default(DefaultCache::new(1000))),
+                Some("partition-id".to_string()),
+            )
+            .unwrap();
         let suite_id = non_signing_suite();
 
         let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;
 
         let dm_out = keyring
-            .on_decrypt(fixture_empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect("on_decrypt with a supplier-resolved branch_key_id must succeed");
         assert_eq!(
