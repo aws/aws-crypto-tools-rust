@@ -3,14 +3,14 @@
 use crate::error::ServerError;
 use crate::handlers::AppState;
 use crate::model::*;
+use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use axum::routing::post;
-use axum::Router;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
@@ -51,16 +51,12 @@ async fn dispatch(
     }
 
     let outcome = match operation.as_str() {
-        "CreateRawAesKeyring" => {
-            decode::<CreateRawAesKeyringRequest>(&body)
-                .and_then(|req| state.create_raw_aes_keyring(req))
-                .and_then(|resp| encode(&resp))
-        }
-        "CreateDefaultCmm" => {
-            decode::<CreateDefaultCmmRequest>(&body)
-                .and_then(|req| state.create_default_cmm(req))
-                .and_then(|resp| encode(&resp))
-        }
+        "CreateRawAesKeyring" => decode::<CreateRawAesKeyringRequest>(&body)
+            .and_then(|req| state.create_raw_aes_keyring(req))
+            .and_then(|resp| encode(&resp)),
+        "CreateDefaultCmm" => decode::<CreateDefaultCmmRequest>(&body)
+            .and_then(|req| state.create_default_cmm(req))
+            .and_then(|resp| encode(&resp)),
         "GetEncryptionMaterials" => match decode::<GetEncryptionMaterialsRequest>(&body) {
             Ok(req) => state
                 .get_encryption_materials(req)

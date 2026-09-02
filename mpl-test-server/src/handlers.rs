@@ -3,13 +3,19 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
+use aws_crypto_mpl::AesGcm;
+// `DecryptMaterialsRequest` is aliased because `crate::model` defines a
+// same-named wire shape; an unaliased import would shadow the glob-imported
+// model type and bind this module's handler signatures to the MPL type.
+use aws_crypto_mpl::cmm::{
+    Cmm, DecryptMaterialsRequest as MplDecryptMaterialsRequest, DefaultCmm,
+    EncryptionMaterialsRequest,
+};
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
     EncryptedDataKey, EncryptionContext,
 };
-use aws_crypto_mpl::AesGcm;
 
 use crate::error::ServerError;
 use crate::model::*;
@@ -144,12 +150,15 @@ impl AppState {
         let edks: Vec<EncryptedDataKey> = req
             .encrypted_data_keys
             .into_iter()
-            .map(|edk| EncryptedDataKey::new(edk.key_provider_id, edk.key_provider_info, edk.ciphertext))
+            .map(|edk| {
+                EncryptedDataKey::new(edk.key_provider_id, edk.key_provider_info, edk.ciphertext)
+            })
             .collect();
 
-        let mut mpl_req = DecryptMaterialsRequest::new(suite, policy, edks, ec);
+        let mut mpl_req = MplDecryptMaterialsRequest::new(suite, policy, edks, ec);
         if let Some(reproduced) = req.reproduced_encryption_context {
-            mpl_req = mpl_req.with_reproduced_encryption_context(map_encryption_context(&reproduced));
+            mpl_req =
+                mpl_req.with_reproduced_encryption_context(map_encryption_context(&reproduced));
         }
 
         let materials = cmm
@@ -164,7 +173,9 @@ impl AppState {
             .to_vec();
 
         let ec_out = encryption_context_to_map(materials.encryption_context());
-        let verification_key = materials.verification_key().map(|vk| vk.as_bytes().to_vec());
+        let verification_key = materials
+            .verification_key()
+            .map(|vk| vk.as_bytes().to_vec());
         let symmetric_signing_key = materials
             .symmetric_signing_key()
             .map(|sk| sk.as_bytes().to_vec());
@@ -200,9 +211,7 @@ fn map_encryption_context(map: &std::collections::BTreeMap<String, String>) -> E
     ec
 }
 
-fn encryption_context_to_map(
-    ec: &EncryptionContext,
-) -> std::collections::BTreeMap<String, String> {
+fn encryption_context_to_map(ec: &EncryptionContext) -> std::collections::BTreeMap<String, String> {
     ec.iter()
         .map(|(k, v)| {
             (
@@ -230,32 +239,76 @@ fn map_commitment_policy(policy: CommitmentPolicy) -> MplCommitmentPolicy {
 
 fn map_algorithm_suite_id(id: AlgorithmSuiteId) -> MplAlgorithmSuiteId {
     match id {
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => {
+            MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
+        }
+        AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => {
+            MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf
+        }
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => {
+            MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+        }
+        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => {
+            MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256
+        }
+        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => {
+            MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256
+        }
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => {
+            MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256
+        }
+        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
+            MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+        }
+        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => {
+            MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        }
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
+            MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+        }
     }
 }
 
 fn reverse_map_algorithm_suite_id(id: MplAlgorithmSuiteId) -> AlgorithmSuiteId {
     match id {
-        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
-        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
-        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => {
+            AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf
+        }
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => {
+            AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => {
+            AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+        }
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => {
+            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256
+        }
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => {
+            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => {
+            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256
+        }
+        MplAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => {
+            AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+        }
+        MplAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => {
+            AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => {
+            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        }
+        MplAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
+            AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+        }
     }
 }
