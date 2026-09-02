@@ -23,9 +23,5 @@ uuid = { version = "=1.23.3", features = ["v4"] }
 default = []
 test-utils = []
 
-[[example]]
-name = "aws_kms_hierarchical"
-path = "examples/aws_kms_hierarchical/main.rs"
-
 [dev-dependencies]
 tokio = { version = "=1.49.0", features = ["rt", "macros", "test-util", "time"], default-features = false }

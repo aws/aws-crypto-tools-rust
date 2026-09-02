@@ -1,10 +1,12 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Constant-time equality tests ported from Dafny `ConstantTime.dfy`.
+//! Constant-time equality tests ported from Dafny [`ConstantTime.dfy`].
 //! The Dafny test has six assertions covering empty inputs, single-byte
 //! matches/mismatches, and three-byte matches/mismatches at both the head
 //! and tail. A length-mismatch case is added on the Rust side for coverage.
+//!
+//! [`ConstantTime.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/ConstantTime.dfy
 
 use aws_mpl_primitives::constant_time_equal;
 

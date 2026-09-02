@@ -1,7 +1,22 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Raw AES keyring tests, ported from the Dafny `TestRawAESKeyring`.
+//! Raw AES keyring tests, ported from the Dafny
+//! [`TestRawAESKeyring.dfy`](https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/TestRawAESKeyring.dfy).
+//!
+//! The fixtures mirror
+//! [`TestUtils.dfy`](https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/TestUtils.dfy):
+//! `namespace_and_name` is `TestUtils.NamespaceAndName(0)`
+//! (`"child0 Namespace"` / `"child0 Name"`), `small_encryption_context_a` is
+//! `TestUtils.SmallEncryptionContext(A)` (`keyA` -> `valA`), and
+//! `unserializable_encryption_context` is the Dafny
+//! `generateUnserializableEncryptionContext` (a value of `0x1_0000` bytes,
+//! one past what the `u16` length field of the serialization format can
+//! express).
+//!
+//! The tests under `Rust-side additions` have no Dafny counterpart. They
+//! cover the on-wire shape of the encrypted data key, the two constructor
+//! validations, and the negative paths Dafny leaves to its proofs.
 
 use std::collections::BTreeSet;
 
@@ -96,6 +111,7 @@ fn assert_kind(err: &MaterialsError, expected: MaterialsErrorKind) {
     );
 }
 
+// Ported from Dafny `TestOnEncryptOnDecryptGenerateDataKey`.
 #[tokio::test]
 async fn test_on_encrypt_on_decrypt_generate_data_key() {
     let keyring = default_keyring();
@@ -142,6 +158,7 @@ async fn test_on_encrypt_on_decrypt_generate_data_key() {
     );
 }
 
+// Ported from Dafny `TestOnEncryptOnDecryptSuppliedDataKey`.
 #[tokio::test]
 async fn test_on_encrypt_on_decrypt_supplied_data_key() {
     let keyring = default_keyring();
@@ -181,6 +198,7 @@ async fn test_on_encrypt_on_decrypt_supplied_data_key() {
     );
 }
 
+// Ported from Dafny `TestOnDecryptKeyNameMismatch`.
 #[tokio::test]
 async fn test_on_decrypt_key_name_mismatch() {
     let keyring = default_keyring();
@@ -207,6 +225,7 @@ async fn test_on_decrypt_key_name_mismatch() {
     );
 }
 
+// Ported from Dafny `TestOnDecryptBadAndGoodEdkSucceeds`.
 #[tokio::test]
 async fn test_on_decrypt_bad_and_good_edk_succeeds() {
     let keyring = default_keyring();
@@ -246,6 +265,7 @@ async fn test_on_decrypt_bad_and_good_edk_succeeds() {
     );
 }
 
+// Ported from Dafny `TestOnDecryptNoEDKs`.
 #[tokio::test]
 async fn test_on_decrypt_no_edks() {
     let keyring = default_keyring();
@@ -261,25 +281,7 @@ async fn test_on_decrypt_no_edks() {
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
 }
 
-#[tokio::test]
-async fn test_on_decrypt_with_existing_plaintext_data_key_fails() {
-    let keyring = default_keyring();
-    let ec = small_encryption_context_a();
-
-    let encrypt_output = keyring
-        .on_encrypt(encryption_materials(ec.clone(), None))
-        .await
-        .expect("on_encrypt succeeds");
-    let edk = encrypt_output.encrypted_data_keys()[0].clone();
-
-    let result = keyring
-        .on_decrypt(decryption_materials(ec, Some(vec![0x11; 32])), &[edk])
-        .await;
-
-    let err = result.expect_err("materials that already carry a plaintext data key must fail");
-    assert_kind(&err, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
-}
-
+// Ported from Dafny `TestOnEncryptUnserializableEC`.
 #[tokio::test]
 async fn test_on_encrypt_unserializable_encryption_context() {
     let keyring = default_keyring();
@@ -301,6 +303,7 @@ async fn test_on_encrypt_unserializable_encryption_context() {
     );
 }
 
+// Ported from Dafny `TestOnDecryptUnserializableEC`.
 #[tokio::test]
 async fn test_on_decrypt_unserializable_encryption_context() {
     let keyring = default_keyring();
@@ -326,6 +329,30 @@ async fn test_on_decrypt_unserializable_encryption_context() {
         "error must name the serialization failure: {}",
         err.message
     );
+}
+
+// ---------------------------------------------------------------------------
+// Rust-side additions: no Dafny counterpart. See the module documentation
+// for why these paths need runtime tests here but not in Dafny.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_on_decrypt_with_existing_plaintext_data_key_fails() {
+    let keyring = default_keyring();
+    let ec = small_encryption_context_a();
+
+    let encrypt_output = keyring
+        .on_encrypt(encryption_materials(ec.clone(), None))
+        .await
+        .expect("on_encrypt succeeds");
+    let edk = encrypt_output.encrypted_data_keys()[0].clone();
+
+    let result = keyring
+        .on_decrypt(decryption_materials(ec, Some(vec![0x11; 32])), &[edk])
+        .await;
+
+    let err = result.expect_err("materials that already carry a plaintext data key must fail");
+    assert_kind(&err, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
 }
 
 #[tokio::test]
@@ -661,10 +688,46 @@ fn test_new_rejects_reserved_aws_kms_key_namespace() {
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
     assert_kind(&err, MaterialsErrorKind::Validation);
     assert!(
-        err.message.contains("must not be `aws-kms`"),
+        err.message.contains("must not be or start with `aws-kms`"),
         "error must name the reserved namespace: {}",
         err.message
     );
+}
+
+#[test]
+fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
+    // The key namespace becomes the EDK's key provider ID, so accepting any of
+    // these would let a raw AES keyring emit encrypted data keys that
+    // impersonate the corresponding AWS KMS keyring. All four are reserved by
+    // the `aws-kms` prefix rule, so a prefix check is required; an equality
+    // check against `aws-kms` alone would let the last three through.
+    let (_, name) = namespace_and_name();
+    for namespace in [
+        "aws-kms",
+        "aws-kms-hierarchy",
+        "aws-kms-rsa",
+        "aws-kms-ecdh",
+        // Not a real provider ID, but shares the reserved prefix.
+        "aws-kms-but-not-really",
+    ] {
+        let Err(err) =
+            RawAesKeyring::new(namespace, name.clone(), vec![0u8; 32], AesGcm::Aes256Gcm)
+        else {
+            panic!("`{namespace}` must be rejected as reserved");
+        };
+        assert_kind(&err, MaterialsErrorKind::Validation);
+    }
+}
+
+#[test]
+fn test_new_accepts_the_raw_ecdh_key_provider_id() {
+    // `raw-ecdh` is the raw ECDH keyring's key provider ID, but it is not
+    // covered by the reserved `aws-kms` prefix and the specification does not
+    // reserve it against the raw AES keyring, so it is accepted. This pins the
+    // rejection to the documented prefix rather than to a broader denylist.
+    let (_, name) = namespace_and_name();
+    RawAesKeyring::new("raw-ecdh", name, vec![0u8; 32], AesGcm::Aes256Gcm)
+        .expect("`raw-ecdh` is not reserved against the raw AES keyring");
 }
 
 #[test]
@@ -688,18 +751,4 @@ fn test_debug_does_not_leak_the_wrapping_key() {
         rendered.contains("child0 Namespace") && rendered.contains("child0 Name"),
         "Debug must still show the non-secret configuration: {rendered}"
     );
-}
-
-#[test]
-fn test_new_allows_key_namespace_that_merely_starts_with_aws_kms() {
-    // Only the exact reserved value is rejected, matching the Dafny reference
-    // implementation's `keyNamespace != "aws-kms"` check.
-    let (_, name) = namespace_and_name();
-    RawAesKeyring::new(
-        "aws-kms-but-not-really",
-        name,
-        vec![0u8; 32],
-        AesGcm::Aes256Gcm,
-    )
-    .expect("a namespace that only shares the prefix is accepted");
 }

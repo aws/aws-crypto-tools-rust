@@ -90,7 +90,8 @@ pub fn generate_random_bytes(
 
 pub fn digest(req: DigestRequest) -> Result<DigestResponse, ServerError> {
     let alg = map_digest_alg(req.algorithm);
-    let digest = prim::digest(alg, &req.data);
+    let mut digest = vec![0u8; alg.output_len()];
+    prim::digest(alg, &req.data, &mut digest).map_err(prim_err)?;
     Ok(DigestResponse { digest })
 }
 
@@ -98,7 +99,8 @@ pub fn digest(req: DigestRequest) -> Result<DigestResponse, ServerError> {
 
 pub fn hmac(req: HmacRequest) -> Result<HmacResponse, ServerError> {
     let alg = map_digest_alg(req.algorithm);
-    let digest = prim::hmac(alg, &req.key, &req.message);
+    let mut digest = vec![0u8; alg.output_len()];
+    prim::hmac(alg, &req.key, &req.message, &mut digest).map_err(prim_err)?;
     Ok(HmacResponse { digest })
 }
 
@@ -135,7 +137,8 @@ pub fn ecdsa_generate_key_pair(
 
 pub fn ecdsa_sign(req: EcdsaSignRequest) -> Result<EcdsaSignResponse, ServerError> {
     let alg = map_ecdsa_alg(req.algorithm);
-    let signature = prim::ecdsa_sign(alg, &req.signing_key, &req.message).map_err(prim_err)?;
+    let mut signature = vec![0u8; prim::signature_len(alg)];
+    prim::ecdsa_sign(alg, &req.signing_key, &req.message, &mut signature).map_err(prim_err)?;
     Ok(EcdsaSignResponse { signature })
 }
 

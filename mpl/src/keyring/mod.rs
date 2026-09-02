@@ -3,17 +3,10 @@
 
 //! The `Keyring` trait — the abstract contract every keyring MUST implement.
 //!
-//! # Why `async_trait` and not native AFIT
-//!
-//! Rust 1.75 stabilised `async fn` in traits ("AFIT"), but AFIT traits are NOT
-//! dyn-compatible on stable — `dyn_compatible_async` is still nightly-only as
-//! of Rust 1.85. The MPL needs `Box<dyn Keyring>` and `&dyn Keyring` plug-in
-//! shapes so that a CMM can hold an arbitrary, runtime-configured keyring
-//! (KMS endpoint, raw key bytes, multi-keyring composition, …). The
-//! [`async_trait`] proc-macro rewrites each `async fn` into a method
-//! returning `Pin<Box<dyn Future + Send>>`, which IS dyn-compatible. The one
-//! heap allocation per call is the price of the plug-in shape.
-//!
+//! Uses #[async_trait] so that the CMM can hold any runtime defined
+//! keyring. The macro makes this work by rewriting each `async fn`
+//! to return a boxed future.
+
 use async_trait::async_trait;
 
 pub mod raw_aes_keyring;

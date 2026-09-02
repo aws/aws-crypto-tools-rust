@@ -3,42 +3,37 @@
 
 //! Branch-key wrapping/unwrapping primitives for the AWS KMS Hierarchical Keyring.
 //!
-//! Implements the [Branch Key Wrapping](
-//! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping),
-//! [Branch Key Unwrapping](
-//! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-unwrapping),
-//! and [Branch Key Wrapping and Unwrapping AAD](
-//! ../spec/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad)
-//! sections — pure crypto leaves over `aws-mpl-primitives`, with no
-//! cache or KMS dependency. Used by the `Keyring` impl in
-//! [`super::hierarchical_keyring`] (in a later cycle).
+//! Wrapping, unwrapping, and the AAD both sides bind. Pure crypto over
+//! `aws-mpl-primitives`, with no cache or KMS dependency. Used by the
+//! `Keyring` impl in [`super::hierarchical_keyring`].
 
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
+use uuid::Uuid;
 
 use crate::structures::{BranchKeyMaterials, EncryptionContext, MaterialsError};
 
-/// Length of the random salt used as the KDF context. Spec: 16 bytes.
+/// Length of the random salt used as the KDF context: 16 bytes.
 const SALT_LEN: usize = 16;
 
-/// Length of the AES-GCM IV. Spec: 12 bytes.
+/// Length of the AES-GCM IV: 12 bytes.
 const IV_LEN: usize = 12;
 
 /// Length of the branch-key version (UUID) when serialized as raw bytes
-/// inside the AAD and the on-wire layout. Spec: 16 bytes.
+/// inside the AAD and the on-wire layout: 16 bytes.
 const VERSION_LEN: usize = 16;
 
 /// AES-GCM authentication tag length. AES-256-GCM always produces a
 /// 16-byte tag.
 const TAG_LEN: usize = 16;
 
-/// Length of the derived branch key produced by KBKDF-CTR-HMAC-SHA256.
-/// AES-256-GCM requires a 32-byte cipher key.
+/// Length of the derived branch key produced by the KDF in Counter Mode with
+/// HMAC SHA256. AES-256-GCM requires a 32-byte cipher key.
 const DERIVED_KEY_LEN: usize = 32;
 
-/// Label for the KBKDF-CTR-HMAC-SHA256 derivation and for the AAD prefix.
-/// Spec: "aws-kms-hierarchy" UTF-8 encoded — 17 bytes.
+/// Label for the KDF in Counter Mode with HMAC SHA256 derivation and for the
+/// AAD prefix: the literal "aws-kms-hierarchy", UTF-8 encoded — 17 bytes.
 const HIERARCHY_LABEL: &[u8] = b"aws-kms-hierarchy";
 
 /// Total fixed overhead of a wrap output relative to the plaintext data key:
@@ -53,9 +48,8 @@ const FIXED_OVERHEAD_LEN: usize = SALT_LEN + IV_LEN + VERSION_LEN + TAG_LEN;
 /// The output is the concatenation, in order, of:
 /// 1. UTF-8 bytes of the literal `"aws-kms-hierarchy"`.
 /// 2. UTF-8 bytes of `branch_key_id`.
-/// 3. The 16-byte representation of `branch_key_version` (a v4 UUID hex
-///    string with the four `-` separators stripped, parsed as 32 hex
-///    digits).
+/// 3. The 16-byte representation of `branch_key_version` (parsed from its
+///    canonical hyphenated UUID form).
 /// 4. The serialized `EncryptionContext`.
 ///
 /// Returns `MaterialsError` if the encryption context fails to serialize
@@ -82,69 +76,39 @@ pub fn compute_aad(
     Ok(aad)
 }
 
-/// Parse a v4 UUID canonical hex string (8-4-4-4-12) into its 16 raw bytes.
+/// Parse a UUID in canonical hyphenated form (8-4-4-4-12) into its 16 raw
+/// bytes.
 ///
-/// `BranchKeyMaterials::new` no longer re-validates the UUID shape, so this
-/// parse acts as the actual validation gate on the branch-key-version
-/// string. Returns `MaterialsError` rather than panicking so a caller that
-/// hands us a malformed string (e.g. a corrupted keystore record or a
-/// fuzzer) gets a clean error instead of a process abort.
+/// This parse is the validation gate on the branch-key-version string.
+/// Returns `MaterialsError` rather than panicking so a caller that hands us a
+/// malformed string (e.g. a corrupted keystore record or a fuzzer) gets a
+/// clean error instead of a process abort.
+///
+/// The explicit length check keeps the gate strict: `Uuid::parse_str` also
+/// accepts the 32-character simple form as well as braced and URN forms,
+/// and only the canonical hyphenated form is 36 characters.
 fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], MaterialsError> {
-    let bytes = s.as_bytes();
-    if bytes.len() != 36
-        || bytes[8] != b'-'
-        || bytes[13] != b'-'
-        || bytes[18] != b'-'
-        || bytes[23] != b'-'
-    {
+    if s.len() != 36 {
         return Err(MaterialsError::new(format!(
             "Branch key version is not a valid 36-char UUID: {s}",
         )));
     }
-    // Strip the four hyphens, leaving 32 hex digits.
-    let mut hex = [0u8; 32];
-    let mut hex_idx = 0;
-    for (i, &b) in bytes.iter().enumerate() {
-        if i == 8 || i == 13 || i == 18 || i == 23 {
-            continue;
-        }
-        hex[hex_idx] = b;
-        hex_idx += 1;
-    }
-    debug_assert_eq!(
-        hex_idx, 32,
-        "uuid hex digit count must be 32 after stripping"
-    );
-
-    let mut out = [0u8; VERSION_LEN];
-    for (i, chunk) in hex.chunks_exact(2).enumerate() {
-        let pair = std::str::from_utf8(chunk).map_err(|_| {
-            MaterialsError::new(format!(
-                "Branch key version contains non-ASCII hex digits: {s}",
-            ))
-        })?;
-        out[i] = u8::from_str_radix(pair, 16).map_err(|_| {
-            MaterialsError::new(format!(
-                "Branch key version contains non-hex characters: {s}",
-            ))
-        })?;
-    }
-    Ok(out)
+    let uuid = Uuid::parse_str(s).map_err(|e| {
+        MaterialsError::new(format!("Branch key version is not a valid UUID: {s}: {e}"))
+    })?;
+    Ok(*uuid.as_bytes())
 }
 
 // ---- KDF ---------------------------------------------------------------------
 
-/// Derive the 32-byte AES-256-GCM cipher key from the branch key using
-/// KBKDF-CTR-HMAC-SHA256 (NIST SP 800-108 §4.1).
+/// Derive the 32-byte AES-256-GCM cipher key from the branch key using the
+/// KDF in Counter Mode with HMAC SHA256 (NIST SP 800-108 §4.1).
 ///
 /// The fixed-info string follows the standard NIST construction
 /// `Label || 0x00 || Context || L_be32`, with:
 /// * `Label`   = "aws-kms-hierarchy"
 /// * `Context` = `salt`
 /// * `L_be32`  = 0x00000100 (256 bits = 32 bytes of output)
-///
-/// The same construction is used on both wrap and unwrap so the round
-/// trip is closed.
 fn derive_branch_key(
     branch_key: &[u8; DERIVED_KEY_LEN],
     salt: &[u8; SALT_LEN],
@@ -159,7 +123,9 @@ fn derive_branch_key(
 
     let mut derived = [0u8; DERIVED_KEY_LEN];
     kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|_| {
-        MaterialsError::keyring_failed("Branch key wrap: KBKDF-CTR-HMAC-SHA256 derivation failed")
+        MaterialsError::keyring_failed(
+            "Branch key wrap: KDF in Counter Mode with HMAC SHA256 derivation failed",
+        )
     })?;
     Ok(derived)
 }
@@ -173,9 +139,8 @@ fn derive_branch_key(
 /// salt(16) || iv(12) || version(16) || encrypted_key(plaintext_len) || tag(16)
 /// ```
 ///
-/// `encryption_context` is the input encryption-materials' EC, bound
-/// into the AAD per spec `#branch-key-wrapping-and-unwrapping-aad` item 4
-/// ("encryption context from the input encryption materials").
+/// `encryption_context` is the input encryption-materials' EC, bound into
+/// the AAD.
 pub fn wrap(
     materials: &BranchKeyMaterials,
     encryption_context: &EncryptionContext,
@@ -246,8 +211,8 @@ pub fn wrap(
 /// Expects the on-wire layout
 /// `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`.
 ///
-/// `encryption_context` is the input decryption-materials' EC, bound
-/// into the AAD per spec `#branch-key-wrapping-and-unwrapping-aad` item 4.
+/// `encryption_context` is the input decryption-materials' EC, bound into
+/// the AAD.
 pub fn unwrap(
     materials: &BranchKeyMaterials,
     encryption_context: &EncryptionContext,
@@ -284,15 +249,11 @@ pub fn unwrap(
 
     // Build the AAD using the materials' branch_key_id, branch_key_version,
     // and the supplied encryption_context (the decryption-materials' EC).
-    // Note: A1 mandates the AAD is included in the AES Decrypt call;
-    // A2 mandates the concatenation order.
     let aad_bytes = compute_aad(
         materials.branch_key_id(),
         materials.branch_key_version(),
         encryption_context,
     )?;
-
-    let unbound_iv = iv_bytes;
 
     let mut plaintext = vec![0u8; encrypted_key.len()];
     aes_decrypt(
@@ -300,7 +261,7 @@ pub fn unwrap(
         &derived_branch_key,
         encrypted_key,
         tag,
-        &unbound_iv,
+        &iv_bytes,
         &aad_bytes,
         &mut plaintext,
     )
