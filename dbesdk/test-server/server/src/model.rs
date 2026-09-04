@@ -132,6 +132,79 @@ pub struct GetItemOutputTransformResponse {
     pub transformed_output: GetItemOutput,
 }
 
+// ---- BatchWriteItem / TransactWriteItems encrypt-before wire shapes ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchWriteItemInput {
+    #[serde(rename = "requestItems")]
+    pub request_items: HashMap<String, Vec<WriteRequest>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WriteRequest {
+    #[serde(rename = "putRequest", skip_serializing_if = "Option::is_none", default)]
+    pub put_request: Option<PutRequest>,
+    #[serde(rename = "deleteRequest", skip_serializing_if = "Option::is_none", default)]
+    pub delete_request: Option<DeleteRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PutRequest {
+    pub item: DdbItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteRequest {
+    pub key: DdbItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactWriteItemsInput {
+    #[serde(rename = "transactItems")]
+    pub transact_items: Vec<TransactWriteItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactWriteItem {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub put: Option<Put>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Put {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub item: DdbItem,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchWriteItemInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: BatchWriteItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchWriteItemInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: BatchWriteItemInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactWriteItemsInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: TransactWriteItemsInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactWriteItemsInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: TransactWriteItemsInput,
+}
+
 // ---------------------------------------------------------------------------
 // AttributeValue — DDB data-plane shape. Scalars (S / N / B / BOOL / NULL),
 // typed sets (SS / NS / BS), and the recursive collections (L / M). L and M

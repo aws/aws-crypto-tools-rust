@@ -123,6 +123,18 @@ async fn dispatch(
                 .map(ok_body),
             Err(e) => Err(e),
         },
+        "BatchWriteItemInputTransform" => match decode(&body) {
+            Ok(request) => handlers::batch_write_item_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "TransactWriteItemsInputTransform" => match decode(&body) {
+            Ok(request) => handlers::transact_write_items_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 

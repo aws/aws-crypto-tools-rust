@@ -13,12 +13,18 @@ use crate::model;
 use crate::registry::ClientRegistry;
 use aws_config::SdkConfig;
 use aws_db_esdk::material_providers::client::Client as MplClient;
+use aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemInput as SdkBatchWriteItemInput;
 use aws_sdk_dynamodb::operation::get_item::{
     GetItemInput as SdkGetItemInput, GetItemOutput as SdkGetItemOutput,
 };
 use aws_sdk_dynamodb::operation::put_item::PutItemInput as SdkPutItemInput;
+use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput as SdkTransactWriteItemsInput;
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::AttributeValue as Ddb;
+use aws_sdk_dynamodb::types::{
+    DeleteRequest as SdkDeleteRequest, Put as SdkPut, PutRequest as SdkPutRequest,
+    TransactWriteItem as SdkTransactWriteItem, WriteRequest as SdkWriteRequest,
+};
 use serde_bytes::ByteBuf;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -179,6 +185,162 @@ pub async fn get_item_output_transform(
     };
     Ok(model::GetItemOutputTransformResponse {
         transformed_output: model::GetItemOutput { item },
+    })
+}
+
+pub async fn batch_write_item_input_transform(
+    state: &AppState,
+    request: model::BatchWriteItemInputTransformRequest,
+) -> Result<model::BatchWriteItemInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+
+    let mut sdk_request_items: HashMap<String, Vec<SdkWriteRequest>> = HashMap::new();
+    for (table, list) in &request.sdk_input.request_items {
+        let mut sdk_list = Vec::with_capacity(list.len());
+        for wr in list {
+            sdk_list.push(to_sdk_write_request(wr)?);
+        }
+        sdk_request_items.insert(table.clone(), sdk_list);
+    }
+    let sdk_input = SdkBatchWriteItemInput::builder()
+        .set_request_items(Some(sdk_request_items))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid BatchWriteItemInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .batch_write_item_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("BatchWriteItemInputTransform returned no transformed_input".into())
+    })?;
+
+    let mut wire_request_items: HashMap<String, Vec<model::WriteRequest>> = HashMap::new();
+    if let Some(items) = transformed.request_items() {
+        for (table, list) in items {
+            let mut wire_list = Vec::with_capacity(list.len());
+            for wr in list {
+                wire_list.push(to_wire_write_request(wr)?);
+            }
+            wire_request_items.insert(table.clone(), wire_list);
+        }
+    }
+    Ok(model::BatchWriteItemInputTransformResponse {
+        transformed_input: model::BatchWriteItemInput {
+            request_items: wire_request_items,
+        },
+    })
+}
+
+pub async fn transact_write_items_input_transform(
+    state: &AppState,
+    request: model::TransactWriteItemsInputTransformRequest,
+) -> Result<model::TransactWriteItemsInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+
+    let mut sdk_items = Vec::with_capacity(request.sdk_input.transact_items.len());
+    for item in &request.sdk_input.transact_items {
+        sdk_items.push(to_sdk_transact_write_item(item)?);
+    }
+    let sdk_input = SdkTransactWriteItemsInput::builder()
+        .set_transact_items(Some(sdk_items))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid TransactWriteItemsInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .transact_write_items_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("TransactWriteItemsInputTransform returned no transformed_input".into())
+    })?;
+
+    let mut wire_items = Vec::with_capacity(transformed.transact_items().len());
+    for item in transformed.transact_items() {
+        wire_items.push(to_wire_transact_write_item(item)?);
+    }
+    Ok(model::TransactWriteItemsInputTransformResponse {
+        transformed_input: model::TransactWriteItemsInput {
+            transact_items: wire_items,
+        },
+    })
+}
+
+fn to_sdk_write_request(wr: &model::WriteRequest) -> Result<SdkWriteRequest, ServerError> {
+    if let Some(pr) = &wr.put_request {
+        let put = SdkPutRequest::builder()
+            .set_item(Some(to_ddb_item(&pr.item)?))
+            .build()
+            .map_err(|e| ServerError::Generic(format!("invalid PutRequest: {e}")))?;
+        return Ok(SdkWriteRequest::builder().put_request(put).build());
+    }
+    if let Some(dr) = &wr.delete_request {
+        let del = SdkDeleteRequest::builder()
+            .set_key(Some(to_ddb_item(&dr.key)?))
+            .build()
+            .map_err(|e| ServerError::Generic(format!("invalid DeleteRequest: {e}")))?;
+        return Ok(SdkWriteRequest::builder().delete_request(del).build());
+    }
+    Err(ServerError::Generic(
+        "WriteRequest must set exactly one of putRequest or deleteRequest".into(),
+    ))
+}
+
+fn to_wire_write_request(wr: &SdkWriteRequest) -> Result<model::WriteRequest, ServerError> {
+    if let Some(pr) = wr.put_request() {
+        return Ok(model::WriteRequest {
+            put_request: Some(model::PutRequest {
+                item: from_ddb_item(pr.item())?,
+            }),
+            delete_request: None,
+        });
+    }
+    if let Some(dr) = wr.delete_request() {
+        return Ok(model::WriteRequest {
+            put_request: None,
+            delete_request: Some(model::DeleteRequest {
+                key: from_ddb_item(dr.key())?,
+            }),
+        });
+    }
+    Err(ServerError::Client(
+        "DBE returned a WriteRequest with neither putRequest nor deleteRequest".into(),
+    ))
+}
+
+fn to_sdk_transact_write_item(
+    item: &model::TransactWriteItem,
+) -> Result<SdkTransactWriteItem, ServerError> {
+    let put = item.put.as_ref().ok_or_else(|| {
+        ServerError::Generic("TransactWriteItem must set a put action (only Put is modeled)".into())
+    })?;
+    let sdk_put = SdkPut::builder()
+        .table_name(&put.table_name)
+        .set_item(Some(to_ddb_item(&put.item)?))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid Put: {e}")))?;
+    Ok(SdkTransactWriteItem::builder().put(sdk_put).build())
+}
+
+fn to_wire_transact_write_item(
+    item: &SdkTransactWriteItem,
+) -> Result<model::TransactWriteItem, ServerError> {
+    let put = item.put().ok_or_else(|| {
+        ServerError::Client("DBE returned a TransactWriteItem with no put action".into())
+    })?;
+    Ok(model::TransactWriteItem {
+        put: Some(model::Put {
+            table_name: put.table_name().to_string(),
+            item: from_ddb_item(put.item())?,
+        }),
     })
 }
 
