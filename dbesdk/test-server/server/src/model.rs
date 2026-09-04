@@ -63,7 +63,10 @@ pub struct DecryptItemResponse {
 }
 
 // ---------------------------------------------------------------------------
-// AttributeValue — DDB data-plane scalar shape (MVP: S / N / B / BOOL / NULL).
+// AttributeValue — DDB data-plane shape. Scalars (S / N / B / BOOL / NULL),
+// typed sets (SS / NS / BS), and the recursive collections (L / M). L and M
+// reference AttributeValue; Vec and HashMap already provide the heap
+// indirection recursion needs, so no explicit Box is required.
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -78,6 +81,16 @@ pub struct AttributeValue {
     pub bool_value: Option<bool>,
     #[serde(rename = "NULL", skip_serializing_if = "Option::is_none", default)]
     pub null: Option<bool>,
+    #[serde(rename = "SS", skip_serializing_if = "Option::is_none", default)]
+    pub ss: Option<Vec<String>>,
+    #[serde(rename = "NS", skip_serializing_if = "Option::is_none", default)]
+    pub ns: Option<Vec<String>>,
+    #[serde(rename = "BS", skip_serializing_if = "Option::is_none", default)]
+    pub bs: Option<Vec<ByteBuf>>,
+    #[serde(rename = "L", skip_serializing_if = "Option::is_none", default)]
+    pub l: Option<Vec<AttributeValue>>,
+    #[serde(rename = "M", skip_serializing_if = "Option::is_none", default)]
+    pub m: Option<HashMap<String, AttributeValue>>,
 }
 
 // ---------------------------------------------------------------------------

@@ -110,6 +110,25 @@ fn to_ddb_value(value: &model::AttributeValue) -> Result<Ddb, ServerError> {
     if value.null.is_some() {
         return Ok(Ddb::Null(true));
     }
+    if let Some(ss) = &value.ss {
+        return Ok(Ddb::Ss(ss.clone()));
+    }
+    if let Some(ns) = &value.ns {
+        return Ok(Ddb::Ns(ns.clone()));
+    }
+    if let Some(bs) = &value.bs {
+        return Ok(Ddb::Bs(bs.iter().map(|b| Blob::new(b.to_vec())).collect()));
+    }
+    if let Some(l) = &value.l {
+        let items = l
+            .iter()
+            .map(to_ddb_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(Ddb::L(items));
+    }
+    if let Some(m) = &value.m {
+        return Ok(Ddb::M(to_ddb_item(m)?));
+    }
     Err(ServerError::Generic(
         "AttributeValue had no member set".into(),
     ))
@@ -129,9 +148,22 @@ fn from_ddb_value(value: &Ddb) -> Result<model::AttributeValue, ServerError> {
         Ddb::B(b) => out.b = Some(ByteBuf::from(b.as_ref().to_vec())),
         Ddb::Bool(flag) => out.bool_value = Some(*flag),
         Ddb::Null(_) => out.null = Some(true),
+        Ddb::Ss(ss) => out.ss = Some(ss.clone()),
+        Ddb::Ns(ns) => out.ns = Some(ns.clone()),
+        Ddb::Bs(bs) => {
+            out.bs = Some(bs.iter().map(|b| ByteBuf::from(b.as_ref().to_vec())).collect());
+        }
+        Ddb::L(list) => {
+            let items = list
+                .iter()
+                .map(from_ddb_value)
+                .collect::<Result<Vec<_>, _>>()?;
+            out.l = Some(items);
+        }
+        Ddb::M(map) => out.m = Some(from_ddb_item(map)?),
         other => {
             return Err(ServerError::Generic(format!(
-                "unsupported AttributeValue variant on the wire (MVP: S/N/B/BOOL/NULL): {other:?}"
+                "unsupported AttributeValue variant on the wire: {other:?}"
             )));
         }
     }
