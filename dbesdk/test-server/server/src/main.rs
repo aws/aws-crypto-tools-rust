@@ -105,6 +105,24 @@ async fn dispatch(
             Ok(request) => handlers::decrypt_item(&state, request).await.map(ok_body),
             Err(e) => Err(e),
         },
+        "CreateTransformsClient" => match decode(&body) {
+            Ok(request) => handlers::create_transforms_client(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "PutItemInputTransform" => match decode(&body) {
+            Ok(request) => handlers::put_item_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "GetItemOutputTransform" => match decode(&body) {
+            Ok(request) => handlers::get_item_output_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 

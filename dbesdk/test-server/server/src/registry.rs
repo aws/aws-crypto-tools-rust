@@ -15,6 +15,7 @@
 
 use crate::error::ServerError;
 use aws_db_esdk::item_encryptor::client::Client as ItemEncryptor;
+use aws_db_esdk::Client as TransformsClient;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -26,9 +27,18 @@ pub struct ClientHandle {
     pub op_lock: tokio::sync::Mutex<()>,
 }
 
+/// A registered DBE DDB-SDK transforms client plus the async lock that
+/// serializes its operations. The transforms client is a DBE (Dafny-transpiled)
+/// client with the same no-concurrent-calls constraint as the item encryptor.
+pub struct TransformsHandle {
+    pub client: TransformsClient,
+    pub op_lock: tokio::sync::Mutex<()>,
+}
+
 #[derive(Clone, Default)]
 pub struct ClientRegistry {
     clients: Arc<Mutex<HashMap<String, Arc<ClientHandle>>>>,
+    transforms: Arc<Mutex<HashMap<String, Arc<TransformsHandle>>>>,
 }
 
 impl ClientRegistry {
@@ -59,5 +69,32 @@ impl ClientRegistry {
             .get(client_id)
             .cloned()
             .ok_or_else(|| ServerError::Generic(format!("unknown clientId '{client_id}'")))
+    }
+
+    /// Register a freshly-built transforms client and return its non-empty
+    /// UUID id. Kept in a separate map from item encryptors so the two client
+    /// kinds never collide on an id.
+    pub fn register_transforms(&self, client: TransformsClient) -> String {
+        let id = Uuid::new_v4().to_string();
+        let handle = Arc::new(TransformsHandle {
+            client,
+            op_lock: tokio::sync::Mutex::new(()),
+        });
+        self.transforms
+            .lock()
+            .expect("transforms registry mutex poisoned")
+            .insert(id.clone(), handle);
+        id
+    }
+
+    /// Resolve a registered transforms client handle, or a GenericServerError
+    /// naming the bad id.
+    pub fn get_transforms(&self, client_id: &str) -> Result<Arc<TransformsHandle>, ServerError> {
+        self.transforms
+            .lock()
+            .expect("transforms registry mutex poisoned")
+            .get(client_id)
+            .cloned()
+            .ok_or_else(|| ServerError::Generic(format!("unknown transforms clientId '{client_id}'")))
     }
 }

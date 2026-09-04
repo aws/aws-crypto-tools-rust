@@ -63,6 +63,76 @@ pub struct DecryptItemResponse {
 }
 
 // ---------------------------------------------------------------------------
+// DDB SDK transforms — minimal wire shapes + operation request/response.
+// PutItemInput / GetItemInput / GetItemOutput carry only the fields the
+// encrypt-before / decrypt-after round-trip needs; handlers.rs maps them onto
+// the real aws_sdk_dynamodb request/response types the transforms client uses.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PutItemInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub item: DdbItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetItemInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub key: DdbItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetItemOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub item: Option<DdbItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTransformsClientRequest {
+    pub config: DbeClientConfig,
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateTransformsClientResponse {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PutItemInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: PutItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PutItemInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: PutItemInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetItemOutputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkOutput")]
+    pub sdk_output: GetItemOutput,
+    #[serde(rename = "originalInput")]
+    pub original_input: GetItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetItemOutputTransformResponse {
+    #[serde(rename = "transformedOutput")]
+    pub transformed_output: GetItemOutput,
+}
+
+// ---------------------------------------------------------------------------
 // AttributeValue — DDB data-plane shape. Scalars (S / N / B / BOOL / NULL),
 // typed sets (SS / NS / BS), and the recursive collections (L / M). L and M
 // reference AttributeValue; Vec and HashMap already provide the heap

@@ -15,6 +15,7 @@
 use crate::error::ServerError;
 use crate::model;
 use aws_config::SdkConfig;
+use aws_db_esdk::dynamodb::types::DynamoDbTableEncryptionConfig;
 use aws_db_esdk::item_encryptor::client::Client as ItemEncryptor;
 use aws_db_esdk::item_encryptor::types::dynamo_db_item_encryptor_config::DynamoDbItemEncryptorConfig;
 use aws_db_esdk::material_providers::client::Client as MplClient;
@@ -23,7 +24,9 @@ use aws_db_esdk::material_providers::types::keyring::KeyringRef;
 use aws_db_esdk::material_providers::types::AesWrappingAlg as MplAesWrappingAlg;
 use aws_db_esdk::material_providers::types::DbeAlgorithmSuiteId as MplSuiteId;
 use aws_db_esdk::material_providers::types::PaddingScheme as MplPaddingScheme;
+use aws_db_esdk::Client as TransformsClient;
 use aws_db_esdk::CryptoAction as DbeCryptoAction;
+use aws_db_esdk::DynamoDbTablesEncryptionConfig;
 use aws_sdk_dynamodb::primitives::Blob;
 use std::collections::HashMap;
 use std::future::Future;
@@ -81,6 +84,69 @@ pub async fn build_client(
     })?;
     ItemEncryptor::from_conf(dbe_config)
         .map_err(|e| ServerError::Generic(format!("failed to build item encryptor: {e}")))
+}
+
+/// Build a configured DBE DDB-SDK transforms client bound to one physical
+/// table. Reuses the item encryptor's recursive keyring/CMM construction and
+/// Crypto Action mapping; only the target config type differs
+/// (`DynamoDbTableEncryptionConfig` rather than `DynamoDbItemEncryptorConfig`).
+/// A construction failure is a framework failure (GenericServerError).
+pub async fn build_transforms_client(
+    mpl: &MplClient,
+    sdk_config: &SdkConfig,
+    cfg: &model::DbeClientConfig,
+    table_name: &str,
+) -> Result<TransformsClient, ServerError> {
+    let mut builder = DynamoDbTableEncryptionConfig::builder()
+        .logical_table_name(&cfg.logical_table_name)
+        .partition_key_name(&cfg.partition_key_name)
+        .attribute_actions_on_encrypt(crypto_actions(&cfg.attribute_actions_on_encrypt));
+
+    if let Some(sort_key) = &cfg.sort_key_name {
+        builder = builder.sort_key_name(sort_key);
+    }
+    if let Some(prefix) = &cfg.allowed_unsigned_attribute_prefix {
+        builder = builder.allowed_unsigned_attribute_prefix(prefix);
+    }
+    if let Some(list) = &cfg.allowed_unsigned_attributes {
+        if !list.is_empty() {
+            builder = builder.allowed_unsigned_attributes(list.clone());
+        }
+    }
+    if let Some(suite) = cfg.algorithm_suite_id {
+        builder = builder.algorithm_suite_id(algorithm_suite(suite));
+    }
+
+    match (&cfg.keyring, &cfg.cmm) {
+        (Some(keyring), None) => {
+            builder = builder.keyring(build_keyring(mpl, sdk_config, keyring).await?);
+        }
+        (None, Some(cmm)) => {
+            builder = builder.cmm(build_cmm(mpl, sdk_config, cmm).await?);
+        }
+        (Some(_), Some(_)) => {
+            return Err(ServerError::Generic(
+                "config set both keyring and cmm; exactly one is required".into(),
+            ));
+        }
+        (None, None) => {
+            return Err(ServerError::Generic(
+                "config set neither keyring nor cmm; exactly one is required".into(),
+            ));
+        }
+    }
+
+    let table_config = builder.build().map_err(|e| {
+        ServerError::Generic(format!("invalid DynamoDbTableEncryptionConfig: {e}"))
+    })?;
+    let tables_config = DynamoDbTablesEncryptionConfig::builder()
+        .table_encryption_configs(HashMap::from([(table_name.to_string(), table_config)]))
+        .build()
+        .map_err(|e| {
+            ServerError::Generic(format!("invalid DynamoDbTablesEncryptionConfig: {e}"))
+        })?;
+    TransformsClient::from_conf(tables_config)
+        .map_err(|e| ServerError::Generic(format!("failed to build transforms client: {e}")))
 }
 
 fn crypto_actions(

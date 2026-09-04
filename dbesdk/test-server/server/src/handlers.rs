@@ -13,6 +13,10 @@ use crate::model;
 use crate::registry::ClientRegistry;
 use aws_config::SdkConfig;
 use aws_db_esdk::material_providers::client::Client as MplClient;
+use aws_sdk_dynamodb::operation::get_item::{
+    GetItemInput as SdkGetItemInput, GetItemOutput as SdkGetItemOutput,
+};
+use aws_sdk_dynamodb::operation::put_item::PutItemInput as SdkPutItemInput;
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::AttributeValue as Ddb;
 use serde_bytes::ByteBuf;
@@ -81,6 +85,100 @@ pub async fn decrypt_item(
         .ok_or_else(|| ServerError::Client("DecryptItem returned no plaintext_item".into()))?;
     Ok(model::DecryptItemResponse {
         plaintext_item: from_ddb_item(&plaintext)?,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// DDB SDK transform handlers. CreateTransformsClient builds a transforms client
+// bound to one table; PutItemInputTransform encrypts a PutItem input;
+// GetItemOutputTransform decrypts a GetItem output. Each maps the minimal wire
+// shape onto the real aws_sdk_dynamodb request/response type.
+// ---------------------------------------------------------------------------
+
+pub async fn create_transforms_client(
+    state: &AppState,
+    request: model::CreateTransformsClientRequest,
+) -> Result<model::CreateTransformsClientResponse, ServerError> {
+    let client = factory::build_transforms_client(
+        &state.mpl,
+        &state.sdk_config,
+        &request.config,
+        &request.table_name,
+    )
+    .await?;
+    let client_id = state.registry.register_transforms(client);
+    Ok(model::CreateTransformsClientResponse { client_id })
+}
+
+pub async fn put_item_input_transform(
+    state: &AppState,
+    request: model::PutItemInputTransformRequest,
+) -> Result<model::PutItemInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let sdk_input = SdkPutItemInput::builder()
+        .table_name(&request.sdk_input.table_name)
+        .set_item(Some(to_ddb_item(&request.sdk_input.item)?))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid PutItemInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .put_item_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("PutItemInputTransform returned no transformed_input".into())
+    })?;
+
+    let table_name = transformed.table_name().unwrap_or_default().to_string();
+    let item = transformed.item().cloned().unwrap_or_default();
+    Ok(model::PutItemInputTransformResponse {
+        transformed_input: model::PutItemInput {
+            table_name,
+            item: from_ddb_item(&item)?,
+        },
+    })
+}
+
+pub async fn get_item_output_transform(
+    state: &AppState,
+    request: model::GetItemOutputTransformRequest,
+) -> Result<model::GetItemOutputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let original_input = SdkGetItemInput::builder()
+        .table_name(&request.original_input.table_name)
+        .set_key(Some(to_ddb_item(&request.original_input.key)?))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid GetItemInput: {e}")))?;
+
+    let mut out_builder = SdkGetItemOutput::builder();
+    if let Some(item) = &request.sdk_output.item {
+        out_builder = out_builder.set_item(Some(to_ddb_item(item)?));
+    }
+    let sdk_output = out_builder.build();
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .get_item_output_transform()
+        .original_input(original_input)
+        .sdk_output(sdk_output)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_output.ok_or_else(|| {
+        ServerError::Client("GetItemOutputTransform returned no transformed_output".into())
+    })?;
+
+    let item = match transformed.item() {
+        Some(map) if !map.is_empty() => Some(from_ddb_item(map)?),
+        _ => None,
+    };
+    Ok(model::GetItemOutputTransformResponse {
+        transformed_output: model::GetItemOutput { item },
     })
 }
 
