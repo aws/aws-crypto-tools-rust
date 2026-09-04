@@ -17,6 +17,9 @@ use aws_sdk_dynamodb::operation::batch_get_item::{
     BatchGetItemInput as SdkBatchGetItemInput, BatchGetItemOutput as SdkBatchGetItemOutput,
 };
 use aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemInput as SdkBatchWriteItemInput;
+use aws_sdk_dynamodb::operation::batch_execute_statement::BatchExecuteStatementInput as SdkBatchExecuteStatementInput;
+use aws_sdk_dynamodb::operation::execute_statement::ExecuteStatementInput as SdkExecuteStatementInput;
+use aws_sdk_dynamodb::operation::execute_transaction::ExecuteTransactionInput as SdkExecuteTransactionInput;
 use aws_sdk_dynamodb::operation::get_item::{
     GetItemInput as SdkGetItemInput, GetItemOutput as SdkGetItemOutput,
 };
@@ -27,8 +30,9 @@ use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput a
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::AttributeValue as Ddb;
 use aws_sdk_dynamodb::types::{
-    DeleteRequest as SdkDeleteRequest, KeysAndAttributes as SdkKeysAndAttributes, Put as SdkPut,
-    PutRequest as SdkPutRequest, TransactWriteItem as SdkTransactWriteItem,
+    BatchStatementRequest as SdkBatchStatementRequest, DeleteRequest as SdkDeleteRequest,
+    KeysAndAttributes as SdkKeysAndAttributes, ParameterizedStatement as SdkParameterizedStatement,
+    Put as SdkPut, PutRequest as SdkPutRequest, TransactWriteItem as SdkTransactWriteItem,
     WriteRequest as SdkWriteRequest,
 };
 use serde_bytes::ByteBuf;
@@ -497,6 +501,122 @@ fn from_ddb_items_opt(
     } else {
         Ok(Some(from_ddb_items(items)?))
     }
+}
+
+pub async fn execute_statement_input_transform(
+    state: &AppState,
+    request: model::ExecuteStatementInputTransformRequest,
+) -> Result<model::ExecuteStatementInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let sdk_input = SdkExecuteStatementInput::builder()
+        .statement(&request.sdk_input.statement)
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid ExecuteStatementInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .execute_statement_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("ExecuteStatementInputTransform returned no transformed_input".into())
+    })?;
+    Ok(model::ExecuteStatementInputTransformResponse {
+        transformed_input: model::ExecuteStatementInput {
+            statement: transformed.statement().unwrap_or_default().to_string(),
+        },
+    })
+}
+
+pub async fn batch_execute_statement_input_transform(
+    state: &AppState,
+    request: model::BatchExecuteStatementInputTransformRequest,
+) -> Result<model::BatchExecuteStatementInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let mut sdk_statements = Vec::with_capacity(request.sdk_input.statements.len());
+    for s in &request.sdk_input.statements {
+        sdk_statements.push(
+            SdkBatchStatementRequest::builder()
+                .statement(&s.statement)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid BatchStatementRequest: {e}")))?,
+        );
+    }
+    let sdk_input = SdkBatchExecuteStatementInput::builder()
+        .set_statements(Some(sdk_statements))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid BatchExecuteStatementInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .batch_execute_statement_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_input.ok_or_else(|| {
+        ServerError::Client(
+            "BatchExecuteStatementInputTransform returned no transformed_input".into(),
+        )
+    })?;
+    let statements = transformed
+        .statements()
+        .iter()
+        .map(|s| model::BatchStatementRequest {
+            statement: s.statement().to_string(),
+        })
+        .collect();
+    Ok(model::BatchExecuteStatementInputTransformResponse {
+        transformed_input: model::BatchExecuteStatementInput { statements },
+    })
+}
+
+pub async fn execute_transaction_input_transform(
+    state: &AppState,
+    request: model::ExecuteTransactionInputTransformRequest,
+) -> Result<model::ExecuteTransactionInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let mut sdk_statements = Vec::with_capacity(request.sdk_input.transact_statements.len());
+    for s in &request.sdk_input.transact_statements {
+        sdk_statements.push(
+            SdkParameterizedStatement::builder()
+                .statement(&s.statement)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid ParameterizedStatement: {e}")))?,
+        );
+    }
+    let sdk_input = SdkExecuteTransactionInput::builder()
+        .set_transact_statements(Some(sdk_statements))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid ExecuteTransactionInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .execute_transaction_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("ExecuteTransactionInputTransform returned no transformed_input".into())
+    })?;
+    let transact_statements = transformed
+        .transact_statements()
+        .iter()
+        .map(|s| model::ParameterizedStatement {
+            statement: s.statement().to_string(),
+        })
+        .collect();
+    Ok(model::ExecuteTransactionInputTransformResponse {
+        transformed_input: model::ExecuteTransactionInput {
+            transact_statements,
+        },
+    })
 }
 
 // ---------------------------------------------------------------------------

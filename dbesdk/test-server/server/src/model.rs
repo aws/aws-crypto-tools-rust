@@ -296,6 +296,76 @@ pub struct BatchGetItemOutputTransformResponse {
     pub transformed_output: BatchGetItemOutput,
 }
 
+// ---- PartiQL validate-before wire shapes ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteStatementInput {
+    pub statement: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchExecuteStatementInput {
+    pub statements: Vec<BatchStatementRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchStatementRequest {
+    pub statement: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteTransactionInput {
+    #[serde(rename = "transactStatements")]
+    pub transact_statements: Vec<ParameterizedStatement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParameterizedStatement {
+    pub statement: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExecuteStatementInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: ExecuteStatementInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExecuteStatementInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: ExecuteStatementInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchExecuteStatementInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: BatchExecuteStatementInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchExecuteStatementInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: BatchExecuteStatementInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExecuteTransactionInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: ExecuteTransactionInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExecuteTransactionInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: ExecuteTransactionInput,
+}
+
 // ---------------------------------------------------------------------------
 // AttributeValue — DDB data-plane shape. Scalars (S / N / B / BOOL / NULL),
 // typed sets (SS / NS / BS), and the recursive collections (L / M). L and M

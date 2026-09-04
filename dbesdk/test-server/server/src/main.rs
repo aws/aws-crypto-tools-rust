@@ -153,6 +153,24 @@ async fn dispatch(
                 .map(ok_body),
             Err(e) => Err(e),
         },
+        "ExecuteStatementInputTransform" => match decode(&body) {
+            Ok(request) => handlers::execute_statement_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "BatchExecuteStatementInputTransform" => match decode(&body) {
+            Ok(request) => handlers::batch_execute_statement_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "ExecuteTransactionInputTransform" => match decode(&body) {
+            Ok(request) => handlers::execute_transaction_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 
