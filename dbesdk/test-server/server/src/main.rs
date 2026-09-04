@@ -135,6 +135,24 @@ async fn dispatch(
                 .map(ok_body),
             Err(e) => Err(e),
         },
+        "ScanOutputTransform" => match decode(&body) {
+            Ok(request) => handlers::scan_output_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "QueryOutputTransform" => match decode(&body) {
+            Ok(request) => handlers::query_output_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "BatchGetItemOutputTransform" => match decode(&body) {
+            Ok(request) => handlers::batch_get_item_output_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 

@@ -13,17 +13,23 @@ use crate::model;
 use crate::registry::ClientRegistry;
 use aws_config::SdkConfig;
 use aws_db_esdk::material_providers::client::Client as MplClient;
+use aws_sdk_dynamodb::operation::batch_get_item::{
+    BatchGetItemInput as SdkBatchGetItemInput, BatchGetItemOutput as SdkBatchGetItemOutput,
+};
 use aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemInput as SdkBatchWriteItemInput;
 use aws_sdk_dynamodb::operation::get_item::{
     GetItemInput as SdkGetItemInput, GetItemOutput as SdkGetItemOutput,
 };
 use aws_sdk_dynamodb::operation::put_item::PutItemInput as SdkPutItemInput;
+use aws_sdk_dynamodb::operation::query::{QueryInput as SdkQueryInput, QueryOutput as SdkQueryOutput};
+use aws_sdk_dynamodb::operation::scan::{ScanInput as SdkScanInput, ScanOutput as SdkScanOutput};
 use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput as SdkTransactWriteItemsInput;
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::AttributeValue as Ddb;
 use aws_sdk_dynamodb::types::{
-    DeleteRequest as SdkDeleteRequest, Put as SdkPut, PutRequest as SdkPutRequest,
-    TransactWriteItem as SdkTransactWriteItem, WriteRequest as SdkWriteRequest,
+    DeleteRequest as SdkDeleteRequest, KeysAndAttributes as SdkKeysAndAttributes, Put as SdkPut,
+    PutRequest as SdkPutRequest, TransactWriteItem as SdkTransactWriteItem,
+    WriteRequest as SdkWriteRequest,
 };
 use serde_bytes::ByteBuf;
 use std::collections::HashMap;
@@ -342,6 +348,155 @@ fn to_wire_transact_write_item(
             item: from_ddb_item(put.item())?,
         }),
     })
+}
+
+pub async fn scan_output_transform(
+    state: &AppState,
+    request: model::ScanOutputTransformRequest,
+) -> Result<model::ScanOutputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let original_input = SdkScanInput::builder()
+        .table_name(&request.original_input.table_name)
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid ScanInput: {e}")))?;
+
+    let mut out_builder = SdkScanOutput::builder();
+    if let Some(items) = &request.sdk_output.items {
+        out_builder = out_builder.set_items(Some(to_ddb_items(items)?));
+    }
+    let sdk_output = out_builder.build();
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .scan_output_transform()
+        .original_input(original_input)
+        .sdk_output(sdk_output)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_output.ok_or_else(|| {
+        ServerError::Client("ScanOutputTransform returned no transformed_output".into())
+    })?;
+
+    Ok(model::ScanOutputTransformResponse {
+        transformed_output: model::ScanOutput {
+            items: from_ddb_items_opt(transformed.items())?,
+        },
+    })
+}
+
+pub async fn query_output_transform(
+    state: &AppState,
+    request: model::QueryOutputTransformRequest,
+) -> Result<model::QueryOutputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let original_input = SdkQueryInput::builder()
+        .table_name(&request.original_input.table_name)
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid QueryInput: {e}")))?;
+
+    let mut out_builder = SdkQueryOutput::builder();
+    if let Some(items) = &request.sdk_output.items {
+        out_builder = out_builder.set_items(Some(to_ddb_items(items)?));
+    }
+    let sdk_output = out_builder.build();
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .query_output_transform()
+        .original_input(original_input)
+        .sdk_output(sdk_output)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_output.ok_or_else(|| {
+        ServerError::Client("QueryOutputTransform returned no transformed_output".into())
+    })?;
+
+    Ok(model::QueryOutputTransformResponse {
+        transformed_output: model::QueryOutput {
+            items: from_ddb_items_opt(transformed.items())?,
+        },
+    })
+}
+
+pub async fn batch_get_item_output_transform(
+    state: &AppState,
+    request: model::BatchGetItemOutputTransformRequest,
+) -> Result<model::BatchGetItemOutputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+
+    let mut sdk_request_items: HashMap<String, SdkKeysAndAttributes> = HashMap::new();
+    for (table, ka) in &request.original_input.request_items {
+        let sdk_ka = SdkKeysAndAttributes::builder()
+            .set_keys(Some(to_ddb_items(&ka.keys)?))
+            .build()
+            .map_err(|e| ServerError::Generic(format!("invalid KeysAndAttributes: {e}")))?;
+        sdk_request_items.insert(table.clone(), sdk_ka);
+    }
+    let original_input = SdkBatchGetItemInput::builder()
+        .set_request_items(Some(sdk_request_items))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid BatchGetItemInput: {e}")))?;
+
+    let mut out_builder = SdkBatchGetItemOutput::builder();
+    if let Some(responses) = &request.sdk_output.responses {
+        let mut sdk_responses: HashMap<String, Vec<HashMap<String, Ddb>>> = HashMap::new();
+        for (table, items) in responses {
+            sdk_responses.insert(table.clone(), to_ddb_items(items)?);
+        }
+        out_builder = out_builder.set_responses(Some(sdk_responses));
+    }
+    let sdk_output = out_builder.build();
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .batch_get_item_output_transform()
+        .original_input(original_input)
+        .sdk_output(sdk_output)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_output.ok_or_else(|| {
+        ServerError::Client("BatchGetItemOutputTransform returned no transformed_output".into())
+    })?;
+
+    let responses = match transformed.responses() {
+        Some(map) if !map.is_empty() => {
+            let mut wire = HashMap::new();
+            for (table, items) in map {
+                wire.insert(table.clone(), from_ddb_items(items)?);
+            }
+            Some(wire)
+        }
+        _ => None,
+    };
+    Ok(model::BatchGetItemOutputTransformResponse {
+        transformed_output: model::BatchGetItemOutput { responses },
+    })
+}
+
+fn to_ddb_items(items: &[model::DdbItem]) -> Result<Vec<HashMap<String, Ddb>>, ServerError> {
+    items.iter().map(to_ddb_item).collect()
+}
+
+fn from_ddb_items(items: &[HashMap<String, Ddb>]) -> Result<Vec<model::DdbItem>, ServerError> {
+    items.iter().map(from_ddb_item).collect()
+}
+
+/// Map an SDK item slice to the wire, treating an empty slice as absent (an
+/// SDK output exposes an unset item list as an empty slice, not None).
+fn from_ddb_items_opt(
+    items: &[HashMap<String, Ddb>],
+) -> Result<Option<Vec<model::DdbItem>>, ServerError> {
+    if items.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(from_ddb_items(items)?))
+    }
 }
 
 // ---------------------------------------------------------------------------

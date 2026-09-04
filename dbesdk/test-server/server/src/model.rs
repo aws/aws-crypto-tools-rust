@@ -205,6 +205,97 @@ pub struct TransactWriteItemsInputTransformResponse {
     pub transformed_input: TransactWriteItemsInput,
 }
 
+// ---- Scan / Query / BatchGetItem decrypt-after wire shapes ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub items: Option<Vec<DdbItem>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub items: Option<Vec<DdbItem>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchGetItemInput {
+    #[serde(rename = "requestItems")]
+    pub request_items: HashMap<String, KeysAndAttributes>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeysAndAttributes {
+    pub keys: Vec<DdbItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchGetItemOutput {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub responses: Option<HashMap<String, Vec<DdbItem>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScanOutputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkOutput")]
+    pub sdk_output: ScanOutput,
+    #[serde(rename = "originalInput")]
+    pub original_input: ScanInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScanOutputTransformResponse {
+    #[serde(rename = "transformedOutput")]
+    pub transformed_output: ScanOutput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryOutputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkOutput")]
+    pub sdk_output: QueryOutput,
+    #[serde(rename = "originalInput")]
+    pub original_input: QueryInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueryOutputTransformResponse {
+    #[serde(rename = "transformedOutput")]
+    pub transformed_output: QueryOutput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchGetItemOutputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkOutput")]
+    pub sdk_output: BatchGetItemOutput,
+    #[serde(rename = "originalInput")]
+    pub original_input: BatchGetItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchGetItemOutputTransformResponse {
+    #[serde(rename = "transformedOutput")]
+    pub transformed_output: BatchGetItemOutput,
+}
+
 // ---------------------------------------------------------------------------
 // AttributeValue — DDB data-plane shape. Scalars (S / N / B / BOOL / NULL),
 // typed sets (SS / NS / BS), and the recursive collections (L / M). L and M
