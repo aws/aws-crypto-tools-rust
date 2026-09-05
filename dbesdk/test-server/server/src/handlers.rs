@@ -16,7 +16,9 @@ use aws_db_esdk::material_providers::client::Client as MplClient;
 use aws_sdk_dynamodb::operation::batch_get_item::{
     BatchGetItemInput as SdkBatchGetItemInput, BatchGetItemOutput as SdkBatchGetItemOutput,
 };
-use aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemInput as SdkBatchWriteItemInput;
+use aws_sdk_dynamodb::operation::batch_write_item::{
+    BatchWriteItemInput as SdkBatchWriteItemInput, BatchWriteItemOutput as SdkBatchWriteItemOutput,
+};
 use aws_sdk_dynamodb::operation::batch_execute_statement::BatchExecuteStatementInput as SdkBatchExecuteStatementInput;
 use aws_sdk_dynamodb::operation::execute_statement::ExecuteStatementInput as SdkExecuteStatementInput;
 use aws_sdk_dynamodb::operation::execute_transaction::ExecuteTransactionInput as SdkExecuteTransactionInput;
@@ -204,16 +206,8 @@ pub async fn batch_write_item_input_transform(
 ) -> Result<model::BatchWriteItemInputTransformResponse, ServerError> {
     let handle = state.registry.get_transforms(&request.client_id)?;
 
-    let mut sdk_request_items: HashMap<String, Vec<SdkWriteRequest>> = HashMap::new();
-    for (table, list) in &request.sdk_input.request_items {
-        let mut sdk_list = Vec::with_capacity(list.len());
-        for wr in list {
-            sdk_list.push(to_sdk_write_request(wr)?);
-        }
-        sdk_request_items.insert(table.clone(), sdk_list);
-    }
     let sdk_input = SdkBatchWriteItemInput::builder()
-        .set_request_items(Some(sdk_request_items))
+        .set_request_items(Some(to_sdk_write_request_map(&request.sdk_input.request_items)?))
         .build()
         .map_err(|e| ServerError::Generic(format!("invalid BatchWriteItemInput: {e}")))?;
 
@@ -229,20 +223,53 @@ pub async fn batch_write_item_input_transform(
         ServerError::Client("BatchWriteItemInputTransform returned no transformed_input".into())
     })?;
 
-    let mut wire_request_items: HashMap<String, Vec<model::WriteRequest>> = HashMap::new();
-    if let Some(items) = transformed.request_items() {
-        for (table, list) in items {
-            let mut wire_list = Vec::with_capacity(list.len());
-            for wr in list {
-                wire_list.push(to_wire_write_request(wr)?);
-            }
-            wire_request_items.insert(table.clone(), wire_list);
-        }
-    }
+    let request_items = match transformed.request_items() {
+        Some(items) => to_wire_write_request_map(items)?,
+        None => HashMap::new(),
+    };
     Ok(model::BatchWriteItemInputTransformResponse {
-        transformed_input: model::BatchWriteItemInput {
-            request_items: wire_request_items,
-        },
+        transformed_input: model::BatchWriteItemInput { request_items },
+    })
+}
+
+pub async fn batch_write_item_output_transform(
+    state: &AppState,
+    request: model::BatchWriteItemOutputTransformRequest,
+) -> Result<model::BatchWriteItemOutputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+
+    let original_input = SdkBatchWriteItemInput::builder()
+        .set_request_items(Some(to_sdk_write_request_map(
+            &request.original_input.request_items,
+        )?))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid BatchWriteItemInput: {e}")))?;
+
+    let mut out_builder = SdkBatchWriteItemOutput::builder();
+    if let Some(unprocessed) = &request.sdk_output.unprocessed_items {
+        out_builder = out_builder.set_unprocessed_items(Some(to_sdk_write_request_map(unprocessed)?));
+    }
+    let sdk_output = out_builder.build();
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .batch_write_item_output_transform()
+        .original_input(original_input)
+        .sdk_output(sdk_output)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let transformed = output.transformed_output.ok_or_else(|| {
+        ServerError::Client("BatchWriteItemOutputTransform returned no transformed_output".into())
+    })?;
+
+    let unprocessed_items = match transformed.unprocessed_items() {
+        Some(items) if !items.is_empty() => Some(to_wire_write_request_map(items)?),
+        _ => None,
+    };
+    Ok(model::BatchWriteItemOutputTransformResponse {
+        transformed_output: model::BatchWriteItemOutput { unprocessed_items },
     })
 }
 
@@ -324,6 +351,34 @@ fn to_wire_write_request(wr: &SdkWriteRequest) -> Result<model::WriteRequest, Se
     Err(ServerError::Client(
         "DBE returned a WriteRequest with neither putRequest nor deleteRequest".into(),
     ))
+}
+
+fn to_sdk_write_request_map(
+    wire: &HashMap<String, Vec<model::WriteRequest>>,
+) -> Result<HashMap<String, Vec<SdkWriteRequest>>, ServerError> {
+    let mut out = HashMap::new();
+    for (table, list) in wire {
+        let mut sdk_list = Vec::with_capacity(list.len());
+        for wr in list {
+            sdk_list.push(to_sdk_write_request(wr)?);
+        }
+        out.insert(table.clone(), sdk_list);
+    }
+    Ok(out)
+}
+
+fn to_wire_write_request_map(
+    sdk: &HashMap<String, Vec<SdkWriteRequest>>,
+) -> Result<HashMap<String, Vec<model::WriteRequest>>, ServerError> {
+    let mut out = HashMap::new();
+    for (table, list) in sdk {
+        let mut wire_list = Vec::with_capacity(list.len());
+        for wr in list {
+            wire_list.push(to_wire_write_request(wr)?);
+        }
+        out.insert(table.clone(), wire_list);
+    }
+    Ok(out)
 }
 
 fn to_sdk_transact_write_item(

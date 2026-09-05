@@ -366,6 +366,30 @@ pub struct ExecuteTransactionInputTransformResponse {
     pub transformed_input: ExecuteTransactionInput,
 }
 
+// ---- BatchWriteItem decrypt-after (UnprocessedItems restoration) ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchWriteItemOutput {
+    #[serde(rename = "unprocessedItems", skip_serializing_if = "Option::is_none", default)]
+    pub unprocessed_items: Option<HashMap<String, Vec<WriteRequest>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchWriteItemOutputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkOutput")]
+    pub sdk_output: BatchWriteItemOutput,
+    #[serde(rename = "originalInput")]
+    pub original_input: BatchWriteItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchWriteItemOutputTransformResponse {
+    #[serde(rename = "transformedOutput")]
+    pub transformed_output: BatchWriteItemOutput,
+}
+
 // ---------------------------------------------------------------------------
 // AttributeValue — DDB data-plane shape. Scalars (S / N / B / BOOL / NULL),
 // typed sets (SS / NS / BS), and the recursive collections (L / M). L and M
