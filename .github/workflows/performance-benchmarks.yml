@@ -64,7 +64,7 @@ jobs:
         run: |
           LOG_FILE="rust_results.json"
           UPLOAD_FILE="cloudwatch_logs.json"
-          jq -c --arg ts "$(date +%s)000" '[.results[] as $result | .metadata as $meta | {timestamp: ($ts | tonumber), message: ({metadata: $meta, result: $result} | tostring)}]' "$LOG_FILE" > "$UPLOAD_FILE"
+          jq -c '[.results[] as $result | .metadata as $meta | {timestamp: $result.epoch_millis, message: ({metadata: $meta, result: $result} | tostring)}] | sort_by(.timestamp)' "$LOG_FILE" > "$UPLOAD_FILE"
 
       - name: Upload logs to CloudWatch
         working-directory: esdk/performance-tests/results/raw-data

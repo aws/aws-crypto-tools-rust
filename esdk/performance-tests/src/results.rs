@@ -26,6 +26,8 @@ pub struct BenchmarkResult {
     pub p95_latency: f64,
     pub p99_latency: f64,
     pub timestamp: String,
+    // Epoch milliseconds; used as the CloudWatch log-event timestamp.
+    pub epoch_millis: i64,
     pub rust_version: String,
     pub cpu_count: usize,
     pub total_memory_gb: f64,
