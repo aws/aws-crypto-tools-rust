@@ -6,6 +6,9 @@ pattern = "./src/**/*.rs"
 [[source]]
 pattern = "./tests/**/*.rs"
 
+# Specifications are read from the spec/ git submodule, pinned by the
+# superproject gitlink to an exact commit. CI checks out that commit
+# (submodules: true), so duvet runs against a deterministic spec snapshot.
 [[specification]]
 source = "spec/data-format/message-header.md"
 
@@ -39,5 +42,8 @@ source = "spec/client-apis/key-derivation.md"
 [report.html]
 enabled = true
 
+# Coverage ratchet: the committed .duvet/snapshot.txt is the coverage baseline.
+# In CI, `make duvet` runs `duvet report --ci`, which fails if coverage drops
+# below that baseline.
 [report.snapshot]
-enabled = false
+enabled = true

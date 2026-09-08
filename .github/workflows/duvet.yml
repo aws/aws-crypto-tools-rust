@@ -35,12 +35,11 @@ jobs:
         with:
           submodules: 'true'
 
-      # Install duvet at its latest published release, matching the duvet
-      # workflow in aws-cryptographic-material-providers-library. duvet has no
-      # prebuilt binary, so it builds from source; cargo/rustup are
-      # preinstalled on the runner.
+      # Install duvet pinned to an exact version so the report and the snapshot
+      # comparison are reproducible across runs. duvet has no prebuilt binary,
+      # so it builds from source; cargo/rustup are preinstalled on the runner.
       - name: Install duvet
-        run: cargo +stable install duvet
+        run: cargo +stable install duvet --version 0.4.3 --locked
 
       - name: Run duvet
         run: make duvet
