@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       id-token: write
@@ -41,6 +41,13 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+
+      # aws-lc-sys / aws-lc-fips-sys assemble AWS-LC with NASM on the
+      # windows-msvc target, and NASM is not on the Windows runner PATH by
+      # default. The Unix runners already provide an assembler.
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -98,10 +105,12 @@ jobs:
       # today); raise it toward 100 as coverage fills in.
       # TODO(mpl): mpl line-coverage is temporarily 80%
       # raise it to 100 as coverage fills in.
+      # On Windows the FIPS backend (aws-lc-fips-sys) is not built, so esdk's
+      # coverage run selects every feature except `fips` there.
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo llvm-cov ${{ (inputs.project == 'esdk' && runner.os == 'Windows') && '--features track,kms,legacy,ddb' || inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
 
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
@@ -109,8 +118,9 @@ jobs:
       # is used. Test-only — the coverage gate above already covers these lines
       # against the default backend, so this step exists to prove the same code
       # passes when linked against AWS-LC-FIPS. Needs the Go step above.
+      # Skipped on Windows: the FIPS backend is not built there.
       - name: Test FIPS-only backend
-        if: inputs.project == 'prim'
+        if: inputs.project == 'prim' && runner.os != 'Windows'
         env:
           RUSTFLAGS: "-C debuginfo=0"
         run: cargo test --no-default-features --features fips --verbose
