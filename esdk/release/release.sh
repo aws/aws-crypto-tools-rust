@@ -7,12 +7,13 @@
 # A release copies the crate from git into its Brazil package and publishes it;
 # Brazil's major-version (.x) version-set line handles consumption, so there is
 # no per-release version and no git tag. Running this with no arguments performs
-# the whole release: it enforces the gates, verifies the build, bundles the
-# docs, copies to Brazil and publishes, then runs an encrypt/decrypt smoke test.
-# It is non-interactive and every gate is checked by the script, so there is no
-# manual checklist and a failed gate stops the release before anything ships.
+# the whole release: it checks its own dependencies (offering to install any
+# that are missing), enforces the gates, verifies the build, bundles the docs,
+# copies to Brazil and publishes, then runs an encrypt/decrypt smoke test. It is
+# otherwise non-interactive, and a failed gate stops the release before
+# anything ships.
 #
-# Phases: gate -> verify -> docs -> brazil -> smoke-test.
+# Phases: deps -> gate -> verify -> docs -> brazil -> smoke-test.
 #
 # --dry-run runs the read-only phases and prints the Brazil commands instead of
 # running them, for validating from a work-in-progress checkout.
@@ -43,6 +44,7 @@ BRAZIL_PUBLISH_CMD="${AWS_ESDK_BRAZIL_PUBLISH_CMD:-}"
 BRAZIL_DOC_DIR="${AWS_ESDK_BRAZIL_DOC_DIR:-doc}"
 
 DRY_RUN=0
+ASSUME_YES=0
 
 log()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mWARN: %s\033[0m\n' "$*" >&2; }
@@ -57,15 +59,27 @@ run() {
     fi
 }
 
+# 0 = yes, 1 = no. --yes answers yes; a non-interactive stdin answers no so the
+# script never hangs waiting for input.
+prompt_yn() {
+    [ "${ASSUME_YES}" -eq 1 ] && return 0
+    [ -t 0 ] || return 1
+    local ans
+    printf '%s [Y/n] ' "$1"
+    read -r ans || return 1
+    case "${ans}" in ""|[Yy]|[Yy][Ee][Ss]) return 0 ;; *) return 1 ;; esac
+}
+
 usage() {
     cat <<'EOF'
-USAGE: release.sh [--dry-run]
+USAGE: release.sh [--dry-run] [--yes]
 
 Runs the whole aws-esdk git -> Brazil release. No arguments and no manual steps.
 
-  --dry-run   Run the gates, build verify, docs, and smoke test; print the
-              Brazil commands instead of running them, and relax the outbound
-              gates.
+  --dry-run   Run the deps check, gates, build verify, docs, and smoke test;
+              print the Brazil commands instead of running them, and relax the
+              outbound gates.
+  -y, --yes   Install missing dependencies without prompting.
   -h, --help  Show this help.
 
 Brazil coordinates are read from the environment or esdk/release/brazil.env:
@@ -80,19 +94,114 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run)  DRY_RUN=1 ;;
+        -y|--yes)   ASSUME_YES=1 ;;
         -h|--help)  usage; exit 0 ;;
         *)          die "unknown argument: $1 (try --help)" ;;
     esac
     shift
 done
 
-# Release gates, enforced automatically. On a real run a failing gate is fatal;
-# --dry-run downgrades the outbound gates (clean tree, pushed) to warnings so a
-# work-in-progress checkout can be validated.
+# ---- dependency checking -------------------------------------------------
+
+PKG_MGR=""
+PKG=""
+detect_pkg_mgr() {
+    if   command -v dnf     >/dev/null 2>&1; then PKG_MGR=dnf; PKG="dnf install -y"
+    elif command -v yum     >/dev/null 2>&1; then PKG_MGR=yum; PKG="yum install -y"
+    elif command -v apt-get >/dev/null 2>&1; then PKG_MGR=apt; PKG="apt-get install -y"
+    elif command -v brew    >/dev/null 2>&1; then PKG_MGR=brew; PKG="brew install"
+    fi
+    if [ -n "${PKG_MGR}" ] && [ "${PKG_MGR}" != brew ] && [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        PKG="sudo ${PKG}"
+    fi
+}
+
+# Package name per manager: $1 dnf, $2 yum, $3 apt, $4 brew.
+pkg_cmd() {
+    case "${PKG_MGR}" in
+        dnf) echo "${PKG} $1" ;; yum) echo "${PKG} $2" ;;
+        apt) echo "${PKG} $3" ;; brew) echo "${PKG} $4" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Install command for a tool, or empty if it must be installed manually.
+install_cmd_for() {
+    case "$1" in
+        cargo|rustc) echo "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y" ;;
+        clippy)      command -v rustup >/dev/null 2>&1 && echo "rustup component add clippy" || echo "" ;;
+        go)          pkg_cmd golang golang golang-go go ;;
+        cmake)       pkg_cmd cmake cmake cmake cmake ;;
+        cc)          pkg_cmd gcc gcc build-essential gcc ;;
+        make)        pkg_cmd make make make make ;;
+        rsync)       pkg_cmd rsync rsync rsync rsync ;;
+        git)         pkg_cmd git git git git ;;
+        *)           echo "" ;;
+    esac
+}
+
+have_tool() {
+    case "$1" in
+        cc)     command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 ;;
+        clippy) command -v cargo-clippy >/dev/null 2>&1 ;;
+        *)      command -v "$1" >/dev/null 2>&1 ;;
+    esac
+}
+
+# Verify every tool the run needs and offer to install any that are missing.
+# Brazil publishing tools are required only for a real publish.
+check_deps() {
+    log "dependencies"
+    detect_pkg_mgr
+
+    local required=(git cargo rustc clippy make cc cmake go)
+    if [ -n "${BRAZIL_PACKAGE}" ] && [ "${DRY_RUN}" -eq 0 ]; then
+        required+=(brazil rsync)
+    fi
+
+    local missing=() t
+    for t in "${required[@]}"; do
+        have_tool "${t}" || missing+=("${t}")
+    done
+    if [ "${#missing[@]}" -eq 0 ]; then
+        echo "all required tools present"
+        return 0
+    fi
+
+    warn "missing tools: ${missing[*]}"
+    local still=() cmd
+    for t in "${missing[@]}"; do
+        have_tool "${t}" && continue   # a previous install may have provided it
+        cmd="$(install_cmd_for "${t}")"
+        if [ -z "${cmd}" ]; then
+            warn "${t}: install manually (no automatic installer available here)"
+            [ "${t}" = brazil ] && warn "  brazil: install via toolbox (toolbox install brazilcli)"
+            still+=("${t}")
+            continue
+        fi
+        echo "  ${t} -> ${cmd}"
+        if prompt_yn "install ${t}?"; then
+            if bash -c "${cmd}"; then
+                [ -f "${HOME}/.cargo/env" ] && . "${HOME}/.cargo/env"
+                have_tool "${t}" || { warn "${t} still not found after install"; still+=("${t}"); }
+            else
+                warn "install of ${t} failed"
+                still+=("${t}")
+            fi
+        else
+            still+=("${t}")
+        fi
+    done
+
+    [ "${#still[@]}" -eq 0 ] || die "missing required tools: ${still[*]}"
+}
+
+# ---- release phases ------------------------------------------------------
+
+# Release gates. On a real run a failing gate is fatal; --dry-run downgrades the
+# outbound gates (clean tree, pushed) to warnings so a WIP checkout validates.
 gate() {
     log "gate"
-    command -v cargo >/dev/null || die "cargo not found on PATH"
-    command -v rustc >/dev/null || die "rustc not found on PATH"
     echo "cargo:  $(cargo --version)"
     echo "rustc:  $(rustc --version)"
 
@@ -183,6 +292,7 @@ smoke_test() {
 }
 
 PUBLISHED=0
+check_deps
 gate
 verify
 build_docs
