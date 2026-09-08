@@ -189,6 +189,18 @@ async fn dispatch(
                 .map(ok_body),
             Err(e) => Err(e),
         },
+        "UpdateItemInputTransform" => match decode(&body) {
+            Ok(request) => handlers::update_item_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "DeleteItemInputTransform" => match decode(&body) {
+            Ok(request) => handlers::delete_item_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 

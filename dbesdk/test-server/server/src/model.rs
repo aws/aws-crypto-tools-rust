@@ -89,6 +89,62 @@ pub struct GetItemOutput {
     pub item: Option<DdbItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateItemInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub key: DdbItem,
+    #[serde(rename = "updateExpression", skip_serializing_if = "Option::is_none", default)]
+    pub update_expression: Option<String>,
+    #[serde(rename = "conditionExpression", skip_serializing_if = "Option::is_none", default)]
+    pub condition_expression: Option<String>,
+    #[serde(rename = "expressionAttributeNames", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_names: Option<HashMap<String, String>>,
+    #[serde(rename = "expressionAttributeValues", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_values: Option<DdbItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteItemInput {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub key: DdbItem,
+    #[serde(rename = "conditionExpression", skip_serializing_if = "Option::is_none", default)]
+    pub condition_expression: Option<String>,
+    #[serde(rename = "expressionAttributeNames", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_names: Option<HashMap<String, String>>,
+    #[serde(rename = "expressionAttributeValues", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_values: Option<DdbItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateItemInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: UpdateItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateItemInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: UpdateItemInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteItemInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: DeleteItemInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteItemInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: DeleteItemInput,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateTransformsClientRequest {
     pub config: DbeClientConfig,

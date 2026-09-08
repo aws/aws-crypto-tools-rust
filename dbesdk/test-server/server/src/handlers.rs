@@ -20,6 +20,7 @@ use aws_sdk_dynamodb::operation::batch_write_item::{
     BatchWriteItemInput as SdkBatchWriteItemInput, BatchWriteItemOutput as SdkBatchWriteItemOutput,
 };
 use aws_sdk_dynamodb::operation::batch_execute_statement::BatchExecuteStatementInput as SdkBatchExecuteStatementInput;
+use aws_sdk_dynamodb::operation::delete_item::DeleteItemInput as SdkDeleteItemInput;
 use aws_sdk_dynamodb::operation::execute_statement::ExecuteStatementInput as SdkExecuteStatementInput;
 use aws_sdk_dynamodb::operation::execute_transaction::ExecuteTransactionInput as SdkExecuteTransactionInput;
 use aws_sdk_dynamodb::operation::get_item::{
@@ -29,6 +30,7 @@ use aws_sdk_dynamodb::operation::put_item::PutItemInput as SdkPutItemInput;
 use aws_sdk_dynamodb::operation::query::{QueryInput as SdkQueryInput, QueryOutput as SdkQueryOutput};
 use aws_sdk_dynamodb::operation::scan::{ScanInput as SdkScanInput, ScanOutput as SdkScanOutput};
 use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsInput as SdkTransactWriteItemsInput;
+use aws_sdk_dynamodb::operation::update_item::UpdateItemInput as SdkUpdateItemInput;
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::AttributeValue as Ddb;
 use aws_sdk_dynamodb::types::{
@@ -670,6 +672,120 @@ pub async fn execute_transaction_input_transform(
     Ok(model::ExecuteTransactionInputTransformResponse {
         transformed_input: model::ExecuteTransactionInput {
             transact_statements,
+        },
+    })
+}
+
+pub async fn update_item_input_transform(
+    state: &AppState,
+    request: model::UpdateItemInputTransformRequest,
+) -> Result<model::UpdateItemInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let wire = &request.sdk_input;
+    let mut b = SdkUpdateItemInput::builder()
+        .table_name(&wire.table_name)
+        .set_key(Some(to_ddb_item(&wire.key)?));
+    if let Some(e) = &wire.update_expression {
+        b = b.update_expression(e);
+    }
+    if let Some(e) = &wire.condition_expression {
+        b = b.condition_expression(e);
+    }
+    if let Some(names) = &wire.expression_attribute_names {
+        if !names.is_empty() {
+            b = b.set_expression_attribute_names(Some(names.clone()));
+        }
+    }
+    if let Some(vals) = &wire.expression_attribute_values {
+        if !vals.is_empty() {
+            b = b.set_expression_attribute_values(Some(to_ddb_item(vals)?));
+        }
+    }
+    let sdk_input = b
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid UpdateItemInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .update_item_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let t = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("UpdateItemInputTransform returned no transformed_input".into())
+    })?;
+
+    Ok(model::UpdateItemInputTransformResponse {
+        transformed_input: model::UpdateItemInput {
+            table_name: t.table_name().unwrap_or_default().to_string(),
+            key: match t.key() {
+                Some(m) => from_ddb_item(m)?,
+                None => HashMap::new(),
+            },
+            update_expression: t.update_expression().map(String::from),
+            condition_expression: t.condition_expression().map(String::from),
+            expression_attribute_names: t.expression_attribute_names().cloned(),
+            expression_attribute_values: match t.expression_attribute_values() {
+                Some(m) => Some(from_ddb_item(m)?),
+                None => None,
+            },
+        },
+    })
+}
+
+pub async fn delete_item_input_transform(
+    state: &AppState,
+    request: model::DeleteItemInputTransformRequest,
+) -> Result<model::DeleteItemInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let wire = &request.sdk_input;
+    let mut b = SdkDeleteItemInput::builder()
+        .table_name(&wire.table_name)
+        .set_key(Some(to_ddb_item(&wire.key)?));
+    if let Some(e) = &wire.condition_expression {
+        b = b.condition_expression(e);
+    }
+    if let Some(names) = &wire.expression_attribute_names {
+        if !names.is_empty() {
+            b = b.set_expression_attribute_names(Some(names.clone()));
+        }
+    }
+    if let Some(vals) = &wire.expression_attribute_values {
+        if !vals.is_empty() {
+            b = b.set_expression_attribute_values(Some(to_ddb_item(vals)?));
+        }
+    }
+    let sdk_input = b
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid DeleteItemInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .delete_item_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let t = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("DeleteItemInputTransform returned no transformed_input".into())
+    })?;
+
+    Ok(model::DeleteItemInputTransformResponse {
+        transformed_input: model::DeleteItemInput {
+            table_name: t.table_name().unwrap_or_default().to_string(),
+            key: match t.key() {
+                Some(m) => from_ddb_item(m)?,
+                None => HashMap::new(),
+            },
+            condition_expression: t.condition_expression().map(String::from),
+            expression_attribute_names: t.expression_attribute_names().cloned(),
+            expression_attribute_values: match t.expression_attribute_values() {
+                Some(m) => Some(from_ddb_item(m)?),
+                None => None,
+            },
         },
     })
 }
