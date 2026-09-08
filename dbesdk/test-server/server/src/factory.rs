@@ -16,6 +16,14 @@ use crate::error::ServerError;
 use crate::model;
 use aws_config::SdkConfig;
 use aws_db_esdk::dynamodb::types::DynamoDbTableEncryptionConfig;
+use aws_db_esdk::dynamodb::types::{
+    BeaconKeySource as DbeBeaconKeySource, BeaconVersion as DbeBeaconVersion,
+    SearchConfig as DbeSearchConfig, SingleKeyStore as DbeSingleKeyStore,
+    StandardBeacon as DbeStandardBeacon,
+};
+use aws_db_esdk::key_store::client::Client as KeyStoreClient;
+use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
+use aws_db_esdk::key_store::types::KmsConfiguration;
 use aws_db_esdk::item_encryptor::client::Client as ItemEncryptor;
 use aws_db_esdk::item_encryptor::types::dynamo_db_item_encryptor_config::DynamoDbItemEncryptorConfig;
 use aws_db_esdk::material_providers::client::Client as MplClient;
@@ -136,6 +144,10 @@ pub async fn build_transforms_client(
         }
     }
 
+    if let Some(search) = &cfg.search {
+        builder = builder.search(build_search_config(search)?);
+    }
+
     let table_config = builder.build().map_err(|e| {
         ServerError::Generic(format!("invalid DynamoDbTableEncryptionConfig: {e}"))
     })?;
@@ -147,6 +159,64 @@ pub async fn build_transforms_client(
         })?;
     TransformsClient::from_conf(tables_config)
         .map_err(|e| ServerError::Generic(format!("failed to build transforms client: {e}")))
+}
+
+/// Build a DBE SearchConfig (beacons) from the wire config. The beacon key
+/// store's DynamoDB and KMS clients are derived from the KMS key ARN's region
+/// (no explicit clients passed), so the keystore reaches KeyStoreDdbTable with
+/// the ambient credentials.
+fn build_search_config(search: &model::SearchConfig) -> Result<DbeSearchConfig, ServerError> {
+    let mut versions = Vec::with_capacity(search.versions.len());
+    for v in &search.versions {
+        let key_store = KeyStoreClient::from_conf(
+            KeyStoreConfig::builder()
+                .ddb_table_name(&v.key_store.ddb_table_name)
+                .logical_key_store_name(&v.key_store.logical_key_store_name)
+                .kms_configuration(KmsConfiguration::KmsKeyArn(v.key_store.kms_key_arn.clone()))
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid KeyStoreConfig: {e}")))?,
+        )
+        .map_err(|e| ServerError::Generic(format!("failed to build beacon key store: {e}")))?;
+
+        let single = v.key_source.single.as_ref().ok_or_else(|| {
+            ServerError::Generic("BeaconKeySource requires a single key store".into())
+        })?;
+        let key_source = DbeBeaconKeySource::Single(
+            DbeSingleKeyStore::builder()
+                .key_id(&single.key_id)
+                .cache_ttl(single.cache_ttl_seconds)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid SingleKeyStore: {e}")))?,
+        );
+
+        let mut bv = DbeBeaconVersion::builder()
+            .version(v.version)
+            .key_store(key_store)
+            .key_source(key_source);
+        if let Some(beacons) = &v.standard_beacons {
+            let mut standard = Vec::with_capacity(beacons.len());
+            for b in beacons {
+                standard.push(
+                    DbeStandardBeacon::builder()
+                        .name(&b.name)
+                        .length(b.length)
+                        .build()
+                        .map_err(|e| ServerError::Generic(format!("invalid StandardBeacon: {e}")))?,
+                );
+            }
+            bv = bv.standard_beacons(standard);
+        }
+        versions.push(
+            bv.build()
+                .map_err(|e| ServerError::Generic(format!("invalid BeaconVersion: {e}")))?,
+        );
+    }
+
+    DbeSearchConfig::builder()
+        .versions(versions)
+        .write_version(search.write_version.unwrap_or(1))
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid SearchConfig: {e}")))
 }
 
 fn crypto_actions(

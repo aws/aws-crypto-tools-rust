@@ -445,6 +445,61 @@ pub struct DbeClientConfig {
     pub keyring: Option<Keyring>,
     #[serde(default)]
     pub cmm: Option<CryptographicMaterialsManager>,
+    #[serde(default)]
+    pub search: Option<SearchConfig>,
+}
+
+// ---------------------------------------------------------------------------
+// Searchable encryption (beacons) — minimal: one beacon version, standard
+// beacons, single key store. Only honored by a transforms client.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchConfig {
+    pub versions: Vec<BeaconVersion>,
+    #[serde(rename = "writeVersion", default)]
+    pub write_version: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeaconVersion {
+    pub version: i32,
+    #[serde(rename = "keyStore")]
+    pub key_store: BeaconKeyStore,
+    #[serde(rename = "keySource")]
+    pub key_source: BeaconKeySource,
+    #[serde(rename = "standardBeacons", default)]
+    pub standard_beacons: Option<Vec<StandardBeacon>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeaconKeyStore {
+    #[serde(rename = "ddbTableName")]
+    pub ddb_table_name: String,
+    #[serde(rename = "logicalKeyStoreName")]
+    pub logical_key_store_name: String,
+    #[serde(rename = "kmsKeyArn")]
+    pub kms_key_arn: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeaconKeySource {
+    #[serde(default)]
+    pub single: Option<SingleKeyStore>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SingleKeyStore {
+    #[serde(rename = "keyId")]
+    pub key_id: String,
+    #[serde(rename = "cacheTtlSeconds")]
+    pub cache_ttl_seconds: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StandardBeacon {
+    pub name: String,
+    pub length: i32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
