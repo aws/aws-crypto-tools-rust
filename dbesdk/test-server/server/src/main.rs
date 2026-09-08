@@ -177,6 +177,18 @@ async fn dispatch(
                 .map(ok_body),
             Err(e) => Err(e),
         },
+        "ScanInputTransform" => match decode(&body) {
+            Ok(request) => handlers::scan_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
+        "QueryInputTransform" => match decode(&body) {
+            Ok(request) => handlers::query_input_transform(&state, request)
+                .await
+                .map(ok_body),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 

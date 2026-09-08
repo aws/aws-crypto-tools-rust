@@ -211,6 +211,12 @@ pub struct TransactWriteItemsInputTransformResponse {
 pub struct ScanInput {
     #[serde(rename = "tableName")]
     pub table_name: String,
+    #[serde(rename = "filterExpression", skip_serializing_if = "Option::is_none", default)]
+    pub filter_expression: Option<String>,
+    #[serde(rename = "expressionAttributeNames", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_names: Option<HashMap<String, String>>,
+    #[serde(rename = "expressionAttributeValues", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_values: Option<DdbItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +229,14 @@ pub struct ScanOutput {
 pub struct QueryInput {
     #[serde(rename = "tableName")]
     pub table_name: String,
+    #[serde(rename = "keyConditionExpression", skip_serializing_if = "Option::is_none", default)]
+    pub key_condition_expression: Option<String>,
+    #[serde(rename = "filterExpression", skip_serializing_if = "Option::is_none", default)]
+    pub filter_expression: Option<String>,
+    #[serde(rename = "expressionAttributeNames", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_names: Option<HashMap<String, String>>,
+    #[serde(rename = "expressionAttributeValues", skip_serializing_if = "Option::is_none", default)]
+    pub expression_attribute_values: Option<DdbItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -388,6 +402,34 @@ pub struct BatchWriteItemOutputTransformRequest {
 pub struct BatchWriteItemOutputTransformResponse {
     #[serde(rename = "transformedOutput")]
     pub transformed_output: BatchWriteItemOutput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScanInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: ScanInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScanInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: ScanInput,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryInputTransformRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(rename = "sdkInput")]
+    pub sdk_input: QueryInput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueryInputTransformResponse {
+    #[serde(rename = "transformedInput")]
+    pub transformed_input: QueryInput,
 }
 
 // ---------------------------------------------------------------------------

@@ -674,6 +674,108 @@ pub async fn execute_transaction_input_transform(
     })
 }
 
+pub async fn scan_input_transform(
+    state: &AppState,
+    request: model::ScanInputTransformRequest,
+) -> Result<model::ScanInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let wire = &request.sdk_input;
+    let mut b = SdkScanInput::builder().table_name(&wire.table_name);
+    if let Some(f) = &wire.filter_expression {
+        b = b.filter_expression(f);
+    }
+    if let Some(names) = &wire.expression_attribute_names {
+        if !names.is_empty() {
+            b = b.set_expression_attribute_names(Some(names.clone()));
+        }
+    }
+    if let Some(vals) = &wire.expression_attribute_values {
+        if !vals.is_empty() {
+            b = b.set_expression_attribute_values(Some(to_ddb_item(vals)?));
+        }
+    }
+    let sdk_input = b
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid ScanInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .scan_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let t = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("ScanInputTransform returned no transformed_input".into())
+    })?;
+
+    Ok(model::ScanInputTransformResponse {
+        transformed_input: model::ScanInput {
+            table_name: t.table_name().unwrap_or_default().to_string(),
+            filter_expression: t.filter_expression().map(String::from),
+            expression_attribute_names: t.expression_attribute_names().cloned(),
+            expression_attribute_values: match t.expression_attribute_values() {
+                Some(m) => Some(from_ddb_item(m)?),
+                None => None,
+            },
+        },
+    })
+}
+
+pub async fn query_input_transform(
+    state: &AppState,
+    request: model::QueryInputTransformRequest,
+) -> Result<model::QueryInputTransformResponse, ServerError> {
+    let handle = state.registry.get_transforms(&request.client_id)?;
+    let wire = &request.sdk_input;
+    let mut b = SdkQueryInput::builder().table_name(&wire.table_name);
+    if let Some(k) = &wire.key_condition_expression {
+        b = b.key_condition_expression(k);
+    }
+    if let Some(f) = &wire.filter_expression {
+        b = b.filter_expression(f);
+    }
+    if let Some(names) = &wire.expression_attribute_names {
+        if !names.is_empty() {
+            b = b.set_expression_attribute_names(Some(names.clone()));
+        }
+    }
+    if let Some(vals) = &wire.expression_attribute_values {
+        if !vals.is_empty() {
+            b = b.set_expression_attribute_values(Some(to_ddb_item(vals)?));
+        }
+    }
+    let sdk_input = b
+        .build()
+        .map_err(|e| ServerError::Generic(format!("invalid QueryInput: {e}")))?;
+
+    let _guard = handle.op_lock.lock().await;
+    let output = handle
+        .client
+        .query_input_transform()
+        .sdk_input(sdk_input)
+        .send()
+        .await
+        .map_err(|e| ServerError::Client(e.to_string()))?;
+    let t = output.transformed_input.ok_or_else(|| {
+        ServerError::Client("QueryInputTransform returned no transformed_input".into())
+    })?;
+
+    Ok(model::QueryInputTransformResponse {
+        transformed_input: model::QueryInput {
+            table_name: t.table_name().unwrap_or_default().to_string(),
+            key_condition_expression: t.key_condition_expression().map(String::from),
+            filter_expression: t.filter_expression().map(String::from),
+            expression_attribute_names: t.expression_attribute_names().cloned(),
+            expression_attribute_values: match t.expression_attribute_values() {
+                Some(m) => Some(from_ddb_item(m)?),
+                None => None,
+            },
+        },
+    })
+}
+
 // ---------------------------------------------------------------------------
 // AttributeValue conversion (wire scalars <-> AWS SDK AttributeValue)
 // ---------------------------------------------------------------------------
