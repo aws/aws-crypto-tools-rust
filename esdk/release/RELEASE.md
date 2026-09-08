@@ -1,80 +1,64 @@
 # Releasing `aws-esdk` (git → Brazil)
 
-How the native Rust `aws-esdk` crate is released from this GitHub repo into its
-internal Brazil package. Driven by [`release.sh`](./release.sh).
+The release is one command. [`release.sh`](./release.sh) runs every gate, phase,
+and check itself — there is no manual checklist.
 
-## Prerequisites
-
-- A clean checkout of the branch being released (release from a clean tree).
-- A Rust toolchain (`cargo`, `rustc`) — see the version CI pins in
-  `.github/workflows/library_rust_tests.yml`.
-- For the Brazil phase: the `brazil` CLI and the Brazil coordinates below.
-
-## Steps
-
-1. Confirm the version in `esdk/Cargo.toml` is the version you intend to release.
-2. From a clean checkout, run the release script:
-
-   ```bash
-   ./esdk/release/release.sh <N.N.N>
-   ```
-
-   `<N.N.N>` is optional; when given it must match `esdk/Cargo.toml` (a typo
-   guard). This runs, in order: preflight → docs → brazil-sync → smoke-test.
-3. Review the staged docs at `esdk/release/build/docs/aws_esdk/index.html`.
-   The ORR links this `index.html`.
-4. Confirm the smoke test printed `OK: ... round-trip succeeded`.
-5. Complete the Brazil publish (see OPEN QUESTIONS) and confirm the published
-   version resolves for internal consumers.
-
-## What the script does
-
-| Phase | Command / effect | Runs from a plain checkout? |
-|-------|------------------|-----------------------------|
-| preflight | tool + version checks, clean-tree check | yes |
-| docs | `cargo doc --all-features --no-deps`, copied to `build/docs/` | yes |
-| brazil-sync | import the crate into its Brazil package, build, bundle docs, publish | no — needs Brazil coordinates |
-| smoke-test | build a standalone consumer and run an encrypt/decrypt round-trip | yes |
-
-The smoke test (`smoke-test/`) is a standalone crate that depends on `aws-esdk`
-as an external consumer would and runs one encrypt/decrypt round-trip with a
-local raw-AES keyring (no AWS credentials or network).
-
-The Brazil phase is skipped, not failed, when its coordinates are unset, so a
-local run still generates docs and runs the smoke test against the in-repo crate.
-
-Brazil coordinates are supplied via the environment:
+## Release
 
 ```bash
-AWS_ESDK_BRAZIL_PACKAGE=<package>       \
-AWS_ESDK_BRAZIL_VERSION_SET=<version-set> \
-AWS_ESDK_BRAZIL_PACKAGE_DIR=<local path>  \
-  ./esdk/release/release.sh --execute-brazil <N.N.N>
+./esdk/release/release.sh
 ```
 
-Without `--execute-brazil` the Brazil phase prints the commands it would run.
+The version is read from `esdk/Cargo.toml`; set it there (in the normal PR) and
+that is the version released. The script is non-interactive and safe to re-run.
+
+## One-time setup
+
+- A Rust toolchain (`cargo`, `rustc`) — the version CI pins in
+  `.github/workflows/library_rust_tests.yml`.
+- The Brazil coordinates below, exported in your environment or written once to
+  `esdk/release/brazil.env` (sourced automatically). The smoke test needs no AWS
+  credentials — it uses a local raw-AES keyring.
+
+## What the one command does
+
+| Phase | Effect |
+|-------|--------|
+| gate | enforces every release gate (below); a failure stops the release |
+| docs | `cargo doc --all-features --no-deps`, copied to `build/docs/` (the ORR links `build/docs/aws_esdk/index.html`) |
+| brazil | imports the crate into its Brazil package, builds, bundles the docs, and publishes |
+| smoke-test | builds a standalone consumer and runs an encrypt/decrypt round-trip against the released crate |
+
+Gates enforced automatically (fatal on a real run; warnings under `--dry-run`):
+
+- `cargo`/`rustc` present.
+- `esdk/Cargo.toml` version is `N.N.N`.
+- Working tree is clean.
+- Tag `v<version>` does not already exist (no accidental re-release).
+- HEAD is pushed to `origin` (you release code that is on the remote).
+
+## Dry run
+
+Validate from a work-in-progress checkout — runs the gates (as warnings), docs,
+and smoke test, and prints the Brazil commands instead of running them:
+
+```bash
+./esdk/release/release.sh --dry-run
+```
 
 ## OPEN QUESTIONS (Brazil-side)
 
-These cannot be resolved from this repo alone. They gate the `brazil-sync`
-phase (marked `TODO(brazil)` in `release.sh`) and the published-crate smoke test.
+These cannot be resolved from this repo. Each is a config value the script reads
+from the environment / `brazil.env`; once all are set, the one command publishes
+end-to-end. Steps whose exact form is still unknown are marked `TODO(brazil)` in
+`release.sh`.
 
-1. **Brazil package.** Does a Brazil package that mirrors this crate already
-   exist? What is its name (`AWS_ESDK_BRAZIL_PACKAGE`)? If not, create it.
-2. **Import mechanism.** Is git → Brazil a live/import package that tracks this
-   repo, or a manual source sync into the package workspace? The script
-   currently `rsync`s `esdk/` into `AWS_ESDK_BRAZIL_PACKAGE_DIR`; confirm the
-   expected source layout and whether the crate needs a `Config`/build spec.
-3. **Version set.** Which version set does it publish into
-   (`AWS_ESDK_BRAZIL_VERSION_SET`), and how does the Cargo.toml version map to
-   the Brazil package major version?
-4. **Publish command.** What actually publishes the built package (a pipeline,
-   `brazil-recursive-cmd`, package-builder)? This is the final `TODO(brazil)`.
-5. **Docs destination.** Where does Brazil publish the bundled HTML from so the
-   ORR link is stable? The script stages docs into `<package>/doc`; confirm the
-   real published path (and whether an internal docs host serves it).
-6. **Published-crate smoke test.** How does a consumer depend on the
-   Brazil-published `aws-esdk` (version-set dependency)? Once known, repoint
-   `smoke-test/Cargo.toml` off the in-repo `path` dependency for release runs.
-7. **Dependencies.** How do `aws-esdk`'s dependencies (including the vendored
-   `aws-mpl-native`) resolve inside the version set?
+| Question | Config value |
+|----------|--------------|
+| 1. Does a Brazil package mirroring this crate exist? What is its name? | `AWS_ESDK_BRAZIL_PACKAGE` |
+| 2. Is git → Brazil a live/import package or a manual source sync? Does it need a `Config`/build spec? (script `rsync`s `esdk/` into the package) | `AWS_ESDK_BRAZIL_PACKAGE_DIR` |
+| 3. Which version set, and how does the Cargo.toml version map to the Brazil major version? | `AWS_ESDK_BRAZIL_VERSION_SET` |
+| 4. What command publishes the built package (pipeline, `brazil-recursive-cmd`, package-builder)? | `AWS_ESDK_BRAZIL_PUBLISH_CMD` |
+| 5. Where does Brazil publish the bundled HTML from so the ORR link is stable? | `AWS_ESDK_BRAZIL_DOC_DIR` |
+| 6. How does a consumer depend on the Brazil-published `aws-esdk`? Then repoint `smoke-test/Cargo.toml` off the in-repo path dep. | — |
+| 7. How do the crate's dependencies (including vendored `aws-mpl-native`) resolve in the version set? | — |

@@ -2,18 +2,25 @@
 # Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# git -> Brazil release for the aws-esdk crate. Runs in phases:
+# One-command git -> Brazil release for the aws-esdk crate.
 #
-#   1. preflight    tool + version checks, clean-tree check
-#   2. docs         cargo doc --all-features --no-deps, staged into build/docs
-#   3. brazil-sync  import the crate into its Brazil package and publish
-#   4. smoke-test   encrypt/decrypt round-trip against the released crate
+# Run it with no arguments and it performs the whole release: enforces the
+# release gates, builds and bundles the docs, imports and publishes to Brazil,
+# and runs an encrypt/decrypt smoke test against the result. It is
+# non-interactive and every gate is checked by the script, so there is no
+# manual checklist and a failed gate stops the release before anything is
+# published.
 #
-# Phases 2 and 4 run from a plain GitHub checkout. Phase 3 needs Brazil
-# coordinates that live outside this repo; see the "OPEN QUESTIONS" in
-# RELEASE.md. When those are not configured the phase is skipped (not failed)
-# and the smoke test consumes the in-repo crate, so a local run still
-# generates docs and proves the crate round-trips.
+# Phases: gate -> docs -> brazil -> smoke-test.
+#
+# --dry-run runs every read-only phase (gates, docs, smoke test) and prints the
+# Brazil commands instead of running them, for validating from a
+# work-in-progress checkout.
+#
+# Brazil coordinates come from the environment (one-time setup, see RELEASE.md);
+# esdk/release/brazil.env is sourced when present. Until they are set, a run
+# builds and bundles the docs and runs the smoke test but does not publish, and
+# says so.
 
 set -euo pipefail
 
@@ -24,51 +31,57 @@ SMOKE_DIR="${SCRIPT_DIR}/smoke-test"
 STAGE="${SCRIPT_DIR}/build"
 DOCS_OUT="${STAGE}/docs"
 
-# Brazil coordinates. Unset here because they are not yet decided; override via
-# the environment once they are (see RELEASE.md OPEN QUESTIONS).
-BRAZIL_PACKAGE="${AWS_ESDK_BRAZIL_PACKAGE:-}"
-BRAZIL_VERSION_SET="${AWS_ESDK_BRAZIL_VERSION_SET:-}"
-BRAZIL_PACKAGE_DIR="${AWS_ESDK_BRAZIL_PACKAGE_DIR:-}"
+# shellcheck source=/dev/null
+[ -f "${SCRIPT_DIR}/brazil.env" ] && . "${SCRIPT_DIR}/brazil.env"
 
-RUN_DOCS=1
-RUN_BRAZIL=1
-RUN_SMOKE=1
-EXECUTE_BRAZIL=0
-EXPECTED_VERSION=""
+# Brazil coordinates. Each maps to an OPEN QUESTION in RELEASE.md; setting them
+# all makes this script publish end-to-end with no further manual steps.
+BRAZIL_PACKAGE="${AWS_ESDK_BRAZIL_PACKAGE:-}"
+BRAZIL_PACKAGE_DIR="${AWS_ESDK_BRAZIL_PACKAGE_DIR:-}"
+BRAZIL_VERSION_SET="${AWS_ESDK_BRAZIL_VERSION_SET:-}"
+BRAZIL_PUBLISH_CMD="${AWS_ESDK_BRAZIL_PUBLISH_CMD:-}"
+BRAZIL_DOC_DIR="${AWS_ESDK_BRAZIL_DOC_DIR:-doc}"
+
+DRY_RUN=0
 
 log()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mWARN: %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# In a real run, execute the command; in a dry run, print it.
+run() {
+    if [ "${DRY_RUN}" -eq 1 ]; then
+        printf '  [dry-run] %s\n' "$*"
+    else
+        "$@"
+    fi
+}
+
 usage() {
     cat <<'EOF'
-USAGE: release.sh [OPTIONS] [VERSION]
+USAGE: release.sh [--dry-run]
 
-  VERSION            Optional N.N.N. If given, must match esdk/Cargo.toml.
+Runs the whole aws-esdk git -> Brazil release. The version is read from
+esdk/Cargo.toml. No other arguments or manual steps.
 
-OPTIONS:
-  --skip-docs        Skip the cargo doc phase.
-  --skip-smoke-test  Skip the smoke-test phase.
-  --no-brazil        Skip the Brazil import/publish phase.
-  --execute-brazil   Run the Brazil commands instead of printing the plan.
-  -h, --help         Show this help.
+  --dry-run   Run the gates, docs, and smoke test; print the Brazil commands
+              instead of running them, and relax the outbound gates.
+  -h, --help  Show this help.
 
-ENVIRONMENT (Brazil phase):
+Brazil coordinates are read from the environment or esdk/release/brazil.env:
   AWS_ESDK_BRAZIL_PACKAGE      Brazil package that mirrors the crate.
-  AWS_ESDK_BRAZIL_VERSION_SET  Version set to publish into.
   AWS_ESDK_BRAZIL_PACKAGE_DIR  Local path to the Brazil package workspace.
+  AWS_ESDK_BRAZIL_VERSION_SET  Version set to publish into.
+  AWS_ESDK_BRAZIL_PUBLISH_CMD  Command that publishes the built package.
+  AWS_ESDK_BRAZIL_DOC_DIR      Docs subdir in the package (default: doc).
 EOF
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --skip-docs)       RUN_DOCS=0 ;;
-        --skip-smoke-test) RUN_SMOKE=0 ;;
-        --no-brazil)       RUN_BRAZIL=0 ;;
-        --execute-brazil)  EXECUTE_BRAZIL=1 ;;
-        -h|--help)         usage; exit 0 ;;
-        -*)                die "unknown option: $1 (try --help)" ;;
-        *)                 EXPECTED_VERSION="$1" ;;
+        --dry-run)  DRY_RUN=1 ;;
+        -h|--help)  usage; exit 0 ;;
+        *)          die "unknown argument: $1 (try --help)" ;;
     esac
     shift
 done
@@ -78,21 +91,35 @@ crate_version() {
         | grep -o '"version":"[0-9][^"]*"' | head -1 | cut -d'"' -f4
 }
 
-preflight() {
-    log "preflight"
+# All release gates, enforced automatically. On a real run a failing gate is
+# fatal; --dry-run downgrades the outbound gates (clean tree, pushed, unreleased)
+# to warnings so a work-in-progress checkout can be validated.
+gate() {
+    log "gate"
     command -v cargo >/dev/null || die "cargo not found on PATH"
-    local version
-    version="$(crate_version)"
-    echo "aws-esdk version: ${version}"
+    command -v rustc >/dev/null || die "rustc not found on PATH"
+
+    VERSION="$(crate_version)"
+    echo "${VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
+        || die "esdk/Cargo.toml version '${VERSION}' is not N.N.N"
+    echo "aws-esdk version: ${VERSION}"
     echo "cargo:  $(cargo --version)"
     echo "rustc:  $(rustc --version)"
 
-    if [ -n "${EXPECTED_VERSION}" ] && [ "${EXPECTED_VERSION}" != "${version}" ]; then
-        die "requested version '${EXPECTED_VERSION}' != esdk/Cargo.toml '${version}'"
+    local fail=die
+    [ "${DRY_RUN}" -eq 1 ] && fail=warn
+
+    [ -z "$(git -C "${REPO_ROOT}" status --porcelain)" ] \
+        || ${fail} "working tree is not clean; release from a clean checkout"
+
+    if git -C "${REPO_ROOT}" rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+        ${fail} "tag v${VERSION} already exists; bump the version in esdk/Cargo.toml"
     fi
 
-    if [ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]; then
-        warn "working tree is not clean; release should be cut from a clean checkout"
+    if [ "${DRY_RUN}" -eq 0 ]; then
+        git -C "${REPO_ROOT}" fetch -q origin || die "cannot reach origin to verify HEAD is pushed"
+        [ -n "$(git -C "${REPO_ROOT}" branch -r --contains HEAD 2>/dev/null)" ] \
+            || die "current commit is not pushed to origin; push before releasing"
     fi
 }
 
@@ -111,52 +138,42 @@ build_docs() {
     echo "docs staged at: ${DOCS_OUT}/aws_esdk/index.html"
 }
 
-# Import the crate into its Brazil package and publish it, bundling the staged
-# docs into the published layout. The exact package name, publish command, and
-# docs destination are OPEN QUESTIONS (RELEASE.md); the unresolved steps are
-# marked TODO(brazil). Without --execute-brazil this prints the plan only.
-brazil_sync() {
-    log "brazil-sync"
+# Import the crate into its Brazil package, build it, bundle the docs, and
+# publish. Runs end-to-end once the Brazil coordinates are set; the source
+# layout, publish command, and docs destination are OPEN QUESTIONS (RELEASE.md)
+# supplied via the environment.
+brazil() {
+    log "brazil"
     if [ -z "${BRAZIL_PACKAGE}" ]; then
-        warn "Brazil coordinates not configured (AWS_ESDK_BRAZIL_PACKAGE unset) -- skipping."
-        warn "See RELEASE.md 'OPEN QUESTIONS' for what remains to wire up."
-        RUN_BRAZIL=0
+        warn "NOT PUBLISHED: Brazil coordinates unset; built and bundled docs and ran the smoke test only."
+        warn "Set AWS_ESDK_BRAZIL_* (see RELEASE.md) and re-run to publish."
+        PUBLISHED=0
         return 0
     fi
 
-    local run="echo   [plan]"
-    [ "${EXECUTE_BRAZIL}" -eq 1 ] && run=""
-
     command -v brazil >/dev/null || die "brazil CLI not found on PATH"
     [ -n "${BRAZIL_PACKAGE_DIR}" ] || die "AWS_ESDK_BRAZIL_PACKAGE_DIR must be set"
+    [ -n "${BRAZIL_PUBLISH_CMD}" ] || die "AWS_ESDK_BRAZIL_PUBLISH_CMD must be set (OPEN QUESTION)"
 
-    echo "package:     ${BRAZIL_PACKAGE}"
+    echo "package:      ${BRAZIL_PACKAGE}"
     echo "version set:  ${BRAZIL_VERSION_SET:-<unset>}"
     echo "package dir:  ${BRAZIL_PACKAGE_DIR}"
 
-    # 1. Sync crate source into the Brazil package.
     # TODO(brazil): confirm the package's expected source layout / subdir.
-    ${run} rsync -a --delete \
-        --exclude target --exclude release/build \
+    run rsync -a --delete --exclude target --exclude release/build \
         "${ESDK_DIR}/" "${BRAZIL_PACKAGE_DIR}/"
-
-    # 2. Build under Brazil.
-    ${run} bash -c "cd '${BRAZIL_PACKAGE_DIR}' && brazil-build"
-
-    # 3. Bundle the built docs into the published layout.
+    run bash -c "cd '${BRAZIL_PACKAGE_DIR}' && brazil-build"
     # TODO(brazil): confirm the path Brazil publishes docs from.
-    ${run} cp -R "${DOCS_OUT}" "${BRAZIL_PACKAGE_DIR}/doc"
-
-    # 4. Publish to the version set.
-    # TODO(brazil): confirm the publish command (brazil-recursive-cmd release,
-    # a pipeline, or a package-builder publish).
-    ${run} echo "TODO(brazil): publish ${BRAZIL_PACKAGE} to ${BRAZIL_VERSION_SET}"
+    run cp -R "${DOCS_OUT}" "${BRAZIL_PACKAGE_DIR}/${BRAZIL_DOC_DIR}"
+    run bash -c "cd '${BRAZIL_PACKAGE_DIR}' && ${BRAZIL_PUBLISH_CMD}"
+    PUBLISHED=1
 }
 
-# Consume the released crate and run an encrypt/decrypt round-trip.
+# Build a standalone consumer of the released crate and run an encrypt/decrypt
+# round-trip. A non-zero exit here fails the release.
 smoke_test() {
     log "smoke-test"
-    if [ "${RUN_BRAZIL}" -eq 1 ]; then
+    if [ "${PUBLISHED}" -eq 1 ]; then
         # TODO(brazil): repoint smoke-test/Cargo.toml at the Brazil-published
         # crate (version-set dependency) instead of the in-repo path dep.
         warn "consuming the Brazil-published crate is not wired yet; running against the in-repo crate."
@@ -164,9 +181,11 @@ smoke_test() {
     ( cd "${SMOKE_DIR}" && cargo run --release )
 }
 
-preflight
-if [ "${RUN_DOCS}" -eq 1 ];   then build_docs;  fi
-if [ "${RUN_BRAZIL}" -eq 1 ]; then brazil_sync;  fi
-if [ "${RUN_SMOKE}" -eq 1 ];  then smoke_test;   fi
+PUBLISHED=0
+gate
+build_docs
+brazil
+smoke_test
 
-log "done"
+log "release complete"
+[ "${PUBLISHED}" -eq 1 ] || warn "reminder: nothing was published (see the brazil phase above)"
