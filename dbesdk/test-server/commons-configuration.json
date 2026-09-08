@@ -5,7 +5,7 @@
     "supported half of every catalog Feature (Requirements 8.2, 8.4-8.11).",
     "",
     "The declared product must equal the Configuration_Set's product",
-    "(Requirement 8.11) — dbesdk.",
+    "(Requirement 8.11) \u2014 dbesdk.",
     "",
     "The Rust Language_Server fully wires raw-aes and aws-kms (the current",
     "catalog). Additional Features get added here in lockstep with the",
@@ -19,7 +19,8 @@
   "product": "dbesdk",
   "supportedFeatures": [
     "raw-aes",
-    "aws-kms"
+    "aws-kms",
+    "beacon-partitions"
   ],
   "unsupportedFeatures": []
 }

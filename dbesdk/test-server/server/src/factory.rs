@@ -226,6 +226,9 @@ fn build_search_config(search: &model::SearchConfig) -> Result<DbeSearchConfig, 
                 if let Some(loc) = &b.loc {
                     sb = sb.loc(loc);
                 }
+                if let Some(n) = b.number_of_partitions {
+                    sb = sb.number_of_partitions(n);
+                }
                 standard.push(
                     sb.build()
                         .map_err(|e| ServerError::Generic(format!("invalid StandardBeacon: {e}")))?,
@@ -244,6 +247,12 @@ fn build_search_config(search: &model::SearchConfig) -> Result<DbeSearchConfig, 
         }
         if let Some(compound) = &v.compound_beacons {
             bv = bv.compound_beacons(build_compound_beacons(compound)?);
+        }
+        if let Some(max) = v.maximum_number_of_partitions {
+            bv = bv.maximum_number_of_partitions(max);
+        }
+        if let Some(default) = v.default_number_of_partitions {
+            bv = bv.default_number_of_partitions(default);
         }
         versions.push(
             bv.build()

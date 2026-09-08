@@ -585,6 +585,10 @@ pub struct BeaconVersion {
     pub encrypted_parts: Option<Vec<EncryptedPart>>,
     #[serde(rename = "signedParts", default)]
     pub signed_parts: Option<Vec<SignedPart>>,
+    #[serde(rename = "maximumNumberOfPartitions", default)]
+    pub maximum_number_of_partitions: Option<i32>,
+    #[serde(rename = "defaultNumberOfPartitions", default)]
+    pub default_number_of_partitions: Option<i32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -617,6 +621,8 @@ pub struct StandardBeacon {
     pub length: i32,
     #[serde(rename = "loc", default)]
     pub loc: Option<String>,
+    #[serde(rename = "numberOfPartitions", default)]
+    pub number_of_partitions: Option<i32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
