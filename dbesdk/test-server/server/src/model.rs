@@ -577,6 +577,14 @@ pub struct BeaconVersion {
     pub key_source: BeaconKeySource,
     #[serde(rename = "standardBeacons", default)]
     pub standard_beacons: Option<Vec<StandardBeacon>>,
+    #[serde(rename = "compoundBeacons", default)]
+    pub compound_beacons: Option<Vec<CompoundBeacon>>,
+    #[serde(rename = "virtualFields", default)]
+    pub virtual_fields: Option<Vec<VirtualField>>,
+    #[serde(rename = "encryptedParts", default)]
+    pub encrypted_parts: Option<Vec<EncryptedPart>>,
+    #[serde(rename = "signedParts", default)]
+    pub signed_parts: Option<Vec<SignedPart>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -607,6 +615,56 @@ pub struct SingleKeyStore {
 pub struct StandardBeacon {
     pub name: String,
     pub length: i32,
+    #[serde(rename = "loc", default)]
+    pub loc: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompoundBeacon {
+    pub name: String,
+    pub split: String,
+    #[serde(rename = "constructors", default)]
+    pub constructors: Option<Vec<Constructor>>,
+    #[serde(rename = "encrypted", default)]
+    pub encrypted: Option<Vec<EncryptedPart>>,
+    #[serde(rename = "signed", default)]
+    pub signed: Option<Vec<SignedPart>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Constructor {
+    pub parts: Vec<ConstructorPart>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConstructorPart {
+    pub name: String,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EncryptedPart {
+    pub name: String,
+    pub prefix: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SignedPart {
+    pub name: String,
+    pub prefix: String,
+    #[serde(rename = "loc", default)]
+    pub loc: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VirtualField {
+    pub name: String,
+    pub parts: Vec<VirtualPart>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VirtualPart {
+    pub loc: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

@@ -18,8 +18,11 @@ use aws_config::SdkConfig;
 use aws_db_esdk::dynamodb::types::DynamoDbTableEncryptionConfig;
 use aws_db_esdk::dynamodb::types::{
     BeaconKeySource as DbeBeaconKeySource, BeaconVersion as DbeBeaconVersion,
-    SearchConfig as DbeSearchConfig, SingleKeyStore as DbeSingleKeyStore,
-    StandardBeacon as DbeStandardBeacon,
+    CompoundBeacon as DbeCompoundBeacon, Constructor as DbeConstructor,
+    ConstructorPart as DbeConstructorPart, EncryptedPart as DbeEncryptedPart,
+    SearchConfig as DbeSearchConfig, SignedPart as DbeSignedPart,
+    SingleKeyStore as DbeSingleKeyStore, StandardBeacon as DbeStandardBeacon,
+    VirtualField as DbeVirtualField, VirtualPart as DbeVirtualPart,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -219,15 +222,28 @@ fn build_search_config(search: &model::SearchConfig) -> Result<DbeSearchConfig, 
         if let Some(beacons) = &v.standard_beacons {
             let mut standard = Vec::with_capacity(beacons.len());
             for b in beacons {
+                let mut sb = DbeStandardBeacon::builder().name(&b.name).length(b.length);
+                if let Some(loc) = &b.loc {
+                    sb = sb.loc(loc);
+                }
                 standard.push(
-                    DbeStandardBeacon::builder()
-                        .name(&b.name)
-                        .length(b.length)
-                        .build()
+                    sb.build()
                         .map_err(|e| ServerError::Generic(format!("invalid StandardBeacon: {e}")))?,
                 );
             }
             bv = bv.standard_beacons(standard);
+        }
+        if let Some(fields) = &v.virtual_fields {
+            bv = bv.virtual_fields(build_virtual_fields(fields)?);
+        }
+        if let Some(parts) = &v.encrypted_parts {
+            bv = bv.encrypted_parts(build_encrypted_parts(parts)?);
+        }
+        if let Some(parts) = &v.signed_parts {
+            bv = bv.signed_parts(build_signed_parts(parts)?);
+        }
+        if let Some(compound) = &v.compound_beacons {
+            bv = bv.compound_beacons(build_compound_beacons(compound)?);
         }
         versions.push(
             bv.build()
@@ -240,6 +256,106 @@ fn build_search_config(search: &model::SearchConfig) -> Result<DbeSearchConfig, 
         .write_version(search.write_version.unwrap_or(1))
         .build()
         .map_err(|e| ServerError::Generic(format!("invalid SearchConfig: {e}")))
+}
+
+fn build_virtual_fields(
+    wire: &[model::VirtualField],
+) -> Result<Vec<DbeVirtualField>, ServerError> {
+    let mut out = Vec::with_capacity(wire.len());
+    for f in wire {
+        let mut parts = Vec::with_capacity(f.parts.len());
+        for p in &f.parts {
+            parts.push(
+                DbeVirtualPart::builder()
+                    .loc(&p.loc)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid VirtualPart: {e}")))?,
+            );
+        }
+        out.push(
+            DbeVirtualField::builder()
+                .name(&f.name)
+                .parts(parts)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid VirtualField: {e}")))?,
+        );
+    }
+    Ok(out)
+}
+
+fn build_encrypted_parts(
+    wire: &[model::EncryptedPart],
+) -> Result<Vec<DbeEncryptedPart>, ServerError> {
+    let mut out = Vec::with_capacity(wire.len());
+    for p in wire {
+        out.push(
+            DbeEncryptedPart::builder()
+                .name(&p.name)
+                .prefix(&p.prefix)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid EncryptedPart: {e}")))?,
+        );
+    }
+    Ok(out)
+}
+
+fn build_signed_parts(wire: &[model::SignedPart]) -> Result<Vec<DbeSignedPart>, ServerError> {
+    let mut out = Vec::with_capacity(wire.len());
+    for p in wire {
+        let mut sp = DbeSignedPart::builder().name(&p.name).prefix(&p.prefix);
+        if let Some(loc) = &p.loc {
+            sp = sp.loc(loc);
+        }
+        out.push(
+            sp.build()
+                .map_err(|e| ServerError::Generic(format!("invalid SignedPart: {e}")))?,
+        );
+    }
+    Ok(out)
+}
+
+fn build_compound_beacons(
+    wire: &[model::CompoundBeacon],
+) -> Result<Vec<DbeCompoundBeacon>, ServerError> {
+    let mut out = Vec::with_capacity(wire.len());
+    for c in wire {
+        let mut cb = DbeCompoundBeacon::builder().name(&c.name).split(&c.split);
+        if let Some(encrypted) = &c.encrypted {
+            cb = cb.encrypted(build_encrypted_parts(encrypted)?);
+        }
+        if let Some(signed) = &c.signed {
+            cb = cb.signed(build_signed_parts(signed)?);
+        }
+        if let Some(constructors) = &c.constructors {
+            let mut ctors = Vec::with_capacity(constructors.len());
+            for ctor in constructors {
+                let mut parts = Vec::with_capacity(ctor.parts.len());
+                for part in &ctor.parts {
+                    parts.push(
+                        DbeConstructorPart::builder()
+                            .name(&part.name)
+                            .required(part.required)
+                            .build()
+                            .map_err(|e| {
+                                ServerError::Generic(format!("invalid ConstructorPart: {e}"))
+                            })?,
+                    );
+                }
+                ctors.push(
+                    DbeConstructor::builder()
+                        .parts(parts)
+                        .build()
+                        .map_err(|e| ServerError::Generic(format!("invalid Constructor: {e}")))?,
+                );
+            }
+            cb = cb.constructors(ctors);
+        }
+        out.push(
+            cb.build()
+                .map_err(|e| ServerError::Generic(format!("invalid CompoundBeacon: {e}")))?,
+        );
+    }
+    Ok(out)
 }
 
 fn crypto_actions(
