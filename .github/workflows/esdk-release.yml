@@ -1,0 +1,55 @@
+# One-click entry point for the aws-esdk git -> Brazil release
+# (esdk/release/release.sh). GitHub-hosted runners do not have the Brazil CLI,
+# so this runs the release in --dry-run: it enforces the gates, verifies the
+# build (make clippy), generates the docs, runs the encrypt/decrypt smoke test,
+# and prints the Brazil commands. The generated docs are uploaded as an
+# artifact. The actual Brazil publish runs `release.sh` (no --dry-run) on a
+# Brazil-capable environment -- see RELEASE.md OPEN QUESTIONS.
+name: aws-esdk Release (validate + docs)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: validate release + build docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Support longpaths on Git checkout
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      # aws-lc-fips-sys (pulled in by cargo doc --all-features) builds its FIPS
+      # module with Go, which is not on PATH by default.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            esdk
+            esdk/release/smoke-test
+
+      - name: Release (dry-run — validate, docs, smoke test)
+        run: ./esdk/release/release.sh --dry-run
+
+      - name: Upload built docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-esdk-docs
+          path: esdk/release/build/docs
+          if-no-files-found: error
