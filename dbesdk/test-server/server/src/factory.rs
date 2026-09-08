@@ -94,17 +94,48 @@ pub async fn build_client(
         .map_err(|e| ServerError::Generic(format!("failed to build item encryptor: {e}")))
 }
 
-/// Build a configured DBE DDB-SDK transforms client bound to one physical
-/// table. Reuses the item encryptor's recursive keyring/CMM construction and
-/// Crypto Action mapping; only the target config type differs
+/// Build a configured DBE DDB-SDK transforms client bound to one or more
+/// physical tables. Reuses the item encryptor's recursive keyring/CMM
+/// construction and Crypto Action mapping; only the target config type differs
 /// (`DynamoDbTableEncryptionConfig` rather than `DynamoDbItemEncryptorConfig`).
+/// Each table gets its own independent `DynamoDbTableEncryptionConfig`, so
+/// per-table settings (notably `algorithm_suite_id`) do not leak across tables.
 /// A construction failure is a framework failure (GenericServerError).
 pub async fn build_transforms_client(
     mpl: &MplClient,
     sdk_config: &SdkConfig,
     cfg: &model::DbeClientConfig,
     table_name: &str,
+    additional: &[model::TransformsTableConfig],
 ) -> Result<TransformsClient, ServerError> {
+    let mut table_configs: HashMap<String, DynamoDbTableEncryptionConfig> = HashMap::new();
+    table_configs.insert(
+        table_name.to_string(),
+        build_table_config(mpl, sdk_config, cfg).await?,
+    );
+    for extra in additional {
+        table_configs.insert(
+            extra.table_name.clone(),
+            build_table_config(mpl, sdk_config, &extra.config).await?,
+        );
+    }
+
+    let tables_config = DynamoDbTablesEncryptionConfig::builder()
+        .table_encryption_configs(table_configs)
+        .build()
+        .map_err(|e| {
+            ServerError::Generic(format!("invalid DynamoDbTablesEncryptionConfig: {e}"))
+        })?;
+    TransformsClient::from_conf(tables_config)
+        .map_err(|e| ServerError::Generic(format!("failed to build transforms client: {e}")))
+}
+
+/// Build one table's `DynamoDbTableEncryptionConfig` from its wire config.
+async fn build_table_config(
+    mpl: &MplClient,
+    sdk_config: &SdkConfig,
+    cfg: &model::DbeClientConfig,
+) -> Result<DynamoDbTableEncryptionConfig, ServerError> {
     let mut builder = DynamoDbTableEncryptionConfig::builder()
         .logical_table_name(&cfg.logical_table_name)
         .partition_key_name(&cfg.partition_key_name)
@@ -148,17 +179,9 @@ pub async fn build_transforms_client(
         builder = builder.search(build_search_config(search)?);
     }
 
-    let table_config = builder.build().map_err(|e| {
+    builder.build().map_err(|e| {
         ServerError::Generic(format!("invalid DynamoDbTableEncryptionConfig: {e}"))
-    })?;
-    let tables_config = DynamoDbTablesEncryptionConfig::builder()
-        .table_encryption_configs(HashMap::from([(table_name.to_string(), table_config)]))
-        .build()
-        .map_err(|e| {
-            ServerError::Generic(format!("invalid DynamoDbTablesEncryptionConfig: {e}"))
-        })?;
-    TransformsClient::from_conf(tables_config)
-        .map_err(|e| ServerError::Generic(format!("failed to build transforms client: {e}")))
+    })
 }
 
 /// Build a DBE SearchConfig (beacons) from the wire config. The beacon key

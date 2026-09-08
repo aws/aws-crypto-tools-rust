@@ -150,6 +150,15 @@ pub struct CreateTransformsClientRequest {
     pub config: DbeClientConfig,
     #[serde(rename = "tableName")]
     pub table_name: String,
+    #[serde(rename = "additionalTables", default)]
+    pub additional_tables: Option<Vec<TransformsTableConfig>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransformsTableConfig {
+    #[serde(rename = "tableName")]
+    pub table_name: String,
+    pub config: DbeClientConfig,
 }
 
 #[derive(Debug, Serialize)]

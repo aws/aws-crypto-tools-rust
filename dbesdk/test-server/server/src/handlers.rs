@@ -124,6 +124,7 @@ pub async fn create_transforms_client(
         &state.sdk_config,
         &request.config,
         &request.table_name,
+        request.additional_tables.as_deref().unwrap_or(&[]),
     )
     .await?;
     let client_id = state.registry.register_transforms(client);
