@@ -105,8 +105,9 @@ jobs:
       # today); raise it toward 100 as coverage fills in.
       # TODO(mpl): mpl line-coverage is temporarily 80%
       # raise it to 100 as coverage fills in.
-      # On Windows the FIPS backend (aws-lc-fips-sys) is not built, so esdk's
-      # coverage run selects every feature except `fips` there.
+      # On Windows, esdk's coverage run excludes `fips` and links the default
+      # backend; the FIPS backend's Windows build is covered by the prim
+      # FIPS-only step below.
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
@@ -117,10 +118,10 @@ jobs:
       # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
       # is used. Test-only — the coverage gate above already covers these lines
       # against the default backend, so this step exists to prove the same code
-      # passes when linked against AWS-LC-FIPS. Needs the Go step above.
-      # Skipped on Windows: the FIPS backend is not built there.
+      # passes when linked against AWS-LC-FIPS. Needs the Go step above, and the
+      # NASM step on Windows.
       - name: Test FIPS-only backend
-        if: inputs.project == 'prim' && runner.os != 'Windows'
+        if: inputs.project == 'prim'
         env:
           RUSTFLAGS: "-C debuginfo=0"
         run: cargo test --no-default-features --features fips --verbose
