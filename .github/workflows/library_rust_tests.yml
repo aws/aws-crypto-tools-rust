@@ -80,6 +80,13 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
+      # Build and run the offline examples so they can't rot. The
+      # hierarchical_keyring example needs KMS and DynamoDB and is excluded here;
+      # it is still compile-checked by the clippy --all-targets step above.
+      - name: Run offline examples
+        if: inputs.project == 'esdk'
+        run: make examples
+
       # Line coverage does not need debug info, so build the coverage binaries
       # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
       # coverage-instrumented); dropping debug info keeps the ubuntu link within
