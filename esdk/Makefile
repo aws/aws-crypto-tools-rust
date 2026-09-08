@@ -1,4 +1,4 @@
-.PHONY: clippy test duvet
+.PHONY: clippy test duvet deny license-check license-check-all
 
 clippy:
 	cargo clippy --tests
@@ -18,3 +18,13 @@ duvet:
 	@test -e spec || ln -s ../spec spec
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
+
+deny:
+	cargo deny check advisories || true
+	cargo deny check bans licenses sources
+
+license-check:
+	./ci/check-license-headers.sh
+
+license-check-all:
+	./ci/check-license-headers.sh --all

@@ -1,0 +1,64 @@
+# Reusable workflow that runs supply-chain and license checks for a single
+# project (subdirectory) in the monorepo. Callers pass the project directory
+# name via the `project` input (e.g. "esdk").
+name: Supply Chain
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to check (e.g. esdk)."
+        required: true
+        type: string
+
+jobs:
+  # cargo-deny scans the project's dependency graph. The deterministic checks
+  # (bans, licenses, sources) change only when dependencies change, so they
+  # gate the PR. Advisories are split out below.
+  cargo-deny:
+    name: cargo-deny (${{ inputs.project }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.project }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      # The RustSec advisory database updates independently of this repo, so a
+      # newly published advisory could turn this red without any code change.
+      # Run it on every PR for visibility, but do not block merges on it.
+      - name: cargo deny check advisories (non-blocking)
+        continue-on-error: true
+        run: cargo deny check advisories
+
+      - name: cargo deny check bans licenses sources
+        run: cargo deny check bans licenses sources
+
+  # Fail when a source file changed by this PR is missing the SPDX license
+  # header. Scoped to changed files so it does not retroactively gate on
+  # pre-existing files.
+  license-header:
+    name: license-header (${{ inputs.project }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.project }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the diff against the PR base branch resolves.
+          fetch-depth: 0
+
+      - name: Check SPDX license headers on changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: ./ci/check-license-headers.sh --base "$BASE_SHA"
