@@ -12,14 +12,12 @@ use aws_mpl_legacy::dafny::types::AesWrappingAlg;
 use aws_mpl_legacy::dafny::types::keyring::KeyringRef;
 use aws_smithy_types::Blob;
 
-/// For demonstration only: a real application must source its wrapping key
-/// from a secure store and never hardcode it.
+/// For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
 const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 
 /// Define your keyring.
 ///
-/// TODO(native-mpl): once native MPL is available, model the custom keyring
-/// example off of
+/// TODO(native-mpl): once native MPL is available, model the custom keyring example off of
 /// https://github.com/aws/aws-encryption-sdk-python/blob/master/examples/src/custom_mpl_cmm_example.py
 async fn build_keyring() -> Result<KeyringRef, Box<dyn std::error::Error>> {
     Ok(mpl()

@@ -34,8 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let plaintext = b"the quick brown fox jumps over the lazy dog";
     File::create(&plaintext_path)?.write_all(plaintext)?;
 
-    // For demonstration only: a real application must source its wrapping
-    // key from a secure store and never hardcode it.
+    // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
     let wrapping_key = [0x01u8; 32];
     let keyring = mpl()
         .create_raw_aes_keyring()
@@ -46,8 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // The encryption context is authenticated, not encrypted. It is bound to
-    // the message and must be reproducible on decrypt.
+    // The encryption context is authenticated, not encrypted.
+    // It is bound to the message and must be reproducible on decrypt.
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose".to_string(), "streaming-example".to_string());
     encryption_context.insert("is not".to_string(), "secret".to_string());

@@ -9,8 +9,7 @@ use aws_smithy_types::Blob;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // For demonstration only: a real application must source its wrapping
-    // key from a secure store and never hardcode it.
+    // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
     let wrapping_key = [0x01u8; 32];
 
     // The namespace and name identify this wrapping key.

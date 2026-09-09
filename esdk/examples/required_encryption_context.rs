@@ -14,8 +14,7 @@ use aws_smithy_types::Blob;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mpl = mpl();
 
-    // For demonstration only: a real application must source its wrapping
-    // key from a secure store and never hardcode it.
+    // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
     let keyring = mpl
         .create_raw_aes_keyring()
         .key_namespace("my-key-namespace")
@@ -25,8 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // Wrap the keyring in a default CMM, then in a required-encryption-context CMM
-    // that marks "tenant" as a required key.
+    // Wrap the keyring in a default CMM, then in a required-encryption-context CMM that marks "tenant" as a required key.
     let default_cmm = mpl
         .create_default_cryptographic_materials_manager()
         .keyring(keyring.clone())

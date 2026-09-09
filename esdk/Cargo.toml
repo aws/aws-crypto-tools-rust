@@ -47,9 +47,7 @@ kms = []
 legacy = []
 ddb = []
 
-# autoexamples is false, so every example is declared explicitly.
-# The raw_aes_keyring, streaming, custom_keyring, and required_encryption_context
-# examples run offline; hierarchical_keyring calls KMS and DynamoDB.
+# autoexamples is false, so declare every example explicitly.
 [[example]]
 name = "raw_aes_keyring"
 path = "examples/raw_aes_keyring.rs"

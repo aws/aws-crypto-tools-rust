@@ -3,8 +3,8 @@
 
 //! Encrypts and decrypts a message with a hierarchical keyring.
 //!
-//! Requires an existing key store with a provisioned branch key, so unlike the other
-//! examples this one needs AWS credentials, a KMS key, and a DynamoDB table, and does not run offline.
+//! Requires an existing key store with a provisioned branch key.
+//! Unlike the other examples this one needs AWS credentials, a KMS key, and a DynamoDB table, and does not run offline.
 
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt, mpl};
 use aws_mpl_legacy::dafny::aws_cryptography_keyStore::client::Client as KeystoreClient;
