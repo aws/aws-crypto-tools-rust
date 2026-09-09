@@ -548,6 +548,8 @@ pub struct DbeClientConfig {
     pub allowed_unsigned_attributes: Option<Vec<String>>,
     #[serde(rename = "algorithmSuiteId", default)]
     pub algorithm_suite_id: Option<DbeAlgorithmSuiteId>,
+    #[serde(rename = "plaintextOverride", default)]
+    pub plaintext_override: Option<PlaintextOverride>,
     #[serde(default)]
     pub keyring: Option<Keyring>,
     #[serde(default)]
@@ -785,6 +787,16 @@ pub enum DbeAlgorithmSuiteId {
     Symsig,
     #[serde(rename = "ALG_AES_256_GCM_HKDF_SHA512_COMMIT_KEY_ECDSA_P384_SYMSIG_HMAC_SHA384")]
     EcdsaSymsig,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum PlaintextOverride {
+    #[serde(rename = "FORCE_PLAINTEXT_WRITE_ALLOW_PLAINTEXT_READ")]
+    ForceWriteAllowRead,
+    #[serde(rename = "FORBID_PLAINTEXT_WRITE_ALLOW_PLAINTEXT_READ")]
+    ForbidWriteAllowRead,
+    #[serde(rename = "FORBID_PLAINTEXT_WRITE_FORBID_PLAINTEXT_READ")]
+    ForbidWriteForbidRead,
 }
 
 // ---------------------------------------------------------------------------

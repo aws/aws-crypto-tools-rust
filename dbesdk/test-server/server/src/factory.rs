@@ -29,6 +29,7 @@ use aws_db_esdk::dynamodb::types::{
     GetSegment as DbeGetSegment, GetSegments as DbeGetSegments,
     BeaconStyle as DbeBeaconStyle, PartOnly as DbePartOnly, AsSet as DbeAsSet,
     Shared as DbeShared, SharedSet as DbeSharedSet,
+    PlaintextOverride as DbePlaintextOverride,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -75,6 +76,9 @@ pub async fn build_client(
     }
     if let Some(suite) = cfg.algorithm_suite_id {
         builder = builder.algorithm_suite_id(algorithm_suite(suite));
+    }
+    if let Some(po) = cfg.plaintext_override {
+        builder = builder.plaintext_override(plaintext_override(po));
     }
 
     match (&cfg.keyring, &cfg.cmm) {
@@ -163,6 +167,9 @@ async fn build_table_config(
     }
     if let Some(suite) = cfg.algorithm_suite_id {
         builder = builder.algorithm_suite_id(algorithm_suite(suite));
+    }
+    if let Some(po) = cfg.plaintext_override {
+        builder = builder.plaintext_override(plaintext_override(po));
     }
 
     match (&cfg.keyring, &cfg.cmm) {
@@ -554,6 +561,20 @@ fn algorithm_suite(suite: model::DbeAlgorithmSuiteId) -> MplSuiteId {
         }
         model::DbeAlgorithmSuiteId::EcdsaSymsig => {
             MplSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384
+        }
+    }
+}
+
+fn plaintext_override(po: model::PlaintextOverride) -> DbePlaintextOverride {
+    match po {
+        model::PlaintextOverride::ForceWriteAllowRead => {
+            DbePlaintextOverride::ForcePlaintextWriteAllowPlaintextRead
+        }
+        model::PlaintextOverride::ForbidWriteAllowRead => {
+            DbePlaintextOverride::ForbidPlaintextWriteAllowPlaintextRead
+        }
+        model::PlaintextOverride::ForbidWriteForbidRead => {
+            DbePlaintextOverride::ForbidPlaintextWriteForbidPlaintextRead
         }
     }
 }
