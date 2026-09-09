@@ -35,11 +35,11 @@ jobs:
         with:
           submodules: 'true'
 
-      # Install duvet pinned to an exact version so the report and the snapshot
-      # comparison are reproducible across runs. duvet has no prebuilt binary,
-      # so it builds from source; cargo/rustup are preinstalled on the runner.
+      # duvet has no prebuilt binary, so it builds from source; cargo/rustup are
+      # preinstalled on the runner. --locked builds against its committed
+      # Cargo.lock.
       - name: Install duvet
-        run: cargo +stable install duvet --version 0.4.3 --locked
+        run: cargo +stable install duvet --locked
 
       - name: Run duvet
         run: make duvet

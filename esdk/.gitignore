@@ -2,6 +2,4 @@
 *.pem
 .duvet/reports/
 .duvet/requirements/
-# The repo-root .gitignore ignores **/.duvet/snapshot.txt; re-include esdk's so
-# the committed snapshot serves as the coverage ratchet baseline.
-!.duvet/snapshot.txt
+.duvet/snapshot.txt

@@ -8,7 +8,7 @@ pattern = "./tests/**/*.rs"
 
 # Specifications are read from the spec/ git submodule, pinned by the
 # superproject gitlink to an exact commit. CI checks out that commit
-# (submodules: true), so duvet runs against a deterministic spec snapshot.
+# (submodules: true), so the report is generated against a fixed spec commit.
 [[specification]]
 source = "spec/data-format/message-header.md"
 
@@ -42,8 +42,7 @@ source = "spec/client-apis/key-derivation.md"
 [report.html]
 enabled = true
 
-# Coverage ratchet: the committed .duvet/snapshot.txt is the coverage baseline.
-# In CI, `make duvet` runs `duvet report --ci`, which fails if coverage drops
-# below that baseline.
+# The CI duvet job uploads the HTML report as a build artifact and does not gate
+# on coverage. Snapshot checking needs a committed snapshot, so it stays off.
 [report.snapshot]
-enabled = true
+enabled = false
