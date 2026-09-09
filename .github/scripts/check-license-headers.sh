@@ -2,10 +2,12 @@
 # Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Verifies that source files across the whole repository carry the header:
+# Verifies that every source file begins with the exact two-line header:
+#     // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #     // SPDX-License-Identifier: Apache-2.0
 #
-# Applies to every project in the repo and to any project added later.
+# The header must be the first two lines of the file. Applies to every project
+# in the repo and to any project added later.
 #
 # Modes:
 #     check-license-headers.sh                changed vs merge-base(HEAD, origin/main)
@@ -13,13 +15,15 @@
 #     check-license-headers.sh --all          every tracked source file in the repo
 #     check-license-headers.sh <file>...      the listed files only
 #
-# Exits non-zero and lists the offenders when a checked file lacks the header.
+# Exits non-zero and lists the offenders when a checked file is missing the
+# header or has it anywhere but the first two lines.
 
 set -euo pipefail
 
-SPDX="SPDX-License-Identifier: Apache-2.0"
-# Number of leading lines searched for the header.
-HEAD_LINES=2
+# The exact header every source file must begin with. All checked extensions
+# use // line comments.
+HEADER="// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0"
 # Source-file extensions this check applies to.
 EXTENSIONS=(rs c cc cpp cxx h hpp hh hxx)
 # Path prefixes (repo-root-relative) excluded from the check.
@@ -77,14 +81,16 @@ if [[ ${#candidates[@]} -gt 0 ]]; then
         [[ -f "$path" ]] || path="$repo_root/$f"
         [[ -f "$path" ]] || continue
         checked=$((checked + 1))
-        if ! head -n "$HEAD_LINES" "$path" | grep -q -- "$SPDX"; then
+        if [[ "$(sed -n '1,2p' "$path")" != "$HEADER" ]]; then
             missing+=("$f")
         fi
     done
 fi
 
 if [[ ${#missing[@]} -gt 0 ]]; then
-    echo "Missing '$SPDX' header in:" >&2
+    echo "Every source file must begin with:" >&2
+    printf '%s\n' "$HEADER" | sed 's/^/  /' >&2
+    echo "Missing or misplaced in:" >&2
     printf '  %s\n' "${missing[@]}" >&2
     exit 1
 fi
