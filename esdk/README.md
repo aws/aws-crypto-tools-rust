@@ -17,8 +17,10 @@ once and reuses it.
 ## Prerequisites
 
 - Rust and `cargo`.
-- [Go](https://go.dev/). A transitive crypto dependency (`aws-lc-sys`) builds it
-  from source during `cargo build`.
+- A C/C++ compiler and CMake, to build the default `aws-lc-sys` crypto backend.
+- Go, only if you enable the optional `fips` feature. That switches the backend
+  to `aws-lc-fips-sys`, which builds the FIPS module from source with CMake and
+  Go. The default (non-FIPS) build does not need Go.
 - AWS credentials, a KMS key, and a DynamoDB table for the hierarchical-keyring
   paths only (see [Examples](#examples)). The raw-AES, streaming, custom-keyring,
   and required-encryption-context paths run offline.
