@@ -27,6 +27,7 @@ use aws_db_esdk::dynamodb::types::{
     VirtualTransform as DbeVirtualTransform, Upper as DbeUpper,
     GetPrefix as DbeGetPrefix, GetSuffix as DbeGetSuffix,
     Lower as DbeLower, Insert as DbeInsert, GetSubstring as DbeGetSubstring,
+    GetSegment as DbeGetSegment, GetSegments as DbeGetSegments,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -343,6 +344,23 @@ fn build_virtual_transforms(
                     .high(s.high)
                     .build()
                     .map_err(|e| ServerError::Generic(format!("invalid GetSubstring: {e}")))?,
+            ));
+        } else if let Some(s) = &t.segment {
+            out.push(DbeVirtualTransform::Segment(
+                DbeGetSegment::builder()
+                    .split(&s.split)
+                    .index(s.index)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid GetSegment: {e}")))?,
+            ));
+        } else if let Some(s) = &t.segments {
+            out.push(DbeVirtualTransform::Segments(
+                DbeGetSegments::builder()
+                    .split(&s.split)
+                    .low(s.low)
+                    .high(s.high)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid GetSegments: {e}")))?,
             ));
         } else {
             return Err(ServerError::Generic(

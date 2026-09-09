@@ -690,6 +690,10 @@ pub struct VirtualTransform {
     pub suffix: Option<GetSuffix>,
     #[serde(rename = "substring", default)]
     pub substring: Option<GetSubstring>,
+    #[serde(rename = "segment", default)]
+    pub segment: Option<GetSegment>,
+    #[serde(rename = "segments", default)]
+    pub segments: Option<GetSegments>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -715,6 +719,19 @@ pub struct GetSuffix {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GetSubstring {
+    pub low: i32,
+    pub high: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetSegment {
+    pub split: String,
+    pub index: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetSegments {
+    pub split: String,
     pub low: i32,
     pub high: i32,
 }
