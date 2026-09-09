@@ -1,7 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::alloc;
 use anyhow::Result;
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk};
 use aws_mpl_legacy::dafny::types::keyring::KeyringRef;
@@ -115,7 +114,6 @@ impl EsdkBenchmark {
         pb.set_message("Throughput test");
 
         let start_time = Instant::now();
-        let alloc = alloc::ResourceTracker::new();
         for i in 0..iterations {
             let iteration_start = Instant::now();
             let (encrypt_ms, decrypt_ms) =
@@ -155,7 +153,6 @@ impl EsdkBenchmark {
             rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count: self.cpu_count,
             total_memory_gb: self.total_memory_gb,
-            alloc: alloc.get_results(),
         };
 
         info!(
@@ -183,7 +180,6 @@ impl EsdkBenchmark {
 
         let mut peak_memory_delta_mb = 0.0;
         let mut avg_memory_samples = Vec::new();
-        let alloc = alloc::ResourceTracker::new();
 
         for i in 0..MEMORY_TEST_ITERATIONS {
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -293,7 +289,6 @@ impl EsdkBenchmark {
             rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count: self.cpu_count,
             total_memory_gb: self.total_memory_gb,
-            alloc: alloc.get_results(),
         };
 
         Ok(result)
@@ -340,7 +335,6 @@ impl EsdkBenchmark {
         }
 
         let start_time = Instant::now();
-        let alloc = alloc::ResourceTracker::new();
         let results = join_all(tasks).await;
         let total_duration = start_time.elapsed().as_secs_f64();
 
@@ -374,7 +368,6 @@ impl EsdkBenchmark {
             rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count: self.cpu_count,
             total_memory_gb: self.total_memory_gb,
-            alloc: alloc.get_results(),
         };
 
         info!(

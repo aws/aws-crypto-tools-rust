@@ -1,7 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::alloc;
 use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
@@ -20,6 +19,7 @@ pub struct BenchmarkResult {
     pub end_to_end_latency_ms: f64,
     pub ops_per_second: f64,
     pub bytes_per_second: f64,
+    // Peak process RSS delta during the operation.
     pub peak_memory_mb: f64,
     pub memory_efficiency_ratio: f64,
     pub p50_latency: f64,
@@ -31,7 +31,6 @@ pub struct BenchmarkResult {
     pub rust_version: String,
     pub cpu_count: usize,
     pub total_memory_gb: f64,
-    pub alloc: alloc::ResourceResults,
 }
 
 #[derive(Debug, Serialize)]
