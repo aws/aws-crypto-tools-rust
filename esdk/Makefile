@@ -14,13 +14,19 @@ test:
 	cargo test --no-default-features --features ddb
 	cargo test --no-default-features --features legacy
 
-# Build and run the offline examples (no AWS credentials required).
-# The hierarchical_keyring example needs KMS and DynamoDB and is excluded here.
+# Set LOCAL_ONLY=--local-only to skip the examples that need AWS credentials.
+# Empty by default, so `make examples` runs the full example suite, including
+# the hierarchical_keyring example (needs KMS and DynamoDB).
+LOCAL_ONLY ?=
+
 examples:
 	cargo run --example raw_aes_keyring
 	cargo run --example streaming
 	cargo run --example custom_keyring
 	cargo run --example required_encryption_context
+ifeq ($(LOCAL_ONLY),)
+	cargo run --example hierarchical_keyring
+endif
 
 duvet:
 	@test -e spec || ln -s ../spec spec

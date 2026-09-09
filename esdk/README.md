@@ -16,6 +16,11 @@ once and reuses it.
 
 ## Prerequisites
 
+`aws-esdk` is not yet published to crates.io. For now you consume it by building
+from this repository, which also carries the in-repo crates it depends on.
+
+Building from source needs:
+
 - Rust and `cargo`.
 - A C/C++ compiler and CMake, to build the default `aws-lc-sys` crypto backend.
 - Go, only if you enable the optional `fips` feature. That switches the backend
@@ -113,16 +118,21 @@ Runnable examples live under [`examples/`](examples/). Run one with
 | `required_encryption_context` | no |
 | `hierarchical_keyring` | yes — KMS + DynamoDB |
 
-`make examples` builds and runs the four offline examples.
+`make examples` runs every example; the hierarchical one needs AWS credentials.
+Add `LOCAL_ONLY=--local-only` to run only the offline examples:
+`make examples LOCAL_ONLY=--local-only`.
 
 ## Build, test, and development
+
+`aws-esdk` builds as part of this repository. From a checkout, run these in the
+`esdk/` directory:
 
 ```bash
 cargo build              # build the library
 cargo build --examples   # build every example, including hierarchical_keyring
-cargo test               # run the test suite (offline)
+cargo test               # run the test suite
 make test                # run the test suite across feature combinations
-make examples            # run the offline examples
+make examples            # run every example (LOCAL_ONLY=--local-only for offline only)
 make clippy              # lint across feature combinations
 ```
 
