@@ -915,10 +915,6 @@ pub struct AwsKmsMrkDiscoveryKeyringConfig {
 }
 
 #[derive(Debug, Deserialize)]
-// Wire-complete but deferred in factory.rs (returns GenericServerError): fields
-// are parsed off the wire but not yet consumed. Not in the [raw-aes, aws-kms]
-// Feature_Catalog.
-#[allow(dead_code)]
 pub struct AwsKmsRsaKeyringConfig {
     #[serde(rename = "kmsKeyId")]
     pub kms_key_id: String,

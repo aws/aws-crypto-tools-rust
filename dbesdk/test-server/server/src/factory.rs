@@ -7,10 +7,9 @@
 // as the Java factory passes `kmsClientForKey(...)`. No KMS call happens at
 // construction; the network is touched only on EncryptItem / DecryptItem.
 //
-// Deferred variants (AwsKmsRsa, Caching CMM) return a GenericServerError: the
-// Java factory itself leaves the Caching CMM unwired, and AwsKmsRsa needs an
-// asymmetric KMS key. They are not reached by any current Test. Every other
-// variant — including the AwsKmsHierarchical keyring (branch-key store) — is
+// The Caching CMM is deferred (returns a GenericServerError): no CachingCMM
+// factory exists in the pinned MPL. It is not reached by any current Test. Every
+// other variant — including the AwsKmsRsa and AwsKmsHierarchical keyrings — is
 // fully wired.
 
 use crate::error::ServerError;
@@ -302,6 +301,53 @@ fn build_virtual_fields(
         );
     }
     Ok(out)
+}
+
+/// Map the wire RSA encryption algorithm to the KMS spec (default OAEP-SHA-256).
+fn kms_rsa_encryption_algorithm(
+    algorithm: Option<model::KmsRsaEncryptionAlgorithm>,
+) -> aws_sdk_kms::types::EncryptionAlgorithmSpec {
+    match algorithm {
+        Some(model::KmsRsaEncryptionAlgorithm::OaepSha1) => {
+            aws_sdk_kms::types::EncryptionAlgorithmSpec::RsaesOaepSha1
+        }
+        _ => aws_sdk_kms::types::EncryptionAlgorithmSpec::RsaesOaepSha256,
+    }
+}
+
+/// Normalize an RSA public key to PEM, as `CreateAwsKmsRsaKeyring` requires. KMS
+/// GetPublicKey returns DER (X.509 SubjectPublicKeyInfo); base64-wrap it in a
+/// `-----BEGIN PUBLIC KEY-----` block. Pass through input that is already PEM.
+fn to_public_key_pem(key: &[u8]) -> Vec<u8> {
+    if key.starts_with(b"-----BEGIN") {
+        return key.to_vec();
+    }
+    let base64 = base64_encode(key);
+    let mut pem = String::from("-----BEGIN PUBLIC KEY-----\n");
+    for chunk in base64.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str("-----END PUBLIC KEY-----\n");
+    pem.into_bytes()
+}
+
+/// Standard base64 encoding (no external dependency needed for this one use).
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[(n >> 18 & 63) as usize] as char);
+        out.push(ALPHABET[(n >> 12 & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { ALPHABET[(n >> 6 & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { ALPHABET[(n & 63) as usize] as char } else { '=' });
+    }
+    out
 }
 
 fn build_beacon_style(style: &model::BeaconStyle) -> Result<DbeBeaconStyle, ServerError> {
@@ -677,10 +723,39 @@ fn build_keyring<'a>(
                 .await
                 .map_err(construction_error);
         }
-        if keyring.aws_kms_rsa.is_some() {
-            return Err(ServerError::Generic(
-                "AwsKmsRsa keyring is not wired in this pass of the Rust TestServer".into(),
-            ));
+        if let Some(c) = &keyring.aws_kms_rsa {
+            // The MPL AwsKmsRsa keyring wraps the data key client-side with the RSA
+            // public key (KMS Decrypt on the read path). The key is supplied as PEM;
+            // when the config omits it, fetch it once from KMS GetPublicKey (DER)
+            // and PEM-wrap it — a construction-time network call, no crypto.
+            let kms_client = kms_client_for_key(sdk_config, &c.kms_key_id);
+            let pem = match &c.public_key {
+                Some(pk) => to_public_key_pem(pk.as_ref()),
+                None => {
+                    let out = kms_client
+                        .get_public_key()
+                        .key_id(&c.kms_key_id)
+                        .send()
+                        .await
+                        .map_err(|e| ServerError::Generic(format!("kms GetPublicKey failed: {e}")))?;
+                    let der = out.public_key().ok_or_else(|| {
+                        ServerError::Generic("kms GetPublicKey returned no public key".into())
+                    })?;
+                    to_public_key_pem(der.as_ref())
+                }
+            };
+            let mut b = mpl
+                .create_aws_kms_rsa_keyring()
+                .kms_key_id(&c.kms_key_id)
+                .public_key(Blob::new(pem))
+                .encryption_algorithm(kms_rsa_encryption_algorithm(c.encryption_algorithm))
+                .kms_client(kms_client);
+            if let Some(tokens) = &c.grant_tokens {
+                if !tokens.is_empty() {
+                    b = b.set_grant_tokens(Some(tokens.clone()));
+                }
+            }
+            return b.send().await.map_err(construction_error);
         }
         if let Some(c) = &keyring.aws_kms_hierarchical {
             // Branch keys live in a DynamoDB key store and are wrapped by a KMS
