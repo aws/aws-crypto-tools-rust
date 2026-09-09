@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "DB-ESDK Language_Repository feature-config.json (design trio): this",
+    "server's Feature_Declaration. The union of supported+unsupported must",
+    "equal the commons Feature_Catalog (feature-config.json in commons)."
+  ],
+  "supportedFeatures": [
+    "raw-aes",
+    "aws-kms",
+    "beacon-partitions"
+  ],
+  "unsupportedFeatures": []
+}
