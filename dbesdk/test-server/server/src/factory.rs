@@ -7,10 +7,11 @@
 // as the Java factory passes `kmsClientForKey(...)`. No KMS call happens at
 // construction; the network is touched only on EncryptItem / DecryptItem.
 //
-// Deferred variants (AwsKmsRsa, AwsKmsHierarchical, Caching CMM) return a
-// GenericServerError: the declared Feature_Catalog is [raw-aes, aws-kms] and the
-// Java factory itself leaves the Caching CMM unwired. They are not reached by any
-// current Test. Every other variant is fully wired.
+// Deferred variants (AwsKmsRsa, Caching CMM) return a GenericServerError: the
+// Java factory itself leaves the Caching CMM unwired, and AwsKmsRsa needs an
+// asymmetric KMS key. They are not reached by any current Test. Every other
+// variant — including the AwsKmsHierarchical keyring (branch-key store) — is
+// fully wired.
 
 use crate::error::ServerError;
 use crate::model;
@@ -566,11 +567,29 @@ fn build_keyring<'a>(
                 "AwsKmsRsa keyring is not wired in this pass of the Rust TestServer".into(),
             ));
         }
-        if keyring.aws_kms_hierarchical.is_some() {
-            return Err(ServerError::Generic(
-                "AwsKmsHierarchical keyring is not wired in this pass of the Rust TestServer"
-                    .into(),
-            ));
+        if let Some(c) = &keyring.aws_kms_hierarchical {
+            // Branch keys live in a DynamoDB key store and are wrapped by a KMS
+            // key. The keystore's DDB/KMS clients are derived from the KMS key
+            // ARN's region (no explicit clients), matching the beacon SearchConfig
+            // keystore build. Branch-key retrieval reaches DynamoDB and KMS only
+            // on EncryptItem / DecryptItem, not at construction.
+            let key_store = KeyStoreClient::from_conf(
+                KeyStoreConfig::builder()
+                    .ddb_table_name(&c.key_store_table_name)
+                    .logical_key_store_name(&c.logical_key_store_name)
+                    .kms_configuration(KmsConfiguration::KmsKeyArn(c.kms_key_arn.clone()))
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid KeyStoreConfig: {e}")))?,
+            )
+            .map_err(|e| ServerError::Generic(format!("failed to build key store: {e}")))?;
+            return mpl
+                .create_aws_kms_hierarchical_keyring()
+                .key_store(key_store)
+                .branch_key_id(&c.branch_key_id)
+                .ttl_seconds(c.ttl_seconds)
+                .send()
+                .await
+                .map_err(construction_error);
         }
         Err(ServerError::Generic(
             "Keyring had no variant member set".into(),

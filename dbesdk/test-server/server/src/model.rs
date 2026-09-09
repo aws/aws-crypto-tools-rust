@@ -902,8 +902,6 @@ pub enum PaddingScheme {
 }
 
 #[derive(Debug, Deserialize)]
-// Wire-complete but deferred in factory.rs (returns GenericServerError).
-#[allow(dead_code)]
 pub struct AwsKmsHierarchicalKeyringConfig {
     #[serde(rename = "branchKeyId")]
     pub branch_key_id: String,
