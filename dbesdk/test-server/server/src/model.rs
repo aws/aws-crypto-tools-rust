@@ -680,14 +680,28 @@ pub struct VirtualPart {
 pub struct VirtualTransform {
     #[serde(rename = "upper", default)]
     pub upper: Option<Upper>,
+    #[serde(rename = "lower", default)]
+    pub lower: Option<Lower>,
+    #[serde(rename = "insert", default)]
+    pub insert: Option<Insert>,
     #[serde(rename = "prefix", default)]
     pub prefix: Option<GetPrefix>,
     #[serde(rename = "suffix", default)]
     pub suffix: Option<GetSuffix>,
+    #[serde(rename = "substring", default)]
+    pub substring: Option<GetSubstring>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Upper {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Lower {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Insert {
+    pub literal: String,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GetPrefix {
@@ -697,6 +711,12 @@ pub struct GetPrefix {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GetSuffix {
     pub length: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetSubstring {
+    pub low: i32,
+    pub high: i32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

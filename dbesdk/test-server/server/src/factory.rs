@@ -26,6 +26,7 @@ use aws_db_esdk::dynamodb::types::{
     VirtualField as DbeVirtualField, VirtualPart as DbeVirtualPart,
     VirtualTransform as DbeVirtualTransform, Upper as DbeUpper,
     GetPrefix as DbeGetPrefix, GetSuffix as DbeGetSuffix,
+    Lower as DbeLower, Insert as DbeInsert, GetSubstring as DbeGetSubstring,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -308,6 +309,19 @@ fn build_virtual_transforms(
                     .build()
                     .map_err(|e| ServerError::Generic(format!("invalid Upper: {e}")))?,
             ));
+        } else if t.lower.is_some() {
+            out.push(DbeVirtualTransform::Lower(
+                DbeLower::builder()
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid Lower: {e}")))?,
+            ));
+        } else if let Some(i) = &t.insert {
+            out.push(DbeVirtualTransform::Insert(
+                DbeInsert::builder()
+                    .literal(&i.literal)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid Insert: {e}")))?,
+            ));
         } else if let Some(p) = &t.prefix {
             out.push(DbeVirtualTransform::Prefix(
                 DbeGetPrefix::builder()
@@ -321,6 +335,14 @@ fn build_virtual_transforms(
                     .length(s.length)
                     .build()
                     .map_err(|e| ServerError::Generic(format!("invalid GetSuffix: {e}")))?,
+            ));
+        } else if let Some(s) = &t.substring {
+            out.push(DbeVirtualTransform::Substring(
+                DbeGetSubstring::builder()
+                    .low(s.low)
+                    .high(s.high)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid GetSubstring: {e}")))?,
             ));
         } else {
             return Err(ServerError::Generic(
