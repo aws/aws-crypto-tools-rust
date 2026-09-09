@@ -671,6 +671,32 @@ pub struct VirtualField {
 #[derive(Debug, Clone, Deserialize)]
 pub struct VirtualPart {
     pub loc: String,
+    #[serde(rename = "trans", default)]
+    pub trans: Option<Vec<VirtualTransform>>,
+}
+
+/// A virtual-part transform (exactly one member set — union on the wire).
+#[derive(Debug, Clone, Deserialize)]
+pub struct VirtualTransform {
+    #[serde(rename = "upper", default)]
+    pub upper: Option<Upper>,
+    #[serde(rename = "prefix", default)]
+    pub prefix: Option<GetPrefix>,
+    #[serde(rename = "suffix", default)]
+    pub suffix: Option<GetSuffix>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Upper {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetPrefix {
+    pub length: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetSuffix {
+    pub length: i32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

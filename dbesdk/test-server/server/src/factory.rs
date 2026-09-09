@@ -24,6 +24,8 @@ use aws_db_esdk::dynamodb::types::{
     SearchConfig as DbeSearchConfig, SignedPart as DbeSignedPart,
     SingleKeyStore as DbeSingleKeyStore, StandardBeacon as DbeStandardBeacon,
     VirtualField as DbeVirtualField, VirtualPart as DbeVirtualPart,
+    VirtualTransform as DbeVirtualTransform, Upper as DbeUpper,
+    GetPrefix as DbeGetPrefix, GetSuffix as DbeGetSuffix,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -275,10 +277,12 @@ fn build_virtual_fields(
     for f in wire {
         let mut parts = Vec::with_capacity(f.parts.len());
         for p in &f.parts {
+            let mut pb = DbeVirtualPart::builder().loc(&p.loc);
+            if let Some(trans) = &p.trans {
+                pb = pb.set_trans(Some(build_virtual_transforms(trans)?));
+            }
             parts.push(
-                DbeVirtualPart::builder()
-                    .loc(&p.loc)
-                    .build()
+                pb.build()
                     .map_err(|e| ServerError::Generic(format!("invalid VirtualPart: {e}")))?,
             );
         }
@@ -289,6 +293,40 @@ fn build_virtual_fields(
                 .build()
                 .map_err(|e| ServerError::Generic(format!("invalid VirtualField: {e}")))?,
         );
+    }
+    Ok(out)
+}
+
+fn build_virtual_transforms(
+    wire: &[model::VirtualTransform],
+) -> Result<Vec<DbeVirtualTransform>, ServerError> {
+    let mut out = Vec::with_capacity(wire.len());
+    for t in wire {
+        if t.upper.is_some() {
+            out.push(DbeVirtualTransform::Upper(
+                DbeUpper::builder()
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid Upper: {e}")))?,
+            ));
+        } else if let Some(p) = &t.prefix {
+            out.push(DbeVirtualTransform::Prefix(
+                DbeGetPrefix::builder()
+                    .length(p.length)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid GetPrefix: {e}")))?,
+            ));
+        } else if let Some(s) = &t.suffix {
+            out.push(DbeVirtualTransform::Suffix(
+                DbeGetSuffix::builder()
+                    .length(s.length)
+                    .build()
+                    .map_err(|e| ServerError::Generic(format!("invalid GetSuffix: {e}")))?,
+            ));
+        } else {
+            return Err(ServerError::Generic(
+                "VirtualTransform had no member set".into(),
+            ));
+        }
     }
     Ok(out)
 }
