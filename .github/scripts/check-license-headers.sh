@@ -5,9 +5,7 @@
 # Verifies that source files across the whole repository carry the header:
 #     // SPDX-License-Identifier: Apache-2.0
 #
-# Applies to every project in the repo, and to any project added later, with
-# no per-project wiring. The vendored unsafe-unreviewed-mpl tree is excluded
-# (it is slated for removal); git submodules are not scanned.
+# Applies to every project in the repo and to any project added later.
 #
 # Modes:
 #     check-license-headers.sh                changed vs merge-base(HEAD, origin/main)
@@ -21,10 +19,11 @@ set -euo pipefail
 
 SPDX="SPDX-License-Identifier: Apache-2.0"
 # Number of leading lines searched for the header.
-HEAD_LINES=15
+HEAD_LINES=2
 # Source-file extensions this check applies to.
 EXTENSIONS=(rs c cc cpp cxx h hpp hh hxx)
 # Path prefixes (repo-root-relative) excluded from the check.
+# TODO: Remove once this project is removed
 EXCLUDES=(unsafe-unreviewed-mpl/)
 
 repo_root="$(git rev-parse --show-toplevel)"
