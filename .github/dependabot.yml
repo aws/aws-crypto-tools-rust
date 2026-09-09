@@ -1,0 +1,24 @@
+# unsafe-unreviewed-mpl is excluded: it is vendored legacy code slated for removal.
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directories:
+      - "/esdk"
+      - "/esdk/performance-tests"
+      - "/esdk/shims/aws-esdk-cpp"
+      - "/mpl"
+      - "/prim"
+    schedule:
+      interval: "weekly"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"
