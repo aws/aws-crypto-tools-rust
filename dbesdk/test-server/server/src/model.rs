@@ -636,6 +636,8 @@ pub struct BeaconStyle {
     pub shared: Option<Shared>,
     #[serde(rename = "asSet", default)]
     pub as_set: Option<AsSet>,
+    #[serde(rename = "sharedSet", default)]
+    pub shared_set: Option<SharedSet>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -646,6 +648,11 @@ pub struct AsSet {}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Shared {
+    pub other: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SharedSet {
     pub other: String,
 }
 

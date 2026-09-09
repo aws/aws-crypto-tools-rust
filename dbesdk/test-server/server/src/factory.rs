@@ -29,7 +29,7 @@ use aws_db_esdk::dynamodb::types::{
     Lower as DbeLower, Insert as DbeInsert, GetSubstring as DbeGetSubstring,
     GetSegment as DbeGetSegment, GetSegments as DbeGetSegments,
     BeaconStyle as DbeBeaconStyle, PartOnly as DbePartOnly, AsSet as DbeAsSet,
-    Shared as DbeShared,
+    Shared as DbeShared, SharedSet as DbeSharedSet,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -323,6 +323,13 @@ fn build_beacon_style(style: &model::BeaconStyle) -> Result<DbeBeaconStyle, Serv
                 .other(&s.other)
                 .build()
                 .map_err(|e| ServerError::Generic(format!("invalid Shared: {e}")))?,
+        ))
+    } else if let Some(s) = &style.shared_set {
+        Ok(DbeBeaconStyle::SharedSet(
+            DbeSharedSet::builder()
+                .other(&s.other)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid SharedSet: {e}")))?,
         ))
     } else {
         Err(ServerError::Generic("BeaconStyle had no member set".into()))
