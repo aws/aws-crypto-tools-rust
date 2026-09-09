@@ -201,6 +201,14 @@ async fn dispatch(
                 .map(ok_body),
             Err(e) => Err(e),
         },
+        // Structured Encryption is gated Rust-unsupported (aws-db-esdk exposes it
+        // as pub(crate)); the `structured-encryption` feature marks it so, and no
+        // Test reaches these ops on a Rust server.
+        "CreateStructuredClient" | "EncryptStructure" | "DecryptStructure" => {
+            Err(ServerError::Generic(
+                "Structured Encryption is not supported by the Rust TestServer".into(),
+            ))
+        }
         other => Err(ServerError::Generic(format!("unknown operation '{other}'"))),
     };
 
