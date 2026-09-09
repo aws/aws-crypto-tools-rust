@@ -1,4 +1,4 @@
-.PHONY: clippy test duvet deny license-check license-check-all
+.PHONY: clippy test duvet deny
 
 clippy:
 	cargo clippy --tests
@@ -22,9 +22,3 @@ duvet:
 deny:
 	cargo deny check advisories || true
 	cargo deny check bans licenses sources
-
-license-check:
-	./ci/check-license-headers.sh
-
-license-check-all:
-	./ci/check-license-headers.sh --all

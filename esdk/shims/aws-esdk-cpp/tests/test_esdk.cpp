@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Offline tests exercising the C++ interfaces (EncryptionSDK.h).
 // Every test here uses only the raw AES keyring and one-shot encrypt/decrypt,
 // so the suite runs fully offline with no credentials and no flags.

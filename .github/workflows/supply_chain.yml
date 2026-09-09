@@ -1,6 +1,6 @@
-# Reusable workflow that runs supply-chain and license checks for a single
-# project (subdirectory) in the monorepo. Callers pass the project directory
-# name via the `project` input (e.g. "esdk").
+# Reusable workflow that runs cargo-deny supply-chain checks (advisories,
+# bans, licenses, sources) for a single project (subdirectory). Callers pass
+# the project directory name via the `project` input (e.g. "esdk").
 name: Supply Chain
 
 on:
@@ -40,25 +40,3 @@ jobs:
 
       - name: cargo deny check bans licenses sources
         run: cargo deny check bans licenses sources
-
-  # Fail when a source file changed by this PR is missing the SPDX license
-  # header. Scoped to changed files so it does not retroactively gate on
-  # pre-existing files.
-  license-header:
-    name: license-header (${{ inputs.project }})
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    defaults:
-      run:
-        working-directory: ${{ inputs.project }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          # Full history so the diff against the PR base branch resolves.
-          fetch-depth: 0
-
-      - name: Check SPDX license headers on changed files
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: ./ci/check-license-headers.sh --base "$BASE_SHA"

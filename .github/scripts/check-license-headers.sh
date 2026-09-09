@@ -2,13 +2,17 @@
 # Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Verifies that esdk source files carry the SPDX license header:
+# Verifies that source files across the whole repository carry the header:
 #     // SPDX-License-Identifier: Apache-2.0
+#
+# Applies to every project in the repo, and to any project added later, with
+# no per-project wiring. The vendored unsafe-unreviewed-mpl tree is excluded
+# (it is slated for removal); git submodules are not scanned.
 #
 # Modes:
 #     check-license-headers.sh                changed vs merge-base(HEAD, origin/main)
 #     check-license-headers.sh --base <ref>   changed vs merge-base(HEAD, <ref>)   (CI)
-#     check-license-headers.sh --all          every tracked source file under esdk/
+#     check-license-headers.sh --all          every tracked source file in the repo
 #     check-license-headers.sh <file>...      the listed files only
 #
 # Exits non-zero and lists the offenders when a checked file lacks the header.
@@ -18,13 +22,12 @@ set -euo pipefail
 SPDX="SPDX-License-Identifier: Apache-2.0"
 # Number of leading lines searched for the header.
 HEAD_LINES=15
-# File extensions this check applies to.
-EXTENSIONS=(rs)
+# Source-file extensions this check applies to.
+EXTENSIONS=(rs c cc cpp cxx h hpp hh hxx)
+# Path prefixes (repo-root-relative) excluded from the check.
+EXCLUDES=(unsafe-unreviewed-mpl/)
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-project_dir="$(dirname "$script_dir")"
-repo_root="$(git -C "$project_dir" rev-parse --show-toplevel)"
-project_rel="${project_dir#"$repo_root"/}"
+repo_root="$(git rev-parse --show-toplevel)"
 
 mode="changed"
 base_ref="origin/main"
@@ -47,14 +50,22 @@ is_source() {
     return 1
 }
 
+is_excluded() {
+    local prefix
+    for prefix in "${EXCLUDES[@]}"; do
+        [[ "$1" == "$prefix"* ]] && return 0
+    done
+    return 1
+}
+
 candidates=()
 if [[ ${#explicit[@]} -gt 0 ]]; then
     candidates=("${explicit[@]}")
 elif [[ "$mode" == "all" ]]; then
-    mapfile -t candidates < <(git -C "$repo_root" ls-files -- "$project_rel")
+    mapfile -t candidates < <(git -C "$repo_root" ls-files)
 else
     base="$(git -C "$repo_root" merge-base HEAD "$base_ref")"
-    mapfile -t candidates < <(git -C "$repo_root" diff --name-only --diff-filter=ACMR "$base" HEAD -- "$project_rel")
+    mapfile -t candidates < <(git -C "$repo_root" diff --name-only --diff-filter=ACMR "$base" HEAD)
 fi
 
 checked=0
@@ -62,6 +73,7 @@ missing=()
 if [[ ${#candidates[@]} -gt 0 ]]; then
     for f in "${candidates[@]}"; do
         is_source "$f" || continue
+        is_excluded "$f" && continue
         path="$f"
         [[ -f "$path" ]] || path="$repo_root/$f"
         [[ -f "$path" ]] || continue

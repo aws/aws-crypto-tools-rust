@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Bridge-internal tests: translation helpers, null-handle checks, and inputs
 //! the facade cannot express. Everything here runs offline. Facade-observable
 //! behavior lives in the C++ suites under tests/. The error wire encoding has

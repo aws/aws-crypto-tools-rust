@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //! # aws-esdk-cpp — a C++ shim over the AWS Encryption SDK for Rust
 
 //! This file defines the shim's interactions with the Rust ESDK.

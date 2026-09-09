@@ -1,3 +1,6 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // detail::to_ffi() converts the C++ enums to the Rust enums
 // with a plain static_cast (i.e. the same enum byte value),
 // so the enum byte values must match.
