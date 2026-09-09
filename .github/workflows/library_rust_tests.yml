@@ -105,13 +105,10 @@ jobs:
       # today); raise it toward 100 as coverage fills in.
       # TODO(mpl): mpl line-coverage is temporarily 80%
       # raise it to 100 as coverage fills in.
-      # On Windows, esdk's coverage run excludes `fips` and links the default
-      # backend; the FIPS backend's Windows build is covered by the prim
-      # FIPS-only step below.
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov ${{ (inputs.project == 'esdk' && runner.os == 'Windows') && '--features track,kms,legacy,ddb' || inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
 
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
