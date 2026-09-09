@@ -154,9 +154,7 @@ jobs:
     with:
       project: ${{ matrix.project }}
 
-  # Repo-wide SPDX license-header check. Runs on every PR against the source
-  # files it changed, so every project — including any added later — is covered
-  # automatically with no per-project wiring.
+  # Check every changed file for copyright and license headers
   pr-ci-license-header:
     runs-on: ubuntu-22.04
     permissions:

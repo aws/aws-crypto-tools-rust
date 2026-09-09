@@ -2,15 +2,14 @@
 # Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Verifies that every source file begins with the license header: the first
-# line includes the copyright notice and the second includes the SPDX license
-# identifier. Only the text is checked, not the comment prefix, so //, #, and
-# any other line-comment style satisfy it:
+# Verifies that every source file begins with the license header:
 #     <comment> Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 #     <comment> SPDX-License-Identifier: Apache-2.0
-#
-# The header must be the first two lines. Applies to every project in the repo
-# and to any project added later.
+# The first line includes the copyright notice;
+# the second includes the SPDX license identifier.
+# The header MUST be the first two lines.
+# Only the text is checked, not the comment prefix, so //, #, and any other line-comment style satisfy it.
+# Applies to every project in the repo and to any project added later.
 #
 # Modes:
 #     check-license-headers.sh                changed vs merge-base(HEAD, origin/main)
@@ -18,13 +17,12 @@
 #     check-license-headers.sh --all          every tracked source file in the repo
 #     check-license-headers.sh <file>...      the listed files only
 #
-# Exits non-zero and lists the offenders when a checked file is missing the
-# header text or has it anywhere but the first two lines.
+# If a file is missing the header, exits non-zero and lists the offending file(s).
 
 set -euo pipefail
 
-# Text the first two lines must contain. The comment prefix (//, #, ...) is not
-# checked, so the header works in any line-comment language.
+# Text the first two lines must contain.
+# The comment prefix (//, #, ...) is not checked.
 COPYRIGHT_TEXT="Copyright Amazon.com Inc. or its affiliates. All Rights Reserved."
 SPDX_TEXT="SPDX-License-Identifier: Apache-2.0"
 # Source-file extensions this check applies to.
