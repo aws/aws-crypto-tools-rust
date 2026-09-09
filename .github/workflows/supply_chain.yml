@@ -1,6 +1,7 @@
 # Reusable workflow that runs cargo-deny supply-chain checks (advisories,
-# bans, licenses, sources) for a single project (subdirectory). Callers pass
-# the project directory name via the `project` input (e.g. "esdk").
+# bans, licenses, sources) for a single project (subdirectory), using the
+# shared deny.toml at the repo root. Callers pass the project directory name
+# via the `project` input (e.g. "esdk").
 name: Supply Chain
 
 on:
@@ -36,7 +37,7 @@ jobs:
       # Run it on every PR for visibility, but do not block merges on it.
       - name: cargo deny check advisories (non-blocking)
         continue-on-error: true
-        run: cargo deny check advisories
+        run: cargo deny --config "$GITHUB_WORKSPACE/deny.toml" check advisories
 
       - name: cargo deny check bans licenses sources
-        run: cargo deny check bans licenses sources
+        run: cargo deny --config "$GITHUB_WORKSPACE/deny.toml" check bans licenses sources

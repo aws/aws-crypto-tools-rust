@@ -1,4 +1,4 @@
-.PHONY: clippy test
+.PHONY: clippy test deny
 
 # The `fips` variants pass `--no-default-features` because `fips` overrides the
 # backend rather than adding to it: with `default` still enabled, `aws-lc-rs`
@@ -12,3 +12,7 @@ clippy:
 test:
 	cargo test
 	cargo test --no-default-features --features fips
+
+deny:
+	cargo deny --config ../deny.toml check advisories || true
+	cargo deny --config ../deny.toml check bans licenses sources

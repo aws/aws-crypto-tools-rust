@@ -20,5 +20,5 @@ duvet:
 	duvet report
 
 deny:
-	cargo deny check advisories || true
-	cargo deny check bans licenses sources
+	cargo deny --config ../deny.toml check advisories || true
+	cargo deny --config ../deny.toml check bans licenses sources

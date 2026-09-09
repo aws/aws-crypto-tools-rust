@@ -1,0 +1,55 @@
+# Shared cargo-deny configuration for every project in this repo.
+#
+# CI runs it per project (.github/workflows/supply_chain.yml, invoked from
+# pull.yml) against each project's own dependency graph:
+#   advisories - known security vulnerabilities (RustSec advisory DB)
+#   bans       - banned and duplicate crates
+#   licenses   - only the allowlisted licenses below
+#   sources    - crates only from crates.io
+#
+# Run locally from any project directory:
+#   cargo deny --config <repo-root>/deny.toml check
+# (esdk and prim also expose `make deny`.)
+
+[advisories]
+# Security advisories are errors. Add a RustSec ID here, with a rationale, only
+# to grant a reviewed, temporary exception.
+ignore = []
+
+[licenses]
+# The union of licenses present across the projects' dependency graphs today,
+# restricted to permissive / OSI-approved licenses. Anything not listed fails.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "Zlib",
+    "OpenSSL",
+]
+
+# `timeout` is MPL-2.0 (file-level copyleft), kept out of the allowlist. This
+# scoped exception permits MPL-2.0 for that one transitive crate.
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+crate = "timeout"
+
+[bans]
+# Dependency graphs legitimately resolve several crates at multiple versions
+# (e.g. http 0.2 and 1.x). Report duplicates without failing CI.
+multiple-versions = "warn"
+# Path dependencies of publishable crates read as wildcards regardless of
+# allow-wildcard-paths, so warn rather than fail. No dependency uses a registry
+# wildcard (`*`) version.
+wildcards = "warn"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
