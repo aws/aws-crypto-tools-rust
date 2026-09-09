@@ -42,9 +42,8 @@ jobs:
         with:
           go-version: 'stable'
 
-      # aws-lc-sys / aws-lc-fips-sys assemble AWS-LC with NASM on the
-      # windows-msvc target, and NASM is not on the Windows runner PATH by
-      # default. The Unix runners already provide an assembler.
+      # aws-lc-sys / aws-lc-fips-sys build AWS-LC with NASM (Netwide Assembler) on Windows.
+      # NASM is not on the Windows runner PATH by default but Unix runners already provide an assembler.
       - name: Install NASM (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/setup-nasm@v1
@@ -115,8 +114,9 @@ jobs:
       # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
       # is used. Test-only — the coverage gate above already covers these lines
       # against the default backend, so this step exists to prove the same code
-      # passes when linked against AWS-LC-FIPS. Needs the Go step above, and the
-      # NASM step on Windows.
+      # passes when linked against AWS-LC-FIPS.
+      # Needs the Go step above.
+      # Windows also needs the NASM step above.
       - name: Test FIPS-only backend
         if: inputs.project == 'prim'
         env:
