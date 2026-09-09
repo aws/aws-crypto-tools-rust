@@ -1,12 +1,10 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Required encryption context with a raw AES keyring. Runs offline.
+//! Encrypts and decrypts a message with a required encryption context.
 //!
-//! A required-encryption-context CMM names encryption-context keys that are
-//! authenticated but NOT stored in the message. The decryptor must supply those
-//! keys (the "reproduced" encryption context): the message can't be decrypted
-//! without them, and they don't take up space on the wire.
+//! A required-encryption-context CMM names encryption-context keys that are authenticated but not stored in the message.
+//! The decryptor must supply those keys again (the reproduced encryption context), so they are bound to the message without taking up space on the wire.
 
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt, mpl};
 use aws_mpl_legacy::dafny::types::AesWrappingAlg;
@@ -16,8 +14,8 @@ use aws_smithy_types::Blob;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mpl = mpl();
 
-    // For demonstration only: a real application must source its wrapping key
-    // from a secure store and never hardcode it.
+    // For demonstration only: a real application must source its wrapping
+    // key from a secure store and never hardcode it.
     let keyring = mpl
         .create_raw_aes_keyring()
         .key_namespace("my-key-namespace")
@@ -27,8 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    // Wrap the keyring in a default CMM, then in a required-EC CMM that names
-    // "tenant" as a required key.
+    // Wrap the keyring in a default CMM, then in a required-encryption-context CMM
+    // that marks "tenant" as a required key.
     let default_cmm = mpl
         .create_default_cryptographic_materials_manager()
         .keyring(keyring.clone())
@@ -43,8 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let plaintext = b"Hello World";
 
-    // "tenant" is authenticated but not written to the message; "purpose" is
-    // written to the message as usual.
+    // "tenant" is authenticated but not written to the message; "purpose" is written as usual.
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("tenant".to_string(), "tenant-a".to_string());
     encryption_context.insert("purpose".to_string(), "required-ec-example".to_string());
@@ -69,8 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(
         decrypted.plaintext, plaintext,
-        "round-trip plaintext must match"
+        "Decryption failed: plaintext mismatch"
     );
-    println!("Success! Required-encryption-context encrypt/decrypt round trip completed.");
+    println!("Success! Encryption and decryption completed successfully.");
     Ok(())
 }
