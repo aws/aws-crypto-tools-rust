@@ -28,6 +28,8 @@ use aws_db_esdk::dynamodb::types::{
     GetPrefix as DbeGetPrefix, GetSuffix as DbeGetSuffix,
     Lower as DbeLower, Insert as DbeInsert, GetSubstring as DbeGetSubstring,
     GetSegment as DbeGetSegment, GetSegments as DbeGetSegments,
+    BeaconStyle as DbeBeaconStyle, PartOnly as DbePartOnly, AsSet as DbeAsSet,
+    Shared as DbeShared,
 };
 use aws_db_esdk::key_store::client::Client as KeyStoreClient;
 use aws_db_esdk::key_store::types::key_store_config::KeyStoreConfig;
@@ -234,6 +236,9 @@ fn build_search_config(search: &model::SearchConfig) -> Result<DbeSearchConfig, 
                 if let Some(n) = b.number_of_partitions {
                     sb = sb.number_of_partitions(n);
                 }
+                if let Some(style) = &b.style {
+                    sb = sb.style(build_beacon_style(style)?);
+                }
                 standard.push(
                     sb.build()
                         .map_err(|e| ServerError::Generic(format!("invalid StandardBeacon: {e}")))?,
@@ -297,6 +302,31 @@ fn build_virtual_fields(
         );
     }
     Ok(out)
+}
+
+fn build_beacon_style(style: &model::BeaconStyle) -> Result<DbeBeaconStyle, ServerError> {
+    if style.part_only.is_some() {
+        Ok(DbeBeaconStyle::PartOnly(
+            DbePartOnly::builder()
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid PartOnly: {e}")))?,
+        ))
+    } else if style.as_set.is_some() {
+        Ok(DbeBeaconStyle::AsSet(
+            DbeAsSet::builder()
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid AsSet: {e}")))?,
+        ))
+    } else if let Some(s) = &style.shared {
+        Ok(DbeBeaconStyle::Shared(
+            DbeShared::builder()
+                .other(&s.other)
+                .build()
+                .map_err(|e| ServerError::Generic(format!("invalid Shared: {e}")))?,
+        ))
+    } else {
+        Err(ServerError::Generic("BeaconStyle had no member set".into()))
+    }
 }
 
 fn build_virtual_transforms(

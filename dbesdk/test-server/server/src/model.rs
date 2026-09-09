@@ -623,6 +623,30 @@ pub struct StandardBeacon {
     pub loc: Option<String>,
     #[serde(rename = "numberOfPartitions", default)]
     pub number_of_partitions: Option<i32>,
+    #[serde(rename = "style", default)]
+    pub style: Option<BeaconStyle>,
+}
+
+/// A standard beacon's style (exactly one member set — union on the wire).
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeaconStyle {
+    #[serde(rename = "partOnly", default)]
+    pub part_only: Option<PartOnly>,
+    #[serde(rename = "shared", default)]
+    pub shared: Option<Shared>,
+    #[serde(rename = "asSet", default)]
+    pub as_set: Option<AsSet>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PartOnly {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AsSet {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Shared {
+    pub other: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
