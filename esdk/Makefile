@@ -1,4 +1,4 @@
-.PHONY: clippy test duvet deny
+.PHONY: clippy test duvet
 
 clippy:
 	cargo clippy --tests
@@ -18,7 +18,3 @@ duvet:
 	@test -e spec || ln -s ../spec spec
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
-
-deny:
-	cargo deny --config ../deny.toml check advisories || true
-	cargo deny --config ../deny.toml check bans licenses sources

@@ -141,8 +141,7 @@ jobs:
     with:
       project: esdk
 
-  # Run cargo-deny (shared root deny.toml) for every changed project. New
-  # projects are covered automatically via the detect-changes matrix.
+  # Run cargo-deny for every changed project
   pr-ci-supply-chain:
     needs: detect-changes
     if: needs.detect-changes.outputs.projects != '[]'
