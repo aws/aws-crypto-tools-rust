@@ -89,8 +89,8 @@ int main() {
                 out.write(reinterpret_cast<const char*>(produced.data()), produced.size());
             }
             // finish() flushes the last frame (and signature footer, for signing suites).
-            // The read loop also stops on a stream error; accept only end-of-file,
-            // so a partially read plaintext is never sealed into a valid message.
+            // The loop above exits on read errors too, not just EOF.
+            // Check for EOF first so a truncated read never becomes a valid message.
             if (!in.eof() || in.bad())
                 throw std::runtime_error("failed reading plaintext file");
             Aws::Esdk::Bytes trailing = enc.finish().trailing_output;
