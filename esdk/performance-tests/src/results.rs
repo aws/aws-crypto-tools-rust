@@ -84,6 +84,7 @@ pub fn percentile(sorted_values: &[f64], p: f64) -> f64 {
 pub fn save_results(
     results: &[BenchmarkResult],
     output_path: &str,
+    keyring: &str,
     cpu_count: usize,
     total_memory_gb: f64,
 ) -> Result<()> {
@@ -94,7 +95,7 @@ pub fn save_results(
     let results_data = BenchmarkResults {
         metadata: BenchmarkMetadata {
             language: "rust".to_string(),
-            keyring: "hierarchical".to_string(),
+            keyring: keyring.to_string(),
             timestamp: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             rust_version: env!("RUSTC_VERSION").to_string(),
             cpu_count,

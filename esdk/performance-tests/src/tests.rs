@@ -93,7 +93,7 @@ impl EsdkBenchmark {
             data.into_boxed_slice()
         };
 
-        // Warmup (also primes the hierarchical keyring's branch-key cache)
+        // Warmup (for the hierarchical keyring, also primes its branch-key cache)
         for i in 0..self.config.iterations.warmup {
             if let Err(e) = Self::encrypt_decrypt(&self.esdk_client, &self.keyring, &data).await {
                 return Err(anyhow::anyhow!("Warmup iteration {} failed: {}", i, e));
@@ -441,7 +441,10 @@ impl EsdkBenchmark {
     }
 
     pub async fn run_all_benchmarks(&mut self, is_quick_mode: bool) -> Result<()> {
-        info!("Starting ESDK hierarchical keyring benchmark suite");
+        info!(
+            "Starting ESDK benchmark suite ({} keyring)",
+            self.keyring_name
+        );
 
         let mut data_sizes = Vec::new();
         data_sizes.extend(&self.config.data_sizes.small);
