@@ -124,7 +124,9 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
+use aws_config::{AppName, Region, SdkConfig};
 use aws_mpl_legacy::dafny;
+use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore as dafny_key_store;
 use std::sync::LazyLock;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
@@ -146,6 +148,10 @@ mod ffi {
         set: bool,
         value: u32,
     }
+    struct OptString {
+        set: bool,
+        value: String,
+    }
     struct OptAlgId {
         set: bool,
         value: EsdkAlgorithmSuiteId,
@@ -153,6 +159,10 @@ mod ffi {
     struct OptCommitmentPolicy {
         set: bool,
         value: EsdkCommitmentPolicy,
+    }
+    struct OptCacheType {
+        set: bool,
+        value: CacheType,
     }
 
     enum EsdkAlgorithmSuiteId {
@@ -252,6 +262,80 @@ mod ffi {
         pub plaintext: Vec<u8>,
     }
 
+    struct RetryConfig {
+        /// false selects standard mode, which is also the AWS SDK default.
+        mode_adaptive: bool,
+        max_attempts: OptU32,
+    }
+
+    struct MplAwsClientConfig {
+        region: OptString,
+        retry: RetryConfig,
+    }
+
+    enum KmsConfigurationType {
+        Unset,
+        KmsKeyArn,
+        KmsMrKeyArn,
+        Discovery,
+        MrDiscovery,
+    }
+
+    struct KeyStoreConfig {
+        ddb_table_name: String,
+        kms_configuration_type: KmsConfigurationType,
+        kms_configuration_value: String,
+        logical_key_store_name: String,
+        id: OptString,
+        grant_tokens: Vec<String>,
+        ddb_client: *const MplDdbClient,
+        kms_client: *const MplKmsClient,
+    }
+
+    enum CacheKind {
+        No = 1,
+        Default = 2,
+        StormTracking = 3,
+        Shared = 4,
+    }
+
+    // cxx does not support passing options on each enum value across the FFI boundary.
+    // As a workaround, union options for each cache on the CacheType enum.
+    struct CacheType {
+        kind: CacheKind,
+        /// Read by `Default` and `StormTracking`.
+        entry_capacity: u32,
+        /// Storm-tracking parameters, read by `StormTracking`. `grace_period`,
+        /// `grace_interval`, and `inflight_ttl` are in `time_units` (default
+        /// seconds); `sleep_milli` is always in milliseconds.
+        entry_pruning_tail_size: u32,
+        grace_period: u32,
+        grace_interval: u32,
+        fan_out: u32,
+        inflight_ttl: u32,
+        sleep_milli: u32,
+        /// Read by `StormTracking`; `Unset` defers to the core default (seconds).
+        time_units: TimeUnits,
+        /// Read by `Shared`.
+        shared: *const CryptographicMaterialsCache,
+    }
+
+    /// Time unit for a storm-tracking cache's grace_period, grace_interval, and
+    /// inflight_ttl. `Unset` defers to the core default (seconds).
+    enum TimeUnits {
+        Unset,
+        Seconds,
+        Milliseconds,
+    }
+
+    struct HierarchicalKeyringInput {
+        branch_key_id: String,
+        key_store: *const KeyStore,
+        ttl_seconds: u32,
+        cache: OptCacheType,
+        partition_id: OptString,
+    }
+
     enum AesWrappingAlg {
         Unset,
         AlgAes128GcmIv12Tag16,
@@ -272,8 +356,23 @@ mod ffi {
     extern "Rust" {
         // No delete_* functions: C++ holds each resource as a rust::Box, whose
         // destructor runs cxx's generated drop glue and drops the Rust Box.
+        type MplDdbClient;
+        fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
+
+        type KeyStore;
+        fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
+
+        type CryptographicMaterialsCache;
+        fn create_cryptographic_materials_cache(
+            cache: &CacheType,
+        ) -> Result<Box<CryptographicMaterialsCache>>;
+
         type Keyring;
+        fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
+
+        type MplKmsClient;
+        fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
@@ -282,8 +381,23 @@ mod ffi {
 
 // Resources
 
+struct MplKmsClient {
+    client: aws_sdk_kms::Client,
+}
+struct MplDdbClient {
+    client: aws_sdk_dynamodb::Client,
+}
+
+struct KeyStore {
+    client: dafny_key_store::client::Client,
+}
+
 struct Keyring {
     client: aws_esdk::Keyring,
+}
+
+struct CryptographicMaterialsCache {
+    cache: dafny::types::cryptographic_materials_cache::CryptographicMaterialsCacheRef,
 }
 
 // ASCII Unit Seperator, used below
@@ -490,6 +604,264 @@ fn make_frame_length(frame_length: u32) -> Result<aws_esdk::FrameLength, String>
     })
 }
 
+// Create an ESDK Rust Key Store KmsConfiguration value from the given FFI KmsConfiguration value
+fn make_kms_config(
+    kind: ffi::KmsConfigurationType,
+    value: &str,
+) -> Result<dafny_key_store::types::KmsConfiguration, String> {
+    use dafny_key_store::types::KmsConfiguration;
+    match kind {
+        ffi::KmsConfigurationType::Unset => Err(shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            "create_keystore",
+            "kms_configuration_type is unset",
+        )),
+        //= spec/shim/esdk-shim.md#kms-configuration
+        //# - The shim MUST translate a KMS key ARN configuration.
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.to_string())),
+        //= spec/shim/esdk-shim.md#kms-configuration
+        //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
+        ffi::KmsConfigurationType::KmsMrKeyArn => {
+            Ok(KmsConfiguration::KmsMrKeyArn(value.to_string()))
+        }
+        //= spec/shim/esdk-shim.md#kms-configuration
+        //# - The shim MUST translate a discovery configuration.
+        ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery(
+            dafny_key_store::types::Discovery::builder()
+                .build()
+                .map_err(|e| {
+                    shim_err(
+                        ffi::ShimErrorKind::ValidationError,
+                        "create_keystore",
+                        format!("failed to build Discovery: {e:?}"),
+                    )
+                })?,
+        )),
+        //= spec/shim/esdk-shim.md#kms-configuration
+        //# - The shim MUST translate a multi-Region-key discovery configuration.
+        ffi::KmsConfigurationType::MrDiscovery => Ok(KmsConfiguration::MrDiscovery(
+            dafny_key_store::types::MrDiscovery::builder()
+                .build()
+                .map_err(|e| {
+                    shim_err(
+                        ffi::ShimErrorKind::ValidationError,
+                        "create_keystore",
+                        format!("failed to build MrDiscovery: {e:?}"),
+                    )
+                })?,
+        )),
+        //= spec/shim/esdk-shim.md#kms-configuration
+        //# - The shim MUST return an error when the target KMS configuration type is not a
+        //# supported value.
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            "create_keystore",
+            "Invalid KmsConfigurationType",
+        )),
+    }
+}
+
+// Create an ESDK Rust CacheType from the given FFI CacheType
+fn make_cache_type(cache: &ffi::CacheType) -> Result<dafny::types::CacheType, String> {
+    let op = "create_cryptographic_materials_cache";
+    let capacity = |field: &str, v: u32| -> Result<i32, String> {
+        i32::try_from(v).map_err(|_| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                op,
+                format!("{field} {v} exceeds the core ESDK's i32 limit"),
+            )
+        })
+    };
+    match cache.kind {
+        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+        //# - The shim MUST support creating a cache that performs no caching.
+        ffi::CacheKind::No => Ok(dafny::types::CacheType::No(
+            dafny::types::NoCache::builder().build().map_err(|e| {
+                shim_err(
+                    ffi::ShimErrorKind::ValidationError,
+                    op,
+                    format!("failed to build NoCache: {e:?}"),
+                )
+            })?,
+        )),
+        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+        //# - The shim MUST support creating a default cache.
+        ffi::CacheKind::Default => {
+            let b = dafny::types::DefaultCache::builder()
+                .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?);
+            Ok(dafny::types::CacheType::Default(b.build().map_err(
+                |e| {
+                    shim_err(
+                        ffi::ShimErrorKind::ValidationError,
+                        op,
+                        format!("failed to build DefaultCache: {e:?}"),
+                    )
+                },
+            )?))
+        }
+        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+        //# - The shim MUST support creating a storm tracking cache.
+        ffi::CacheKind::StormTracking => {
+            let mut b = dafny::types::StormTrackingCache::builder()
+                .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
+                .entry_pruning_tail_size(capacity(
+                    "entry_pruning_tail_size",
+                    cache.entry_pruning_tail_size,
+                )?)
+                .grace_period(capacity("grace_period", cache.grace_period)?)
+                .grace_interval(capacity("grace_interval", cache.grace_interval)?)
+                .fan_out(capacity("fan_out", cache.fan_out)?)
+                .in_flight_ttl(capacity("inflight_ttl", cache.inflight_ttl)?)
+                .sleep_milli(capacity("sleep_milli", cache.sleep_milli)?);
+            match cache.time_units {
+                ffi::TimeUnits::Seconds => b = b.time_units(dafny::types::TimeUnits::Seconds),
+                ffi::TimeUnits::Milliseconds => {
+                    b = b.time_units(dafny::types::TimeUnits::Milliseconds)
+                }
+                _ => {}
+            }
+            Ok(dafny::types::CacheType::StormTracking(b.build().map_err(
+                |e| {
+                    shim_err(
+                        ffi::ShimErrorKind::ValidationError,
+                        op,
+                        format!("failed to build StormTrackingCache: {e:?}"),
+                    )
+                },
+            )?))
+        }
+        ffi::CacheKind::Shared => {
+            let shared = require_handle(cache.shared, "shared cache", op)?;
+            Ok(dafny::types::CacheType::Shared(shared.cache.clone()))
+        }
+        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+        //# - The shim MUST return an error when the target cache kind is not a supported
+        //# value.
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            op,
+            "unrecognized or unset cache kind",
+        )),
+    }
+}
+
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//# - The shim MUST provide an operation that creates a cryptographic materials
+//# cache of a target-selected kind, backed by the core ESDK.
+fn create_cryptographic_materials_cache(
+    cache: &ffi::CacheType,
+) -> Result<Box<CryptographicMaterialsCache>, String> {
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //# - Creating a cryptographic materials cache MUST provide the target-supplied
+    //# cache type, with its values, to the core ESDK.
+    let cache_type = make_cache_type(cache)?;
+    let op = "create_cryptographic_materials_cache";
+
+    let mpl_config = dafny::types::MaterialProvidersConfig::builder()
+        .build()
+        .map_err(|e| {
+            shim_err(
+                ffi::ShimErrorKind::Esdk,
+                op,
+                format!("failed to build MaterialProvidersConfig: {e:?}"),
+            )
+        })?;
+    let mpl = dafny::Client::from_conf(mpl_config)
+        .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, op, e))?;
+    let created = TOKIO_RUNTIME
+        .block_on(
+            mpl.create_cryptographic_materials_cache()
+                .cache(cache_type)
+                .send(),
+        )
+        .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, op, e))?;
+
+    Ok(Box::new(CryptographicMaterialsCache { cache: created }))
+}
+
+/// C++ to Rust for AWS SDK call retry config
+fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
+    if !config.mode_adaptive && !config.max_attempts.set {
+        return None;
+    }
+    let mut out_config = if config.mode_adaptive {
+        aws_config::retry::RetryConfig::adaptive()
+    } else {
+        aws_config::retry::RetryConfig::standard()
+    };
+    if config.max_attempts.set {
+        out_config = out_config.with_max_attempts(config.max_attempts.value);
+    }
+    Some(out_config)
+}
+
+// AWS SDK client configuration
+
+fn shim_user_agent() -> String {
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //# - The shim MUST set a user-agent on each service client of the form
+    //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
+    //# `<target-language>` is the target language, `<core-language>` is the core
+    //# ESDK's implementation language, and `<version>` is the shim's published version.
+    format!(
+        "AwsEncryptionSdk-Shim-C++-Rust-{}",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
+    if current_app_name.is_empty() {
+        shim_ua.to_string()
+    } else {
+        //= spec/shim/esdk-shim.md#service-client-configuration
+        //# - The shim MUST preserve any user-agent already present in the loaded
+        //# configuration, appending its own rather than replacing it.
+        format!("{} {}", current_app_name, shim_ua)
+    }
+}
+
+//= spec/shim/esdk-shim.md#service-client-configuration
+//= type=implication
+//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
+//# - The shim SHOULD allow one client configuration to be applied to multiple
+//# service clients.
+fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
+    let shared_config = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
+        aws_config::BehaviorVersion::latest(),
+    ));
+
+    let user_agent_string = shim_user_agent();
+    let current_app_name = shared_config
+        .app_name()
+        .map(|app_name| app_name.to_string())
+        .unwrap_or_default();
+    let new_app_name = merge_user_agent(&current_app_name, &user_agent_string);
+    let app_name = AppName::new(new_app_name).map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            "client configuration",
+            format!("invalid app name: {e}"),
+        )
+    })?;
+    let mut builder = shared_config.to_builder().app_name(app_name);
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //# - If the target does not supply a retry configuration, the shim MUST defer to
+    //# the core ESDK's default retry configuration and MUST NOT substitute its own.
+    if let Some(retry_config) = make_retry_config(&input.retry) {
+        //= spec/shim/esdk-shim.md#service-client-configuration
+        //# - If the target supplies a retry configuration, the shim MUST apply it to each
+        //# service client.
+        builder = builder.retry_config(retry_config);
+    }
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //# - If the target supplies a region, the shim MUST apply it to each service client.
+    if input.region.set {
+        builder = builder.region(Region::new(input.region.value.clone()));
+    }
+    Ok(builder.build())
+}
+
 // ESDK/MPL Client Operations
 
 fn apply_encrypt_options(
@@ -620,6 +992,82 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     })
 }
 
+//= spec/shim/esdk-shim.md#create-kms-client
+//# - The shim MUST provide an operation that creates a KMS service client backed by
+//# the core ESDK.
+fn create_kms_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplKmsClient>, String> {
+    //= spec/shim/esdk-shim.md#create-kms-client
+    //# - Creating a KMS client MUST apply the target-supplied client configuration, as
+    //# defined in [Service client configuration](#service-client-configuration).
+    let sdk_config = create_sdk_config(input)?;
+    let client = aws_sdk_kms::Client::new(&sdk_config);
+    Ok(Box::new(MplKmsClient { client }))
+}
+
+//= spec/shim/esdk-shim.md#create-dynamodb-client
+//# - The shim MUST provide an operation that creates a DynamoDB service client
+//# backed by the core ESDK.
+fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient>, String> {
+    //= spec/shim/esdk-shim.md#create-dynamodb-client
+    //# - Creating a DynamoDB client MUST apply the target-supplied client configuration,
+    //# as defined in [Service client configuration](#service-client-configuration).
+    let sdk_config = create_sdk_config(input)?;
+    let client = aws_sdk_dynamodb::Client::new(&sdk_config);
+    Ok(Box::new(MplDdbClient { client }))
+}
+
+//= spec/shim/esdk-shim.md#create-key-store
+//# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
+fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
+    //= spec/shim/esdk-shim.md#create-key-store
+    //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+    //# each checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+    //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+    //# left for the core ESDK to default.
+    let mut builder = dafny_key_store::types::key_store_config::KeyStoreConfig::builder();
+    // A null handle means "not supplied": omit it so the core ESDK builds its own
+    // default client. SAFETY: a non-null handle is a valid client borrowed for this call.
+    if let Some(kms_client) = unsafe { input.kms_client.as_ref() } {
+        builder = builder.kms_client(kms_client.client.clone());
+    }
+    if let Some(ddb_client) = unsafe { input.ddb_client.as_ref() } {
+        builder = builder.ddb_client(ddb_client.client.clone());
+    }
+    //= spec/shim/esdk-shim.md#create-key-store
+    //# - Creating a key store MUST provide the target-supplied table name and logical key
+    //# store name to the core ESDK.
+    builder = builder.ddb_table_name(input.ddb_table_name.clone());
+    builder = builder.logical_key_store_name(input.logical_key_store_name.clone());
+    //= spec/shim/esdk-shim.md#create-key-store
+    //# - Creating a key store MUST provide the target-supplied KMS configuration to the
+    //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
+    builder = builder.kms_configuration(make_kms_config(
+        input.kms_configuration_type,
+        &input.kms_configuration_value,
+    )?);
+    //= spec/shim/esdk-shim.md#create-key-store
+    //# - Creating a key store MUST provide the target-supplied key store id and grant
+    //# tokens to the core ESDK when present; an unset value is omitted.
+    if input.id.set {
+        builder = builder.id(input.id.value.clone());
+    }
+    if !input.grant_tokens.is_empty() {
+        builder = builder.grant_tokens(input.grant_tokens.clone());
+    }
+    let config = builder.build().map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            "create_keystore",
+            format!("failed to build KeyStoreConfig: {e:?}"),
+        )
+    })?;
+
+    let store = dafny_key_store::client::Client::from_conf(config)
+        .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, "create_keystore", e))?;
+    Ok(Box::new(KeyStore { client: store }))
+}
+
 //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
 //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
 //# wrapping algorithm of the same meaning.
@@ -688,6 +1136,70 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
                 .send(),
         )
         .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, "create_raw_aes_keyring", e))?;
+
+    Ok(Box::new(Keyring {
+        client: keyring.into(),
+    }))
+}
+
+//= spec/shim/esdk-shim.md#create-hierarchical-keyring
+//# - The shim MUST provide an operation that creates a hierarchical keyring backed
+//# by the core ESDK.
+fn create_hierarchical_keyring(
+    input: &ffi::HierarchicalKeyringInput,
+) -> Result<Box<Keyring>, String> {
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //# - Creating a hierarchical keyring MUST require a key store handle, checked as
+    //# defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
+    //# and MUST provide it to the core ESDK.
+    let key_store = require_handle(input.key_store, "key_store", "create_hierarchical_keyring")?;
+
+    let mpl_config = dafny::types::MaterialProvidersConfig::builder()
+        .build()
+        .map_err(|e| {
+            shim_err(
+                ffi::ShimErrorKind::Esdk,
+                "create_keyring",
+                format!("failed to build MaterialProvidersConfig: {e:?}"),
+            )
+        })?;
+    let mpl = dafny::Client::from_conf(mpl_config)
+        .map_err(|e| shim_err(ffi::ShimErrorKind::LegacyError, "create_keyring", e))?;
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
+    //# and time-to-live to the core ESDK.
+    let mut builder = mpl
+        .create_aws_kms_hierarchical_keyring()
+        .branch_key_id(input.branch_key_id.clone())
+        .ttl_seconds(input.ttl_seconds)
+        .key_store(key_store.client.clone());
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= reason=The builder receives a cache only when the target supplied one; otherwise it keeps the core ESDK's default cache.
+    //# - When no cache is supplied, creating a hierarchical keyring MUST defer to the
+    //# core ESDK's default cache.
+    //
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= reason=A Shared CacheType carries an existing cache handle, which make_cache_type converts to the core's Shared cache referencing that exact instance.
+    //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
+    //# exact cache, so several keyrings given the same cache share it.
+    if input.cache.set {
+        builder = builder.cache(make_cache_type(&input.cache.value)?);
+    }
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
+    //# the core ESDK when present; an unset value is omitted.
+    if input.partition_id.set {
+        builder = builder.partition_id(input.partition_id.value.clone());
+    }
+
+    let keyring = TOKIO_RUNTIME.block_on(builder.send()).map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::LegacyError,
+            "create_hierarchical_keyring",
+            e,
+        )
+    })?;
 
     Ok(Box::new(Keyring {
         client: keyring.into(),

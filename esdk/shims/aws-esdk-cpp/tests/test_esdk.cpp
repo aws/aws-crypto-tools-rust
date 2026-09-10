@@ -1,8 +1,7 @@
-// Offline tests exercising the C++ interfaces (EncryptionSDK.h).
-// Every test here uses only the raw AES keyring and one-shot encrypt/decrypt,
-// so the suite runs fully offline with no credentials and no flags.
+// Integration tests exercising the C++ interfaces (EncryptionSDK.h).
 
 #include <iostream>
+#include <map>
 #include <string>
 #include <typeinfo>
 #include <vector>
@@ -48,7 +47,93 @@
 
 namespace {
 
+using esdk_test::make_hierarchical_keyring;
 using esdk_test::to_bytes;
+using TestConfig = esdk_test::TestConfig;
+
+void test_round_trip(const TestConfig& cfg) {
+    auto keyring = make_hierarchical_keyring(cfg);
+    Aws::Esdk::EncryptionSDK esdk;
+    auto plaintext = to_bytes("Hello World");
+    auto ciphertext = esdk.encrypt(plaintext, keyring).ciphertext;
+    ESDK_CHECK(ciphertext != plaintext);
+
+    auto decrypted = esdk.decrypt(ciphertext, keyring);
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //= reason=Round trip would only pass consistently if plaintext was provided unmodified.
+    //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
+    //
+    //= spec/shim/esdk-shim.md#encrypt-outputs
+    //= type=test
+    //= reason=Round trip would only pass consistently if ciphertext was returned unmodified.
+    //# - MUST return the core ESDK's ciphertext unmodified.
+    //
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //= type=test
+    //= reason=Round trip would only pass consistently if ciphertext was provided unmodified.
+    //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
+    //
+    //= spec/shim/esdk-shim.md#decrypt-outputs
+    //= type=test
+    //= reason=Round trip would only pass consistently if plaintext was returned unmodified.
+    //# - MUST return the core ESDK's plaintext unmodified.
+    ESDK_CHECK(decrypted.plaintext == plaintext);
+}
+
+void test_round_trip_with_encryption_context(const TestConfig& cfg) {
+    auto keyring = make_hierarchical_keyring(cfg);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto plaintext = to_bytes("context matters");
+    std::map<std::string, std::string> ec = {{"purpose", "test"}, {"origin", "cxx"}};
+    auto encrypted = sdk.encrypt(plaintext, keyring,
+                                 Aws::Esdk::EncryptOptions()
+                                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+                                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
+                                     .with_encryption_context(ec));
+    ESDK_CHECK(encrypted.algorithm_suite_id ==
+          Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    for (const auto& kv : ec) {
+        ESDK_CHECK(encrypted.encryption_context.count(kv.first) == 1);
+        ESDK_CHECK(encrypted.encryption_context[kv.first] == kv.second);
+    }
+    auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring,
+                                 Aws::Esdk::DecryptOptions().with_encryption_context(ec));
+    ESDK_CHECK(decrypted.plaintext == plaintext);
+
+    //= spec/shim/esdk-shim.md#decrypt-outputs
+    //= type=test
+    //# - MUST return the result encryption context, converted as defined in
+    //# [Encryption context](#encryption-context).
+    for (const auto& kv : ec) {
+        ESDK_CHECK(decrypted.encryption_context.count(kv.first) == 1);
+        ESDK_CHECK(decrypted.encryption_context[kv.first] == kv.second);
+    }
+
+    //= spec/shim/esdk-shim.md#decrypt-outputs
+    //= type=test
+    //# - MUST return the used algorithm suite, converted as defined in
+    //# [Algorithm suite identifier](#algorithm-suite-identifier).
+    ESDK_CHECK(decrypted.algorithm_suite_id ==
+          Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+}
+
+void test_decrypt_garbage_throws(const TestConfig& cfg) {
+    auto keyring = make_hierarchical_keyring(cfg);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto garbage = to_bytes("this is not a valid ESDK ciphertext");
+    // Assert decrypting garbage raises SerializationException
+    CHECK_THROWS_TYPE(Aws::Esdk::SerializationException, sdk.decrypt(garbage, keyring));
+}
+
+void test_tampered_ciphertext_throws(const TestConfig& cfg) {
+    auto keyring = make_hierarchical_keyring(cfg);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto ciphertext = sdk.encrypt(to_bytes("tamper me"), keyring).ciphertext.to_vector();
+    ESDK_CHECK(!ciphertext.empty());
+    ciphertext[ciphertext.size() / 2] ^= 0xFF;  // flip a byte mid-message
+    CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring));
+}
 
 void test_raw_aes_round_trip() {
     struct Case {
@@ -101,6 +186,48 @@ void test_raw_aes_wrong_keyring_fails() {
     CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring_b));
 }
 
+void test_cache_kinds() {
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST provide an operation that creates a cryptographic materials
+    //# cache of a target-selected kind, backed by the core ESDK.
+    //
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST support creating a cache that performs no caching.
+    auto no_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::No());
+
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST support creating a storm tracking cache.
+    auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
+        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
+        /*grace_interval=*/1, /*fan_out=*/20, /*inflight_ttl=*/10, /*sleep_milli=*/20));
+
+    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+    //= type=test
+    //# - The shim MUST support creating a default cache.
+    auto default_cache =
+        Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::Default(100));
+    // entry_capacity above ESDK Rust's i32 limit is rejected.
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::CryptographicMaterialsCache(
+                          Aws::Esdk::CacheType::Default(0x80000000u)));
+}
+
+// This test is offline -- short table name rejection happens before any network calls
+void test_keystore_rejects_short_table_name() {
+    Aws::Esdk::KmsClient kms;
+    Aws::Esdk::DdbClient ddb;
+    // LegacyError kind: exactly the base exception type.
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      Aws::Esdk::KeyStore("ab", "ab",
+                                          "arn:aws:kms:us-west-2:000000000000:key/test",
+                                          Aws::Esdk::KeyStoreOptions()
+                                              .with_kms_client(kms)
+                                              .with_ddb_client(ddb)));
+}
+
 // Assert a particular error scenario forwards the error raised by ESDK Rust
 void test_error_kinds() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -124,6 +251,39 @@ void test_error_kinds() {
                         .ciphertext.to_vector();
     tampered.back() ^= 0xFF;
     CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(tampered, keyring));
+}
+
+void test_client_configuration() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+
+    // ForbidEncryptAllowDecrypt must forward ESDK Rust's behavior of rejecting committing policy in config
+    Aws::Esdk::EncryptionSDK forbid_sdk(Aws::Esdk::EncryptionSDKConfig().with_commitment_policy(
+        Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
+    CHECK_THROWS_ESDK(forbid_sdk.encrypt(
+        to_bytes("client policy applies"), keyring,
+        Aws::Esdk::EncryptOptions().with_algorithm_suite(
+            Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)));
+
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= type=test
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
+    CHECK_THROWS_TYPE(
+        Aws::Esdk::ValidationException,
+        forbid_sdk.encrypt(to_bytes("set in two places"), keyring,
+                           Aws::Esdk::EncryptOptions().with_commitment_policy(
+                               Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)));
+
+    //= spec/shim/esdk-shim.md#client-configuration
+    //= type=test
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
+    Aws::Esdk::EncryptionSDK default_sdk;
+    auto rt = default_sdk.encrypt(to_bytes("defaults"), keyring);
+    auto pt = default_sdk.decrypt(rt.ciphertext, keyring);
+    ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
 }
 
 // String-view and Bytes ergonomics for non-std::vector input/output types
@@ -174,16 +334,176 @@ void test_bytes_and_string_ergonomics() {
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
 }
 
+void test_full_resource_chain(const TestConfig& cfg) {
+    auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
+    if (!cfg.region.empty()) {
+        client_config.with_region(cfg.region);
+    }
+
+    //= spec/shim/esdk-shim.md#create-kms-client
+    //= type=test
+    //# - The shim MUST provide an operation that creates a KMS service client backed by
+    //# the core ESDK.
+    Aws::Esdk::KmsClient kms(
+        //= spec/shim/esdk-shim.md#create-kms-client
+        //= type=test
+        //# - Creating a KMS client MUST apply the target-supplied client configuration, as
+        //# defined in [Service client configuration](#service-client-configuration).
+        client_config
+    );
+
+    //= spec/shim/esdk-shim.md#create-dynamodb-client
+    //= type=test
+    //# - The shim MUST provide an operation that creates a DynamoDB service client
+    //# backed by the core ESDK.
+    Aws::Esdk::DdbClient ddb(
+        //= spec/shim/esdk-shim.md#create-dynamodb-client
+        //= type=test
+        //# - Creating a DynamoDB client MUST apply the target-supplied client configuration,
+        //# as defined in [Service client configuration](#service-client-configuration).
+        client_config
+    );
+
+    //= spec/shim/esdk-shim.md#create-key-store
+    //= type=test
+    //# - The shim MUST provide an operation that creates a key store backed by the core
+    //# ESDK.
+    auto keystore = Aws::Esdk::KeyStore(
+        //= spec/shim/esdk-shim.md#create-key-store
+        //= type=test
+        //# - Creating a key store MUST provide the target-supplied table name and logical key
+        //# store name to the core ESDK.
+        cfg.ddb_table,
+        cfg.logical_keystore,
+        //= spec/shim/esdk-shim.md#create-key-store
+        //= type=test
+        //# - Creating a key store MUST provide the target-supplied KMS configuration to the
+        //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
+        cfg.kms_key_arn,
+        //= spec/shim/esdk-shim.md#create-key-store
+        //= type=test
+        //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+        //# each checked as defined in
+        //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+        //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+        //# left for the core ESDK to default.
+        Aws::Esdk::KeyStoreOptions()
+            .with_kms_client(kms)
+            .with_ddb_client(ddb)
+            //= spec/shim/esdk-shim.md#create-key-store
+            //= type=test
+            //# - Creating a key store MUST provide the target-supplied key store id and grant
+            //# tokens to the core ESDK when present; an unset value is omitted.
+            .with_id("shim-integration-test")
+            .with_grant_tokens({"grant-token-example"}));
+
+    Aws::Esdk::CryptographicMaterialsCache cache(Aws::Esdk::CacheType::StormTracking(
+        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
+        /*grace_interval=*/1, /*fan_out=*/20, /*inflight_ttl=*/10, /*sleep_milli=*/20));
+
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //# - The shim MUST provide an operation that creates a hierarchical keyring backed
+    //# by the core ESDK.
+    auto keyring = Aws::Esdk::HierarchicalKeyring(
+        keystore,
+        //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+        //= type=test
+        //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
+        //# and time-to-live to the core ESDK.
+        cfg.branch_key_id,
+        /*ttl_seconds=*/600,
+        Aws::Esdk::HierarchicalKeyringOptions()
+            //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+            //= type=test
+            //# - Creating a hierarchical keyring MAY be supplied with a
+            //# [cryptographic materials cache](#create-cryptographic-materials-cache),
+            //# checked as defined in
+            //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes).
+            .with_cache(Aws::Esdk::CacheType::Shared(cache))
+            //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+            //= type=test
+            //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
+            //# the core ESDK when present; an unset value is omitted.
+            .with_partition_id("shim-partition"));
+
+    Aws::Esdk::EncryptionSDK sdk;
+    auto plaintext = to_bytes("Hello from the C++ integration test");
+    std::map<std::string, std::string> ec = {{"purpose", "integration-test"}};
+
+    auto enc = sdk.encrypt(
+        plaintext, keyring,
+        Aws::Esdk::EncryptOptions()
+            //= spec/shim/esdk-shim.md#encrypt-inputs
+            //= type=test
+            //# - MUST provide the target-supplied algorithm suite to the core ESDK,
+            //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
+            .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            //= spec/shim/esdk-shim.md#encrypt-inputs
+            //= type=test
+            //# - MUST provide the target-supplied encryption context to the core ESDK,
+            //# converted as defined in [Encryption context](#encryption-context).
+            .with_encryption_context(ec));
+    ESDK_CHECK(enc.ciphertext != plaintext);
+
+    //= spec/shim/esdk-shim.md#encrypt-outputs
+    //= type=test
+    //# - MUST return the used algorithm suite, converted as defined in
+    //# [Algorithm suite identifier](#algorithm-suite-identifier).
+    ESDK_CHECK(enc.algorithm_suite_id ==
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+
+    //= spec/shim/esdk-shim.md#encrypt-outputs
+    //= type=test
+    //# - MUST return the result encryption context, converted as defined in
+    //# [Encryption context](#encryption-context).
+    ESDK_CHECK(enc.encryption_context.count("purpose") == 1);
+    ESDK_CHECK(enc.encryption_context["purpose"] == "integration-test");
+
+    auto dec = sdk.decrypt(enc.ciphertext, keyring,
+                           Aws::Esdk::DecryptOptions()
+                               //= spec/shim/esdk-shim.md#decrypt-inputs
+                               //= type=test
+                               //# - MUST provide the target-supplied encryption context to the core ESDK,
+                               //# converted as defined in [Encryption context](#encryption-context).
+                               .with_encryption_context(ec));
+    ESDK_CHECK(dec.plaintext == plaintext);
+    ESDK_CHECK(dec.algorithm_suite_id ==
+               Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    ESDK_CHECK(dec.encryption_context.count("purpose") == 1);
+    ESDK_CHECK(dec.encryption_context["purpose"] == "integration-test");
+}
+
 }  // namespace
 
-int main() {
-    // Every test is offline.
+int main(int argc, char** argv) {
+    // Always run offline tests
     try {
         test_raw_aes_round_trip();
         test_raw_aes_wrong_keyring_fails();
         test_raw_aes_mismatched_key_length_throws();
+        test_cache_kinds();
+        test_keystore_rejects_short_table_name();
         test_error_kinds();
+        test_client_configuration();
         test_bytes_and_string_ergonomics();
+    } catch (const std::exception& e) {
+        std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
+        return 2;
+    }
+
+    // If enabled, also run tests that require creds
+    auto cfg = esdk_test::integration_config_or_gate(argc, argv, "test_esdk");
+    if (!cfg) {
+        return esdk_test::report("test_esdk");
+    }
+
+    try {
+        test_round_trip(*cfg);
+        test_round_trip_with_encryption_context(*cfg);
+        test_decrypt_garbage_throws(*cfg);
+        test_tampered_ciphertext_throws(*cfg);
+        test_full_resource_chain(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
