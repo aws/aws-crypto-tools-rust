@@ -2,27 +2,24 @@
 # Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# One-command git -> Brazil release for the aws-esdk crate.
+# git -> Brazil release for the aws-esdk crate, in two review-gated steps:
 #
-# A release copies the crate from git into its Brazil package and publishes it;
-# Brazil's major-version (.x) version-set line handles consumption, so there is
-# no per-release version and no git tag. Running this with no arguments performs
-# the whole release: it checks its own dependencies (offering to install any
-# that are missing), enforces the gates, verifies the build, bundles the docs,
-# publishes to Brazil via PackageBuilder, then runs an encrypt/decrypt smoke
-# test. It is
-# otherwise non-interactive, and a failed gate stops the release before
-# anything ships.
+#   1. release.sh            Check deps, run the gates, verify the build, bundle
+#                            the docs, run the smoke test, then sync this crate
+#                            onto a NEW BRANCH of the Brazil package and open a
+#                            code review. Never a direct push to mainline.
+#   2. release.sh --publish  After the code review is approved and merged to the
+#                            package's mainline, PackageBuilder builds it and
+#                            publishes to the version set.
 #
-# Phases: deps -> gate -> verify -> docs -> brazil -> smoke-test.
+# The review between the two steps is the gate: a code review cannot auto-merge,
+# so publishing is deliberately a second command after a human approves.
 #
-# --dry-run runs the read-only phases and prints the Brazil commands instead of
-# running them, for validating from a work-in-progress checkout.
+# --dry-run runs the read-only phases and prints the mutating commands (the CR
+# and the PackageBuilder build) instead of running them.
 #
 # Brazil coordinates come from the environment (one-time setup, see RELEASE.md);
-# esdk/release/brazil.env is sourced when present. Until they are set, a run
-# verifies the build, bundles the docs, and runs the smoke test but does not
-# publish, and says so.
+# esdk/release/brazil.env is sourced when present.
 
 set -euo pipefail
 
@@ -36,19 +33,18 @@ DOCS_OUT="${STAGE}/docs"
 # shellcheck source=/dev/null
 [ -f "${SCRIPT_DIR}/brazil.env" ] && . "${SCRIPT_DIR}/brazil.env"
 
-# Brazil coordinates. Setting the package + version set makes this script
-# publish via PackageBuilder with no further manual steps. See RELEASE.md.
 BRAZIL_PACKAGE="${AWS_ESDK_BRAZIL_PACKAGE:-AwsCryptoToolsRust}"
 BRAZIL_VERSION_SET="${AWS_ESDK_BRAZIL_VERSION_SET:-}"
 BRAZIL_BRANCH="${AWS_ESDK_BRAZIL_BRANCH:-mainline}"
-# Optional: a command that syncs this repo's crate into the Brazil package's
-# source. Leave unset when the package is GitHub-backed (source already mirrored).
+# Command that copies this crate + Config onto a NEW BRANCH of the package
+# checkout and opens a code review. It must not push to mainline directly.
 BRAZIL_IMPORT_CMD="${AWS_ESDK_BRAZIL_IMPORT_CMD:-}"
 # Optional: overrides the default `brazil pb build` publish command entirely.
 BRAZIL_PUBLISH_CMD="${AWS_ESDK_BRAZIL_PUBLISH_CMD:-}"
 
 DRY_RUN=0
 ASSUME_YES=0
+PUBLISH_MODE=0
 
 log()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mWARN: %s\033[0m\n' "$*" >&2; }
@@ -76,21 +72,21 @@ prompt_yn() {
 
 usage() {
     cat <<'EOF'
-USAGE: release.sh [--dry-run] [--yes]
+USAGE: release.sh [--dry-run] [--yes]        stage: verify + open the sync CR
+       release.sh --publish [--dry-run]      after the CR merges: build + publish
 
-Runs the whole aws-esdk git -> Brazil release. No arguments and no manual steps.
-
-  --dry-run   Run the deps check, gates, build verify, docs, and smoke test;
-              print the Brazil commands instead of running them, and relax the
-              outbound gates.
+  --dry-run   Run the read-only phases; print the CR and PackageBuilder commands
+              instead of running them, and relax the outbound gates.
+  --publish   Build the package from its mainline and publish to the version set
+              (run after the sync code review is approved and merged).
   -y, --yes   Install missing dependencies without prompting.
   -h, --help  Show this help.
 
 Brazil coordinates are read from the environment or esdk/release/brazil.env:
-  AWS_ESDK_BRAZIL_PACKAGE      Brazil package that builds the crate.
+  AWS_ESDK_BRAZIL_PACKAGE      Brazil package (default: AwsCryptoToolsRust).
   AWS_ESDK_BRAZIL_VERSION_SET  Version set to publish into (PackageBuilder).
-  AWS_ESDK_BRAZIL_BRANCH       Package source branch (default: mainline).
-  AWS_ESDK_BRAZIL_IMPORT_CMD   Optional: sync repo -> package source (skip if GitHub-backed).
+  AWS_ESDK_BRAZIL_BRANCH       Package mainline branch (default: mainline).
+  AWS_ESDK_BRAZIL_IMPORT_CMD   Command that opens the branch + code review sync.
   AWS_ESDK_BRAZIL_PUBLISH_CMD  Optional: override the default `brazil pb build`.
 EOF
 }
@@ -98,6 +94,7 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run)  DRY_RUN=1 ;;
+        --publish)  PUBLISH_MODE=1 ;;
         -y|--yes)   ASSUME_YES=1 ;;
         -h|--help)  usage; exit 0 ;;
         *)          die "unknown argument: $1 (try --help)" ;;
@@ -138,8 +135,8 @@ install_cmd_for() {
         cmake)       pkg_cmd cmake cmake cmake cmake ;;
         cc)          pkg_cmd gcc gcc build-essential gcc ;;
         make)        pkg_cmd make make make make ;;
-        rsync)       pkg_cmd rsync rsync rsync rsync ;;
-        git)         pkg_cmd git git git git ;;
+        cr)          echo "" ;;
+        brazil)      echo "" ;;
         *)           echo "" ;;
     esac
 }
@@ -153,14 +150,16 @@ have_tool() {
 }
 
 # Verify every tool the run needs and offer to install any that are missing.
-# Brazil publishing tools are required only for a real publish.
+# The stage run needs the build toolchain; --publish needs the brazil CLI.
 check_deps() {
     log "dependencies"
     detect_pkg_mgr
 
-    local required=(git cargo rustc clippy make cc cmake go)
-    if [ -n "${BRAZIL_PACKAGE}" ] && [ "${DRY_RUN}" -eq 0 ]; then
-        required+=(brazil)
+    local required
+    if [ "${PUBLISH_MODE}" -eq 1 ]; then
+        required=(git brazil)
+    else
+        required=(git cargo rustc clippy make cc cmake go)
     fi
 
     local missing=() t
@@ -200,15 +199,12 @@ check_deps() {
     [ "${#still[@]}" -eq 0 ] || die "missing required tools: ${still[*]}"
 }
 
-# ---- release phases ------------------------------------------------------
+# ---- gates ---------------------------------------------------------------
 
-# Release gates. On a real run a failing gate is fatal; --dry-run downgrades the
-# outbound gates (clean tree, pushed) to warnings so a WIP checkout validates.
+# On a real run a failing gate is fatal; --dry-run downgrades the outbound gates
+# (clean tree, pushed) to warnings so a WIP checkout validates.
 gate() {
     log "gate"
-    echo "cargo:  $(cargo --version)"
-    echo "rustc:  $(rustc --version)"
-
     local fail=die
     [ "${DRY_RUN}" -eq 1 ] && fail=warn
 
@@ -221,6 +217,8 @@ gate() {
             || die "current commit is not pushed to origin; push before releasing (Brazil mirrors git)"
     fi
 }
+
+# ---- stage phases --------------------------------------------------------
 
 # Build gate: clippy compiles and lints every test across all feature combos
 # (credential-free). The full test matrix additionally runs only when AWS
@@ -252,28 +250,43 @@ build_docs() {
     echo "docs staged at: ${DOCS_OUT}/aws_esdk/index.html"
 }
 
-# Publish to Brazil via PackageBuilder: it builds the package from its source
-# branch and publishes into the version set. --autoMergeEnabled pulls missing
-# dependencies from the tracking version set, which must be Rust-enabled to
-# resolve the crate's ~210-crate closure. Set AWS_ESDK_BRAZIL_IMPORT_CMD if the
-# package is not GitHub-backed and needs the repo synced into its source first.
-brazil() {
-    log "brazil"
-    if [ -z "${BRAZIL_PACKAGE}" ] || [ -z "${BRAZIL_VERSION_SET}" ]; then
-        warn "NOT PUBLISHED: set AWS_ESDK_BRAZIL_PACKAGE and AWS_ESDK_BRAZIL_VERSION_SET to publish (see RELEASE.md)."
-        warn "The build was verified, the docs bundled, and the smoke test run."
-        PUBLISHED=0
+# Build a standalone consumer of the crate and run an encrypt/decrypt round-trip.
+smoke_test() {
+    log "smoke-test"
+    ( cd "${SMOKE_DIR}" && cargo run --release )
+}
+
+# Sync this crate into the Brazil package by opening a code review on a NEW
+# BRANCH -- never a direct push to mainline. The copy + Config + review is done
+# by AWS_ESDK_BRAZIL_IMPORT_CMD (it knows the package's layout); this phase runs
+# it and points you at the next step.
+import_to_brazil() {
+    log "import: open the sync code review"
+    if [ -z "${BRAZIL_IMPORT_CMD}" ]; then
+        warn "No sync configured. Set AWS_ESDK_BRAZIL_IMPORT_CMD to a command that copies"
+        warn "this crate + Config onto a NEW BRANCH of the ${BRAZIL_PACKAGE} checkout and"
+        warn "opens a code review (cr). It must not push to mainline directly."
         return 0
     fi
+    run bash -c "${BRAZIL_IMPORT_CMD}"
+    warn "Once the code review is approved and merged to ${BRAZIL_PACKAGE} mainline, run:"
+    warn "  ./esdk/release/release.sh --publish"
+}
 
+# ---- publish phase -------------------------------------------------------
+
+# PackageBuilder builds the package from its mainline and publishes into the
+# version set. --autoMergeEnabled pulls missing dependencies from the tracking
+# version set, which must be Rust-enabled to resolve the crate's ~210-crate
+# closure.
+publish() {
+    log "publish: brazil pb build"
+    [ -n "${BRAZIL_VERSION_SET}" ] || die "AWS_ESDK_BRAZIL_VERSION_SET must be set to publish (see RELEASE.md)"
     command -v brazil >/dev/null || die "brazil CLI not found on PATH"
+
     echo "package:      ${BRAZIL_PACKAGE}"
     echo "version set:  ${BRAZIL_VERSION_SET}"
     echo "branch:       ${BRAZIL_BRANCH}"
-
-    # TODO(brazil): confirm whether the package is GitHub-backed (no import step)
-    # or needs a source push per release; set AWS_ESDK_BRAZIL_IMPORT_CMD if so.
-    [ -n "${BRAZIL_IMPORT_CMD}" ] && run bash -c "${BRAZIL_IMPORT_CMD}"
 
     if [ -n "${BRAZIL_PUBLISH_CMD}" ]; then
         run bash -c "${BRAZIL_PUBLISH_CMD}"
@@ -286,28 +299,19 @@ brazil() {
             --useLatestChange --setAsTarget --autoMergeEnabled \
             --releaseNotes "aws-esdk release" --waitForCompletion ${dry}
     fi
-    PUBLISHED=1
 }
 
-# Build a standalone consumer of the released crate and run an encrypt/decrypt
-# round-trip. A non-zero exit here fails the release.
-smoke_test() {
-    log "smoke-test"
-    if [ "${PUBLISHED}" -eq 1 ]; then
-        # TODO(brazil): repoint smoke-test/Cargo.toml at the Brazil-published
-        # crate (version-set dependency) instead of the in-repo path dep.
-        warn "consuming the Brazil-published crate is not wired yet; running against the in-repo crate."
-    fi
-    ( cd "${SMOKE_DIR}" && cargo run --release )
-}
+# ---- flow ----------------------------------------------------------------
 
-PUBLISHED=0
 check_deps
 gate
-verify
-build_docs
-brazil
-smoke_test
-
-log "release complete"
-[ "${PUBLISHED}" -eq 1 ] || warn "reminder: nothing was published (see the brazil phase above)"
+if [ "${PUBLISH_MODE}" -eq 1 ]; then
+    publish
+    log "published"
+else
+    verify
+    build_docs
+    smoke_test
+    import_to_brazil
+    log "staged"
+fi
