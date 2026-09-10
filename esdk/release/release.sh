@@ -38,7 +38,7 @@ DOCS_OUT="${STAGE}/docs"
 
 # Brazil coordinates. Setting the package + version set makes this script
 # publish via PackageBuilder with no further manual steps. See RELEASE.md.
-BRAZIL_PACKAGE="${AWS_ESDK_BRAZIL_PACKAGE:-}"
+BRAZIL_PACKAGE="${AWS_ESDK_BRAZIL_PACKAGE:-AwsCryptoToolsRust}"
 BRAZIL_VERSION_SET="${AWS_ESDK_BRAZIL_VERSION_SET:-}"
 BRAZIL_BRANCH="${AWS_ESDK_BRAZIL_BRANCH:-mainline}"
 # Optional: a command that syncs this repo's crate into the Brazil package's
