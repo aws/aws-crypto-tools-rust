@@ -566,6 +566,8 @@ namespace detail {
 
 // Reads `source` in chunks, feeds each to `stream.write`, and forwards the
 // produced bytes to `sink`; then finalizes and appends the trailing output.
+// Throws if `source` fails before end-of-stream or `sink` rejects a write, so a
+// partial pump never returns success.
 template <typename Stream>
 StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
     char buf[4096];
@@ -575,9 +577,17 @@ StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sin
         sink.write(reinterpret_cast<const char*>(produced.data()),
                    static_cast<std::streamsize>(produced.size()));
     }
+    // The read loop stops on stream failure as well as end-of-stream; only
+    // end-of-stream means the whole source was consumed, so anything else must
+    // not reach finish().
+    if (source.bad() || !source.eof())
+        throw AwsEncryptionSdkException("reading from the source stream failed before the end of input");
     StreamResult result = stream.finish();
     sink.write(reinterpret_cast<const char*>(result.trailing_output.data()),
                static_cast<std::streamsize>(result.trailing_output.size()));
+    // ostream failure is sticky, so one check covers every write above.
+    if (!sink)
+        throw AwsEncryptionSdkException("writing to the sink stream failed; its output is incomplete");
     return result;
 }
 

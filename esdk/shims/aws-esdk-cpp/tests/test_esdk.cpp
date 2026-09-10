@@ -3,6 +3,8 @@
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <typeinfo>
 #include <vector>
@@ -648,6 +650,41 @@ void test_streaming_pump() {
     ESDK_CHECK(plaintext_out.str() == message);
 }
 
+// A stream that fails mid-pump must surface as an error, never as a result
+// covering only part of the data.
+void test_streaming_pump_io_failure() {
+    // Serves a fixed get area; the refill attempt throws, which read() records
+    // as badbit mid-stream.
+    class FailingReadBuf : public std::streambuf {
+        std::string data_;
+
+    public:
+        explicit FailingReadBuf(std::string data) : data_(std::move(data)) {
+            setg(data_.data(), data_.data(), data_.data() + data_.size());
+        }
+        int_type underflow() override { throw std::runtime_error("simulated read failure"); }
+    };
+
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+
+    // Source fails after part of the plaintext.
+    FailingReadBuf buf("partial plaintext");
+    std::istream failing_source(&buf);
+    std::ostringstream sink;
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      sdk.encrypt_stream(failing_source, sink, keyring));
+
+    // Sink in a failed state accepts no output.
+    std::istringstream source("plaintext");
+    std::ostringstream failed_sink;
+    failed_sink.setstate(std::ios::badbit);
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      sdk.encrypt_stream(source, failed_sink, keyring));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -664,6 +701,7 @@ int main(int argc, char** argv) {
         test_streaming();
         test_streaming_signed_message_refused();
         test_streaming_pump();
+        test_streaming_pump_io_failure();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
