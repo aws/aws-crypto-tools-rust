@@ -1735,8 +1735,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_with_no_edks_reports_no_match_rather_than_an_empty_aggregate() {
         // Nothing was attempted, so this is not an aggregate of zero failures
-        // but a distinct one: no encrypted data key matched. Dafny returns a
-        // separate error here too rather than an empty collection.
+        // but a distinct one: no encrypted data key matched.
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
@@ -1751,8 +1750,6 @@ mod ondecrypt {
             !err.is_collection(),
             "with nothing attempted there is nothing to collect; got: {err}",
         );
-        // Names what it wanted, which is what makes a misconfigured branch-key
-        // id diagnosable.
         assert!(
             err.message.contains("aws-kms-hierarchy") && err.message.contains(FAKE_BRANCH_KEY_ID),
             "the error must name the expected provider id and branch-key id; got: {}",
@@ -1865,7 +1862,6 @@ mod ondecrypt {
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
 
-        // Both attempts are represented in the rendered error.
         let rendered = err.to_string();
         assert!(
             rendered.contains("4 bytes") && rendered.contains("8 bytes"),

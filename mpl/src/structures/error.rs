@@ -76,17 +76,12 @@ pub struct MaterialsError {
     /// candidate encrypted data key, for instance.
     ///
     /// Non-empty exactly when this error aggregates others, which
-    /// [`MaterialsError::is_collection`] reports. An operation with nothing to
-    /// attempt returns a distinct error rather than an empty aggregate, so
-    /// there is no "aggregate of nothing" state.
+    /// [`MaterialsError::is_collection`] reports.
     ///
     /// This exists because the specification requires that a keyring failing
     /// to decrypt any encrypted data key "MUST yield an error that includes
-    /// all the collected errors", and a message built by formatting each error
-    /// into a string cannot be inspected by a caller. Keeping the errors typed
-    /// here is the same choice the Dafny implementation makes with its
-    /// `CollectionOfErrors(list, message)` error variant, which it uses for
-    /// this condition in every keyring.
+    /// all the collected errors". Keeping them typed lets a caller inspect
+    /// each attempt.
     ///
     /// This is the only representation of the collected failures:
     /// [`fmt::Display`] renders them from here, so `message` describes the
@@ -102,8 +97,7 @@ pub struct MaterialsError {
 impl PartialEq for MaterialsError {
     fn eq(&self, other: &Self) -> bool {
         // `cause` is excluded because `dyn Error` does not implement `Eq`.
-        // `collected` is included: it is a `Vec<MaterialsError>`, so it
-        // compares recursively, and two aggregates that collected different
+        // `collected` is included: two aggregates that collected different
         // failures are not the same error.
         self.kind == other.kind
             && self.message == other.message
@@ -262,21 +256,18 @@ impl MaterialsError {
     /// [`MaterialsError::is_collection`] to ask whether an error aggregates
     /// others.
     ///
-    /// `collected` MUST NOT be empty. An operation with nothing to report has a
-    /// different failure and should use the plain constructor for its kind.
-    /// Keeping that case out of here is what makes a non-empty `collected` mean
-    /// "this error aggregates others".
+    /// `collected` is expected to be non-empty. An empty `collected` yields an
+    /// error that is not an aggregate, so an operation with nothing to report
+    /// should use the plain constructor for its kind instead.
     ///
     /// `message` should describe the overall failure only. The collected errors
     /// are rendered by [`fmt::Display`] from
-    /// [`collected`](MaterialsError::collected), so formatting them into
-    /// `message` as well would duplicate them.
+    /// [`collected`](MaterialsError::collected).
     ///
     /// When exactly one attempt failed there is an unambiguous cause, so that
     /// error is attached as the `cause` as well and
-    /// [`std::error::Error::source`] reaches it — the idiomatic Rust access
-    /// path for the common single-key case. With several failures there is no
-    /// single one to nominate, so no `cause` is set. Either way `collected`
+    /// [`std::error::Error::source`] reaches it. With several failures there is
+    /// no single one to nominate, so no `cause` is set. Either way `collected`
     /// holds every failure, so a caller does not have to branch on the count
     /// to find them.
     #[track_caller]

@@ -282,9 +282,8 @@ impl Keyring for RawAesKeyring {
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();
 
         let mut collected_errors: Vec<MaterialsError> = Vec::new();
-        // Whether any EDK got past this keyring's provider-id / provider-info
-        // filter and was actually decrypted. Distinguishes "none of these keys
-        // are mine" from "one was mine and it failed to decrypt".
+        // Distinguishes "none of these keys are mine" from "one was mine and
+        // it failed to decrypt": both leave `collected_errors` non-empty.
         let mut attempted_decryption = false;
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
@@ -345,13 +344,14 @@ impl Keyring for RawAesKeyring {
         // materials; reaching this line means no decryption succeeded, so the
         // input `materials` is dropped unmodified.
 
-        // Nothing reached decryption: every supplied EDK, if any, was rejected
-        // by this keyring's provider filter. That is a no-match rather than a
-        // decryption failure, so it keeps `NoMatchingDataKey` — the kind stays
-        // the category of the failure even when the error aggregates others.
-        // Unlike the hierarchical keyring, this loop records an error for a
-        // non-matching EDK rather than skipping it, so those rejections are
-        // still reported.
+        // No EDK reached decryption, so the failure is categorically a
+        // no-match. `kind` is the category of the overall failure and stays
+        // `NoMatchingDataKey` even when the error aggregates the per-EDK
+        // rejections.
+        //
+        // Every filter miss is recorded, so `collected_errors` being non-empty
+        // does not by itself mean an EDK was attempted — `attempted_decryption`
+        // is the only signal for that.
         if !attempted_decryption {
             return Err(if collected_errors.is_empty() {
                 MaterialsError::no_matching_data_key(
@@ -367,10 +367,11 @@ impl Keyring for RawAesKeyring {
         }
 
         // At least one EDK was this keyring's and decryption still failed. The
-        // per-attempt errors stay typed on the returned error rather than being
-        // flattened into the message — the same shape the hierarchical keyring
-        // uses. The raw AES spec states the requirement as "If no decryption
-        // succeeds, the keyring MUST fail":
+        // per-attempt errors stay typed on the returned error, so a caller can
+        // inspect each one.
+        //
+        //   "If no decryption succeeds, the keyring MUST fail"
+        //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
         Err(MaterialsError::collection(
             MaterialsErrorKind::KeyringFailed,

@@ -455,8 +455,6 @@ impl Keyring for HierarchicalKeyring {
         // Nothing was attempted: every supplied EDK was filtered out before
         // the keystore was consulted, so this is not an aggregate of failures
         // but a distinct one — no encrypted data key matched this keyring.
-        // This is the common shape of a misconfigured branch-key id, so the
-        // message names what was expected against what was supplied.
         if collected_errors.is_empty() {
             return Err(MaterialsError::no_matching_data_key(format!(
                 "HierarchicalKeyring::on_decrypt: no encrypted data key matched. Expected \
@@ -475,11 +473,6 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        //
-        // Formatting them into the message alone would satisfy the letter of
-        // that but leave a caller parsing prose to find out why any given
-        // attempt failed. Display renders them, so the message describes only
-        // the overall failure.
         Err(MaterialsError::collection(
             MaterialsErrorKind::KeyringFailed,
             "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key",

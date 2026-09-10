@@ -680,13 +680,10 @@ fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
 }
 
 /// Map a failed DynamoDB SDK call into a `KeystoreError`, naming the
-/// `operation` that failed. We collapse every SDK error variant into
-/// `KeystoreErrorKind::Dynamodb` since callers only need the categorisation,
-/// not the raw SDK error type. The originating SDK error is retained as the
-/// `cause`, reachable through [`std::error::Error::source`], so a caller that
-/// needs to distinguish a specific DynamoDB exception (a
-/// `ConditionalCheckFailedException` from throttling, say) can downcast to it
-/// rather than parsing the message.
+/// `operation` that failed. Every SDK error variant collapses into
+/// `KeystoreErrorKind::Dynamodb`; the originating SDK error is retained as the
+/// `cause`, reachable through [`std::error::Error::source`], so a caller
+/// needing a specific DynamoDB exception can downcast to it.
 ///
 /// `SdkError`'s `Display` is a bare lifecycle label ("service error",
 /// "dispatch failure"), so the message names this layer only.
