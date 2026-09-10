@@ -650,18 +650,20 @@ void test_streaming_pump() {
     ESDK_CHECK(plaintext_out.str() == message);
 }
 
-// A stream that fails mid-pump must surface as an error, never as a result
-// covering only part of the data.
+// A stream that fails mid-pump must surface as an error
 void test_streaming_pump_io_failure() {
-    // Serves a fixed get area; the refill attempt throws, which read() records
-    // as badbit mid-stream.
+
+    // Mock a failing stream:
+
     class FailingReadBuf : public std::streambuf {
         std::string data_;
 
     public:
+        // Seed the get area with valid data to serve the initial read(s)...
         explicit FailingReadBuf(std::string data) : data_(std::move(data)) {
             setg(data_.data(), data_.data(), data_.data() + data_.size());
         }
+        // ... then fail once that data is drained and more input is requested
         int_type underflow() override { throw std::runtime_error("simulated read failure"); }
     };
 
@@ -670,14 +672,15 @@ void test_streaming_pump_io_failure() {
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::EncryptionSDK sdk;
 
-    // Source fails after part of the plaintext.
+    // Assert source fails to read
     FailingReadBuf buf("partial plaintext");
     std::istream failing_source(&buf);
     std::ostringstream sink;
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       sdk.encrypt_stream(failing_source, sink, keyring));
 
-    // Sink in a failed state accepts no output.
+    // Assert sink fails to write
+    // (Note this doesn't use the FailingReadBuf defined above and uses a different failure mode)
     std::istringstream source("plaintext");
     std::ostringstream failed_sink;
     failed_sink.setstate(std::ios::badbit);
