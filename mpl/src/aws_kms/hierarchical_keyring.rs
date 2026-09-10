@@ -456,12 +456,9 @@ impl Keyring for HierarchicalKeyring {
         // the keystore was consulted, so this is not an aggregate of failures
         // but a distinct one — no encrypted data key matched this keyring.
         if collected_errors.is_empty() {
-            return Err(MaterialsError::no_matching_data_key(format!(
-                "HierarchicalKeyring::on_decrypt: no encrypted data key matched. Expected \
-                 keyProviderId {KEY_PROVIDER_ID_HIERARCHY:?} with keyProviderInfo \
-                 {branch_key_id:?}; got [{}]",
-                describe_supplied_edks(encrypted_data_keys),
-            )));
+            return Err(MaterialsError::no_matching_data_key(
+                "HierarchicalKeyring::on_decrypt: no encrypted data key matched.",
+            ));
         }
 
         // At least one candidate was attempted and every one failed. The
@@ -624,25 +621,6 @@ impl HierarchicalKeyring {
 
         branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
     }
-}
-
-/// Render the supplied EDKs' provider id and provider info for a no-match
-/// error, so the message names what was offered against what was expected.
-/// This runs only when nothing matched, so the EDKs here belong to other
-/// keyrings: a raw AES EDK's provider info is `key name || tag length(u32) ||
-/// iv length(u32) || iv`, which is not UTF-8, hence the lossy render. This
-/// keyring's own provider info is required to be UTF-8.
-fn describe_supplied_edks(edks: &[EncryptedDataKey]) -> String {
-    edks.iter()
-        .map(|edk| {
-            format!(
-                "keyProviderId: {:?}, keyProviderInfo: {:?}",
-                edk.key_provider_id,
-                String::from_utf8_lossy(&edk.key_provider_info),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
 }
 
 /// Generate a random plaintext data key of the algorithm suite's
