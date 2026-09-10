@@ -11,7 +11,8 @@ use crate::types::{SafeRead, SafeWrite};
 ///
 /// The caller is responsible for ensuring this is only called when the algorithm suite
 /// includes a signature algorithm.
-pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<(), Error> {
+#[doc(hidden)]
+pub fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<(), Error> {
     //= spec/client-apis/encrypt.md#construct-the-signature
     //# The order for message footer serialization MUST conform to the [Message Footer](../data-format/message-footer.md) specification.
     //

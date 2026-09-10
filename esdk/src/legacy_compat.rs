@@ -36,7 +36,10 @@ pub(crate) const fn from_dafny_esdk_suite_id(
     }
 }
 
-pub(crate) const fn from_dafny_dbe_suite_id(
+/// Convert a legacy Dafny DBE suite ID to the native ID.
+#[doc(hidden)]
+#[must_use]
+pub const fn from_dafny_dbe_suite_id(
     legacy: aws_mpl_legacy::dafny::types::DbeAlgorithmSuiteId,
 ) -> aws_mpl_legacy::suites::DbeAlgorithmSuiteId {
     use aws_mpl_legacy::dafny::types::DbeAlgorithmSuiteId as Old;
@@ -51,7 +54,9 @@ pub(crate) const fn from_dafny_dbe_suite_id(
     }
 }
 
-pub(crate) fn from_dafny_suite_id(
+/// Convert a legacy Dafny algorithm suite ID to the native ID.
+#[doc(hidden)]
+pub fn from_dafny_suite_id(
     legacy: &aws_mpl_legacy::dafny::types::AlgorithmSuiteId,
 ) -> Result<aws_mpl_legacy::suites::AlgorithmSuiteId, Error> {
     use aws_mpl_legacy::dafny::types::AlgorithmSuiteId as Old;
@@ -155,7 +160,9 @@ pub(crate) fn convert_alg(
     }
 }
 
-pub(crate) fn from_legacy_aes(
+/// Convert a legacy Dafny AES-GCM config to the native form.
+#[doc(hidden)]
+pub fn from_legacy_aes(
     x: &aws_mpl_legacy::dafny::aws_cryptography_primitives::types::AesGcm,
 ) -> Result<aws_mpl_legacy::primitives::AesGcm, Error> {
     match x
@@ -190,7 +197,9 @@ pub(crate) const fn from_legacy_hmac(
     }
 }
 
-pub(crate) fn from_legacy_hkdf(
+/// Convert a legacy Dafny HKDF config to the native form.
+#[doc(hidden)]
+pub fn from_legacy_hkdf(
     x: &aws_mpl_legacy::dafny::types::Hkdf,
 ) -> Result<aws_mpl_legacy::suites::Hkdf, Error> {
     let mut n = aws_mpl_legacy::suites::Hkdf::default();
@@ -258,7 +267,9 @@ pub(crate) fn from_legacy_sig(
     }
 }
 
-pub(crate) fn from_legacy_ssig(
+/// Convert a legacy Dafny symmetric signature algorithm to the native form.
+#[doc(hidden)]
+pub fn from_legacy_ssig(
     x: aws_mpl_legacy::dafny::types::SymmetricSignatureAlgorithm,
 ) -> Result<aws_mpl_legacy::suites::SymmetricSignatureAlgorithm, Error> {
     use aws_mpl_legacy::dafny::types::SymmetricSignatureAlgorithm as Old;
@@ -272,7 +283,9 @@ pub(crate) fn from_legacy_ssig(
     }
 }
 
-pub(crate) fn from_legacy_inter_wrap(
+/// Convert a legacy Dafny intermediate key wrapping config to the native form.
+#[doc(hidden)]
+pub fn from_legacy_inter_wrap(
     x: aws_mpl_legacy::dafny::types::IntermediateKeyWrapping,
 ) -> Result<aws_mpl_legacy::suites::IntermediateKeyWrapping, Error> {
     let mut r = aws_mpl_legacy::suites::IntermediateKeyWrapping::default();
@@ -291,7 +304,9 @@ pub(crate) fn from_legacy_inter_wrap(
     Ok(r)
 }
 
-pub(crate) fn from_legacy_wrap(
+/// Convert a legacy Dafny EDK wrapping algorithm to the native form.
+#[doc(hidden)]
+pub fn from_legacy_wrap(
     x: aws_mpl_legacy::dafny::types::EdkWrappingAlgorithm,
 ) -> Result<aws_mpl_legacy::suites::EdkWrappingAlgorithm, Error> {
     use aws_mpl_legacy::dafny::types::EdkWrappingAlgorithm as Old;
@@ -305,7 +320,9 @@ pub(crate) fn from_legacy_wrap(
     }
 }
 
-pub(crate) fn from_legacy_as(
+/// Convert a legacy Dafny algorithm suite info to a native suite.
+#[doc(hidden)]
+pub fn from_legacy_as(
     x: aws_mpl_legacy::dafny::types::AlgorithmSuiteInfo,
 ) -> Result<AlgorithmSuite, Error> {
     let mut s = AlgorithmSuite::default();
@@ -353,7 +370,9 @@ pub(crate) fn from_legacy_as(
     Ok(s)
 }
 
-pub(crate) fn from_legacy_em(
+/// Convert legacy Dafny encryption materials to native materials.
+#[doc(hidden)]
+pub fn from_legacy_em(
     x: aws_mpl_legacy::dafny::types::EncryptionMaterials,
 ) -> Result<EncryptionMaterials, Error> {
     let mut ret = EncryptionMaterials::default();
@@ -398,7 +417,9 @@ pub(crate) fn from_legacy_em(
     Ok(ret)
 }
 
-pub(crate) fn from_legacy_dm(
+/// Convert legacy Dafny decryption materials to native materials.
+#[doc(hidden)]
+pub fn from_legacy_dm(
     x: aws_mpl_legacy::dafny::types::DecryptionMaterials,
 ) -> Result<DecryptionMaterials, Error> {
     let mut ret = DecryptionMaterials::default();

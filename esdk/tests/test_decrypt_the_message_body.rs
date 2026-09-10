@@ -581,3 +581,40 @@ async fn test_nonframed_body_fields_deserialized_from_wire() {
     let result = decrypt_external_nonframed_vector(Version::V2).await;
     assert_eq!(result, EXTERNAL_V2_NONFRAMED_PT);
 }
+
+// A final frame whose sequence number does not continue the frame sequence
+// must be rejected before its content is decrypted.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_final_frame_sequence_number_out_of_order_rejected() {
+    let keyring = test_keyring().await;
+    // 25 bytes / frame_length 10 → frames 1,2 regular + final frame seq 3.
+    let pt = vec![0xA5u8; 25];
+    let valid_ct = encrypt_framed_with_keyring(&pt, 10, &keyring).await;
+    let final_frame = parse_final_frame(&valid_ct, 10);
+    assert_eq!(final_frame.seq_num, 3, "final frame continues the sequence");
+    // Integer-level tamper: increment the final frame's sequence number.
+    let mut tampered_ct = valid_ct.clone();
+    tampered_ct[final_frame.seq_num_offset..final_frame.seq_num_offset + 4]
+        .copy_from_slice(&(final_frame.seq_num + 1).to_be_bytes());
+
+    let valid_input =
+        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+    let tampered_input =
+        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+
+    //= spec/client-apis/decrypt.md#decrypt-the-message-body
+    //= type=test
+    //= reason=In-sequence final frame → Ok; final frame seq 3→4 → SerializationError before its content is decrypted
+    //# Otherwise, this value MUST be 1 greater than the value of the sequence number
+    //# of the previous frame.
+    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
+    let err = decrypt(&tampered_input)
+        .await
+        .expect_err("out-of-order final frame sequence number must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("Final sequence number out of order"),
+        "error must name the sequence check; got: {}",
+        err.message
+    );
+}

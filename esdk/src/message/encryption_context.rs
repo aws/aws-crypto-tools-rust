@@ -58,7 +58,8 @@ fn get_length(data: &ESDKCanonicalEncryptionContext) -> usize {
 }
 
 /// Write the header's AAD EC sub-section: length + key-value pairs.
-pub(crate) fn write_aad_section(
+#[doc(hidden)]
+pub fn write_aad_section(
     w: &mut dyn SafeWrite,
     data: &ESDKCanonicalEncryptionContext,
 ) -> Result<(), Error> {
@@ -96,7 +97,8 @@ pub(crate) fn write_aad_section(
 }
 
 /// Write the key-value-pairs body: count, then (key, value) pairs.
-pub(crate) fn write_aad(
+#[doc(hidden)]
+pub fn write_aad(
     w: &mut dyn SafeWrite,
     data: &ESDKCanonicalEncryptionContext,
 ) -> Result<(), Error> {

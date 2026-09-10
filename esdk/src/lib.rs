@@ -134,11 +134,29 @@ pub(crate) mod message;
 /// changed, renamed, or removed at any time.
 #[doc(hidden)]
 pub mod __test_internals {
-    pub use crate::key_derivation::{ExpandedKeyMaterial, derive_key_v2, derive_keys};
-    pub use crate::message::DigestWriter;
+    pub use crate::key_derivation::{
+        ExpandedKeyMaterial, derive_key_v1, derive_key_v2, derive_keys, digest_length,
+        get_kdf_input_len, get_kdf_output_len,
+    };
+    pub use crate::legacy_compat::{
+        from_dafny_dbe_suite_id, from_dafny_suite_id, from_legacy_aes, from_legacy_as,
+        from_legacy_dm, from_legacy_em, from_legacy_hkdf, from_legacy_inter_wrap, from_legacy_ssig,
+        from_legacy_wrap,
+    };
     pub use crate::message::body::body_aad::{BodyAADContent, body_aad};
-    pub use crate::message::header::{HeaderInfo, generate_message_id, read_header_body};
-    pub use crate::message::header_auth::read_header_auth_tag;
-    pub use crate::message::header_types::HeaderBody;
+    pub use crate::message::encrypted_data_keys::write_edks;
+    pub use crate::message::encryption_context::{write_aad, write_aad_section};
+    pub use crate::message::footer::write_footer;
+    pub use crate::message::header::{
+        HeaderInfo, generate_message_id, header_version_supports_commitment, read_header_body,
+        validate_max_encrypted_data_keys, validate_suite_data,
+    };
+    pub use crate::message::header_auth::{read_header_auth_tag, write_header_auth_tag};
+    pub use crate::message::header_types::{HeaderAuth, HeaderBody};
+    pub use crate::message::serializable_types::{
+        is_esdk_encrypted_data_keys, is_esdk_encryption_context,
+    };
+    pub use crate::message::serialize_functions::{read_opt_u8, read_up_to, read_up_to_peek};
+    pub use crate::message::{DigestWriter, NoopWriter};
     pub use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
 }

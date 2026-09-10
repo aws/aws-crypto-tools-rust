@@ -8,7 +8,9 @@ use super::{Error, ser_err};
 use crate::types::{SafeRead, SafeWrite};
 use aws_mpl_legacy::EncryptedDataKey;
 
-pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Result<(), Error> {
+/// Serialize the encrypted data keys section of a message header.
+#[doc(hidden)]
+pub fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Result<(), Error> {
     //= spec/data-format/message-header.md#encrypted-data-keys
     //# The Encrypted Data Keys MUST consist of, in order,
     //# Encrypted Data Key Count,

@@ -25,7 +25,9 @@ pub struct ExpandedKeyMaterial {
 
 // Returns the HKDF-derived (output) key length defined by the algorithm suite.
 // Only HKDF suites carry this length; any other KDF reaching here is a config error.
-fn get_kdf_output_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
+/// HKDF output key length declared by the suite; errors for non-HKDF suites.
+#[doc(hidden)]
+pub fn get_kdf_output_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
     match suite.kdf {
         DerivationAlgorithm::Hkdf(x) => Ok(x.output_key_length),
         other => Err(val_err(format!(
@@ -36,7 +38,9 @@ fn get_kdf_output_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
 
 // Returns the HKDF input (plaintext data key) length defined by the algorithm suite.
 // Only HKDF suites carry this length; any other KDF reaching here is a config error.
-fn get_kdf_input_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
+/// HKDF input key length declared by the suite; errors for non-HKDF suites.
+#[doc(hidden)]
+pub fn get_kdf_input_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
     match suite.kdf {
         DerivationAlgorithm::Hkdf(x) => Ok(x.input_key_length),
         other => Err(val_err(format!(
@@ -47,7 +51,9 @@ fn get_kdf_input_len(suite: &AlgorithmSuite) -> Result<u32, Error> {
 
 // Output length in bytes of each supported hash. Used to size the all-zero HKDF
 // salt for V1 derivation (the salt length equals the hash output length, RFC 5869).
-fn digest_length(alg: aws_mpl_legacy::primitives::DigestAlg) -> Result<usize, Error> {
+/// Digest output length in bytes for a digest algorithm.
+#[doc(hidden)]
+pub fn digest_length(alg: aws_mpl_legacy::primitives::DigestAlg) -> Result<usize, Error> {
     match alg {
         aws_mpl_legacy::primitives::DigestAlg::Sha256 => Ok(32),
         aws_mpl_legacy::primitives::DigestAlg::Sha384 => Ok(48),
@@ -58,7 +64,9 @@ fn digest_length(alg: aws_mpl_legacy::primitives::DigestAlg) -> Result<usize, Er
 
 // Derives the message encryption key for V1 suites: a single HKDF call, with no
 // key commitment.
-pub(crate) fn derive_key_v1(
+/// Derive V1 (non-committing) key material from the plaintext data key.
+#[doc(hidden)]
+pub fn derive_key_v1(
     message_id: &[u8],
     plaintext_data_key: &[u8],
     suite: &AlgorithmSuite,

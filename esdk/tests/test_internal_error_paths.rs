@@ -1,0 +1,684 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+//! Direct-call coverage of internal validation and conversion error paths
+//! (via `__test_internals`). These guards sit behind MPL-side validation on
+//! the public API path, so each is exercised here with directly constructed
+//! inputs.
+
+#[allow(clippy::duplicate_mod)]
+mod fixtures;
+mod test_helpers;
+
+use aws_esdk::__test_internals::*;
+use aws_esdk::{ErrorKind, mpl};
+use aws_mpl_legacy::suites::{
+    AlgorithmSuite, DerivationAlgorithm, SignatureAlgorithm, get_algorithm_suite_info,
+};
+use test_helpers::*;
+
+/// Clone the static suite table entry for `binary_id` so tests can perturb
+/// individual fields.
+fn suite(binary_id: [u8; 2]) -> AlgorithmSuite {
+    get_algorithm_suite_info(binary_id).unwrap().clone()
+}
+
+// The HKDF length getters reject suites whose KDF is not HKDF.
+#[test]
+fn test_kdf_length_getters_reject_non_hkdf_suite() {
+    let identity_suite = suite([0x00, 0x78]); // AlgAes256GcmIv12Tag16NoKdf
+    let err = get_kdf_output_len(&identity_suite).expect_err("identity KDF has no output length");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    let err = get_kdf_input_len(&identity_suite).expect_err("identity KDF has no input length");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}
+
+// SHA-512 digest length is 64 bytes.
+#[test]
+fn test_digest_length_sha512() {
+    assert_eq!(
+        digest_length(aws_mpl_legacy::primitives::DigestAlg::Sha512).unwrap(),
+        64
+    );
+}
+
+// Identity-KDF derivation rejects a data key whose length does not match the
+// suite's encryption key length.
+#[test]
+fn test_derive_key_v1_identity_rejects_wrong_length_key() {
+    let identity_suite = suite([0x00, 0x78]);
+    let message_id = [0u8; 16];
+    let err = derive_key_v1(&message_id, &[0u8; 16], &identity_suite)
+        .expect_err("16-byte key under an AES-256 identity suite must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(err.message.contains("Identity KDF"), "got: {}", err.message);
+}
+
+// V1 derivation rejects a suite whose KDF is None.
+#[test]
+fn test_derive_key_v1_rejects_kdf_none() {
+    let mut bad_suite = suite([0x01, 0x78]);
+    bad_suite.kdf = DerivationAlgorithm::None;
+    let err =
+        derive_key_v1(&[0u8; 16], &[0u8; 32], &bad_suite).expect_err("KDF None must be rejected");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message
+            .contains("None is not a valid Key Derivation Function"),
+        "got: {}",
+        err.message
+    );
+}
+
+// V2 derivation rejects a suite whose KDF output length disagrees with its
+// encryption key length.
+#[test]
+fn test_derive_key_v2_rejects_mismatched_kdf_output_length() {
+    let mut bad_suite = suite([0x04, 0x78]);
+    let DerivationAlgorithm::Hkdf(mut hkdf) = bad_suite.kdf else {
+        panic!("committing suite uses HKDF");
+    };
+    hkdf.output_key_length = 16;
+    bad_suite.kdf = DerivationAlgorithm::Hkdf(hkdf);
+    let err = derive_key_v2(&[0u8; 32], &[0u8; 32], &bad_suite)
+        .expect_err("KDF output length differing from AES-256 key length must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("does not match KDF output key length"),
+        "got: {}",
+        err.message
+    );
+}
+
+// V2 derivation rejects suites whose commitment algorithm is None or Identity.
+#[test]
+fn test_derive_key_v2_rejects_invalid_commitment_algorithm() {
+    let mut none_suite = suite([0x04, 0x78]);
+    none_suite.commitment = DerivationAlgorithm::None;
+    let err =
+        derive_key_v2(&[0u8; 32], &[0u8; 32], &none_suite).expect_err("commitment None must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("None is not a valid Commitment"),
+        "got: {}",
+        err.message
+    );
+
+    let mut identity_suite = suite([0x04, 0x78]);
+    identity_suite.commitment = DerivationAlgorithm::Identity;
+    let err = derive_key_v2(&[0u8; 32], &[0u8; 32], &identity_suite)
+        .expect_err("commitment Identity must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("is not a valid Commitment"),
+        "got: {}",
+        err.message
+    );
+}
+
+// derive_keys dispatches on the suite's message version and rejects unknown
+// versions.
+#[test]
+fn test_derive_keys_rejects_unknown_message_version() {
+    let mut bad_suite = suite([0x04, 0x78]);
+    bad_suite.message_version = 3;
+    let err =
+        derive_keys(&[0u8; 32], &[0u8; 32], &bad_suite).expect_err("message version 3 must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("Unknown Message Version"),
+        "got: {}",
+        err.message
+    );
+}
+
+// header_version_supports_commitment: any suite is valid in a V1 body; a
+// non-committing suite in a V2 body is not.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_header_version_supports_commitment_cases() {
+    let v1_ct = encrypt_v1(b"commitment cases").await;
+    let mut cursor = std::io::Cursor::new(v1_ct.as_slice());
+    let mut raw = Vec::new();
+    let v1_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    assert!(header_version_supports_commitment(
+        &suite([0x01, 0x78]),
+        &v1_body
+    ));
+
+    let v2_ct = encrypt_v2(b"commitment cases").await;
+    let mut cursor = std::io::Cursor::new(v2_ct.as_slice());
+    let mut raw = Vec::new();
+    let v2_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    assert!(header_version_supports_commitment(
+        &suite([0x04, 0x78]),
+        &v2_body
+    ));
+    assert!(
+        !header_version_supports_commitment(&suite([0x01, 0x78]), &v2_body),
+        "non-committing suite cannot support a V2 (committing) header body"
+    );
+}
+
+// A V1 header body carries no algorithm suite data.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_v1_header_body_suite_data_is_empty() {
+    let v1_ct = encrypt_v1(b"v1 suite data").await;
+    let mut cursor = std::io::Cursor::new(v1_ct.as_slice());
+    let mut raw = Vec::new();
+    let v1_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    assert_eq!(v1_body.suite_data(), &[] as &[u8]);
+}
+
+// validate_suite_data rejects a derived commitment key whose length differs
+// from the suite's declared suite-data length.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_validate_suite_data_rejects_wrong_length() {
+    let v2_ct = encrypt_v2(b"suite data length").await;
+    let mut cursor = std::io::Cursor::new(v2_ct.as_slice());
+    let mut raw = Vec::new();
+    let v2_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    let err = validate_suite_data(&suite([0x04, 0x78]), &v2_body, &[0u8; 16])
+        .expect_err("16-byte commitment key against a 32-byte suite-data field must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}
+
+// The EDK list validation rejects an empty list.
+#[test]
+fn test_validate_max_encrypted_data_keys_rejects_empty() {
+    let err = validate_max_encrypted_data_keys(None, &[]).expect_err("empty EDK list must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("must be greater than 0"),
+        "got: {}",
+        err.message
+    );
+}
+
+// Header authentication serialization and deserialization both reject a suite
+// with an unknown message version.
+#[test]
+fn test_header_auth_rejects_unknown_message_version() {
+    let mut bad_suite = suite([0x04, 0x78]);
+    bad_suite.message_version = 3;
+    let auth = HeaderAuth::AESMac {
+        header_iv: vec![0u8; 12],
+        header_auth_tag: vec![0u8; 16],
+    };
+    let mut out = Vec::new();
+    let err = write_header_auth_tag(&mut out, &auth, &bad_suite)
+        .expect_err("write with message version 3 must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+
+    let mut cursor = std::io::Cursor::new(&[0u8; 32][..]);
+    let mut raw = Vec::new();
+    let err = read_header_auth_tag(&mut cursor, &bad_suite, &mut raw)
+        .expect_err("read with message version 3 must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+}
+
+/// Reader that always fails with a non-EOF I/O error.
+#[derive(Debug)]
+struct FailingReader;
+impl std::io::Read for FailingReader {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("injected read failure"))
+    }
+}
+
+// Read helpers surface non-EOF I/O errors as serialization errors, and
+// read_up_to_peek accepts an empty destination.
+#[test]
+fn test_read_helpers_surface_io_errors() {
+    let mut buf = [0u8; 4];
+    let err =
+        read_up_to(&mut FailingReader, &mut buf).expect_err("failing reader must surface an error");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+
+    let err = read_opt_u8(&mut FailingReader).expect_err("failing reader must surface an error");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+
+    let mut empty: [u8; 0] = [];
+    assert_eq!(
+        read_up_to_peek(&mut FailingReader, &mut empty, None).unwrap(),
+        0,
+        "empty destination reads zero bytes without touching the reader"
+    );
+}
+
+// The footer serializer rejects a signature longer than a UInt16 can describe.
+#[test]
+fn test_write_footer_rejects_oversized_signature() {
+    let mut out = Vec::new();
+    let err =
+        write_footer(&mut out, &vec![0u8; 70_000]).expect_err("70,000-byte signature must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+}
+
+// The EDK-section serializer rejects an empty list.
+#[test]
+fn test_write_edks_rejects_empty_list() {
+    let mut out = Vec::new();
+    let err = write_edks(&mut out, &[]).expect_err("empty EDK list must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("empty encrypted data keys"),
+        "got: {}",
+        err.message
+    );
+}
+
+// The AAD serializer rejects pairs whose key or value exceeds a UInt16
+// length, and a pair count above u16::MAX.
+#[test]
+fn test_write_aad_rejects_oversized_entries() {
+    let mut out = Vec::new();
+    let huge_key = vec![("k".repeat(70_000), "v".to_string())];
+    let err = write_aad(&mut out, &huge_key).expect_err("oversized key must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+
+    let huge_value = vec![("k".to_string(), "v".repeat(70_000))];
+    let err = write_aad(&mut out, &huge_value).expect_err("oversized value must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+
+    let too_many: Vec<(String, String)> = (0..70_000u32)
+        .map(|i| (format!("{i}"), String::new()))
+        .collect();
+    let err = write_aad(&mut out, &too_many).expect_err("70,000 pairs must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+}
+
+// The serializable-EC check rejects a map with more entries than a UInt16 can
+// count; the serializable-EDK check rejects a list longer than a UInt16.
+#[test]
+fn test_is_esdk_checks_reject_oversized_collections() {
+    let big_ec: aws_esdk::EncryptionContext = (0..65_536u32)
+        .map(|i| (format!("{i}"), String::new()))
+        .collect();
+    assert!(!is_esdk_encryption_context(&big_ec));
+
+    let edk = aws_mpl_legacy::EncryptedDataKey::default();
+    let big_edks = vec![edk; 65_536];
+    assert!(!is_esdk_encrypted_data_keys(&big_edks));
+}
+
+// Non-ECDSA suites have no ECDSA algorithm to extract.
+#[test]
+fn test_get_ecdsa_alg_rejects_non_signing_suite() {
+    let err = get_ecdsa_alg(SignatureAlgorithm::None)
+        .expect_err("None signature algorithm has no ECDSA parameters");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}
+
+// The internal writers accept flush().
+#[test]
+fn test_internal_writers_flush() {
+    use std::io::Write as _;
+    let mut noop = NoopWriter;
+    noop.flush().unwrap();
+    let mut digest = DigestWriter::default();
+    digest.flush().unwrap();
+}
+
+// === Legacy Dafny → native conversion error paths ===
+
+/// A fully valid legacy Dafny AlgorithmSuiteInfo to perturb per test.
+async fn legacy_suite_info(binary_id: [u8; 2]) -> aws_mpl_legacy::dafny::types::AlgorithmSuiteInfo {
+    let info = mpl()
+        .get_algorithm_suite_info()
+        .binary_id(aws_smithy_types::Blob::new(binary_id.to_vec()))
+        .send()
+        .await
+        .unwrap();
+    aws_mpl_legacy::dafny::types::AlgorithmSuiteInfo::builder()
+        .set_id(info.id)
+        .set_binary_id(info.binary_id)
+        .set_message_version(info.message_version)
+        .set_encrypt(info.encrypt)
+        .set_kdf(info.kdf)
+        .set_commitment(info.commitment)
+        .set_signature(info.signature)
+        .set_symmetric_signature(info.symmetric_signature)
+        .set_edk_wrapping(info.edk_wrapping)
+        .build()
+        .unwrap()
+}
+
+// AES-GCM conversion accepts only 16/24/32-byte key lengths.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_aes_rejects_unknown_key_length() {
+    let info = legacy_suite_info([0x01, 0x78]).await;
+    let Some(aws_mpl_legacy::dafny::types::Encrypt::AesGcm(mut gcm)) = info.encrypt else {
+        panic!("suite 0x0178 encrypt is AES-GCM");
+    };
+    gcm.key_length = Some(15);
+    let err = from_legacy_aes(&gcm).expect_err("15-byte AES key must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("Unknown AES-GCM key length: 15"),
+        "got: {}",
+        err.message
+    );
+}
+
+// HKDF conversion rejects negative lengths from the legacy layer.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_hkdf_rejects_negative_lengths() {
+    let info = legacy_suite_info([0x01, 0x78]).await;
+    let Some(aws_mpl_legacy::dafny::types::DerivationAlgorithm::Hkdf(hkdf)) = info.kdf else {
+        panic!("suite 0x0178 KDF is HKDF");
+    };
+
+    for field in ["salt", "input", "output"] {
+        let mut bad = hkdf.clone();
+        match field {
+            "salt" => bad.salt_length = Some(-1),
+            "input" => bad.input_key_length = Some(-1),
+            _ => bad.output_key_length = Some(-1),
+        }
+        let err = from_legacy_hkdf(&bad).expect_err("negative length must fail");
+        assert_eq!(err.kind, ErrorKind::ValidationError, "{field}: got {err:?}");
+        assert!(
+            err.message.contains("negative value from MPL"),
+            "{field}: got {}",
+            err.message
+        );
+    }
+}
+
+// Symmetric-signature conversion maps the HMAC variant.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_ssig_maps_hmac() {
+    let hmac = aws_mpl_legacy::dafny::types::SymmetricSignatureAlgorithm::Hmac(
+        aws_mpl_legacy::dafny::aws_cryptography_primitives::types::DigestAlgorithm::Sha384,
+    );
+    let converted = from_legacy_ssig(hmac).unwrap();
+    assert!(matches!(
+        converted,
+        aws_mpl_legacy::suites::SymmetricSignatureAlgorithm::Hmac(
+            aws_mpl_legacy::primitives::DigestAlg::Sha384
+        )
+    ));
+}
+
+// DBE suite IDs convert for both defined variants.
+#[test]
+fn test_from_dafny_dbe_suite_ids_convert() {
+    use aws_mpl_legacy::dafny::types::DbeAlgorithmSuiteId as Old;
+    use aws_mpl_legacy::suites::DbeAlgorithmSuiteId as New;
+    assert_eq!(
+        from_dafny_dbe_suite_id(Old::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384),
+        New::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384
+    );
+    assert_eq!(
+        from_dafny_dbe_suite_id(Old::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384),
+        New::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384SymsigHmacSha384
+    );
+    let dbe = aws_mpl_legacy::dafny::types::AlgorithmSuiteId::Dbe(
+        Old::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384,
+    );
+    assert!(matches!(
+        from_dafny_suite_id(&dbe).unwrap(),
+        aws_mpl_legacy::suites::AlgorithmSuiteId::Dbe(
+            New::AlgAes256GcmHkdfSha512CommitKeySymsigHmacSha384
+        )
+    ));
+}
+
+// Suite-info conversion rejects a negative message version, an unknown AES
+// key length, an ECDSA signature missing its curve, and an intermediate key
+// wrapping missing a field.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_as_rejects_malformed_fields() {
+    let good = legacy_suite_info([0x01, 0x78]).await;
+
+    let mut negative_version = good.clone();
+    negative_version.message_version = Some(-1);
+    let err = from_legacy_as(negative_version).expect_err("negative message version must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+
+    let mut bad_key_len = good.clone();
+    if let Some(aws_mpl_legacy::dafny::types::Encrypt::AesGcm(gcm)) = bad_key_len.encrypt.as_mut() {
+        gcm.key_length = Some(15);
+    }
+    let err = from_legacy_as(bad_key_len).expect_err("bad AES key length must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+
+    let mut curveless = good.clone();
+    curveless.signature = Some(aws_mpl_legacy::dafny::types::SignatureAlgorithm::Ecdsa(
+        aws_mpl_legacy::dafny::types::Ecdsa::builder()
+            .build()
+            .unwrap(),
+    ));
+    let err = from_legacy_as(curveless).expect_err("ECDSA without a curve must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("missing curve"),
+        "got: {}",
+        err.message
+    );
+
+    let mut bad_wrap = good;
+    bad_wrap.edk_wrapping = Some(
+        aws_mpl_legacy::dafny::types::EdkWrappingAlgorithm::IntermediateKeyWrapping(
+            aws_mpl_legacy::dafny::types::IntermediateKeyWrapping::builder()
+                .build()
+                .unwrap(),
+        ),
+    );
+    let err = from_legacy_as(bad_wrap).expect_err("intermediate wrapping missing fields must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}
+
+// A valid intermediate key wrapping converts; the DBE committing suite
+// carries one.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_wrap_intermediate_key_wrapping_converts() {
+    let dbe = legacy_suite_info([0x67, 0x00]).await;
+    let wrap = dbe.edk_wrapping.expect("DBE suite has EDK wrapping");
+    let converted = from_legacy_wrap(wrap).unwrap();
+    assert!(matches!(
+        converted,
+        aws_mpl_legacy::suites::EdkWrappingAlgorithm::IntermediateKeyWrapping(_)
+    ));
+}
+
+// Legacy encryption-materials conversion: symmetric signing keys carry over,
+// and materials missing required fields are rejected.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_em_paths() {
+    let info = legacy_suite_info([0x01, 0x78]).await;
+    let materials = aws_mpl_legacy::dafny::types::EncryptionMaterials::builder()
+        .algorithm_suite(info.clone())
+        .encryption_context(std::collections::HashMap::new())
+        .encrypted_data_keys(Vec::new())
+        .required_encryption_context_keys(Vec::new())
+        .symmetric_signing_keys(vec![aws_smithy_types::Blob::new(vec![1u8; 32])])
+        .build()
+        .unwrap();
+    let converted = from_legacy_em(materials).unwrap();
+    assert_eq!(
+        converted.symmetric_signing_keys.len(),
+        1,
+        "symmetric signing keys must carry over"
+    );
+
+    let missing_req_keys = aws_mpl_legacy::dafny::types::EncryptionMaterials::builder()
+        .algorithm_suite(info)
+        .encryption_context(std::collections::HashMap::new())
+        .encrypted_data_keys(Vec::new())
+        .build()
+        .unwrap();
+    let err = from_legacy_em(missing_req_keys)
+        .expect_err("missing required_encryption_context_keys must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}
+
+// Legacy decryption-materials conversion rejects materials whose suite fails
+// to convert or that are missing required fields.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_dm_rejects_malformed_materials() {
+    let mut bad_suite = legacy_suite_info([0x01, 0x78]).await;
+    bad_suite.message_version = Some(-1);
+    let bad = aws_mpl_legacy::dafny::types::DecryptionMaterials::builder()
+        .algorithm_suite(bad_suite)
+        .encryption_context(std::collections::HashMap::new())
+        .required_encryption_context_keys(Vec::new())
+        .build()
+        .unwrap();
+    let err = from_legacy_dm(bad).expect_err("unconvertible suite must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+
+    let missing_req_keys = aws_mpl_legacy::dafny::types::DecryptionMaterials::builder()
+        .algorithm_suite(legacy_suite_info([0x01, 0x78]).await)
+        .encryption_context(std::collections::HashMap::new())
+        .build()
+        .unwrap();
+    let err = from_legacy_dm(missing_req_keys)
+        .expect_err("missing required_encryption_context_keys must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}
+
+// The per-EDK serializer rejects fields longer than a UInt16 can describe,
+// and the section serializer rejects more EDKs than a UInt16 can count.
+#[test]
+fn test_write_edks_rejects_oversized_fields_and_count() {
+    let base = aws_mpl_legacy::EncryptedDataKey::default();
+
+    let mut huge_id = base.clone();
+    huge_id.key_provider_id = "p".repeat(70_000);
+    let mut huge_info = base.clone();
+    huge_info.key_provider_info = vec![0u8; 70_000];
+    let mut huge_ct = base.clone();
+    huge_ct.ciphertext = vec![0u8; 70_000];
+
+    for (label, edk) in [
+        ("id", huge_id),
+        ("info", huge_info),
+        ("ciphertext", huge_ct),
+    ] {
+        let mut out = Vec::new();
+        let err = write_edks(&mut out, std::slice::from_ref(&edk))
+            .expect_err("oversized field must fail");
+        assert_eq!(
+            err.kind,
+            ErrorKind::SerializationError,
+            "{label}: got {err:?}"
+        );
+    }
+
+    let mut out = Vec::new();
+    let err = write_edks(&mut out, &vec![base; 65_536]).expect_err("65,536 EDKs must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("Count too large"),
+        "got: {}",
+        err.message
+    );
+}
+
+// The AAD section serializer rejects a section whose total byte length
+// exceeds a UInt16, even when every individual field fits.
+#[test]
+fn test_write_aad_section_rejects_oversized_total() {
+    let pairs: Vec<(String, String)> = (0..300u32)
+        .map(|i| (format!("key-{i:04}"), "v".repeat(300)))
+        .collect();
+    let mut out = Vec::new();
+    let err = write_aad_section(&mut out, &pairs)
+        .expect_err("90 KB of pairs must exceed the UInt16 section length");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("too large for u16"),
+        "got: {}",
+        err.message
+    );
+}
+
+// Message ID generation rejects unknown message format versions.
+#[test]
+fn test_generate_message_id_rejects_unknown_version() {
+    let mut bad_suite = suite([0x04, 0x78]);
+    bad_suite.message_version = 3;
+    let err = generate_message_id(&bad_suite).expect_err("message version 3 must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+}
+
+// validate_suite_data with a matching commitment key still rejects a suite
+// whose declared suite-data length disagrees, and rejects a suite without an
+// HKDF commitment at all.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_validate_suite_data_declared_length_and_commitment_checks() {
+    let v2_ct = encrypt_v2(b"declared length").await;
+    let mut cursor = std::io::Cursor::new(v2_ct.as_slice());
+    let mut raw = Vec::new();
+    let v2_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    let header_suite_data = v2_body.suite_data().to_vec();
+    assert_eq!(header_suite_data.len(), 32);
+
+    // Equal bytes, but the suite declares a 16-byte suite-data length.
+    let mut short_decl = suite([0x04, 0x78]);
+    let DerivationAlgorithm::Hkdf(mut hkdf) = short_decl.commitment else {
+        panic!("committing suite commitment is HKDF");
+    };
+    hkdf.output_key_length = 16;
+    short_decl.commitment = DerivationAlgorithm::Hkdf(hkdf);
+    let err = validate_suite_data(&short_decl, &v2_body, &header_suite_data)
+        .expect_err("declared 16-byte suite data against 32 bytes must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+    assert!(
+        err.message.contains("declared suite-data length"),
+        "got: {}",
+        err.message
+    );
+
+    // A suite without HKDF commitment has no declared suite-data length.
+    let mut no_commit = suite([0x04, 0x78]);
+    no_commit.commitment = DerivationAlgorithm::None;
+    let err = validate_suite_data(&no_commit, &v2_body, &header_suite_data)
+        .expect_err("non-HKDF commitment must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+}
+
+// Intermediate-key-wrapping conversion reports each missing field.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_inter_wrap_rejects_each_missing_field() {
+    let dbe = legacy_suite_info([0x67, 0x00]).await;
+    let Some(aws_mpl_legacy::dafny::types::EdkWrappingAlgorithm::IntermediateKeyWrapping(good)) =
+        dbe.edk_wrapping
+    else {
+        panic!("DBE suite uses intermediate key wrapping");
+    };
+
+    for field in [
+        "key_encryption_key_kdf",
+        "mac_key_kdf",
+        "pdk_encrypt_algorithm",
+    ] {
+        let mut bad = good.clone();
+        match field {
+            "key_encryption_key_kdf" => bad.key_encryption_key_kdf = None,
+            "mac_key_kdf" => bad.mac_key_kdf = None,
+            _ => bad.pdk_encrypt_algorithm = None,
+        }
+        let err = from_legacy_inter_wrap(bad).expect_err("missing field must fail");
+        assert_eq!(err.kind, ErrorKind::ValidationError, "{field}: got {err:?}");
+        assert!(err.message.contains(field), "{field}: got {}", err.message);
+    }
+}
+
+// Legacy encryption-materials conversion rejects a suite that fails to
+// convert.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_from_legacy_em_rejects_unconvertible_suite() {
+    let mut bad_suite = legacy_suite_info([0x01, 0x78]).await;
+    bad_suite.message_version = Some(-1);
+    let bad = aws_mpl_legacy::dafny::types::EncryptionMaterials::builder()
+        .algorithm_suite(bad_suite)
+        .encryption_context(std::collections::HashMap::new())
+        .encrypted_data_keys(Vec::new())
+        .required_encryption_context_keys(Vec::new())
+        .build()
+        .unwrap();
+    let err = from_legacy_em(bad).expect_err("unconvertible suite must fail");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got {err:?}");
+}

@@ -94,14 +94,19 @@ jobs:
       # `cfg(feature = ...)` code, so dropping `--all-features` costs no
       # coverage — the FIPS backend gets its own parity step below.
       #
-      # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
-      # today); raise it toward 100 as coverage fills in.
+      # esdk gate: the uncovered remainder is (a) the Modern material-source
+      # path (`aws_mpl_legacy` keyring/CMM traits are sealed and their
+      # constructors return NotImplemented, so no caller can reach it yet),
+      # (b) compiler-forced `_` arms on #[non_exhaustive] MPL enums with no
+      # other constructible variant, (c) error branches of `?` on infallible
+      # writers / AWS-LC primitives, and (d) integer-width guards that cannot
+      # fail on 64-bit targets. Raise the gate when the modern MPL ships.
       # TODO(mpl): mpl line-coverage is temporarily 80%
       # raise it to 100 as coverage fills in.
       - name: Test + line coverage gate
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '89' || '80' }} --verbose
 
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so

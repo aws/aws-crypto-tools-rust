@@ -204,7 +204,9 @@ impl HeaderBody {
             Self::V2Body(body) => &body.algorithm_suite,
         }
     }
-    pub(crate) const fn suite_data(&self) -> &[u8] {
+    /// Algorithm suite data bytes carried by the header (empty for V1 bodies).
+    #[must_use]
+    pub const fn suite_data(&self) -> &[u8] {
         match self {
             Self::V1Body(_) => &[],
             Self::V2Body(body) => body.suite_data.as_slice(),
@@ -214,6 +216,7 @@ impl HeaderBody {
 
 /// Header authentication data carried in a message header.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(clippy::exhaustive_enums)]
 pub enum HeaderAuth {
     /// AES-GCM header authentication: an IV and the computed authentication tag.
     AESMac {

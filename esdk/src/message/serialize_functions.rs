@@ -31,7 +31,8 @@ fn ser_io(e: std::io::Error) -> Error {
 }
 
 /// Read up to `buf.len()` bytes; returns the number actually read (may be < len on EOF).
-pub(crate) fn read_up_to(this: &mut dyn SafeRead, buf: &mut [u8]) -> Result<usize, Error> {
+#[doc(hidden)]
+pub fn read_up_to(this: &mut dyn SafeRead, buf: &mut [u8]) -> Result<usize, Error> {
     let mut curr: usize = 0;
     loop {
         match this.read(&mut buf[curr..]) {
@@ -50,7 +51,8 @@ pub(crate) fn read_up_to(this: &mut dyn SafeRead, buf: &mut [u8]) -> Result<usiz
 }
 
 /// Like `read_up_to`, but `first` is a one-byte peek already consumed by the caller.
-pub(crate) fn read_up_to_peek(
+#[doc(hidden)]
+pub fn read_up_to_peek(
     this: &mut dyn SafeRead,
     buf: &mut [u8],
     first: Option<u8>,
@@ -123,7 +125,8 @@ pub(crate) fn read_u8(r: &mut dyn SafeRead, raw: &mut dyn SafeWrite) -> Result<u
 
 /// Read one byte, returning `Ok(None)` on clean EOF. Does NOT mirror into a
 /// raw buffer (used for streaming peek).
-pub(crate) fn read_opt_u8(r: &mut dyn SafeRead) -> Result<Option<u8>, Error> {
+#[doc(hidden)]
+pub fn read_opt_u8(r: &mut dyn SafeRead) -> Result<Option<u8>, Error> {
     let mut result = [0u8; 1];
     match r.read_exact(&mut result) {
         Ok(()) => Ok(Some(result[0])),

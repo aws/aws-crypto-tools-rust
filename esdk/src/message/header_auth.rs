@@ -10,7 +10,9 @@ use super::{Error, ser_err};
 use crate::types::{SafeRead, SafeWrite};
 use aws_mpl_legacy::suites::AlgorithmSuite;
 
-pub(crate) fn write_header_auth_tag(
+/// Serialize the header authentication for the suite's message version.
+#[doc(hidden)]
+pub fn write_header_auth_tag(
     w: &mut dyn SafeWrite,
     header_auth: &HeaderAuth,
     suite: &AlgorithmSuite,

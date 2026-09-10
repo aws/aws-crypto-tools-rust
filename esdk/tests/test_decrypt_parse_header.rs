@@ -633,3 +633,135 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
         "tampered V2 auth tag must produce CryptographicError"
     );
 }
+
+// A framed message whose header declares frame length 0 must be rejected at
+// header parse, before any authentication.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_framed_zero_frame_length_rejected() {
+    let keyring = test_keyring().await;
+    let valid_ct = encrypt_framed_with_keyring(b"framed zero frame length", 10, &keyring).await;
+    let (_, _, frame_length_offset) = parse_header_offsets(&valid_ct);
+    let mut tampered_ct = valid_ct.clone();
+    tampered_ct[frame_length_offset..frame_length_offset + 4].copy_from_slice(&0u32.to_be_bytes());
+    assert_ne!(
+        u32::from_be_bytes(
+            valid_ct[frame_length_offset..frame_length_offset + 4]
+                .try_into()
+                .unwrap()
+        ),
+        0,
+        "tamper must change the frame length"
+    );
+
+    assert!(
+        try_decrypt_with_keyring(&valid_ct, &keyring).await.is_ok(),
+        "valid ct must decrypt"
+    );
+    let err = try_decrypt_with_keyring(&tampered_ct, &keyring)
+        .await
+        .expect_err("frame length 0 with framed content must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("Frame length must be positive"),
+        "error must name the frame-length check; got: {}",
+        err.message
+    );
+}
+
+// A header whose EDK count field reads 0 must be rejected at parse.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_zero_edk_count_rejected() {
+    let keyring = test_keyring().await;
+    let valid_ct = encrypt_v2(b"zero edk count").await;
+    let section = parse_edk_section(&valid_ct, Version::V2);
+    assert_eq!(section.edk_count, 1, "baseline message carries one EDK");
+    let mut tampered_ct = valid_ct.clone();
+    tampered_ct[section.edk_count_offset..section.edk_count_offset + 2]
+        .copy_from_slice(&0u16.to_be_bytes());
+
+    let valid_input =
+        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+    let tampered_input =
+        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+
+    //= spec/data-format/message-header.md#encrypted-data-key-count
+    //= type=test
+    //= reason=Count 1 → Ok; count field tampered to 0 → ValidationError at parse, proving the greater-than-zero check
+    //# This value MUST be greater than 0.
+    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
+    let err = decrypt(&tampered_input)
+        .await
+        .expect_err("EDK count 0 must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message
+            .contains("Encrypted data key count must be greater than 0"),
+        "error must name the EDK-count check; got: {}",
+        err.message
+    );
+}
+
+// A V2 header naming a non-committing algorithm suite must be rejected at
+// parse: the V2 format exists only for committing suites.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_v2_header_with_non_committing_suite_rejected() {
+    let keyring = test_keyring().await;
+    let valid_ct = encrypt_v2(b"v2 suite must commit").await;
+    assert_eq!(valid_ct[0], 0x02, "baseline is a V2 message");
+    // Overwrite the V2 suite ID bytes (offsets 1-2) with the non-committing
+    // 0x0178 suite (AlgAes256GcmIv12Tag16HkdfSha256).
+    let mut tampered_ct = valid_ct.clone();
+    tampered_ct[1] = 0x01;
+    tampered_ct[2] = 0x78;
+
+    assert!(
+        try_decrypt_with_keyring(&valid_ct, &keyring).await.is_ok(),
+        "valid ct must decrypt"
+    );
+    let err = try_decrypt_with_keyring(&tampered_ct, &keyring)
+        .await
+        .expect_err("non-committing suite in a V2 header must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("must support commitment"),
+        "error must name the commitment check; got: {}",
+        err.message
+    );
+}
+
+// An encryption-context key whose bytes are not valid UTF-8 must be rejected
+// at parse.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_utf8_encryption_context_key_rejected() {
+    let keyring = test_keyring().await;
+    let mut ec = EncryptionContext::new();
+    ec.insert("k1".to_string(), "v1".to_string());
+    let valid_ct = encrypt_no_sign_ec_keyring(b"utf8 ec", ec, Version::V2, &keyring).await;
+
+    // AAD layout: [section len: 2][kv count: 2][key len: 2][key bytes...].
+    // The first key byte sits 6 bytes into the AAD section; 0xFF is not valid
+    // in any UTF-8 sequence.
+    let fields = parse_v2_header_field_offsets(&valid_ct);
+    let (_, aad_start, _) = fields
+        .iter()
+        .find(|(n, _, _)| *n == "AAD")
+        .expect("V2 header has an AAD field");
+    let first_key_byte = aad_start + 6;
+    assert_eq!(valid_ct[first_key_byte], b'k', "offset must hit the EC key");
+    let mut tampered_ct = valid_ct.clone();
+    tampered_ct[first_key_byte] = 0xFF;
+
+    assert!(
+        try_decrypt_with_keyring(&valid_ct, &keyring).await.is_ok(),
+        "valid ct must decrypt"
+    );
+    let err = try_decrypt_with_keyring(&tampered_ct, &keyring)
+        .await
+        .expect_err("non-UTF-8 encryption context key must fail");
+    assert_eq!(err.kind, ErrorKind::SerializationError, "got {err:?}");
+    assert!(
+        err.message.contains("UTF8 Decode Error"),
+        "error must name the UTF-8 check; got: {}",
+        err.message
+    );
+}

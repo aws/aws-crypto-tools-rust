@@ -39,7 +39,9 @@ pub(crate) use super::error::ser_err;
 /// Used when a write target is required by the interface but the output isn't needed
 /// (e.g., computing a digest without also serializing to a buffer).
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub(crate) struct NoopWriter;
+#[doc(hidden)]
+#[allow(clippy::exhaustive_structs)]
+pub struct NoopWriter;
 impl std::io::Write for NoopWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         Ok(buf.len())

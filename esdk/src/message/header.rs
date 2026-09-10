@@ -135,10 +135,10 @@ pub fn read_header_body(
     Ok(result)
 }
 
-pub(crate) fn header_version_supports_commitment(
-    suite: &AlgorithmSuite,
-    body: &HeaderBody,
-) -> bool {
+/// Whether the header body version carries the commitment values the suite requires.
+#[doc(hidden)]
+#[must_use]
+pub fn header_version_supports_commitment(suite: &AlgorithmSuite, body: &HeaderBody) -> bool {
     match (suite.commitment, body) {
         (DerivationAlgorithm::Hkdf(header), HeaderBody::V2Body(body)) => {
             usize::try_from(header.output_key_length).is_ok_and(|n| body.suite_data.len() == n)
@@ -148,7 +148,9 @@ pub(crate) fn header_version_supports_commitment(
     }
 }
 
-pub(crate) fn validate_max_encrypted_data_keys(
+/// Validate the EDK list is non-empty and within the configured maximum.
+#[doc(hidden)]
+pub fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     edks: &[aws_mpl_legacy::EncryptedDataKey],
 ) -> Result<(), Error> {
@@ -202,7 +204,9 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
     Ok(rand_bytes)
 }
 
-pub(crate) fn validate_suite_data(
+/// Validate the header's algorithm suite data against the derived commitment key.
+#[doc(hidden)]
+pub fn validate_suite_data(
     suite: &AlgorithmSuite,
     header_body: &HeaderBody,
     expected_suite_data: &[u8],

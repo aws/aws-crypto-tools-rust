@@ -274,8 +274,15 @@ async fn internal_encrypt(
         //= spec/client-apis/encrypt.md#behavior
         //# - If the materials do not have an algorithm suite including a signature algorithm,
         //# the Encrypt operation MUST NOT construct a signature.
+        //
+        //= spec/data-format/message.md#structure
+        //= reason=step_construct_signature is not called for non-signing suites, so no footer bytes are written
+        //# If the algorithm suite does not contain a signature algorithm, the message MUST NOT contain a message footer.
     }
 
+    //= spec/data-format/message.md#structure
+    //= reason=suite IDs outside the recognized ESDK set fail this conversion, before any footer handling
+    //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
     let suite_id = get_esdk_algorithm_suite_id(header.suite.id)?;
 
     //= spec/client-apis/encrypt.md#behavior
@@ -521,12 +528,8 @@ fn step_construct_signature(
             )?;
         }
 
-        //= spec/data-format/message.md#structure
-        //# If the algorithm suite does not contain a signature algorithm, the message MUST NOT contain a message footer.
         aws_mpl_legacy::suites::SignatureAlgorithm::None => {}
 
-        //= spec/data-format/message.md#structure
-        //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
         _ => {
             return Err(esdk_err(
                 "Unrecognized signature algorithm in algorithm suite",
