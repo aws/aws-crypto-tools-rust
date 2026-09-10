@@ -35,15 +35,15 @@ shared_cache_example: examples/shared_cache_example.cpp include/aws/esdk/Encrypt
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o shared_cache_example
 
-# COV_CXXFLAGS is empty for normal builds. The coverage-cpp target sets it to
-# the clang coverage flags so the C++ link pulls in the LLVM profile runtime
-# that the instrumented Rust staticlib references (cargo adds this runtime for
-# its own binaries; a standalone g++ link does not).
-
 test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ tests/test_esdk.cpp \
 		$(CXXFLAGS_COMMON) $(COV_CXXFLAGS) $(LINK_LIBS) \
 		-o test_esdk
+
+adopt_keyring_test: tests/adopt_keyring_test.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ tests/adopt_keyring_test.cpp \
+		-Itarget/cxxbridge $(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o adopt_keyring_test
 
 custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyring/example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs
 	cd examples/custom-keyring && cargo build
@@ -79,7 +79,7 @@ test_resource_leaks: tests/test_resource_leaks.cpp tests/esdk_test_support.h inc
 		$(CXXFLAGS_COMMON) $(LINK_LIBS) \
 		-o test_resource_leaks
 
-# Compile-only: the static_asserts fire during compilation, so no link step.
+# This test runs during compilation (static asserts)
 enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ -c enum_parity_test.cpp \
 		-Itarget/cxxbridge -Iinclude \
@@ -87,12 +87,12 @@ enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(
 		-o enum_parity_test.o
 
 clean:
-	rm -f basic_hierarchical_keyring_example raw_aes_keyring_example zero_copy_comparison shared_cache_example custom_keyring_example streaming_example streaming_chunks_example test_esdk adopt_keyring_test test_concurrency test_resource_leaks enum_parity_test.o
+	rm -f test_esdk adopt_keyring_test custom_keyring_example enum_parity_test.o
 
 clippy:
 	cargo clippy --tests
 
-# Build the Rust static library, the C++ examples, the compile-time enum_parity check,
+# Build the Rust static library, examples, the compile-time enum_parity check,
 # and the test binaries.
 build-tests:
 	cargo build

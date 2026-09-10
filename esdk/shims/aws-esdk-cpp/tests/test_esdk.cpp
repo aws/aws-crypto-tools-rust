@@ -4,6 +4,8 @@
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <thread>
 #include <typeinfo>
@@ -387,7 +389,6 @@ void test_streaming() {
         ciphertext.insert(ciphertext.end(), out.begin(), out.end());
         // Sleep briefly to ensure the background worker thread consuming these writes can be scheduled
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
     }
     ESDK_CHECK(ciphertext.size() >= 4096);
     //= spec/shim/shim.md#streaming
@@ -653,6 +654,44 @@ void test_streaming_pump() {
     ESDK_CHECK(plaintext_out.str() == message);
 }
 
+// A stream that fails mid-pump must surface as an error
+void test_streaming_pump_io_failure() {
+
+    // Mock a failing stream:
+
+    class FailingReadBuf : public std::streambuf {
+        std::string data_;
+
+    public:
+        // Seed the get area with valid data to serve the initial read(s)...
+        explicit FailingReadBuf(std::string data) : data_(std::move(data)) {
+            setg(data_.data(), data_.data(), data_.data() + data_.size());
+        }
+        // ... then fail once that data is drained and more input is requested
+        int_type underflow() override { throw std::runtime_error("simulated read failure"); }
+    };
+
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+
+    // Assert source fails to read
+    FailingReadBuf buf("partial plaintext");
+    std::istream failing_source(&buf);
+    std::ostringstream sink;
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      sdk.encrypt_stream(failing_source, sink, keyring));
+
+    // Assert sink fails to write
+    // (Note this doesn't use the FailingReadBuf defined above and uses a different failure mode)
+    std::istringstream source("plaintext");
+    std::ostringstream failed_sink;
+    failed_sink.setstate(std::ios::badbit);
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      sdk.encrypt_stream(source, failed_sink, keyring));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -669,6 +708,7 @@ int main(int argc, char** argv) {
         test_streaming();
         test_streaming_signed_message_refused();
         test_streaming_pump();
+        test_streaming_pump_io_failure();
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;
