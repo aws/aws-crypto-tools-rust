@@ -609,7 +609,7 @@ public:
 /// Do not act on released plaintext before finish() succeeds,
 /// and discard everything released if finish() throws.
 ///
-/// Streamed decrypt cannot be used with to decrypt messages
+/// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
 /// Decrypt these messages with Aws::Esdk::decrypt instead.
 class DecryptStream {
