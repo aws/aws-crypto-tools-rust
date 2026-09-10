@@ -121,6 +121,11 @@ publish (`brazil pb build`) are settled. What remains:
    (CargoBrazil is already universal in Brazil; crates.io crates are not
    per-crate Brazil packages). Needs your team's **bindle** and **mailing list**
    for the new version-set group. This is the main remaining setup.
+
+   The Peru + shared-CodeArtifact approach is what the Brazil tooling points to
+   (the `--associateSharedCodeArtifactRepository` build flag is Peru-only);
+   confirm it against your org's existing Rust-in-Brazil convention before
+   committing to it.
 2. **`Config`** — the CargoBrazil `Config` for the package (build system, major
    version, and a `cargo doc` step so docs ship in the package). Base it on an
    existing CargoBrazil package. It is part of what the sync CR lands.
