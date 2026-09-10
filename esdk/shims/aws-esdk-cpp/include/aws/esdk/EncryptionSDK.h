@@ -247,6 +247,11 @@ public:
 /// Base Keyring type.
 /// Every concrete keyring must derive from this type.
 /// All ESDK-supplied keyrings can be shared across threads.
+///
+/// If implementing a custom keyring, the implementation is responsible for:
+///  - Deriving from this base type
+///  - Keeping its own dependencies alive for its lifetime
+///  - Handling its own thread safety
 class Keyring {
     std::shared_ptr<detail::KeyringImpl> impl_;
     friend class EncryptionSDK;
@@ -256,6 +261,16 @@ protected:
 
 public:
     virtual ~Keyring() = default;
+
+    /// Adopts a custom keyring defined in Rust.
+    /// See `custom-keyring` example for usage.
+    ///
+    /// `raw_handle` must be the return value of passing the custom Rust keyring into `aws_esdk_cpp::into_keyring_handle`.
+    /// You may only pass each handle to exactly one adopt call's `raw_handle` arg.
+    /// Ownership transfer's to that call's returned Keyring; any other pointer is undefined behavior.
+    /// Everything the keyring depends on must be owned by the Rust keyring itself.
+    /// Do not reference C++ objects from the Rust keyring through raw pointers.
+    static Keyring adopt(void* raw_handle);
 };
 
 class CacheType;
