@@ -71,24 +71,21 @@ pub struct MaterialsError {
     /// through [`std::error::Error::source`] so consumers can walk the
     /// error chain. Not compared by [`PartialEq`].
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
-    /// Every error collected while attempting an operation that failed several
-    /// times before failing overall — a keyring's `on_decrypt` attempting each
-    /// candidate encrypted data key, for instance.
+    /// Every failure collected while attempting an operation that ultimately
+    /// failed — for example, a keyring's `on_decrypt` trying each candidate
+    /// encrypted data key.
     ///
     /// Non-empty exactly when this error aggregates others, which
     /// [`MaterialsError::is_collection`] reports.
     ///
-    /// This exists because the specification requires that a keyring failing
-    /// to decrypt any encrypted data key "MUST yield an error that includes
-    /// all the collected errors". Keeping them typed lets a caller inspect
-    /// each attempt.
+    /// Keeping the failures typed here satisfies the specification's
+    /// requirement that a keyring failing to decrypt any encrypted data key
+    /// "MUST yield an error that includes all the collected errors", and lets
+    /// a caller inspect each one. [`fmt::Display`] renders them from here, so
+    /// `message` describes the overall failure alone.
     ///
-    /// This is the only representation of the collected failures:
-    /// [`fmt::Display`] renders them from here, so `message` describes the
-    /// overall failure alone and the two cannot drift apart.
-    ///
-    /// `cause` and `collected` answer different questions and are not
-    /// alternatives: `cause` is why *this* failure happened and chains through
+    /// `cause` and `collected` answer different questions: `cause` is why
+    /// *this* failure happened and chains through
     /// [`std::error::Error::source`]; `collected` is what was tried and how
     /// each attempt failed.
     pub collected: Vec<MaterialsError>,
@@ -245,31 +242,26 @@ impl MaterialsError {
         }
     }
 
-    /// Construct an error carrying every error collected while attempting an
-    /// operation that failed repeatedly — a keyring's `on_decrypt` attempting
-    /// each candidate encrypted data key, for instance.
+    /// Construct an error carrying every failure collected while attempting an
+    /// operation that ultimately failed.
     ///
-    /// `kind` stays the *category* of the overall failure, because
-    /// aggregate-ness is orthogonal to it: a keyring that attempted keys and
-    /// failed is `KeyringFailed`, while one whose every candidate was rejected
-    /// by its own provider filter is `NoMatchingDataKey`. Use
-    /// [`MaterialsError::is_collection`] to ask whether an error aggregates
-    /// others.
+    /// `kind` is the category of the overall failure, not a statement about
+    /// aggregation: a keyring that attempted keys and failed is
+    /// `KeyringFailed`, while one whose every candidate was rejected by its
+    /// own provider filter is `NoMatchingDataKey`.
     ///
-    /// `collected` is expected to be non-empty. An empty `collected` yields an
+    /// `collected` is expected to be non-empty; an empty `collected` yields an
     /// error that is not an aggregate, so an operation with nothing to report
     /// should use the plain constructor for its kind instead.
     ///
-    /// `message` should describe the overall failure only. The collected errors
-    /// are rendered by [`fmt::Display`] from
+    /// `message` should describe the overall failure only — [`fmt::Display`]
+    /// renders the collected errors from
     /// [`collected`](MaterialsError::collected).
     ///
-    /// When exactly one attempt failed there is an unambiguous cause, so that
-    /// error is attached as the `cause` as well and
-    /// [`std::error::Error::source`] reaches it. With several failures there is
-    /// no single one to nominate, so no `cause` is set. Either way `collected`
-    /// holds every failure, so a caller does not have to branch on the count
-    /// to find them.
+    /// A single collected failure is also attached as the `cause`, so
+    /// [`std::error::Error::source`] reaches it; with several there is no one
+    /// failure to nominate and no `cause` is set. `collected` holds every
+    /// failure either way.
     #[track_caller]
     pub fn collection(
         kind: MaterialsErrorKind,
@@ -308,12 +300,14 @@ impl MaterialsError {
     }
 
     /// Whether this error aggregates other failures, as a keyring's
-    /// `on_decrypt` does when it attempted every candidate encrypted data key
-    /// and none succeeded.
+    /// `on_decrypt` does when every encrypted data key it examined produced a
+    /// failure.
     ///
     /// Prefer this to inspecting [`collected`](MaterialsError::collected)
-    /// directly: aggregate-ness is orthogonal to
-    /// [`kind`](MaterialsError::kind), which stays a category of failure.
+    /// directly. Aggregate-ness is orthogonal to
+    /// [`kind`](MaterialsError::kind): an aggregate can be a
+    /// `NoMatchingDataKey` (every candidate was filtered out) as readily as a
+    /// `KeyringFailed` (candidates were tried and failed).
     pub const fn is_collection(&self) -> bool {
         !self.collected.is_empty()
     }
@@ -322,10 +316,9 @@ impl MaterialsError {
 impl fmt::Display for MaterialsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "MaterialsError({:?}): {}", self.kind, self.message)?;
-        // The collected failures are rendered from `collected` rather than
-        // being pre-formatted into `message`, so there is one representation of
-        // them. Aggregates are one level deep — a collected per-attempt error
-        // is never itself an aggregate — so this does not nest.
+        // Rendered from `collected` so there is one representation of the
+        // failures. A collected error renders in full, so an aggregate nested
+        // inside an aggregate would nest this section; no caller here does that.
         if let [first, rest @ ..] = self.collected.as_slice() {
             write!(f, " (collected errors: [{first}")?;
             for err in rest {

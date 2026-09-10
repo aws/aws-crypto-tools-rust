@@ -282,8 +282,9 @@ impl Keyring for RawAesKeyring {
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();
 
         let mut collected_errors: Vec<MaterialsError> = Vec::new();
-        // Distinguishes "none of these keys are mine" from "one was mine and
-        // it failed to decrypt": both leave `collected_errors` non-empty.
+        // True once an EDK passes the provider filter and so belongs to this
+        // keyring. Filter misses are recorded in `collected_errors` too, so a
+        // non-empty `collected_errors` does not imply this.
         let mut attempted_decryption = false;
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
@@ -344,14 +345,9 @@ impl Keyring for RawAesKeyring {
         // materials; reaching this line means no decryption succeeded, so the
         // input `materials` is dropped unmodified.
 
-        // No EDK reached decryption, so the failure is categorically a
-        // no-match. `kind` is the category of the overall failure and stays
-        // `NoMatchingDataKey` even when the error aggregates the per-EDK
-        // rejections.
-        //
-        // Every filter miss is recorded, so `collected_errors` being non-empty
-        // does not by itself mean an EDK was attempted — `attempted_decryption`
-        // is the only signal for that.
+        // Nothing here was this keyring's. The per-EDK rejections ride along on
+        // the error, but the category stays `NoMatchingDataKey`: aggregating
+        // sub-errors does not change what kind of failure this is.
         if !attempted_decryption {
             return Err(if collected_errors.is_empty() {
                 MaterialsError::no_matching_data_key(
