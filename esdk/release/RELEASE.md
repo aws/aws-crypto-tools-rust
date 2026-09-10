@@ -73,10 +73,16 @@ manifest version, not the release mechanism.
   ```bash
   brazil versionset create \
     --versionSet AwsCryptoToolsRust/development \
-    --from <RUST_ENABLED_PARENT_VS> \
+    --dependencyModel peru \
     --targets AwsCryptoToolsRust-1.0 \
-    --platforms AL2_x86_64,AL2_aarch64
+    --platforms AL2_x86_64,AL2_aarch64 \
+    --bindleId <team-bindle> --mailingList <team-list>
   ```
+
+  Rust dependencies resolve from a **shared CodeArtifact crates.io mirror**, not
+  per-crate Brazil packages (CargoBrazil, the build system, is already universal
+  in Brazil). Associate the mirror on the first publish by adding
+  `--associateSharedCodeArtifactRepository` to the `pb build` once.
 
 - Coordinates, in the environment or `esdk/release/brazil.env` (sourced
   automatically):
@@ -110,11 +116,11 @@ The smoke test needs no AWS credentials — it uses a local raw-AES keyring.
 The package (`AwsCryptoToolsRust`), sync model (branch + code review), and
 publish (`brazil pb build`) are settled. What remains:
 
-1. **Rust-enabled parent version set** — `brazil vs create --from <?>` needs a
-   parent that already has CargoBrazil and the crates.io closure, so
-   `--autoMergeEnabled` can resolve the crate's ~210 dependencies. **This is the
-   blocker:** if no Rust-enabled version set exists in the org, Rust-in-Brazil
-   has to be stood up first. Find whoever owns Rust in the org's version sets.
+1. **Version set** — create a **Peru** version set and associate the **shared
+   CodeArtifact crates.io mirror**; that is how the ~210-crate closure resolves
+   (CargoBrazil is already universal in Brazil; crates.io crates are not
+   per-crate Brazil packages). Needs your team's **bindle** and **mailing list**
+   for the new version-set group. This is the main remaining setup.
 2. **`Config`** — the CargoBrazil `Config` for the package (build system, major
    version, and a `cargo doc` step so docs ship in the package). Base it on an
    existing CargoBrazil package. It is part of what the sync CR lands.
