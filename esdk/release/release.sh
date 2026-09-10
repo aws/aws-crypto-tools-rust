@@ -9,7 +9,8 @@
 # no per-release version and no git tag. Running this with no arguments performs
 # the whole release: it checks its own dependencies (offering to install any
 # that are missing), enforces the gates, verifies the build, bundles the docs,
-# copies to Brazil and publishes, then runs an encrypt/decrypt smoke test. It is
+# publishes to Brazil via PackageBuilder, then runs an encrypt/decrypt smoke
+# test. It is
 # otherwise non-interactive, and a failed gate stops the release before
 # anything ships.
 #
@@ -35,13 +36,16 @@ DOCS_OUT="${STAGE}/docs"
 # shellcheck source=/dev/null
 [ -f "${SCRIPT_DIR}/brazil.env" ] && . "${SCRIPT_DIR}/brazil.env"
 
-# Brazil coordinates. Each maps to an OPEN QUESTION in RELEASE.md; setting them
-# all makes this script copy to Brazil and publish with no further manual steps.
+# Brazil coordinates. Setting the package + version set makes this script
+# publish via PackageBuilder with no further manual steps. See RELEASE.md.
 BRAZIL_PACKAGE="${AWS_ESDK_BRAZIL_PACKAGE:-}"
-BRAZIL_PACKAGE_DIR="${AWS_ESDK_BRAZIL_PACKAGE_DIR:-}"
 BRAZIL_VERSION_SET="${AWS_ESDK_BRAZIL_VERSION_SET:-}"
+BRAZIL_BRANCH="${AWS_ESDK_BRAZIL_BRANCH:-mainline}"
+# Optional: a command that syncs this repo's crate into the Brazil package's
+# source. Leave unset when the package is GitHub-backed (source already mirrored).
+BRAZIL_IMPORT_CMD="${AWS_ESDK_BRAZIL_IMPORT_CMD:-}"
+# Optional: overrides the default `brazil pb build` publish command entirely.
 BRAZIL_PUBLISH_CMD="${AWS_ESDK_BRAZIL_PUBLISH_CMD:-}"
-BRAZIL_DOC_DIR="${AWS_ESDK_BRAZIL_DOC_DIR:-doc}"
 
 DRY_RUN=0
 ASSUME_YES=0
@@ -83,11 +87,11 @@ Runs the whole aws-esdk git -> Brazil release. No arguments and no manual steps.
   -h, --help  Show this help.
 
 Brazil coordinates are read from the environment or esdk/release/brazil.env:
-  AWS_ESDK_BRAZIL_PACKAGE      Brazil package that mirrors the crate.
-  AWS_ESDK_BRAZIL_PACKAGE_DIR  Local path to the Brazil package workspace.
-  AWS_ESDK_BRAZIL_VERSION_SET  Version set the package publishes into.
-  AWS_ESDK_BRAZIL_PUBLISH_CMD  Command that publishes the built package.
-  AWS_ESDK_BRAZIL_DOC_DIR      Docs subdir in the package (default: doc).
+  AWS_ESDK_BRAZIL_PACKAGE      Brazil package that builds the crate.
+  AWS_ESDK_BRAZIL_VERSION_SET  Version set to publish into (PackageBuilder).
+  AWS_ESDK_BRAZIL_BRANCH       Package source branch (default: mainline).
+  AWS_ESDK_BRAZIL_IMPORT_CMD   Optional: sync repo -> package source (skip if GitHub-backed).
+  AWS_ESDK_BRAZIL_PUBLISH_CMD  Optional: override the default `brazil pb build`.
 EOF
 }
 
@@ -156,7 +160,7 @@ check_deps() {
 
     local required=(git cargo rustc clippy make cc cmake go)
     if [ -n "${BRAZIL_PACKAGE}" ] && [ "${DRY_RUN}" -eq 0 ]; then
-        required+=(brazil rsync)
+        required+=(brazil)
     fi
 
     local missing=() t
@@ -248,34 +252,40 @@ build_docs() {
     echo "docs staged at: ${DOCS_OUT}/aws_esdk/index.html"
 }
 
-# Copy the crate into its Brazil package, build it, bundle the docs, and
-# publish. Runs end-to-end once the Brazil coordinates are set; the source
-# layout, publish command, and docs destination are OPEN QUESTIONS (RELEASE.md)
-# supplied via the environment.
+# Publish to Brazil via PackageBuilder: it builds the package from its source
+# branch and publishes into the version set. --autoMergeEnabled pulls missing
+# dependencies from the tracking version set, which must be Rust-enabled to
+# resolve the crate's ~210-crate closure. Set AWS_ESDK_BRAZIL_IMPORT_CMD if the
+# package is not GitHub-backed and needs the repo synced into its source first.
 brazil() {
     log "brazil"
-    if [ -z "${BRAZIL_PACKAGE}" ]; then
-        warn "NOT PUBLISHED: Brazil coordinates unset; verified the build, bundled docs, and ran the smoke test only."
-        warn "Set AWS_ESDK_BRAZIL_* (see RELEASE.md) and re-run to publish."
+    if [ -z "${BRAZIL_PACKAGE}" ] || [ -z "${BRAZIL_VERSION_SET}" ]; then
+        warn "NOT PUBLISHED: set AWS_ESDK_BRAZIL_PACKAGE and AWS_ESDK_BRAZIL_VERSION_SET to publish (see RELEASE.md)."
+        warn "The build was verified, the docs bundled, and the smoke test run."
         PUBLISHED=0
         return 0
     fi
 
     command -v brazil >/dev/null || die "brazil CLI not found on PATH"
-    [ -n "${BRAZIL_PACKAGE_DIR}" ] || die "AWS_ESDK_BRAZIL_PACKAGE_DIR must be set"
-    [ -n "${BRAZIL_PUBLISH_CMD}" ] || die "AWS_ESDK_BRAZIL_PUBLISH_CMD must be set (OPEN QUESTION)"
-
     echo "package:      ${BRAZIL_PACKAGE}"
-    echo "version set:  ${BRAZIL_VERSION_SET:-<unset>}"
-    echo "package dir:  ${BRAZIL_PACKAGE_DIR}"
+    echo "version set:  ${BRAZIL_VERSION_SET}"
+    echo "branch:       ${BRAZIL_BRANCH}"
 
-    # TODO(brazil): confirm the package's expected source layout / subdir.
-    run rsync -a --delete --exclude target --exclude release/build \
-        "${ESDK_DIR}/" "${BRAZIL_PACKAGE_DIR}/"
-    run bash -c "cd '${BRAZIL_PACKAGE_DIR}' && brazil-build"
-    # TODO(brazil): confirm the path Brazil publishes docs from.
-    run cp -R "${DOCS_OUT}" "${BRAZIL_PACKAGE_DIR}/${BRAZIL_DOC_DIR}"
-    run bash -c "cd '${BRAZIL_PACKAGE_DIR}' && ${BRAZIL_PUBLISH_CMD}"
+    # TODO(brazil): confirm whether the package is GitHub-backed (no import step)
+    # or needs a source push per release; set AWS_ESDK_BRAZIL_IMPORT_CMD if so.
+    [ -n "${BRAZIL_IMPORT_CMD}" ] && run bash -c "${BRAZIL_IMPORT_CMD}"
+
+    if [ -n "${BRAZIL_PUBLISH_CMD}" ]; then
+        run bash -c "${BRAZIL_PUBLISH_CMD}"
+    else
+        local dry=""
+        [ "${DRY_RUN}" -eq 1 ] && dry="--dryrun"
+        run brazil packagebuilder build \
+            --versionSet "${BRAZIL_VERSION_SET}" \
+            --package "${BRAZIL_PACKAGE}" --branch "${BRAZIL_BRANCH}" \
+            --useLatestChange --setAsTarget --autoMergeEnabled \
+            --releaseNotes "aws-esdk release" --waitForCompletion ${dry}
+    fi
     PUBLISHED=1
 }
 
