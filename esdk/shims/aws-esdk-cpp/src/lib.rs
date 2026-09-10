@@ -253,6 +253,12 @@ mod ffi {
         pub commitment_policy: OptCommitmentPolicy,
     }
 
+    struct StreamFinishOutput {
+        pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+        pub encryption_context: Vec<EncryptionContextItem>,
+        pub trailing_output: Vec<u8>,
+    }
+
     struct DecryptOutput {
         /// Algorithm Suite used to encrypt the message
         pub algorithm_suite_id: EsdkAlgorithmSuiteId,
@@ -376,6 +382,16 @@ mod ffi {
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
+
+        type EncryptStream;
+        fn create_encrypt_stream(input: &EncryptInput) -> Result<Box<EncryptStream>>;
+        fn encrypt_stream_write(stream: &mut EncryptStream, chunk: &[u8]) -> Result<Vec<u8>>;
+        fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<StreamFinishOutput>;
+
+        type DecryptStream;
+        fn create_decrypt_stream(input: &DecryptInput) -> Result<Box<DecryptStream>>;
+        fn decrypt_stream_write(stream: &mut DecryptStream, chunk: &[u8]) -> Result<Vec<u8>>;
+        fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<StreamFinishOutput>;
     }
 }
 
@@ -1204,6 +1220,305 @@ fn create_hierarchical_keyring(
     Ok(Box::new(Keyring {
         client: keyring.into(),
     }))
+}
+
+// Streaming
+
+/// Feeds chunks from C++ to a Rust ESDK input channel
+struct ChannelReader {
+    // Input channel to Rust ESDK
+    rx: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
+    // Current chunk being fed to Rust
+    // (Must be persisted across reads. One read may not consume entire chunk)
+    pending: Vec<u8>,
+    // How much of `pending` has been read
+    offset: usize,
+}
+
+// ChannelReader implements std::io::Read so ESDK Rust can read from it.
+// ESDK Rust calls read() to get new bytes from the ChannelReader.
+impl std::io::Read for ChannelReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Current chunk exhausted: block for the next one from C++.
+        while self.offset == self.pending.len() {
+            let rx = self.rx.lock().expect("stream reader poisoned");
+            match rx.recv() {
+                // Next chunk arrived; read from its start.
+                Ok(chunk) => {
+                    self.pending = chunk;
+                    self.offset = 0;
+                }
+                // Sender dropped: end of input.
+                Err(_) => return Ok(0),
+            }
+        }
+        // Copy as much of the current chunk as fits in buf; the rest waits for the next read.
+        let n = buf.len().min(self.pending.len() - self.offset);
+        buf[..n].copy_from_slice(&self.pending[self.offset..self.offset + n]);
+        self.offset += n;
+        Ok(n)
+    }
+}
+
+impl std::fmt::Debug for ChannelReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ChannelReader")
+    }
+}
+
+/// Feeds output from Rust ESDK to a Rust output channel
+struct ChannelWriter {
+    // Rust output channel
+    tx: std::sync::mpsc::Sender<Vec<u8>>,
+}
+
+// ChannelWriter implements std::io::Write so the ESDK Rust can write to it.
+// ESDK Rust calls write() to send output bytes to the ChannelWriter.
+impl std::io::Write for ChannelWriter {
+    //= spec/shim/shim.md#streaming
+    //= reason=Every buffer ESDK Rust produces is sent to C++ immediately
+    //# - The shim SHOULD return output from write steps as the core library produces
+    //# it, rather than holding all output until the finish step.
+    //
+    //= spec/shim/shim.md#streaming
+    //= type=implication
+    //= reason=The writer forwards the ESDK Rust's output verbatim
+    //# - The shim MUST NOT weaken the core library's own rules for releasing
+    //# unverified output.
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if !buf.is_empty() {
+            self.tx.send(buf.to_vec()).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stream closed")
+            })?;
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for ChannelWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ChannelWriter")
+    }
+}
+
+/// One in-flight streaming operation connecting C++ to the worker thread that runs ESDK Rust
+struct StreamState {
+    // Sends C++ chunks to the Rust ChannelReader
+    input_tx: Option<std::sync::mpsc::Sender<Vec<u8>>>,
+    // Receives output from the Rust ChannelWriter and forwards to C++.
+    output_rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    // The thread running the ESDK operation
+    worker: Option<std::thread::JoinHandle<Result<ffi::StreamFinishOutput, String>>>,
+    // Operation name ("encrypt_stream"/"decrypt_stream"), for error messages.
+    operation: &'static str,
+}
+
+impl StreamState {
+    /// Wires up the two channels and starts the ESDK operation on its own thread.
+    /// (Must run on a thread; the ESDK Rust call blocks, while C++ needs to keep calling write.)
+    fn spawn<F>(operation: &'static str, run: F) -> Self
+    where
+        F: FnOnce(ChannelReader, ChannelWriter) -> Result<ffi::StreamFinishOutput, String>
+            + Send
+            + 'static,
+    {
+        // input: C++ -> Rust reader
+        let (input_tx, input_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        // output: Rust writer -> C++
+        let (output_tx, output_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let reader = ChannelReader {
+            rx: std::sync::Mutex::new(input_rx),
+            pending: Vec::new(),
+            offset: 0,
+        };
+        let writer = ChannelWriter { tx: output_tx };
+        let worker = std::thread::spawn(move || run(reader, writer));
+        StreamState {
+            input_tx: Some(input_tx),
+            output_rx,
+            worker: Some(worker),
+            operation,
+        }
+    }
+
+    /// Sends a chunk to ESDK Rust and returns the output produced so far.
+    /// An empty chunk adds no input. It only polls for output.
+    //
+    //= spec/shim/shim.md#streaming
+    //# - The shim MUST provide a write step that the target calls repeatedly, each
+    //# call supplying the next chunk of input and returning whatever output the
+    //# operation has produced so far (possibly none).
+    fn write(&mut self, chunk: &[u8]) -> Result<Vec<u8>, String> {
+        let tx = self.input_tx.as_ref().ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                self.operation,
+                "write after finish",
+            )
+        })?;
+        if chunk.is_empty() {
+            return Ok(self.drain_available());
+        }
+        //= spec/shim/shim.md#streaming
+        //= reason=An ESDK Rust failure stops its reader. Writing again returns error, so does finish.
+        //# - When the operation has failed, the shim MUST return an error from the next
+        //# write or finish step.
+        if tx.send(chunk.to_vec()).is_err() {
+            // ESDK Rust raised an error. Join to surface its error.
+            return self.join_worker().map(|_| Vec::new());
+        }
+        Ok(self.drain_available())
+    }
+
+    /// Signals end of input, waits for the ESDK Rust to complete, and returns any remaining output.
+    //
+    //= spec/shim/shim.md#streaming
+    //# - The shim MUST provide a finish step that ends the input, completes the
+    //# operation, and returns the operation's result together with any output not
+    //# yet returned by a write step.
+    fn finish(&mut self) -> Result<ffi::StreamFinishOutput, String> {
+        drop(self.input_tx.take());
+        let mut result = self.join_worker()?;
+        let mut trailing = self.drain_available();
+        trailing.extend_from_slice(&result.trailing_output);
+        result.trailing_output = trailing;
+        Ok(result)
+    }
+
+    /// Waits for the worker thread to finish and returns its result
+    fn join_worker(&mut self) -> Result<ffi::StreamFinishOutput, String> {
+        let worker = self.worker.take().ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                self.operation,
+                "finish called twice",
+            )
+        })?;
+        worker.join().map_err(|_| {
+            shim_err(
+                ffi::ShimErrorKind::Esdk,
+                self.operation,
+                "stream worker panicked",
+            )
+        })?
+    }
+
+    /// Collects all output the worker has produced so far without blocking
+    fn drain_available(&mut self) -> Vec<u8> {
+        let mut out = Vec::new();
+        while let Ok(chunk) = self.output_rx.try_recv() {
+            out.extend_from_slice(&chunk);
+        }
+        out
+    }
+}
+
+struct EncryptStream {
+    state: StreamState,
+}
+struct DecryptStream {
+    state: StreamState,
+}
+
+//= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+//# - The ESDK shim SHOULD provide streaming encrypt and decrypt operations,
+//# accepting the same inputs as [encrypt](#encrypt-inputs) and
+//# [decrypt](#decrypt-inputs) except the plaintext or ciphertext, which the
+//# target supplies incrementally.
+fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
+    let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
+    let mut core_input = aws_esdk::EncryptStreamInput::new();
+    core_input.keyring = Some(keyring.client.clone());
+    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
+    if input.algorithm_suite_id.set {
+        core_input.algorithm_suite_id =
+            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
+    }
+    if input.frame_length.set {
+        core_input.frame_length = make_frame_length(input.frame_length.value)?;
+    }
+    if input.max_encrypted_data_keys.set {
+        core_input.max_encrypted_data_keys =
+            max_edks_target_to_core(input.max_encrypted_data_keys.value);
+    }
+    if input.commitment_policy.set {
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
+    }
+    Ok(Box::new(EncryptStream {
+        state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
+            let output = TOKIO_RUNTIME
+                .block_on(aws_esdk::encrypt_stream(
+                    &mut reader,
+                    &mut writer,
+                    &core_input,
+                ))
+                .map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt_stream", e))?;
+            //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+            //# - A successful finish step MUST return the same non-payload outputs as
+            //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
+            Ok(ffi::StreamFinishOutput {
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+                trailing_output: Vec::new(),
+            })
+        }),
+    }))
+}
+
+fn encrypt_stream_write(stream: &mut EncryptStream, chunk: &[u8]) -> Result<Vec<u8>, String> {
+    stream.state.write(chunk)
+}
+
+fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<ffi::StreamFinishOutput, String> {
+    stream.state.finish()
+}
+
+fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
+    let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
+    let mut core_input = aws_esdk::DecryptStreamInput::new();
+    core_input.keyring = Some(keyring.client.clone());
+    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
+    if input.max_encrypted_data_keys.set {
+        core_input.max_encrypted_data_keys =
+            max_edks_target_to_core(input.max_encrypted_data_keys.value);
+    }
+    if input.commitment_policy.set {
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
+    }
+    Ok(Box::new(DecryptStream {
+        state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
+            let output = TOKIO_RUNTIME
+                .block_on(aws_esdk::decrypt_stream(
+                    &mut reader,
+                    &mut writer,
+                    &core_input,
+                ))
+                //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
+                //= reason=The core's refusal (and every other core error) propagates through this map_err; the shim releases only what the core's writer produced.
+                //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
+                //# and the shim MUST surface the core ESDK's refusal to stream a message whose
+                //# verification cannot complete until the end of the message.
+                .map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt_stream", e))?;
+            Ok(ffi::StreamFinishOutput {
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+                trailing_output: Vec::new(),
+            })
+        }),
+    }))
+}
+
+fn decrypt_stream_write(stream: &mut DecryptStream, chunk: &[u8]) -> Result<Vec<u8>, String> {
+    stream.state.write(chunk)
+}
+
+fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinishOutput, String> {
+    stream.state.finish()
 }
 
 #[cfg(test)]
