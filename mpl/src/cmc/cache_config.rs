@@ -45,15 +45,6 @@
 // every keyring with `ttl_seconds <= 10` fail to construct; `ttl_seconds = 1` is
 // currently accepted as the smallest legal TTL.
 //
-// OPEN QUESTION (needs a spec-team decision, not a code change): whether
-// cross-implementation parity on default caching behaviour matters enough to
-// change this. As it stands, callers on other implementations get thundering-herd
-// suppression by default and callers here do not. Resolving that in favour of
-// parity means changing the specification first, and then reconciling the
-// grace-period rule with the TTL floor above — note Dafny is itself
-// inconsistent, applying the TTL cross-check on its absent-cache path but not
-// when `Default` is passed explicitly, while building a 10-second grace period
-// either way.
 
 use std::sync::Arc;
 
