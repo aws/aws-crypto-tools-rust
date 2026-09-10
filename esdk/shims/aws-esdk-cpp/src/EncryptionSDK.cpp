@@ -166,6 +166,20 @@ struct KeyringImpl {
         : retained(std::move(deps)), handle(std::move(h)) {}
 };
 
+struct EncryptStreamImpl {
+    Retained retained;
+    ::rust::Box<::ffi::EncryptStream> handle;
+    EncryptStreamImpl(Retained deps, ::rust::Box<::ffi::EncryptStream> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
+};
+
+struct DecryptStreamImpl {
+    Retained retained;
+    ::rust::Box<::ffi::DecryptStream> handle;
+    DecryptStreamImpl(Retained deps, ::rust::Box<::ffi::DecryptStream> h)
+        : retained(std::move(deps)), handle(std::move(h)) {}
+};
+
 }  // namespace detail
 
 // ClientConfig
@@ -312,6 +326,15 @@ CryptographicMaterialsCache::CryptographicMaterialsCache(const CacheType& cache)
 
 // Keyrings
 
+// Adopt a custom Rust keyring into the Aws::Esdk::Keyring type
+Keyring Keyring::adopt(void* raw_handle) {
+    return Keyring(std::make_shared<detail::KeyringImpl>(
+        // Custom implementations of Keyrings currently can't retain C++ resources,
+        // but support for this can be added in the future as a non-breaking change.
+        detail::Retained{},
+        ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
+}
+
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::uint32_t ttl_seconds,
@@ -438,6 +461,156 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
+}
+
+// Streaming
+
+EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
+                                                   const EncryptOptions& options) {
+    ::ffi::EncryptInput in{};
+    in.keyring = &*keyring.impl_->handle;
+    in.encryption_context = detail::to_ec(options.encryption_context_);
+    in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
+    if (commitment_policy_ && options.commitment_policy_)
+        throw ValidationException(
+            "commitment_policy is provided by both the EncryptionSDK client and the "
+            "per-call options. Set it in exactly one place.");
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
+    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
+                                                                     : commitment_policy_);
+    in.frame_length = detail::to_opt(options.frame_length_);
+    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
+        throw ValidationException(
+            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
+            "the per-call options. Set it in exactly one place.");
+    in.max_encrypted_data_keys = detail::to_opt(
+        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                         : max_encrypted_data_keys_);
+    // Keyring MUST be retained.
+    // The stream outlives this call and must not outlive the keyring it was created from.
+    return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
+        detail::Retained{keyring.impl_},
+        detail::guard([&] { return ::ffi::create_encrypt_stream(in); })));
+}
+
+DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
+                                                   const DecryptOptions& options) {
+    ::ffi::DecryptInput in{};
+    in.keyring = &*keyring.impl_->handle;
+    in.encryption_context = detail::to_ec(options.encryption_context_);
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on both the client and a
+    //# per-operation input MUST be rejected as invalid input.
+    if (commitment_policy_ && options.commitment_policy_)
+        throw ValidationException(
+            "commitment_policy is provided by both the EncryptionSDK client and the "
+            "per-call options. Set it in exactly one place.");
+    //= spec/shim/esdk-shim.md#client-configuration
+    //# - A configuration value the target supplies on neither the client nor the
+    //# operation MUST defer to the core ESDK's default.
+    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
+                                                                     : commitment_policy_);
+    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
+        throw ValidationException(
+            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
+            "the per-call options. Set it in exactly one place.");
+    in.max_encrypted_data_keys = detail::to_opt(
+        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
+                                         : max_encrypted_data_keys_);
+    // Keyring MUST be retained.
+    // The stream outlives this call and must not outlive the keyring it was created from.
+    return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
+        detail::Retained{keyring.impl_},
+        detail::guard([&] { return ::ffi::create_decrypt_stream(in); })));
+}
+
+Bytes EncryptStream::write(const std::uint8_t* data, std::size_t size) {
+    static const std::uint8_t empty = 0;
+    // An empty write is a poll.
+    // Keep the slice pointer valid even when the caller passes null with size 0.
+    if (size == 0) data = &empty;
+    return detail::make_bytes(detail::guard([&] {
+        return ::ffi::encrypt_stream_write(*impl_->handle,
+                                           ::rust::Slice<const std::uint8_t>(data, size));
+    }));
+}
+
+StreamResult EncryptStream::finish() {
+    ::ffi::StreamFinishOutput out =
+        detail::guard([&] { return ::ffi::encrypt_stream_finish(*impl_->handle); });
+    StreamResult result;
+    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    result.encryption_context = detail::from_ec(out.encryption_context);
+    result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
+    return result;
+}
+
+Bytes DecryptStream::write(const std::uint8_t* data, std::size_t size) {
+    static const std::uint8_t empty = 0;
+    // An empty write is a poll.
+    // Keep the slice pointer valid even when the caller passes null with size 0.
+    if (size == 0) data = &empty;
+    return detail::make_bytes(detail::guard([&] {
+        return ::ffi::decrypt_stream_write(*impl_->handle,
+                                           ::rust::Slice<const std::uint8_t>(data, size));
+    }));
+}
+
+StreamResult DecryptStream::finish() {
+    ::ffi::StreamFinishOutput out =
+        detail::guard([&] { return ::ffi::decrypt_stream_finish(*impl_->handle); });
+    StreamResult result;
+    result.trailing_output = detail::make_bytes(std::move(out.trailing_output));
+    result.encryption_context = detail::from_ec(out.encryption_context);
+    result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
+    return result;
+}
+
+namespace detail {
+
+// Reads `source` in chunks, feeds each to `stream.write`, and forwards the
+// produced bytes to `sink`; then finalizes and appends the trailing output.
+// Throws if `source` fails before end-of-stream or `sink` rejects a write.
+template <typename Stream>
+StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
+    char buf[4096];
+    while (source.read(buf, sizeof(buf)) || source.gcount() > 0) {
+        Bytes produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
+                                      static_cast<std::size_t>(source.gcount()));
+        sink.write(reinterpret_cast<const char*>(produced.data()),
+                   static_cast<std::streamsize>(produced.size()));
+    }
+    // If `source` failed to read, throw so an incomplete output is not surfaced
+    if (source.bad() || !source.eof())
+        throw AwsEncryptionSdkException("reading from the source stream failed before the end of input");
+    StreamResult result = stream.finish();
+    sink.write(reinterpret_cast<const char*>(result.trailing_output.data()),
+               static_cast<std::streamsize>(result.trailing_output.size()));
+    // If `sink` failed to write, throw so an incomplete output is not surfaced
+    if (!sink)
+        throw AwsEncryptionSdkException("writing to the sink stream failed; its output is incomplete");
+    return result;
+}
+
+}  // namespace detail
+
+StreamResult EncryptionSDK::encrypt_stream(std::istream& source, std::ostream& sink,
+                                           const Keyring& keyring,
+                                           const EncryptOptions& options) {
+    EncryptStream stream = create_encrypt_stream(keyring, options);
+    return detail::pump_stream(stream, source, sink);
+}
+
+StreamResult EncryptionSDK::decrypt_stream(std::istream& source, std::ostream& sink,
+                                           const Keyring& keyring,
+                                           const DecryptOptions& options) {
+    DecryptStream stream = create_decrypt_stream(keyring, options);
+    return detail::pump_stream(stream, source, sink);
 }
 
 }  // namespace Esdk

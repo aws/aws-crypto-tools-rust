@@ -20,7 +20,21 @@ test_esdk: tests/test_esdk.cpp tests/esdk_test_support.h include/aws/esdk/Encryp
 		$(CXXFLAGS_COMMON) $(COV_CXXFLAGS) $(LINK_LIBS) \
 		-o test_esdk
 
-# enum_parity tests run during compile step
+adopt_keyring_test: tests/adopt_keyring_test.cpp tests/esdk_test_support.h include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
+	g++ tests/adopt_keyring_test.cpp \
+		-Itarget/cxxbridge $(CXXFLAGS_COMMON) $(LINK_LIBS) \
+		-o adopt_keyring_test
+
+custom_keyring_example: examples/custom-keyring/src/lib.rs examples/custom-keyring/example.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs
+	cd examples/custom-keyring && cargo build
+	g++ examples/custom-keyring/example.cpp \
+		-Iinclude \
+		examples/custom-keyring/target/debug/libcustom_keyring_example.a \
+		-lpthread -ldl $(PLATFORM_LIBS) \
+		-std=c++17 \
+		-o custom_keyring_example
+
+# This test runs during compilation (static asserts)
 enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(STATICLIB)
 	g++ -c enum_parity_test.cpp \
 		-Itarget/cxxbridge -Iinclude \
@@ -28,15 +42,16 @@ enum_parity: enum_parity_test.cpp include/aws/esdk/EncryptionSDK.h src/lib.rs $(
 		-o enum_parity_test.o
 
 clean:
-	rm -f test_esdk enum_parity_test.o
+	rm -f test_esdk adopt_keyring_test custom_keyring_example enum_parity_test.o
 
 clippy:
 	cargo clippy --tests
 
-# Build the library and the tests
+# Build the Rust static library, the compile-time parity check, the test binary,
+# the custom-keyring adoption test, and the custom-keyring example.
 build-tests:
 	cargo build
-	$(MAKE) enum_parity test_esdk
+	$(MAKE) enum_parity test_esdk custom_keyring_example adopt_keyring_test
 
 # Run C++ tests. LOCAL_ONLY=--local-only skips the credentialed integration
 # tests; empty (the default) makes a missing ESDK_TEST_* credential a hard
@@ -44,6 +59,8 @@ build-tests:
 LOCAL_ONLY ?=
 run-cpp:
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./test_esdk $(LOCAL_ONLY)
+	./custom_keyring_example
+	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./adopt_keyring_test
 
 # Full local suite without credentials
 test: build-tests

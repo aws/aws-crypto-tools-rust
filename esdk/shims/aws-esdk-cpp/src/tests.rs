@@ -734,3 +734,92 @@ fn create_sdk_config_applies_every_field() {
     let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
+
+// Handles
+
+// into_keyring_handle is the Rust that backs the public C++ `Keyring::adopt` path.
+// Check it yields an owned Box<Keyring> pointer. (Type only testable in Rust).
+#[test]
+fn into_keyring_handle_boxes_the_keyring() {
+    let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x2A; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("raw AES keyring should build");
+    let handle = into_keyring_handle(keyring.client.clone());
+    assert!(!handle.is_null());
+    unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
+}
+
+// Streaming internals
+//
+// Stream internals (ChannelReader/ChannelWriter and the worker thread)
+// are unconstructible from C++, so internals must be tested here.
+// Actual streamed encrypt/decrypt behavior lives in the C++ test_streaming.
+
+#[test]
+fn channel_reader_and_writer_debug() {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let reader = ChannelReader {
+        rx: std::sync::Mutex::new(rx),
+        pending: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(format!("{reader:?}"), "ChannelReader");
+    let writer = ChannelWriter { tx };
+    assert_eq!(format!("{writer:?}"), "ChannelWriter");
+}
+
+#[test]
+fn channel_writer_flush_is_noop_and_reports_broken_pipe() {
+    use std::io::Write;
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let mut writer = ChannelWriter { tx };
+    writer.flush().expect("flush is a no-op");
+    // A non-empty write forwards the bytes and returns the count.
+    assert_eq!(writer.write(b"data").expect("write succeeds"), 4);
+    assert_eq!(rx.recv().unwrap(), b"data");
+    // An empty write is a no-op poll.
+    assert_eq!(writer.write(b"").expect("empty write"), 0);
+    // Receiver gone: a non-empty write reports the broken pipe.
+    drop(rx);
+    let err = writer
+        .write(b"more")
+        .expect_err("write must fail once the receiver is gone");
+    assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+}
+
+// A panicking worker.
+// Finish will join it and surface the Rust panic as an error to C++.
+#[test]
+fn stream_finish_surfaces_worker_panic() {
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
+    let err = expect_err(state.finish());
+    assert!(
+        err.contains("stream worker panicked"),
+        "unexpected error: {err}"
+    );
+}
+
+// An erroring worker.
+// Assert its error is raised.
+#[test]
+fn stream_write_after_worker_failure_surfaces_error() {
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| {
+        Err("worker failed".to_string())
+    });
+    let mut surfaced = None;
+    for _ in 0..200 {
+        match state.write(b"data") {
+            Ok(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(e) => {
+                surfaced = Some(e);
+                break;
+            }
+        }
+    }
+    let err = surfaced.expect("write must surface the failed worker");
+    assert!(err.contains("worker failed"), "unexpected error: {err}");
+}
