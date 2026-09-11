@@ -1,11 +1,13 @@
 // Integration tests exercising the C++ interfaces (EncryptionSDK.h).
 
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
 #include <string>
+#include <thread>
 #include <typeinfo>
 #include <vector>
 
@@ -385,6 +387,8 @@ void test_streaming() {
         //# it, rather than holding all output until the finish step.
         auto out = enc.write(nullptr, 0);
         ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+        // Sleep briefly to ensure the background worker thread consuming these writes can be scheduled
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     ESDK_CHECK(ciphertext.size() >= 4096);
     //= spec/shim/shim.md#streaming
