@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Resolve the spec dependency declared in spec-source.json into <repo-root>/spec.
-# The spec is a build-time dependency cloned at the configured ref, not a git
-# submodule. `ref` may be a branch (tracks its tip) or a commit. duvet reads the
-# resolved spec/ tree; the esdk and cpp-shim projects symlink to it.
+# The spec is a build-time dependency cloned at the configured ref, not a git submodule.
+# `ref` may be a branch (tracks its tip) or a commit.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
