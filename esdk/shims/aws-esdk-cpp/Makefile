@@ -132,7 +132,7 @@ test-ci-cpp: build-tests
 	$(MAKE) run-cpp
 
 duvet:
-	../../../resolve-spec.sh
+	../../../scripts/resolve-spec.sh
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report
 

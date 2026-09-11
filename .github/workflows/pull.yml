@@ -64,8 +64,8 @@ jobs:
               - 's3ec/**'
             shared:
               - '.github/workflows/**'
-              - 'spec-source.json'
-              - 'resolve-spec.sh'
+              - 'scripts/spec-source.json'
+              - 'scripts/resolve-spec.sh'
 
       - name: Compute project matrix
         id: set

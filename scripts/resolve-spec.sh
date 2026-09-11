@@ -4,11 +4,12 @@
 # `ref` may be a branch (tracks its tip) or a commit.
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-config="$root/spec-source.json"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+config="$script_dir/spec-source.json"
 url="$(jq -er '.spec.url' "$config")"
 ref="$(jq -er '.spec.ref' "$config")"
-dest="$root/spec"
+dest="$repo_root/spec"
 
 if [ ! -e "$dest/.git" ]; then
   git init -q "$dest"
