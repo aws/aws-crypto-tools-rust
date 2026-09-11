@@ -17,11 +17,11 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 /// Use this to recover a concrete AWS SDK error from an MPL error:
 ///
 /// ```no_run
-/// use aws_crypto_mpl::error_chain::find_source;
+/// use aws_crypto_mpl::error_chain::find_in_error_chain;
 /// use aws_sdk_kms::error::SdkError;
 /// use aws_sdk_kms::operation::decrypt::DecryptError;
 /// # fn example(err: &aws_crypto_mpl::structures::MaterialsError) {
-/// if let Some(sdk) = find_source::<SdkError<DecryptError>>(err) {
+/// if let Some(sdk) = find_in_error_chain::<SdkError<DecryptError>>(err) {
 ///     if sdk.as_service_error().is_some_and(DecryptError::is_incorrect_key_exception) {
 ///         // the branch key's ciphertext was encrypted under a different KMS key
 ///     }
@@ -35,7 +35,7 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 /// `None`; [`aws_sdk_kms`](crate::aws_sdk_kms) and
 /// [`aws_sdk_dynamodb`](crate::aws_sdk_dynamodb) are re-exported so the
 /// version matches.
-pub fn find_source<'a, E>(err: &'a (dyn Error + 'static)) -> Option<&'a E>
+pub fn find_in_error_chain<'a, E>(err: &'a (dyn Error + 'static)) -> Option<&'a E>
 where
     E: Error + 'static,
 {

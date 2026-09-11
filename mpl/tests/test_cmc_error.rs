@@ -8,7 +8,7 @@
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
-use aws_crypto_mpl::error_chain::find_source;
+use aws_crypto_mpl::error_chain::find_in_error_chain;
 use aws_crypto_mpl::{CmcError, CmcErrorKind};
 
 #[test]
@@ -90,11 +90,12 @@ fn display_renders_only_its_own_layer() {
 }
 
 #[test]
-fn the_cause_is_reachable_with_find_source() {
+fn the_cause_is_reachable_with_find_in_error_chain() {
     let err = CmcError::storage_failed_with_cause(
         "remote cache read failed",
         IoError::new(IoErrorKind::NotFound, "entry vanished"),
     );
-    let io = find_source::<IoError>(&err).expect("find_source must reach the CmcError's cause");
+    let io = find_in_error_chain::<IoError>(&err)
+        .expect("find_in_error_chain must reach the CmcError's cause");
     assert_eq!(io.kind(), IoErrorKind::NotFound);
 }

@@ -183,9 +183,9 @@ fn test_display_omits_the_collected_clause_when_there_is_nothing_collected() {
 
 #[test]
 fn test_collection_keeps_the_kind_it_was_given() {
-    // Aggregate-ness is orthogonal to kind: a keyring whose every candidate was
-    // rejected by its own provider filter aggregates those rejections but is
-    // still categorically a no-match, not a decryption failure.
+    // Collecting sub-errors does not change the kind. Every candidate here was
+    // rejected by the keyring's provider filter, so this stays a no-match
+    // rather than becoming a decryption failure.
     let err = MaterialsError::collection(
         MaterialsErrorKind::NoMatchingDataKey,
         "no encrypted data key matched this keyring",

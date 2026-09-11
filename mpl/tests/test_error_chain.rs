@@ -11,7 +11,7 @@ use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use aws_crypto_mpl::cmc::CmcError;
-use aws_crypto_mpl::error_chain::{aws_service_error_code, find_source};
+use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::keystore::{KeystoreError, KeystoreErrorKind};
 use aws_crypto_mpl::structures::MaterialsError;
 
@@ -25,9 +25,10 @@ fn nested_chain() -> MaterialsError {
 }
 
 #[test]
-fn find_source_returns_the_error_itself_at_depth_zero() {
+fn find_in_error_chain_returns_the_error_itself_at_depth_zero() {
     let err = nested_chain();
-    let found = find_source::<MaterialsError>(&err).expect("the outermost error matches its type");
+    let found =
+        find_in_error_chain::<MaterialsError>(&err).expect("the outermost error matches its type");
     assert_eq!(
         found.message, "keyring could not reach its keystore",
         "depth-0 lookup must return the outermost error, not a link below it"
@@ -35,17 +36,18 @@ fn find_source_returns_the_error_itself_at_depth_zero() {
 }
 
 #[test]
-fn find_source_walks_to_an_intermediate_link() {
+fn find_in_error_chain_walks_to_an_intermediate_link() {
     let err = nested_chain();
-    let found = find_source::<KeystoreError>(&err).expect("the KeystoreError link is reachable");
+    let found =
+        find_in_error_chain::<KeystoreError>(&err).expect("the KeystoreError link is reachable");
     assert_eq!(found.kind(), &KeystoreErrorKind::Dynamodb);
     assert_eq!(found.message(), "DynamoDB failed");
 }
 
 #[test]
-fn find_source_walks_to_the_root_of_the_chain() {
+fn find_in_error_chain_walks_to_the_root_of_the_chain() {
     let err = nested_chain();
-    let found = find_source::<IoError>(&err).expect("the root io::Error is reachable");
+    let found = find_in_error_chain::<IoError>(&err).expect("the root io::Error is reachable");
     assert_eq!(
         found.kind(),
         IoErrorKind::ConnectionReset,
@@ -54,23 +56,23 @@ fn find_source_walks_to_the_root_of_the_chain() {
 }
 
 #[test]
-fn find_source_returns_none_for_a_type_absent_from_the_chain() {
+fn find_in_error_chain_returns_none_for_a_type_absent_from_the_chain() {
     let err = nested_chain();
     assert!(
-        find_source::<CmcError>(&err).is_none(),
+        find_in_error_chain::<CmcError>(&err).is_none(),
         "a type that does not appear in the chain must not match by coincidence"
     );
 }
 
 #[test]
-fn find_source_returns_none_for_a_single_link_chain() {
+fn find_in_error_chain_returns_none_for_a_single_link_chain() {
     let err = MaterialsError::keyring_failed("no underlying cause");
     assert!(
         err.source().is_none(),
         "precondition: the chain has one link"
     );
     assert!(
-        find_source::<IoError>(&err).is_none(),
+        find_in_error_chain::<IoError>(&err).is_none(),
         "walking a chain with no source must terminate and return None"
     );
 }

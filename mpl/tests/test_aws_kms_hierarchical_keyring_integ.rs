@@ -899,9 +899,8 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
     //       case ComAmazonawsKms(nestedError) =>
     //         expect nestedError.IncorrectKeyException?;
     //
-    // The keystore now nests the originating SDK error as the cause, so that
-    // assertion ports directly instead of being approximated by the error
-    // kind. The chain is MaterialsError -> KeystoreError -> SdkError.
+    // The keystore nests the originating SDK error as the cause.
+    // The chain is MaterialsError -> KeystoreError -> SdkError.
     let keystore_err = err
         .source()
         .expect("the keystore failure must be attached as the cause")

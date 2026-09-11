@@ -304,7 +304,7 @@ impl MaterialsError {
     /// failure.
     ///
     /// Prefer this to inspecting [`collected`](MaterialsError::collected)
-    /// directly. Aggregate-ness is orthogonal to
+    /// directly. Collecting sub-errors does not change
     /// [`kind`](MaterialsError::kind): an aggregate can be a
     /// `NoMatchingDataKey` (every candidate was filtered out) as readily as a
     /// `KeyringFailed` (candidates were tried and failed).
@@ -318,7 +318,7 @@ impl fmt::Display for MaterialsError {
         write!(f, "MaterialsError({:?}): {}", self.kind, self.message)?;
         // Rendered from `collected` so there is one representation of the
         // failures. A collected error renders in full, so an aggregate nested
-        // inside an aggregate would nest this section; no caller here does that.
+        // inside an aggregate would nest this section.
         if let [first, rest @ ..] = self.collected.as_slice() {
             write!(f, " (collected errors: [{first}")?;
             for err in rest {

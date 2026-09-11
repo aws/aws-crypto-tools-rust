@@ -19,7 +19,7 @@ use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
-use aws_crypto_mpl::error_chain::{aws_service_error_code, find_source};
+use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::{
     BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
 };
@@ -447,7 +447,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
 }
 
 #[tokio::test]
-async fn find_source_recovers_the_sdk_error_by_type() {
+async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
     let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
         .await
         .unwrap();
@@ -457,11 +457,11 @@ async fn find_source_recovers_the_sdk_error_by_type() {
     };
 
     assert!(
-        find_source::<SdkError<GetItemError>>(&err).is_some(),
-        "find_source must recover the concrete GetItem SdkError from the chain"
+        find_in_error_chain::<SdkError<GetItemError>>(&err).is_some(),
+        "find_in_error_chain must recover the concrete GetItem SdkError from the chain"
     );
     assert!(
-        find_source::<SdkError<DescribeTableError>>(&err).is_none(),
+        find_in_error_chain::<SdkError<DescribeTableError>>(&err).is_none(),
         "a different operation's SdkError is a different type and must not match"
     );
 }
@@ -481,7 +481,7 @@ async fn a_dispatch_failure_has_no_service_error_code() {
         Err(e) => e,
     };
 
-    let sdk = find_source::<SdkError<GetItemError>>(&err)
+    let sdk = find_in_error_chain::<SdkError<GetItemError>>(&err)
         .expect("precondition: the SDK error is in the chain");
     assert!(
         sdk.as_service_error().is_none(),
