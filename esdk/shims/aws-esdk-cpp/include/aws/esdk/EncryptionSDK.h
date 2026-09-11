@@ -624,7 +624,7 @@ public:
 /// Do not act on released plaintext before finish() succeeds,
 /// and discard everything released if finish() throws.
 ///
-/// Streamed decrypt cannot be used with to decrypt messages
+/// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
 /// Decrypt these messages with Aws::Esdk::decrypt instead.
 class DecryptStream {
@@ -732,6 +732,7 @@ public:
     /// then flushes the final frame. Returns the message metadata. Neither the
     /// plaintext nor the ciphertext is ever fully held in memory, so this works
     /// on inputs too large to fit. For per-chunk control, use create_encrypt_stream.
+    /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
     StreamResult encrypt_stream(
         std::istream& source,
         std::ostream& sink,
@@ -740,6 +741,7 @@ public:
 
     /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
     /// to `sink`, and returns the message metadata.
+    /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
     /// SECURITY: `sink` receives plaintext before verification completes. On a
     /// normal return every byte written to `sink` is authenticated; if this
     /// throws, discard everything written to `sink`. Streamed decrypt cannot

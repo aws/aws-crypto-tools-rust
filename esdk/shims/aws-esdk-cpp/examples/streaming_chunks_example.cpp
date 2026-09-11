@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
@@ -88,8 +89,13 @@ int main() {
                 out.write(reinterpret_cast<const char*>(produced.data()), produced.size());
             }
             // finish() flushes the last frame (and signature footer, for signing suites).
+            // The loop above exits on read errors too, not just EOF.
+            // Check for EOF first so a truncated read never becomes a valid message.
+            if (!in.eof() || in.bad())
+                throw std::runtime_error("failed reading plaintext file");
             Aws::Esdk::Bytes trailing = enc.finish().trailing_output;
             out.write(reinterpret_cast<const char*>(trailing.data()), trailing.size());
+            if (!out) throw std::runtime_error("failed writing ciphertext file");
         }
 
         // Decrypt
@@ -110,11 +116,14 @@ int main() {
                 append(unverified, dec.write(reinterpret_cast<const std::uint8_t*>(chunk),
                                              static_cast<std::size_t>(in.gcount())));
             }
+            if (!in.eof() || in.bad())
+                throw std::runtime_error("failed reading ciphertext file");
             append(unverified, dec.finish().trailing_output);
 
             // finish() returned. Every byte is now authenticated and safe to use.
             std::ofstream out(DECRYPTED_FILE, std::ios::binary);
             out.write(reinterpret_cast<const char*>(unverified.data()), unverified.size());
+            if (!out) throw std::runtime_error("failed writing decrypted file");
         }
 
         if (!files_equal(PLAINTEXT_FILE, DECRYPTED_FILE)) {
