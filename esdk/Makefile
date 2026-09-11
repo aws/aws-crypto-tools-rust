@@ -15,6 +15,7 @@ test:
 	cargo test --no-default-features --features legacy
 
 duvet:
+	../resolve-spec.sh
 	@test -e spec || ln -s ../spec spec
 	rm -rf .duvet/reports .duvet/requirements
 	duvet report

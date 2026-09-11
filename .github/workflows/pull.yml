@@ -7,9 +7,9 @@
 #   * If `mpl/` is modified, run CI for ALL projects. MPL is the shared
 #     foundation that every other project depends on, so a change there can
 #     affect anything downstream.
-#   * If shared infrastructure changes (the CI workflows themselves, the
-#     `spec` submodule pointer, or `.gitmodules`), also run CI for all
-#     projects, since those changes can affect every project.
+#   * If shared infrastructure changes (the CI workflows themselves or the
+#     spec source config), also run CI for all projects, since those changes
+#     can affect every project.
 #   * Otherwise, run CI only for the project directories that changed.
 name: PR CI
 
@@ -64,8 +64,8 @@ jobs:
               - 's3ec/**'
             shared:
               - '.github/workflows/**'
-              - 'spec'
-              - '.gitmodules'
+              - 'spec-source.json'
+              - 'resolve-spec.sh'
 
       - name: Compute project matrix
         id: set

@@ -9,15 +9,15 @@ on:
       - "esdk/shims/aws-esdk-cpp/**"
       - ".github/workflows/aws-esdk-cpp-duvet.yml"
       - ".github/workflows/duvet.yml"
-      - "spec"
-      - ".gitmodules"
+      - "spec-source.json"
+      - "resolve-spec.sh"
   push:
     paths:
       - "esdk/shims/aws-esdk-cpp/**"
       - ".github/workflows/aws-esdk-cpp-duvet.yml"
       - ".github/workflows/duvet.yml"
-      - "spec"
-      - ".gitmodules"
+      - "spec-source.json"
+      - "resolve-spec.sh"
   workflow_dispatch:
 
 jobs:

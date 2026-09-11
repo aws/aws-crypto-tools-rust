@@ -7,3 +7,6 @@
 **/.duvet/snapshot.txt
 **/.duvet/reports/**
 **/.duvet/requirements/**
+
+# Resolved spec dependency (see spec-source.json / resolve-spec.sh)
+/spec/
