@@ -15,7 +15,10 @@ pub mod storm_tracking;
 
 use async_trait::async_trait;
 
-pub use cache_config::{CacheType, DefaultCache, StormTrackingCache, StormTrackingCacheBuilder};
+pub use cache_config::{
+    CacheType, DefaultCache, MultiThreadedCache, SingleThreadedCache, StormTrackingCache,
+    StormTrackingCacheBuilder,
+};
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use local::LocalCmc;
 pub use storm_tracking::{StormTrackingCmc, TimeUnits};

@@ -18,6 +18,8 @@
 //! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -31,7 +33,9 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
-use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
+use aws_crypto_mpl::cmc::cache_config::{
+    CacheType, DefaultCache, MultiThreadedCache, SingleThreadedCache, StormTrackingCache,
+};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
@@ -40,7 +44,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc};
+use aws_crypto_mpl::{CacheEntry, CachedMaterials, Cmc, LocalCmc, UsageMetadata};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -403,6 +407,203 @@ fn new_with_cache_type_none_succeeds() {
         None,
     )
     .expect("None cache_type must default to a built-in cache");
+}
+
+/// A cache entry holding branch-key materials, for asserting whether a
+/// configured cache actually stores anything.
+fn branch_key_cache_entry() -> CacheEntry {
+    let now = SystemTime::now();
+    CacheEntry::new(
+        CachedMaterials::BranchKey(fixture_materials_empty_ec()),
+        now,
+        now + Duration::from_secs(3600),
+        UsageMetadata::default(),
+    )
+}
+
+/// Build a keyring with `cache_type` and hand back the cache it constructed.
+fn cache_for(cache_type: CacheType) -> Arc<dyn Cmc> {
+    let keyring = HierarchicalKeyring::new(
+        keystore_never_consulted(),
+        3600,
+        Some("bk".to_string()),
+        None,
+        Some(cache_type),
+        None,
+    )
+    .expect("the cache type must be accepted");
+    Arc::clone(keyring.cache())
+}
+
+#[tokio::test]
+async fn new_with_no_cache_type_builds_a_cache_that_stores_nothing() {
+    let cache = cache_for(CacheType::No);
+
+    cache
+        .put_cache_entry(b"id", branch_key_cache_entry())
+        .await
+        .expect("put on a no-store cache must succeed rather than error");
+
+    assert!(
+        cache
+            .get_cache_entry(b"id")
+            .await
+            .expect("get on a no-store cache must succeed")
+            .is_none(),
+        "CacheType::No MUST never cache anything",
+    );
+}
+
+#[tokio::test]
+async fn new_with_single_threaded_cache_stores_entries() {
+    let cache = cache_for(CacheType::SingleThreaded(SingleThreadedCache::new(8)));
+
+    cache
+        .put_cache_entry(b"id", branch_key_cache_entry())
+        .await
+        .unwrap();
+
+    assert!(
+        cache.get_cache_entry(b"id").await.unwrap().is_some(),
+        "a SingleThreaded cache with capacity 8 MUST store the entry",
+    );
+}
+
+#[tokio::test]
+async fn new_with_multi_threaded_cache_stores_entries() {
+    let cache = cache_for(CacheType::MultiThreaded(MultiThreadedCache::new(8)));
+
+    cache
+        .put_cache_entry(b"id", branch_key_cache_entry())
+        .await
+        .unwrap();
+
+    assert!(
+        cache.get_cache_entry(b"id").await.unwrap().is_some(),
+        "a MultiThreaded cache with capacity 8 MUST store the entry",
+    );
+}
+
+/// Number of OS threads that use the cache simultaneously in
+/// [`multi_threaded_cache_serves_concurrent_puts_and_gets`], and the capacity
+/// that cache is given. Equal on purpose: with one entry per thread and
+/// capacity for exactly that many, no put can evict another thread's entry, so
+/// every assertion below holds for any interleaving.
+const CONCURRENT_THREADS: usize = 8;
+
+/// Drive `fut` to completion on the calling thread.
+///
+/// The concurrency test uses real OS threads, but [`Cmc`]'s methods are async,
+/// so each thread needs a runtime of its own. `#[tokio::test]` cannot be used
+/// instead: it builds a current-thread runtime, which would interleave the
+/// cache calls as tasks without ever running two of them on different threads —
+/// exercising concurrency but not thread safety.
+fn block_on<F: std::future::Future>(fut: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("a current-thread tokio runtime must build")
+        .block_on(fut)
+}
+
+/// Cache id this test gives to thread `i`.
+fn concurrent_cache_id(i: usize) -> Vec<u8> {
+    format!("concurrent-id-{i}").into_bytes()
+}
+
+#[test]
+fn multi_threaded_cache_serves_concurrent_puts_and_gets() {
+    // The Smithy model's sole distinguishing claim for `MultiThreadedCache` is
+    // that it is safe to use from a multi-threaded environment, so putting and
+    // getting from many threads at once is this variant's own contract — not a
+    // re-derivation of LocalCmc's capacity / LRU / TTL behaviour, which
+    // `test_local_cmc.rs` owns per the note at the top of this section.
+    let cache = cache_for(CacheType::MultiThreaded(MultiThreadedCache::new(
+        CONCURRENT_THREADS,
+    )));
+
+    let mut handles = Vec::with_capacity(CONCURRENT_THREADS);
+    for i in 0..CONCURRENT_THREADS {
+        let cache = Arc::clone(&cache);
+        handles.push(thread::spawn(move || {
+            block_on(async move {
+                let own = concurrent_cache_id(i);
+                cache
+                    .put_cache_entry(&own, branch_key_cache_entry())
+                    .await
+                    .expect("a put concurrent with other threads' puts MUST succeed");
+
+                // This thread wrote this key, the cache has capacity for one
+                // entry per thread, and nothing deletes, so the hit is
+                // guaranteed no matter how the threads interleave.
+                assert!(
+                    cache
+                        .get_cache_entry(&own)
+                        .await
+                        .expect("a get concurrent with other threads' puts MUST succeed")
+                        .is_some(),
+                    "thread {i} MUST read back the entry it just put",
+                );
+
+                // A neighbour's key may not be written yet, so hit-vs-miss is
+                // deliberately not asserted. What is asserted is that reading
+                // a key another thread is concurrently writing returns
+                // successfully rather than erroring — a poisoned inner Mutex
+                // would surface here as CmcErrorKind::StorageFailed.
+                let neighbour = concurrent_cache_id((i + 1) % CONCURRENT_THREADS);
+                cache
+                    .get_cache_entry(&neighbour)
+                    .await
+                    .expect("a get racing another thread's put MUST succeed");
+            });
+        }));
+    }
+
+    for (i, handle) in handles.into_iter().enumerate() {
+        handle
+            .join()
+            .unwrap_or_else(|_| panic!("thread {i} MUST NOT panic while using the cache"));
+    }
+
+    // Every thread's put is still readable: none was lost to a racing put, and
+    // the Mutex was not left poisoned behind them.
+    block_on(async {
+        for i in 0..CONCURRENT_THREADS {
+            assert!(
+                cache
+                    .get_cache_entry(&concurrent_cache_id(i))
+                    .await
+                    .expect("a get after all threads have joined MUST succeed")
+                    .is_some(),
+                "the entry put by thread {i} MUST survive {CONCURRENT_THREADS} concurrent writers",
+            );
+        }
+    });
+}
+
+#[test]
+fn new_with_threaded_caches_accepts_an_explicit_pruning_tail_size() {
+    // Exercises the Some arm of the optional entry_pruning_tail_size; the
+    // constructors above leave it None.
+    for cache_type in [
+        CacheType::SingleThreaded(SingleThreadedCache {
+            entry_capacity: 8,
+            entry_pruning_tail_size: Some(4),
+        }),
+        CacheType::MultiThreaded(MultiThreadedCache {
+            entry_capacity: 8,
+            entry_pruning_tail_size: Some(4),
+        }),
+    ] {
+        HierarchicalKeyring::new(
+            keystore_never_consulted(),
+            3600,
+            Some("bk".to_string()),
+            None,
+            Some(cache_type),
+            None,
+        )
+        .expect("an explicit entry_pruning_tail_size must be accepted");
+    }
 }
 
 #[test]
