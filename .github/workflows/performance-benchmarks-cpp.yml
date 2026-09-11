@@ -103,7 +103,7 @@ jobs:
         working-directory: esdk/shims/aws-esdk-cpp/performance-tests/results/raw-data
         run: |
           NAMESPACE="EsdkPerformanceBenchmarks"
-          jq -c --arg keyring "${{ matrix.keyring }}" '
+          jq -c --arg keyring "${{ matrix.keyring }}" --arg os "${{ matrix.os }}" '
             [ .results[] as $r
               | [ {n: "P50Latency",      v: $r.p50_latency,    u: "Milliseconds"},
                   {n: "P95Latency",      v: $r.p95_latency,    u: "Milliseconds"},
@@ -112,10 +112,12 @@ jobs:
                   {n: "PeakMemoryRssMb", v: $r.peak_memory_mb, u: "Megabytes"} ][]
               | select(.v > 0)
               | {MetricName: .n, Value: .v, Unit: .u,
-                 Dimensions: [ {Name: "Language", Value: $r.language},
-                               {Name: "Keyring",  Value: $keyring},
-                               {Name: "TestType", Value: $r.test_name},
-                               {Name: "DataSize", Value: ($r.data_size | tostring)} ]} ]' \
+                 Dimensions: [ {Name: "Language",    Value: $r.language},
+                               {Name: "Keyring",     Value: $keyring},
+                               {Name: "TestType",    Value: $r.test_name},
+                               {Name: "DataSize",    Value: ($r.data_size | tostring)},
+                               {Name: "OS",          Value: $os},
+                               {Name: "Concurrency", Value: ($r.concurrency | tostring)} ]} ]' \
             cpp_results.json > metric_data.json
           if [ "$(jq length metric_data.json)" -gt 0 ]; then
             aws cloudwatch put-metric-data --namespace "$NAMESPACE" \
