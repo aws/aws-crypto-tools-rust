@@ -29,7 +29,8 @@ use std::sync::Arc;
 #[non_exhaustive]
 pub enum CmcErrorKind {
     /// A concrete CMC's underlying storage failed (lock poisoned, IO error,
-    /// etc.). The `message` field carries the cause.
+    /// etc.). Where the failure originated in a lower-level error, that
+    /// error is retained as the `cause`.
     StorageFailed,
     /// A concrete CMC could not honor the request because the entry shape
     /// supplied by the caller is invalid (missing usage metadata at put
@@ -40,20 +41,51 @@ pub enum CmcErrorKind {
 /// Error type for `Cmc` trait operations. Mirrors the
 /// `MaterialsError`/`MaterialsErrorKind` shape used elsewhere in the MPL so
 /// callers have a single `kind` enum to match against.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct CmcError {
     /// Categorisation of this error. Stable for matching at call sites.
     pub kind: CmcErrorKind,
     /// Free-form human-readable message describing this specific failure.
     pub message: String,
+    /// The lower-level error that caused this error, if any. Exposed
+    /// through [`std::error::Error::source`] so consumers can walk the
+    /// error chain. Not compared by [`PartialEq`] because `dyn Error` does
+    /// not implement [`Eq`].
+    //
+    // `Cmc` is a public trait, so a cache implemented outside this crate
+    // needs a typed channel for the failure its store returned.
+    pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
 }
 
+impl PartialEq for CmcError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.message == other.message
+    }
+}
+impl Eq for CmcError {}
+
 impl CmcError {
-    /// Construct a `StorageFailed` error.
+    /// Construct a `StorageFailed` error with no underlying cause.
     pub fn storage_failed(reason: impl Into<String>) -> Self {
         Self {
             kind: CmcErrorKind::StorageFailed,
             message: reason.into(),
+            cause: None,
+        }
+    }
+
+    /// Construct a `StorageFailed` error wrapping the underlying store
+    /// failure. The cause is surfaced through
+    /// [`std::error::Error::source`].
+    pub fn storage_failed_with_cause(
+        reason: impl Into<String>,
+        cause: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            kind: CmcErrorKind::StorageFailed,
+            message: reason.into(),
+            cause: Some(Arc::new(cause)),
         }
     }
 
@@ -62,12 +94,18 @@ impl CmcError {
         Self {
             kind: CmcErrorKind::InvalidEntry,
             message: reason.into(),
+            cause: None,
         }
     }
 
     /// Borrow the categorisation of this error.
     pub const fn kind(&self) -> &CmcErrorKind {
         &self.kind
+    }
+
+    /// Borrow the underlying cause, if this error wraps one.
+    pub fn cause(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
+        self.cause.as_deref()
     }
 }
 
@@ -77,7 +115,13 @@ impl fmt::Display for CmcError {
     }
 }
 
-impl std::error::Error for CmcError {}
+impl std::error::Error for CmcError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.cause
+            .as_ref()
+            .map(|c| c.as_ref() as &(dyn std::error::Error + 'static))
+    }
+}
 
 //
 #[async_trait]

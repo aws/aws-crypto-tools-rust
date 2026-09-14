@@ -14,6 +14,7 @@ pub mod aws_kms;
 mod client;
 pub mod cmc;
 pub mod cmm;
+pub mod error_chain;
 pub mod keyring;
 pub mod keystore;
 pub mod structures;
@@ -23,6 +24,12 @@ pub use client::*;
 // `RawAesKeyring::new`; without this a caller would have to depend on
 // `aws-mpl-primitives` directly just to name the wrapping algorithm.
 pub use aws_mpl_primitives::AesGcm;
+// Re-exported because both SDK clients appear in the public signature of
+// `KeyStoreConfig`, and because a `KeystoreError` carries these crates' SDK
+// errors as its cause: downcasting to one requires the exact same crate
+// version, which a consumer declaring its own dependency may not resolve.
+pub use aws_sdk_dynamodb;
+pub use aws_sdk_kms;
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
     LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
