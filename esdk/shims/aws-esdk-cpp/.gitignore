@@ -1,12 +1,6 @@
 # Cargo build output
 /target/
-
-# Cargo.lock IS committed for this crate and its example. Both build cdylib /
-# staticlib artifacts for C++ consumers, so they are applications, not
-# libraries, and need a reproducible dependency set. Leaving them unpinned made
-# CI re-resolve on every run, which broke the build the moment aws-smithy-runtime
-# 1.14.1 raised its aws-smithy-types requirement to ^1.7.0 while aws-config
-# 1.12.0 still capped aws-smithy-json at ^0.63 — an unsatisfiable pair.
+Cargo.lock
 
 # Compiled demo / test binaries (built via the Makefile)
 /basic_hierarchical_keyring_example
@@ -37,5 +31,6 @@
 /adopt_keyring_test
 /custom_keyring_example
 /examples/custom-keyring/target/
+/examples/custom-keyring/Cargo.lock
 /streaming_example
 /shared_cache_example
