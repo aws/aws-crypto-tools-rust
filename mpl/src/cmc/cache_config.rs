@@ -14,7 +14,6 @@
 //! These types are deliberately independent of any one CMP so that a keyring
 //! and a caching CMM configure a cache the same way.
 
-
 use std::sync::Arc;
 
 use crate::cmc::{Cmc, TimeUnits};
@@ -44,7 +43,7 @@ pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
 ///
 /// Mirrors the Smithy `SingleThreadedCache`: `entryCapacity` is required and
 /// `entryPruningTailSize` is optional. In this implementation it builds the
-/// same [`LocalCmc`](super::LocalCmc) as [`CacheType::MultiThreaded`]
+/// same [`LocalCmc`](super::LocalCmc) as [`CacheType::MultiThreaded`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct SingleThreadedCache {
     /// Maximum number of entries the cache holds.

@@ -186,6 +186,7 @@ impl HierarchicalKeyring {
                 // Nothing is ever cached. A zero entry capacity makes LocalCmc
                 // a no-store cache, which is how Dafny builds this variant too
                 // (LocalCMC(0, 1) at CreateCryptographicMaterialsCache).
+                // https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/src/AwsCryptographyMaterialProvidersOperations.dfy#L813
                 let local = LocalCmc::new(0, CACHE_PRUNING_TAIL_SIZE).map_err(|e| {
                     MaterialsError::new(format!(
                         "HierarchicalKeyring: failed to initialize no-store LocalCmc: {e}",
