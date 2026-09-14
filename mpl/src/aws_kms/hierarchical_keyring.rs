@@ -174,11 +174,6 @@ impl HierarchicalKeyring {
             DEFAULT_CACHE_ENTRY_CAPACITY,
         ))) {
             CacheType::Default(default_cache) => {
-                // A plain LocalCmc, not a storm-tracking cache. The spec's
-                // non-`Shared` path initializes a local
-                // cryptographic-materials-cache; Dafny's DefaultStorm()
-                // construction is a known divergence. See the note at the top
-                // of `cmc/cache_config.rs`.
                 let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
                     .map_err(|e| {
                         MaterialsError::new(format!(
@@ -201,7 +196,7 @@ impl HierarchicalKeyring {
             // Both build the same cache: LocalCmc keeps its state behind a
             // Mutex, so it is already the synchronized one and this
             // implementation has no thread-unsafe variant to offer for the
-            // single-threaded case. See the note on CacheType::SingleThreaded.
+            // single-threaded case.
             CacheType::SingleThreaded(SingleThreadedCache {
                 entry_capacity,
                 entry_pruning_tail_size,

@@ -13,38 +13,7 @@
 //!
 //! These types are deliberately independent of any one CMP so that a keyring
 //! and a caching CMM configure a cache the same way.
-//!
-//! All six variants of the Smithy `CacheType` union are modelled here. The
-//! union is closed, so `CacheType` is deliberately not `#[non_exhaustive]`:
-//! there is no further variant expected, and leaving it exhaustive lets callers
-//! match without a catch-all arm.
 
-// `CacheType::Default` deliberately builds a plain `LocalCmc`, not a
-// storm-tracking cache. This is a known divergence from the Dafny
-// implementation, which builds `StormTracker.DefaultStorm()` (entry capacity
-// 1000, grace period 10s, grace interval 1s, fan out 20, in-flight TTL 10s,
-// milliseconds) with the caller's entry capacity substituted, at
-// `AwsCryptographyMaterialProvidersOperations.CreateCryptographicMaterialsCache`.
-//
-// The specification is what this implementation follows. It states twice that
-// the non-`Shared` path initializes a local cryptographic-materials-cache:
-// "On initialization the Hierarchical Keyring MUST initialize a
-// cryptographic-materials-cache with the configured cache limit TTL and the max
-// cache size", and "If the Hierarchical Keyring does NOT get a `Shared` cache on
-// initialization, it MUST initialize a cryptographic-materials-cache with the
-// user provided cache limit TTL and the entry capacity", both linking the local
-// CMC. Nothing normative says `Default` means storm-tracking; the Smithy model's
-// "Probably a StormTrackingCache" javadoc on `DefaultCache` is not normative.
-// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#initialization
-//
-// Keeping `LocalCmc` also keeps this implementation self-consistent. The
-// grace-period rule — "If the cache to initialize is a Storm Tracking
-// Cryptographic Materials Cache then the Grace Period MUST be less than the
-// cache limit TTL" — is conditional on the cache being storm-tracking, so it
-// does not apply here. A 10-second default grace period would, which would make
-// every keyring with `ttl_seconds <= 10` fail to construct; `ttl_seconds = 1` is
-// currently accepted as the smallest legal TTL.
-//
 
 use std::sync::Arc;
 
@@ -75,8 +44,7 @@ pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
 ///
 /// Mirrors the Smithy `SingleThreadedCache`: `entryCapacity` is required and
 /// `entryPruningTailSize` is optional. In this implementation it builds the
-/// same [`LocalCmc`](super::LocalCmc) as [`CacheType::MultiThreaded`] — see
-/// the note on that variant.
+/// same [`LocalCmc`](super::LocalCmc) as [`CacheType::MultiThreaded`]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct SingleThreadedCache {
     /// Maximum number of entries the cache holds.
