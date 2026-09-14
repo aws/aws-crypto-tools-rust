@@ -298,9 +298,6 @@ mod ffi {
         kms_client: *const MplKmsClient,
     }
 
-    // 0 is deliberately unassigned so a value-initialized `CacheKind` is never a
-    // real selection (`unset_cache()` in tests.rs relies on this). New kinds
-    // append: a no-caching kind, if the MPL models one later, becomes 4.
     enum CacheKind {
         Default = 1,
         StormTracking = 2,
