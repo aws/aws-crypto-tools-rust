@@ -1,6 +1,11 @@
 # Cargo build output
 /target/
-Cargo.lock
+
+# Cargo.lock is committed for this crate and its example, as it is for esdk, mpl
+# and prim. Both build cdylib/staticlib artifacts for C++ consumers, so they are
+# applications rather than libraries, and a reproducible dependency set is the
+# expected default. Without it CI re-resolved on every run, which let an upstream
+# publish break the build with no change on our side.
 
 # Compiled demo / test binaries (built via the Makefile)
 /basic_hierarchical_keyring_example
@@ -31,6 +36,5 @@ Cargo.lock
 /adopt_keyring_test
 /custom_keyring_example
 /examples/custom-keyring/target/
-/examples/custom-keyring/Cargo.lock
 /streaming_example
 /shared_cache_example
