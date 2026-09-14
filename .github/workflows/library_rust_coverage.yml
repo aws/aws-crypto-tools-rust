@@ -1,0 +1,115 @@
+# Reusable workflow that enforces line coverage for a single project
+# (subdirectory) in the monorepo. Callers pass the project directory name via
+# the `project` input (e.g. "esdk").
+#
+# The gate is patch coverage: every line added or changed by the pull request
+# must be covered by the project's tests (100%, no threshold to tune). There
+# is no minimum on the project's total coverage. Lines the diff does not
+# touch, and changed lines that are not executable (comments, signatures,
+# attributes), do not count against the gate.
+name: Library Rust Coverage
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Project subdirectory to measure (e.g. mpl, esdk)."
+        required: true
+        type: string
+
+jobs:
+  patchCoverage:
+    name: ${{ inputs.project }} patch coverage
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+          # diff-cover diffs HEAD against the PR base branch, so the base
+          # ref's history must be present, not just the PR merge commit.
+          fetch-depth: 0
+
+      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
+      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
+      # for this workflow by default.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install diff-cover
+        run: pip install diff-cover==9.7.1
+
+      # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
+      # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
+      # test keys in us-west-2, so the coverage run must have AWS credentials.
+      # Assume the shared public ESDK CI role via GitHub OIDC (the job already
+      # requests `id-token: write`). The role ARN is public (no repo secret
+      # needed); access is gated by the role's OIDC trust policy, which must
+      # permit `repo:aws/aws-crypto-tools-rust:*`.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustCoverage
+          special-characters-workaround: "true"
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.project }}
+
+      # Line coverage does not need debug info, so build the coverage binaries
+      # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
+      # coverage-instrumented); dropping debug info keeps the ubuntu link
+      # within the hosted runner's memory.
+      #
+      # `prim` is deliberately excluded from `--all-features`. Its only
+      # non-default feature is `fips`, and `aws-lc-rs` treats `fips` as an
+      # override rather than an addition: with both features on it links
+      # `aws-lc-fips-sys` and ignores `aws-lc-sys`. Running coverage with
+      # `--all-features` would therefore measure the FIPS backend and leave
+      # the default (non-FIPS) backend that actually ships untested. `prim`
+      # has no `cfg(feature = ...)` code, so dropping `--all-features` costs
+      # no coverage.
+      #
+      # `--remap-path-prefix` makes the lcov SF paths relative to the project
+      # directory, so they can be re-rooted for diff-cover below.
+      - name: Generate line coverage
+        working-directory: ${{ inputs.project }}
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --lcov --remap-path-prefix --output-path lcov.info --verbose
+
+      # diff-cover matches lcov SF paths against `git diff` paths, which are
+      # relative to the repository root — a path mismatch makes every file
+      # fall out of the report and the gate pass vacuously. Re-root the SF
+      # paths onto the project directory, then fail loudly if any resulting
+      # path does not exist in the tree.
+      - name: Re-root coverage paths to the repository root
+        run: |
+          set -euo pipefail
+          sed -i 's|^SF:|SF:${{ inputs.project }}/|' '${{ inputs.project }}/lcov.info'
+          missing=0
+          while IFS= read -r f; do
+            if [[ ! -f "$f" ]]; then
+              echo "lcov references a path that does not exist from the repository root: $f"
+              missing=1
+            fi
+          done < <(sed -n 's|^SF:||p' '${{ inputs.project }}/lcov.info' | sort -u)
+          exit "$missing"
+
+      - name: Enforce 100% patch coverage
+        run: diff-cover '${{ inputs.project }}/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100

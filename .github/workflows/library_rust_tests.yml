@@ -45,10 +45,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt, llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+          components: clippy, rustfmt
 
       # KMS-backed integration tests (e.g. tests/test_encrypt_decrypt.rs) call
       # kms:GenerateDataKey / kms:Decrypt against the shared AWS Crypto Tools
@@ -80,35 +77,31 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-      # Line coverage does not need debug info, so build the coverage binaries
-      # with `-C debuginfo=0`. They are large (aws-lc-sys + aws-lc-fips-sys,
-      # coverage-instrumented); dropping debug info keeps the ubuntu link within
-      # the hosted runner's memory. Harmless on macOS.
+      # Test binaries are large (aws-lc-sys + aws-lc-fips-sys), so build them
+      # with `-C debuginfo=0` to keep the ubuntu link within the hosted
+      # runner's memory. Harmless on macOS.
       #
       # `prim` is deliberately excluded from `--all-features`. Its only
       # non-default feature is `fips`, and `aws-lc-rs` treats `fips` as an
       # override rather than an addition: with both features on it links
-      # `aws-lc-fips-sys` and ignores `aws-lc-sys`. Running coverage with
-      # `--all-features` would therefore measure the FIPS backend and leave the
-      # default (non-FIPS) backend that actually ships untested. `prim` has no
-      # `cfg(feature = ...)` code, so dropping `--all-features` costs no
-      # coverage — the FIPS backend gets its own parity step below.
+      # `aws-lc-fips-sys` and ignores `aws-lc-sys`. Testing with
+      # `--all-features` would therefore exercise the FIPS backend and leave
+      # the default (non-FIPS) backend that actually ships untested. `prim`
+      # has no `cfg(feature = ...)` code, so dropping `--all-features` costs
+      # nothing — the FIPS backend gets its own parity step below.
       #
-      # TODO(esdk): esdk line-coverage gate is temporarily 80% (esdk is ~81%
-      # today); raise it toward 100 as coverage fills in.
-      # TODO(mpl): mpl line-coverage is temporarily 80%
-      # raise it to 100 as coverage fills in.
-      - name: Test + line coverage gate
+      # Line coverage is enforced separately by library_rust_coverage.yml.
+      - name: Test
         env:
           RUSTFLAGS: "-C debuginfo=0"
-        run: cargo llvm-cov ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --fail-under-lines ${{ inputs.project == 'esdk' && '80' || '80' }} --verbose
+        run: cargo test ${{ inputs.project != 'prim' && '--all-features' || '' }} --workspace --verbose
 
       # FIPS parity check for `prim`. `--no-default-features` is required to get
       # a FIPS-only build: `--features fips` alone leaves `default` enabled, so
       # both `aws-lc-sys` and `aws-lc-fips-sys` get compiled and only the latter
-      # is used. Test-only — the coverage gate above already covers these lines
-      # against the default backend, so this step exists to prove the same code
-      # passes when linked against AWS-LC-FIPS. Needs the Go step above.
+      # is used. The test step above already exercises these lines against the
+      # default backend, so this step exists to prove the same code passes when
+      # linked against AWS-LC-FIPS. Needs the Go step above.
       - name: Test FIPS-only backend
         if: inputs.project == 'prim'
         env:
