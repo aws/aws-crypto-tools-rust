@@ -249,8 +249,6 @@ CacheType CacheType::Default(std::uint32_t entry_capacity) {
     return c;
 }
 
-CacheType CacheType::No() { return CacheType(Kind::No); }
-
 CacheType CacheType::StormTracking(
     std::uint32_t entry_capacity,
     std::uint32_t entry_pruning_tail_size,
@@ -288,9 +286,6 @@ struct CacheTypeLowerer {
             case CacheType::Kind::Default:
                 out.kind = ::ffi::CacheKind::Default;
                 out.entry_capacity = c.entry_capacity_;
-                break;
-            case CacheType::Kind::No:
-                out.kind = ::ffi::CacheKind::No;
                 break;
             case CacheType::Kind::StormTracking:
                 out.kind = ::ffi::CacheKind::StormTracking;

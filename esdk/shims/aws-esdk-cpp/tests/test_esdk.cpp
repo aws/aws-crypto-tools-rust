@@ -199,11 +199,6 @@ void test_cache_kinds() {
     //
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
-    //# - The shim MUST support creating a cache that performs no caching.
-    auto no_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::No());
-
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //= type=test
     //# - The shim MUST support creating a storm tracking cache.
     auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
         /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,

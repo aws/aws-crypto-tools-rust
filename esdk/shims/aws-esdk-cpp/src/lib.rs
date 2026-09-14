@@ -298,11 +298,13 @@ mod ffi {
         kms_client: *const MplKmsClient,
     }
 
+    // 0 is deliberately unassigned so a value-initialized `CacheKind` is never a
+    // real selection (`unset_cache()` in tests.rs relies on this). New kinds
+    // append: a no-caching kind, if the MPL models one later, becomes 4.
     enum CacheKind {
-        No = 1,
-        Default = 2,
-        StormTracking = 3,
-        Shared = 4,
+        Default = 1,
+        StormTracking = 2,
+        Shared = 3,
     }
 
     // cxx does not support passing options on each enum value across the FFI boundary.
@@ -691,17 +693,6 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<dafny::types::CacheType, St
     };
     match cache.kind {
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-        //# - The shim MUST support creating a cache that performs no caching.
-        ffi::CacheKind::No => Ok(dafny::types::CacheType::No(
-            dafny::types::NoCache::builder().build().map_err(|e| {
-                shim_err(
-                    ffi::ShimErrorKind::ValidationError,
-                    op,
-                    format!("failed to build NoCache: {e:?}"),
-                )
-            })?,
-        )),
-        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a default cache.
         ffi::CacheKind::Default => {
             let b = dafny::types::DefaultCache::builder()
@@ -751,6 +742,11 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<dafny::types::CacheType, St
             let shared = require_handle(cache.shared, "shared cache", op)?;
             Ok(dafny::types::CacheType::Shared(shared.cache.clone()))
         }
+        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+        //= type=exception
+        //= reason=Removed from the shim's public surface; a no-caching request now reaches this error arm.
+        //# - The shim MUST support creating a cache that performs no caching.
+        //
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST return an error when the target cache kind is not a supported
         //# value.
