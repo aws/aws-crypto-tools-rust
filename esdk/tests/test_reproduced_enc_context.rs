@@ -10,6 +10,7 @@ mod fixtures;
 mod test_helpers;
 use aws_esdk::*;
 use fixtures::*;
+use test_helpers::{kms_keyring, test_keyring};
 
 // Positive-path round-trip with the same encryption context on encrypt and
 // decrypt, using a local raw AES keyring (no network/credentials dependency).
@@ -50,6 +51,52 @@ async fn test_encryption_context_on_decrypt() {
     .unwrap();
 
     assert_eq!(decrypt_output.plaintext, asdf);
+}
+
+// Mirrors the Dafny TestReproducedEncryptionContext.TestEncryptionContextOnDecryptFailure
+// test: a KMS keyring decrypt supplying more reproduced encryption context
+// than was used on encrypt must fail.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_encryption_context_on_decrypt_failure() {
+    let asdf = "asdf".as_bytes();
+
+    let kms_keyring = kms_keyring().await;
+
+    let encryption_context = small_encryption_context(SmallEncryptionContextVariation::A);
+    let incorrect_reproduced_encryption_context =
+        small_encryption_context(SmallEncryptionContextVariation::AB);
+
+    let encrypt_output = encrypt(&EncryptInput::with_legacy_keyring(
+        asdf,
+        encryption_context,
+        kms_keyring.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let esdk_ciphertext = encrypt_output.ciphertext;
+
+    // We expect to fail because we pass more encryption context than was used on encrypt.
+    let err = decrypt(&DecryptInput::with_legacy_keyring(
+        &esdk_ciphertext,
+        incorrect_reproduced_encryption_context,
+        kms_keyring,
+    ))
+    .await
+    .expect_err(
+        "decrypt must fail when reproduced encryption context adds a key not on the message",
+    );
+
+    // The reproduced encryption context is passed to KMS on Decrypt, so KMS
+    // rejects the data key unwrap for the extra pair.
+    let ErrorKind::LegacyError(legacy) = &err.kind else {
+        panic!("expected LegacyError, got: {:?}", err.kind);
+    };
+    let inner = format!("{legacy:?}");
+    assert!(
+        inner.contains("No Configured KMS Key was able to decrypt the Data Key"),
+        "expected KMS data-key unwrap failure, got: {inner}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -116,4 +163,42 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     //# - Decrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
     decrypt_input.encryption_context = EncryptionContext::new();
     let _ = decrypt(&decrypt_input).await.unwrap();
+}
+
+// Native counterpart of the Dafny
+// TestRequiredEncryptionContext.TestRemoveOnDecryptIsBackwardsCompatibleHappyCase
+// test, minus the required encryption context CMM (the native MPL does not
+// provide one): a message with all encryption context stored in the header
+// decrypts when a strict subset of that context is supplied as reproduced
+// encryption context.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_subset_reproduced_encryption_context_on_decrypt() {
+    let asdf = "asdf".as_bytes();
+
+    let raw_aes_keyring = test_keyring().await;
+
+    // All encryption context is stored in the message
+    let encryption_context = small_encryption_context(SmallEncryptionContextVariation::AB);
+    let subset_reproduced_encryption_context =
+        small_encryption_context(SmallEncryptionContextVariation::A);
+
+    let encrypt_output = encrypt(&EncryptInput::with_legacy_keyring(
+        asdf,
+        encryption_context,
+        raw_aes_keyring.clone(),
+    ))
+    .await
+    .unwrap();
+
+    let esdk_ciphertext = encrypt_output.ciphertext;
+
+    let decrypt_output = decrypt(&DecryptInput::with_legacy_keyring(
+        &esdk_ciphertext,
+        subset_reproduced_encryption_context,
+        raw_aes_keyring,
+    ))
+    .await
+    .unwrap();
+
+    assert_eq!(decrypt_output.plaintext, asdf);
 }
