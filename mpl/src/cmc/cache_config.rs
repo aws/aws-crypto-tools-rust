@@ -48,9 +48,8 @@ pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
 pub struct SingleThreadedCache {
     /// Maximum number of entries the cache holds.
     pub entry_capacity: usize,
-    /// Number of LRU entries scanned per get for TTL-aware pruning. Optional
-    /// in the Smithy model; when `None` it resolves to 1, the value every path
-    /// in the Dafny implementation uses.
+    /// Number of LRU entries scanned per get for TTL-aware pruning. Resolves
+    /// to 1 when `None`.
     pub entry_pruning_tail_size: Option<usize>,
 }
 
@@ -76,9 +75,8 @@ impl SingleThreadedCache {
 pub struct MultiThreadedCache {
     /// Maximum number of entries the cache holds.
     pub entry_capacity: usize,
-    /// Number of LRU entries scanned per get for TTL-aware pruning. Optional
-    /// in the Smithy model; when `None` it resolves to 1, the value every path
-    /// in the Dafny implementation uses.
+    /// Number of LRU entries scanned per get for TTL-aware pruning. Resolves
+    /// to 1 when `None`.
     pub entry_pruning_tail_size: Option<usize>,
 }
 
@@ -130,10 +128,8 @@ pub struct StormTrackingCache {
     /// Maximum number of entries the underlying
     /// [`LocalCmc`](super::LocalCmc) holds.
     pub entry_capacity: usize,
-    /// Number of LRU entries scanned per get for TTL-aware pruning. Optional
-    /// in the Smithy model; when left unset on
-    /// [`StormTrackingCacheBuilder`] it defaults to 1, the value every path
-    /// in the Dafny implementation uses.
+    /// Number of LRU entries scanned per get for TTL-aware pruning.
+    /// [`StormTrackingCacheBuilder`] defaults it to 1 when left unset.
     pub entry_pruning_tail_size: usize,
     /// Window during which a soon-to-expire entry is still served.
     pub grace_period: u64,
@@ -150,23 +146,16 @@ pub struct StormTrackingCache {
 }
 
 impl StormTrackingCache {
-    /// Start a fluent builder for `StormTrackingCache`. The six required
-    /// numeric fields must be supplied via the builder before
-    /// [`StormTrackingCacheBuilder::build`] is called;
-    /// `entry_pruning_tail_size` and `time_units` are optional.
+    /// Start a fluent builder for `StormTrackingCache`.
     #[must_use]
     pub fn builder() -> StormTrackingCacheBuilder {
         StormTrackingCacheBuilder::default()
     }
 }
 
-/// Fluent builder for [`StormTrackingCache`]. The six required numeric fields
-/// (`entry_capacity`, `grace_period`, `grace_interval`, `fan_out`,
-/// `inflight_ttl`, `sleep_milli`) must be set;
-/// [`StormTrackingCacheBuilder::build`] returns an error if any were left
-/// unset. `entry_pruning_tail_size` is optional and defaults to 1, matching
-/// the Smithy model, which does not mark it `@required`. `time_units` is
-/// optional and defaults to seconds.
+/// Fluent builder for [`StormTrackingCache`].
+/// [`StormTrackingCacheBuilder::build`] returns an error if a required field
+/// was left unset.
 #[derive(Debug, Clone, Default)]
 pub struct StormTrackingCacheBuilder {
     entry_capacity: Option<usize>,
@@ -237,8 +226,7 @@ impl StormTrackingCacheBuilder {
     }
 
     /// Finalize the builder. Returns an error naming the first missing
-    /// required field if any of the six required numeric fields were left
-    /// unset. `entry_pruning_tail_size` and `time_units` are optional.
+    /// required field.
     pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
         Ok(StormTrackingCache {
             entry_capacity: self.entry_capacity.ok_or_else(|| {
@@ -280,27 +268,15 @@ pub enum CacheType {
     /// to state. Omitting the cache entirely is what selects the CMP's own
     /// default capacity.
     Default(DefaultCache),
-    /// Nothing is ever cached. Builds a [`LocalCmc`](super::LocalCmc) with an
-    /// entry capacity of zero, which stores no entries at all — the same
-    /// construction the Dafny implementation uses for this variant.
-    ///
-    /// The Smithy `NoCache` structure has no members, so this variant carries
-    /// no payload rather than an empty struct the caller would have to name.
+    /// Nothing is ever cached.
     No,
     /// A CMP-local [`LocalCmc`](super::LocalCmc) configured by the carried
-    /// [`SingleThreadedCache`].
-    ///
-    /// The model distinguishes this from [`CacheType::MultiThreaded`] because
-    /// the Dafny implementation has a cache that is not thread-safe and wraps
-    /// it in a synchronizing layer for the multi-threaded case. This
-    /// implementation has no such distinction to offer: `LocalCmc` keeps all
-    /// shared state behind a `Mutex`, so it is already the synchronized one and
-    /// both variants build it identically. The variant is modelled anyway so
-    /// configuration written against the model is accepted here.
+    /// [`SingleThreadedCache`]. Builds the same cache as
+    /// [`CacheType::MultiThreaded`]: `LocalCmc` is thread-safe either way.
     SingleThreaded(SingleThreadedCache),
     /// A CMP-local [`LocalCmc`](super::LocalCmc) configured by the carried
     /// [`MultiThreadedCache`]. Builds the same cache as
-    /// [`CacheType::SingleThreaded`] — see the note there.
+    /// [`CacheType::SingleThreaded`].
     MultiThreaded(MultiThreadedCache),
     /// Use the caller-supplied [`Cmc`] impl directly. Common when one
     /// cache is shared across multiple Hierarchical Keyrings (or other

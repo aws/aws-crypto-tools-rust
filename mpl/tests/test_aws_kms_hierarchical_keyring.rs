@@ -493,13 +493,11 @@ async fn new_with_multi_threaded_cache_stores_entries() {
 /// every assertion below holds for any interleaving.
 const CONCURRENT_THREADS: usize = 8;
 
-/// Drive `fut` to completion on the calling thread.
-///
-/// The concurrency test uses real OS threads, but [`Cmc`]'s methods are async,
-/// so each thread needs a runtime of its own. `#[tokio::test]` cannot be used
-/// instead: it builds a current-thread runtime, which would interleave the
-/// cache calls as tasks without ever running two of them on different threads —
-/// exercising concurrency but not thread safety.
+/// Drive `fut` to completion on the calling thread. Each thread in the
+/// concurrency test needs a runtime of its own; `#[tokio::test]`'s
+/// current-thread runtime would interleave the cache calls as tasks without
+/// ever running two on different threads, testing concurrency but not thread
+/// safety.
 fn block_on<F: std::future::Future>(fut: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .build()
@@ -516,9 +514,7 @@ fn concurrent_cache_id(i: usize) -> Vec<u8> {
 fn multi_threaded_cache_serves_concurrent_puts_and_gets() {
     // The Smithy model's sole distinguishing claim for `MultiThreadedCache` is
     // that it is safe to use from a multi-threaded environment, so putting and
-    // getting from many threads at once is this variant's own contract — not a
-    // re-derivation of LocalCmc's capacity / LRU / TTL behaviour, which
-    // `test_local_cmc.rs` owns per the note at the top of this section.
+    // getting from many threads at once is this variant's own contract.
     let cache = cache_for(CacheType::MultiThreaded(MultiThreadedCache::new(
         CONCURRENT_THREADS,
     )));

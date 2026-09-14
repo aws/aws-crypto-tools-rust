@@ -111,9 +111,8 @@ fn threaded_cache_constructors_leave_the_pruning_tail_unset() {
 }
 
 /// Each of the six required numeric fields, omitted one at a time, must fail
-/// and name itself. `entry_pruning_tail_size` is absent from this table on
-/// purpose — it is optional, and `build_with_pruning_tail_unset_defaults_to_one`
-/// covers the case that used to belong here.
+/// and name itself. `entry_pruning_tail_size` is absent on purpose — it is
+/// optional, covered by `build_with_pruning_tail_unset_defaults_to_one`.
 #[test]
 fn build_without_a_required_field_names_the_missing_field() {
     let cases: Vec<(&str, BuilderFactory)> = vec![
