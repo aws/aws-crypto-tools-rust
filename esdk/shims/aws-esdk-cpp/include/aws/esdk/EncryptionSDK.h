@@ -295,8 +295,7 @@ public:
 /// inflight_ttl. Left unset, they are seconds.
 enum class TimeUnits { Seconds, Milliseconds };
 
-// TODO: expose remaining MPL cache kinds (SingleThreaded, MultiThreaded)
-// A no-caching kind is deliberately not offered; see `make_cache_type` in src/lib.rs.
+// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
 public:

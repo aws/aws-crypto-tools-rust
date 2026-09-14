@@ -741,7 +741,7 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<dafny::types::CacheType, St
         }
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //= type=exception
-        //= reason=Removed from the shim's public surface; a no-caching request now reaches this error arm.
+        //= reason=Will be added in the future
         //# - The shim MUST support creating a cache that performs no caching.
         //
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
