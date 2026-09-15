@@ -15,10 +15,12 @@ readme = "README.md"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-aws-config = "1.8.12"
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../unsafe-unreviewed-mpl/mpl" }
-aws-sdk-dynamodb = "1.103.0"
-aws-sdk-kms = "1.98.0"
+# The AWS SDK crates and aws-config come from aws-crypto-mpl's re-exports rather
+# than direct dependencies: KeyStoreConfig takes aws_sdk_kms::Client and
+# aws_sdk_dynamodb::Client by value, so the versions must be exactly the ones the
+# MPL was compiled against, and aws-crypto-mpl pins them.
+aws-crypto-mpl = { path = "../../../mpl" }
+aws-mpl-primitives = { path = "../../../prim" }
 # Remove once an aws-config requiring aws-smithy-json ^0.64 is released.
 aws-smithy-types = "=1.6.3"
 cxx = "1.0.194"

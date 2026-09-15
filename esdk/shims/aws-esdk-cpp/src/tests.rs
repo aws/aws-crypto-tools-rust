@@ -158,7 +158,7 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn alg_id_target_to_core_maps_each_repr_to_matching_variant() {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
+    use aws_esdk::EsdkAlgorithmSuiteId as C;
     let pairs: [(u16, C); 11] = [
         (0x0014, C::AlgAes128GcmIv12Tag16NoKdf),
         (0x0046, C::AlgAes192GcmIv12Tag16NoKdf),
@@ -194,7 +194,7 @@ fn alg_id_target_to_core_rejects_unknown() {
 
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
-    use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as C;
+    use aws_esdk::EsdkAlgorithmSuiteId as C;
     let pairs: [(C, u16); 11] = [
         (C::AlgAes128GcmIv12Tag16NoKdf, 0x0014),
         (C::AlgAes192GcmIv12Tag16NoKdf, 0x0046),
@@ -228,7 +228,7 @@ fn alg_id_round_trips_through_both_conversions() {
 
 #[test]
 fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use aws_esdk::EsdkCommitmentPolicy as C;
     let pairs: [(P, C); 3] = [
         (P::ForbidEncryptAllowDecrypt, C::ForbidEncryptAllowDecrypt),
         (P::RequireEncryptAllowDecrypt, C::RequireEncryptAllowDecrypt),
@@ -323,7 +323,7 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::keystore::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
@@ -335,7 +335,7 @@ fn make_kms_config_accepts_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::keystore::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
@@ -347,25 +347,25 @@ fn make_kms_config_accepts_mr_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_discovery() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::keystore::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::Discovery, "").unwrap(),
-        KmsConfiguration::Discovery(_)
+        KmsConfiguration::Discovery
     ));
 }
 
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
-    use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::KmsConfiguration;
+    use aws_crypto_mpl::keystore::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.
     assert!(matches!(
-        make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "").unwrap(),
-        KmsConfiguration::MrDiscovery(_)
+        make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "us-west-2").unwrap(),
+        KmsConfiguration::MrDiscovery { region } if region == "us-west-2"
     ));
 }
 
@@ -601,7 +601,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
 
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use aws_esdk::EsdkCommitmentPolicy as C;
     let input = ffi::EncryptInput {
         algorithm_suite_id: set_alg_id(F { repr: 0x0578 }),
         encryption_context: Vec::new(),
@@ -636,7 +636,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
 
 #[test]
 fn apply_decrypt_options_forwards_every_optional_input() {
-    use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
+    use aws_esdk::EsdkCommitmentPolicy as C;
     let input = ffi::DecryptInput {
         ciphertext: &[],
         encryption_context: Vec::new(),

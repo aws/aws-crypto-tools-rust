@@ -5,6 +5,7 @@
 //! See README.md for the full setup, and example.cpp for the C++ side.
 
 use std::ffi::c_void;
+use std::sync::Arc;
 
 /// For demonstration only: a real application must source its wrapping key
 /// from a secure store and never hardcode it.
@@ -12,23 +13,21 @@ const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 
 /// Step 2: define your keyring.
 ///
-/// TODO(native-mpl): once native MPL is available,
-/// model the custom keyring example off of
-/// https://github.com/aws/aws-encryption-sdk-python/blob/master/examples/src/custom_mpl_cmm_example.py
+/// This example wraps the MPL's own raw AES keyring, which is the smallest thing
+/// that demonstrates the handoff. To supply behavior of your own instead,
+/// implement `aws_crypto_mpl::keyring::Keyring` on your own type and hand that
+/// to `aws_esdk::Keyring::from` — the shim does not care which implementation it
+/// receives.
 fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
-    let mpl = aws_mpl_legacy::dafny::Client::from_conf(
-        aws_mpl_legacy::dafny::types::MaterialProvidersConfig::builder().build()?,
+    let keyring = aws_crypto_mpl::keyring::RawAesKeyring::new(
+        "custom-keyring-example",
+        "demo-key",
+        WRAPPING_KEY.to_vec(),
+        aws_crypto_mpl::AesGcm::Aes256Gcm,
     )?;
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    let keyring = runtime.block_on(
-        mpl.create_raw_aes_keyring()
-            .key_namespace("custom-keyring-example")
-            .key_name("demo-key")
-            .wrapping_key(WRAPPING_KEY.to_vec())
-            .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-            .send(),
-    )?;
-    Ok(keyring.into())
+    Ok(aws_esdk::Keyring::from(
+        Arc::new(keyring) as Arc<dyn aws_crypto_mpl::keyring::Keyring>
+    ))
 }
 
 /// Step 3: export your keyring.
