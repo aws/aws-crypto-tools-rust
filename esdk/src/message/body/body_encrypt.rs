@@ -9,7 +9,7 @@ use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{read_opt_u8, read_up_to_peek, write_bytes, write_u32};
 use crate::message::{DigestWriter, Error, ser_err};
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::primitives::{AesGcm, aes_encrypt};
+use aws_mpl_primitives::{AesGcm, aes_encrypt};
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
 const MAX_DATA: usize = (1usize << 36) - 32;
@@ -289,8 +289,8 @@ pub(crate) fn encrypt_and_serialize_body(
             header.body.frame_length()
         ));
     };
-    let iv_len = usize::from(get_iv_length(&header.suite));
-    let auth_len = usize::from(get_tag_length(&header.suite));
+    let iv_len = get_iv_length(&header.suite);
+    let auth_len = get_tag_length(&header.suite);
     let frame_len = frame_length + iv_len + auth_len + 4;
     let mut frame_buf = Vec::with_capacity(frame_len);
 

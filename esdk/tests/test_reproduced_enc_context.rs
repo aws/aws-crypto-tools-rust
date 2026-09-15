@@ -10,6 +10,7 @@ mod fixtures;
 mod test_helpers;
 use aws_esdk::*;
 use fixtures::*;
+use test_helpers::test_keyring;
 
 // Positive-path round-trip with the same encryption context on encrypt and
 // decrypt, using a local raw AES keyring (no network/credentials dependency).
@@ -17,21 +18,11 @@ use fixtures::*;
 async fn test_encryption_context_on_decrypt() {
     let asdf = "asdf".as_bytes();
 
-    let (namespace, name) = namespace_and_name(0);
-    let mpl = mpl();
-    let raw_aes_keyring = mpl
-        .create_raw_aes_keyring()
-        .key_namespace(namespace)
-        .key_name(name)
-        .wrapping_key(aws_smithy_types::Blob::new([0; 32]))
-        .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        .send()
-        .await
-        .unwrap();
+    let raw_aes_keyring = test_keyring().await;
 
     let encryption_context = small_encryption_context(SmallEncryptionContextVariation::AB);
 
-    let encrypt_output = encrypt(&EncryptInput::with_legacy_keyring(
+    let encrypt_output = encrypt(&EncryptInput::with_keyring(
         asdf,
         encryption_context.clone(),
         raw_aes_keyring.clone(),
@@ -41,7 +32,7 @@ async fn test_encryption_context_on_decrypt() {
 
     let esdk_ciphertext = encrypt_output.ciphertext;
 
-    let decrypt_output = decrypt(&DecryptInput::with_legacy_keyring(
+    let decrypt_output = decrypt(&DecryptInput::with_keyring(
         &esdk_ciphertext,
         encryption_context,
         raw_aes_keyring,
@@ -56,23 +47,13 @@ async fn test_encryption_context_on_decrypt() {
 async fn test_mismatched_encryption_context_on_decrypt() {
     let asdf = "asdf".as_bytes();
 
-    let (namespace, name) = namespace_and_name(0);
-    let mpl = mpl();
-    let raw_aes_keyring = mpl
-        .create_raw_aes_keyring()
-        .key_namespace(namespace)
-        .key_name(name)
-        .wrapping_key(aws_smithy_types::Blob::new([0; 32]))
-        .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        .send()
-        .await
-        .unwrap();
+    let raw_aes_keyring = test_keyring().await;
 
     let encryption_context = small_encryption_context(SmallEncryptionContextVariation::A);
     let bad_encryption_context =
         small_mismatched_encryption_context(SmallEncryptionContextVariation::A);
 
-    let encrypt_output = encrypt(&EncryptInput::with_legacy_keyring(
+    let encrypt_output = encrypt(&EncryptInput::with_keyring(
         asdf,
         encryption_context.clone(),
         raw_aes_keyring.clone(),
@@ -82,11 +63,8 @@ async fn test_mismatched_encryption_context_on_decrypt() {
 
     let esdk_ciphertext = encrypt_output.ciphertext;
 
-    let mut decrypt_input = DecryptInput::with_legacy_keyring(
-        &esdk_ciphertext,
-        bad_encryption_context,
-        raw_aes_keyring,
-    );
+    let mut decrypt_input =
+        DecryptInput::with_keyring(&esdk_ciphertext, bad_encryption_context, raw_aes_keyring);
     let err = decrypt(&decrypt_input)
         .await
         .expect_err("decrypt must fail when reproduced encryption context has mismatched values");
@@ -94,16 +72,19 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     // We expect to fail because although the same key is present on the ec,
     // the value is different. The MPL's reproduced-EC validation produces a
     // pinned error message identifying the mechanism.
-    let ErrorKind::LegacyError(legacy) = &err.kind else {
-        panic!("expected LegacyError, got: {:?}", err.kind);
-    };
-    let inner = format!("{legacy:?}");
+    assert_eq!(
+        err.kind,
+        ErrorKind::MplError,
+        "expected MplError, got: {:?}",
+        err.kind
+    );
+    let inner = err.to_string();
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=Mismatched reproduced EC value triggers MPL "does not match reproduced encryption context" error, proving the reproduced EC was used
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     assert!(
-        inner.contains("does not match reproduced encryption context"),
+        inner.contains("disagrees with the message's encryption context"),
         "expected reproduced-EC mismatch error, got: {inner}"
     );
 

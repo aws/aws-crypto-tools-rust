@@ -4,95 +4,79 @@
 
 use crate::Error;
 use crate::val_err;
-// TODO replace these with the new crate we write
-use aws_mpl_legacy::CryptographicMaterialsManagerRef;
-use aws_mpl_legacy::KeyringRef;
-use aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef as LegacyCMM;
-use aws_mpl_legacy::dafny::types::keyring::KeyringRef as LegacyKeyring;
+use aws_crypto_mpl::cmm::Cmm as MplCmm;
+use aws_crypto_mpl::keyring::Keyring as MplKeyring;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 /// A keyring supplied to an encrypt or decrypt operation.
 ///
-/// Use [`Keyring::Modern`] for the higher-level `aws_mpl_legacy::KeyringRef`
-/// wrapper, or [`Keyring::Legacy`] for the Dafny-generated MPL keyring ref.
-#[derive(Debug, Clone)]
+/// Wraps a shared reference to any type implementing the MPL
+/// [`Keyring`](aws_crypto_mpl::keyring::Keyring) trait.
+#[derive(Clone)]
 #[non_exhaustive]
-pub enum Keyring {
-    /// Legacy keyring, i.e. `aws_mpl_legacy::dafny::types::keyring::KeyringRef`
-    Legacy(LegacyKeyring),
-    /// Keyring, i.e. `aws_mpl_legacy::KeyringRef`
-    Modern(KeyringRef),
+pub struct Keyring(pub(crate) Arc<dyn MplKeyring>);
+
+impl std::fmt::Debug for Keyring {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Keyring").finish_non_exhaustive()
+    }
 }
 
 /// A cryptographic materials manager (CMM) supplied to an encrypt or decrypt operation.
 ///
-/// Use [`Cmm::Modern`] for the higher-level
-/// `aws_mpl_legacy::CryptographicMaterialsManagerRef` wrapper, or
-/// [`Cmm::Legacy`] for the Dafny-generated MPL CMM ref.
-#[derive(Debug, Clone)]
+/// Wraps a shared reference to any type implementing the MPL
+/// [`Cmm`](aws_crypto_mpl::cmm::Cmm) trait.
+#[derive(Clone)]
 #[non_exhaustive]
-pub enum Cmm {
-    /// Legacy CMM, i.e. `aws_mpl_legacy::dafny::types::cryptographic_materials_manager::CryptographicMaterialsManagerRef`
-    Legacy(LegacyCMM),
-    /// CMM, i.e. `aws_mpl_legacy::CryptographicMaterialsManagerRef`
-    Modern(CryptographicMaterialsManagerRef),
+pub struct Cmm(pub(crate) Arc<dyn MplCmm>);
+
+impl std::fmt::Debug for Cmm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cmm").finish_non_exhaustive()
+    }
 }
 
 impl PartialEq for Keyring {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Modern(x), Self::Modern(y)) => {
-                std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
-            }
-            (Self::Legacy(x), Self::Legacy(y)) => x == y,
-            _ => false,
-        }
+        std::ptr::addr_eq(Arc::as_ptr(&self.0), Arc::as_ptr(&other.0))
     }
 }
 impl Eq for Keyring {}
 
 impl PartialEq for Cmm {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Modern(x), Self::Modern(y)) => {
-                std::ptr::addr_eq(std::sync::Arc::as_ptr(x), std::sync::Arc::as_ptr(y))
-            }
-            (Self::Legacy(x), Self::Legacy(y)) => x == y,
-            _ => false,
-        }
+        std::ptr::addr_eq(Arc::as_ptr(&self.0), Arc::as_ptr(&other.0))
     }
 }
 impl Eq for Cmm {}
 
-impl From<LegacyKeyring> for Keyring {
-    fn from(keyring: LegacyKeyring) -> Self {
-        Self::Legacy(keyring)
+impl From<Arc<dyn MplKeyring>> for Keyring {
+    fn from(keyring: Arc<dyn MplKeyring>) -> Self {
+        Self(keyring)
     }
 }
-impl From<KeyringRef> for Keyring {
-    fn from(keyring: KeyringRef) -> Self {
-        Self::Modern(keyring)
-    }
-}
-impl From<LegacyCMM> for Cmm {
-    fn from(cmm: LegacyCMM) -> Self {
-        Self::Legacy(cmm)
-    }
-}
-impl From<CryptographicMaterialsManagerRef> for Cmm {
-    fn from(cmm: CryptographicMaterialsManagerRef) -> Self {
-        Self::Modern(cmm)
+impl From<Arc<dyn MplCmm>> for Cmm {
+    fn from(cmm: Arc<dyn MplCmm>) -> Self {
+        Self(cmm)
     }
 }
 
-/// Internal union of the four ways a caller can supply materials, resolved from
+/// Internal union of the two ways a caller can supply materials, resolved from
 /// the `keyring` / `cmm` input fields and consumed by `create_cmm_from_input`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) enum MaterialSource {
-    LegacyCmm(LegacyCMM),
-    LegacyKeyring(LegacyKeyring),
-    Cmm(CryptographicMaterialsManagerRef),
-    Keyring(KeyringRef),
+    Cmm(Arc<dyn MplCmm>),
+    Keyring(Arc<dyn MplKeyring>),
+}
+
+impl std::fmt::Debug for MaterialSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cmm(_) => f.write_str("MaterialSource::Cmm(..)"),
+            Self::Keyring(_) => f.write_str("MaterialSource::Keyring(..)"),
+        }
+    }
 }
 
 /// Resolve the caller-supplied `keyring` / `cmm` fields into the internal
@@ -102,10 +86,8 @@ pub(crate) fn resolve_material_source(
     cmm: Option<&Cmm>,
 ) -> Option<MaterialSource> {
     match (keyring, cmm) {
-        (Some(Keyring::Legacy(k)), None) => Some(MaterialSource::LegacyKeyring(k.clone())),
-        (Some(Keyring::Modern(k)), None) => Some(MaterialSource::Keyring(k.clone())),
-        (None, Some(Cmm::Legacy(c))) => Some(MaterialSource::LegacyCmm(c.clone())),
-        (None, Some(Cmm::Modern(c))) => Some(MaterialSource::Cmm(c.clone())),
+        (Some(Keyring(k)), None) => Some(MaterialSource::Keyring(k.clone())),
+        (None, Some(Cmm(c))) => Some(MaterialSource::Cmm(c.clone())),
         _ => None,
     }
 }
@@ -148,23 +130,6 @@ impl FrameLength {
                 .ok_or_else(|| val_err("Frame length must be non-zero"))?,
         ))
     }
-}
-
-/// Convenience constructor for a `MaterialProviders` library client.
-///
-/// Most call sites that need an MPL client (e.g. building a keyring) can
-/// use this rather than re-deriving the `MaterialProvidersConfig` builder.
-///
-/// # Panics
-/// Panics if the `MaterialProviders` client cannot be constructed.
-#[must_use]
-pub fn mpl() -> aws_mpl_legacy::dafny::client::Client {
-    aws_mpl_legacy::dafny::client::Client::from_conf(
-        aws_mpl_legacy::dafny::types::MaterialProvidersConfig::builder()
-            .build()
-            .unwrap(),
-    )
-    .unwrap()
 }
 
 /// Output bytes sink for streaming encrypt/decrypt operations.
@@ -218,15 +183,50 @@ pub trait SafeRead: std::io::Read + Send + Sync + std::fmt::Debug {}
 impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
 
 /// Algorithm suite identifiers for the ESDK.
-pub use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
+pub use aws_crypto_mpl::structures::AlgorithmSuiteId as EsdkAlgorithmSuiteId;
+
+/// Key-Value pairs to associate with the encrypted data.
+///
+/// The ESDK encryption context is a map of UTF-8 string keys to UTF-8 string
+/// values. It is converted to the MPL's byte-oriented
+/// [`EncryptionContext`](aws_crypto_mpl::structures::EncryptionContext) at the
+/// CMM boundary.
+pub type EncryptionContext = std::collections::HashMap<String, String>;
 
 /// Commitment policies governing key commitment behavior.
-pub use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
+///
+/// Mirrors the ESDK rows of the MPL commitment-policy table
+/// ([`aws_crypto_mpl::structures::Esdk`]); converted to the MPL
+/// [`CommitmentPolicy`](aws_crypto_mpl::structures::CommitmentPolicy) at the
+/// materials boundary.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum EsdkCommitmentPolicy {
+    /// Encrypt with non-committing suites only; decrypt any ESDK suite.
+    ForbidEncryptAllowDecrypt,
+    /// Encrypt with committing suites only; decrypt any ESDK suite.
+    RequireEncryptAllowDecrypt,
+    /// Encrypt and decrypt with committing suites only. This is the default.
+    //= spec/client-apis/client.md#initialization
+    //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
+    #[default]
+    RequireEncryptRequireDecrypt,
+}
 
-/// Key-Value pairs to associate with the encrypted data
-pub use aws_mpl_legacy::EncryptionContext;
+impl From<EsdkCommitmentPolicy> for aws_crypto_mpl::structures::CommitmentPolicy {
+    fn from(policy: EsdkCommitmentPolicy) -> Self {
+        use aws_crypto_mpl::structures::Esdk;
+        Self::Esdk(match policy {
+            EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt => Esdk::ForbidEncryptAllowDecrypt,
+            EsdkCommitmentPolicy::RequireEncryptAllowDecrypt => Esdk::RequireEncryptAllowDecrypt,
+            EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => {
+                Esdk::RequireEncryptRequireDecrypt
+            }
+        })
+    }
+}
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [`encrypt`](crate::encrypt).
 //= spec/client-apis/encrypt.md#output
@@ -259,7 +259,17 @@ impl EncryptOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+impl Default for EncryptOutput {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            ciphertext: Vec::new(),
+            encryption_context: EncryptionContext::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [`encrypt_stream`](crate::encrypt_stream).
 pub struct EncryptStreamOutput {
@@ -276,7 +286,16 @@ impl EncryptStreamOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+impl Default for EncryptStreamOutput {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            encryption_context: EncryptionContext::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [decrypt](crate::decrypt).
 pub struct DecryptOutput {
@@ -299,7 +318,17 @@ impl DecryptOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+impl Default for DecryptOutput {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            encryption_context: EncryptionContext::new(),
+            plaintext: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [`decrypt_stream`](crate::decrypt_stream).
 pub struct DecryptStreamOutput {
@@ -313,6 +342,15 @@ impl DecryptStreamOutput {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+impl Default for DecryptStreamOutput {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+            encryption_context: EncryptionContext::new(),
+        }
     }
 }
 
@@ -403,51 +441,27 @@ impl<'a> EncryptInput<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct an `EncryptInput` with a legacy `CryptographicMaterialsManagerRef`
+    /// Construct an `EncryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_legacy_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: LegacyCMM) -> Self {
+    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
-            cmm: Some(Cmm::Legacy(cmm)),
+            cmm: Some(Cmm(cmm)),
             ..Default::default()
         }
     }
-    /// Construct an `EncryptInput` with a legacy `KeyringRef`
+    /// Construct an `EncryptInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_legacy_keyring(
+    pub fn with_keyring(
         plaintext: &'a [u8],
         ec: EncryptionContext,
-        keyring: LegacyKeyring,
+        keyring: Arc<dyn MplKeyring>,
     ) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
-            keyring: Some(Keyring::Legacy(keyring)),
-            ..Default::default()
-        }
-    }
-    /// Construct an `EncryptInput` with a `CryptographicMaterialsManagerRef`
-    #[must_use]
-    pub fn with_cmm(
-        plaintext: &'a [u8],
-        ec: EncryptionContext,
-        cmm: CryptographicMaterialsManagerRef,
-    ) -> Self {
-        Self {
-            plaintext,
-            encryption_context: ec,
-            cmm: Some(Cmm::Modern(cmm)),
-            ..Default::default()
-        }
-    }
-    /// Construct an `EncryptInput` with a `KeyringRef`
-    #[must_use]
-    pub fn with_keyring(plaintext: &'a [u8], ec: EncryptionContext, keyring: KeyringRef) -> Self {
-        Self {
-            plaintext,
-            encryption_context: ec,
-            keyring: Some(Keyring::Modern(keyring)),
+            keyring: Some(Keyring(keyring)),
             ..Default::default()
         }
     }
@@ -506,39 +520,21 @@ impl EncryptStreamInput {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct an `EncryptStreamInput` with a legacy `CryptographicMaterialsManagerRef`
+    /// Construct an `EncryptStreamInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_legacy_cmm(ec: EncryptionContext, cmm: LegacyCMM) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
         Self {
             encryption_context: ec,
-            cmm: Some(Cmm::Legacy(cmm)),
+            cmm: Some(Cmm(cmm)),
             ..Default::default()
         }
     }
-    /// Construct an `EncryptStreamInput` with a legacy `KeyringRef`
+    /// Construct an `EncryptStreamInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_legacy_keyring(ec: EncryptionContext, keyring: LegacyKeyring) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn MplKeyring>) -> Self {
         Self {
             encryption_context: ec,
-            keyring: Some(Keyring::Legacy(keyring)),
-            ..Default::default()
-        }
-    }
-    /// Construct an `EncryptStreamInput` with a `CryptographicMaterialsManagerRef`
-    #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: CryptographicMaterialsManagerRef) -> Self {
-        Self {
-            encryption_context: ec,
-            cmm: Some(Cmm::Modern(cmm)),
-            ..Default::default()
-        }
-    }
-    /// Construct an `EncryptStreamInput` with a `KeyringRef`
-    #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: KeyringRef) -> Self {
-        Self {
-            encryption_context: ec,
-            keyring: Some(Keyring::Modern(keyring)),
+            keyring: Some(Keyring(keyring)),
             ..Default::default()
         }
     }
@@ -617,51 +613,27 @@ impl<'a> DecryptInput<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct a `DecryptInput` with a legacy `CryptographicMaterialsManagerRef`
+    /// Construct a `DecryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_legacy_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: LegacyCMM) -> Self {
+    pub fn with_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
-            cmm: Some(Cmm::Legacy(cmm)),
+            cmm: Some(Cmm(cmm)),
             ..Default::default()
         }
     }
-    /// Construct a `DecryptInput` with a legacy `KeyringRef`
+    /// Construct a `DecryptInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_legacy_keyring(
+    pub fn with_keyring(
         ciphertext: &'a [u8],
         ec: EncryptionContext,
-        keyring: LegacyKeyring,
+        keyring: Arc<dyn MplKeyring>,
     ) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
-            keyring: Some(Keyring::Legacy(keyring)),
-            ..Default::default()
-        }
-    }
-    /// Construct a `DecryptInput` with a `CryptographicMaterialsManagerRef`
-    #[must_use]
-    pub fn with_cmm(
-        ciphertext: &'a [u8],
-        ec: EncryptionContext,
-        cmm: CryptographicMaterialsManagerRef,
-    ) -> Self {
-        Self {
-            ciphertext,
-            encryption_context: ec,
-            cmm: Some(Cmm::Modern(cmm)),
-            ..Default::default()
-        }
-    }
-    /// Construct a `DecryptInput` with a `KeyringRef`
-    #[must_use]
-    pub fn with_keyring(ciphertext: &'a [u8], ec: EncryptionContext, keyring: KeyringRef) -> Self {
-        Self {
-            ciphertext,
-            encryption_context: ec,
-            keyring: Some(Keyring::Modern(keyring)),
+            keyring: Some(Keyring(keyring)),
             ..Default::default()
         }
     }
@@ -700,39 +672,21 @@ impl DecryptStreamInput {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct a `DecryptStreamInput` with a legacy `CryptographicMaterialsManagerRef`
+    /// Construct a `DecryptStreamInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_legacy_cmm(ec: EncryptionContext, cmm: LegacyCMM) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
         Self {
             encryption_context: ec,
-            cmm: Some(Cmm::Legacy(cmm)),
+            cmm: Some(Cmm(cmm)),
             ..Default::default()
         }
     }
-    /// Construct a `DecryptStreamInput` with a legacy `KeyringRef`
+    /// Construct a `DecryptStreamInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_legacy_keyring(ec: EncryptionContext, keyring: LegacyKeyring) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn MplKeyring>) -> Self {
         Self {
             encryption_context: ec,
-            keyring: Some(Keyring::Legacy(keyring)),
-            ..Default::default()
-        }
-    }
-    /// Construct a `DecryptStreamInput` with a `CryptographicMaterialsManagerRef`
-    #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: CryptographicMaterialsManagerRef) -> Self {
-        Self {
-            encryption_context: ec,
-            cmm: Some(Cmm::Modern(cmm)),
-            ..Default::default()
-        }
-    }
-    /// Construct a `DecryptStreamInput` with a `KeyringRef`
-    #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: KeyringRef) -> Self {
-        Self {
-            encryption_context: ec,
-            keyring: Some(Keyring::Modern(keyring)),
+            keyring: Some(Keyring(keyring)),
             ..Default::default()
         }
     }

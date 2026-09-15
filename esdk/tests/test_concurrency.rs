@@ -16,8 +16,6 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -60,7 +58,7 @@ fn concurrent_round_trips(
                     for i in 0..ITERS_PER_THREAD {
                         // Encrypt and record the message ID from the header.
                         let plaintext = format!("thread {t} message {i}").into_bytes();
-                        let mut enc_input = EncryptInput::with_legacy_keyring(
+                        let mut enc_input = EncryptInput::with_keyring(
                             &plaintext,
                             EncryptionContext::new(),
                             keyring.clone(),
@@ -71,7 +69,7 @@ fn concurrent_round_trips(
                         ids.lock().unwrap().push(extract_id(&out.ciphertext));
 
                         // Decrypt and verify the round trip.
-                        let mut dec_input = DecryptInput::with_legacy_keyring(
+                        let mut dec_input = DecryptInput::with_keyring(
                             &out.ciphertext,
                             EncryptionContext::new(),
                             keyring.clone(),

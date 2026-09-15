@@ -8,8 +8,8 @@ use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, wri
 use super::{Error, ser_err};
 use crate::error::val_err_with_cause;
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::EncryptedDataKey;
-use aws_mpl_legacy::suites::AlgorithmSuite;
+use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::structures::EncryptedDataKey;
 
 pub(crate) type MessageId = Vec<u8>;
 
@@ -247,7 +247,7 @@ pub(crate) const MESSAGE_ID_LEN_V2: usize = 32;
 pub(crate) fn read_esdk_suite_id(
     r: &mut dyn SafeRead,
     raw: &mut dyn SafeWrite,
-) -> Result<&'static AlgorithmSuite, Error> {
+) -> Result<AlgorithmSuite, Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The length of the serialized algorithm suite ID field MUST be 2 bytes.
     let mut esdk_suite_id_bytes = [0; 2];
@@ -259,16 +259,15 @@ pub(crate) fn read_esdk_suite_id(
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    let suite =
-        aws_mpl_legacy::suites::get_algorithm_suite_info(esdk_suite_id_bytes).map_err(|e| {
-            val_err_with_cause(
-                format!(
-                    "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
-                    esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]
-                ),
-                e,
-            )
-        })?;
+    let suite = crate::suites::algorithm_suite_from_bytes(esdk_suite_id_bytes).map_err(|e| {
+        val_err_with_cause(
+            format!(
+                "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]
+            ),
+            e,
+        )
+    })?;
     Ok(suite)
 }
 
@@ -278,8 +277,7 @@ pub(crate) fn write_esdk_suite_id(
 ) -> Result<(), Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The length of the serialized algorithm suite ID field MUST be 2 bytes.
-    debug_assert_eq!(suite.binary_id.len(), 2);
-    write_bytes(w, &suite.binary_id[..])
+    write_bytes(w, &suite.id()[..])
 }
 
 pub(crate) fn read_message_id_v1(

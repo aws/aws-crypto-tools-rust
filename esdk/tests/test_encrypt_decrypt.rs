@@ -6,7 +6,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind};
-use test_helpers::{CallStyle, kms_keyring, run_decrypt, run_encrypt};
+use test_helpers::{CallStyle, run_decrypt, run_encrypt, test_keyring};
 
 // Round-trips plaintext via encrypt/decrypt. Iterates over CallStyle so both
 // the free `encrypt`/`decrypt` functions AND `Esdk::default().encrypt`/`decrypt`
@@ -15,10 +15,10 @@ use test_helpers::{CallStyle, kms_keyring, run_decrypt, run_encrypt};
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let ec = EncryptionContext::new();
-        let encrypt_input = EncryptInput::with_legacy_keyring(plaintext, ec, kms_keyring);
+        let encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring);
 
         //= spec/client-apis/client.md#encrypt
         //= type=test
@@ -49,16 +49,14 @@ async fn test_encrypt_decrypt() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bad_decrypt_input() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let ec = EncryptionContext::new();
-        let encrypt_input =
-            EncryptInput::with_legacy_keyring(b"hello esdk", ec.clone(), kms_keyring.clone());
+        let encrypt_input = EncryptInput::with_keyring(b"hello esdk", ec.clone(), keyring.clone());
         let esdk_ciphertext = run_encrypt(style, &encrypt_input)
             .await
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"))
             .ciphertext;
-        let mut decrypt_input =
-            DecryptInput::with_legacy_keyring(&esdk_ciphertext, ec, kms_keyring);
+        let mut decrypt_input = DecryptInput::with_keyring(&esdk_ciphertext, ec, keyring);
 
         decrypt_input.keyring = None;
         let bad_decrypt_output = run_decrypt(style, &decrypt_input).await;
@@ -82,10 +80,10 @@ async fn test_bad_decrypt_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_short() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let ec = EncryptionContext::new();
-        let encrypt_input = EncryptInput::with_legacy_keyring(plaintext, ec, kms_keyring);
+        let encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring);
         let encrypt_output = run_encrypt(style, &encrypt_input)
             .await
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"));
@@ -122,18 +120,18 @@ async fn test_encrypt_decrypt_short() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_ec() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let encryption_context =
             std::collections::HashMap::from([("stuff".to_string(), "junk".to_string())]);
         let encrypt_input =
-            EncryptInput::with_legacy_keyring(plaintext, encryption_context, kms_keyring.clone());
+            EncryptInput::with_keyring(plaintext, encryption_context, keyring.clone());
         let encrypt_output = run_encrypt(style, &encrypt_input)
             .await
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"));
         let esdk_ciphertext = encrypt_output.ciphertext;
         let ec = EncryptionContext::new();
-        let decrypt_input = DecryptInput::with_legacy_keyring(&esdk_ciphertext, ec, kms_keyring);
+        let decrypt_input = DecryptInput::with_keyring(&esdk_ciphertext, ec, keyring);
         let decrypt_output = run_decrypt(style, &decrypt_input)
             .await
             .unwrap_or_else(|e| panic!("decrypt failed under {style:?}: {e:?}"));
@@ -154,12 +152,11 @@ async fn test_encrypt_decrypt_ec() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_bad_ec() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let encryption_context =
             std::collections::HashMap::from([("aws-crypto-stuff".to_string(), "junk".to_string())]);
-        let encrypt_input =
-            EncryptInput::with_legacy_keyring(plaintext, encryption_context, kms_keyring);
+        let encrypt_input = EncryptInput::with_keyring(plaintext, encryption_context, keyring);
         let encrypt_output = run_encrypt(style, &encrypt_input).await;
 
         //= spec/client-apis/encrypt.md#encryption-context
@@ -180,10 +177,10 @@ async fn test_encrypt_decrypt_bad_ec() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bad_encrypt_input() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let ec = EncryptionContext::new();
-        let mut encrypt_input = EncryptInput::with_legacy_keyring(plaintext, ec, kms_keyring);
+        let mut encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring);
         encrypt_input.keyring = None;
         let encrypt_output = run_encrypt(style, &encrypt_input).await;
 
@@ -209,12 +206,11 @@ async fn test_bad_encrypt_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_varied_frame_lengths() {
     for style in CallStyle::ALL {
-        let kms_keyring = kms_keyring().await;
+        let keyring = test_keyring().await;
         let plaintext = "0123456789abcdef".as_bytes();
 
         let ec = EncryptionContext::new();
-        let mut encrypt_input =
-            EncryptInput::with_legacy_keyring(plaintext, ec.clone(), kms_keyring.clone());
+        let mut encrypt_input = EncryptInput::with_keyring(plaintext, ec.clone(), keyring.clone());
         // Sweep frame_length from 4 (multi-frame) up to plaintext.len() (single full frame),
         // round-tripping at each length to confirm encrypt+decrypt agree across both regimes.
         for i in 4..=plaintext.len() {
@@ -227,11 +223,8 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
                     panic!("encrypt failed under {style:?} (frame_len={i}): {e:?}")
                 });
             let esdk_ciphertext = encrypt_output.ciphertext;
-            let decrypt_input = DecryptInput::with_legacy_keyring(
-                &esdk_ciphertext,
-                ec.clone(),
-                kms_keyring.clone(),
-            );
+            let decrypt_input =
+                DecryptInput::with_keyring(&esdk_ciphertext, ec.clone(), keyring.clone());
             let decrypt_output = run_decrypt(style, &decrypt_input)
                 .await
                 .unwrap_or_else(|e| {
