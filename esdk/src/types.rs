@@ -417,7 +417,7 @@ pub struct EncryptInput<'a> {
     ///
     /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
     //= spec/client-apis/client.md#commitment-policy
-    //= reason=commitment_policy field type is EsdkCommitmentPolicy from aws_mpl_legacy
+    //= reason=commitment_policy field type is the crate's own EsdkCommitmentPolicy enum
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
     //
     //= spec/client-apis/client.md#initialization

@@ -46,7 +46,7 @@ pub struct EsdkConfig {
     /// Commitment policy applied to every operation. Default is
     /// `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     //= spec/client-apis/client.md#commitment-policy
-    //= reason=field type EsdkCommitmentPolicy is from aws_mpl_legacy::commitment (the MPL)
+    //= reason=field type is the crate's own EsdkCommitmentPolicy enum
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
     pub commitment_policy: EsdkCommitmentPolicy,
     /// Optional cap on the number of encrypted data keys per message.
