@@ -24,7 +24,6 @@ test-utils = []
 
 [dev-dependencies]
 # Used only by tests, as an implementation-independent digest oracle for the
-# cache-identifier byte-layout assertions. The library itself reaches AWS-LC
-# through `aws-mpl-primitives`, never directly.
+# cache-identifier byte-layout assertions.
 aws-lc-rs = "=1.17.0"
 tokio = { version = "=1.49.0", features = ["rt", "macros", "test-util", "time"], default-features = false }
