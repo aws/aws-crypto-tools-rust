@@ -669,21 +669,47 @@ fn make_kms_config(
 // Create an ESDK Rust CacheType from the given FFI CacheType
 fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
     let op = "create_cryptographic_materials_cache";
+    // Bound the target-supplied sizes. The core's fields are `usize`, so nothing
+    // in the type system forces a limit here — but an unbounded entry capacity
+    // reaches `LruCache::new`, which preallocates and aborts the process on
+    // allocation failure instead of returning an error. u32::MAX entries is a
+    // ~68 GiB request. i32::MAX is the bound this bridge has always documented,
+    // and `test_esdk.cpp` asserts a capacity above it is rejected.
+    let capacity = |field: &str, v: u32| -> Result<usize, String> {
+        let bounded = i32::try_from(v).map_err(|_| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                op,
+                format!("{field} {v} exceeds the bridge's supported maximum"),
+            )
+        })?;
+        usize::try_from(bounded).map_err(|_| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                op,
+                format!("{field} {v} does not fit in usize"),
+            )
+        })
+    };
     match cache.kind {
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a default cache.
-        ffi::CacheKind::Default => Ok(CacheType::Default(DefaultCache::new(
-            cache.entry_capacity as usize,
-        ))),
+        ffi::CacheKind::Default => Ok(CacheType::Default(DefaultCache::new(capacity(
+            "entry_capacity",
+            cache.entry_capacity,
+        )?))),
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a storm tracking cache.
         ffi::CacheKind::StormTracking => {
             let mut params = StormTrackingCache::builder()
-                .entry_capacity(cache.entry_capacity as usize)
-                .entry_pruning_tail_size(cache.entry_pruning_tail_size as usize)
+                .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
+                .entry_pruning_tail_size(capacity(
+                    "entry_pruning_tail_size",
+                    cache.entry_pruning_tail_size,
+                )?)
                 .grace_period(u64::from(cache.grace_period))
                 .grace_interval(u64::from(cache.grace_interval))
-                .fan_out(cache.fan_out as usize)
+                .fan_out(capacity("fan_out", cache.fan_out)?)
                 .inflight_ttl(u64::from(cache.inflight_ttl))
                 .sleep_milli(u64::from(cache.sleep_milli));
             match cache.time_units {
