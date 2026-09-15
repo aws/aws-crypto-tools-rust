@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use crate::cmc::{Cmc, TimeUnits};
+use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc, TimeUnits};
 use crate::structures::MaterialsError;
 
 /// Entry capacity a CMP uses when the caller configures no cache at all.
@@ -233,4 +233,51 @@ pub enum CacheType {
     /// the carried [`StormTrackingCache`] parameters. The consuming CMP
     /// validates that `grace_period < cache limit TTL`.
     StormTracking(StormTrackingCache),
+}
+
+/// Materialize a [`CacheType`] into a concrete cache.
+///
+/// This is the single place the mapping from configuration to implementation
+/// lives, so a CMP that accepts a `CacheType` and a caller that wants a
+/// standalone cache to share across CMPs both produce the same thing.
+///
+/// `CacheType::StormTracking` carries a `grace_period` that the specification
+/// requires to be less than the consuming CMP's cache-limit TTL. That bound
+/// relates two different objects' configuration, so it is **not** checked here —
+/// a standalone cache has no TTL to compare against. The consuming CMP checks it
+/// before calling this function; see
+/// [`HierarchicalKeyring::new`](crate::aws_kms::hierarchical_keyring::HierarchicalKeyring::new).
+///
+/// # Errors
+///
+/// Returns an error if the underlying cache rejects the supplied parameters.
+pub fn create_cryptographic_materials_cache(
+    cache_type: CacheType,
+) -> Result<Arc<dyn Cmc>, MaterialsError> {
+    match cache_type {
+        CacheType::Default(default_cache) => {
+            let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
+                .map_err(|e| {
+                    MaterialsError::new(format!("failed to initialize default LocalCmc: {e}"))
+                })?;
+            Ok(Arc::new(local))
+        }
+        CacheType::Shared(cache) => Ok(cache),
+        CacheType::StormTracking(params) => {
+            let storm = StormTrackingCmc::new(
+                params.entry_capacity,
+                params.entry_pruning_tail_size,
+                params.grace_period,
+                params.grace_interval,
+                params.fan_out,
+                params.inflight_ttl,
+                params.sleep_milli,
+                params.time_units,
+            )
+            .map_err(|e| {
+                MaterialsError::new(format!("failed to initialize StormTrackingCmc: {e}"))
+            })?;
+            Ok(Arc::new(storm))
+        }
+    }
 }
