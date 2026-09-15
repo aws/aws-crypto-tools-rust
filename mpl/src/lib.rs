@@ -24,14 +24,17 @@ pub use client::*;
 // `RawAesKeyring::new`; without this a caller would have to depend on
 // `aws-mpl-primitives` directly just to name the wrapping algorithm.
 pub use aws_mpl_primitives::AesGcm;
+
+pub use aws_config;
+pub use aws_kms::hierarchical_keyring::HierarchicalKeyring;
+
 // Re-exported because both SDK clients appear in the public signature of
 // `KeyStoreConfig`, and because a `KeystoreError` carries these crates' SDK
 // errors as its cause: downcasting to one requires the exact same crate
 // version, which a consumer declaring its own dependency may not resolve.
 pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
-pub use aws_config;
-pub use aws_kms::hierarchical_keyring::HierarchicalKeyring;
+
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
     LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
