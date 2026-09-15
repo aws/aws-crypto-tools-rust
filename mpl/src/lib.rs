@@ -30,6 +30,11 @@ pub use aws_mpl_primitives::AesGcm;
 // version, which a consumer declaring its own dependency may not resolve.
 pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
+// Re-exported for the same version-matching reason as the SDK clients above: a
+// caller that builds its own `SdkConfig` to construct those clients must use the
+// `aws-config` this crate resolved, or the `Client::new` argument types differ.
+pub use aws_config;
+pub use aws_kms::hierarchical_keyring::HierarchicalKeyring;
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
     LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
