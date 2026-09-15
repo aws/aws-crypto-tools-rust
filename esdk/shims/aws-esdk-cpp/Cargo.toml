@@ -19,6 +19,8 @@ aws-config = "1.8.12"
 aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../unsafe-unreviewed-mpl/mpl" }
 aws-sdk-dynamodb = "1.103.0"
 aws-sdk-kms = "1.98.0"
+# Remove once an aws-config requiring aws-smithy-json ^0.64 is released.
+aws-smithy-types = "=1.6.3"
 cxx = "1.0.194"
 tokio = {version = "1.49.0", features = ["full"] }
 aws-esdk = { path = "../.." }

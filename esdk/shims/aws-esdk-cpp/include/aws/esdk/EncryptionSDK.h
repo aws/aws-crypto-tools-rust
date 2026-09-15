@@ -295,15 +295,13 @@ public:
 /// inflight_ttl. Left unset, they are seconds.
 enum class TimeUnits { Seconds, Milliseconds };
 
-// TODO: expose remaining MPL cache kinds (SingleThreaded, MultiThreaded)
+// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
 public:
     /// The best choice for most situations. Probably a StormTrackingCache.
     /// \param entry_capacity Maximum number of entries cached.
     static CacheType Default(std::uint32_t entry_capacity);
-    /// Nothing should ever be cached.
-    static CacheType No();
     /// A cache safe for multi-threaded use that also limits redundant and
     /// overly parallel backend calls.
     /// For a cache with sensible defaults, use Default instead.
@@ -330,7 +328,7 @@ public:
     static CacheType Shared(const CryptographicMaterialsCache& cache);
 
 private:
-    enum class Kind { Default, No, StormTracking, Shared };
+    enum class Kind { Default, StormTracking, Shared };
     explicit CacheType(Kind kind) : kind_(kind) {}
     Kind kind_;
     std::uint32_t entry_capacity_ = 0;
