@@ -19,15 +19,6 @@ aws-config = "1.8.12"
 aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../unsafe-unreviewed-mpl/mpl" }
 aws-sdk-dynamodb = "1.103.0"
 aws-sdk-kms = "1.98.0"
-# Constraint only — this crate never calls aws-smithy-types. Pinned because
-# aws-smithy-runtime 1.14.1 and aws-smithy-runtime-api 1.16.1 require
-# aws-smithy-types ^1.7.0, while aws-config 1.12.0 (still the latest) caps
-# aws-smithy-json at ^0.63.0, and aws-smithy-json 0.63.0 does not compile
-# against aws-smithy-types 1.7.0. Holding types at 1.6.3 makes those newer
-# siblings unselectable, which is what restores a buildable graph. The pin also
-# reaches examples/custom-keyring, which resolves separately but depends on this
-# crate by path.
-#
 # Remove once an aws-config requiring aws-smithy-json ^0.64 is released.
 aws-smithy-types = "=1.6.3"
 cxx = "1.0.194"
