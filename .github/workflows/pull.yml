@@ -42,6 +42,8 @@ jobs:
       pull-requests: read
     outputs:
       projects: ${{ steps.set.outputs.projects }}
+      cpp-shim: ${{ steps.filter.outputs.cpp-shim }}
+      shared: ${{ steps.filter.outputs.shared }}
     steps:
       - uses: actions/checkout@v6
 
@@ -54,6 +56,8 @@ jobs:
               - 'mpl/**'
             esdk:
               - 'esdk/**'
+            cpp-shim:
+              - 'esdk/shims/aws-esdk-cpp/**'
             prim:
               - 'prim/**'
             aws_structured_encryption:
@@ -155,6 +159,15 @@ jobs:
     with:
       project: esdk
 
+  # Enforce the patch-coverage gate for the C++ shim. The shim is its own
+  # cargo workspace under esdk/shims/aws-esdk-cpp, so pr-ci-coverage never
+  # measures it; its coverage unions the shim's Rust unit tests with the C++
+  # integ test binary (make coverage-cpp).
+  pr-ci-cpp-coverage:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cpp-shim == 'true' || needs.detect-changes.outputs.shared == 'true'
+    uses: ./.github/workflows/library_cpp_coverage.yml
+
   # Single stable required status check for branch protection. It passes when
   # every needed job either succeeded or was legitimately skipped. `pr-ci-rust`
   # is allowed to skip so that PRs touching no project still pass this gate.
@@ -164,6 +177,7 @@ jobs:
       - detect-changes
       - pr-ci-rust
       - pr-ci-coverage
+      - pr-ci-cpp-coverage
       - pr-ci-duvet
     runs-on: ubuntu-22.04
     steps:
@@ -171,4 +185,4 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: pr-ci-rust, pr-ci-coverage, pr-ci-duvet
+          allowed-skips: pr-ci-rust, pr-ci-coverage, pr-ci-cpp-coverage, pr-ci-duvet

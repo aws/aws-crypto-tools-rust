@@ -1,0 +1,107 @@
+# Reusable workflow that enforces line coverage for the C++ shim
+# (esdk/shims/aws-esdk-cpp). The shim is its own cargo workspace, so the
+# per-project Rust coverage workflow never measures it; its coverage is the
+# union of the shim's Rust unit tests and the C++ integ test binary
+# (`make coverage-cpp`), both exercising the shim's Rust translation layer.
+#
+# The gate is patch coverage: every line added or changed by the pull request
+# must be covered (100%, no threshold to tune). There is no minimum on the
+# shim's total coverage. Lines the diff does not touch, and changed lines that
+# are not executable, do not count against the gate.
+name: Library C++ Shim Coverage
+
+on:
+  workflow_call:
+
+jobs:
+  patchCoverage:
+    name: cpp shim patch coverage
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+          # diff-cover diffs HEAD against the PR base branch, so the base
+          # ref's history must be present, not just the PR merge commit.
+          fetch-depth: 0
+
+      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
+      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
+      # for this workflow by default.
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install diff-cover
+        run: pip install diff-cover==9.7.1
+
+      # The C++ integ tests drive the hierarchical keyring against the shared
+      # AWS Crypto Tools test key store in us-west-2, so the coverage run must
+      # have AWS credentials. Assume the shared public ESDK CI role via GitHub
+      # OIDC (the job already requests `id-token: write`).
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: CppShimCoverage
+          special-characters-workaround: "true"
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: esdk/shims/aws-esdk-cpp
+
+      # The Makefile instruments the C++ test binary with
+      # `-fprofile-instr-generate -fcoverage-mapping`, which are clang-only
+      # flags, so the C++ toolchain must be clang. Line coverage does not need
+      # debug info, so build the coverage binaries with `-C debuginfo=0` to
+      # keep the ubuntu link within the hosted runner's memory.
+      - name: Generate line coverage
+        working-directory: esdk/shims/aws-esdk-cpp
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+          CC: clang
+          CXX: clang++
+          ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
+          ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
+          ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
+          ESDK_TEST_BRANCH_KEY_ID: 3ce7656b-e166-40f3-8c9b-a920ce6596cd
+          ESDK_TEST_REGION: us-west-2
+        run: make coverage-cpp COV_CPP_REPORT="report --lcov --output-path lcov.info"
+
+      # diff-cover matches lcov SF paths against `git diff` paths, which are
+      # relative to the repository root — a path mismatch makes every file
+      # fall out of the report and the gate pass vacuously. Re-root the SF
+      # paths onto the shim directory (handling both absolute and
+      # crate-relative forms), then fail loudly if any resulting path does not
+      # exist in the tree.
+      - name: Re-root coverage paths to the repository root
+        run: |
+          set -euo pipefail
+          lcov='esdk/shims/aws-esdk-cpp/lcov.info'
+          sed -i "s|^SF:${GITHUB_WORKSPACE}/|SF:|" "$lcov"
+          sed -i 's|^SF:\([^/]\)|SF:esdk/shims/aws-esdk-cpp/\1|' "$lcov"
+          missing=0
+          while IFS= read -r f; do
+            if [[ ! -f "$f" ]]; then
+              echo "lcov references a path that does not exist from the repository root: $f"
+              missing=1
+            fi
+          done < <(sed -n 's|^SF:||p' "$lcov" | sort -u)
+          exit "$missing"
+
+      - name: Enforce 100% patch coverage
+        run: diff-cover 'esdk/shims/aws-esdk-cpp/lcov.info' --compare-branch 'origin/${{ github.base_ref }}' --fail-under 100
