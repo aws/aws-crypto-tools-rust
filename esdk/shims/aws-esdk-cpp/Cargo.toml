@@ -21,8 +21,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # MPL was compiled against, and aws-crypto-mpl pins them.
 aws-crypto-mpl = { path = "../../../mpl" }
 aws-mpl-primitives = { path = "../../../prim" }
-# Remove once an aws-config requiring aws-smithy-json ^0.64 is released.
-aws-smithy-types = "=1.6.3"
 cxx = "1.0.194"
 tokio = {version = "1.49.0", features = ["full"] }
 aws-esdk = { path = "../.." }
