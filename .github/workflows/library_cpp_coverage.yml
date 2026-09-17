@@ -63,6 +63,7 @@ jobs:
           ESDK_TEST_REGION: us-west-2
         run: make coverage-cpp COV_CPP_REPORT="report --lcov --output-path lcov.info"
 
+      # Diff PR coverage against base branch coverage
       - name: Re-root coverage paths to the repository root
         run: |
           set -euo pipefail
