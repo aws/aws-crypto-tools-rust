@@ -10,10 +10,16 @@
 //! SDK. Happy-path read coverage lives in the real-AWS integration tests in
 //! `tests/test_keystore_branch_key_store_integ.rs`.
 
+use std::error::Error as _;
+
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::error::SdkError;
+use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
+use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
+use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::{
     BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
 };
@@ -266,6 +272,17 @@ async fn get_active_branch_key_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+
+    // The originating SDK error is attached as the cause, not merely formatted
+    // into the message, so a caller can recover it by type and inspect the
+    // concrete DynamoDB failure.
+    let cause = err
+        .source()
+        .expect("the DynamoDB SDK error must be attached as the cause");
+    assert!(
+        cause.downcast_ref::<SdkError<GetItemError>>().is_some(),
+        "the cause must be the originating GetItem SdkError; got: {cause}",
+    );
 }
 
 #[tokio::test]
@@ -281,6 +298,12 @@ async fn get_branch_key_version_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
+            .is_some(),
+        "the versioned read path must preserve the SDK error as the cause too; got: {err}",
+    );
 }
 
 #[tokio::test]
@@ -297,6 +320,15 @@ async fn create_key_store_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+
+    // A different call site than the read path above, so its cause is asserted
+    // separately: the DescribeTable error is attached rather than discarded.
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<DescribeTableError>>())
+            .is_some(),
+        "the cause must be the originating DescribeTable SdkError; got: {err}",
+    );
 }
 
 #[tokio::test]
@@ -362,6 +394,12 @@ async fn version_key_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
+            .is_some(),
+        "the SDK error must be preserved as the cause here too; got: {err}",
+    );
 }
 
 #[tokio::test]
@@ -376,4 +414,81 @@ async fn get_beacon_key_dispatches_to_dynamodb() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
+            .is_some(),
+        "the SDK error must be preserved as the cause here too; got: {err}",
+    );
+}
+
+#[tokio::test]
+async fn the_message_does_not_render_the_sdk_errors_display() {
+    // `SdkError`'s `Display` is a bare lifecycle label, so the message must
+    // carry this layer and the operation; the detail is in the cause.
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.get_active_branch_key("bk-1".to_string()).await {
+        Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+
+    assert_eq!(
+        err.message(),
+        "DynamoDB GetItem failed",
+        "the message must name this layer and the operation, with no SDK Display appended"
+    );
+    assert_eq!(
+        err.to_string(),
+        "KeystoreError(Dynamodb): DynamoDB GetItem failed",
+        "Display renders only this layer; a chain-walking printer renders the cause"
+    );
+}
+
+#[tokio::test]
+async fn find_in_error_chain_recovers_the_sdk_error_by_type() {
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.get_active_branch_key("bk-1".to_string()).await {
+        Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+
+    assert!(
+        find_in_error_chain::<SdkError<GetItemError>>(&err).is_some(),
+        "find_in_error_chain must recover the concrete GetItem SdkError from the chain"
+    );
+    assert!(
+        find_in_error_chain::<SdkError<DescribeTableError>>(&err).is_none(),
+        "a different operation's SdkError is a different type and must not match"
+    );
+}
+
+#[tokio::test]
+async fn a_dispatch_failure_has_no_service_error_code() {
+    // Only `SdkError::ServiceError` carries service metadata; construction,
+    // timeout, dispatch, and response-parsing failures return the SDK's
+    // empty metadata. With no AWS configured this fails at dispatch, so
+    // there is no code to report. A real service code is asserted in the
+    // real-AWS integration suites.
+    let store = BranchKeyStore::new(fixture_config_with_id("id-x"))
+        .await
+        .unwrap();
+    let err = match store.get_active_branch_key("bk-1".to_string()).await {
+        Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
+        Err(e) => e,
+    };
+
+    let sdk = find_in_error_chain::<SdkError<GetItemError>>(&err)
+        .expect("precondition: the SDK error is in the chain");
+    assert!(
+        sdk.as_service_error().is_none(),
+        "precondition: with no AWS configured this is a dispatch failure, not a service error"
+    );
+    assert!(
+        aws_service_error_code(&err).is_none(),
+        "a dispatch failure carries no service metadata, so it has no code"
+    );
 }
