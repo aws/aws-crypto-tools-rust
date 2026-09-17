@@ -135,9 +135,8 @@ jobs:
     with:
       project: ${{ matrix.project }}
 
-  # Enforce the line coverage gate once per selected project, separately from
-  # the correctness tests. The gate requires 100% coverage of the lines the PR
-  # adds or changes; it puts no minimum on total project coverage.
+  # Line coverage check.
+  # 100% of new lines must be covered by tests.
   pr-ci-coverage:
     needs: detect-changes
     if: needs.detect-changes.outputs.projects != '[]'

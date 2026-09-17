@@ -1,13 +1,5 @@
-# Reusable workflow that enforces line coverage for the C++ shim
-# (esdk/shims/aws-esdk-cpp). The shim is its own cargo workspace, so the
-# per-project Rust coverage workflow never measures it; its coverage is the
-# union of the shim's Rust unit tests and the C++ integ test binary
-# (`make coverage-cpp`), both exercising the shim's Rust translation layer.
-#
-# The gate is patch coverage: every line added or changed by the pull request
-# must be covered (100%, no threshold to tune). There is no minimum on the
-# shim's total coverage. Lines the diff does not touch, and changed lines that
-# are not executable, do not count against the gate.
+# Assert that every line of executable code added or changed in the PR is covered by tests.
+# There is no minimum bar for the project's total coverage.
 name: Library C++ Shim Coverage
 
 on:
@@ -24,13 +16,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: 'true'
-          # diff-cover diffs HEAD against the PR base branch, so the base
-          # ref's history must be present, not just the PR merge commit.
+          # diff-cover needs the base branch history
           fetch-depth: 0
 
-      # Required by aws-lc-fips-sys: its CMake build invokes Go to generate
-      # FIPS module artifacts. GitHub-hosted runners do not put `go` on PATH
-      # for this workflow by default.
+      # aws-lc-fips-sys needs Go to build
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -47,10 +36,6 @@ jobs:
       - name: Install diff-cover
         run: pip install diff-cover==9.7.1
 
-      # The C++ integ tests drive the hierarchical keyring against the shared
-      # AWS Crypto Tools test key store in us-west-2, so the coverage run must
-      # have AWS credentials. Assume the shared public ESDK CI role via GitHub
-      # OIDC (the job already requests `id-token: write`).
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -64,14 +49,10 @@ jobs:
         with:
           workspaces: esdk/shims/aws-esdk-cpp
 
-      # The Makefile instruments the C++ test binary with
-      # `-fprofile-instr-generate -fcoverage-mapping`, which are clang-only
-      # flags, so the C++ toolchain must be clang. Line coverage does not need
-      # debug info, so build the coverage binaries with `-C debuginfo=0` to
-      # keep the ubuntu link within the hosted runner's memory.
       - name: Generate line coverage
         working-directory: esdk/shims/aws-esdk-cpp
         env:
+          # Drop debug info to save RAM
           RUSTFLAGS: "-C debuginfo=0"
           CC: clang
           CXX: clang++
@@ -82,12 +63,8 @@ jobs:
           ESDK_TEST_REGION: us-west-2
         run: make coverage-cpp COV_CPP_REPORT="report --lcov --output-path lcov.info"
 
-      # diff-cover matches lcov SF paths against `git diff` paths, which are
-      # relative to the repository root — a path mismatch makes every file
-      # fall out of the report and the gate pass vacuously. Re-root the SF
-      # paths onto the shim directory (handling both absolute and
-      # crate-relative forms), then fail loudly if any resulting path does not
-      # exist in the tree.
+      # Re-root lcov SF paths to the repo root so diff-cover matches them,
+      # then fail if any path doesn't exist.
       - name: Re-root coverage paths to the repository root
         run: |
           set -euo pipefail

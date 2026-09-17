@@ -1,0 +1,113 @@
+# Report total line coverage for every Rust project
+name: Library Rust Coverage Report
+
+on:
+  pull_request:
+  schedule:
+    # 07:00 UTC every day
+    - cron: '0 7 * * *'
+  # Allow manual runs from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # A project is any top-level dir with its own Cargo.toml.
+  # New projects are picked up automatically.
+  detect-projects:
+    name: List projects
+    runs-on: ubuntu-22.04
+    outputs:
+      projects: ${{ steps.set.outputs.projects }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute project matrix
+        id: set
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=()
+          for d in */; do
+            [[ -f "${d}Cargo.toml" ]] && selected+=("${d%/}")
+          done
+          if [[ ${#selected[@]} -eq 0 ]]; then
+            projects='[]'
+          else
+            projects=$(printf '%s\n' "${selected[@]}" | jq -R . | jq -cs .)
+          fi
+          echo "projects=$projects" >> "$GITHUB_OUTPUT"
+          echo "Selected projects: $projects"
+
+  coverage:
+    needs: detect-projects
+    if: needs.detect-projects.outputs.projects != '[]'
+    name: ${{ matrix.project }} line coverage
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      # fail-fast: false so one project failing doesn't cancel the others' coverage
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect-projects.outputs.projects) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'true'
+          fetch-depth: 0
+
+      # esdk's --all-features builds aws-lc-fips-sys, which needs Go
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::370957321024:role/GitHub-CI-Public-ESDK-Dafny-Role-us-west-2
+          role-session-name: RustCoverageReport
+          special-characters-workaround: "true"
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.project }}
+
+      # build `prim` without `all-features`; otherwise it tests with FIPS.
+      # FIPS adds nothing for line coverage and is heavier to build.
+      - name: Choose feature flags
+        run: |
+          if [ '${{ matrix.project }}' = 'prim' ]; then
+            echo "FEATURE_FLAGS=" >> "$GITHUB_ENV"
+          else
+            echo "FEATURE_FLAGS=--all-features" >> "$GITHUB_ENV"
+          fi
+
+      - name: Measure total line coverage
+        working-directory: ${{ matrix.project }}
+        env:
+          # Drop debug info to save RAM
+          RUSTFLAGS: "-C debuginfo=0"
+        run: |
+          set -euo pipefail
+          cargo llvm-cov $FEATURE_FLAGS --workspace --no-report
+          cargo llvm-cov report --summary-only
+          cargo llvm-cov report --summary-only --json --output-path coverage-summary.json
+          line_pct=$(jq -r '.data[0].totals.lines.percent' coverage-summary.json)
+          line_cov=$(jq -r '.data[0].totals.lines.covered' coverage-summary.json)
+          line_cnt=$(jq -r '.data[0].totals.lines.count' coverage-summary.json)
+          printf '### %s\nLine coverage: **%.2f%%** (%s / %s lines)\n' \
+            '${{ matrix.project }}' "$line_pct" "$line_cov" "$line_cnt" >> "$GITHUB_STEP_SUMMARY"
