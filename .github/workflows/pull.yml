@@ -158,10 +158,7 @@ jobs:
     with:
       project: esdk
 
-  # Enforce the patch-coverage gate for the C++ shim. The shim is its own
-  # cargo workspace under esdk/shims/aws-esdk-cpp, so pr-ci-coverage never
-  # measures it; its coverage unions the shim's Rust unit tests with the C++
-  # integ test binary (make coverage-cpp).
+  # Line coverage check for the C++ ESDK shim
   pr-ci-cpp-coverage:
     needs: detect-changes
     if: needs.detect-changes.outputs.cpp-shim == 'true' || needs.detect-changes.outputs.shared == 'true'
