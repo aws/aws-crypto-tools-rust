@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use async_trait::async_trait;
-use aws_config::{BehaviorVersion, Region};
+use aws_config::{BehaviorVersion, FrameworkMetadata, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::operation::describe_table::DescribeTableError;
 use aws_sdk_dynamodb::primitives::Blob;
@@ -98,7 +98,7 @@ impl BranchKeyStore {
         if config.kms_client.is_none() || config.ddb_client.is_none() {
             let sdk_config = default_sdk_config(&config.kms_configuration).await;
             if config.kms_client.is_none() {
-                config.kms_client = Some(KmsClient::new(&sdk_config));
+                config.kms_client = Some(KmsClient::new(&with_user_agent(&sdk_config)));
             }
             if config.ddb_client.is_none() {
                 config.ddb_client = Some(DynamoDbClient::new(&sdk_config));
@@ -763,6 +763,39 @@ async fn default_sdk_config(config: &KmsConfiguration) -> aws_config::SdkConfig 
     }
 }
 
+// The identifier this crate reports in the user agent of the AWS KMS SDK
+// client it creates. Mirrors the Dafny MPL's `AwsCryptographicMPL/<runtime>`
+// with `/` replaced by `-`, because a framework metadata name rejects `/`.
+const MPL_FRAMEWORK_NAME: &str = "AwsCryptographicMPL-Rust";
+
+// Add this library's identifier to the user agent of an AWS SDK client built
+// from `sdk_config`.
+//
+// `FrameworkMetadata` is the AWS SDK for Rust's supported mechanism for a
+// library built on top of the SDK to self-identify: the SDK renders it into
+// the `User-Agent` header as `lib/<name>/<version>`. It is stored by
+// appending, so a caller that has registered its own framework metadata keeps
+// it — unlike the client's app name, which has a single slot.
+//
+// Per the branch key store specification the keystore appends a user agent
+// string to the AWS KMS SDK client it creates:
+// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/branch-key-store.md#kms-client
+// The value used is the generic MPL identifier the Dafny implementation
+// applies to every KMS client it constructs, not the `aws-kms-hierarchy` value
+// the specification text names, which no Dafny runtime implements.
+//
+// Only the KMS client is given the identifier. That matches both the
+// specification, which names the KMS client alone, and the Dafny runtime,
+// whose DynamoDB client factory sets no user agent.
+fn with_user_agent(sdk_config: &aws_config::SdkConfig) -> aws_config::SdkConfig {
+    // Cannot fail: both arguments are compile-time constants drawn from the
+    // permitted charset (ASCII alphanumerics plus `-`, and the `.`, `-` and
+    // `+` a Cargo semver version can add).
+    let metadata = FrameworkMetadata::new(MPL_FRAMEWORK_NAME, Some(env!("CARGO_PKG_VERSION")))
+        .expect("framework metadata is valid");
+    sdk_config.to_builder().framework_metadata(metadata).build()
+}
+
 /// Convert a DynamoDB GetItem response item into an [`EncryptedRecord`].
 ///
 /// The branch-key-store record format defines `enc` as a binary
@@ -818,4 +851,80 @@ fn record_from_ddb_item(
         attributes,
         enc: enc_blob.into_inner(),
     })
+}
+
+#[cfg(test)]
+mod user_agent_tests {
+    use super::{FrameworkMetadata, MPL_FRAMEWORK_NAME, with_user_agent};
+    use aws_config::{BehaviorVersion, SdkConfig};
+    use aws_sdk_dynamodb::Client as DynamoDbClient;
+    use aws_sdk_kms::Client as KmsClient;
+
+    /// A config that can actually build clients — an SDK client cannot be
+    /// constructed without a behavior version.
+    fn base_config() -> SdkConfig {
+        SdkConfig::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .build()
+    }
+
+    #[test]
+    fn identifier_matches_the_dafny_shape() {
+        let config = with_user_agent(&base_config());
+        let metadata = config.framework_metadata();
+        assert_eq!(metadata.len(), 1, "exactly one identifier is added");
+        // The rendered header field is `lib/<name>/<version>`, so these two
+        // values are the on-the-wire user agent contribution.
+        assert_eq!(metadata[0].name(), "AwsCryptographicMPL-Rust");
+        assert_eq!(metadata[0].version(), Some(env!("CARGO_PKG_VERSION")));
+        assert!(
+            !MPL_FRAMEWORK_NAME.contains('/'),
+            "framework metadata names reject '/': {MPL_FRAMEWORK_NAME}"
+        );
+    }
+
+    #[test]
+    fn caller_framework_metadata_is_preserved() {
+        let caller = FrameworkMetadata::new("caller-framework", Some("1.2.3")).unwrap();
+        let config = with_user_agent(
+            &base_config()
+                .to_builder()
+                .framework_metadata(caller.clone())
+                .build(),
+        );
+        let names: Vec<&str> = config
+            .framework_metadata()
+            .iter()
+            .map(|metadata| metadata.name())
+            .collect();
+        assert!(
+            names.contains(&caller.name()),
+            "must preserve the caller's identifier: {names:?}"
+        );
+        assert!(
+            names.contains(&MPL_FRAMEWORK_NAME),
+            "must add this crate's identifier: {names:?}"
+        );
+    }
+
+    #[test]
+    fn identifier_reaches_the_kms_client_and_not_the_ddb_client() {
+        let base = base_config();
+        let kms = KmsClient::new(&with_user_agent(&base));
+        let kms_names: Vec<&str> = kms
+            .config()
+            .framework_metadata()
+            .iter()
+            .map(|metadata| metadata.name())
+            .collect();
+        assert_eq!(kms_names, vec![MPL_FRAMEWORK_NAME]);
+
+        // The DynamoDB client is built from the untouched configuration, so
+        // `with_user_agent` must not have mutated `base` in place.
+        let ddb = DynamoDbClient::new(&base);
+        assert!(
+            ddb.config().framework_metadata().is_empty(),
+            "the DynamoDB client must carry no identifier"
+        );
+    }
 }
