@@ -12,12 +12,12 @@ PID_FILE := .server.pid
 LOG_FILE := .server.log
 
 # Bootstrap-then-delegate coordinates for `make test-server`. The commons
-# repository coordinates live in commons-configuration.json next to this
+# repository coordinates live in server-config.json next to this
 # Makefile; COMMONS_BRANCH overrides the configured branch at invocation time.
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/..)
 SHIM_DIR     := $(abspath $(MAKEFILE_DIR)/../esdk/shims/aws-esdk-cpp)
-COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/commons-configuration.json
+COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
 COMMONS_BRANCH ?=
 CLONE_DIR      ?= $(MAKEFILE_DIR)/.commons-clone
 CLONE_ORCH_DIR := $(CLONE_DIR)/esdk/test-server/orchestrator
@@ -76,7 +76,7 @@ check-java: ## Verify JAVA_HOME points at a JDK 21+ (the commons orchestrator ne
 # Bootstrap-then-delegate: parse the commons coordinates, clone commons at the
 # branch head, and run the orchestrator core in the clone with this working tree
 # as the live C++-shim server source. `context=language:rust-cpp` must match the
-# language id under which commons-configuration.json is registered in commons.
+# language id under which server-config.json is registered in commons.
 # Needs AWS credentials and a JDK 21+.
 test-server: check-java build-server ## Run the complete cross-language TestServer via the commons orchestrator; COMMONS_BRANCH=<b> overrides
 	@set -eo pipefail; \
