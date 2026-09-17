@@ -1,10 +1,12 @@
 # Design Doc — Binding the Verus Proofs to Shipped ESDK Code
 
-**Status:** Draft for team discussion
-**Author:** (Verus verification effort)
-**Date:** September 2026
-**Scope:** How to convert the current out-of-crate Verus *models* into verification of the *actual shipped* ESDK parsing code.
-**Related:** `docs/verus-proofs-report.md`, `docs/verification-recommendations.md`, `verification/README.md`, `.kiro/steering/verus-verification.md`
+**Status:** Draft for team discussion\\
+**Author:** Mahnush\\
+**Date:** September 2026\\
+**Scope:** How to convert the current out-of-crate Verus *models* into verification of *actual shipped* code, across (1) the ESDK parsing/message layer and (2) the Material Providers Library (MPL) — its cryptographic-materials structures and keyring/CMM/keystore logic.\\
+**Related:** `docs/verus-proofs-report.md`, `docs/verification-recommendations.md`, `docs/threat-model.md`, `verification/README.md`, `.kiro/steering/verus-verification.md`
+
+> **Update (this revision):** extended beyond the ESDK message layer to cover a planned Verus verification effort for the **MPL and MPL materials** (`mpl/` = `aws-crypto-mpl`, and the primitives in `prim/`). See §2.5 (MPL scope & layering), the MPL rows added to the options in §§3–5, and the MPL-specific open questions in §8.
 
 ---
 
@@ -18,6 +20,8 @@ We have Verus proofs for the ESDK message layer — 71 obligations, 0 errors, co
 2. **Weaker headline.** The honest claim is "we have verified models of the ESDK parser," not "the ESDK parser is verified."
 
 **Goal:** close the drift risk and strengthen the claim, with a change that (a) an AWS-owned repo's review process would accept, and (b) respects the Verus soundness invariants (no `assume`/`external_body`/`admit` to fake a pass).
+
+**Additional goal (MPL):** the same approach should extend to the Material Providers Library. The MPL is where several of the highest-severity threats live — key commitment (VR-001, the CVE-2020-8897 class), branch-key wrapping/unwrapping, MRK matching, and the cache-entry identifier byte layout. Today there are **no** MPL proofs at all. This doc now treats "which MPL logic is Verus-tractable, and through which seam" as a first-class question alongside the ESDK parsing layer.
 
 ---
 
@@ -37,6 +41,28 @@ Investigation of the coupling (files/lines below) shows a true in-crate wrap is 
 - No `cfg(verus...)`/`verus_keep_ghost` gates exist in shipping source (only in `.kiro` prose).
 
 **Conclusion:** binding proofs to shipped code requires a *structural* change that isolates the pure byte logic from the trait objects and the heavy dep graph. The three options below differ in how far that isolation goes.
+
+---
+
+## 2.5 MPL scope and layering (new)
+
+The plan extends verification to the **Material Providers Library**. In this repo that is the native `mpl/` crate (`aws-crypto-mpl`) plus the primitives crate `prim/` (`aws-mpl-primitives`). The MPL is where the highest-severity threats concentrate (key commitment, branch-key wrap/unwrap, MRK matching), so it is high-value — but it has the **same crate-granularity build blocker** as `esdk`, and a heavy dep graph of its own.
+
+**MPL dep graph (`mpl/Cargo.toml`):** `aws-config`, `aws-sdk-kms`, `aws-sdk-dynamodb`, `tokio`, `lru`, `time`, `uuid`, `base64`, and `aws-mpl-primitives` (`prim/`, which wraps `aws-lc-rs`). None Verus-buildable. So, exactly as with `esdk`, wrapping any `mpl/` module in `verus!` compiles the whole crate and fails. `prim/`, by contrast, depends **only on `aws-lc-rs`** — its logic is FFI wrappers, so the crypto is out of scope but the surrounding length/bounds logic is the same partial story as VR-006.
+
+**Layering — from most to least Verus-tractable.** The key insight is that the MPL splits cleanly into pure-logic vs. I/O-bound layers:
+
+| MPL layer | Files | Verus tractability | Notes |
+|-----------|-------|--------------------|-------|
+| **Materials structures** | `mpl/src/structures/*` (algorithm_suite, encryption_context, encrypted_data_key, {encryption,decryption,branch_key,beacon_key}_materials, commitment_policy, error) | **High** — mostly pure data + invariants | Prime targets: field/length invariants, encryption-context (de)serialization/canonicalization, EDK structure. Includes the `write_volatile` zeroization already proven (VR-010) in `algorithm_suite.rs`. |
+| **Byte-layout / matching / KDF logic** | `mpl/src/aws_kms/{cache_entry_identifier, mrk_match, branch_key_wrap}.rs` | **High–Medium** — pure functions over bytes/strings | `cache_entry_identifier` byte layout (the crate already has a std digest oracle test for it), MRK ARN matching, branch-key wrap/unwrap AAD construction & fixed-size slicing (the `.expect(...)` sites in the threat model). |
+| **Key commitment** | `mpl` commit-key derivation + the ESDK-side `validate_suite_data` constant-time compare | **Medium** — logic modelable; HKDF primitive is FFI | This is **VR-001**, the CVE-2020-8897 class. The extract-then-two-expands *structure* and the constant-time comparison decision are modelable; the HKDF math itself is `aws-lc-rs` (out of scope). |
+| **CMM / cache** | `mpl/src/cmm/*`, `mpl/src/cmc/*` (default CMM, local + storm-tracking cache, LRU) | **Medium–Low** | Cache eligibility/TTL decisions and the storm-tracking state machine are modelable as pure logic; the `lru`/`time`/concurrency parts are not. |
+| **Keyring / keystore I/O** | `mpl/src/keyring/*`, `mpl/src/keystore/*`, `mpl/src/aws_kms/hierarchical_keyring.rs`, `kms_ops.rs`, `kms_config.rs` | **Low** | Dominated by `aws-sdk-kms`/`aws-sdk-dynamodb`/`tokio` async I/O — out of Verus scope, same as the aws-lc-rs FFI. Only surrounding bounds/validation logic is provable. |
+
+**Important prioritization caveat.** The native `mpl/` crate is **not currently on the ESDK dependency path** — the shipping ESDK still routes CMM/keyring work through the Dafny-backed `unsafe-unreviewed-mpl` (`aws-mpl-legacy`). So MPL proofs today verify the *native replacement* MPL, not what the ESDK actually executes end-to-end. That is fine and forward-looking (the native MPL is the intended future), but the team should decide whether MPL verification tracks the native `mpl/` (bet on the future) or must also address the legacy Dafny shim (which is an external, non-auditable artifact — see `docs/threat-model.md` §12.2 / RR5). **Recommendation: target native `mpl/`; treat the Dafny shim as out of scope / trusted, and note the residual explicitly.**
+
+**Consequence for the options.** The same three structural options apply to the MPL, with one addition: because the *materials structures* are pure data types, the cleanest MPL seam is often not "extract a crate" but "verify the structures and their pure helpers directly once the crate can be Verus-built" — which still requires solving the crate-granularity/dep-graph problem (Option A-style) unless the pure logic is extracted (Option B-style into e.g. `mpl-core`).
 
 ---
 
@@ -60,6 +86,8 @@ Investigation of the coupling (files/lines below) shows a true in-crate wrap is 
 
 **Effort:** High / uncertain (weeks; may hit a wall on the dep graph).
 **Assurance:** Highest *if* achievable.
+**Applies to MPL?** In principle — thread Verus through `mpl/` in place. Same verdict, more so: `mpl/`'s dep graph (`aws-config`, `aws-sdk-*`, `tokio`, `lru`, `time`, `uuid`, `prim`→`aws-lc-rs`) is at least as un-buildable as `esdk`'s, so this is high/uncertain for MPL too.
+
 **Recommendation:** Not first. Only pursue if Option B proves insufficient.
 
 ---
@@ -106,9 +134,11 @@ Investigation of the coupling (files/lines below) shows a true in-crate wrap is 
 - The `raw`-mirror and streaming (`dyn SafeRead`) semantics must be preserved exactly at the adapter layer; the split must not change where EOF vs. error is produced.
 - UTF-8 validation and any `String` handling stay on the `esdk` side or are modeled with the one documented `from_utf8` trusted boundary (as today).
 
-**Effort:** Medium (days). Mostly mechanical once the crate boundary is drawn; the risk is in equivalence testing, not novelty.
-**Assurance:** High — verifies shipped code for the parsing layer, which is the bulk of VR-003/004/005.
-**Recommendation:** **Preferred.** Best assurance-per-risk; the seam is exactly what the current `ByteReader` was designed to become.
+**Applies to MPL?** Yes, and this is the recommended MPL path too — an analogous `mpl-core` (std-only) crate holding the **materials structures** (`structures/*`) and the pure byte-layout/matching/KDF-structure helpers (`cache_entry_identifier`, `mrk_match`, `branch_key_wrap` AAD/slicing, commit-key derivation structure). `mpl/` then depends on `mpl-core` and keeps the `aws-sdk-*`/`tokio` I/O as thin adapters, exactly as `esdk` would delegate to `esdk-wire`. The materials structures are pure data types, so much of `mpl-core` needs no adapter at all — it can be verified directly. The two extracted cores (`esdk-wire`, `mpl-core`) could even share a common Verus-buildable byte-primitives crate to avoid duplicating the `ByteReader`/big-endian source-of-truth.
+
+**Effort:** Medium (days) for ESDK; **Medium–Large** for MPL (more surface: structures + KDF + cache logic).
+**Assurance:** High — verifies shipped code for the parsing layer (bulk of VR-003/004/005) and, via `mpl-core`, the materials structures + key-commitment logic (VR-001, VR-010) and byte-layout/matching helpers.
+**Recommendation:** **Preferred** for both ESDK and MPL. The seam is exactly what the current `ByteReader` was designed to become; `mpl-core` is the MPL analogue.
 
 ---
 
@@ -129,45 +159,69 @@ Investigation of the coupling (files/lines below) shows a true in-crate wrap is 
 - **Lower assurance:** tests check specific inputs, not *all* inputs. It is not a proof and does not remove the "it's a model" caveat — it only reduces the chance that drift goes unnoticed.
 - Duplicates intent between the models and the tests; both must be kept in sync with the specs.
 
-**Effort:** Low (hours–1 day).
+**Applies to MPL?** Yes — the MPL already has a precedent for this: `mpl/` ships a dev-dependency `aws-lc-rs` used purely as a "digest oracle for the cache-identifier byte-layout assertions" (`mpl/Cargo.toml`). Extending those with vectors derived from the (future) MPL Verus specs — cache-entry-identifier layout, MRK matching, EDK/encryption-context structure, commit-key derivation structure — is a natural, low-risk drift guard for MPL too.
+
+**Effort:** Low (hours–1 day) per layer.
 **Assurance:** Medium-low (drift detection, not verification).
-**Recommendation:** Do this **now, regardless** — it's cheap insurance and a good bridge while B is reviewed.
+**Recommendation:** Do this **now, regardless** — it's cheap insurance and a good bridge while B is reviewed. For MPL, lean on the existing cache-identifier test precedent.
 
 ---
 
 ## 6. Comparison
 
-| | A: in-place Verus | B: `esdk-wire` crate | C: fidelity tests |
+| | A: in-place Verus | B: extracted core crate | C: fidelity tests |
 |---|---|---|---|
-| Verifies *shipped* code? | Yes (if feasible) | **Yes** (the wire crate) | No (drift detection) |
-| Removes "it's a model" caveat? | Yes | **Yes** (parsing layer) | No |
+| Verifies *shipped* code? | Yes (if feasible) | **Yes** (the core crate) | No (drift detection) |
+| Removes "it's a model" caveat? | Yes | **Yes** (extracted layer) | No |
 | Modifies shipping source? | Yes, extensive | Yes, contained | No (tests only) |
 | Feasibility risk | **High** (crate dep graph) | Low–Medium | None |
 | Blast radius / review load | Large | Medium | Small |
 | Soundness-shortcut temptation | High (deps unbuildable) | None | N/A |
-| Effort | High/uncertain | Medium (days) | Low (hours) |
-| CI integration | `cargo-verus` on `esdk` | `cargo-verus` on `esdk-wire` | normal `cargo test` |
+| Effort (ESDK) | High/uncertain | Medium (days) | Low (hours) |
+| Effort (MPL) | High/uncertain | Medium–Large | Low (per layer) |
+| Covers MPL? | In principle (harder deps) | **Yes** (`mpl-core`: structures + KDF/commit + layout helpers) | Yes (drift guard) |
+| CI integration | `cargo-verus` on crate | `cargo-verus` on `esdk-wire` / `mpl-core` | normal `cargo test` |
 
 ---
 
 ## 7. Recommendation
 
-1. **Now:** Option C — add the fidelity test harness. Low-risk, immediate drift protection, useful under any long-term choice.
-2. **Next (primary):** Option B — extract `esdk-wire` and rewire `serialize_functions` as adapters, so the Verus proofs bind to shipped code. This is the real "migration" and the best assurance-per-risk.
-3. **Only if needed:** Option A — reserve for cases B cannot reach (e.g. verifying logic that genuinely cannot leave `esdk`), accepting the dep-graph feasibility risk.
+Same strategy for both ESDK and MPL: **C now, B as the primary migration, A only if B can't reach.**
 
-**Non-negotiables under any option** (from the Verus soundness invariants): no `assume`/`admit`/`external_body`/`external` to force a pass; success requires actual `0 errors`; a single documented `external_body` boundary for `std::str::from_utf8` is the only accepted trust anchor and must stay flagged; the verified type/function must be the shipped one (no `cfg`-gated divergent definitions).
+1. **Now:** Option C — add the fidelity test harness for both ESDK readers and the MPL cache-identifier / structure layout (building on the existing MPL digest-oracle test). Low-risk, immediate drift protection, useful under any long-term choice.
+2. **Next (primary):** Option B — extract std-only cores and rewire the heavy crates as adapters, so the Verus proofs bind to shipped code:
+   - `esdk-wire` ← the byte parsing/serialization core.
+   - `mpl-core` ← the materials structures + pure byte-layout/matching/KDF-structure helpers.
+   - Optionally a shared byte-primitives crate underneath both (the `ByteReader`/big-endian source-of-truth).
+3. **Only if needed:** Option A — reserve for logic that genuinely cannot leave `esdk`/`mpl`, accepting the dep-graph feasibility risk.
+
+### Proposed phasing (MPL-aware)
+
+| Phase | Work | Options | Targets |
+|-------|------|---------|---------|
+| 0 | Fidelity tests (ESDK readers + MPL cache-id/structures) | C | Drift guard for VR-003/004/005 + MPL layout |
+| 1 | Extract `esdk-wire`; rewire `serialize_functions` | B | Bind VR-003/004/005 to shipped code |
+| 2 | Extract `mpl-core` structures; verify materials/EDK/EC structures + zeroization | B | VR-010 + materials-structure invariants (shipped) |
+| 3 | MPL byte-layout/matching helpers: cache-entry-identifier, MRK match, branch-key-wrap AAD/slicing | B | Panic-freedom + layout correctness (shipped) |
+| 4 | Key commitment: commit-key derivation *structure* + constant-time compare | B (+ trusted HKDF boundary) | **VR-001** (CVE-2020-8897 class) |
+| 5 | Decrypt/CMM orchestration ordering once seams exist | B/A | VR-002 end-to-end; CMM cache-eligibility logic |
+
+Phases 2–4 are the MPL additions. They are independent of Phase 1 (different crate), so ESDK and MPL migration can proceed in parallel once the shared byte-primitives decision (§8 Q1) is made.
+
+**Non-negotiables under any option** (from the Verus soundness invariants): no `assume`/`admit`/`external_body`/`external` to force a pass; success requires actual `0 errors`; the documented `std::str::from_utf8` boundary and the aws-lc-rs/HKDF FFI boundaries are the only accepted trust anchors and must stay flagged; the verified type/function must be the shipped one (no `cfg`-gated divergent definitions). For MPL specifically: proofs target the **native `mpl/`**, and the Dafny-backed legacy MPL (`aws-mpl-legacy`) remains an explicitly-noted out-of-scope trusted artifact.
 
 ---
 
 ## 8. Open questions for the team
 
-1. **Crate boundary (B):** is a new `esdk-wire` crate acceptable in the release matrix, or should the core live as a module in an existing dependency-light crate (e.g. alongside `prim`)?
-2. **Error type:** acceptable to introduce a plain wire-error enum in the core and map to `crate::error::Error` at the boundary? Any objection to losing `Backtrace` inside the core?
-3. **Equivalence bar:** what evidence is required that the adapter rewrite is byte-for-byte behavior-preserving — differential tests against the current implementation, fuzzing, or both?
-4. **Scope:** stop at the parsing layer (VR-003/004/005), or also target key-commitment (VR-001) and the decrypt orchestration (VR-002) once the seam exists?
-5. **CI:** add `cargo-verus`/`make verify` as a required check, and on which crate(s)?
+1. **Crate boundary (B):** are new `esdk-wire` and `mpl-core` crates acceptable in the release matrix, or should the cores live as modules in existing dependency-light crates (e.g. `prim`)? Should both share one byte-primitives crate to avoid duplicating the `ByteReader`/big-endian source-of-truth?
+2. **Error type:** acceptable to introduce a plain wire-error enum in each core and map to `crate::error::Error` / `mpl` errors at the boundary? Any objection to losing `Backtrace` inside the cores?
+3. **Equivalence bar:** what evidence is required that the adapter rewrites are byte-for-byte behavior-preserving — differential tests against the current implementation, fuzzing, or both? (Applies to both `esdk` readers and MPL structure/layout helpers.)
+4. **Scope:** how far to push — parsing layer (VR-003/004/005) only, or through key-commitment (VR-001), decrypt/CMM orchestration (VR-002), and the MPL materials/keyring logic per the Phase table in §7?
+5. **CI:** add `cargo-verus`/`make verify` as a required check, and on which crate(s) — `esdk-wire`, `mpl-core`, both?
 6. **Toolchain policy:** pin the Verus version (currently `0.2026.07.12`, Rust `1.96.0`) in CI; who owns upgrades?
+7. **MPL target — native vs legacy (new):** MPL proofs would target the native `mpl/` (`aws-crypto-mpl`), which is **not yet on the ESDK dependency path** (the shipping ESDK uses the Dafny-backed `unsafe-unreviewed-mpl`). Is verifying the native MPL — the intended future — the right bet, with the legacy Dafny shim documented as out-of-scope/trusted? Or is there a requirement to also cover what the ESDK executes today?
+8. **MPL scope boundaries (new):** confirm the crypto/I/O trust boundaries for MPL — HKDF/AES via `aws-lc-rs` (FFI, out of scope), KMS/DynamoDB via `aws-sdk-*` + `tokio` (out of scope). Proofs cover the surrounding structure/layout/decision logic only; is that assurance level acceptable for the key-commitment and branch-key-wrap threats?
 
 ---
 
@@ -188,3 +242,5 @@ Investigation of the coupling (files/lines below) shows a true in-crate wrap is 
 | **Total** | **71** | 0 errors |
 
 Run: `make -C verification verify` (Verus `0.2026.07.12`, toolchain `1.96.0`).
+
+**MPL status:** the inventory above is **ESDK-only**. There are currently **no MPL proofs** — MPL verification is the planned work described in §2.5 and the Phase 2–4 table in §7. The one MPL-adjacent proof so far is `zeroize_proofs.rs` (VR-010), which models `PlaintextDataKey::zeroize` in `mpl/src/structures/algorithm_suite.rs`; it is the natural first `mpl-core` target once that seam exists.
