@@ -1,12 +1,16 @@
 # Design Doc — Binding the Verus Proofs to Shipped ESDK Code
 
-**Status:** Draft for team discussion\\
-**Author:** Mahnush\\
-**Date:** September 2026\\
-**Scope:** How to convert the current out-of-crate Verus *models* into verification of *actual shipped* code, across (1) the ESDK parsing/message layer and (2) the Material Providers Library (MPL) — its cryptographic-materials structures and keyring/CMM/keystore logic.\\
+**Status:** Draft for team discussion
+
+**Author:** Mahnush
+
+**Date:** September 2026
+
+**Scope:** How to convert the current out-of-crate Verus *models* into verification of *actual shipped* code, across (1) the ESDK parsing/message layer and (2) the Material Providers Library (MPL) — its cryptographic-materials structures and keyring/CMM/keystore logic.
+
 **Related:** `docs/verus-proofs-report.md`, `docs/verification-recommendations.md`, `docs/threat-model.md`, `verification/README.md`, `.kiro/steering/verus-verification.md`
 
-> **Update (this revision):** extended beyond the ESDK message layer to cover a planned Verus verification effort for the **MPL and MPL materials** (`mpl/` = `aws-crypto-mpl`, and the primitives in `prim/`). See §2.5 (MPL scope & layering), the MPL rows added to the options in §§3–5, and the MPL-specific open questions in §8.
+> **Update (this revision):** extended beyond the ESDK message layer to cover a planned Verus verification effort for the **MPL and MPL primitives** (`mpl/` = `aws-crypto-mpl`, and the primitives in `prim/`). See §2.5 (MPL scope & layering), the MPL rows added to the options in §§3–5, and the MPL-specific open questions in §8.
 
 ---
 
