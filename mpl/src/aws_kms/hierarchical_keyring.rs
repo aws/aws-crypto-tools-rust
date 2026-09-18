@@ -26,7 +26,7 @@ use crate::cmc::{
 use crate::keystore::Keystore;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, MaterialsError, PlaintextDataKey,
+    EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
 
 /// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
@@ -289,9 +289,10 @@ impl HierarchicalKeyring {
 /// version and variant bits.
 fn generate_partition_id() -> Result<Vec<u8>, MaterialsError> {
     let mut bytes = [0u8; 16];
-    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
-        MaterialsError::new(
+    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
+        MaterialsError::new_with_cause(
             "HierarchicalKeyring: failed to obtain entropy for partition-id v4 UUID",
+            e,
         )
     })?;
     Ok(uuid::Builder::from_random_bytes(bytes)
@@ -332,9 +333,10 @@ impl Keyring for HierarchicalKeyring {
         );
 
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
-            MaterialsError::keyring_failed(format!(
-                "HierarchicalKeyring: cache get_cache_entry failed: {e}",
-            ))
+            MaterialsError::keyring_failed_with_cause(
+                format!("HierarchicalKeyring: cache get_cache_entry failed: {e}"),
+                e,
+            )
         })?;
 
         let ciphertext = match cached {
@@ -348,9 +350,10 @@ impl Keyring for HierarchicalKeyring {
                     .get_active_branch_key(branch_key_id.clone())
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: get_active_branch_key failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: get_active_branch_key failed: {e}"),
+                            e,
+                        )
                     })?;
 
                 let now = SystemTime::now();
@@ -364,9 +367,10 @@ impl Keyring for HierarchicalKeyring {
                     .put_cache_entry(&cache_id, entry)
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: cache put_cache_entry failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: cache put_cache_entry failed: {e}"),
+                            e,
+                        )
                     })?;
 
                 branch_key_wrap::wrap(
@@ -414,7 +418,7 @@ impl Keyring for HierarchicalKeyring {
 
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
-        let mut collected_errors: Vec<String> = Vec::new();
+        let mut collected_errors: Vec<MaterialsError> = Vec::new();
         for edk in encrypted_data_keys {
             if edk.key_provider_id != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
@@ -439,7 +443,7 @@ impl Keyring for HierarchicalKeyring {
                         materials.symmetric_signing_key().cloned(),
                     );
                 }
-                Err(e) => collected_errors.push(e.to_string()),
+                Err(e) => collected_errors.push(e),
             }
         }
 
@@ -447,10 +451,30 @@ impl Keyring for HierarchicalKeyring {
         // mutated DecryptionMaterials; reaching this line means no EDK was
         // successfully decrypted, so the input `materials` parameter (owned
         // but never mutated) is dropped without modification.
-        Err(MaterialsError::keyring_failed(format!(
-            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key (collected errors: [{}])",
-            collected_errors.join("; "),
-        )))
+
+        // Nothing was attempted: every supplied EDK was filtered out before
+        // the keystore was consulted, so this is not an aggregate of failures
+        // but a distinct one — no encrypted data key matched this keyring.
+        if collected_errors.is_empty() {
+            return Err(MaterialsError::no_matching_data_key(
+                "HierarchicalKeyring::on_decrypt: no encrypted data key matched.",
+            ));
+        }
+
+        // At least one candidate was attempted and every one failed. The
+        // per-attempt errors are carried typed on the returned error, which is
+        // what the specification requires:
+        //
+        //   "If OnDecrypt fails to successfully decrypt any encrypted data key,
+        //    then it MUST yield an error that includes all the collected
+        //    errors."
+        //
+        // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
+        Err(MaterialsError::collection(
+            MaterialsErrorKind::KeyringFailed,
+            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key",
+            collected_errors,
+        ))
     }
 }
 
@@ -553,9 +577,10 @@ impl HierarchicalKeyring {
         );
 
         let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
-            MaterialsError::keyring_failed(format!(
-                "HierarchicalKeyring: cache get_cache_entry failed: {e}",
-            ))
+            MaterialsError::keyring_failed_with_cause(
+                format!("HierarchicalKeyring: cache get_cache_entry failed: {e}"),
+                e,
+            )
         })?;
 
         let bkm = match cached {
@@ -568,9 +593,10 @@ impl HierarchicalKeyring {
                     .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: get_branch_key_version failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: get_branch_key_version failed: {e}"),
+                            e,
+                        )
                     })?;
 
                 let now = SystemTime::now();
@@ -584,9 +610,10 @@ impl HierarchicalKeyring {
                     .put_cache_entry(&cache_id, entry)
                     .await
                     .map_err(|e| {
-                        MaterialsError::keyring_failed(format!(
-                            "HierarchicalKeyring: cache put_cache_entry failed: {e}",
-                        ))
+                        MaterialsError::keyring_failed_with_cause(
+                            format!("HierarchicalKeyring: cache put_cache_entry failed: {e}"),
+                            e,
+                        )
                     })?;
                 bkm
             }
@@ -600,9 +627,10 @@ impl HierarchicalKeyring {
 /// configured encryption-key length using the `aws-mpl-primitives` CSPRNG.
 fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, MaterialsError> {
     let mut bytes = vec![0u8; suite.encryption_key_length()];
-    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|_| {
-        MaterialsError::keyring_failed(
+    aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
+        MaterialsError::keyring_failed_with_cause(
             "HierarchicalKeyring: failed to obtain entropy for random plaintext data key",
+            e,
         )
     })?;
     Ok(PlaintextDataKey::new(bytes))
