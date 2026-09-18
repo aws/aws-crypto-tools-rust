@@ -30,6 +30,20 @@ jobs:
         with:
           components: llvm-tools-preview
 
+      # The C++ side must be compiled by the clang whose LLVM major matches
+      # rustc's, so the profile runtime writes the profraw version that
+      # rustc's llvm-profdata expects.
+      - name: Install clang matching rustc's LLVM
+        run: |
+          set -euo pipefail
+          llvm_major=$(rustc -vV | sed -n 's/^LLVM version: \([0-9][0-9]*\).*/\1/p')
+          test -n "$llvm_major"
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$llvm_major"
+          echo "CC=clang-$llvm_major" >> "$GITHUB_ENV"
+          echo "CXX=clang++-$llvm_major" >> "$GITHUB_ENV"
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
@@ -54,8 +68,6 @@ jobs:
         env:
           # Drop debug info to save RAM
           RUSTFLAGS: "-C debuginfo=0"
-          CC: clang
-          CXX: clang++
           ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
           ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
           ESDK_TEST_LOGICAL_KEYSTORE: KeyStoreDdbTable
