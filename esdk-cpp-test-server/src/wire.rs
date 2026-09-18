@@ -4,8 +4,7 @@
 use crate::backend::CppBackend;
 use aws_esdk_test_server::error::ServerError;
 use aws_esdk_test_server::model::{
-    CreateClientRequest, DecryptRequest, DecryptStreamRequest, EncryptRequest,
-    EncryptStreamRequest,
+    CreateClientRequest, DecryptRequest, DecryptStreamRequest, EncryptRequest, EncryptStreamRequest,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
