@@ -10,10 +10,9 @@ use std::sync::Arc;
 use aws_esdk_cpp_test_server::backend::CppBackend;
 use aws_esdk_cpp_test_server::model::{
     AesWrappingAlg, CreateClientRequest, CreateClientResponse, CryptographicMaterialsManager,
-    DecryptRequest, DecryptResponse, DecryptStreamRequest, DecryptStreamResponse,
-    DefaultCmmConfig, EncryptRequest, EncryptResponse, EncryptStreamRequest,
-    EncryptStreamResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy, Keyring,
-    RawAesKeyringConfig,
+    DecryptRequest, DecryptResponse, DecryptStreamRequest, DecryptStreamResponse, DefaultCmmConfig,
+    EncryptRequest, EncryptResponse, EncryptStreamRequest, EncryptStreamResponse,
+    EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy, Keyring, RawAesKeyringConfig,
 };
 use aws_esdk_cpp_test_server::wire::app;
 use axum::body::Body;
