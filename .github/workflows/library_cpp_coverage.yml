@@ -80,8 +80,13 @@ jobs:
         run: |
           set -euo pipefail
           lcov='esdk/shims/aws-esdk-cpp/lcov.info'
-          sed -i "s|^SF:${GITHUB_WORKSPACE}/|SF:|" "$lcov"
-          sed -i 's|^SF:\([^/]\)|SF:esdk/shims/aws-esdk-cpp/\1|' "$lcov"
+          # Absolute workspace paths become repo-relative; paths that were
+          # already relative get the shim directory prefix. The t branch
+          # keeps each SF line from matching both rules.
+          sed -i \
+            -e "s|^SF:${GITHUB_WORKSPACE}/|SF:|" -e t \
+            -e 's|^SF:\([^/]\)|SF:esdk/shims/aws-esdk-cpp/\1|' \
+            "$lcov"
           missing=0
           while IFS= read -r f; do
             if [[ ! -f "$f" ]]; then
