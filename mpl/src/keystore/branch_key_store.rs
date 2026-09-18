@@ -25,6 +25,7 @@ use time::OffsetDateTime;
 use time::macros::format_description;
 use uuid::Uuid;
 
+use crate::aws_kms::user_agent::with_user_agent;
 use crate::keystore::Keystore;
 use crate::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
@@ -123,10 +124,13 @@ impl BranchKeyStore {
         Self::build(config)
     }
 
-    /// Shared tail of both constructors: require concrete clients, resolve the
-    /// keystore id, and assemble. Assumes the KMS configuration has already
-    /// been validated.
-    fn build(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
+    /// Shared code by both constructors:
+    /// require concrete clients,
+    /// add this crate's user agent identifier to the KMS client,
+    /// resolve the keystore id,
+    /// then assemble.
+    /// Assumes the KMS configuration has already been validated.
+    fn build(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
         if config.kms_client.is_none() || config.ddb_client.is_none() {
             return Err(KeystoreError::new(
                 KeystoreErrorKind::Configuration,
@@ -134,6 +138,11 @@ impl BranchKeyStore {
                  use BranchKeyStore::new to build defaults for absent clients",
             ));
         }
+
+        // The config's KMS client might be ours or one the caller passed in.
+        // Add the user agent here so both get it.
+        // Doing it in `new` would only cover the client we build.
+        config.kms_client = config.kms_client.take().map(with_user_agent);
 
         let keystore_id = config
             .id
@@ -818,4 +827,25 @@ fn record_from_ddb_item(
         attributes,
         enc: enc_blob.into_inner(),
     })
+}
+
+/// Internal accessors exposed solely so integration tests under `tests/` can
+/// assert on the SDK clients resolved during construction. Gated behind
+/// `test-utils` so it is not compiled for library consumers. Not part of the
+/// public API. Do not use.
+///
+/// Everything in this module is exempt from semantic versioning and may be
+/// changed, renamed, or removed at any time.
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    use super::BranchKeyStore;
+
+    pub fn kms_client(store: &BranchKeyStore) -> &aws_sdk_kms::Client {
+        store.kms_client()
+    }
+
+    pub fn ddb_client(store: &BranchKeyStore) -> &aws_sdk_dynamodb::Client {
+        store.ddb_client()
+    }
 }
