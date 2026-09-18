@@ -153,7 +153,7 @@ impl BranchKeyStore {
     }
 
     /// The resolved AWS KMS client. Guaranteed present after construction.
-    pub(crate) fn kms_client(&self) -> &KmsClient {
+    fn kms_client(&self) -> &KmsClient {
         self.config
             .kms_client
             .as_ref()
@@ -162,7 +162,7 @@ impl BranchKeyStore {
 
     /// The resolved Amazon DynamoDB client. Guaranteed present after
     /// construction.
-    pub(crate) fn ddb_client(&self) -> &DynamoDbClient {
+    fn ddb_client(&self) -> &DynamoDbClient {
         self.config
             .ddb_client
             .as_ref()
@@ -824,4 +824,46 @@ fn record_from_ddb_item(
         attributes,
         enc: enc_blob.into_inner(),
     })
+}
+
+// In-crate because it needs the private client accessors; the tagging helper
+// itself is covered in `tests/test_aws_kms_user_agent.rs`.
+#[cfg(test)]
+mod tests {
+    use super::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
+    use crate::aws_kms::user_agent::MPL_FRAMEWORK_NAME;
+    use aws_config::{BehaviorVersion, SdkConfig};
+
+    #[test]
+    fn with_clients_tags_the_kms_client_and_not_the_ddb_client() {
+        let sdk_config = SdkConfig::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .build();
+        let store = BranchKeyStore::with_clients(KeyStoreConfig {
+            ddb_table_name: "test-table".to_string(),
+            kms_configuration: KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                    .to_string(),
+            ),
+            logical_keystore_name: "test-logical".to_string(),
+            id: Some("user-agent-test".to_string()),
+            grant_tokens: None,
+            ddb_client: Some(aws_sdk_dynamodb::Client::new(&sdk_config)),
+            kms_client: Some(aws_sdk_kms::Client::new(&sdk_config)),
+        })
+        .expect("with_clients must succeed when both clients are present");
+
+        let kms_names: Vec<&str> = store
+            .kms_client()
+            .config()
+            .framework_metadata()
+            .iter()
+            .map(|metadata| metadata.name())
+            .collect();
+        assert_eq!(kms_names, vec![MPL_FRAMEWORK_NAME]);
+        assert!(
+            store.ddb_client().config().framework_metadata().is_empty(),
+            "the DynamoDB client must carry no identifier"
+        );
+    }
 }
