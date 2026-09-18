@@ -75,9 +75,7 @@ fn with_clients_succeeds_when_both_clients_are_supplied() {
     assert_eq!(info.keystore_id, "supplied-clients");
 }
 
-// Construction tags the KMS client's user agent with this crate's identifier,
-// and leaves the DynamoDB client alone. The tagging helper itself is covered in
-// `tests/test_aws_kms_user_agent.rs`; this only checks the keystore applies it.
+// Construction tags only the KMS client's user agent with this crate's identifier.
 #[cfg(feature = "test-utils")]
 #[test]
 fn with_clients_tags_the_kms_client_and_not_the_ddb_client() {
