@@ -31,7 +31,6 @@ jobs:
       run:
         working-directory: ${{ inputs.project }}
     steps:
-      # The spec is resolved by `make duvet` (resolve-spec.sh), not a submodule.
       - uses: actions/checkout@v6
 
       # Install duvet at its latest published release, matching the duvet
