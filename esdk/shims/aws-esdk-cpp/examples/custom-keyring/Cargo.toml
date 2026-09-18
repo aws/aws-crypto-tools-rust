@@ -1,0 +1,22 @@
+# Step 1: Create a Rust crate for your keyring.
+[package]
+name = "custom-keyring-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# Your keyring crate MUST depend on aws-esdk-cpp.
+# This example uses a local path dependency;
+# in your own project, depend on a published version instead
+# (e.g. aws-esdk-cpp = "X.Y.Z").
+aws-esdk-cpp = { path = "../.." }
+aws-esdk = { path = "../../../.." }
+aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../../../unsafe-unreviewed-mpl/mpl" }
+tokio = { version = "1.49.0", features = ["rt"] }
+
+# Standalone crate, not a member of the shim's workspace
+[workspace]
