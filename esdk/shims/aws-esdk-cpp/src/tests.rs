@@ -1,13 +1,18 @@
-//! Bridge-internal tests: translation helpers, null-handle checks, and the
-//! error-kind wire encoding. Everything here runs offline. Facade-observable
+//! Bridge-internal tests: translation helpers, null-handle checks, and inputs
+//! the facade cannot express. Everything here runs offline. Facade-observable
 //! behavior, including the credentialed integration coverage, lives in the C++
-//! suites under tests/.
+//! suites under tests/. The error wire encoding has no test of its own: every
+//! C++ typed-exception check on a Rust-produced error covers the encode and
+//! decode end to end.
 
 use super::*;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
-// Constructors for the presence-encoded optionals.
+// Helpers
+//
+// Constructors for the presence-encoded optionals, all-unset fixtures
+// mirroring the C++ side's value-initialized inputs, and shared builders.
 
 fn unset_u32() -> ffi::OptU32 {
     ffi::OptU32 {
@@ -48,13 +53,17 @@ fn unset_cache() -> ffi::OptCacheType {
         value: ffi::CacheType {
             kind: ffi::CacheKind { repr: 0 },
             entry_capacity: 0,
-            entry_pruning_tail_size: unset_u32(),
+            entry_pruning_tail_size: 0,
+            grace_period: 0,
+            grace_interval: 0,
+            fan_out: 0,
+            inflight_ttl: 0,
+            sleep_milli: 0,
+            time_units: ffi::TimeUnits::Unset,
             shared: std::ptr::null(),
         },
     }
 }
-
-// All-unset test fixtures, mirroring the C++ side's value-initialized inputs.
 
 fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
     ffi::EncryptInput {
@@ -110,6 +119,26 @@ fn unset_client_config() -> ffi::MplAwsClientConfig {
         },
     }
 }
+
+fn keystore_config_with_clients(kms: &MplKmsClient, ddb: &MplDdbClient) -> ffi::KeyStoreConfig {
+    let mut cfg = unset_keystore_config();
+    cfg.kms_client = kms as *const MplKmsClient;
+    cfg.ddb_client = ddb as *const MplDdbClient;
+    cfg.ddb_table_name = "valid-table-name".to_string();
+    cfg.logical_key_store_name = "valid-table-name".to_string();
+    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsKeyArn;
+    cfg.kms_configuration_value = "arn:aws:kms:us-west-2:000000000000:key/test".to_string();
+    cfg
+}
+
+fn expect_err<T>(result: Result<T, String>) -> String {
+    match result {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => e,
+    }
+}
+
+// Type translation
 
 // Must mirror the discriminants of `ffi::EsdkAlgorithmSuiteId` in the bridge.
 const ALG_REPRS: [u16; 11] = [
@@ -265,94 +294,31 @@ fn encryption_context_empty() {
     assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
 }
 
-fn expect_err<T>(result: Result<T, String>) -> String {
-    match result {
-        Ok(_) => panic!("expected an error"),
-        Err(e) => e,
-    }
-}
-
 #[test]
-fn encrypt_rejects_null_keyring() {
-    //= spec/shim/esdk-shim.md#materials-source
+fn make_frame_length_translates_and_rejects_zero() {
+    //= spec/shim/esdk-shim.md#frame-length
     //= type=test
-    //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
-    //# materials source is supplied.
-    let err = expect_err(encrypt(&unset_encrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
-    // A null keyring is inexpressible through the facade, so the kind pin
-    // (5 = ValidationError) lives here.
+    //# - The shim MUST translate the target frame length using the core ESDK's frame
+    //# length constructor, and MUST return an error when the core ESDK rejects the
+    //# value.
+    let err = make_frame_length(0).unwrap_err();
     assert!(
-        err.starts_with(&format!("5{}encrypt: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
-}
-
-#[test]
-fn decrypt_rejects_null_keyring() {
-    let err = expect_err(decrypt(&unset_decrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
-}
-
-#[test]
-fn create_keystore_rejects_null_clients() {
-    let err = expect_err(create_keystore(&unset_keystore_config()));
-    //= spec/shim/shim.md#handles-and-lifetimes
-    //= type=test
-    //= reason=Exercises a common `require_handle` method call, so this is universal
-    //# - Before dereferencing a target-supplied resource handle, the shim MUST check it
-    //# and MUST return an error when a required handle is absent.
-    //
-    //= spec/shim/esdk-shim.md#create-key-store
-    //= type=test
-    //# - Creating a key store MUST require a KMS client handle and a DynamoDB client
-    //# handle, checked as defined in
-    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
-    //# and MUST provide both to the core ESDK.
-    assert!(
-        err.contains("kms_client is null"),
+        err.contains("Frame length must be non-zero"),
         "unexpected error: {err}"
     );
-
-    let kms = create_kms_client(&unset_client_config()).expect("create kms client");
-    let mut cfg = unset_keystore_config();
-    cfg.kms_client = &*kms as *const MplKmsClient;
-    let err = expect_err(create_keystore(&cfg));
-    assert!(
-        err.contains("ddb_client is null"),
-        "unexpected error: {err}"
-    );
+    assert!(make_frame_length(4096).is_ok());
+    assert!(make_frame_length(1).is_ok());
 }
 
 #[test]
-fn create_hierarchical_keyring_rejects_null_key_store() {
-    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+fn max_edks_zero_is_no_limit_positive_is_limit() {
+    //= spec/shim/esdk-shim.md#maximum-encrypted-data-keys
     //= type=test
-    //# - Creating a hierarchical keyring MUST require a key store handle, checked as defined in
-    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
-    //# and MUST provide it to the core ESDK.
-    let err = expect_err(create_hierarchical_keyring(
-        &unset_hierarchical_keyring_input(),
-    ));
-    assert!(err.contains("key_store is null"), "unexpected error: {err}");
-}
-
-#[test]
-fn make_kms_config_rejects_unknown_type() {
-    //= spec/shim/esdk-shim.md#kms-configuration
-    //= type=test
-    //# - The shim MUST return an error when the target KMS configuration type is not a
-    //# supported value.
-    let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
-    assert!(
-        err.contains("Invalid KmsConfigurationType"),
-        "unexpected error: {err}"
-    );
-    let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
-    assert!(
-        err.contains("kms_configuration_type is unset"),
-        "unexpected error: {err}"
-    );
+    //# The shim MUST translate zero to the core ESDK's "no limit" representation,
+    //# and a positive value `n` to a limit of `n`.
+    assert_eq!(max_edks_target_to_core(0), None);
+    assert_eq!(max_edks_target_to_core(1), std::num::NonZeroUsize::new(1));
+    assert_eq!(max_edks_target_to_core(42), std::num::NonZeroUsize::new(42));
 }
 
 #[test]
@@ -404,6 +370,153 @@ fn make_kms_config_accepts_mr_discovery() {
 }
 
 #[test]
+fn make_kms_config_rejects_unknown_type() {
+    //= spec/shim/esdk-shim.md#kms-configuration
+    //= type=test
+    //# - The shim MUST return an error when the target KMS configuration type is not a
+    //# supported value.
+    let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
+    assert!(
+        err.contains("Invalid KmsConfigurationType"),
+        "unexpected error: {err}"
+    );
+    let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
+    assert!(
+        err.contains("kms_configuration_type is unset"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn classify_core_error_maps_each_kind() {
+    use aws_esdk::ErrorKind;
+    // ErrorKind::Esdk has no explicit arm; it maps through the wildcard.
+    let cases = [
+        (ErrorKind::Esdk, ffi::ShimErrorKind::Esdk),
+        (
+            ErrorKind::SerializationError,
+            ffi::ShimErrorKind::SerializationError,
+        ),
+        (
+            ErrorKind::CryptographicError,
+            ffi::ShimErrorKind::CryptographicError,
+        ),
+        (ErrorKind::MplError, ffi::ShimErrorKind::MplError),
+        (
+            ErrorKind::ValidationError,
+            ffi::ShimErrorKind::ValidationError,
+        ),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(
+            classify_core_error(&kind).repr,
+            expected.repr,
+            "for {kind:?}"
+        );
+    }
+}
+
+// Inputs the facade cannot express, so must be tested in Rust
+//
+// - Null resource handles (the facade passes references)
+// - unset/unknown enum reprs (the facade's factories only produce valid values)
+
+#[test]
+fn encrypt_rejects_null_keyring() {
+    //= spec/shim/esdk-shim.md#materials-source
+    //= type=test
+    //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
+    //# materials source is supplied.
+    let err = expect_err(encrypt(&unset_encrypt_input()));
+    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+}
+
+#[test]
+fn decrypt_rejects_null_keyring() {
+    let err = expect_err(decrypt(&unset_decrypt_input()));
+    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+}
+
+#[test]
+fn create_keystore_defaults_absent_clients() {
+    //= spec/shim/esdk-shim.md#create-key-store
+    //= type=test
+    //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+    //# each checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+    //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+    //# left for the core ESDK to default.
+    // Neither client is supplied (both handles null); the core ESDK builds its own,
+    // so key-store creation still succeeds.
+    let mut cfg = unset_keystore_config();
+    cfg.ddb_table_name = "valid-table-name".to_string();
+    cfg.logical_key_store_name = "valid-table-name".to_string();
+    cfg.kms_configuration_type = ffi::KmsConfigurationType::KmsKeyArn;
+    cfg.kms_configuration_value = "arn:aws:kms:us-west-2:000000000000:key/test".to_string();
+    assert!(cfg.kms_client.is_null() && cfg.ddb_client.is_null());
+    create_keystore(&cfg).expect("key store should build with defaulted clients");
+}
+
+#[test]
+fn create_keystore_rejects_unset_kms_config_type() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let mut unset_kms = keystore_config_with_clients(&kms, &ddb);
+    // An unset KMS configuration type is inexpressible through the facade
+    // (KeyStore constructor always supplies a key ARN)
+    // so the rejection pins here.
+    unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
+    let err = expect_err(create_keystore(&unset_kms));
+    assert!(
+        err.contains("kms_configuration_type is unset"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_hierarchical_keyring_rejects_null_key_store() {
+    //= spec/shim/esdk-shim.md#create-hierarchical-keyring
+    //= type=test
+    //# - Creating a hierarchical keyring MUST require a key store handle, checked as defined in
+    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
+    //# and MUST provide it to the core ESDK.
+    let err = expect_err(create_hierarchical_keyring(
+        &unset_hierarchical_keyring_input(),
+    ));
+    assert!(err.contains("key_store is null"), "unexpected error: {err}");
+}
+
+#[test]
+fn create_hierarchical_keyring_reports_bad_cache() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = &*keystore as *const KeyStore;
+    input.cache = ffi::OptCacheType {
+        set: true,
+        value: ffi::CacheType {
+            kind: ffi::CacheKind { repr: 99 },
+            entry_capacity: 0,
+            entry_pruning_tail_size: 0,
+            grace_period: 0,
+            grace_interval: 0,
+            fan_out: 0,
+            inflight_ttl: 0,
+            sleep_milli: 0,
+            time_units: ffi::TimeUnits::Unset,
+            shared: std::ptr::null(),
+        },
+    };
+    let err = expect_err(create_hierarchical_keyring(&input));
+    assert!(
+        err.contains("unrecognized or unset cache kind"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn create_cache_rejects_unknown_kind() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
@@ -413,7 +526,13 @@ fn create_cache_rejects_unknown_kind() {
         let err = expect_err(create_cryptographic_materials_cache(&ffi::CacheType {
             kind: ffi::CacheKind { repr },
             entry_capacity: 0,
-            entry_pruning_tail_size: unset_u32(),
+            entry_pruning_tail_size: 0,
+            grace_period: 0,
+            grace_interval: 0,
+            fan_out: 0,
+            inflight_ttl: 0,
+            sleep_milli: 0,
+            time_units: ffi::TimeUnits::Unset,
             shared: std::ptr::null(),
         }));
         assert!(
@@ -424,178 +543,62 @@ fn create_cache_rejects_unknown_kind() {
 }
 
 #[test]
-fn make_frame_length_translates_and_rejects_zero() {
-    //= spec/shim/esdk-shim.md#frame-length
-    //= type=test
-    //# - The shim MUST translate the target frame length using the core ESDK's frame
-    //# length constructor, and MUST return an error when the core ESDK rejects the
-    //# value.
-    let err = make_frame_length(0).unwrap_err();
-    assert!(
-        err.contains("Frame length must be non-zero"),
-        "unexpected error: {err}"
-    );
-    assert!(make_frame_length(4096).is_ok());
-    assert!(make_frame_length(1).is_ok());
-}
-
-#[test]
-fn max_edks_zero_is_no_limit_positive_is_limit() {
-    //= spec/shim/esdk-shim.md#maximum-encrypted-data-keys
-    //= type=test
-    //# The shim MUST translate zero to the core ESDK's "no limit" representation,
-    //# and a positive value `n` to a limit of `n`.
-    assert_eq!(max_edks_target_to_core(0), None);
-    assert_eq!(max_edks_target_to_core(1), std::num::NonZeroUsize::new(1));
-    assert_eq!(max_edks_target_to_core(42), std::num::NonZeroUsize::new(42));
-}
-
-#[test]
-fn user_agent_form_and_append() {
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - The shim MUST set a user-agent on each service client of the form
-    //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
-    //# `<target-language>` is the target language, `<core-language>` is the core
-    //# ESDK's implementation language, and `<version>` is the shim's published version.
-    let ua = shim_user_agent();
-    assert_eq!(merge_user_agent("", &ua), ua);
-    assert!(ua.starts_with("AwsEncryptionSdk-Shim-C++-Rust-"));
-
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - The shim MUST preserve any user-agent already present in the loaded
-    //# configuration, appending its own rather than replacing it.
-    let merged = merge_user_agent("existing-agent/1.0", &ua);
-    assert!(
-        merged.starts_with("existing-agent/1.0"),
-        "must preserve existing: {merged}"
-    );
-    assert!(merged.contains(&ua), "must append shim UA: {merged}");
-}
-
-#[test]
-fn create_sdk_config_defers_retry_when_unset() {
-    let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
-        aws_config::BehaviorVersion::latest(),
-    ));
-    let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - If the target does not supply a retry configuration, the shim MUST defer to
-    //# the core ESDK's default retry configuration and MUST NOT substitute its own.
-    assert_eq!(
-        sdk.retry_config().map(|r| r.max_attempts()),
-        default_ref.retry_config().map(|r| r.max_attempts())
-    );
-}
-
-#[test]
-fn create_sdk_config_applies_region_retry_and_user_agent() {
-    let mut cfg = unset_client_config();
-    cfg.region = ffi::OptString {
-        set: true,
-        value: "us-west-2".to_string(),
-    };
-    cfg.retry.max_attempts = set_u32(7);
-    let sdk = create_sdk_config(&cfg).expect("build sdk config");
-
-    let region: Option<&str> = sdk.region().map(|r| r.as_ref());
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - If the target supplies a region, the shim MUST apply it to each service client.
-    assert_eq!(region, Some("us-west-2"));
-
-    //= spec/shim/esdk-shim.md#service-client-configuration
-    //= type=test
-    //# - If the target supplies a retry configuration, the shim MUST apply it to each
-    //# service client.
-    assert_eq!(sdk.retry_config().map(|r| r.max_attempts()), Some(7));
-
-    let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
-    assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
-}
-
-fn test_raw_aes_keyring() -> Box<Keyring> {
-    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
-        key_namespace: "test-ns".to_string(),
-        key_name: "test-key".to_string(),
-        wrapping_key: &[0x01; 32],
-        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
-    })
-    .expect("create raw AES keyring")
-}
-
-#[test]
-fn streaming_decrypt_tamper_fails_at_finish() {
-    let keyring = test_raw_aes_keyring();
-
-    let mut enc_in = unset_encrypt_input();
-    enc_in.keyring = &*keyring as *const Keyring;
-    enc_in.algorithm_suite_id =
-        set_alg_id(ffi::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
-    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
-    let mut ciphertext = encrypt_stream_write(&mut stream, b"stream tamper target").expect("write");
-    let fin = encrypt_stream_finish(&mut stream).expect("finish");
-    ciphertext.extend_from_slice(&fin.trailing_output);
-
-    *ciphertext.last_mut().unwrap() ^= 0xFF;
-
-    let mut dec_in = unset_decrypt_input();
-    dec_in.keyring = &*keyring as *const Keyring;
-    let mut stream = create_decrypt_stream(&dec_in).expect("create decrypt stream");
-    // Feeding may or may not surface the failure (the pump is asynchronous);
-    // finish MUST fail with the core's CryptographicError kind either way.
-    let mut failed = None;
-    for chunk in ciphertext.chunks(7) {
-        if let Err(e) = decrypt_stream_write(&mut stream, chunk) {
-            failed = Some(e);
-            break;
-        }
+fn create_storm_tracking_cache_honors_time_units() {
+    // time_units governs how grace_period/grace_interval/inflight_ttl are
+    // interpreted; Unset (the core default of seconds), Seconds, and
+    // Milliseconds must each build a usable cache.
+    for time_units in [
+        ffi::TimeUnits::Unset,
+        ffi::TimeUnits::Seconds,
+        ffi::TimeUnits::Milliseconds,
+    ] {
+        create_cryptographic_materials_cache(&ffi::CacheType {
+            kind: ffi::CacheKind::StormTracking,
+            entry_capacity: 10,
+            entry_pruning_tail_size: 1,
+            grace_period: 10,
+            grace_interval: 1,
+            fan_out: 20,
+            inflight_ttl: 10,
+            sleep_milli: 20,
+            time_units,
+            shared: std::ptr::null(),
+        })
+        .expect("storm-tracking cache should build");
     }
-    let err = match failed {
-        Some(e) => e,
-        None => expect_err(decrypt_stream_finish(&mut stream)),
-    };
-    assert!(
-        err.starts_with(&format!("2{}decrypt_stream: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
 }
 
 #[test]
-fn streaming_write_after_finish_is_invalid_input() {
-    let keyring = test_raw_aes_keyring();
-    let mut enc_in = unset_encrypt_input();
-    enc_in.keyring = &*keyring as *const Keyring;
-    let mut stream = create_encrypt_stream(&enc_in).expect("create encrypt stream");
-    encrypt_stream_finish(&mut stream).expect("finish");
-    let err = expect_err(encrypt_stream_write(&mut stream, b"late"));
-    assert!(
-        err.starts_with(&format!("5{}encrypt_stream: ", '\u{1f}')),
-        "unexpected encoding: {err}"
-    );
-}
-
-#[test]
-fn create_raw_aes_keyring_rejects_unset_wrapping_alg() {
+fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
     //= type=test
     //# - The shim MUST return an error when the target wrapping algorithm is not a
     //# supported value.
-    let err = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+    let unset = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
         key_namespace: "test-ns".to_string(),
         key_name: "test-key".to_string(),
         wrapping_key: &[0x01; 32],
         wrapping_alg: ffi::AesWrappingAlg::Unset,
     }));
     assert!(
-        err.contains("wrapping_alg is unset"),
-        "unexpected error: {err}"
+        unset.contains("wrapping_alg is unset"),
+        "unexpected error: {unset}"
+    );
+
+    let unknown = expect_err(create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x01; 32],
+        wrapping_alg: ffi::AesWrappingAlg { repr: 99 },
+    }));
+    assert!(
+        unknown.contains("Invalid AesWrappingAlg"),
+        "unexpected error: {unknown}"
     );
 }
 
-// Each value differs from the core default, so a dropped assignment fails.
+// Options forwarding
+
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
     use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as C;
@@ -656,4 +659,167 @@ fn apply_decrypt_options_forwards_every_optional_input() {
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
+}
+
+// AWS SDK client configuration
+// The built SdkConfig is opaque through the facade, so the values must be tested from Rust
+
+#[test]
+fn user_agent_form_and_append() {
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - The shim MUST set a user-agent on each service client of the form
+    //# `AwsEncryptionSdk-Shim-<target-language>-<core-language>-<version>`, where
+    //# `<target-language>` is the target language, `<core-language>` is the core
+    //# ESDK's implementation language, and `<version>` is the shim's published version.
+    let ua = shim_user_agent();
+    assert_eq!(merge_user_agent("", &ua), ua);
+    assert!(ua.starts_with("AwsEncryptionSdk-Shim-C++-Rust-"));
+
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - The shim MUST preserve any user-agent already present in the loaded
+    //# configuration, appending its own rather than replacing it.
+    let merged = merge_user_agent("existing-agent/1.0", &ua);
+    assert!(
+        merged.starts_with("existing-agent/1.0"),
+        "must preserve existing: {merged}"
+    );
+    assert!(merged.contains(&ua), "must append shim UA: {merged}");
+}
+
+#[test]
+fn create_sdk_config_defers_retry_when_unset() {
+    let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
+        aws_config::BehaviorVersion::latest(),
+    ));
+    let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - If the target does not supply a retry configuration, the shim MUST defer to
+    //# the core ESDK's default retry configuration and MUST NOT substitute its own.
+    assert_eq!(
+        sdk.retry_config().map(|r| r.max_attempts()),
+        default_ref.retry_config().map(|r| r.max_attempts())
+    );
+}
+
+#[test]
+fn create_sdk_config_applies_every_field() {
+    let mut cfg = unset_client_config();
+    cfg.region = ffi::OptString {
+        set: true,
+        value: "us-west-2".to_string(),
+    };
+    cfg.retry.max_attempts = set_u32(7);
+    cfg.retry.mode_adaptive = true;
+    let sdk = create_sdk_config(&cfg).expect("build sdk config");
+
+    let region: Option<&str> = sdk.region().map(|r| r.as_ref());
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - If the target supplies a region, the shim MUST apply it to each service client.
+    assert_eq!(region, Some("us-west-2"));
+
+    //= spec/shim/esdk-shim.md#service-client-configuration
+    //= type=test
+    //# - If the target supplies a retry configuration, the shim MUST apply it to each
+    //# service client.
+    assert_eq!(sdk.retry_config().map(|r| r.max_attempts()), Some(7));
+    assert_eq!(
+        sdk.retry_config().map(|r| r.mode()),
+        Some(aws_config::retry::RetryConfig::adaptive().mode())
+    );
+
+    let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
+    assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
+}
+
+// Handles
+
+// into_keyring_handle is the Rust that backs the public C++ `Keyring::adopt` path.
+// Check it yields an owned Box<Keyring> pointer. (Type only testable in Rust).
+#[test]
+fn into_keyring_handle_boxes_the_keyring() {
+    let keyring = create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x2A; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("raw AES keyring should build");
+    let handle = into_keyring_handle(keyring.client.clone());
+    assert!(!handle.is_null());
+    unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
+}
+
+// Streaming internals
+//
+// Stream internals (ChannelReader/ChannelWriter and the worker thread)
+// are unconstructible from C++, so internals must be tested here.
+// Actual streamed encrypt/decrypt behavior lives in the C++ test_streaming.
+
+#[test]
+fn channel_reader_and_writer_debug() {
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let reader = ChannelReader {
+        rx: std::sync::Mutex::new(rx),
+        pending: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(format!("{reader:?}"), "ChannelReader");
+    let writer = ChannelWriter { tx };
+    assert_eq!(format!("{writer:?}"), "ChannelWriter");
+}
+
+#[test]
+fn channel_writer_flush_is_noop_and_reports_broken_pipe() {
+    use std::io::Write;
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let mut writer = ChannelWriter { tx };
+    writer.flush().expect("flush is a no-op");
+    // A non-empty write forwards the bytes and returns the count.
+    assert_eq!(writer.write(b"data").expect("write succeeds"), 4);
+    assert_eq!(rx.recv().unwrap(), b"data");
+    // An empty write is a no-op poll.
+    assert_eq!(writer.write(b"").expect("empty write"), 0);
+    // Receiver gone: a non-empty write reports the broken pipe.
+    drop(rx);
+    let err = writer
+        .write(b"more")
+        .expect_err("write must fail once the receiver is gone");
+    assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe);
+}
+
+// A panicking worker.
+// Finish will join it and surface the Rust panic as an error to C++.
+#[test]
+fn stream_finish_surfaces_worker_panic() {
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
+    let err = expect_err(state.finish());
+    assert!(
+        err.contains("stream worker panicked"),
+        "unexpected error: {err}"
+    );
+}
+
+// An erroring worker.
+// Assert its error is raised.
+#[test]
+fn stream_write_after_worker_failure_surfaces_error() {
+    let mut state = StreamState::spawn("test_stream", |_reader, _writer| {
+        Err("worker failed".to_string())
+    });
+    let mut surfaced = None;
+    for _ in 0..200 {
+        match state.write(b"data") {
+            Ok(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(e) => {
+                surfaced = Some(e);
+                break;
+            }
+        }
+    }
+    let err = surfaced.expect("write must surface the failed worker");
+    assert!(err.contains("worker failed"), "unexpected error: {err}");
 }

@@ -1,8 +1,6 @@
-// detail::to_ffi() converts the facade enums to the bridge enums with a plain
-// static_cast, so their values must match; drift fails this compile.
-//
-// This is an internal white-box check, so it deliberately includes the
-// cxx-generated bridge header (which the public header no longer exposes).
+// detail::to_ffi() converts the C++ enums to the Rust enums
+// with a plain static_cast (i.e. the same enum byte value),
+// so the enum byte values must match.
 #include <cstdint>
 
 #include <aws/esdk/EncryptionSDK.h>
@@ -33,7 +31,7 @@ static_assert(eq(::aws_esdk_ffi::KmsConfigurationType{}, ::aws_esdk_ffi::KmsConf
 static_assert(eq(::aws_esdk_ffi::AesWrappingAlg{}, ::aws_esdk_ffi::AesWrappingAlg::Unset), "zero-init AesWrappingAlg is Unset");
 static_assert(!eq(::aws_esdk_ffi::EsdkCommitmentPolicy{}, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "zero-init CommitmentPolicy is not a selection");
 static_assert(!eq(::aws_esdk_ffi::EsdkAlgorithmSuiteId{}, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf), "zero-init AlgorithmSuiteId is not a selection");
-static_assert(!eq(::aws_esdk_ffi::CacheKind{}, ::aws_esdk_ffi::CacheKind::No), "zero-init CacheKind is not a selection");
+static_assert(!eq(::aws_esdk_ffi::CacheKind{}, ::aws_esdk_ffi::CacheKind::Default), "zero-init CacheKind is not a selection");
 // The facade's guard decodes these reprs from the error-message prefix; a
 // renumbering here must fail this build, not misclassify errors at runtime.
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Esdk, 0), "ShimErrorKind::Esdk");

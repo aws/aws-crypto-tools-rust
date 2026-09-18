@@ -10,8 +10,8 @@ int main() {
         // key from a secure store and never hardcode it.
         std::vector<std::uint8_t> wrapping_key(32, 0x01);
 
-        // The namespace and name identify this wrapping key; decrypt must use a
-        // keyring with the same namespace, name, key, and algorithm.
+        // The namespace and name identify this wrapping key.
+        // Decrypt must use a keyring with the same namespace, name, key, and algorithm.
         auto keyring = Aws::Esdk::RawAesKeyring(
             "my-key-namespace",
             "my-key-name",

@@ -15,10 +15,17 @@
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
 //! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
+use std::error::Error as _;
+
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_dynamodb::operation::get_item::GetItemError;
+use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_kms::Client as KmsClient;
+use aws_sdk_kms::error::SdkError;
+use aws_sdk_kms::operation::decrypt::DecryptError;
 
+use aws_crypto_mpl::error_chain::aws_service_error_code;
 use aws_crypto_mpl::{
     BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
 };
@@ -45,8 +52,10 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 const WEST_BRANCH_KEY: &str = "MyWestBranch2";
 
 /// A branch-key id whose `kms-arn` field intentionally does NOT match
-/// `KEY_ARN` — used to exercise the ARN-disagreement path.
-const POSTAL_HORN_BRANCH_KEY_ID: &str = "682dfba7-4c35-491d-8d6a-5a9c56194061";
+/// `KEY_ARN` — used to exercise the ARN-disagreement path. This is Dafny's
+/// `postalHornBranchKeyId` fixture in
+/// AwsCryptographyKeyStore/test/Fixtures.dfy.
+const DISCOVERY_BRANCH_KEY_ID: &str = "682dfba7-4c35-491d-8d6a-5a9c56194061";
 
 const INCORRECT_LOGICAL_NAME: &str = "MySuperAwesomeTableName";
 
@@ -304,16 +313,26 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
         Ok(_) => panic!("KmsMrKeyArn(ap-south-2) MUST fail — key does not exist in AP"),
         Err(e) => e,
     };
-    // Dafny test asserts the error is a KMS opaque error; we map any
-    // KMS SDK error to KeystoreErrorKind::Kms.
+    // Dafny asserts the error is a KMS opaque error. The SDK error is nested
+    // as the cause here, so the assertion goes one level deeper than the kind.
+    // The service-error variant is deliberately not pinned: whether an absent
+    // key in a possibly-unenabled region comes back as a modeled exception or
+    // as a dispatch failure is an account-configuration detail, so only the
+    // nesting itself is asserted.
     assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+    assert!(
+        err.source()
+            .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
+            .is_some(),
+        "the KMS SDK error must be nested as the cause; got: {err}",
+    );
 }
 
 // ─── TestGetActiveKeyWithIncorrectKmsKeyArn ────────────────────────────────
 
 #[tokio::test]
 async fn integ_get_active_key_with_arn_disagreement_fails() {
-    // KEY_ARN is configured but POSTAL_HORN_BRANCH_KEY_ID's record was
+    // KEY_ARN is configured but DISCOVERY_BRANCH_KEY_ID's record was
     // created with a different KMS ARN — the kms-arn-compat check in
     // resolve_keystore_arn rejects with Authentication errkind.
     let store = build_store(
@@ -324,10 +343,10 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
     )
     .await;
     let err = match store
-        .get_active_branch_key(POSTAL_HORN_BRANCH_KEY_ID.to_string())
+        .get_active_branch_key(DISCOVERY_BRANCH_KEY_ID.to_string())
         .await
     {
-        Ok(_) => panic!("Configured KEY_ARN + postalHornBranchKeyId MUST fail (ARN mismatch)"),
+        Ok(_) => panic!("Configured KEY_ARN + DISCOVERY_BRANCH_KEY_ID MUST fail (ARN mismatch)"),
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Authentication);
@@ -352,6 +371,86 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+
+    // The originating SDK error is nested as the cause, so the specific KMS
+    // exception is recoverable by type. This ports the assertion Dafny makes
+    // in AwsCryptographyKeyStore/test/TestGetKeys.dfy:
+    //
+    //     match activeResult.error {
+    //       case ComAmazonawsKms(nestedError) =>
+    //         expect nestedError.InvalidCiphertextException?;
+    //
+    // Asserting only the error kind would equally admit throttling, access
+    // denied, or a disabled key.
+    let sdk_err = err
+        .source()
+        .expect("the KMS SDK error must be attached as the cause")
+        .downcast_ref::<SdkError<DecryptError>>()
+        .expect("the cause must be the originating Decrypt SdkError");
+    let service_err = sdk_err
+        .as_service_error()
+        .expect("a wrong-EC Decrypt is a modeled service error, not a dispatch failure");
+    assert!(
+        service_err.is_invalid_ciphertext_exception(),
+        "a mismatched encryption context MUST surface InvalidCiphertextException; got: {service_err:?}",
+    );
+
+    // The same exception is reachable without knowing which KMS operation
+    // failed, via the error code the SDK prescribes for forward-compatible
+    // matching. This is the `Some(code)` half of `aws_service_error_code`;
+    // the `None` half (a dispatch failure carries no service metadata) is
+    // covered in `tests/test_keystore_branch_key_store.rs`.
+    assert_eq!(
+        aws_service_error_code(&err),
+        Some("InvalidCiphertextException"),
+        "the service error code must be reachable from the top of the chain",
+    );
+}
+
+// ─── DynamoDB error nesting ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() {
+    // The DynamoDB half of the same guarantee: a failed GetItem must surface
+    // the originating SDK error as the cause, not merely a Dynamodb-kind error
+    // with the SDK error formatted into the message. No Dafny counterpart —
+    // the Dafny suite does not exercise an unreachable table.
+    //
+    // The modeled service-error variant is deliberately not pinned, because it
+    // depends on the caller's IAM policy rather than on this code. CI's role is
+    // scoped to the fixture table, so an unknown table name is denied by IAM
+    // before DynamoDB reports on its existence and the operation error arrives
+    // as `Unhandled` carrying `AccessDeniedException`. A caller permitted on
+    // the whole table namespace instead sees `ResourceNotFoundException`. Both
+    // are the same nesting, which is what is under test here.
+    let store = BranchKeyStore::new(KeyStoreConfig {
+        ddb_table_name: "aws-crypto-tools-rust-table-that-does-not-exist".to_string(),
+        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
+        id: None,
+        grant_tokens: None,
+        ddb_client: Some(ddb_client_us_west_2().await),
+        kms_client: Some(kms_client_for_region("us-west-2").await),
+    })
+    .await
+    .expect("construction does not touch DynamoDB, so it must succeed");
+
+    let err = match store.get_active_branch_key(BRANCH_KEY_ID.to_string()).await {
+        Ok(_) => panic!("GetItem against an unreachable table MUST fail"),
+        Err(e) => e,
+    };
+    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+
+    let sdk_err = err
+        .source()
+        .expect("the DynamoDB SDK error must be attached as the cause")
+        .downcast_ref::<SdkError<GetItemError>>()
+        .expect("the cause must be the originating GetItem SdkError");
+    assert!(
+        sdk_err.as_service_error().is_some(),
+        "the nested SDK error must carry the service response, so a caller can \
+         match on the DynamoDB exception; got: {sdk_err:?}",
+    );
 }
 
 // ─── TestGetActiveKeyDoesNotExistFails ─────────────────────────────────────
@@ -370,4 +469,172 @@ async fn integ_get_active_key_does_not_exist() {
         Err(e) => e,
     };
     assert_eq!(err.kind(), &KeystoreErrorKind::RecordNotFound);
+}
+
+// ─── Write path: CreateKeyStore / CreateKey / VersionKey round trips ─────────
+//
+// These tests mutate the shared keystore table. Each uses a random
+// branch-key-id (so it never collides with the read fixtures) and deletes
+// every item it created via `cleanup_branch_key` before asserting, so a
+// failed assertion still leaves the table clean. They require write
+// permissions in addition to the read role: `kms:GenerateDataKeyWithoutPlaintext`
+// and `kms:ReEncrypt` on the test key, and `dynamodb:PutItem` /
+// `TransactWriteItems` / `Query` / `DeleteItem` on the table.
+
+/// Delete every item stored under `branch_key_id` (all `type` sort keys),
+/// so a create/version round trip leaves no residue in the shared table.
+async fn cleanup_branch_key(ddb: &DynamoDbClient, table: &str, branch_key_id: &str) {
+    let response = ddb
+        .query()
+        .table_name(table)
+        .consistent_read(true)
+        .key_condition_expression("#bk = :bk")
+        .expression_attribute_names("#bk", "branch-key-id")
+        .expression_attribute_values(":bk", AttributeValue::S(branch_key_id.to_string()))
+        .send()
+        .await
+        .expect("cleanup Query must succeed");
+
+    for item in response.items() {
+        if let Some(AttributeValue::S(type_value)) = item.get("type") {
+            ddb.delete_item()
+                .table_name(table)
+                .key(
+                    "branch-key-id",
+                    AttributeValue::S(branch_key_id.to_string()),
+                )
+                .key("type", AttributeValue::S(type_value.clone()))
+                .send()
+                .await
+                .expect("cleanup DeleteItem must succeed");
+        }
+    }
+}
+
+#[tokio::test]
+async fn integ_create_key_store_returns_existing_table_arn() {
+    // The table already exists, so CreateKeyStore takes the DescribeTable
+    // path, validates the KeySchema, and returns the existing table ARN.
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
+    )
+    .await;
+
+    let arn = store
+        .create_key_store()
+        .await
+        .expect("CreateKeyStore against the existing table must return its ARN");
+    assert!(
+        arn.contains(&format!(":table/{BRANCH_KEY_STORE_NAME}")),
+        "expected a DynamoDB table ARN, got: {arn}"
+    );
+}
+
+#[tokio::test]
+async fn integ_create_key_round_trips() {
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
+    )
+    .await;
+    let cleanup_ddb = ddb_client_us_west_2().await;
+
+    // Create a brand-new branch key (random id) with no custom EC.
+    let branch_key_id = store
+        .create_key(None, None)
+        .await
+        .expect("create_key must succeed");
+
+    // Read back the ACTIVE, the specific version, and the beacon key.
+    let active = store.get_active_branch_key(branch_key_id.clone()).await;
+    let version = active
+        .as_ref()
+        .ok()
+        .map(|m| m.branch_key_version().to_string());
+    let by_version = match &version {
+        Some(v) => Some(
+            store
+                .get_branch_key_version(branch_key_id.clone(), v.clone())
+                .await,
+        ),
+        None => None,
+    };
+    let beacon = store.get_beacon_key(branch_key_id.clone()).await;
+
+    cleanup_branch_key(&cleanup_ddb, BRANCH_KEY_STORE_NAME, &branch_key_id).await;
+
+    let active = active.expect("get_active_branch_key must succeed after create_key");
+    assert_eq!(active.branch_key_id(), branch_key_id);
+    assert_eq!(active.branch_key().len(), 32);
+
+    let by_version = by_version
+        .expect("a version must have been read")
+        .expect("get_branch_key_version must succeed for the created version");
+    assert_eq!(by_version.branch_key_id(), branch_key_id);
+    assert_eq!(by_version.branch_key().len(), 32);
+    assert_eq!(
+        by_version.branch_key_version(),
+        active.branch_key_version(),
+        "the created version MUST be the ACTIVE version"
+    );
+
+    let beacon = beacon.expect("get_beacon_key must succeed after create_key");
+    assert_eq!(beacon.beacon_key_id(), branch_key_id);
+    assert_eq!(beacon.beacon_key().map(<[u8]>::len), Some(32));
+}
+
+#[tokio::test]
+async fn integ_version_key_round_trips() {
+    let store = build_store(
+        KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
+        LOGICAL_KEY_STORE_NAME,
+        kms_client_for_region("us-west-2").await,
+        ddb_client_us_west_2().await,
+    )
+    .await;
+    let cleanup_ddb = ddb_client_us_west_2().await;
+
+    let branch_key_id = store
+        .create_key(None, None)
+        .await
+        .expect("create_key must succeed");
+
+    let first_version = store
+        .get_active_branch_key(branch_key_id.clone())
+        .await
+        .expect("get_active_branch_key must succeed after create_key")
+        .branch_key_version()
+        .to_string();
+
+    // Rotate the ACTIVE branch key to a new version.
+    let version_result = store.version_key(branch_key_id.clone()).await;
+
+    // After versioning, ACTIVE points at a new version, and the original
+    // version is still retrievable by version id.
+    let new_active = store.get_active_branch_key(branch_key_id.clone()).await;
+    let old_by_version = store
+        .get_branch_key_version(branch_key_id.clone(), first_version.clone())
+        .await;
+
+    cleanup_branch_key(&cleanup_ddb, BRANCH_KEY_STORE_NAME, &branch_key_id).await;
+
+    version_result.expect("version_key must succeed");
+
+    let new_active = new_active.expect("get_active_branch_key must succeed after version_key");
+    assert_eq!(new_active.branch_key_id(), branch_key_id);
+    assert_eq!(new_active.branch_key().len(), 32);
+    assert_ne!(
+        new_active.branch_key_version(),
+        first_version,
+        "version_key MUST rotate ACTIVE to a new version"
+    );
+
+    let old = old_by_version.expect("the original version must remain retrievable");
+    assert_eq!(old.branch_key_version(), first_version);
+    assert_eq!(old.branch_key().len(), 32);
 }

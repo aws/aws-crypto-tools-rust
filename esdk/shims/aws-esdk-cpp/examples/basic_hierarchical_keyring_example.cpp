@@ -8,20 +8,14 @@
 
 int main() {
     try {
-        // Region and credentials come from the default AWS config chain.
-        auto client_config = Aws::Esdk::ClientConfig();
-
-        auto kms = Aws::Esdk::KmsClient(client_config);
-        auto ddb = Aws::Esdk::DdbClient(client_config);
-
-        // The AWS Crypto Tools CI test key store; replace these with your own
-        // key store's table, name, and KMS key ARN.
+        // The AWS Crypto Tools CI test key store.
+        // Replace these with your own key store's table, name, and KMS key ARN. 
         auto keystore = Aws::Esdk::KeyStore(
-            "KeyStoreDdbTable",                                                    // table_name
-            "KeyStoreDdbTable",                                                    // logical_key_store_name
-            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",  // kms_arn
-            kms,
-            ddb
+            "KeyStoreDdbTable",  // table_name
+            "KeyStoreDdbTable",  // logical_key_store_name
+            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126" // kms_arn
+            // KMS and DynamoDB clients are optional and omitted here.
+            // The ESDK will build defaults from the standard AWS config chain (region and credentials).
         );
 
         auto keyring = Aws::Esdk::HierarchicalKeyring(
@@ -30,15 +24,15 @@ int main() {
             4242,  // ttl_seconds: how long cached branch key material may be reused
             // Unset options keep the library defaults.
             Aws::Esdk::HierarchicalKeyringOptions()
-                .with_cache(Aws::Esdk::CacheType::MultiThreaded(42))
+                .with_cache(Aws::Esdk::CacheType::Default(42))
         );
 
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::EncryptionSDK esdk;
 
         std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
-        auto encrypted = sdk.encrypt(plaintext, keyring);
+        auto encrypted = esdk.encrypt(plaintext, keyring);
 
-        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+        auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
 
         if (plaintext != decrypted.plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";

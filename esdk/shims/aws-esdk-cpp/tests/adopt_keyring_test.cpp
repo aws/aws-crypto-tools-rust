@@ -1,9 +1,11 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// White-box test: like enum_parity_test.cpp, this TU includes the bridge header.
-// It plays the consumer's Rust crate, which produces the keyring handle C++ adopts.
-// Everything after the handle exists goes through the public facade only.
+// Adopting a custom keyring.
+// A consumer writes a keyring implementation in Rust,
+// turns it into a raw handle (void*),
+// and hands that handle to Aws::Esdk::Keyring::adopt on the C++ side.
+// The custom-keyring example shows the real consumer flow end to end; this is an internal test.
 
 #include <cstdint>
 #include <iostream>
@@ -16,7 +18,12 @@
 
 int main() {
     try {
-        // Consumer's Rust side: any keyring the core accepts, as a raw handle.
+        // Make a "custom" keyring, which is just the Dafny Rust Raw AES keyring.
+        // This is sufficent to test adoption.
+        // TODO: Once native MPL support exists, copy-paste the native Raw AES keyring implementation
+        // into a test file, then use that implementation.
+        // That pins the raw AES keyring interface/behavior, acting as an additional assertion
+        // that future changes to the keyring interface/behaviorial contract are non-breaking.
         ::aws_esdk_ffi::RawAesKeyringInput in{};
         std::vector<std::uint8_t> key(32, 0x2A);
         in.key_namespace = ::rust::String("test-ns");
@@ -25,10 +32,9 @@ int main() {
         in.wrapping_alg = ::aws_esdk_ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16;
         void* raw_handle = ::aws_esdk_ffi::create_raw_aes_keyring(in).into_raw();
 
-        // Consumer's C++ side: adopt and use through the public facade.
+        // Adopt the handle for use by C++
         //= spec/shim/shim.md#custom-implementations-of-core-library-interfaces
         //= type=test
-        //= reason=A handle produced by the shim's conversion is adopted and the result encrypts and decrypts through the facade.
         //# - The shim MAY let the target adopt a consumer-written implementation of a
         //# core-library interface.
         auto keyring = Aws::Esdk::Keyring::adopt(raw_handle);
@@ -39,8 +45,7 @@ int main() {
         auto decrypted = sdk.decrypt(ciphertext, keyring);
         ESDK_CHECK(decrypted.plaintext == plaintext);
 
-        // The adopted keyring is a first-class keyring: a different keyring
-        // cannot decrypt its output.
+        // A different keyring can't decrypt the custom keyring's messages
         std::vector<std::uint8_t> other_key(32, 0x07);
         Aws::Esdk::RawAesKeyring other("test-ns", "test-key", other_key,
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);

@@ -17,6 +17,7 @@ use crate::message::serializable_types::{
     ESDKCanonicalEncryptionContext, get_encrypt_key_length, get_iv_length, to_canonical_pairs,
 };
 use crate::message::{DigestWriter, body, footer, header};
+use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
     EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
     FrameLength, MaterialSource, SafeRead, SafeWrite,
@@ -30,6 +31,23 @@ use aws_mpl_legacy::suites::AlgorithmSuite;
 const IV_LEN: usize = 12;
 /// AES-GCM authentication tag length in bytes.
 const AUTH_TAG_LEN: usize = 16;
+
+/// Best-effort capacity hint for the ciphertext buffer, to minimize
+/// reallocations. Total encrypted content equals `plaintext_len`, plus fixed
+/// per-frame and header overhead.
+fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: FrameLength) -> usize {
+    let frame_length_usize = usize::try_from(frame_length.0.get()).unwrap_or(usize::MAX);
+    let frames = plaintext_len.div_ceil(frame_length_usize).max(1);
+    // Sequence number field + IV + authentication tag per frame.
+    let per_frame_overhead = 4 + IV_LEN + AUTH_TAG_LEN;
+    // Sequence number end + encrypted content length fields on the final frame.
+    let final_frame_extra = 8;
+    let header_overhead = 1024_usize;
+    plaintext_len
+        .saturating_add(frames.saturating_mul(per_frame_overhead))
+        .saturating_add(final_frame_extra)
+        .saturating_add(header_overhead)
+}
 
 /// Intermediate state produced by [`step_get_encryption_materials`] and consumed by subsequent steps.
 struct EncryptionMaterialsResult {
@@ -57,24 +75,7 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 
     let mut cursor = std::io::Cursor::new(input.plaintext);
 
-    // Best-effort capacity hint to minimize reallocations. Total encrypted content equals
-    // plaintext.len(), plus fixed per-frame and header overhead.
-    let frame_length_usize = usize::try_from(input.frame_length.0.get()).unwrap_or(usize::MAX);
-    let frames = input
-        .plaintext
-        .len()
-        .div_ceil(frame_length_usize.max(1))
-        .max(1);
-    let per_frame_overhead = 4 + IV_LEN + AUTH_TAG_LEN;
-    let final_frame_extra = 8;
-    let header_overhead = 1024_usize;
-    let total_size = input
-        .plaintext
-        .len()
-        .saturating_add(frames.saturating_mul(per_frame_overhead))
-        .saturating_add(final_frame_extra)
-        .saturating_add(header_overhead);
-
+    let total_size = estimated_ciphertext_capacity(input.plaintext.len(), input.frame_length);
     let mut ciphertext: Vec<u8> = Vec::with_capacity(total_size);
     let out = internal_encrypt(
         &mut cursor,
@@ -479,7 +480,7 @@ fn step_construct_signature(
     //# and the output [encrypted message](#encrypted-message) MUST contain a [message footer](../data-format/message-footer.md).
     match &header.suite.signature {
         aws_mpl_legacy::suites::SignatureAlgorithm::Ecdsa(_) => {
-            let ecdsa_params = crate::decrypt::get_ecdsa_alg(header.suite.signature)?;
+            let ecdsa_params = get_ecdsa_alg(header.suite.signature)?;
 
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# To calculate a signature, this operation MUST use the [signature algorithm](../framework/algorithm-suites.md#signature-algorithm)
@@ -539,31 +540,6 @@ fn step_construct_signature(
     //# this operation MUST release any previously unreleased serialized bytes from previous steps
     //# and MUST release the message footer.
     Ok(())
-}
-
-/// Extracts the ESDK algorithm suite id from a generic MPL algorithm suite id,
-/// returning an error if the suite is not an ESDK suite.
-///
-/// # Errors
-///
-/// Returns an error if `id` is not an ESDK algorithm suite.
-pub fn get_esdk_algorithm_suite_id(
-    id: aws_mpl_legacy::suites::AlgorithmSuiteId,
-) -> Result<aws_mpl_legacy::suites::EsdkAlgorithmSuiteId, Error> {
-    match id {
-        aws_mpl_legacy::suites::AlgorithmSuiteId::Esdk(x) => Ok(x),
-        //= spec/client-apis/encrypt.md#get-the-encryption-materials
-        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-        //# encrypt MUST yield an error.
-        //
-        //= spec/client-apis/decrypt.md#get-the-decryption-materials
-        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-        //# decrypt MUST yield an error.
-        //
-        //= spec/client-apis/decrypt.md#algorithm-suite
-        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-        other => Err(esdk_err(format!("Unsupported algorithm suite: {other:?}"))),
-    }
 }
 
 const RESERVED_ENCRYPTION_CONTEXT: &str = "aws-crypto-";

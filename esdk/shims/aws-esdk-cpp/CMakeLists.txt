@@ -1,12 +1,12 @@
 # CMake integration for the AWS Encryption SDK C++ bindings (aws-esdk-cpp)
 #
 # Consumers do:
-#     add_subdirectory(aws-esdk-cpp)
-#     target_link_libraries(my_app PRIVATE AWS::esdk)
-#     #include <aws/esdk/EncryptionSDK.h>
+#     add_subdirectory(aws-esdk-cpp)  # pull this folder into your build
+#     target_link_libraries(my_app PRIVATE AWS::esdk)  # link against the AWS::esdk target
+#     #include <aws/esdk/EncryptionSDK.h>  # in your code
 #
-# `cargo build` produces the Rust staticlib and the cxx-generated
-# C++ sources, then exposes them behind the AWS::esdk target.
+# `cargo build` produces the Rust staticlib and the cxx-generated C++ sources,
+# then exposes them behind the AWS::esdk target.
 cmake_minimum_required(VERSION 3.20)
 project(aws_esdk_cpp LANGUAGES CXX)
 
@@ -16,8 +16,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(ESDK_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(ESDK_TARGET_DIR ${ESDK_ROOT}/target)
 
-# Pick the Cargo profile from CMAKE_BUILD_TYPE
-# Default to the optimized core if none provided
+# Pick the Cargo profile from CMAKE_BUILD_TYPE.
+# Default to the optimized profile (release) if none provided
 set(ESDK_CARGO_ARGS build)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(ESDK_PROFILE debug)
@@ -39,7 +39,7 @@ endif()
 set(ESDK_STATICLIB ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/libaws_esdk_cpp.a)
 set(ESDK_BRIDGE_CC ${ESDK_TARGET_DIR}/cxxbridge/aws-esdk-cpp/src/lib.rs.cc)
 
-# Find cxx runtime archive used to compile
+# Find cxx runtime archive used to link
 file(GLOB_RECURSE _esdk_cxxbridge_rt
      ${ESDK_TARGET_DIR}/${ESDK_PROFILE}/build/cxx-*/out/libcxxbridge1.a)
 if(NOT _esdk_cxxbridge_rt)

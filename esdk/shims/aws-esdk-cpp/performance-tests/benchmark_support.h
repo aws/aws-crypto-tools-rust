@@ -92,12 +92,14 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
     }
     Aws::Esdk::KmsClient kms(client_config);
     Aws::Esdk::DdbClient ddb(client_config);
-    Aws::Esdk::KeyStore keystore(env.ddb_table, env.logical_keystore,
-                                 env.kms_key_arn, kms, ddb);
+    Aws::Esdk::KeyStore keystore(env.ddb_table, env.logical_keystore, env.kms_key_arn,
+                                 Aws::Esdk::KeyStoreOptions()
+                                     .with_kms_client(kms)
+                                     .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), env.branch_key_id, /*ttl_seconds=*/600000,
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CacheType::MultiThreaded(100)));
+            Aws::Esdk::CacheType::Default(100)));
 }
 
 // Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read

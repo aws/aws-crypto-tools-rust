@@ -1,7 +1,7 @@
 //! Your custom keyring, defined in Rust and exported to C++.
 //!
-//! Step 1 (`build_keyring`): define your keyring.
-//! Step 2 (`custom_keyring_create`): export it as a handle for C++ to adopt.
+//! Step 2 (`build_keyring`): define your keyring.
+//! Step 3 (`custom_keyring_create`): export it as a handle for C++ to adopt.
 //! See README.md for the full setup, and example.cpp for the C++ side.
 
 use std::ffi::c_void;
@@ -10,14 +10,11 @@ use std::ffi::c_void;
 /// from a secure store and never hardcode it.
 const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 
-/// Step 1: define your keyring here. Anything the core ESDK accepts works.
-/// This one wraps data keys with AES-256-GCM under key material this crate
-/// sources itself — replace the body with your key management.
+/// Step 2: define your keyring.
 ///
-/// TODO(native-mpl): once the ESDK for Rust depends on the native Rust MPL,
-/// replace this Dafny-built keyring with a custom implementation of the
-/// unsealed native keyring trait (a struct implementing the trait, which may
-/// still delegate to a built-in keyring internally).
+/// TODO(native-mpl): once native MPL is available,
+/// model the custom keyring example off of
+/// https://github.com/aws/aws-encryption-sdk-python/blob/master/examples/src/custom_mpl_cmm_example.py
 fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     let mpl = aws_mpl_legacy::dafny::Client::from_conf(
         aws_mpl_legacy::dafny::types::MaterialProvidersConfig::builder().build()?,
@@ -34,9 +31,7 @@ fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     Ok(keyring.into())
 }
 
-/// Step 2: export your keyring. Your C++ declares this function, calls it,
-/// and adopts the returned handle with `Aws::Esdk::Keyring::adopt` — exactly
-/// once per handle. Return null when construction fails.
+/// Step 3: export your keyring.
 #[unsafe(no_mangle)]
 pub extern "C" fn custom_keyring_create() -> *mut c_void {
     match build_keyring() {

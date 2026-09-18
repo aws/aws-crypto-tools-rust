@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Test that message IDs stay unique under concurrent encrypts.
-// This is important because a repeat would reuse the derived data key and frame IVs, breaking AES-GCM.
+// Message ID assertions are important because a repeat would reuse the derived data key and frame IVs, breaking AES-GCM.
+// This also tests using ESDK resources (keyrings, etc.) under concurrent load.
 
 #include <cstddef>
 #include <cstdint>
@@ -118,8 +119,7 @@ void run_case(const char* label, Aws::Esdk::EncryptionSDK& sdk,
 }  // namespace
 
 int main(int argc, char** argv) {
-    // Offline: one shared SDK and one shared raw AES keyring across all
-    // threads; no AWS resources required, so this section always runs.
+    // Always run offline tests
     {
         std::vector<std::uint8_t> key(32, 0x2A);
         Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
@@ -128,7 +128,6 @@ int main(int argc, char** argv) {
         try {
             //= spec/shim/shim.md#concurrency
             //= type=test
-            //= reason=8 threads share one client and one keyring; every round trip returns the exact plaintext and every message ID is unique.
             //# If a core library resource or operation supports concurrent use from multiple threads,
             //# the shim library SHOULD support it as well.
             run_case("raw-aes v2", sdk, keyring, std::nullopt,
@@ -144,6 +143,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    // If configured to do integ tests, also test HKeyring
     auto cfg = esdk_test::integration_config_or_gate(argc, argv, "test_concurrency");
     if (!cfg) {
         return esdk_test::report("test_concurrency");
@@ -151,7 +151,7 @@ int main(int argc, char** argv) {
 
     Aws::Esdk::EncryptionSDK sdk;
     try {
-        auto keyring = esdk_test::make_keyring(*cfg);
+        auto keyring = esdk_test::make_hierarchical_keyring(*cfg);
 
         run_case("v2", sdk, keyring, std::nullopt,
                  Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt,

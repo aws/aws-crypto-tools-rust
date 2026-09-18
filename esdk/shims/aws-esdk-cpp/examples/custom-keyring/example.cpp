@@ -1,22 +1,15 @@
-// Your C++ side of the custom keyring.
-//
-// The keyring itself is defined in src/lib.rs, not here. Keyring behavior
-// runs in Rust, where the core ESDK lives; C++ only holds a handle to it.
-// This file shows the C++ half: declare your crate's extern "C" constructor,
-// adopt the handle once, and use the result like any other keyring.
-// See README.md for the full setup.
+// Your C++ code using the custom keyring.
 
 #include <iostream>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
 
-// Step 3: declare the extern "C" constructor your Rust crate exports.
+// Declare the extern "C" constructor your Rust crate exports.
 extern "C" void* custom_keyring_create();
 
 int main() {
     try {
-        // Step 4: adopt the handle. Adopt each handle exactly once; the
-        // result is a keyring like any other.
+        // Step 4: adopt the handle
         void* handle = custom_keyring_create();
         if (handle == nullptr) {
             std::cerr << "Rust keyring construction failed\n";
@@ -25,6 +18,7 @@ int main() {
         auto keyring = Aws::Esdk::Keyring::adopt(handle);
 
         // From here on, nothing is special about your keyring.
+        // Use it like any other keyring.
         Aws::Esdk::EncryptionSDK sdk;
 
         std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};

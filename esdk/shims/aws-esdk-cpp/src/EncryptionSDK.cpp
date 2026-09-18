@@ -215,11 +215,17 @@ DdbClient::DdbClient(const ClientConfig& cfg)
 KeyStore::KeyStore(const std::string& table_name,
                    const std::string& logical_key_store_name,
                    const std::string& kms_arn,
-                   KmsClient kms,
-                   DdbClient ddb,
                    const KeyStoreOptions& options)
     : impl_(std::make_shared<detail::KeyStoreImpl>(
-          detail::Retained{kms.impl_, ddb.impl_}, detail::guard([&] {
+          // Retain only the clients the caller supplied; an unset client is
+          // built by the ESDK Rust and owned by the key store itself.
+          [&] {
+              detail::Retained deps;
+              if (options.kms_client_) deps.push_back(options.kms_client_->impl_);
+              if (options.ddb_client_) deps.push_back(options.ddb_client_->impl_);
+              return deps;
+          }(),
+          detail::guard([&] {
               ::ffi::KeyStoreConfig c{};
               c.ddb_table_name = ::rust::String(table_name);
               c.logical_key_store_name = ::rust::String(logical_key_store_name);
@@ -229,8 +235,9 @@ KeyStore::KeyStore(const std::string& table_name,
               for (const auto& token : options.grant_tokens_) {
                   c.grant_tokens.push_back(::rust::String(token));
               }
-              c.kms_client = &*kms.impl_->handle;
-              c.ddb_client = &*ddb.impl_->handle;
+              // A null handle tells the shim to defer to the core ESDK's default client.
+              if (options.kms_client_) c.kms_client = &*options.kms_client_->impl_->handle;
+              if (options.ddb_client_) c.ddb_client = &*options.ddb_client_->impl_->handle;
               return ::ffi::create_keystore(c);
           }))) {}
 
@@ -242,13 +249,24 @@ CacheType CacheType::Default(std::uint32_t entry_capacity) {
     return c;
 }
 
-CacheType CacheType::No() { return CacheType(Kind::No); }
-
-CacheType CacheType::MultiThreaded(std::uint32_t entry_capacity,
-                                   std::optional<std::uint32_t> entry_pruning_tail_size) {
-    CacheType c(Kind::MultiThreaded);
+CacheType CacheType::StormTracking(
+    std::uint32_t entry_capacity,
+    std::uint32_t entry_pruning_tail_size,
+    std::uint32_t grace_period,
+    std::uint32_t grace_interval,
+    std::uint32_t fan_out,
+    std::uint32_t inflight_ttl,
+    std::uint32_t sleep_milli,
+    std::optional<TimeUnits> time_units) {
+    CacheType c(Kind::StormTracking);
     c.entry_capacity_ = entry_capacity;
     c.entry_pruning_tail_size_ = entry_pruning_tail_size;
+    c.grace_period_ = grace_period;
+    c.grace_interval_ = grace_interval;
+    c.fan_out_ = fan_out;
+    c.inflight_ttl_ = inflight_ttl;
+    c.sleep_milli_ = sleep_milli;
+    c.time_units_ = time_units;
     return c;
 }
 
@@ -269,13 +287,19 @@ struct CacheTypeLowerer {
                 out.kind = ::ffi::CacheKind::Default;
                 out.entry_capacity = c.entry_capacity_;
                 break;
-            case CacheType::Kind::No:
-                out.kind = ::ffi::CacheKind::No;
-                break;
-            case CacheType::Kind::MultiThreaded:
-                out.kind = ::ffi::CacheKind::MultiThreaded;
+            case CacheType::Kind::StormTracking:
+                out.kind = ::ffi::CacheKind::StormTracking;
                 out.entry_capacity = c.entry_capacity_;
-                out.entry_pruning_tail_size = to_opt(c.entry_pruning_tail_size_);
+                out.entry_pruning_tail_size = c.entry_pruning_tail_size_;
+                out.grace_period = c.grace_period_;
+                out.grace_interval = c.grace_interval_;
+                out.fan_out = c.fan_out_;
+                out.inflight_ttl = c.inflight_ttl_;
+                out.sleep_milli = c.sleep_milli_;
+                out.time_units = c.time_units_
+                    ? (*c.time_units_ == TimeUnits::Milliseconds ? ::ffi::TimeUnits::Milliseconds
+                                                                 : ::ffi::TimeUnits::Seconds)
+                    : ::ffi::TimeUnits::Unset;
                 break;
             case CacheType::Kind::Shared:
                 out.kind = ::ffi::CacheKind::Shared;
@@ -287,15 +311,13 @@ struct CacheTypeLowerer {
 };
 }  // namespace detail
 
-CryptographicMaterialsCache CryptographicMaterialsCache::Create(const CacheType& cache) {
-    detail::Retained retained =
-        cache.shared_ ? detail::Retained{cache.shared_} : detail::Retained{};
-    return CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
-        std::move(retained), detail::guard([&] {
-            ::ffi::CacheType ffi_cache = detail::CacheTypeLowerer::lower(cache);
-            return ::ffi::create_cryptographic_materials_cache(ffi_cache);
-        })));
-}
+CryptographicMaterialsCache::CryptographicMaterialsCache(const CacheType& cache)
+    : impl_(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+          cache.shared_ ? detail::Retained{cache.shared_} : detail::Retained{},
+          detail::guard([&] {
+              ::ffi::CacheType ffi_cache = detail::CacheTypeLowerer::lower(cache);
+              return ::ffi::create_cryptographic_materials_cache(ffi_cache);
+          }))) {}
 
 // Keyrings
 
@@ -542,6 +564,48 @@ StreamResult DecryptStream::finish() {
     result.encryption_context = detail::from_ec(out.encryption_context);
     result.algorithm_suite_id = detail::alg_from_ffi(out.algorithm_suite_id);
     return result;
+}
+
+namespace detail {
+
+// Reads `source` in chunks, feeds each to `stream.write`, and forwards the
+// produced bytes to `sink`; then finalizes and appends the trailing output.
+// Throws if `source` fails before end-of-stream or `sink` rejects a write.
+template <typename Stream>
+StreamResult pump_stream(Stream& stream, std::istream& source, std::ostream& sink) {
+    char buf[4096];
+    while (source.read(buf, sizeof(buf)) || source.gcount() > 0) {
+        Bytes produced = stream.write(reinterpret_cast<const std::uint8_t*>(buf),
+                                      static_cast<std::size_t>(source.gcount()));
+        sink.write(reinterpret_cast<const char*>(produced.data()),
+                   static_cast<std::streamsize>(produced.size()));
+    }
+    // If `source` failed to read, throw so an incomplete output is not surfaced
+    if (source.bad() || !source.eof())
+        throw AwsEncryptionSdkException("reading from the source stream failed before the end of input");
+    StreamResult result = stream.finish();
+    sink.write(reinterpret_cast<const char*>(result.trailing_output.data()),
+               static_cast<std::streamsize>(result.trailing_output.size()));
+    // If `sink` failed to write, throw so an incomplete output is not surfaced
+    if (!sink)
+        throw AwsEncryptionSdkException("writing to the sink stream failed; its output is incomplete");
+    return result;
+}
+
+}  // namespace detail
+
+StreamResult EncryptionSDK::encrypt_stream(std::istream& source, std::ostream& sink,
+                                           const Keyring& keyring,
+                                           const EncryptOptions& options) {
+    EncryptStream stream = create_encrypt_stream(keyring, options);
+    return detail::pump_stream(stream, source, sink);
+}
+
+StreamResult EncryptionSDK::decrypt_stream(std::istream& source, std::ostream& sink,
+                                           const Keyring& keyring,
+                                           const DecryptOptions& options) {
+    DecryptStream stream = create_decrypt_stream(keyring, options);
+    return detail::pump_stream(stream, source, sink);
 }
 
 }  // namespace Esdk

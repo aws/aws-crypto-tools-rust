@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <istream>
 #include <map>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -31,38 +33,37 @@ namespace Esdk {
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=The facade defines its own enums (Aws::Esdk::); the ffi-generated enum types are not visible in this header.
+//= reason=The facade defines its own enums in Aws::Esdk:: namespace
 //# - For each core-library enumeration it exposes, the shim MUST define its own
 //# corresponding enumeration type.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every public function signature uses only Aws::Esdk:: types and C++ standard-library types; no ffi-generated type is even visible in this header.
+//= reason=Every public function uses only Aws::Esdk:: types and C++ standard-library types
 //# - Each public function the shim exposes MUST use only owned-interface types or
 //# standard-library types in its signature.
 //
 //= spec/shim/shim.md#owned-interface
 //= type=implication
-//= reason=Every C++ resource holds its handle behind a private pointer to an implementation type that is only defined inside the compiled shim, so users cannot access or name it.
 //# - Each owned interface that represents a core-library resource MUST hold the
 //# generated handle privately and MUST NOT expose it in its public API.
 //
 //= spec/shim/shim.md#handles-and-lifetimes
 //= type=implication
-//= reason=Every C++ resource that depends on another resource holds it (or a shared owner of it) inside its implementation for its own lifetime.
+//= reason=Resourcs hold dependent resources inside its own implementation
 //# - An owned interface that depends on another resource MUST retain ownership of
 //# that resource for its own lifetime, so that a handle passed across the boundary
 //# cannot outlive the resource it refers to.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Every optional input has a with_* setter on every operation's or resource's options object.
+//= reason=with_* setters
 //# - The shim MUST expose each optional input of the operations and resource
 //# creations it exposes.
 //
 //= spec/shim/shim.md#operation-contracts
 //= type=implication
-//= reason=Options objects with with_* setters are the idiomatic C++ optional-input mechanism.
+//= reason=with_* setters
 //# - The shim MUST accept optional inputs through a mechanism idiomatic to the
 //# target language (e.g.
 //
@@ -82,8 +83,8 @@ namespace Esdk {
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
 //
-/// Base exception for every failure this library reports. Catching this type
-/// catches everything the shim can throw.
+/// Base exception for every failure this library reports.
+/// Catching this type catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
@@ -206,6 +207,8 @@ public:
 class KeyStoreOptions {
     std::optional<std::string> key_store_id_;
     std::vector<std::string> grant_tokens_;
+    std::optional<KmsClient> kms_client_;
+    std::optional<DdbClient> ddb_client_;
     friend class KeyStore;
 
 public:
@@ -213,6 +216,10 @@ public:
     KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
     /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
     KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
+    /// The KMS client this Key Store uses. Unset lets the ESDK Rust build a default one.
+    KeyStoreOptions& with_kms_client(KmsClient kms) { kms_client_ = std::move(kms); return *this; }
+    /// The DynamoDB client this Key Store uses. Unset lets the ESDK Rust build a default one.
+    KeyStoreOptions& with_ddb_client(DdbClient ddb) { ddb_client_ = std::move(ddb); return *this; }
 };
 
 /// A Branch Key Store backed by a DynamoDB table and protected by AWS KMS.
@@ -229,14 +236,11 @@ public:
     /// \param kms_arn Key Store is restricted to only this KMS Key ARN. If a different
     ///        KMS Key ARN is encountered when creating, versioning, or getting a Branch
     ///        Key or Beacon Key, KMS is never called and an exception is thrown.
-    /// \param kms The KMS client this Key Store uses to call AWS KMS.
-    /// \param ddb The DynamoDB client this Key Store uses to call Amazon DynamoDB.
-    /// \param options Optional Key Store parameters.
+    /// \param options Optional Key Store parameters, including the KMS and DynamoDB
+    ///        clients. A client left unset is built with defaults by the ESDK Rust.
     KeyStore(const std::string& table_name,
              const std::string& logical_key_store_name,
              const std::string& kms_arn,
-             KmsClient kms,
-             DdbClient ddb,
              const KeyStoreOptions& options = {});
 };
 
@@ -284,35 +288,57 @@ class CryptographicMaterialsCache {
 public:
     /// Constructs the cache described by `cache`.
     /// \param cache Which type of local cache to use.
-    static CryptographicMaterialsCache Create(const CacheType& cache);
+    explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
+/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
+/// inflight_ttl. Left unset, they are seconds.
+enum class TimeUnits { Seconds, Milliseconds };
+
+// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
 public:
     /// The best choice for most situations. Probably a StormTrackingCache.
     /// \param entry_capacity Maximum number of entries cached.
     static CacheType Default(std::uint32_t entry_capacity);
-    /// Nothing should ever be cached.
-    static CacheType No();
-    /// A cache that is safe for use in a multi threaded environment, but no
-    /// extra functionality.
+    /// A cache safe for multi-threaded use that also limits redundant and
+    /// overly parallel backend calls.
+    /// For a cache with sensible defaults, use Default instead.
     /// \param entry_capacity Maximum number of entries cached.
     /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    static CacheType MultiThreaded(
+    /// \param grace_period Time before expiration to begin refreshing, in time_units.
+    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param fan_out Maximum number of simultaneous refresh attempts.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
+    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
+    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    static CacheType StormTracking(
         std::uint32_t entry_capacity,
-        std::optional<std::uint32_t> entry_pruning_tail_size = std::nullopt);
+        std::uint32_t entry_pruning_tail_size,
+        std::uint32_t grace_period,
+        std::uint32_t grace_interval,
+        std::uint32_t fan_out,
+        std::uint32_t inflight_ttl,
+        std::uint32_t sleep_milli,
+        std::optional<TimeUnits> time_units = std::nullopt);
     /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
     /// the user should provide an already constructed CryptographicMaterialsCache
     /// to the Hierarchical Keyring at initialization.
     static CacheType Shared(const CryptographicMaterialsCache& cache);
 
 private:
-    enum class Kind { Default, No, MultiThreaded, Shared };
+    enum class Kind { Default, StormTracking, Shared };
     explicit CacheType(Kind kind) : kind_(kind) {}
     Kind kind_;
     std::uint32_t entry_capacity_ = 0;
-    std::optional<std::uint32_t> entry_pruning_tail_size_;
+    std::uint32_t entry_pruning_tail_size_ = 0;
+    std::uint32_t grace_period_ = 0;
+    std::uint32_t grace_interval_ = 0;
+    std::uint32_t fan_out_ = 0;
+    std::uint32_t inflight_ttl_ = 0;
+    std::uint32_t sleep_milli_ = 0;
+    std::optional<TimeUnits> time_units_;
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
     friend class CryptographicMaterialsCache;
     friend class HierarchicalKeyring;
@@ -539,17 +565,17 @@ struct DecryptResult {
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
 //# ESDK's client configuration, applied to every operation of that client.
-class SdkOptions {
+class EncryptionSDKConfig {
     std::optional<CommitmentPolicy> commitment_policy_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
     friend class EncryptionSDK;
 
 public:
     /// Commitment policy applied to every operation on this client.
-    SdkOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Cap on the number of encrypted data keys per message, applied to every
     /// operation on this client. 0 means no limit.
-    SdkOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Result of finishing a stream
@@ -596,7 +622,7 @@ public:
 /// Do not act on released plaintext before finish() succeeds,
 /// and discard everything released if finish() throws.
 ///
-/// Streamed decrypt cannot be used with to decrypt messages
+/// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
 /// Decrypt these messages with Aws::Esdk::decrypt instead.
 class DecryptStream {
@@ -633,7 +659,7 @@ class EncryptionSDK {
 
 public:
     EncryptionSDK() = default;
-    explicit EncryptionSDK(const SdkOptions& options)
+    explicit EncryptionSDK(const EncryptionSDKConfig& options)
         : commitment_policy_(options.commitment_policy_),
           max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
 
@@ -645,7 +671,8 @@ public:
     /// Encrypts a plaintext held in any contiguous buffer
     /// (e.g. an mmap'd file or another library's buffer)
     /// without copying it into an std::vector first.
-    /// The buffer must stay valid for the duration of the call; the plaintext bytes are not retained afterwards.
+    /// The buffer must stay valid for the duration of the call.
+    /// The plaintext bytes are not retained afterwards.
     //
     //= spec/shim/shim.md#bulk-data
     //# - The shim SHOULD let the caller pass a payload without first copying it into
@@ -669,7 +696,8 @@ public:
         const DecryptOptions& options = {});
 
     /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
-    /// The buffer must stay valid for the duration of the call; the ciphertext bytes are not retained afterwards.
+    /// The buffer must stay valid for the duration of the call.
+    /// The ciphertext bytes are not retained afterwards.
     DecryptResult decrypt(
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
@@ -694,6 +722,31 @@ public:
     /// Creates a streaming decrypt operation.
     /// See DecryptStream documentation for the verification semantics of streamed plaintext.
     DecryptStream create_decrypt_stream(
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+    /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
+    /// each, and writes the ciphertext to `sink` until `source` is exhausted,
+    /// then flushes the final frame. Returns the message metadata. Neither the
+    /// plaintext nor the ciphertext is ever fully held in memory, so this works
+    /// on inputs too large to fit. For per-chunk control, use create_encrypt_stream.
+    /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
+    StreamResult encrypt_stream(
+        std::istream& source,
+        std::ostream& sink,
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
+    /// to `sink`, and returns the message metadata.
+    /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
+    /// SECURITY: `sink` receives plaintext before verification completes. On a
+    /// normal return every byte written to `sink` is authenticated; if this
+    /// throws, discard everything written to `sink`. Streamed decrypt cannot
+    /// decrypt a multi-frame message under a signing suite; use decrypt() for those.
+    StreamResult decrypt_stream(
+        std::istream& source,
+        std::ostream& sink,
         const Keyring& keyring,
         const DecryptOptions& options = {});
 

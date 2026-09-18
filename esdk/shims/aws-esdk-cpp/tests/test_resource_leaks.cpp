@@ -1,7 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Repeated round trips must not grow resident memory (/proc/self/statm, Linux only).
+// Repeated round trips must not grow resident memory proportionally to the number of round trips.
+// If it does, this indicates a memory leak.
+// Only runs on Linux due to checking /proc/self/statm for memory stats
 
 #include <cstddef>
 #include <cstdint>
@@ -15,14 +17,15 @@
 
 namespace {
 
-constexpr int WARMUP_ITERS = 50;
+constexpr int WARMUP_ITERS = 5;
 constexpr int MEASURED_ITERS = 500;
-constexpr std::size_t PAYLOAD_BYTES = 64 * 1024;
-// A leaked 64 KiB payload per iteration would add ~31 MiB; allocator drift stays under this.
-constexpr long MAX_GROWTH_BYTES = 12L * 1024 * 1024;
+constexpr std::size_t PAYLOAD_BYTES = 64 * 1024;  // 64 kB
+// Fail if memory grows by more than a constant multiple of the payload bytes
+// If memory use scales with number of iterations, this indicates a resource leak
+constexpr long MAX_GROWTH_BYTES = PAYLOAD_BYTES * 10;
 
-// 0 when /proc/self/statm is unreadable, so the caller can skip.
 long read_rss_bytes() {
+    // This read is only valid on Linux, so this test can only run on Linux right now
     std::FILE* statm = std::fopen("/proc/self/statm", "r");
     if (!statm) {
         return 0;
@@ -53,14 +56,21 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (read_rss_bytes() == 0) {
-        std::cout << "SKIP: /proc/self/statm is unavailable; the resource-leak "
-                     "test needs it to measure resident memory.\n";
-        return 0;
+        // /proc/self/statm is only valid on Linux, so this test can only run on Linux right now
+        if (esdk_test::has_flag(argc, argv, "--non-linux")) {
+            std::cout << "test_resource_leaks: --non-linux, skipping the "
+                         "resident-memory leak check (needs /proc/self/statm)\n";
+            return 0;
+        }
+        std::cerr << "FATAL: /proc/self/statm is unavailable, so resident memory "
+                     "cannot be measured (this suite runs on Linux only). Pass "
+                     "--non-linux to skip the leak check on this platform.\n";
+        return 2;
     }
 
     Aws::Esdk::EncryptionSDK sdk;
     try {
-        auto keyring = esdk_test::make_keyring(*cfg);
+        auto keyring = esdk_test::make_hierarchical_keyring(*cfg);
         std::vector<std::uint8_t> plaintext(PAYLOAD_BYTES, 0xA5);
 
         bool all_round_trips_ok = true;
@@ -70,8 +80,9 @@ int main(int argc, char** argv) {
         }
         long baseline = read_rss_bytes();
         if (baseline == 0) {
-            std::cout << "SKIP: /proc/self/statm became unavailable during the resource-leak test.\n";
-            return 0;
+            std::cerr << "FATAL: /proc/self/statm became unavailable mid-test; "
+                         "resident memory can no longer be measured.\n";
+            return 2;
         }
 
         for (int i = 0; i < MEASURED_ITERS; ++i) {
@@ -79,8 +90,9 @@ int main(int argc, char** argv) {
         }
         long after = read_rss_bytes();
         if (after == 0) {
-            std::cout << "SKIP: /proc/self/statm became unavailable during the resource-leak test.\n";
-            return 0;
+            std::cerr << "FATAL: /proc/self/statm became unavailable mid-test; "
+                         "resident memory can no longer be measured.\n";
+            return 2;
         }
         ESDK_CHECK(all_round_trips_ok);
 

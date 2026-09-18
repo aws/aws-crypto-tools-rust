@@ -1,3 +1,4 @@
+# Run all tests for C++ shim (Rust/C++ unit/integ tests)
 name: aws-esdk-cpp shim
 
 on:
@@ -39,9 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Each Linux C++ test binary statically links aws-lc and the AWS SDKs; the
-      # default runner disk cannot hold all of them at once, so reclaim the large
-      # preinstalled toolchains this job does not use.
+      # GHA runners crash if they hold the statically linked aws-lc and AWS SDKs.
+      # Reclaim the large preinstalled toolchains this job does not use.
       - name: Free disk space
         if: runner.os == 'Linux'
         run: |
