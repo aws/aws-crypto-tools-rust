@@ -106,6 +106,7 @@ version = "0.1.0"
 dependencies = [
  "aws-esdk",
  "aws-mpl-native",
+ "aws-smithy-types",
  "axum",
  "ciborium",
  "serde",

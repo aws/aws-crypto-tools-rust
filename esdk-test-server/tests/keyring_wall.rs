@@ -1,7 +1,7 @@
 //! A real rpcv2Cbor `CreateClient` with the offline Raw-AES / Default-CMM config
-//! (identical to the commons `BlobRoundTrip` config) drives the server to the
-//! vendored MPL, which does not implement keyring construction. The server MUST
-//! surface this as an `ESDKClientError` naming the unimplemented constructor.
+//! (identical to the commons `BlobRoundTrip` config) drives the server to build
+//! a Raw-AES keyring through the Dafny MPL. The server MUST accept it and return
+//! a client id.
 
 use std::sync::Arc;
 
@@ -47,7 +47,7 @@ fn text<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a str> {
 }
 
 #[tokio::test]
-async fn create_client_raw_aes_surfaces_keyring_not_implemented() {
+async fn create_client_raw_aes_succeeds() {
     let router = app(Arc::new(AppState::new()));
 
     let mut body = Vec::new();
@@ -62,24 +62,16 @@ async fn create_client_raw_aes_surfaces_keyring_not_implemented() {
         .expect("build request");
 
     let response = router.oneshot(request).await.expect("dispatch");
-    assert_eq!(response.status(), 400, "client error status expected");
+    assert_eq!(response.status(), 200, "raw-AES CreateClient must succeed");
 
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let value: Value = ciborium::from_reader(&bytes[..]).expect("decode cbor error");
-    let Value::Map(map) = value else {
-        panic!("error body was not a CBOR map");
+    let Value::Map(map) = ciborium::from_reader(&bytes[..]).expect("decode cbor response") else {
+        panic!("response body was not a CBOR map");
     };
-
-    assert_eq!(
-        text(&map, "__type"),
-        Some("aws.cryptography.esdk.testserver#ESDKClientError"),
-        "keyring construction failure must map to ESDKClientError",
-    );
-    let message = text(&map, "message").expect("error carries a message");
     assert!(
-        message.contains("create_raw_aes_keyring"),
-        "message must name the unimplemented keyring constructor, got: {message}",
+        text(&map, "clientId").is_some_and(|id| !id.is_empty()),
+        "CreateClient must return a non-empty clientId",
     );
 }
