@@ -138,9 +138,7 @@ impl BranchKeyStore {
         }
 
         // Applied here rather than beside the default-client construction in
-        // `new` so that a caller-supplied client is identified too, and so
-        // that `with_clients` — where the client is always caller-supplied —
-        // is covered by the same code.
+        // `new` so that a caller-supplied client is identified too.
         config.kms_client = config.kms_client.take().map(with_user_agent);
 
         let keystore_id = config

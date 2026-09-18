@@ -3,21 +3,16 @@
 
 //! User agent identification for AWS KMS SDK clients.
 //!
-//! Shared by every component that accepts an optional AWS KMS client — the
-//! branch key store today, and the AWS KMS keyrings as they are added — so that
-//! each one tags its client the same way.
+//! Separate from the branch key store so the AWS KMS keyrings, which also take
+//! an optional KMS client, can reuse it.
 
 use aws_config::FrameworkMetadata;
 use aws_sdk_kms::Client as KmsClient;
 
-// The identifier this crate reports in the user agent of the AWS KMS SDK
-// clients it uses. Mirrors the Dafny MPL's `AwsCryptographicMPL/<runtime>` with
-// `/` replaced by `-`, because a framework metadata name rejects `/`.
+// Mirrors the Dafny MPL's `AwsCryptographicMPL/<runtime>` identifier with `/`
+// replaced by `-`, because a framework metadata name rejects `/`.
 pub const MPL_FRAMEWORK_NAME: &str = "AwsCryptographicMPL-Rust";
 
-// Return `client` with this library's identifier in its user agent, or `client`
-// unchanged if the identifier is already there.
-//
 // `FrameworkMetadata` is the AWS SDK for Rust's supported mechanism for a
 // library built on top of the SDK to self-identify: the SDK renders it into the
 // `User-Agent` header as `lib/<name>/<version>`. It is stored by appending, so
@@ -31,15 +26,9 @@ pub const MPL_FRAMEWORK_NAME: &str = "AwsCryptographicMPL-Rust";
 // to every KMS client it constructs, not the `aws-kms-hierarchy` value the
 // specification text names, which no Dafny runtime implements.
 //
-// Unlike the Dafny implementation, which sets the identifier only on clients it
-// constructs itself, this applies to caller-supplied clients as well, so that
-// requests are attributable however the client was obtained. The already-present
-// check keeps that idempotent: a client taken from one component and passed to
-// another is not tagged twice.
-//
-// Only the KMS client is given the identifier. That matches both the
-// specification, which names the KMS client alone, and the Dafny runtime, whose
-// DynamoDB client factory sets no user agent.
+// The Dafny implementation sets the identifier only on clients it constructs
+// itself; this applies to caller-supplied clients too, so requests are
+// attributable however the client was obtained.
 pub fn with_user_agent(client: KmsClient) -> KmsClient {
     let config = client.config();
     if config
