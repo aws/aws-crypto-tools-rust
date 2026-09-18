@@ -75,6 +75,65 @@ pub struct DecryptResponse {
     pub plaintext: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptStreamRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(with = "serde_bytes")]
+    pub plaintext: Vec<u8>,
+    #[serde(
+        rename = "encryptionContext",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub encryption_context: Option<BTreeMap<String, String>>,
+    #[serde(
+        rename = "algorithmSuiteId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    #[serde(
+        rename = "frameLength",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub frame_length: Option<i64>,
+    /// Plaintext length bound (spec/client-apis/encrypt.md#plaintext-length-bound).
+    #[serde(
+        rename = "plaintextLengthBound",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plaintext_length_bound: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptStreamResponse {
+    #[serde(with = "serde_bytes")]
+    pub ciphertext: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecryptStreamRequest {
+    #[serde(rename = "clientId")]
+    pub client_id: String,
+    #[serde(with = "serde_bytes")]
+    pub ciphertext: Vec<u8>,
+    #[serde(
+        rename = "encryptionContext",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub encryption_context: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecryptStreamResponse {
+    #[serde(with = "serde_bytes")]
+    pub plaintext: Vec<u8>,
+}
+
 // Client configuration
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

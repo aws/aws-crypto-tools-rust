@@ -3,7 +3,10 @@
 
 use crate::backend::CppBackend;
 use aws_esdk_test_server::error::ServerError;
-use aws_esdk_test_server::model::{CreateClientRequest, DecryptRequest, EncryptRequest};
+use aws_esdk_test_server::model::{
+    CreateClientRequest, DecryptRequest, DecryptStreamRequest, EncryptRequest,
+    EncryptStreamRequest,
+};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -67,9 +70,20 @@ async fn dispatch(
             Ok(req) => state.decrypt(req).await.and_then(|resp| encode(&resp)),
             Err(e) => Err(e),
         },
-        "EncryptStream" | "DecryptStream" => Err(ServerError::generic(
-            "streaming operations are not supported by the C++ shim language server",
-        )),
+        "EncryptStream" => match decode::<EncryptStreamRequest>(&body) {
+            Ok(req) => state
+                .encrypt_stream(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "DecryptStream" => match decode::<DecryptStreamRequest>(&body) {
+            Ok(req) => state
+                .decrypt_stream(req)
+                .await
+                .and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         other => Err(ServerError::generic(format!("unknown operation: {other}"))),
     };
 

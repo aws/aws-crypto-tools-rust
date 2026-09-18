@@ -55,6 +55,36 @@ extern "C" {
         out_err: *mut *mut c_char,
     ) -> c_int;
 
+    fn esdk_cpp_encrypt_stream(
+        client: *mut c_void,
+        plaintext: *const u8,
+        plaintext_len: usize,
+        commitment_policy: u8,
+        algorithm_suite_id: u16,
+        frame_length: u32,
+        max_encrypted_data_keys: u32,
+        ec_keys: *const *const c_char,
+        ec_vals: *const *const c_char,
+        ec_len: usize,
+        out_buf: *mut *mut u8,
+        out_len: *mut usize,
+        out_err: *mut *mut c_char,
+    ) -> c_int;
+
+    fn esdk_cpp_decrypt_stream(
+        client: *mut c_void,
+        ciphertext: *const u8,
+        ciphertext_len: usize,
+        commitment_policy: u8,
+        max_encrypted_data_keys: u32,
+        ec_keys: *const *const c_char,
+        ec_vals: *const *const c_char,
+        ec_len: usize,
+        out_buf: *mut *mut u8,
+        out_len: *mut usize,
+        out_err: *mut *mut c_char,
+    ) -> c_int;
+
     fn esdk_cpp_free_client(client: *mut c_void);
     fn esdk_cpp_free_buf(buf: *mut u8);
     fn esdk_cpp_free_err(err: *mut c_char);
@@ -251,6 +281,78 @@ pub fn decrypt(
     // SAFETY: as in `encrypt`.
     let rc = unsafe {
         esdk_cpp_decrypt(
+            client.handle,
+            ciphertext.as_ptr(),
+            ciphertext.len(),
+            commitment_policy,
+            max_encrypted_data_keys,
+            ec.key_ptrs.as_ptr(),
+            ec.val_ptrs.as_ptr(),
+            ec.key_ptrs.len(),
+            &mut buf,
+            &mut len,
+            &mut err,
+        )
+    };
+    if rc == 0 {
+        Ok(unsafe { take_buf(buf, len) })
+    } else {
+        Err(unsafe { take_err(err) })
+    }
+}
+
+pub fn encrypt_stream(
+    client: &CppClient,
+    plaintext: &[u8],
+    commitment_policy: u8,
+    algorithm_suite_id: u16,
+    frame_length: u32,
+    max_encrypted_data_keys: u32,
+    encryption_context: &[(String, String)],
+) -> Result<Vec<u8>, String> {
+    let ec = to_c_encryption_context(encryption_context)?;
+    let mut buf: *mut u8 = ptr::null_mut();
+    let mut len: usize = 0;
+    let mut err: *mut c_char = ptr::null_mut();
+    // SAFETY: as in `encrypt`.
+    let rc = unsafe {
+        esdk_cpp_encrypt_stream(
+            client.handle,
+            plaintext.as_ptr(),
+            plaintext.len(),
+            commitment_policy,
+            algorithm_suite_id,
+            frame_length,
+            max_encrypted_data_keys,
+            ec.key_ptrs.as_ptr(),
+            ec.val_ptrs.as_ptr(),
+            ec.key_ptrs.len(),
+            &mut buf,
+            &mut len,
+            &mut err,
+        )
+    };
+    if rc == 0 {
+        Ok(unsafe { take_buf(buf, len) })
+    } else {
+        Err(unsafe { take_err(err) })
+    }
+}
+
+pub fn decrypt_stream(
+    client: &CppClient,
+    ciphertext: &[u8],
+    commitment_policy: u8,
+    max_encrypted_data_keys: u32,
+    encryption_context: &[(String, String)],
+) -> Result<Vec<u8>, String> {
+    let ec = to_c_encryption_context(encryption_context)?;
+    let mut buf: *mut u8 = ptr::null_mut();
+    let mut len: usize = 0;
+    let mut err: *mut c_char = ptr::null_mut();
+    // SAFETY: as in `encrypt`.
+    let rc = unsafe {
+        esdk_cpp_decrypt_stream(
             client.handle,
             ciphertext.as_ptr(),
             ciphertext.len(),

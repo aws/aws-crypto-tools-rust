@@ -2,6 +2,7 @@
 // server calls these functions; each one runs entirely through Aws::Esdk:: so
 // the C++ shim surface is what gets exercised end to end.
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,18 @@ uint8_t* dup_bytes(const Aws::Esdk::Bytes& bytes) {
     }
     return out;
 }
+
+uint8_t* dup_bytes(const std::vector<uint8_t>& bytes) {
+    uint8_t* out = static_cast<uint8_t*>(std::malloc(bytes.empty() ? 1 : bytes.size()));
+    if (out && !bytes.empty()) {
+        std::memcpy(out, bytes.data(), bytes.size());
+    }
+    return out;
+}
+
+// Feed size for stream writes; multiple write() calls per message exercise
+// chunked input through the streaming classes.
+constexpr size_t kStreamChunk = 4096;
 
 std::map<std::string, std::string> to_map(const char* const* keys,
                                           const char* const* vals,
@@ -190,6 +203,104 @@ int esdk_cpp_decrypt(void* client,
         return 1;
     } catch (...) {
         *out_err = dup_message("unknown C++ exception during decrypt");
+        return 1;
+    }
+}
+
+// Streaming variants of encrypt/decrypt. Same argument conventions as
+// esdk_cpp_encrypt/esdk_cpp_decrypt; input is fed to the stream in fixed-size
+// chunks so multiple write() calls run per message, then finish() flushes the
+// trailing output.
+int esdk_cpp_encrypt_stream(void* client,
+                            const uint8_t* plaintext,
+                            size_t plaintext_len,
+                            uint8_t commitment_policy,
+                            uint16_t algorithm_suite_id,
+                            uint32_t frame_length,
+                            uint32_t max_encrypted_data_keys,
+                            const char* const* ec_keys,
+                            const char* const* ec_vals,
+                            size_t ec_len,
+                            uint8_t** out_buf,
+                            size_t* out_len,
+                            char** out_err) {
+    try {
+        auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
+        EncryptOptions options;
+        options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
+        if (algorithm_suite_id != 0) {
+            options.with_algorithm_suite(static_cast<AlgorithmSuiteId>(algorithm_suite_id));
+        }
+        if (frame_length != 0) {
+            options.with_frame_length(frame_length);
+        }
+        if (max_encrypted_data_keys != 0) {
+            options.with_max_encrypted_data_keys(max_encrypted_data_keys);
+        }
+        options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
+
+        EncryptionSDK sdk;
+        Aws::Esdk::EncryptStream stream = sdk.create_encrypt_stream(*keyring, options);
+        std::vector<uint8_t> ciphertext;
+        for (size_t offset = 0; offset < plaintext_len; offset += kStreamChunk) {
+            size_t n = std::min(kStreamChunk, plaintext_len - offset);
+            Aws::Esdk::Bytes produced = stream.write(plaintext + offset, n);
+            ciphertext.insert(ciphertext.end(), produced.data(), produced.data() + produced.size());
+        }
+        Aws::Esdk::StreamResult result = stream.finish();
+        ciphertext.insert(ciphertext.end(), result.trailing_output.data(),
+                          result.trailing_output.data() + result.trailing_output.size());
+        *out_buf = dup_bytes(ciphertext);
+        *out_len = ciphertext.size();
+        return 0;
+    } catch (const std::exception& e) {
+        *out_err = dup_message(e.what());
+        return 1;
+    } catch (...) {
+        *out_err = dup_message("unknown C++ exception during encrypt_stream");
+        return 1;
+    }
+}
+
+int esdk_cpp_decrypt_stream(void* client,
+                            const uint8_t* ciphertext,
+                            size_t ciphertext_len,
+                            uint8_t commitment_policy,
+                            uint32_t max_encrypted_data_keys,
+                            const char* const* ec_keys,
+                            const char* const* ec_vals,
+                            size_t ec_len,
+                            uint8_t** out_buf,
+                            size_t* out_len,
+                            char** out_err) {
+    try {
+        auto* keyring = reinterpret_cast<Aws::Esdk::Keyring*>(client);
+        DecryptOptions options;
+        options.with_commitment_policy(static_cast<CommitmentPolicy>(commitment_policy));
+        if (max_encrypted_data_keys != 0) {
+            options.with_max_encrypted_data_keys(max_encrypted_data_keys);
+        }
+        options.with_encryption_context(to_map(ec_keys, ec_vals, ec_len));
+
+        EncryptionSDK sdk;
+        Aws::Esdk::DecryptStream stream = sdk.create_decrypt_stream(*keyring, options);
+        std::vector<uint8_t> plaintext;
+        for (size_t offset = 0; offset < ciphertext_len; offset += kStreamChunk) {
+            size_t n = std::min(kStreamChunk, ciphertext_len - offset);
+            Aws::Esdk::Bytes released = stream.write(ciphertext + offset, n);
+            plaintext.insert(plaintext.end(), released.data(), released.data() + released.size());
+        }
+        Aws::Esdk::StreamResult result = stream.finish();
+        plaintext.insert(plaintext.end(), result.trailing_output.data(),
+                         result.trailing_output.data() + result.trailing_output.size());
+        *out_buf = dup_bytes(plaintext);
+        *out_len = plaintext.size();
+        return 0;
+    } catch (const std::exception& e) {
+        *out_err = dup_message(e.what());
+        return 1;
+    } catch (...) {
+        *out_err = dup_message("unknown C++ exception during decrypt_stream");
         return 1;
     }
 }

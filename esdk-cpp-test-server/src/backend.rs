@@ -6,7 +6,8 @@ use crate::seam::{self, CppClient};
 use aws_esdk_test_server::error::ServerError;
 use aws_esdk_test_server::model::{
     AesWrappingAlg, CreateClientRequest, CreateClientResponse, CryptographicMaterialsManager,
-    DecryptRequest, DecryptResponse, EncryptRequest, EncryptResponse, EsdkAlgorithmSuiteId,
+    DecryptRequest, DecryptResponse, DecryptStreamRequest, DecryptStreamResponse, EncryptRequest,
+    EncryptResponse, EncryptStreamRequest, EncryptStreamResponse, EsdkAlgorithmSuiteId,
     EsdkClientConfig, EsdkCommitmentPolicy, Keyring,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -72,6 +73,15 @@ fn max_edks_code(config: &EsdkClientConfig) -> Result<u32, ServerError> {
 
 fn encryption_context(map: Option<BTreeMap<String, String>>) -> Vec<(String, String)> {
     map.map(|m| m.into_iter().collect()).unwrap_or_default()
+}
+
+// 0 encodes "unset" over the FFI, so a configured frame length must fit in u32.
+fn frame_length_code(frame_length: Option<i64>) -> Result<u32, ServerError> {
+    match frame_length {
+        Some(value) => u32::try_from(value)
+            .map_err(|_| ServerError::generic(format!("frameLength out of range: {value}"))),
+        None => Ok(0),
+    }
 }
 
 // The C++ facade exposes the hierarchical and raw-AES keyrings, both wrapped in
@@ -173,17 +183,7 @@ impl CppBackend {
     pub async fn encrypt(&self, req: EncryptRequest) -> Result<EncryptResponse, ServerError> {
         let materials = self.materials(&req.client_id)?;
         let algorithm_suite_id = req.algorithm_suite_id.map(suite_id).unwrap_or(0);
-        let frame_length = match req.frame_length {
-            Some(value) => {
-                let Ok(frame) = u32::try_from(value) else {
-                    return Err(ServerError::generic(format!(
-                        "frameLength out of range: {value}"
-                    )));
-                };
-                frame
-            }
-            None => 0,
-        };
+        let frame_length = frame_length_code(req.frame_length)?;
         let ec = encryption_context(req.encryption_context);
         let plaintext = req.plaintext;
         let commitment_policy = materials.commitment_policy;
@@ -226,6 +226,67 @@ impl CppBackend {
         .map_err(ServerError::esdk)?;
 
         Ok(DecryptResponse { plaintext })
+    }
+
+    /// Stream_Variant of encrypt: drives the C++ streaming encrypt surface
+    /// (create_encrypt_stream / write / finish).
+    ///
+    /// `plaintextLengthBound` is accepted on the wire but not applied: the C++
+    /// facade exposes no plaintext-length bound.
+    pub async fn encrypt_stream(
+        &self,
+        req: EncryptStreamRequest,
+    ) -> Result<EncryptStreamResponse, ServerError> {
+        let materials = self.materials(&req.client_id)?;
+        let algorithm_suite_id = req.algorithm_suite_id.map(suite_id).unwrap_or(0);
+        let frame_length = frame_length_code(req.frame_length)?;
+        let ec = encryption_context(req.encryption_context);
+        let plaintext = req.plaintext;
+        let commitment_policy = materials.commitment_policy;
+        let max = materials.max_encrypted_data_keys;
+        let client = materials.client;
+
+        let ciphertext = tokio::task::spawn_blocking(move || {
+            let client = client.lock().expect("client mutex");
+            seam::encrypt_stream(
+                &client,
+                &plaintext,
+                commitment_policy,
+                algorithm_suite_id,
+                frame_length,
+                max,
+                &ec,
+            )
+        })
+        .await
+        .map_err(|e| ServerError::generic(format!("encrypt_stream task failed: {e}")))?
+        .map_err(ServerError::esdk)?;
+
+        Ok(EncryptStreamResponse { ciphertext })
+    }
+
+    /// Stream_Variant of decrypt: drives the C++ streaming decrypt surface
+    /// (create_decrypt_stream / write / finish).
+    pub async fn decrypt_stream(
+        &self,
+        req: DecryptStreamRequest,
+    ) -> Result<DecryptStreamResponse, ServerError> {
+        let materials = self.materials(&req.client_id)?;
+        let ec = encryption_context(req.encryption_context);
+        let ciphertext = req.ciphertext;
+        let commitment_policy = materials.commitment_policy;
+        let max = materials.max_encrypted_data_keys;
+        let client = materials.client;
+
+        let plaintext = tokio::task::spawn_blocking(move || {
+            let client = client.lock().expect("client mutex");
+            seam::decrypt_stream(&client, &ciphertext, commitment_policy, max, &ec)
+        })
+        .await
+        .map_err(|e| ServerError::generic(format!("decrypt_stream task failed: {e}")))?
+        .map_err(ServerError::esdk)?;
+
+        Ok(DecryptStreamResponse { plaintext })
     }
 
     fn materials(&self, client_id: &str) -> Result<Materials, ServerError> {
