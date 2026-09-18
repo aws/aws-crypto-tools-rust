@@ -14,19 +14,27 @@ test:
 	cargo test --no-default-features --features ddb
 	cargo test --no-default-features --features legacy
 
-# Set LOCAL_ONLY=--local-only to skip the examples that need AWS credentials.
-# Empty by default, so `make examples` runs the full example suite, including
-# the hierarchical_keyring example (needs KMS and DynamoDB).
+# Run `make examples LOCAL_ONLY=--local-only` to skip examples that need AWS credentials.
+# Otherwise `make examples` runs all examples by default.
 LOCAL_ONLY ?=
+# Cargo will only register examples in 2 cases:
+# - examples/*.rs
+# - examples/NAME/main.rs
+# Examples cannot be declared elsewhere.
+EXAMPLES := $(basename $(notdir $(wildcard examples/*.rs))) \
+            $(notdir $(patsubst %/main.rs,%,$(wildcard examples/*/main.rs)))
+CREDS_EXAMPLES := hierarchical_keyring
+ifeq ($(LOCAL_ONLY),)
+RUN_EXAMPLES := $(EXAMPLES)
+else
+RUN_EXAMPLES := $(filter-out $(CREDS_EXAMPLES),$(EXAMPLES))
+endif
 
 examples:
-	cargo run --example raw_aes_keyring
-	cargo run --example streaming
-	cargo run --example custom_keyring
-	cargo run --example required_encryption_context
-ifeq ($(LOCAL_ONLY),)
-	cargo run --example hierarchical_keyring
-endif
+	@for ex in $(RUN_EXAMPLES); do \
+		echo "=== cargo run --example $$ex ==="; \
+		cargo run --example $$ex || exit 1; \
+	done
 
 duvet:
 	@test -e spec || ln -s ../spec spec

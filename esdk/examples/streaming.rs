@@ -58,7 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut input = File::open(&plaintext_path)?;
         let mut output = File::create(&ciphertext_path)?;
-        encrypt_stream(&mut input, &mut output, &enc_input).await?;
+        if let Err(e) = encrypt_stream(&mut input, &mut output, &enc_input).await {
+            // On error the ciphertext is incomplete and unusable.
+            // Don't attempt to treat it as a valid message.
+            // We choose to delete it here.
+            drop(output);
+            let _ = fs::remove_file(&ciphertext_path);
+            return Err(e.into());
+        }
     }
 
     // Decrypt the ciphertext file back into the decrypted file.
@@ -69,7 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut input = File::open(&ciphertext_path)?;
         let mut output = File::create(&decrypted_path)?;
-        decrypt_stream(&mut input, &mut output, &dec_input).await?;
+        if let Err(e) = decrypt_stream(&mut input, &mut output, &dec_input).await {
+            // On error the plaintext is unverified.
+            // You MUST not use it and MUST discard it.
+            drop(output);
+            let _ = fs::remove_file(&decrypted_path);
+            return Err(e.into());
+        }
     }
 
     // The decrypted file matches the original plaintext (demo check only).

@@ -80,9 +80,6 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-      # Build and run the examples so they can't rot.
-      # This runs the full suite, including the credentialed hierarchical_keyring example; the job configures AWS credentials above.
-      # Pass LOCAL_ONLY=--local-only to skip the credentialed examples.
       - name: Run examples
         if: inputs.project == 'esdk'
         run: make examples

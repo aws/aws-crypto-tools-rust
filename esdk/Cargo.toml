@@ -10,7 +10,6 @@ repository = "https://github.com/aws/aws-client-encryption-rust/aws-esdk/"
 authors = ["AWS-CryptoTools"]
 documentation = "https://docs.rs/crate/aws-esdk"
 readme = "README.md"
-autoexamples = false
 
 [dependencies]
 tokio = { version = "1.49.0", features = ["full"] }
@@ -46,24 +45,3 @@ track = []
 kms = []
 legacy = []
 ddb = []
-
-# autoexamples is false, so declare every example explicitly.
-[[example]]
-name = "raw_aes_keyring"
-path = "examples/raw_aes_keyring.rs"
-
-[[example]]
-name = "streaming"
-path = "examples/streaming.rs"
-
-[[example]]
-name = "custom_keyring"
-path = "examples/custom_keyring.rs"
-
-[[example]]
-name = "required_encryption_context"
-path = "examples/required_encryption_context.rs"
-
-[[example]]
-name = "hierarchical_keyring"
-path = "examples/hierarchical_keyring.rs"
