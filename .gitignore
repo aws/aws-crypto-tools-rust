@@ -8,5 +8,5 @@
 **/.duvet/reports/**
 **/.duvet/requirements/**
 
-# Resolved spec dependency (see scripts/spec-source.json / scripts/resolve-spec.sh)
+# Resolved spec dependency
 /spec/
