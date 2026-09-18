@@ -829,44 +829,23 @@ fn record_from_ddb_item(
     })
 }
 
-// In-crate because it needs the private client accessors; the tagging helper
-// itself is covered in `tests/test_aws_kms_user_agent.rs`.
-#[cfg(test)]
-mod tests {
-    use super::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
-    use crate::aws_kms::user_agent::MPL_FRAMEWORK_NAME;
-    use aws_config::{BehaviorVersion, SdkConfig};
+/// Internal accessors exposed solely so integration tests under `tests/` can
+/// assert on the SDK clients resolved during construction. Gated behind
+/// `test-utils` so it is not compiled for library consumers. Not part of the
+/// public API. Do not use.
+///
+/// Everything in this module is exempt from semantic versioning and may be
+/// changed, renamed, or removed at any time.
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    use super::BranchKeyStore;
 
-    #[test]
-    fn with_clients_tags_the_kms_client_and_not_the_ddb_client() {
-        let sdk_config = SdkConfig::builder()
-            .behavior_version(BehaviorVersion::latest())
-            .build();
-        let store = BranchKeyStore::with_clients(KeyStoreConfig {
-            ddb_table_name: "test-table".to_string(),
-            kms_configuration: KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .to_string(),
-            ),
-            logical_keystore_name: "test-logical".to_string(),
-            id: Some("user-agent-test".to_string()),
-            grant_tokens: None,
-            ddb_client: Some(aws_sdk_dynamodb::Client::new(&sdk_config)),
-            kms_client: Some(aws_sdk_kms::Client::new(&sdk_config)),
-        })
-        .expect("with_clients must succeed when both clients are present");
+    pub fn kms_client(store: &BranchKeyStore) -> &aws_sdk_kms::Client {
+        store.kms_client()
+    }
 
-        let kms_names: Vec<&str> = store
-            .kms_client()
-            .config()
-            .framework_metadata()
-            .iter()
-            .map(|metadata| metadata.name())
-            .collect();
-        assert_eq!(kms_names, vec![MPL_FRAMEWORK_NAME]);
-        assert!(
-            store.ddb_client().config().framework_metadata().is_empty(),
-            "the DynamoDB client must carry no identifier"
-        );
+    pub fn ddb_client(store: &BranchKeyStore) -> &aws_sdk_dynamodb::Client {
+        store.ddb_client()
     }
 }
