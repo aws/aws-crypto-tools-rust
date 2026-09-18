@@ -187,6 +187,8 @@ jobs:
         with:
           role-to-assume: ${{ vars.ESDK_TEST_SERVER_KMS_ROLE_ARN || 'arn:aws:iam::370957321024:role/esdk-test-server-ci-kms-role' }}
           aws-region: us-west-2
+          # The orchestrated run exceeds the default 1h credential lifetime.
+          role-duration-seconds: 7200
 
       - name: Verify AWS credentials are active (gates the orchestrated run)
         run: |
