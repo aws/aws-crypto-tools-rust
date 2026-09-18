@@ -12,12 +12,18 @@
 // boxes the future to make `dyn Keystore` work today.
 //
 
+pub mod attributes;
+pub mod branch_key_store;
 pub mod config;
+pub mod encryption_context;
 pub mod error;
 pub mod kms_config;
+pub(crate) mod kms_ops;
+pub mod record;
 
 use async_trait::async_trait;
 
+pub use branch_key_store::BranchKeyStore;
 pub use config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
 pub use error::{KeystoreError, KeystoreErrorKind};
 
@@ -26,7 +32,13 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 #[async_trait]
 pub trait Keystore: Send + Sync {
     /// Returns the keystore information for this keystore.
-    async fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError>;
+    ///
+    /// This is the keystore's own configuration, fixed when the keystore was
+    /// constructed, so it is synchronous and performs no IO. Callers that
+    /// need it on every operation — for example the Hierarchical Keyring's
+    /// cache identifiers, which bind the logical keystore name — can
+    /// therefore resolve it once at construction.
+    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError>;
 
     /// Creates the backing DynamoDB table for this keystore.
     async fn create_key_store(&self) -> Result<String, KeystoreError>;

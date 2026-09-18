@@ -5,7 +5,6 @@
 //! obtains decryption materials from a keyring/CMM, derives the data key,
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
-use crate::encrypt::get_esdk_algorithm_suite_id;
 use crate::error::{Error, esdk_err, val_err};
 use crate::key_derivation;
 use crate::materials;
@@ -15,14 +14,13 @@ use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
+use crate::suites::{get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptionContext,
     MaterialSource, SafeRead, SafeWrite,
 };
 use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::primitives::{
-    DigestContext, EcdsaSignatureAlgorithm, aes_decrypt, ecdsa_verify_context,
-};
+use aws_mpl_legacy::primitives::{DigestContext, aes_decrypt, ecdsa_verify_context};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum DecryptMode {
@@ -131,9 +129,12 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     //= reason=decrypt() returns Result; caller cannot access output until Ok
     //# If the input encrypted message is not being [streamed](streaming.md) to this operation,
     //# all output MUST NOT be released until after these steps complete successfully.
-    // Plaintext is always smaller than the ciphertext and grows as frames decrypt;
-    // pre-sizing to ciphertext.len() would over-allocate (badly so for small frames).
-    let mut plaintext: Vec<u8> = Vec::new();
+    // The plaintext is never longer than the ciphertext (which carries the header,
+    // per-frame overhead, and footer on top of the encrypted content), so the
+    // ciphertext length is an upper bound that lets the buffer grow without
+    // reallocating while frames decrypt. Capacity beyond the final plaintext
+    // length is returned when the Vec shrinks below.
+    let mut plaintext: Vec<u8> = Vec::with_capacity(input.ciphertext.len());
 
     let out = internal_decrypt(
         &mut cursor,
@@ -155,6 +156,13 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         //# but there are consumable bytes which are intended to be decrypted,
         //# this operation MUST fail.
         return Err(esdk_err("Data after message footer"));
+    }
+
+    // Return excess capacity when the upper-bound reservation greatly exceeds
+    // the decrypted plaintext (e.g. messages built from tiny frames, where
+    // per-frame overhead dominates the ciphertext length).
+    if plaintext.capacity() / 2 > plaintext.len() {
+        plaintext.shrink_to_fit();
     }
 
     Ok(DecryptOutput {
@@ -234,9 +242,6 @@ async fn internal_decrypt(
     )
     .await?;
 
-    //= spec/client-apis/decrypt.md#get-the-decryption-materials
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# decrypt MUST yield an error.
     get_esdk_algorithm_suite_id(state.header.suite.id)?;
 
     //= spec/client-apis/decrypt.md#behavior
@@ -312,8 +317,6 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        //= spec/client-apis/decrypt.md#algorithm-suite
-        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
         algorithm_suite_id: get_esdk_algorithm_suite_id(state.header.suite.id)?,
     })
 }
@@ -340,6 +343,7 @@ fn step_parse_header(
         header::read_header_body(ciphertext, max_encrypted_data_keys, &mut raw_header)?;
 
     //= spec/client-apis/decrypt.md#verify-the-header
+    //= type=implication
     //= reason=sig_digest is fed header bytes immediately; raw header not retained for later
     //# - The streamed Decrypt operation SHOULD input the serialized header to the signature algorithm as soon as it is deserialized,
     //# such that the serialized header isn't required to remain in memory to [verify the signature](#verify-the-signature).
@@ -548,8 +552,6 @@ fn step_decrypt_body(
     state: &mut DecryptState,
     mode: &DecryptMode,
 ) -> Result<Vec<u8>, Error> {
-    let key = state.derived_data_keys.data_key.clone();
-
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=implication
     //= reason=Body parsers read from the same `ciphertext` cursor passed to step_parse_header; cursor advances sequentially after the header parse
@@ -584,7 +586,7 @@ fn step_decrypt_body(
             body::read_and_decrypt_non_framed_message_body(
                 ciphertext,
                 &state.header,
-                &key,
+                &state.derived_data_keys.data_key,
                 &mut state.sig_digest,
             )?
         }
@@ -595,7 +597,7 @@ fn step_decrypt_body(
                 ciphertext,
                 plaintext,
                 &state.header,
-                &key,
+                &state.derived_data_keys.data_key,
                 &mut state.sig_digest,
                 fail_if_multi_frame,
             )?
@@ -641,7 +643,6 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
         //= spec/client-apis/decrypt.md#behavior
         //# - If the message header does not contain an algorithm suite including a signature algorithm,
         //# the Decrypt operation MUST NOT perform this step.
-        return Ok(());
     }
     Ok(())
 }
@@ -661,31 +662,12 @@ fn build_encryption_context_to_only_authenticate(
         .collect()
 }
 
-/// Extracts the ECDSA signature algorithm from a generic MPL signature
-/// algorithm, returning an error if the algorithm is not ECDSA.
-///
-/// # Errors
-///
-/// Returns an error if `alg` is not an ECDSA signature algorithm.
-pub fn get_ecdsa_alg(
-    alg: aws_mpl_legacy::suites::SignatureAlgorithm,
-) -> Result<EcdsaSignatureAlgorithm, Error> {
-    match alg {
-        aws_mpl_legacy::suites::SignatureAlgorithm::Ecdsa(x) => Ok(x),
-        _ => Err(val_err("Unsupported signature algorithm")),
-    }
-}
-
 fn verify_signature(
     r: &mut dyn SafeRead,
     context: DigestContext,
     dec_mat: &aws_mpl_legacy::DecryptionMaterials,
     sig_digest: &mut dyn SafeWrite,
 ) -> Result<(), Error> {
-    if dec_mat.verification_key.is_none() {
-        return Ok(());
-    }
-
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= reason=blocking read on the input stream implicitly waits for enough bytes
     //# If there are not enough consumable bytes to deserialize the message footer and

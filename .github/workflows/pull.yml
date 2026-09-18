@@ -131,6 +131,16 @@ jobs:
     with:
       project: ${{ matrix.project }}
 
+  # Run duvet and upload the compliance report for projects that have duvet
+  # configured. Currently that is esdk only; add a job per project as more
+  # projects gain a .duvet/config.toml.
+  pr-ci-duvet:
+    needs: detect-changes
+    if: contains(fromJSON(needs.detect-changes.outputs.projects), 'esdk')
+    uses: ./.github/workflows/duvet.yml
+    with:
+      project: esdk
+
   # Single stable required status check for branch protection. It passes when
   # every needed job either succeeded or was legitimately skipped. `pr-ci-rust`
   # is allowed to skip so that PRs touching no project still pass this gate.
@@ -139,10 +149,11 @@ jobs:
     needs:
       - detect-changes
       - pr-ci-rust
+      - pr-ci-duvet
     runs-on: ubuntu-22.04
     steps:
       - name: Verify all required jobs passed
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: pr-ci-rust
+          allowed-skips: pr-ci-rust, pr-ci-duvet

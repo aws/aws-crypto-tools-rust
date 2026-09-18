@@ -14,6 +14,20 @@ use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::types::{SafeRead, SafeWrite};
 use aws_mpl_legacy::primitives::aes_decrypt;
 
+/// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
+fn release_previous_frame(
+    w: &mut dyn SafeWrite,
+    result: &[u8],
+    fail_if_multi_frame: bool,
+) -> Result<(), Error> {
+    if fail_if_multi_frame {
+        return Err(esdk_err(
+            "Streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages.",
+        ));
+    }
+    write_bytes(w, result)
+}
+
 pub(crate) fn read_and_decrypt_framed_message_body(
     ciphertext: &mut dyn SafeRead,
     w: &mut dyn SafeWrite,
@@ -162,6 +176,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //# The encrypted content length MUST be a UInt32.
             //
             //= spec/data-format/message-body.md#final-frame-encrypted-content
+            //= reason=read_seq_u32_bounded reads the content length field then exactly that many content bytes, so the serialized content length equals the field by construction
             //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
             //
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -257,7 +272,6 @@ pub(crate) fn read_and_decrypt_framed_message_body(
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
                 // final frame is empty, so return last full frame
-                let mut empty_result = Vec::new();
                 aes_decrypt(
                     alg_suite,
                     key,
@@ -268,7 +282,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
                     &auth_tag,
                     &iv,
                     &aad,
-                    &mut empty_result[..],
+                    &mut [],
                 )?;
                 // If this empty final frame is also the FIRST frame (i.e. the entire
                 // plaintext is empty), there is no "last full frame" to return. The
@@ -280,12 +294,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             } else {
                 // write previous frame's data, now that we know we have another frame.
                 if expected_frame != START_SEQUENCE_NUMBER {
-                    if fail_if_multi_frame {
-                        return Err(esdk_err(
-                            "Streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages.",
-                        ));
-                    }
-                    write_bytes(w, &result)?;
+                    release_previous_frame(w, &result, fail_if_multi_frame)?;
                 }
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
@@ -327,22 +336,21 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         }
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=implication
+        //= reason=regular-frame plaintext is written to the sink as each frame's tag verifies
         //# - If the streamed Decrypt operation is using an algorithm suite with a signature algorithm,
         //# all plaintext decrypted from regular frames SHOULD be released as soon as the above calculation,
         //# including tag verification, succeeds.
         //
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=implication
+        //= reason=each frame's plaintext is written to the output sink as its tag verifies, before the next frame is read
         //# - If the streamed Decrypt operation is using an algorithm suite without a signature algorithm,
         //# plaintext SHOULD be released as soon as the above calculation, including tag verification,
         //# succeeds.
         // write previous frame's data, now that we know we have another frame.
         if expected_frame != START_SEQUENCE_NUMBER {
-            if fail_if_multi_frame {
-                return Err(esdk_err(
-                    "Streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages.",
-                ));
-            }
-            write_bytes(w, &result)?;
+            release_previous_frame(w, &result, fail_if_multi_frame)?;
         }
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -362,6 +370,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //# The IV MUST be interpreted as bytes.
         //
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= type=implication
         //= reason=sig_digest is threaded through each read_bytes call, feeding the serialized frame to the signature algorithm as it is deserialized
         //# - The streamed Decrypt operation SHOULD input the serialized frame to the signature algorithm as soon as it is deserialized,
         //# such that the serialized frame isn't required to remain in memory to complete

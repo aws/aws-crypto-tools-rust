@@ -106,46 +106,18 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
 }
 
 #[test]
-fn test_signing_key_length_must_match_algorithm_suite() {
-    // Reject both too-short and too-long signing keys, on both P-256 (32-byte)
-    // and P-384 (48-byte) signing suites. The four (suite, actual_len)
-    // combinations catch off-by-one bugs (`>=` vs `==`, `<=` vs `==`) that a
-    // one-sided length check would miss.
-    let cases: [(AlgorithmSuiteId, usize); 4] = [
-        (P256_SIGN_SUITE, 16), // too short for P-256 (expects 32)
-        (P256_SIGN_SUITE, 48), // too long for P-256 (48 is P-384's length)
-        (SIGN_SUITE, 16),      // too short for P-384 (expects 48)
-        (SIGN_SUITE, 96),      // too long for P-384
-    ];
-    for (suite_id, bad_len) in cases {
-        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
-        let reck = BTreeSet::new();
-        let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
-        let bad_sk = SigningKey::new(vec![0u8; bad_len]);
-        let edk = make_edk();
-
-        let result =
-            EncryptionMaterials::new(suite_id, vec![edk], ec, reck, Some(pdk), Some(bad_sk), None);
-        let err = result.expect_err(&format!(
-            "{suite_id:?} with {bad_len}-byte signing key must fail"
-        ));
-        assert!(
-            err.message.contains("Signing key length"),
-            "{suite_id:?} @ {bad_len}: unexpected error message: {}",
-            err.message
-        );
-    }
-}
-
-#[test]
-fn test_signing_key_correct_length_succeeds() {
-    // Positive companion to test_signing_key_length_must_match_algorithm_suite.
-    // Cover BOTH signing families: P-256 (32-byte scalar) and P-384 (48-byte
-    // scalar). Without both, an accidental swap of the two spec-table rows
-    // would go undetected.
-    let cases: [(AlgorithmSuiteId, SigningKey); 2] = [
+fn test_signing_key_accepted_regardless_of_length() {
+    // The spec constrains the signing key's presence and the algorithm it must
+    // suit, not its byte length (`structures.md#signing-key`), and the Dafny
+    // MPL likewise checks presence only. So a signing suite accepts a signing
+    // key of any length: the raw-scalar sizes below, and the DER lengths that
+    // `aws-mpl-primitives` actually emits (121 bytes for P-256, 167 for P-384)
+    // and that `ecdsa_sign_digest` requires.
+    let cases: [(AlgorithmSuiteId, SigningKey); 4] = [
         (P256_SIGN_SUITE, p256_signing_key()),
         (SIGN_SUITE, p384_signing_key()),
+        (P256_SIGN_SUITE, SigningKey::new(vec![0u8; 121])),
+        (SIGN_SUITE, SigningKey::new(vec![0u8; 167])),
     ];
     for (suite_id, sk) in cases {
         let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
@@ -157,7 +129,7 @@ fn test_signing_key_correct_length_succeeds() {
             EncryptionMaterials::new(suite_id, vec![edk], ec, reck, Some(pdk), Some(sk), None);
         assert!(
             result.is_ok(),
-            "{suite_id:?} with correctly-sized signing key must succeed: {:?}",
+            "{suite_id:?} signing key must be accepted: {:?}",
             result.err()
         );
     }

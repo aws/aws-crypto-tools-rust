@@ -1,0 +1,775 @@
+// EncryptionSDK.h — public types for the C++ Shim for the AWS Encryption SDK for Rust
+
+#pragma once
+
+#include <algorithm>
+#include <cstdint>
+#include <istream>
+#include <map>
+#include <memory>
+#include <optional>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#if defined(__has_include)
+#if __has_include(<version>)
+#include <version>
+#endif
+#endif
+#if defined(__cpp_lib_span)
+#include <span>
+#endif
+
+namespace Aws {
+namespace Esdk {
+
+// File-wide invariants.
+// Each requirement below holds for every type and operation in this facade.
+// These cannot be explicitly tested, but are recorded as implications.
+// Any edits to this file must respect these requirements.
+//
+//= spec/shim/shim.md#owned-interface
+//= type=implication
+//= reason=The facade defines its own enums in Aws::Esdk:: namespace
+//# - For each core-library enumeration it exposes, the shim MUST define its own
+//# corresponding enumeration type.
+//
+//= spec/shim/shim.md#owned-interface
+//= type=implication
+//= reason=Every public function uses only Aws::Esdk:: types and C++ standard-library types
+//# - Each public function the shim exposes MUST use only owned-interface types or
+//# standard-library types in its signature.
+//
+//= spec/shim/shim.md#owned-interface
+//= type=implication
+//# - Each owned interface that represents a core-library resource MUST hold the
+//# generated handle privately and MUST NOT expose it in its public API.
+//
+//= spec/shim/shim.md#handles-and-lifetimes
+//= type=implication
+//= reason=Resourcs hold dependent resources inside its own implementation
+//# - An owned interface that depends on another resource MUST retain ownership of
+//# that resource for its own lifetime, so that a handle passed across the boundary
+//# cannot outlive the resource it refers to.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=with_* setters
+//# - The shim MUST expose each optional input of the operations and resource
+//# creations it exposes.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=with_* setters
+//# - The shim MUST accept optional inputs through a mechanism idiomatic to the
+//# target language (e.g.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=with_* setters
+//# - The shim MUST define its operation and resource-creation inputs such that
+//# an optional input can be added without breaking existing target code.
+//
+//= spec/shim/shim.md#operation-contracts
+//= type=implication
+//= reason=Options fields are std::optional (or empty); operations start from a value-initialized (all-unset) input and assign a field only when the caller set it.
+//# - When the target does not supply an optional input, the shim MUST defer to
+//# the core library's default and MUST NOT substitute its own.
+
+//= spec/shim/shim.md#owned-interface
+//= type=implication
+//# - The shim MUST define its own error type for its public surface.
+//
+/// Base exception for every failure this library reports.
+/// Catching this type catches everything the shim can throw.
+class AwsEncryptionSdkException : public std::runtime_error {
+public:
+    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
+};
+
+//= spec/shim/shim.md#error-classification
+//= type=implication
+//= reason=Every specific exception derives from AwsEncryptionSdkException
+//# - Every exposed error kind MUST also be identifiable as the shim's own base
+//# error type, so a target that handles only the base type is unaffected when a
+//# kind is added.
+//
+/// The message bytes are malformed and could not be read or written.
+/// No cryptography was attempted.
+class SerializationException : public AwsEncryptionSdkException {
+public:
+    explicit SerializationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+};
+
+/// A cryptographic operation failed (ex. auth tag did not verify).
+/// Retrying the same input cannot succeed.
+class CryptographicException : public AwsEncryptionSdkException {
+public:
+    explicit CryptographicException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+};
+
+/// An input is invalid (malformed/unrecognized value, or a missing required input type.)
+/// Fix the input; retrying the same input cannot succeed.
+class ValidationException : public AwsEncryptionSdkException {
+public:
+    explicit ValidationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+};
+
+/// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
+/// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
+enum class AlgorithmSuiteId : std::uint16_t {
+    AlgAes128GcmIv12Tag16NoKdf               = 0x0014,
+    AlgAes192GcmIv12Tag16NoKdf               = 0x0046,
+    AlgAes256GcmIv12Tag16NoKdf               = 0x0078,
+    AlgAes128GcmIv12Tag16HkdfSha256          = 0x0114,
+    AlgAes192GcmIv12Tag16HkdfSha256          = 0x0146,
+    AlgAes256GcmIv12Tag16HkdfSha256          = 0x0178,
+    AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 = 0x0214,
+    AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0346,
+    AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 = 0x0378,
+    AlgAes256GcmHkdfSha512CommitKey          = 0x0478,
+    AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 = 0x0578,
+};
+
+/// Governs whether messages are encrypted with, and are required to carry, key commitment.
+/// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
+enum class CommitmentPolicy : std::uint8_t {
+    ForbidEncryptAllowDecrypt  = 1,
+    RequireEncryptAllowDecrypt = 2,
+    RequireEncryptRequireDecrypt = 3,
+};
+
+/// The AES-GCM algorithm a raw AES keyring uses to wrap and unwrap data keys.
+enum class AesWrappingAlgorithm : std::uint8_t {
+    AlgAes128GcmIv12Tag16 = 1,
+    AlgAes192GcmIv12Tag16 = 2,
+    AlgAes256GcmIv12Tag16 = 3,
+};
+
+// Implementation types defined inside EncryptionSDK.cpp.
+// Deliberately left incomplete here so no consumer can construct, copy, or inspect them.
+namespace detail {
+struct ClientConfigImpl;
+struct EncryptStreamImpl;
+struct DecryptStreamImpl;
+struct KmsClientImpl;
+struct DdbClientImpl;
+struct KeyStoreImpl;
+struct KeyringImpl;
+struct CryptographicMaterialsCacheImpl;
+struct CacheTypeLowerer;
+struct BytesFactory;
+}  // namespace detail
+
+/// AWS service-client configuration for AWS SDK clients.
+/// A field left unset defers to the ESDK Rust's default configuration resolution.
+/// One ClientConfig may configure multiple clients.
+class ClientConfig {
+    std::shared_ptr<detail::ClientConfigImpl> impl_;
+    friend class KmsClient;
+    friend class DdbClient;
+
+public:
+    ClientConfig();
+    /// Maximum request attempts (1 = no retries).
+    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    /// Selects adaptive retry mode instead of the standard one.
+    ClientConfig& with_adaptive_retry(bool a);
+    /// AWS region for the client (ex. "us-west-2").
+    ClientConfig& with_region(const std::string& r);
+};
+
+/// KMS Client.
+class KmsClient {
+    std::shared_ptr<detail::KmsClientImpl> impl_;
+    friend class KeyStore;
+
+public:
+    /// Creates a KMS client.
+    explicit KmsClient(const ClientConfig& cfg = {});
+};
+
+/// DynamoDB client.
+class DdbClient {
+    std::shared_ptr<detail::DdbClientImpl> impl_;
+    friend class KeyStore;
+
+public:
+    /// Creates a DynamoDB client.
+    explicit DdbClient(const ClientConfig& cfg = {});
+};
+
+/// Optional Key Store parameters.
+/// A field left unset is omitted from the ESDK Rust's Key Store configuration.
+class KeyStoreOptions {
+    std::optional<std::string> key_store_id_;
+    std::vector<std::string> grant_tokens_;
+    std::optional<KmsClient> kms_client_;
+    std::optional<DdbClient> ddb_client_;
+    friend class KeyStore;
+
+public:
+    /// An identifier for this Key Store.
+    KeyStoreOptions& with_id(const std::string& id) { key_store_id_ = id; return *this; }
+    /// The AWS KMS grant tokens that are used when this Key Store calls to AWS KMS.
+    KeyStoreOptions& with_grant_tokens(const std::vector<std::string>& tokens) { grant_tokens_ = tokens; return *this; }
+    /// The KMS client this Key Store uses. Unset lets the ESDK Rust build a default one.
+    KeyStoreOptions& with_kms_client(KmsClient kms) { kms_client_ = std::move(kms); return *this; }
+    /// The DynamoDB client this Key Store uses. Unset lets the ESDK Rust build a default one.
+    KeyStoreOptions& with_ddb_client(DdbClient ddb) { ddb_client_ = std::move(ddb); return *this; }
+};
+
+/// A Branch Key Store backed by a DynamoDB table and protected by AWS KMS.
+class KeyStore {
+    std::shared_ptr<detail::KeyStoreImpl> impl_;
+    friend class HierarchicalKeyring;
+
+public:
+    /// Creates a Key Store backed by a DynamoDB table and protected by AWS KMS.
+    /// \param table_name The DynamoDB table name that backs this Key Store.
+    /// \param logical_key_store_name The logical name for this Key Store, which is
+    ///        cryptographically bound to the keys it holds. This appears in the
+    ///        Encryption Context of KMS requests as `tablename`.
+    /// \param kms_arn Key Store is restricted to only this KMS Key ARN. If a different
+    ///        KMS Key ARN is encountered when creating, versioning, or getting a Branch
+    ///        Key or Beacon Key, KMS is never called and an exception is thrown.
+    /// \param options Optional Key Store parameters, including the KMS and DynamoDB
+    ///        clients. A client left unset is built with defaults by the ESDK Rust.
+    KeyStore(const std::string& table_name,
+             const std::string& logical_key_store_name,
+             const std::string& kms_arn,
+             const KeyStoreOptions& options = {});
+};
+
+/// Base Keyring type.
+/// Every concrete keyring must derive from this type.
+/// All ESDK-supplied keyrings can be shared across threads.
+///
+/// If implementing a custom keyring, the implementation is responsible for:
+///  - Deriving from this base type
+///  - Keeping its own dependencies alive for its lifetime
+///  - Handling its own thread safety
+class Keyring {
+    std::shared_ptr<detail::KeyringImpl> impl_;
+    friend class EncryptionSDK;
+
+protected:
+    explicit Keyring(std::shared_ptr<detail::KeyringImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    virtual ~Keyring() = default;
+
+    /// Adopts a custom keyring defined in Rust.
+    /// See `custom-keyring` example for usage.
+    ///
+    /// `raw_handle` must be the return value of passing the custom Rust keyring into `aws_esdk_cpp::into_keyring_handle`.
+    /// You may only pass each handle to exactly one adopt call's `raw_handle` arg.
+    /// Ownership transfer's to that call's returned Keyring; any other pointer is undefined behavior.
+    /// Everything the keyring depends on must be owned by the Rust keyring itself.
+    /// Do not reference C++ objects from the Rust keyring through raw pointers.
+    static Keyring adopt(void* raw_handle);
+};
+
+class CacheType;
+
+/// A constructed cryptographic materials cache.
+/// Copies share the underlying cache.
+class CryptographicMaterialsCache {
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
+    friend class CacheType;
+    friend class HierarchicalKeyring;
+    explicit CryptographicMaterialsCache(
+        std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
+        : impl_(std::move(impl)) {}
+
+public:
+    /// Constructs the cache described by `cache`.
+    /// \param cache Which type of local cache to use.
+    explicit CryptographicMaterialsCache(const CacheType& cache);
+};
+
+/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
+/// inflight_ttl. Left unset, they are seconds.
+enum class TimeUnits { Seconds, Milliseconds };
+
+// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
+/// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
+class CacheType {
+public:
+    /// The best choice for most situations. Probably a StormTrackingCache.
+    /// \param entry_capacity Maximum number of entries cached.
+    static CacheType Default(std::uint32_t entry_capacity);
+    /// A cache safe for multi-threaded use that also limits redundant and
+    /// overly parallel backend calls.
+    /// For a cache with sensible defaults, use Default instead.
+    /// \param entry_capacity Maximum number of entries cached.
+    /// \param entry_pruning_tail_size Number of entries to prune at a time.
+    /// \param grace_period Time before expiration to begin refreshing, in time_units.
+    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param fan_out Maximum number of simultaneous refresh attempts.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
+    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
+    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    static CacheType StormTracking(
+        std::uint32_t entry_capacity,
+        std::uint32_t entry_pruning_tail_size,
+        std::uint32_t grace_period,
+        std::uint32_t grace_interval,
+        std::uint32_t fan_out,
+        std::uint32_t inflight_ttl,
+        std::uint32_t sleep_milli,
+        std::optional<TimeUnits> time_units = std::nullopt);
+    /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
+    /// the user should provide an already constructed CryptographicMaterialsCache
+    /// to the Hierarchical Keyring at initialization.
+    static CacheType Shared(const CryptographicMaterialsCache& cache);
+
+private:
+    enum class Kind { Default, StormTracking, Shared };
+    explicit CacheType(Kind kind) : kind_(kind) {}
+    Kind kind_;
+    std::uint32_t entry_capacity_ = 0;
+    std::uint32_t entry_pruning_tail_size_ = 0;
+    std::uint32_t grace_period_ = 0;
+    std::uint32_t grace_interval_ = 0;
+    std::uint32_t fan_out_ = 0;
+    std::uint32_t inflight_ttl_ = 0;
+    std::uint32_t sleep_milli_ = 0;
+    std::optional<TimeUnits> time_units_;
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
+    friend class CryptographicMaterialsCache;
+    friend class HierarchicalKeyring;
+    friend struct detail::CacheTypeLowerer;
+};
+
+/// Optional hierarchical keyring parameters.
+/// A field left unset keeps the ESDK Rust's default.
+class HierarchicalKeyringOptions {
+    std::optional<CacheType> cache_;
+    std::optional<std::string> partition_id_;
+    friend class HierarchicalKeyring;
+
+public:
+    /// Sets the type of cache for this Hierarchical Keyring.
+    /// By providing an already initialized 'Shared' cache, users can determine the scope of the cache.
+    /// That is, if the cache is shared across other Cryptographic Material Providers,
+    /// for instance other Hierarchical Keyrings or Caching Cryptographic Materials Managers (Caching CMMs).
+    /// If any other type of cache in the CacheType union is provided,
+    /// the Hierarchical Keyring will initialize a cache of that type,
+    /// to be used with only this Hierarchical Keyring.
+    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
+    /// with entryCapacity = 1000.
+    HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
+        cache_ = cache;
+        return *this;
+    }
+    /// Partition ID to distinguish Cryptographic Material Providers (i.e: Keyrings) writing to a cache.
+    /// If the Partition ID is the same for two Hierarchical Keyrings (or another Material Provider),
+    /// they can share the same cache entries in the cache.
+    HierarchicalKeyringOptions& with_partition_id(const std::string& id) { partition_id_ = id; return *this; }
+};
+
+/// Keyring backed by Branch Keys in a KeyStore.
+class HierarchicalKeyring : public Keyring {
+public:
+    /// Creates a Hierarchical Keyring, which supports wrapping and unwrapping data keys
+    /// using Branch Keys persisted in DynamoDB and protected by a symmetric AWS KMS Key or
+    /// AWS KMS Multi-Region Key.
+    /// \param key_store The Key Store which contains the Branch Key(s) responsible for
+    ///        wrapping and unwrapping data keys.
+    /// \param branch_key_id The identifier for the single Branch Key responsible for
+    ///        wrapping and unwrapping the data key.
+    /// \param ttl_seconds How many seconds the Branch Key material is allowed to be reused
+    ///        within the local cache before it is re-retrieved from Amazon DynamoDB and
+    ///        re-authenticated with AWS KMS.
+    /// \param options Optional Hierarchical Keyring parameters.
+    HierarchicalKeyring(KeyStore key_store,
+                        const std::string& branch_key_id,
+                        std::uint32_t ttl_seconds,
+                        const HierarchicalKeyringOptions& options = {});
+};
+
+/// Keyring that wraps and unwraps data keys locally with AES-GCM.
+class RawAesKeyring : public Keyring {
+public:
+    /// Creates a Raw AES Keyring, which wraps and unwraps data keys locally using
+    /// AES-GCM. The wrapping key bytes are copied into the keyring.
+    /// \param key_namespace A namespace associated with this wrapping key.
+    /// \param key_name A name associated with this wrapping key.
+    /// \param wrapping_key The AES key used with AES_GCM encryption and decryption.
+    ///        Its length must match the wrapping algorithm (16, 24, or 32 bytes).
+    /// \param wrapping_alg The AES-GCM algorithm used to wrap and unwrap data keys.
+    RawAesKeyring(const std::string& key_namespace,
+                  const std::string& key_name,
+                  const std::vector<std::uint8_t>& wrapping_key,
+                  AesWrappingAlgorithm wrapping_alg);
+};
+
+/// Optional encrypt parameters.
+/// A field left unset keeps the ESDK Rust's default.
+class EncryptOptions {
+    std::optional<AlgorithmSuiteId> algorithm_suite_;
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::map<std::string, std::string> encryption_context_;
+    std::optional<std::uint32_t> frame_length_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
+public:
+    /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
+    EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
+    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
+    EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Key-value pairs to associate with the encrypted data.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#encryption-context>
+    EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
+    /// Length of each frame of framed data in bytes. Default 4096.
+    EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
+    /// Limit to number of encrypted data keys on a message.
+    /// 0 means no limit.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
+    EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
+/// Optional decrypt parameters.
+/// A field left unset keeps the ESDK Rust's default.
+class DecryptOptions {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::map<std::string, std::string> encryption_context_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
+public:
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
+    DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
+    DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
+    /// 0 means no limit.
+    DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
+/// Read-only byte buffer returned by encrypt and decrypt.
+///
+/// This points into the Rust library's output buffer.
+/// This enables an output sink to read the Rust buffer directly
+/// without needing a potentially-expensive copy to an std::vector.
+/// If you need a std::vector, use `.to_vector()`.
+//= spec/shim/shim.md#bulk-data
+//= reason=data()/size() read the ESDK Rust's buffer where it was written; no copy is made to construct a Bytes.
+//# - The shim SHOULD let the caller read a payload result in place, where the
+//# core library wrote it, instead of copying it into a new container first.
+//
+//= spec/shim/shim.md#bulk-data
+//= type=implication
+//= reason=Every Bytes shares the underlying buffer. The buffer is freed only when the last Bytes referring to it is destroyed.
+//# - A result exposed this way MUST remain valid until the caller releases it.
+class Bytes {
+    const std::uint8_t* data_ = nullptr;
+    std::size_t size_ = 0;
+    std::shared_ptr<void> owner_;  // keeps the ESDK Rust's buffer alive
+    friend struct detail::BytesFactory;
+    Bytes(const std::uint8_t* data, std::size_t size, std::shared_ptr<void> owner)
+        : data_(data), size_(size), owner_(std::move(owner)) {}
+
+public:
+    /// An empty buffer.
+    Bytes() = default;
+    Bytes(Bytes&&) = default;
+    Bytes& operator=(Bytes&&) = default;
+    /// Copies share the underlying buffer.
+    /// The buffer is reference-counted and freed when the last copy is destroyed.
+    Bytes(const Bytes&) = default;
+    Bytes& operator=(const Bytes&) = default;
+
+    /// Pointer to the first byte.
+    const std::uint8_t* data() const { return data_; }
+    /// Number of bytes.
+    std::size_t size() const { return size_; }
+    /// True when size() == 0, false otherwise.
+    bool empty() const { return size_ == 0; }
+
+    /// Iterator to the first byte.
+    const std::uint8_t* begin() const { return data_; }
+    /// Iterator one past the last byte.
+    const std::uint8_t* end() const { return data_ + size_; }
+    /// The byte at `index`; no bounds check.
+    std::uint8_t operator[](std::size_t index) const { return data_[index]; }
+
+    /// Copies the bytes into an owning std::vector.
+    //= spec/shim/shim.md#bulk-data
+    //# - The shim MUST also let the caller copy a result into memory the caller owns.
+    std::vector<std::uint8_t> to_vector() const {
+        return std::vector<std::uint8_t>(begin(), end());
+    }
+
+    /// Views the bytes as characters.
+    /// The view is only valid while any Bytes sharing the buffer lives. No copy is made.
+    std::string_view as_string_view() const {
+        return std::string_view(reinterpret_cast<const char*>(data_), size_);
+    }
+
+#if defined(__cpp_lib_span)
+    /// Views the bytes as a std::span;
+    /// Only valid while any Bytes sharing the buffer live.
+    std::span<const std::uint8_t> as_span() const { return {data_, size_}; }
+#endif
+};
+
+/// Equality check impls
+inline bool operator==(const Bytes& lhs, const Bytes& rhs) {
+    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+}
+inline bool operator!=(const Bytes& lhs, const Bytes& rhs) { return !(lhs == rhs); }
+
+inline bool operator==(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) {
+    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+}
+inline bool operator==(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return rhs == lhs; }
+inline bool operator!=(const Bytes& lhs, const std::vector<std::uint8_t>& rhs) { return !(lhs == rhs); }
+inline bool operator!=(const std::vector<std::uint8_t>& lhs, const Bytes& rhs) { return !(rhs == lhs); }
+
+/// Result of encrypt.
+struct EncryptResult {
+    /// The encrypted message.
+    Bytes ciphertext;
+    /// Encryption context associated with the encrypted message.
+    /// This can differ from the value provided to EncryptInput.
+    std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used for encryption.
+    /// This can differ from the value provided to EncryptInput.
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
+/// Result of decrypt.
+struct DecryptResult {
+    /// Decrypted plaintext data.
+    Bytes plaintext;
+    /// Encryption context recovered from the encrypted message.
+    std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used for decryption.
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
+/// Client-level configuration for EncryptionSDK.
+///
+/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
+/// Each field must be set in exactly one place.
+/// A field unset in both defers to the core library's default.
+//
+//= spec/shim/esdk-shim.md#client-configuration
+//# The ESDK shim MAY expose a client-level configuration mirroring the core
+//# ESDK's client configuration, applied to every operation of that client.
+class EncryptionSDKConfig {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+    friend class EncryptionSDK;
+
+public:
+    /// Commitment policy applied to every operation on this client.
+    EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
+    /// Cap on the number of encrypted data keys per message, applied to every
+    /// operation on this client. 0 means no limit.
+    EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+};
+
+/// Result of finishing a stream
+struct StreamResult {
+    /// Output bytes produced by finishing a stream.
+    // For encrypt: the final frame (and for signing suites, the signature footer).
+    Bytes trailing_output;
+    /// Encryption context associated with the message.
+    std::map<std::string, std::string> encryption_context;
+    /// Algorithm suite used.
+    AlgorithmSuiteId algorithm_suite_id;
+};
+
+/// Streaming encrypt. Feed plaintext in chunks, receive ciphertext as it is produced.
+/// `finish()` flushes the final frame (and signature footer, for signing suites).
+/// Create via EncryptionSDK::create_encrypt_stream.
+/// One stream is single-threaded; different streams may run on different threads.
+class EncryptStream {
+    std::shared_ptr<detail::EncryptStreamImpl> impl_;
+    friend class EncryptionSDK;
+    explicit EncryptStream(std::shared_ptr<detail::EncryptStreamImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    /// Feeds a plaintext chunk and returns whatever ciphertext the Rust ESDK has produced so far.
+    /// The output ciphertext for a given write may be empty. Frames are emitted as they fill and the pump is asynchronous.
+    /// An empty write adds no input and polls for produced output.
+    Bytes write(const std::uint8_t* data, std::size_t size);
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(std::string_view chunk) {
+        return write(reinterpret_cast<const std::uint8_t*>(chunk.data()), chunk.size());
+    }
+    /// Ends the plaintext input, flushes the final frame (and the signature footer
+    /// for signing suites), and returns it with the message metadata.
+    /// The stream cannot be written after finish.
+    StreamResult finish();
+};
+
+/// Streaming decrypt. Feed ciphertext in chunks, receive plaintext as it is produced.
+/// Call finish() to complete verification.
+///
+/// SECURITY: the message is not fully verified until finish() returns successfully.
+/// Do not act on released plaintext before finish() succeeds,
+/// and discard everything released if finish() throws.
+///
+/// Streamed decrypt cannot be used to decrypt messages
+/// that were encrypted with signing suites and have multiple frames.
+/// Decrypt these messages with Aws::Esdk::decrypt instead.
+class DecryptStream {
+    std::shared_ptr<detail::DecryptStreamImpl> impl_;
+    friend class EncryptionSDK;
+    explicit DecryptStream(std::shared_ptr<detail::DecryptStreamImpl> impl) : impl_(std::move(impl)) {}
+
+public:
+    /// Feeds a ciphertext chunk and returns whatever plaintext the Rust ESDK has released so far.
+    /// The output plaintext for a given write may be empty.
+    /// An empty write adds no input and polls for produced output.
+    /// Released plaintext is unverified until finish() succeeds; see the class documentation.
+    //
+    //= spec/shim/shim.md#streaming
+    //= type=implication
+    //# - The shim MUST document to users that output returned before the finish step
+    //# succeeds is not yet complete or verified.
+    Bytes write(const std::uint8_t* data, std::size_t size);
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const std::vector<std::uint8_t>& chunk) { return write(chunk.data(), chunk.size()); }
+    /// \copydoc write(const std::uint8_t*, std::size_t)
+    Bytes write(const Bytes& chunk) { return write(chunk.data(), chunk.size()); }
+    /// Ends the ciphertext input and completes decryption, including signature
+    /// verification for signing suites.
+    /// Success means every byte this stream released is authenticated and is safe to be acted upon.
+    /// Failure means the user must discard all released plaintext.
+    StreamResult finish();
+};
+
+/// ESDK client interface.
+class EncryptionSDK {
+    std::optional<CommitmentPolicy> commitment_policy_;
+    std::optional<std::uint32_t> max_encrypted_data_keys_;
+
+public:
+    EncryptionSDK() = default;
+    explicit EncryptionSDK(const EncryptionSDKConfig& options)
+        : commitment_policy_(options.commitment_policy_),
+          max_encrypted_data_keys_(options.max_encrypted_data_keys_) {}
+
+    EncryptResult encrypt(
+        const std::vector<std::uint8_t>& plaintext,
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Encrypts a plaintext held in any contiguous buffer
+    /// (e.g. an mmap'd file or another library's buffer)
+    /// without copying it into an std::vector first.
+    /// The buffer must stay valid for the duration of the call.
+    /// The plaintext bytes are not retained afterwards.
+    //
+    //= spec/shim/shim.md#bulk-data
+    //# - The shim SHOULD let the caller pass a payload without first copying it into
+    //# a shim-defined container: the operation reads the caller's bytes in place,
+    //# and the caller's bytes need to stay valid only for the duration of the call.
+    EncryptResult encrypt(
+        const std::uint8_t* plaintext,
+        std::size_t plaintext_len,
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    DecryptResult decrypt(
+        const std::vector<std::uint8_t>& ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+    /// Decrypts a ciphertext held in a Aws::Esdk::Bytes without copying it.
+    DecryptResult decrypt(
+        const Bytes& ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+    /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
+    /// The buffer must stay valid for the duration of the call.
+    /// The ciphertext bytes are not retained afterwards.
+    DecryptResult decrypt(
+        const std::uint8_t* ciphertext,
+        std::size_t ciphertext_len,
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+    /// Encrypts a text payload viewed through a std::string_view without copying it.
+    /// The view must stay valid for the duration of the call.
+    EncryptResult encrypt(
+        std::string_view plaintext,
+        const Keyring& keyring,
+        const EncryptOptions& options = {}) {
+        return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
+                       plaintext.size(), keyring, options);
+    }
+
+    /// Creates a streaming encrypt operation.
+    EncryptStream create_encrypt_stream(
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Creates a streaming decrypt operation.
+    /// See DecryptStream documentation for the verification semantics of streamed plaintext.
+    DecryptStream create_decrypt_stream(
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+    /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
+    /// each, and writes the ciphertext to `sink` until `source` is exhausted,
+    /// then flushes the final frame. Returns the message metadata. Neither the
+    /// plaintext nor the ciphertext is ever fully held in memory, so this works
+    /// on inputs too large to fit. For per-chunk control, use create_encrypt_stream.
+    /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
+    StreamResult encrypt_stream(
+        std::istream& source,
+        std::ostream& sink,
+        const Keyring& keyring,
+        const EncryptOptions& options = {});
+
+    /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
+    /// to `sink`, and returns the message metadata.
+    /// Throws if `source` fails before reaching end-of-stream or `sink` rejects a write.
+    /// SECURITY: `sink` receives plaintext before verification completes. On a
+    /// normal return every byte written to `sink` is authenticated; if this
+    /// throws, discard everything written to `sink`. Streamed decrypt cannot
+    /// decrypt a multi-frame message under a signing suite; use decrypt() for those.
+    StreamResult decrypt_stream(
+        std::istream& source,
+        std::ostream& sink,
+        const Keyring& keyring,
+        const DecryptOptions& options = {});
+
+#if defined(__cpp_lib_span)
+    /// Encrypts a plaintext viewed through a std::span without copying it.
+    /// The span must stay valid for the duration of the call.
+    EncryptResult encrypt(
+        std::span<const std::uint8_t> plaintext,
+        const Keyring& keyring,
+        const EncryptOptions& options = {}) {
+        return encrypt(plaintext.data(), plaintext.size(), keyring, options);
+    }
+
+    /// Decrypts a ciphertext viewed through a std::span without copying it.
+    /// The span must stay valid for the duration of the call.
+    DecryptResult decrypt(
+        std::span<const std::uint8_t> ciphertext,
+        const Keyring& keyring,
+        const DecryptOptions& options = {}) {
+        return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
+    }
+#endif
+};
+
+}  // namespace Esdk
+}  // namespace Aws
