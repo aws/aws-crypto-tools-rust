@@ -124,10 +124,12 @@ impl BranchKeyStore {
         Self::build(config)
     }
 
-    /// Shared tail of both constructors: require concrete clients, add this
-    /// crate's user agent identifier to the KMS client, resolve the keystore
-    /// id, and assemble. Assumes the KMS configuration has already been
-    /// validated.
+    /// Shared code by both constructors:
+    /// require concrete clients,
+    /// add this crate's user agent identifier to the KMS client,
+    /// resolve the keystore id,
+    /// then assemble.
+    /// Assumes the KMS configuration has already been validated.
     fn build(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
         if config.kms_client.is_none() || config.ddb_client.is_none() {
             return Err(KeystoreError::new(
@@ -137,8 +139,9 @@ impl BranchKeyStore {
             ));
         }
 
-        // Applied here rather than beside the default-client construction in
-        // `new` so that a caller-supplied client is identified too.
+        // The config's KMS client might be ours or one the caller passed in.
+        // Add the user agent here so both get it.
+        // Doing it in `new` would only cover the client we build.
         config.kms_client = config.kms_client.take().map(with_user_agent);
 
         let keystore_id = config

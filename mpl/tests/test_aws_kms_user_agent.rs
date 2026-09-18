@@ -8,8 +8,8 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::aws_kms::__test_internals::{MPL_FRAMEWORK_NAME, with_user_agent};
 
-/// A zero-config KMS client. `BehaviorVersion::latest()` is required at
-/// client-construction time; no IO occurs at construction.
+/// A zero-config KMS client.
+/// Construction does no IO.
 fn dummy_client() -> KmsClient {
     KmsClient::new(
         &SdkConfig::builder()
@@ -39,8 +39,8 @@ fn untagged_client_gains_the_identifier() {
     let tagged = with_user_agent(client);
     let metadata = tagged.config().framework_metadata();
     assert_eq!(metadata.len(), 1);
-    // The rendered header field is `lib/<name>/<version>`, so these two values
-    // are the on-the-wire user agent contribution.
+    // The SDK renders the metadata into the User-Agent header as `lib/<name>/<version>`,
+    // so these two asserts pin exactly what goes onto the wire.
     assert_eq!(metadata[0].name(), "AwsCryptographicMPL-Rust");
     assert_eq!(metadata[0].version(), Some(env!("CARGO_PKG_VERSION")));
     assert!(

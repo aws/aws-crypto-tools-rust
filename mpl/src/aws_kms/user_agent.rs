@@ -8,10 +8,9 @@ use aws_sdk_kms::Client as KmsClient;
 
 pub const MPL_FRAMEWORK_NAME: &str = "AwsCryptographicMPL-Rust";
 
-// `FrameworkMetadata` is the AWS SDK for Rust's supported mechanism for a
-// library built on top of the SDK to self-identify: the SDK renders it into the
-// `User-Agent` header as `lib/<name>/<version>`. It is stored by appending, so
-// any metadata the caller registered is kept.
+// A library built on the AWS SDK for Rust identifies itself with FrameworkMetadata.
+// The SDK renders it into the User-Agent header as `lib/<name>/<version>`.
+// Registering ours appends instead of overwriting so the caller's existing entries stay intact.
 pub fn with_user_agent(client: KmsClient) -> KmsClient {
     let config = client.config();
     if config
