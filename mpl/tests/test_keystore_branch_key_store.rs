@@ -20,6 +20,7 @@ use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
+use aws_crypto_mpl::keystore::__test_internals as keystore_internals;
 use aws_crypto_mpl::{
     BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
 };
@@ -73,6 +74,31 @@ fn with_clients_succeeds_when_both_clients_are_supplied() {
         .get_key_store_info()
         .expect("get_key_store_info must succeed");
     assert_eq!(info.keystore_id, "supplied-clients");
+}
+
+// Construction tags the KMS client's user agent with this crate's identifier,
+// whether the caller supplied the client or it was defaulted. The DynamoDB
+// client is left alone. The tagging helper itself is covered in
+// `tests/test_aws_kms_user_agent.rs`.
+#[test]
+fn with_clients_tags_the_kms_client_and_not_the_ddb_client() {
+    let store = BranchKeyStore::with_clients(fixture_config_with_id("user-agent"))
+        .expect("with_clients must succeed when both clients are present");
+
+    let kms_names: Vec<&str> = keystore_internals::kms_client(&store)
+        .config()
+        .framework_metadata()
+        .iter()
+        .map(|metadata| metadata.name())
+        .collect();
+    assert_eq!(kms_names, vec!["AwsCryptographicMPL-Rust"]);
+    assert!(
+        keystore_internals::ddb_client(&store)
+            .config()
+            .framework_metadata()
+            .is_empty(),
+        "the DynamoDB client must carry no identifier"
+    );
 }
 
 #[test]

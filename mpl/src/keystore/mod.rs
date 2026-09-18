@@ -29,6 +29,23 @@ pub use error::{KeystoreError, KeystoreErrorKind};
 
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
+/// Crate-internal surfaces re-exported for integration tests.
+///
+/// Hidden from the public API surface; do NOT depend on these from outside
+/// the crate's own integration tests — they are not stable API.
+#[doc(hidden)]
+pub mod __test_internals {
+    use super::BranchKeyStore;
+
+    pub fn kms_client(store: &BranchKeyStore) -> &aws_sdk_kms::Client {
+        store.kms_client()
+    }
+
+    pub fn ddb_client(store: &BranchKeyStore) -> &aws_sdk_dynamodb::Client {
+        store.ddb_client()
+    }
+}
+
 #[async_trait]
 pub trait Keystore: Send + Sync {
     /// Returns the keystore information for this keystore.
