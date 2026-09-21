@@ -49,8 +49,7 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v4
         with:
-          # A file counts for a filter when it matches a pattern and no negated
-          # pattern (the test servers have their own workflows).
+          # The default quantifier ignores '!' patterns; this makes them act as excludes.
           predicate-quantifier: some-with-excludes
           filters: |
             mpl:

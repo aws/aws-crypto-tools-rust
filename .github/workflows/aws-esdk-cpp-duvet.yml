@@ -7,7 +7,6 @@ on:
   pull_request:
     paths:
       - "esdk/shims/aws-esdk-cpp/**"
-      - "!esdk/shims/aws-esdk-cpp/test-server/**"
       - ".github/workflows/aws-esdk-cpp-duvet.yml"
       - ".github/workflows/duvet.yml"
       - "spec"
@@ -15,7 +14,6 @@ on:
   push:
     paths:
       - "esdk/shims/aws-esdk-cpp/**"
-      - "!esdk/shims/aws-esdk-cpp/test-server/**"
       - ".github/workflows/aws-esdk-cpp-duvet.yml"
       - ".github/workflows/duvet.yml"
       - "spec"
