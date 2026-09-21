@@ -56,6 +56,7 @@ jobs:
               - 'mpl/**'
             esdk:
               - 'esdk/**'
+              # The test servers have their own workflows.
               - '!esdk/test-server/**'
               - '!esdk/shims/aws-esdk-cpp/test-server/**'
             prim:
