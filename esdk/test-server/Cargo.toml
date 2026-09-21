@@ -1,5 +1,5 @@
-# Kept out of the esdk library's coverage-gated CI (the PR CI path filters
-# exclude this directory); it has its own workflow.
+# Lives at the repo top level (not under esdk/) so it is not swept into the
+# esdk library's coverage-gated CI; it has its own workflow.
 [package]
 name = "aws-esdk-test-server"
 version = "0.1.0"
