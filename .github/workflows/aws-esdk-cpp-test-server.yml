@@ -3,12 +3,12 @@ name: ESDK TestServer (C++ shim)
 on:
   pull_request:
     paths:
-      - "esdk-cpp-test-server/**"
+      - "esdk/shims/aws-esdk-cpp/test-server/**"
       - "esdk/**"
       - ".github/workflows/aws-esdk-cpp-test-server.yml"
   push:
     paths:
-      - "esdk-cpp-test-server/**"
+      - "esdk/shims/aws-esdk-cpp/test-server/**"
       - "esdk/**"
       - ".github/workflows/aws-esdk-cpp-test-server.yml"
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: esdk-cpp-test-server
+        working-directory: esdk/shims/aws-esdk-cpp/test-server
     steps:
       - uses: actions/checkout@v4
 
@@ -46,13 +46,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            esdk-cpp-test-server
+            esdk/shims/aws-esdk-cpp/test-server
             esdk/shims/aws-esdk-cpp
 
       # The server links the shim's cdylib, so build the shim first (a separate
       # step keeps the two heavy Rust builds from running at once).
       - name: Build the aws-esdk-cpp shim
-        run: cd ../esdk/shims/aws-esdk-cpp && cargo build
+        run: cd .. && cargo build
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -229,7 +229,7 @@ jobs:
           fi
 
       - name: Run the orchestrated TestServer
-        working-directory: esdk-cpp-test-server
+        working-directory: esdk/shims/aws-esdk-cpp/test-server
         run: make test-server
 
       - name: Save build caches

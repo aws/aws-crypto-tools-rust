@@ -49,11 +49,16 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v4
         with:
+          # A file counts for a filter when it matches a pattern and no negated
+          # pattern (the test servers have their own workflows).
+          predicate-quantifier: some-with-excludes
           filters: |
             mpl:
               - 'mpl/**'
             esdk:
               - 'esdk/**'
+              - '!esdk/test-server/**'
+              - '!esdk/shims/aws-esdk-cpp/test-server/**'
             prim:
               - 'prim/**'
             aws_structured_encryption:

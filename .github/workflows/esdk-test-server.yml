@@ -5,13 +5,15 @@ name: ESDK TestServer (Rust)
 on:
   pull_request:
     paths:
-      - "esdk-test-server/**"
+      - "esdk/test-server/**"
       - "esdk/**"
+      - "!esdk/shims/aws-esdk-cpp/test-server/**"
       - ".github/workflows/esdk-test-server.yml"
   push:
     paths:
-      - "esdk-test-server/**"
+      - "esdk/test-server/**"
       - "esdk/**"
+      - "!esdk/shims/aws-esdk-cpp/test-server/**"
       - ".github/workflows/esdk-test-server.yml"
   workflow_dispatch:
   workflow_call:
@@ -25,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: esdk-test-server
+        working-directory: esdk/test-server
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,7 +47,7 @@ jobs:
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: esdk-test-server
+          workspaces: esdk/test-server
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -198,7 +200,7 @@ jobs:
           fi
 
       - name: Run the orchestrated TestServer
-        working-directory: esdk-test-server
+        working-directory: esdk/test-server
         run: make test-server
 
       - name: Save build caches

@@ -5,10 +5,14 @@ on:
   pull_request:
     paths:
       - "esdk/**"
+      - "!esdk/test-server/**"
+      - "!esdk/shims/aws-esdk-cpp/test-server/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   push:
     paths:
       - "esdk/**"
+      - "!esdk/test-server/**"
+      - "!esdk/shims/aws-esdk-cpp/test-server/**"
       - ".github/workflows/aws-esdk-cpp.yml"
   workflow_dispatch:
 
