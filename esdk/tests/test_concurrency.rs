@@ -8,6 +8,9 @@
 //! pair breaks it: plaintext can be recovered and messages forged. So the
 //! test asserts IDs stay unique even when many threads encrypt at once.
 //!
+//! Also pins liveness: more in-flight operations than scheduler threads must
+//! all complete (aws/aws-encryption-sdk#899).
+//!
 //! Local to exercise the native client's RNG under real threads (though this
 //! could probably move to the test server eventually).
 
@@ -19,7 +22,8 @@ use aws_esdk::*;
 use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
 use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 const THREADS: usize = 8;
 const ITERS_PER_THREAD: usize = 24;
@@ -135,4 +139,85 @@ fn concurrent_v1_round_trips_and_unique_message_ids() {
         ids.len(),
         "message IDs must be unique across concurrent encrypts"
     );
+}
+
+/// Run `f` on its own OS thread and fail if it has not finished in time.
+///
+/// A deadlocked runtime never returns, so the timeout is what turns a
+/// deadlock into a test failure instead of a hung test binary.
+fn assert_completes_within(secs: u64, f: impl FnOnce() + Send + 'static) {
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        f();
+        let _ = tx.send(());
+    });
+    if rx.recv_timeout(Duration::from_secs(secs)) == Err(mpsc::RecvTimeoutError::Timeout) {
+        panic!("concurrent operations did not complete within {secs}s: deadlock");
+    }
+    // Re-raise the worker's own panic when it failed instead of completing.
+    worker.join().unwrap();
+}
+
+/// Spawn `tasks` concurrent round-trip tasks on `rt` against one shared
+/// keyring and wait for every one of them.
+fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: usize) {
+    rt.block_on(async {
+        let keyring = test_helpers::test_keyring().await;
+        let mut set = tokio::task::JoinSet::new();
+        for t in 0..tasks {
+            let keyring = keyring.clone();
+            set.spawn(async move {
+                for i in 0..iters {
+                    let plaintext = format!("task {t} message {i}").into_bytes();
+                    let enc_input = EncryptInput::with_legacy_keyring(
+                        &plaintext,
+                        EncryptionContext::new(),
+                        keyring.clone(),
+                    );
+                    let out = encrypt(&enc_input).await.unwrap();
+
+                    let dec_input = DecryptInput::with_legacy_keyring(
+                        &out.ciphertext,
+                        EncryptionContext::new(),
+                        keyring.clone(),
+                    );
+                    let dec = decrypt(&dec_input).await.unwrap();
+                    assert_eq!(
+                        dec.plaintext, plaintext,
+                        "round trip must return the plaintext"
+                    );
+                }
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            res.expect("task must not panic");
+        }
+    });
+}
+
+/// aws/aws-encryption-sdk#899: the ESDK must not deadlock when more
+/// operations are in flight than the runtime has worker threads.
+#[test]
+fn more_tasks_than_worker_threads_completes() {
+    assert_completes_within(120, || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        oversubscribed_round_trips(rt, 64, 4);
+    });
+}
+
+/// The strictest oversubscription: every task shares one scheduler thread,
+/// so any blocking wait inside an operation would deadlock.
+#[test]
+fn many_tasks_on_current_thread_runtime_completes() {
+    assert_completes_within(120, || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        oversubscribed_round_trips(rt, 64, 2);
+    });
 }
