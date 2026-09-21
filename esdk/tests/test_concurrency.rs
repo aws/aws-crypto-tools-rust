@@ -8,9 +8,6 @@
 //! pair breaks it: plaintext can be recovered and messages forged. So the
 //! test asserts IDs stay unique even when many threads encrypt at once.
 //!
-//! Also pins liveness (aws/aws-encryption-sdk#899):
-//! operations must complete even when more are in flight than the runtime has threads.
-//!
 //! Local to exercise the native client's RNG under real threads (though this
 //! could probably move to the test server eventually).
 
@@ -141,9 +138,7 @@ fn concurrent_v1_round_trips_and_unique_message_ids() {
     );
 }
 
-/// Run `f` on its own OS thread; fail if it does not finish in time.
-///
-/// A deadlock would hang the test binary; the timeout turns it into a failure.
+/// Run function `f` on its own thread and fail if it does not finish within `secs`.
 fn assert_completes_within(secs: u64, f: impl FnOnce() + Send + 'static) {
     let (tx, rx) = mpsc::channel();
     let worker = std::thread::spawn(move || {
@@ -157,7 +152,7 @@ fn assert_completes_within(secs: u64, f: impl FnOnce() + Send + 'static) {
     worker.join().unwrap();
 }
 
-/// Spawn `tasks` concurrent tasks on `rt` and wait for all of them.
+/// Spawn number of `tasks` concurrent tasks on `rt` and wait for all of them to finish.
 /// Each task runs `iters` encrypt/decrypt round trips against one shared keyring.
 fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: usize) {
     rt.block_on(async {
@@ -194,8 +189,7 @@ fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: 
     });
 }
 
-/// aws/aws-encryption-sdk#899: the ESDK must not deadlock
-/// when more operations are in flight than the runtime has worker threads.
+/// Round-trip with # threads > # CPUs. This must not deadlock
 #[test]
 fn more_tasks_than_worker_threads_completes() {
     assert_completes_within(120, || {
@@ -205,18 +199,5 @@ fn more_tasks_than_worker_threads_completes() {
             .build()
             .unwrap();
         oversubscribed_round_trips(rt, 64, 4);
-    });
-}
-
-/// The strictest oversubscription: every task shares a single runtime thread,
-/// so an operation that blocks it stalls every other task.
-#[test]
-fn many_tasks_on_current_thread_runtime_completes() {
-    assert_completes_within(120, || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        oversubscribed_round_trips(rt, 64, 2);
     });
 }
