@@ -9,7 +9,7 @@ publish = false
 description = "Hand-rolled rpcv2Cbor Language_Server for the Primitives TestServer, delegating to aws-mpl-primitives."
 
 [[bin]]
-name = "prim-test-server"
+name = "primitives-test-server"
 path = "src/main.rs"
 
 [dependencies]

@@ -6,7 +6,7 @@ SHELL := bash
 # Port for the server (override: make run-server PORT=9090).
 PORT ?= 8094
 
-BIN      := target/release/prim-test-server
+BIN      := target/release/primitives-test-server
 PID_FILE := .server.pid
 LOG_FILE := .server.log
 
@@ -28,7 +28,7 @@ run-server: build-server ## Run the server in the FOREGROUND on PORT (Ctrl-C to 
 
 start-server: build-server ## Start the server in the BACKGROUND on PORT (writes .server.pid)
 	@$(BIN) $(PORT) >"$(LOG_FILE)" 2>&1 & echo $$! >"$(PID_FILE)"; \
-		echo "started prim-test-server (pid $$(cat $(PID_FILE))) on port $(PORT)"
+		echo "started primitives-test-server (pid $$(cat $(PID_FILE))) on port $(PORT)"
 
 wait-for-server: ## Block until the server accepts connections on PORT (120s timeout)
 	@for i in $$(seq 1 120); do \
