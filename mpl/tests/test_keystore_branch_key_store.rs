@@ -75,6 +75,31 @@ fn with_clients_succeeds_when_both_clients_are_supplied() {
     assert_eq!(info.keystore_id, "supplied-clients");
 }
 
+// Construction tags only the KMS client's user agent with this crate's identifier.
+#[cfg(feature = "test-utils")]
+#[test]
+fn with_clients_tags_the_kms_client_and_not_the_ddb_client() {
+    use aws_crypto_mpl::keystore::branch_key_store::__test_internals as ks;
+
+    let store = BranchKeyStore::with_clients(fixture_config_with_id("user-agent"))
+        .expect("with_clients must succeed when both clients are present");
+
+    let kms_names: Vec<&str> = ks::kms_client(&store)
+        .config()
+        .framework_metadata()
+        .iter()
+        .map(|metadata| metadata.name())
+        .collect();
+    assert_eq!(kms_names, vec!["AwsCryptographicMPL-Rust"]);
+    assert!(
+        ks::ddb_client(&store)
+            .config()
+            .framework_metadata()
+            .is_empty(),
+        "the DynamoDB client must carry no identifier"
+    );
+}
+
 #[test]
 fn with_clients_without_kms_client_returns_configuration_error() {
     let mut config = fixture_config_with_id("no-kms-client");
