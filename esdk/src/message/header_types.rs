@@ -259,6 +259,10 @@ pub(crate) fn read_esdk_suite_id(
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
+    //
+    //= spec/data-format/message.md#structure
+    //= reason=This is the only place an algorithm suite ID is resolved from the wire; returning Err here aborts deserialization before any trailing bytes are read, so none can be treated as a footer
+    //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
     let suite = crate::suites::algorithm_suite_from_bytes(esdk_suite_id_bytes).map_err(|e| {
         val_err_with_cause(
             format!(
