@@ -625,6 +625,38 @@ void test_streaming_signed_message_refused() {
     }
 }
 
+void test_streaming_plaintext_length_bound() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    std::vector<std::uint8_t> plaintext(300, 0x5A);
+
+    // A bound equal to the plaintext length succeeds.
+    auto within = sdk.create_encrypt_stream(
+        keyring, Aws::Esdk::EncryptOptions().with_plaintext_length_bound(plaintext.size()));
+    std::vector<std::uint8_t> ciphertext;
+    auto out = within.write(plaintext);
+    ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+    auto fin = within.finish();
+    ciphertext.insert(ciphertext.end(), fin.trailing_output.begin(), fin.trailing_output.end());
+    ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
+
+    // A plaintext longer than the bound fails the stream.
+    ++::esdk_test::g_checks;
+    try {
+        auto over = sdk.create_encrypt_stream(
+            keyring,
+            Aws::Esdk::EncryptOptions().with_plaintext_length_bound(plaintext.size() - 1));
+        over.write(plaintext);
+        over.finish();
+        ++::esdk_test::g_failures;
+        std::cerr << "FAIL: over-bound streamed encrypt did not throw\n";
+    } catch (const Aws::Esdk::ValidationException&) {
+        // expected
+    }
+}
+
 // Round trip through the whole-stream pump (encrypt_stream/decrypt_stream).
 void test_streaming_pump() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -702,6 +734,7 @@ int main(int argc, char** argv) {
         test_bytes_and_string_ergonomics();
         test_streaming();
         test_streaming_signed_message_refused();
+        test_streaming_plaintext_length_bound();
         test_streaming_pump();
         test_streaming_pump_io_failure();
     } catch (const std::exception& e) {

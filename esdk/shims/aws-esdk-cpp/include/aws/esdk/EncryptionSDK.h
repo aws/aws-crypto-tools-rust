@@ -416,6 +416,7 @@ class EncryptOptions {
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
     std::optional<std::uint32_t> max_encrypted_data_keys_;
+    std::optional<std::uint64_t> plaintext_length_bound_;
     friend class EncryptionSDK;
 
 public:
@@ -435,6 +436,11 @@ public:
     /// 0 means no limit.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
     EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
+    /// Upper bound on the plaintext length for a streaming encrypt: the stream
+    /// fails once more than `n` plaintext bytes are consumed. Applied only by
+    /// create_encrypt_stream; the one-shot encrypt has a plaintext of known
+    /// length and ignores it.
+    EncryptOptions& with_plaintext_length_bound(std::uint64_t n) { plaintext_length_bound_ = n; return *this; }
 };
 
 /// Optional decrypt parameters.

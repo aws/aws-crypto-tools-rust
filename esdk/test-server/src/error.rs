@@ -3,8 +3,8 @@
 /// A modeled TestServer error.
 #[derive(Debug, Clone)]
 pub enum ServerError {
-    /// Framework-side failure (bad/unknown clientId, unset variant, streaming on
-    /// a non-streaming server, any uncaught error).
+    /// Framework-side failure: a CreateClient configuration rejection or an
+    /// unknown clientId.
     Generic(String),
     /// A failure forwarded from the underlying ESDK; the message is the ESDK
     /// error's message.

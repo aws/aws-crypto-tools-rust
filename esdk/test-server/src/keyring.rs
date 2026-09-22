@@ -22,9 +22,7 @@ use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::{
 use aws_mpl_legacy::dafny::types::AesWrappingAlg as MplAesWrappingAlg;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
-///
-/// A `Default` CMM resolves to its inner keyring (the ESDK wraps a keyring in a
-/// default CMM).
+/// Failure here is a CreateClient-time configuration rejection.
 pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
 ) -> Result<EsdkKeyring, ServerError> {
@@ -97,7 +95,7 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, Serv
         .wrapping_alg(wrapping_alg)
         .send()
         .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(EsdkKeyring::Legacy(keyring))
 }
 
@@ -114,9 +112,9 @@ async fn build_hierarchical(
         .logical_key_store_name(config.logical_key_store_name.clone())
         .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
         .build()
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     let key_store = KeyStoreClient::from_conf(key_store_config)
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     let keyring = aws_esdk::mpl()
         .create_aws_kms_hierarchical_keyring()
         .branch_key_id(config.branch_key_id.clone())
@@ -124,6 +122,6 @@ async fn build_hierarchical(
         .ttl_seconds(config.ttl_seconds)
         .send()
         .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+        .map_err(|e| ServerError::generic(e.to_string()))?;
     Ok(EsdkKeyring::Legacy(keyring))
 }

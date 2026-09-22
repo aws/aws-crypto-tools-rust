@@ -75,11 +75,15 @@ fn encryption_context(map: Option<BTreeMap<String, String>>) -> Vec<(String, Str
     map.map(|m| m.into_iter().collect()).unwrap_or_default()
 }
 
-// 0 encodes "unset" over the FFI, so a configured frame length must fit in u32.
+// Invalid ESDK encrypt input — the modeled ESDK error.
 fn frame_length_code(frame_length: Option<i64>) -> Result<u32, ServerError> {
     match frame_length {
-        Some(value) => u32::try_from(value)
-            .map_err(|_| ServerError::generic(format!("frameLength out of range: {value}"))),
+        Some(value) => match u32::try_from(value) {
+            Ok(code) if code > 0 => Ok(code),
+            _ => Err(ServerError::esdk(format!(
+                "frameLength must be in 1..=u32::MAX, got {value}"
+            ))),
+        },
         None => Ok(0),
     }
 }
@@ -163,10 +167,11 @@ impl CppBackend {
             ));
         };
 
+        // CreateClient configuration rejection — the framework GenericServerError.
         let client = create
             .await
             .map_err(|e| ServerError::generic(format!("create_client task failed: {e}")))?
-            .map_err(ServerError::esdk)?;
+            .map_err(ServerError::generic)?;
 
         let client_id = uuid::Uuid::new_v4().to_string();
         self.clients.lock().expect("registry mutex").insert(
@@ -228,11 +233,7 @@ impl CppBackend {
         Ok(DecryptResponse { plaintext })
     }
 
-    /// Stream_Variant of encrypt: drives the C++ streaming encrypt surface
-    /// (create_encrypt_stream / write / finish).
-    ///
-    /// `plaintextLengthBound` is accepted on the wire but not applied: the C++
-    /// facade exposes no plaintext-length bound.
+    /// Streaming encrypt variant.
     pub async fn encrypt_stream(
         &self,
         req: EncryptStreamRequest,
@@ -240,6 +241,14 @@ impl CppBackend {
         let materials = self.materials(&req.client_id)?;
         let algorithm_suite_id = req.algorithm_suite_id.map(suite_id).unwrap_or(0);
         let frame_length = frame_length_code(req.frame_length)?;
+        let plaintext_length_bound = match req.plaintext_length_bound {
+            Some(bound) => Some(u64::try_from(bound).map_err(|_| {
+                ServerError::esdk(format!(
+                    "plaintextLengthBound must be non-negative, got {bound}"
+                ))
+            })?),
+            None => None,
+        };
         let ec = encryption_context(req.encryption_context);
         let plaintext = req.plaintext;
         let commitment_policy = materials.commitment_policy;
@@ -255,6 +264,7 @@ impl CppBackend {
                 algorithm_suite_id,
                 frame_length,
                 max,
+                plaintext_length_bound,
                 &ec,
             )
         })
@@ -265,8 +275,7 @@ impl CppBackend {
         Ok(EncryptStreamResponse { ciphertext })
     }
 
-    /// Stream_Variant of decrypt: drives the C++ streaming decrypt surface
-    /// (create_decrypt_stream / write / finish).
+    /// Streaming decrypt variant.
     pub async fn decrypt_stream(
         &self,
         req: DecryptStreamRequest,

@@ -8,10 +8,14 @@
 use crate::error::ServerError;
 use crate::keyring::keyring_for_cmm;
 use crate::model::{
-    CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
-    EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
+    CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse,
+    DecryptStreamRequest, DecryptStreamResponse, EncryptRequest, EncryptResponse,
+    EncryptStreamRequest, EncryptStreamResponse, EsdkAlgorithmSuiteId, EsdkClientConfig,
+    EsdkCommitmentPolicy,
 };
-use aws_esdk::{DecryptInput, EncryptInput, Keyring as EsdkKeyring};
+use aws_esdk::{
+    DecryptInput, DecryptStreamInput, EncryptInput, EncryptStreamInput, Keyring as EsdkKeyring,
+};
 use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as MplCommitmentPolicy;
 use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_mpl_legacy::EncryptionContext;
@@ -91,6 +95,16 @@ fn encryption_context(
     map.map(|m| m.into_iter().collect()).unwrap_or_default()
 }
 
+// Invalid ESDK encrypt input — the modeled ESDK error.
+fn frame_length(frame: i64) -> Result<aws_esdk::FrameLength, ServerError> {
+    u32::try_from(frame)
+        .ok()
+        .and_then(|f| aws_esdk::FrameLength::new(f).ok())
+        .ok_or_else(|| {
+            ServerError::esdk(format!("frameLength must be in 1..=u32::MAX, got {frame}"))
+        })
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self::default()
@@ -128,14 +142,7 @@ impl AppState {
             input.algorithm_suite_id = Some(map_algorithm_suite(suite));
         }
         if let Some(frame) = req.frame_length {
-            input.frame_length = u32::try_from(frame)
-                .ok()
-                .and_then(|f| aws_esdk::FrameLength::new(f).ok())
-                .ok_or_else(|| {
-                    ServerError::generic(format!(
-                        "frameLength must be in 1..=u32::MAX, got {frame}"
-                    ))
-                })?;
+            input.frame_length = frame_length(frame)?;
         }
         let output = aws_esdk::encrypt(&input)
             .await
@@ -160,6 +167,57 @@ impl AppState {
         Ok(DecryptResponse {
             plaintext: output.plaintext,
         })
+    }
+
+    /// Streaming encrypt variant.
+    pub async fn encrypt_stream(
+        &self,
+        req: EncryptStreamRequest,
+    ) -> Result<EncryptStreamResponse, ServerError> {
+        let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
+        let mut input = EncryptStreamInput::new();
+        input.encryption_context = encryption_context(req.encryption_context);
+        input.keyring = Some(keyring);
+        input.commitment_policy = commitment_policy;
+        input.max_encrypted_data_keys = max;
+        if let Some(suite) = req.algorithm_suite_id {
+            input.algorithm_suite_id = Some(map_algorithm_suite(suite));
+        }
+        if let Some(frame) = req.frame_length {
+            input.frame_length = frame_length(frame)?;
+        }
+        if let Some(bound) = req.plaintext_length_bound {
+            input.data_size = Some(usize::try_from(bound).map_err(|_| {
+                ServerError::esdk(format!(
+                    "plaintextLengthBound must be non-negative, got {bound}"
+                ))
+            })?);
+        }
+        let mut plaintext = std::io::Cursor::new(req.plaintext);
+        let mut ciphertext = Vec::new();
+        aws_esdk::encrypt_stream(&mut plaintext, &mut ciphertext, &input)
+            .await
+            .map_err(|e| ServerError::Esdk(e.message))?;
+        Ok(EncryptStreamResponse { ciphertext })
+    }
+
+    /// Streaming decrypt variant.
+    pub async fn decrypt_stream(
+        &self,
+        req: DecryptStreamRequest,
+    ) -> Result<DecryptStreamResponse, ServerError> {
+        let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
+        let mut input = DecryptStreamInput::new();
+        input.encryption_context = encryption_context(req.encryption_context);
+        input.keyring = Some(keyring);
+        input.commitment_policy = commitment_policy;
+        input.max_encrypted_data_keys = max;
+        let mut ciphertext = std::io::Cursor::new(req.ciphertext);
+        let mut plaintext = Vec::new();
+        aws_esdk::decrypt_stream(&mut ciphertext, &mut plaintext, &input)
+            .await
+            .map_err(|e| ServerError::Esdk(e.message))?;
+        Ok(DecryptStreamResponse { plaintext })
     }
 
     /// Look up registered materials by id, cloning the shared keyring handle.

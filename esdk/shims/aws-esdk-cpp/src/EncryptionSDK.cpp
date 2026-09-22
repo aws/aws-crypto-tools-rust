@@ -61,6 +61,9 @@ auto guard(F&& f) -> decltype(f()) {
 ::ffi::OptU32 to_opt(const std::optional<std::uint32_t>& o) {
     return o ? ::ffi::OptU32{true, *o} : ::ffi::OptU32{false, 0};
 }
+::ffi::OptU64 to_opt(const std::optional<std::uint64_t>& o) {
+    return o ? ::ffi::OptU64{true, *o} : ::ffi::OptU64{false, 0};
+}
 ::ffi::OptString to_opt(const std::optional<std::string>& o) {
     return o ? ::ffi::OptString{true, ::rust::String(*o)} : ::ffi::OptString{false, {}};
 }
@@ -486,6 +489,7 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     in.max_encrypted_data_keys = detail::to_opt(
         options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
                                          : max_encrypted_data_keys_);
+    in.plaintext_length_bound = detail::to_opt(options.plaintext_length_bound_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(

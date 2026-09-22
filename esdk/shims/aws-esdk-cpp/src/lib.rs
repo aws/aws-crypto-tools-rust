@@ -148,6 +148,10 @@ mod ffi {
         set: bool,
         value: u32,
     }
+    struct OptU64 {
+        set: bool,
+        value: u64,
+    }
     struct OptString {
         set: bool,
         value: String,
@@ -229,6 +233,10 @@ mod ffi {
         /// Whether to require committing algorithms on encrypt/decrypt.
         /// Core default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`
         pub commitment_policy: OptCommitmentPolicy,
+        /// Upper bound on the plaintext length for a streaming encrypt.
+        /// Applied only by `create_encrypt_stream`; the one-shot encrypt has a
+        /// plaintext of known length and ignores it.
+        pub plaintext_length_bound: OptU64,
     }
     struct EncryptOutput {
         /// Algorithm Suite used to encrypt the message
@@ -1440,6 +1448,17 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     if input.commitment_policy.set {
         core_input.commitment_policy =
             commitment_policy_target_to_core(input.commitment_policy.value)?;
+    }
+    if input.plaintext_length_bound.set {
+        core_input.data_size = Some(usize::try_from(input.plaintext_length_bound.value).map_err(
+            |e| {
+                shim_err(
+                    ffi::ShimErrorKind::ValidationError,
+                    "plaintext length bound translation",
+                    e,
+                )
+            },
+        )?);
     }
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
