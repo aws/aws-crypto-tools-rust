@@ -29,7 +29,7 @@ use test_helpers::*;
 
 /// Helper: independently construct a default CMM from a keyring via the MPL.
 /// Mirrors the call in `materials.rs::create_cmm_from_input` for the
-/// `Keyring::Legacy` arm.
+/// keyring arm.
 fn default_cmm_from(keyring: KeyringRef) -> std::sync::Arc<dyn aws_crypto_mpl::cmm::Cmm> {
     std::sync::Arc::new(aws_crypto_mpl::cmm::DefaultCmm::new(keyring))
 }
