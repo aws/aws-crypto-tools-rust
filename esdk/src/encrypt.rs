@@ -637,18 +637,9 @@ fn build_header_body(
     //= spec/client-apis/encrypt.md#construct-the-header
     //# The [message format version](../data-format/message-header.md#supported-versions) MUST be the value associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites).
     //
-    // Dispatch on the suite's own message format version rather than on
-    // key_commitment(). The two agree for every ESDK suite defined today, but
-    // the specification lists them as independent columns of the supported-suites
-    // table, so the agreement is a property of the current table and not a
-    // definition. `derive_keys`, `write_header_auth_tag`, and
-    // `read_header_auth_tag` all key off message_format_version() already, and
-    // `write_header_body` asserts the body variant matches it.
-    //
-    // The final arm is defense-in-depth on the same terms as `generate_message_id`:
-    // every supported suite declares version 1 or 2, so it cannot be reached from
-    // the static table, but matching explicitly fails loudly rather than silently
-    // serializing the wrong header version.
+    // Key commitment and message format version are independent columns of the
+    // supported-suites table that happen to agree for every suite defined today.
+    // No suite declares a version outside 1 or 2, so the final arm is unreachable.
     match suite.message_format_version() {
         2 => build_v2_header_body(
             message_id,

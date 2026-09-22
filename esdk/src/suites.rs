@@ -19,6 +19,8 @@ use aws_crypto_mpl::structures::{
 use aws_mpl_primitives::{DigestAlg, EcdsaSignatureAlgorithm};
 
 /// Every ESDK algorithm suite id, used to build the reverse `[u8; 2] -> id` lookup.
+///
+/// Kept in step with the MPL by `exhaustive_over_algorithm_suite_id` below.
 const ALL_SUITES: [AlgorithmSuiteId; 11] = [
     AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
     AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
@@ -32,6 +34,30 @@ const ALL_SUITES: [AlgorithmSuiteId; 11] = [
     AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
     AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
 ];
+
+// Ties `ALL_SUITES` to the MPL enum at compile time. The match has no wildcard
+// arm, so a suite added to `AlgorithmSuiteId` fails to compile until it is
+// mapped here; each arm indexes `ALL_SUITES`, so the array must grow to match or
+// the index fails const evaluation. Never called -- the coupling is the point.
+#[expect(
+    dead_code,
+    reason = "exists for its exhaustiveness check, not to be called"
+)]
+const fn exhaustive_over_algorithm_suite_id(id: AlgorithmSuiteId) -> AlgorithmSuiteId {
+    match id {
+        AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => ALL_SUITES[0],
+        AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => ALL_SUITES[1],
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => ALL_SUITES[2],
+        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => ALL_SUITES[3],
+        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => ALL_SUITES[4],
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => ALL_SUITES[5],
+        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => ALL_SUITES[6],
+        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => ALL_SUITES[7],
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => ALL_SUITES[8],
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => ALL_SUITES[9],
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => ALL_SUITES[10],
+    }
+}
 
 /// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuiteId`].
 ///

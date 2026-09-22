@@ -68,10 +68,11 @@ fn from_mpl_required_keys(keys: &BTreeSet<Vec<u8>>) -> Result<Vec<String>, Error
 /// byte-keyed fields the ESDK must serialize as strings.
 ///
 /// The MPL models the encryption context and the required-encryption-context
-/// keys as raw bytes, but the ESDK message format requires UTF-8. Converting
-/// here -- at the single boundary the MPL hands materials back across -- means
-/// a non-UTF-8 entry is rejected once, with an error, instead of each later
-/// stage re-deriving the strings and having to decide what to do about one.
+/// keys as raw bytes, but the encryption context is specified as "a key-value
+/// mapping of arbitrary, non-secret, UTF-8 encoded strings". Converting at this
+/// single boundary means a CMM returning non-UTF-8 bytes is rejected once, with
+/// an error, and every later stage works from `String`.
+// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
 pub(crate) struct ValidatedMaterials<M> {
     pub(crate) materials: M,
     pub(crate) encryption_context: EncryptionContext,
@@ -154,17 +155,10 @@ pub(crate) async fn get_decryption_materials(
         ));
     }
 
-    // The encryption context is "a key-value mapping of arbitrary, non-secret,
-    // UTF-8 encoded strings", so a CMM returning bytes that are not UTF-8 has
-    // violated the structure the ESDK must serialize. Reject it here, at the one
-    // boundary the MPL hands materials back across, rather than letting each
-    // later stage re-derive the strings and decide what to do about one.
-    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
-    //
-    // Required keys first: the MPL constructors enforce that the required-key
-    // set is a subset of the encryption context keys, so a non-UTF-8 required
-    // key is always also a non-UTF-8 encryption context key. Checking the
-    // subset first is what makes the more specific error reachable.
+    // Required keys before the context: the MPL constructors enforce that the
+    // required-key set is a subset of the context keys, so a non-UTF-8 required
+    // key is always also a non-UTF-8 context key. Checking it first is what
+    // makes the more specific error reachable.
     let required_encryption_context_keys =
         from_mpl_required_keys(materials.required_encryption_context_keys())?;
     let encryption_context = from_mpl_ec(materials.encryption_context())?;
@@ -233,17 +227,10 @@ pub(crate) async fn get_encryption_materials(
         ));
     }
 
-    // The encryption context is "a key-value mapping of arbitrary, non-secret,
-    // UTF-8 encoded strings", so a CMM returning bytes that are not UTF-8 has
-    // violated the structure the ESDK must serialize. Reject it here, at the one
-    // boundary the MPL hands materials back across, rather than letting each
-    // later stage re-derive the strings and decide what to do about one.
-    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
-    //
-    // Required keys first: the MPL constructors enforce that the required-key
-    // set is a subset of the encryption context keys, so a non-UTF-8 required
-    // key is always also a non-UTF-8 encryption context key. Checking the
-    // subset first is what makes the more specific error reachable.
+    // Required keys before the context: the MPL constructors enforce that the
+    // required-key set is a subset of the context keys, so a non-UTF-8 required
+    // key is always also a non-UTF-8 context key. Checking it first is what
+    // makes the more specific error reachable.
     let required_encryption_context_keys =
         from_mpl_required_keys(materials.required_encryption_context_keys())?;
     let encryption_context = from_mpl_ec(materials.encryption_context())?;
