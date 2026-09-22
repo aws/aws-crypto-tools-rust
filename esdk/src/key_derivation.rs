@@ -23,24 +23,23 @@ pub struct ExpandedKeyMaterial {
     pub commitment_key: Option<Zeroizing<Vec<u8>>>,
 }
 
-// Returns the HKDF-derived (output) key length defined by the algorithm suite.
-// Only HKDF suites carry this length; any other KDF reaching here is a config error.
-fn get_kdf_output_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
+// Returns the HKDF key length defined by the algorithm suite, which serves as
+// both the input (plaintext data key) length and the output (derived key)
+// length. Only HKDF suites carry a length; the identity KDF reaching here is a
+// config error.
+//
+// The specification lists "Key Derivation Input Length" and the encryption key
+// length as separate values, and they are equal for every ESDK suite: the
+// input-length column of the encryption-key-derivation-settings table is
+// 128/192/256 bits, matching each suite's AES key size, and for the identity-KDF
+// suites the equality is mandated outright. The MPL's AlgorithmSuite does not
+// model the input length as a distinct field, so there is nothing separate to
+// read; if it ever gains one, these two uses should be split apart again.
+// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings
+fn hkdf_key_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
     match suite.encryption_kdf() {
         KeyDerivationAlgorithm::IdentityKdf => Err(val_err(
-            "Algorithm suite KDF must be HKDF to derive output key length, got IdentityKdf",
-        )),
-        _ => Ok(suite.encryption_key_length()),
-    }
-}
-
-// Returns the HKDF input (plaintext data key) length defined by the algorithm suite.
-// Only HKDF suites carry this length; any other KDF reaching here is a config error.
-// For every ESDK HKDF suite the input key length equals the encryption key length.
-fn get_kdf_input_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
-    match suite.encryption_kdf() {
-        KeyDerivationAlgorithm::IdentityKdf => Err(val_err(
-            "Algorithm suite KDF must be HKDF to derive input key length, got IdentityKdf",
+            "Algorithm suite KDF must be HKDF to derive a key length, got IdentityKdf",
         )),
         _ => Ok(suite.encryption_key_length()),
     }
@@ -164,22 +163,14 @@ pub fn derive_key_v2(
     // internal bug rather than bad input.
     debug_assert_eq!(suite.message_format_version(), 2);
 
-    // For V2 algorithms the KDF can only be HKDF, and the encryption key length must
-    // match the KDF output length.
-    let kdf_output_len = get_kdf_output_len(suite)?;
-    let encrypt_key_len = get_encrypt_key_length(suite);
-    if encrypt_key_len != kdf_output_len {
-        return Err(val_err(format!(
-            "Encryption key length {encrypt_key_len} does not match KDF output key length {kdf_output_len}"
-        )));
-    }
+    // For V2 algorithms the KDF can only be HKDF.
+    let kdf_key_len = hkdf_key_len(suite)?;
     if message_id.len() != MESSAGE_ID_LEN_V2 {
         return Err(val_err(format!(
             "V2 message ID (HKDF salt) must be {MESSAGE_ID_LEN_V2} bytes, got {}",
             message_id.len()
         )));
     }
-    let kdf_input_len = get_kdf_input_len(suite)?;
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //# - The length of the input keying material MUST equal the [key derivation input length](#key-derivation-input-length)
     //# specified by the [algorithm suite encryption key derivation settings](#algorithm-suites-encryption-key-derivation-settings).
@@ -187,9 +178,9 @@ pub fn derive_key_v2(
     //= spec/client-apis/key-derivation.md#hkdf-commit-key
     //# - The length of the input keying material MUST equal the [key derivation input length](#key-derivation-input-length)
     //# specified by the algorithm suite commit key derivation setting.
-    if plaintext_data_key.len() != kdf_input_len {
+    if plaintext_data_key.len() != kdf_key_len {
         return Err(val_err(format!(
-            "Plaintext data key length {} does not match KDF input key length {kdf_input_len}",
+            "Plaintext data key length {} does not match KDF input key length {kdf_key_len}",
             plaintext_data_key.len()
         )));
     }
@@ -234,7 +225,7 @@ pub fn derive_key_v2(
     //= spec/client-apis/key-derivation.md#hkdf-encryption-key
     //# - The length of the output keying material MUST equal the [encryption key length](#encryption-key-length)
     //# specified by the [algorithm suite encryption settings](#algorithm-suites-encryption-settings).
-    let mut encrypt_key = Zeroizing::new(vec![0u8; kdf_output_len]);
+    let mut encrypt_key = Zeroizing::new(vec![0u8; kdf_key_len]);
 
     //= spec/client-apis/key-derivation.md#hkdf-commit-key
     //# - The length of the output keying material MUST equal the [algorithm suite data length](#algorithm-suite-data-length)
