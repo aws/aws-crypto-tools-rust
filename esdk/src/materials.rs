@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::error::{Error, val_err};
@@ -48,6 +49,35 @@ fn from_mpl_ec(ec: &MplEncryptionContext) -> Result<EncryptionContext, Error> {
     Ok(out)
 }
 
+/// Convert the MPL's byte-keyed required-encryption-context key set to the
+/// `String` keys the ESDK header serialization works with.
+///
+/// # Errors
+/// Returns an error if any key is not valid UTF-8, which the ESDK message
+/// format requires.
+fn from_mpl_required_keys(keys: &BTreeSet<Vec<u8>>) -> Result<Vec<String>, Error> {
+    keys.iter()
+        .map(|k| {
+            String::from_utf8(k.clone())
+                .map_err(|_| val_err("Required encryption context key is not valid UTF-8"))
+        })
+        .collect()
+}
+
+/// Materials returned by a CMM, together with the UTF-8 views of the two
+/// byte-keyed fields the ESDK must serialize as strings.
+///
+/// The MPL models the encryption context and the required-encryption-context
+/// keys as raw bytes, but the ESDK message format requires UTF-8. Converting
+/// here -- at the single boundary the MPL hands materials back across -- means
+/// a non-UTF-8 entry is rejected once, with an error, instead of each later
+/// stage re-deriving the strings and having to decide what to do about one.
+pub(crate) struct ValidatedMaterials<M> {
+    pub(crate) materials: M,
+    pub(crate) encryption_context: EncryptionContext,
+    pub(crate) required_encryption_context_keys: Vec<String>,
+}
+
 /// Build the internal [`ResolvedCmm`] from the resolved material source. A
 /// supplied CMM is used directly; a supplied keyring is wrapped in a
 /// [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
@@ -76,7 +106,7 @@ pub(crate) async fn get_decryption_materials(
     header_body: &HeaderBody,
     reproduced_encryption_context: &EncryptionContext,
     commitment_policy: EsdkCommitmentPolicy,
-) -> Result<DecryptionMaterials, Error> {
+) -> Result<ValidatedMaterials<DecryptionMaterials>, Error> {
     let policy = CommitmentPolicy::Esdk(commitment_policy);
     let encryption_context = to_mpl_ec(&from_canonical_pairs(
         header_body.encryption_context().clone(),
@@ -124,12 +154,31 @@ pub(crate) async fn get_decryption_materials(
         ));
     }
 
-    if !is_esdk_encryption_context(&from_mpl_ec(materials.encryption_context())?) {
+    // The encryption context is "a key-value mapping of arbitrary, non-secret,
+    // UTF-8 encoded strings", so a CMM returning bytes that are not UTF-8 has
+    // violated the structure the ESDK must serialize. Reject it here, at the one
+    // boundary the MPL hands materials back across, rather than letting each
+    // later stage re-derive the strings and decide what to do about one.
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
+    //
+    // Required keys first: the MPL constructors enforce that the required-key
+    // set is a subset of the encryption context keys, so a non-UTF-8 required
+    // key is always also a non-UTF-8 encryption context key. Checking the
+    // subset first is what makes the more specific error reachable.
+    let required_encryption_context_keys =
+        from_mpl_required_keys(materials.required_encryption_context_keys())?;
+    let encryption_context = from_mpl_ec(materials.encryption_context())?;
+
+    if !is_esdk_encryption_context(&encryption_context) {
         return Err(val_err(
             "CMM failed to return serializable decryption materials",
         ));
     }
-    Ok(materials)
+    Ok(ValidatedMaterials {
+        materials,
+        encryption_context,
+        required_encryption_context_keys,
+    })
 }
 
 pub(crate) async fn get_encryption_materials(
@@ -138,7 +187,7 @@ pub(crate) async fn get_encryption_materials(
     encryption_context: EncryptionContext,
     max_plaintext_length: Option<usize>,
     commitment_policy: EsdkCommitmentPolicy,
-) -> Result<EncryptionMaterials, Error> {
+) -> Result<ValidatedMaterials<EncryptionMaterials>, Error> {
     let policy = CommitmentPolicy::Esdk(commitment_policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -184,7 +233,22 @@ pub(crate) async fn get_encryption_materials(
         ));
     }
 
-    if !is_esdk_encryption_context(&from_mpl_ec(materials.encryption_context())?) {
+    // The encryption context is "a key-value mapping of arbitrary, non-secret,
+    // UTF-8 encoded strings", so a CMM returning bytes that are not UTF-8 has
+    // violated the structure the ESDK must serialize. Reject it here, at the one
+    // boundary the MPL hands materials back across, rather than letting each
+    // later stage re-derive the strings and decide what to do about one.
+    // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
+    //
+    // Required keys first: the MPL constructors enforce that the required-key
+    // set is a subset of the encryption context keys, so a non-UTF-8 required
+    // key is always also a non-UTF-8 encryption context key. Checking the
+    // subset first is what makes the more specific error reachable.
+    let required_encryption_context_keys =
+        from_mpl_required_keys(materials.required_encryption_context_keys())?;
+    let encryption_context = from_mpl_ec(materials.encryption_context())?;
+
+    if !is_esdk_encryption_context(&encryption_context) {
         return Err(val_err(
             "CMM failed to return serializable encryption materials",
         ));
@@ -194,5 +258,9 @@ pub(crate) async fn get_encryption_materials(
             "CMM failed to return serializable encrypted data keys",
         ));
     }
-    Ok(materials)
+    Ok(ValidatedMaterials {
+        materials,
+        encryption_context,
+        required_encryption_context_keys,
+    })
 }

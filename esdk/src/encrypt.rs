@@ -53,6 +53,10 @@ fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: FrameLength
 /// Intermediate state produced by [`step_get_encryption_materials`] and consumed by subsequent steps.
 struct EncryptionMaterialsResult {
     materials: EncryptionMaterials,
+    /// UTF-8 validated view of `materials.encryption_context()`.
+    encryption_context: EncryptionContext,
+    /// UTF-8 validated view of `materials.required_encryption_context_keys()`.
+    required_encryption_context_keys: Vec<String>,
     derived_data_keys: key_derivation::ExpandedKeyMaterial,
     message_id: MessageId,
 }
@@ -217,27 +221,10 @@ async fn internal_encrypt(
     //
     //= spec/data-format/message.md#structure
     //# - The message MUST begin with [Message Header](message-header.md)
-    let stored_ec: EncryptionContext = mat_result
-        .materials
-        .encryption_context()
-        .iter()
-        .filter_map(
-            |(k, v)| match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
-                (Ok(k), Ok(v)) => Some((k, v)),
-                _ => None,
-            },
-        )
-        .collect();
-    let required_keys: Vec<String> = mat_result
-        .materials
-        .required_encryption_context_keys()
-        .iter()
-        .filter_map(|k| String::from_utf8(k.clone()).ok())
-        .collect();
     let header = step_construct_header(
         &mat_result,
-        &stored_ec,
-        &required_keys,
+        &mat_result.encryption_context,
+        &mat_result.required_encryption_context_keys,
         mat_result.materials.encrypted_data_keys(),
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# The frame length used in the procedures described below MUST be the input [frame length](#frame-length),
@@ -354,7 +341,7 @@ async fn step_get_encryption_materials(
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The call to [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials)
     //# on that CMM MUST be constructed as follows:
-    let materials = materials::get_encryption_materials(
+    let validated = materials::get_encryption_materials(
         cmm,
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# - Algorithm Suite: If provided, this MUST be the [input algorithm suite](#algorithm-suite).
@@ -364,6 +351,7 @@ async fn step_get_encryption_materials(
         commitment_policy,
     )
     .await?;
+    let materials = validated.materials;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
@@ -410,6 +398,8 @@ async fn step_get_encryption_materials(
 
     Ok(EncryptionMaterialsResult {
         materials,
+        encryption_context: validated.encryption_context,
+        required_encryption_context_keys: validated.required_encryption_context_keys,
         derived_data_keys,
         message_id,
     })

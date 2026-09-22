@@ -385,7 +385,7 @@ async fn step_get_decryption_materials(
         ));
     }
 
-    let dec_mat = materials::get_decryption_materials(
+    let validated = materials::get_decryption_materials(
         cmm,
         algorithm_suite_id,
         header_body,
@@ -393,6 +393,7 @@ async fn step_get_decryption_materials(
         commitment_policy,
     )
     .await?;
+    let dec_mat = validated.materials;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
@@ -463,8 +464,10 @@ async fn step_get_decryption_materials(
     }
 
     let header_encryption_context = from_canonical_pairs(header_body.encryption_context().clone());
-    let encryption_context_to_only_authenticate =
-        build_encryption_context_to_only_authenticate(&dec_mat);
+    let encryption_context_to_only_authenticate = build_encryption_context_to_only_authenticate(
+        &validated.encryption_context,
+        &validated.required_encryption_context_keys,
+    );
 
     let header = header::HeaderInfo {
         body: header_body.clone(),
@@ -654,19 +657,13 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
 // to only contain key value pairs listed
 // in the decryption material's required encryption context keys.
 fn build_encryption_context_to_only_authenticate(
-    dec_mat: &DecryptionMaterials,
+    encryption_context: &EncryptionContext,
+    required_encryption_context_keys: &[String],
 ) -> EncryptionContext {
-    let required = dec_mat.required_encryption_context_keys();
-    dec_mat
-        .encryption_context()
+    encryption_context
         .iter()
-        .filter(|(k, _)| required.contains(*k))
-        .filter_map(
-            |(k, v)| match (String::from_utf8(k.clone()), String::from_utf8(v.clone())) {
-                (Ok(k), Ok(v)) => Some((k, v)),
-                _ => None,
-            },
-        )
+        .filter(|(k, _)| required_encryption_context_keys.contains(*k))
+        .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
 }
 
