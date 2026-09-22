@@ -232,24 +232,6 @@ pub struct EncryptOutput {
     /// Encryption context associated with the encrypted message.
     pub encryption_context: EncryptionContext,
 }
-impl EncryptOutput {
-    /// Create default `EncryptOutput`
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Default for EncryptOutput {
-    fn default() -> Self {
-        Self {
-            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-            ciphertext: Vec::new(),
-            encryption_context: EncryptionContext::new(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [`encrypt_stream`](crate::encrypt_stream).
@@ -259,23 +241,6 @@ pub struct EncryptStreamOutput {
     /// Encryption context associated with the encrypted message.
     pub encryption_context: EncryptionContext,
 }
-impl EncryptStreamOutput {
-    /// Create default `EncryptStreamOutput`
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Default for EncryptStreamOutput {
-    fn default() -> Self {
-        Self {
-            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-            encryption_context: EncryptionContext::new(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [decrypt](crate::decrypt).
@@ -291,24 +256,6 @@ pub struct DecryptOutput {
     //# This MUST be a sequence of bytes.
     pub plaintext: Vec<u8>,
 }
-impl DecryptOutput {
-    /// Create default `DecryptOutput`
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Default for DecryptOutput {
-    fn default() -> Self {
-        Self {
-            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-            encryption_context: EncryptionContext::new(),
-            plaintext: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output for [`decrypt_stream`](crate::decrypt_stream).
@@ -318,23 +265,6 @@ pub struct DecryptStreamOutput {
     /// Encryption context recovered from the encrypted message.
     pub encryption_context: EncryptionContext,
 }
-impl DecryptStreamOutput {
-    /// Create default `DecryptStreamOutput`
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Default for DecryptStreamOutput {
-    fn default() -> Self {
-        Self {
-            algorithm_suite_id: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-            encryption_context: EncryptionContext::new(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt`](crate::encrypt).
