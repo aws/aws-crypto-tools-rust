@@ -4,8 +4,8 @@
 
 use crate::Error;
 use crate::val_err;
-use aws_crypto_mpl::cmm::Cmm as MplCmm;
-use aws_crypto_mpl::keyring::Keyring as MplKeyring;
+use aws_crypto_mpl::cmm;
+use aws_crypto_mpl::keyring;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// [`Keyring`](aws_crypto_mpl::keyring::Keyring) trait.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Keyring(pub(crate) Arc<dyn MplKeyring>);
+pub struct Keyring(pub(crate) Arc<dyn keyring::Keyring>);
 
 impl std::fmt::Debug for Keyring {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -29,7 +29,7 @@ impl std::fmt::Debug for Keyring {
 /// [`Cmm`](aws_crypto_mpl::cmm::Cmm) trait.
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Cmm(pub(crate) Arc<dyn MplCmm>);
+pub struct Cmm(pub(crate) Arc<dyn cmm::Cmm>);
 
 impl std::fmt::Debug for Cmm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -51,13 +51,13 @@ impl PartialEq for Cmm {
 }
 impl Eq for Cmm {}
 
-impl From<Arc<dyn MplKeyring>> for Keyring {
-    fn from(keyring: Arc<dyn MplKeyring>) -> Self {
+impl From<Arc<dyn keyring::Keyring>> for Keyring {
+    fn from(keyring: Arc<dyn keyring::Keyring>) -> Self {
         Self(keyring)
     }
 }
-impl From<Arc<dyn MplCmm>> for Cmm {
-    fn from(cmm: Arc<dyn MplCmm>) -> Self {
+impl From<Arc<dyn cmm::Cmm>> for Cmm {
+    fn from(cmm: Arc<dyn cmm::Cmm>) -> Self {
         Self(cmm)
     }
 }
@@ -66,8 +66,8 @@ impl From<Arc<dyn MplCmm>> for Cmm {
 /// the `keyring` / `cmm` input fields and consumed by `create_cmm_from_input`.
 #[derive(Clone)]
 pub(crate) enum MaterialSource {
-    Cmm(Arc<dyn MplCmm>),
-    Keyring(Arc<dyn MplKeyring>),
+    Cmm(Arc<dyn cmm::Cmm>),
+    Keyring(Arc<dyn keyring::Keyring>),
 }
 
 impl std::fmt::Debug for MaterialSource {
@@ -443,7 +443,7 @@ impl<'a> EncryptInput<'a> {
     }
     /// Construct an `EncryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
+    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
@@ -456,7 +456,7 @@ impl<'a> EncryptInput<'a> {
     pub fn with_keyring(
         plaintext: &'a [u8],
         ec: EncryptionContext,
-        keyring: Arc<dyn MplKeyring>,
+        keyring: Arc<dyn keyring::Keyring>,
     ) -> Self {
         Self {
             plaintext,
@@ -522,7 +522,7 @@ impl EncryptStreamInput {
     }
     /// Construct an `EncryptStreamInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
         Self {
             encryption_context: ec,
             cmm: Some(Cmm(cmm)),
@@ -531,7 +531,7 @@ impl EncryptStreamInput {
     }
     /// Construct an `EncryptStreamInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn MplKeyring>) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn keyring::Keyring>) -> Self {
         Self {
             encryption_context: ec,
             keyring: Some(Keyring(keyring)),
@@ -615,7 +615,7 @@ impl<'a> DecryptInput<'a> {
     }
     /// Construct a `DecryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
+    pub fn with_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
@@ -628,7 +628,7 @@ impl<'a> DecryptInput<'a> {
     pub fn with_keyring(
         ciphertext: &'a [u8],
         ec: EncryptionContext,
-        keyring: Arc<dyn MplKeyring>,
+        keyring: Arc<dyn keyring::Keyring>,
     ) -> Self {
         Self {
             ciphertext,
@@ -674,7 +674,7 @@ impl DecryptStreamInput {
     }
     /// Construct a `DecryptStreamInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
     #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn MplCmm>) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
         Self {
             encryption_context: ec,
             cmm: Some(Cmm(cmm)),
@@ -683,7 +683,7 @@ impl DecryptStreamInput {
     }
     /// Construct a `DecryptStreamInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
     #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn MplKeyring>) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn keyring::Keyring>) -> Self {
         Self {
             encryption_context: ec,
             keyring: Some(Keyring(keyring)),

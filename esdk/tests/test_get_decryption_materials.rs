@@ -11,9 +11,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_crypto_mpl::cmm::{
-    Cmm as MplCmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest,
-};
+use aws_crypto_mpl::cmm::{self, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::structures::{
     DecryptionMaterials, EncryptionMaterials, KeyDerivationAlgorithm, MaterialsError,
@@ -305,13 +303,13 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
 /// then delegates to an inner (real) default CMM so the returned materials are
 /// the genuine ones the ESDK uses to complete the round-trip.
 struct DecryptSpyCmm {
-    inner: Arc<dyn MplCmm>,
+    inner: Arc<dyn cmm::Cmm>,
     observed_edk_count: Arc<Mutex<Option<usize>>>,
     observed_ec_keys: Arc<Mutex<Option<Vec<String>>>>,
 }
 
 #[async_trait::async_trait]
-impl MplCmm for DecryptSpyCmm {
+impl cmm::Cmm for DecryptSpyCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
@@ -345,10 +343,10 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let enc_input = EncryptInput::with_keyring(pt, ec, keyring.clone());
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
-    let inner_cmm: Arc<dyn MplCmm> = Arc::new(DefaultCmm::new(keyring));
+    let inner_cmm: Arc<dyn cmm::Cmm> = Arc::new(DefaultCmm::new(keyring));
     let observed_edk_count = Arc::new(Mutex::new(None));
     let observed_ec_keys = Arc::new(Mutex::new(None));
-    let spy_cmm: Arc<dyn MplCmm> = Arc::new(DecryptSpyCmm {
+    let spy_cmm: Arc<dyn cmm::Cmm> = Arc::new(DecryptSpyCmm {
         inner: inner_cmm,
         observed_edk_count: observed_edk_count.clone(),
         observed_ec_keys: observed_ec_keys.clone(),

@@ -1,8 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::cmm::{Cmm as MplCmm, DefaultCmm};
-use aws_crypto_mpl::keyring::{Keyring as MplKeyring, RawAesKeyring};
+use aws_crypto_mpl::cmm::{self, DefaultCmm};
+use aws_crypto_mpl::keyring::{self, RawAesKeyring};
 use aws_esdk::{
     Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring, decrypt,
     encrypt,
@@ -47,7 +47,7 @@ const ESDK_NET_V400_MESSAGE: &[u8] = &[
 // the message must fail header authentication rather than decrypt.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_net_v400_message_is_not_readable() {
-    let raw_aes_keyring: Arc<dyn MplKeyring> = Arc::new(
+    let raw_aes_keyring: Arc<dyn keyring::Keyring> = Arc::new(
         RawAesKeyring::new(
             "Some managed raw keys",
             "My 256-bit AES wrapping key",
@@ -256,7 +256,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_accepts_cmm() {
     let keyring = test_keyring().await;
-    let cmm: Arc<dyn MplCmm> = Arc::new(DefaultCmm::new(keyring));
+    let cmm: Arc<dyn cmm::Cmm> = Arc::new(DefaultCmm::new(keyring));
     let plaintext = b"cmm round-trip plaintext";
 
     let mut encrypt_input = EncryptInput::new();
@@ -297,7 +297,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm: Arc<dyn MplCmm> = Arc::new(DefaultCmm::new(keyring.clone()));
+    let cmm: Arc<dyn cmm::Cmm> = Arc::new(DefaultCmm::new(keyring.clone()));
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
@@ -337,7 +337,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm: Arc<dyn MplCmm> = Arc::new(DefaultCmm::new(keyring.clone()));
+    let cmm: Arc<dyn cmm::Cmm> = Arc::new(DefaultCmm::new(keyring.clone()));
 
     //= spec/client-apis/decrypt.md#input
     //= type=test

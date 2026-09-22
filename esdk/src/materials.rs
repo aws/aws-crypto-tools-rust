@@ -11,14 +11,15 @@ use crate::message::serializable_types::{
 };
 use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{Cmm as MplCmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
+use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey,
     EncryptionContext as MplEncryptionContext, EncryptionMaterials,
 };
 
-/// A cryptographic materials manager resolved from the caller's input.
-pub(crate) struct Cmm(Arc<dyn MplCmm>);
+/// A cryptographic materials manager resolved from the caller's input: either
+/// the caller's own CMM, or a [`DefaultCmm`] wrapping the caller's keyring.
+pub(crate) struct ResolvedCmm(Arc<dyn Cmm>);
 
 /// Convert an ESDK (`HashMap<String, String>`) encryption context to the MPL's
 /// byte-oriented [`MplEncryptionContext`].
@@ -47,12 +48,14 @@ fn from_mpl_ec(ec: &MplEncryptionContext) -> Result<EncryptionContext, Error> {
     Ok(out)
 }
 
-/// Build the internal [`Cmm`] from the resolved material source. A supplied CMM
-/// is used directly; a supplied keyring is wrapped in a
+/// Build the internal [`ResolvedCmm`] from the resolved material source. A
+/// supplied CMM is used directly; a supplied keyring is wrapped in a
 /// [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
-pub(crate) fn create_cmm_from_input(input_source: Option<MaterialSource>) -> Result<Cmm, Error> {
+pub(crate) fn create_cmm_from_input(
+    input_source: Option<MaterialSource>,
+) -> Result<ResolvedCmm, Error> {
     match input_source.ok_or_else(|| val_err("A Materials Source must be provided"))? {
-        MaterialSource::Cmm(cmm) => Ok(Cmm(cmm)),
+        MaterialSource::Cmm(cmm) => Ok(ResolvedCmm(cmm)),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials
             //# If instead the caller supplied a [keyring](../framework/keyring-interface.md),
@@ -62,13 +65,13 @@ pub(crate) fn create_cmm_from_input(input_source: Option<MaterialSource>) -> Res
             //= spec/client-apis/decrypt.md#keyring
             //# If the Keyring is provided as the input, the client MUST construct a [default CMM](../framework/default-cmm.md) that uses this keyring,
             //# to obtain the [decryption materials](../framework/structures.md#decryption-materials) that is required for decryption.
-            Ok(Cmm(Arc::new(DefaultCmm::new(keyring))))
+            Ok(ResolvedCmm(Arc::new(DefaultCmm::new(keyring))))
         }
     }
 }
 
 pub(crate) async fn get_decryption_materials(
-    cmm: Cmm,
+    cmm: ResolvedCmm,
     algorithm_suite_id: AlgorithmSuiteId,
     header_body: &HeaderBody,
     reproduced_encryption_context: &EncryptionContext,
@@ -130,7 +133,7 @@ pub(crate) async fn get_decryption_materials(
 }
 
 pub(crate) async fn get_encryption_materials(
-    cmm: Cmm,
+    cmm: ResolvedCmm,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
     max_plaintext_length: Option<usize>,

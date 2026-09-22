@@ -19,14 +19,14 @@ pub enum Version {
 
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
-use aws_crypto_mpl::keyring::{Keyring as MplKeyring, RawAesKeyring};
+use aws_crypto_mpl::keyring::{self, RawAesKeyring};
 use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::EsdkCommitmentPolicy;
 use aws_mpl_primitives::AesGcm;
 use std::sync::Arc;
 
 /// A caller-supplied keyring handle, as accepted by `EncryptInput::with_keyring`.
-pub type KeyringRef = Arc<dyn MplKeyring>;
+pub type KeyringRef = Arc<dyn keyring::Keyring>;
 
 /// Build a native raw-AES keyring handle.
 fn raw_aes(ns: String, name: String, key: [u8; 32]) -> KeyringRef {
