@@ -189,7 +189,7 @@ fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: 
     });
 }
 
-/// Round-trip with # tasks > # worker threads. This must not deadlock
+/// Run round-trip above with # tasks > # worker threads.
 #[test]
 fn more_tasks_than_worker_threads_completes() {
     assert_completes_within(120, || {
