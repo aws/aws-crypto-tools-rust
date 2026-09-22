@@ -37,20 +37,6 @@ impl std::fmt::Debug for Cmm {
     }
 }
 
-impl PartialEq for Keyring {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::addr_eq(Arc::as_ptr(&self.0), Arc::as_ptr(&other.0))
-    }
-}
-impl Eq for Keyring {}
-
-impl PartialEq for Cmm {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::addr_eq(Arc::as_ptr(&self.0), Arc::as_ptr(&other.0))
-    }
-}
-impl Eq for Cmm {}
-
 impl Keyring {
     /// Wrap a caller's keyring implementation.
     ///
@@ -291,7 +277,7 @@ pub struct DecryptStreamOutput {
     /// Encryption context recovered from the encrypted message.
     pub encryption_context: EncryptionContext,
 }
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt`](crate::encrypt).
 //= spec/client-apis/encrypt.md#input
@@ -431,7 +417,7 @@ impl<'a> EncryptInput<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt_stream`](crate::encrypt_stream).
 pub struct EncryptStreamInput {
@@ -514,7 +500,7 @@ impl EncryptStreamInput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`decrypt`](crate::decrypt).
 pub struct DecryptInput<'a> {
@@ -551,7 +537,7 @@ pub struct DecryptInput<'a> {
     pub commitment_policy: EsdkCommitmentPolicy,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`decrypt_stream`](crate::decrypt_stream).
 pub struct DecryptStreamInput {
