@@ -100,7 +100,12 @@ impl BranchKeyStore {
         // character limit, and without this the failure is deferred to the first
         // request, so it needs credentials and a network round trip to surface.
         // Not a keystore-spec requirement — it mirrors the service constraint.
-        let name_len = config.ddb_table_name.chars().count();
+        //
+        // `len()` rather than `chars().count()`: DynamoDB's permitted alphabet is
+        // `[a-zA-Z0-9_.-]`, so byte length and character count agree for every
+        // name that could be accepted, and a name containing multi-byte
+        // characters is rejected on the alphabet regardless of either count.
+        let name_len = config.ddb_table_name.len();
         if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
             return Err(KeystoreError::new(
                 KeystoreErrorKind::Configuration,
