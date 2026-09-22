@@ -636,47 +636,98 @@ fn build_header_body(
 ) -> Result<HeaderBody, Error> {
     //= spec/client-apis/encrypt.md#construct-the-header
     //# The [message format version](../data-format/message-header.md#supported-versions) MUST be the value associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites).
-    if suite.key_commitment() {
-        let Some(sd) = suite_data else {
-            return ser_err("Suite data must be present for a committing algorithm suite");
-        };
-        let expected_len = suite.algorithm_suite_data_length();
-        if sd.len() != expected_len {
-            return ser_err(
-                "Suite data length must match the commitment key output length for a committing suite",
-            );
-        }
-        //= spec/client-apis/encrypt.md#v2-header
-        //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.
-        Ok(HeaderBody::V2Body(V2HeaderBody {
-            algorithm_suite: *suite,
-            message_id: message_id.clone(),
-            encryption_context: encryption_context.clone(),
-            encrypted_data_keys: encrypted_data_keys.into(),
-            //= spec/client-apis/encrypt.md#nonframed-message-body-encryption
-            //# Implementations of the AWS Encryption SDK MUST NOT encrypt using the nonframed content type.
-            content_type: ContentType::Framed,
+    //
+    // Dispatch on the suite's own message format version rather than on
+    // key_commitment(). The two agree for every ESDK suite defined today, but
+    // the specification lists them as independent columns of the supported-suites
+    // table, so the agreement is a property of the current table and not a
+    // definition. `derive_keys`, `write_header_auth_tag`, and
+    // `read_header_auth_tag` all key off message_format_version() already, and
+    // `write_header_body` asserts the body variant matches it.
+    //
+    // The final arm is defense-in-depth on the same terms as `generate_message_id`:
+    // every supported suite declares version 1 or 2, so it cannot be reached from
+    // the static table, but matching explicitly fails loudly rather than silently
+    // serializing the wrong header version.
+    match suite.message_format_version() {
+        2 => build_v2_header_body(
+            message_id,
+            suite,
+            encryption_context,
+            encrypted_data_keys,
             frame_length,
-            suite_data: sd,
-        }))
-    } else {
-        let header_iv_length_usize = get_iv_length(suite);
-        let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
-            return ser_err(&format!(
-                "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
-            ));
-        };
-        Ok(HeaderBody::V1Body(V1HeaderBody {
-            message_type: MessageType::TypeCustomerAed,
-            algorithm_suite: *suite,
-            message_id: message_id.clone(),
-            encryption_context: encryption_context.clone(),
-            encrypted_data_keys: encrypted_data_keys.into(),
-            content_type: ContentType::Framed,
-            header_iv_length,
+            suite_data,
+        ),
+        1 => build_v1_header_body(
+            message_id,
+            suite,
+            encryption_context,
+            encrypted_data_keys,
             frame_length,
-        }))
+        ),
+        v => ser_err(&format!(
+            "Algorithm suite declares unsupported message format version {v}"
+        )),
     }
+}
+
+/// Build a Header Body Version 2.0 for a committing algorithm suite.
+fn build_v2_header_body(
+    message_id: &MessageId,
+    suite: &AlgorithmSuite,
+    encryption_context: &ESDKCanonicalEncryptionContext,
+    encrypted_data_keys: &[EncryptedDataKey],
+    frame_length: u32,
+    suite_data: Option<Vec<u8>>,
+) -> Result<HeaderBody, Error> {
+    let Some(sd) = suite_data else {
+        return ser_err("Suite data must be present for a committing algorithm suite");
+    };
+    let expected_len = suite.algorithm_suite_data_length();
+    if sd.len() != expected_len {
+        return ser_err(
+            "Suite data length must match the commitment key output length for a committing suite",
+        );
+    }
+    //= spec/client-apis/encrypt.md#v2-header
+    //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.
+    Ok(HeaderBody::V2Body(V2HeaderBody {
+        algorithm_suite: *suite,
+        message_id: message_id.clone(),
+        encryption_context: encryption_context.clone(),
+        encrypted_data_keys: encrypted_data_keys.into(),
+        //= spec/client-apis/encrypt.md#nonframed-message-body-encryption
+        //# Implementations of the AWS Encryption SDK MUST NOT encrypt using the nonframed content type.
+        content_type: ContentType::Framed,
+        frame_length,
+        suite_data: sd,
+    }))
+}
+
+/// Build a Header Body Version 1.0 for a non-committing algorithm suite.
+fn build_v1_header_body(
+    message_id: &MessageId,
+    suite: &AlgorithmSuite,
+    encryption_context: &ESDKCanonicalEncryptionContext,
+    encrypted_data_keys: &[EncryptedDataKey],
+    frame_length: u32,
+) -> Result<HeaderBody, Error> {
+    let header_iv_length_usize = get_iv_length(suite);
+    let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
+        return ser_err(&format!(
+            "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
+        ));
+    };
+    Ok(HeaderBody::V1Body(V1HeaderBody {
+        message_type: MessageType::TypeCustomerAed,
+        algorithm_suite: *suite,
+        message_id: message_id.clone(),
+        encryption_context: encryption_context.clone(),
+        encrypted_data_keys: encrypted_data_keys.into(),
+        content_type: ContentType::Framed,
+        header_iv_length,
+        frame_length,
+    }))
 }
 
 fn build_header_auth_tag(
