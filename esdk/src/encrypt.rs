@@ -339,7 +339,7 @@ async fn step_get_encryption_materials(
         //# If an [input algorithm suite](#algorithm-suite) is provided
         //# that is not supported by the [commitment policy](client.md#commitment-policy)
         //# configured in the [client](client.md) encrypt MUST yield an error.
-        let policy: aws_crypto_mpl::structures::CommitmentPolicy = commitment_policy.into();
+        let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
         if !policy.allows_for_encrypt(id) {
             return Err(val_err(
                 "Input algorithm suite is not supported by the configured commitment policy for encryption",

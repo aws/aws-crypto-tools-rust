@@ -195,36 +195,17 @@ pub type EncryptionContext = std::collections::HashMap<String, String>;
 
 /// Commitment policies governing key commitment behavior.
 ///
-/// Mirrors the ESDK rows of the MPL commitment-policy table
-/// ([`aws_crypto_mpl::structures::Esdk`]); converted to the MPL
-/// [`CommitmentPolicy`](aws_crypto_mpl::structures::CommitmentPolicy) at the
-/// materials boundary.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
-#[non_exhaustive]
-pub enum EsdkCommitmentPolicy {
-    /// Encrypt with non-committing suites only; decrypt any ESDK suite.
-    ForbidEncryptAllowDecrypt,
-    /// Encrypt with committing suites only; decrypt any ESDK suite.
-    RequireEncryptAllowDecrypt,
-    /// Encrypt and decrypt with committing suites only. This is the default.
-    //= spec/client-apis/client.md#initialization
-    //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    #[default]
-    RequireEncryptRequireDecrypt,
-}
+/// This is the Material Providers Library's own ESDK commitment-policy enum,
+/// re-exported. It is wrapped in the MPL
+/// [`CommitmentPolicy`](aws_crypto_mpl::structures::CommitmentPolicy) union at
+/// the materials boundary.
+pub use aws_crypto_mpl::structures::Esdk as EsdkCommitmentPolicy;
 
-impl From<EsdkCommitmentPolicy> for aws_crypto_mpl::structures::CommitmentPolicy {
-    fn from(policy: EsdkCommitmentPolicy) -> Self {
-        use aws_crypto_mpl::structures::Esdk;
-        Self::Esdk(match policy {
-            EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt => Esdk::ForbidEncryptAllowDecrypt,
-            EsdkCommitmentPolicy::RequireEncryptAllowDecrypt => Esdk::RequireEncryptAllowDecrypt,
-            EsdkCommitmentPolicy::RequireEncryptRequireDecrypt => {
-                Esdk::RequireEncryptRequireDecrypt
-            }
-        })
-    }
-}
+/// Commitment policy used when the caller provides none.
+//= spec/client-apis/client.md#initialization
+//# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
+pub(crate) const DEFAULT_COMMITMENT_POLICY: EsdkCommitmentPolicy =
+    EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
@@ -354,7 +335,7 @@ impl Default for DecryptStreamOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt`](crate::encrypt).
 //= spec/client-apis/encrypt.md#input
@@ -417,11 +398,11 @@ pub struct EncryptInput<'a> {
     ///
     /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
     //= spec/client-apis/client.md#commitment-policy
-    //= reason=commitment_policy field type is the crate's own EsdkCommitmentPolicy enum
+    //= reason=EsdkCommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::Esdk
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
     //
     //= spec/client-apis/client.md#initialization
-    //= reason=EsdkCommitmentPolicy::default() returns RequireEncryptRequireDecrypt; EncryptInput uses #[derive(Default)]
+    //= reason=EncryptInput::default() sets this field to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
     //
     //= spec/client-apis/client.md#initialization
@@ -433,6 +414,21 @@ pub struct EncryptInput<'a> {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     pub commitment_policy: EsdkCommitmentPolicy,
+}
+
+impl Default for EncryptInput<'_> {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: None,
+            encryption_context: EncryptionContext::new(),
+            frame_length: FrameLength::default(),
+            keyring: None,
+            cmm: None,
+            plaintext: &[],
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
+    }
 }
 
 impl<'a> EncryptInput<'a> {
@@ -479,7 +475,7 @@ impl<'a> EncryptInput<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt_stream`](crate::encrypt_stream).
 pub struct EncryptStreamInput {
@@ -512,6 +508,21 @@ pub struct EncryptStreamInput {
     ///
     /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
     pub commitment_policy: EsdkCommitmentPolicy,
+}
+
+impl Default for EncryptStreamInput {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: None,
+            encryption_context: EncryptionContext::new(),
+            frame_length: FrameLength::default(),
+            keyring: None,
+            cmm: None,
+            data_size: None,
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
+    }
 }
 
 impl EncryptStreamInput {
@@ -547,7 +558,7 @@ impl EncryptStreamInput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Input for [`decrypt`](crate::decrypt).
 pub struct DecryptInput<'a> {
@@ -584,7 +595,7 @@ pub struct DecryptInput<'a> {
     pub commitment_policy: EsdkCommitmentPolicy,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Input for [`decrypt_stream`](crate::decrypt_stream).
 pub struct DecryptStreamInput {
@@ -605,6 +616,19 @@ pub struct DecryptStreamInput {
     ///
     /// Leave at the default when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
     pub commitment_policy: EsdkCommitmentPolicy,
+}
+
+impl Default for DecryptInput<'_> {
+    fn default() -> Self {
+        Self {
+            ciphertext: &[],
+            encryption_context: EncryptionContext::new(),
+            keyring: None,
+            cmm: None,
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
+    }
 }
 
 impl<'a> DecryptInput<'a> {
@@ -663,6 +687,18 @@ impl<'a> DecryptInput<'a> {
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
         resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
+    }
+}
+
+impl Default for DecryptStreamInput {
+    fn default() -> Self {
+        Self {
+            encryption_context: EncryptionContext::new(),
+            keyring: None,
+            cmm: None,
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
     }
 }
 

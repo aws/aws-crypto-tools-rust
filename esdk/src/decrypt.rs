@@ -378,7 +378,7 @@ async fn step_get_decryption_materials(
     //# configured in the [client](client.md) decrypt MUST yield an error.
     let algorithm_suite_id =
         crate::suites::algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
-    let policy: aws_crypto_mpl::structures::CommitmentPolicy = commitment_policy.into();
+    let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
     if !policy.allows_for_decrypt(algorithm_suite_id) {
         return Err(val_err(
             "Parsed algorithm suite is not supported by the configured commitment policy for decryption",

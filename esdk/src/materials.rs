@@ -77,7 +77,7 @@ pub(crate) async fn get_decryption_materials(
     reproduced_encryption_context: &EncryptionContext,
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<DecryptionMaterials, Error> {
-    let policy: CommitmentPolicy = commitment_policy.into();
+    let policy = CommitmentPolicy::Esdk(commitment_policy);
     let encryption_context = to_mpl_ec(&from_canonical_pairs(
         header_body.encryption_context().clone(),
     ));
@@ -139,7 +139,7 @@ pub(crate) async fn get_encryption_materials(
     max_plaintext_length: Option<usize>,
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<EncryptionMaterials, Error> {
-    let policy: CommitmentPolicy = commitment_policy.into();
+    let policy = CommitmentPolicy::Esdk(commitment_policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# - Commitment Policy: This MUST be the [commitment policy](client.md#commitment-policy)
