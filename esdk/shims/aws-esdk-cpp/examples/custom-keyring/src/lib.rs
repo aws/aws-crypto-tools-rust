@@ -5,7 +5,6 @@
 //! See README.md for the full setup, and example.cpp for the C++ side.
 
 use std::ffi::c_void;
-use std::sync::Arc;
 
 /// For demonstration only: a real application must source its wrapping key
 /// from a secure store and never hardcode it.
@@ -16,7 +15,7 @@ const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 /// This example wraps the MPL's own raw AES keyring, which is the smallest thing
 /// that demonstrates the handoff. To supply behavior of your own instead,
 /// implement `aws_crypto_mpl::keyring::Keyring` on your own type and hand that
-/// to `aws_esdk::Keyring::from` — the shim does not care which implementation it
+/// to `aws_esdk::Keyring::new` — the shim does not care which implementation it
 /// receives.
 fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     let keyring = aws_crypto_mpl::keyring::RawAesKeyring::new(
@@ -25,9 +24,7 @@ fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
         WRAPPING_KEY.to_vec(),
         aws_crypto_mpl::AesGcm::Aes256Gcm,
     )?;
-    Ok(aws_esdk::Keyring::from(
-        Arc::new(keyring) as Arc<dyn aws_crypto_mpl::keyring::Keyring>
-    ))
+    Ok(aws_esdk::Keyring::new(keyring))
 }
 
 /// Step 3: export your keyring.

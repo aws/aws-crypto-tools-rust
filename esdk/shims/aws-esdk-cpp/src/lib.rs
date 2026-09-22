@@ -1105,9 +1105,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
     .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
-        client: aws_esdk::Keyring::from(
-            Arc::new(keyring) as Arc<dyn aws_crypto_mpl::keyring::Keyring>
-        ),
+        client: aws_esdk::Keyring::new(keyring),
     }))
 }
 
@@ -1163,9 +1161,7 @@ fn create_hierarchical_keyring(
     .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, op, e))?;
 
     Ok(Box::new(Keyring {
-        client: aws_esdk::Keyring::from(
-            Arc::new(keyring) as Arc<dyn aws_crypto_mpl::keyring::Keyring>
-        ),
+        client: aws_esdk::Keyring::new(keyring),
     }))
 }
 
