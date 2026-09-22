@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Per-server server-config.json (design 'Server Configuration'): the commons",
+    "pointer + product for this Rust MPL Language_Server. The sibling",
+    "feature-config.json carries the Feature_Declaration and bug-config.json the",
+    "exhibited-bug list. The commons branch points at the MPL rollout branch",
+    "until it merges to main; flip it to main after the merge."
+  ],
+  "commonsRepository": {
+    "name": "aws-crypto-tools-commons",
+    "url": "git@github.com:aws/aws-crypto-tools-commons.git",
+    "branch": "jocorell/mpl-test-server-model"
+  },
+  "product": "mpl"
+}
