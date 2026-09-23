@@ -18,11 +18,9 @@ use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::cache_config::{
-    CACHE_PRUNING_TAIL_SIZE, CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache,
+    CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache, create_cryptographic_materials_cache,
 };
-use crate::cmc::{
-    CacheEntry, CachedMaterials, Cmc, LocalCmc, StormTrackingCmc, TimeUnits, UsageMetadata,
-};
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, TimeUnits, UsageMetadata};
 use crate::keystore::Keystore;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
@@ -169,49 +167,30 @@ impl HierarchicalKeyring {
         // An absent `cache_type` is where the 1000-entry default lives: the
         // model requires `DefaultCache.entryCapacity`, and documents this
         // number on the keyring's own `cache` member.
-        let cache: Arc<dyn Cmc> = match cache_type.unwrap_or(CacheType::Default(DefaultCache::new(
+        let cache_type = cache_type.unwrap_or(CacheType::Default(DefaultCache::new(
             DEFAULT_CACHE_ENTRY_CAPACITY,
-        ))) {
-            CacheType::Default(default_cache) => {
-                let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
-                    .map_err(|e| {
-                        MaterialsError::new(format!(
-                            "HierarchicalKeyring: failed to initialize default LocalCmc: {e}",
-                        ))
-                    })?;
-                Arc::new(local)
-            }
-            CacheType::Shared(cache) => cache,
-            CacheType::StormTracking(params) => {
-                let grace_in_seconds = match params.time_units.unwrap_or_default() {
-                    TimeUnits::Seconds => params.grace_period,
-                    TimeUnits::Milliseconds => params.grace_period / 1000,
-                };
-                if grace_in_seconds >= ttl_seconds {
-                    return Err(MaterialsError::new(format!(
-                        "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
-                        params.grace_period,
-                        params.time_units.unwrap_or_default(),
-                    )));
-                }
-                let storm = StormTrackingCmc::new(
-                    params.entry_capacity,
-                    params.entry_pruning_tail_size,
+        )));
+
+        // The grace-period bound relates a storm-tracking parameter to this
+        // keyring's TTL, so it is checked here rather than inside
+        // `create_cryptographic_materials_cache`, which has no TTL to compare
+        // against when a cache is built standalone.
+        if let CacheType::StormTracking(params) = &cache_type {
+            let grace_in_seconds = match params.time_units.unwrap_or_default() {
+                TimeUnits::Seconds => params.grace_period,
+                TimeUnits::Milliseconds => params.grace_period / 1000,
+            };
+            if grace_in_seconds >= ttl_seconds {
+                return Err(MaterialsError::new(format!(
+                    "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
                     params.grace_period,
-                    params.grace_interval,
-                    params.fan_out,
-                    params.inflight_ttl,
-                    params.sleep_milli,
-                    params.time_units,
-                )
-                .map_err(|e| {
-                    MaterialsError::new(format!(
-                        "HierarchicalKeyring: failed to initialize StormTrackingCmc: {e}",
-                    ))
-                })?;
-                Arc::new(storm)
+                    params.time_units.unwrap_or_default(),
+                )));
             }
-        };
+        }
+
+        let cache = create_cryptographic_materials_cache(cache_type)
+            .map_err(|e| MaterialsError::new(format!("HierarchicalKeyring: {e}")))?;
 
         let partition_id_bytes = match partition_id {
             Some(s) => s.into_bytes(),

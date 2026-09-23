@@ -13,12 +13,15 @@ pub enum ErrorKind {
     Esdk,
     /// Error in serializing or deserializing the data
     SerializationError,
-    /// Low level cryptographic error from `aws_mpl_legacy::primitives`
+    /// Low level cryptographic error from `aws_mpl_primitives`
     CryptographicError,
-    /// Mid level cryptographic error from `aws_mpl_legacy`
+    /// Error surfaced by the Material Providers Library while obtaining
+    /// encryption or decryption materials (from a keyring or CMM).
     MplError,
-    /// Mid level cryptographic error from `aws_mpl_legacy`
-    LegacyError(Arc<aws_mpl_legacy::dafny::types::error::Error>),
+    /// Error surfaced by the MPL branch key store.
+    KeystoreError,
+    /// Error surfaced by the MPL cryptographic materials cache.
+    CacheError,
     /// Malformed input. No cryptography has been attempted.
     ValidationError,
 }
@@ -31,7 +34,6 @@ pub struct Error {
     /// message
     pub message: String,
     /// Backtrace captured when error was encountered.
-    /// For `LegacyError` the backtrace is not captured until the ESDK level
     pub backtrace: Arc<Backtrace>,
     /// The Error causing the Error, if any.
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
@@ -51,7 +53,8 @@ impl std::fmt::Display for Error {
             ErrorKind::SerializationError => write!(f, "Serialization Error {}", self.message),
             ErrorKind::CryptographicError => write!(f, "Cryptographic Error {}", self.message),
             ErrorKind::MplError => write!(f, "MPL Error {}", self.message),
-            ErrorKind::LegacyError(e) => write!(f, "Legacy MPL Error {e} {}", self.message),
+            ErrorKind::KeystoreError => write!(f, "Keystore Error {}", self.message),
+            ErrorKind::CacheError => write!(f, "Cache Error {}", self.message),
             ErrorKind::ValidationError => write!(f, "Validation Error {}", self.message),
         }
     }
@@ -109,33 +112,45 @@ pub(crate) fn ser_err<T>(msg: &str) -> Result<T, Error> {
     })
 }
 
-impl From<aws_mpl_legacy::dafny::types::error::Error> for Error {
+impl From<aws_crypto_mpl::structures::MaterialsError> for Error {
     #[track_caller]
-    fn from(item: aws_mpl_legacy::dafny::types::error::Error) -> Self {
-        Self {
-            kind: ErrorKind::LegacyError(Arc::new(item)),
-            message: String::new(),
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: None,
-        }
-    }
-}
-
-impl From<aws_mpl_legacy::error::Error> for Error {
-    #[track_caller]
-    fn from(item: aws_mpl_legacy::error::Error) -> Self {
+    fn from(item: aws_crypto_mpl::structures::MaterialsError) -> Self {
         Self {
             kind: ErrorKind::MplError,
-            message: String::new(),
-            backtrace: item.backtrace.clone(),
+            message: item.to_string(),
+            backtrace: Arc::new(Backtrace::capture()),
             cause: Some(Arc::new(item)),
         }
     }
 }
 
-impl From<aws_mpl_legacy::primitives::Error> for Error {
+impl From<aws_crypto_mpl::keystore::KeystoreError> for Error {
     #[track_caller]
-    fn from(item: aws_mpl_legacy::primitives::Error) -> Self {
+    fn from(item: aws_crypto_mpl::keystore::KeystoreError) -> Self {
+        Self {
+            kind: ErrorKind::KeystoreError,
+            message: item.to_string(),
+            backtrace: Arc::new(Backtrace::capture()),
+            cause: Some(Arc::new(item)),
+        }
+    }
+}
+
+impl From<aws_crypto_mpl::cmc::CmcError> for Error {
+    #[track_caller]
+    fn from(item: aws_crypto_mpl::cmc::CmcError) -> Self {
+        Self {
+            kind: ErrorKind::CacheError,
+            message: item.to_string(),
+            backtrace: Arc::new(Backtrace::capture()),
+            cause: Some(Arc::new(item)),
+        }
+    }
+}
+
+impl From<aws_mpl_primitives::Error> for Error {
+    #[track_caller]
+    fn from(item: aws_mpl_primitives::Error) -> Self {
         Self {
             kind: ErrorKind::CryptographicError,
             message: item.message,
