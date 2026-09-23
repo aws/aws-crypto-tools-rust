@@ -25,6 +25,7 @@ use time::OffsetDateTime;
 use time::macros::format_description;
 use uuid::Uuid;
 
+use crate::aws_kms::user_agent::with_user_agent;
 use crate::keystore::Keystore;
 use crate::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
@@ -67,6 +68,10 @@ pub struct BranchKeyStore {
     keystore_id: String,
 }
 
+/// DynamoDB's documented table-name bounds.
+const DDB_TABLE_NAME_MIN_LEN: usize = 3;
+const DDB_TABLE_NAME_MAX_LEN: usize = 255;
+
 impl BranchKeyStore {
     /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`], resolving
     /// any absent AWS SDK client.
@@ -91,6 +96,20 @@ impl BranchKeyStore {
         // malformed ARN fails before any operation is dispatched, and before
         // its Region is used to build a default client.
         config.kms_configuration.validate()?;
+
+        // DynamoDB documents a 3-255 character limit,
+        // and without this the failure is deferred to the first
+        // request.
+        // Not a keystore-spec requirement — it mirrors the service constraint.
+        let name_len = config.ddb_table_name.len();
+        if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
+            return Err(KeystoreError::new(
+                KeystoreErrorKind::Configuration,
+                format!(
+                    "ddb_table_name must be between {DDB_TABLE_NAME_MIN_LEN} and {DDB_TABLE_NAME_MAX_LEN} characters, got {name_len}",
+                ),
+            ));
+        }
 
         // Resolve any absent client to a default built from the Region in
         // the KMS ARN, storing it back into the config so the config always
@@ -123,10 +142,13 @@ impl BranchKeyStore {
         Self::build(config)
     }
 
-    /// Shared tail of both constructors: require concrete clients, resolve the
-    /// keystore id, and assemble. Assumes the KMS configuration has already
-    /// been validated.
-    fn build(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
+    /// Shared code by both constructors:
+    /// require concrete clients,
+    /// add this crate's user agent identifier to the KMS client,
+    /// resolve the keystore id,
+    /// then assemble.
+    /// Assumes the KMS configuration has already been validated.
+    fn build(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
         if config.kms_client.is_none() || config.ddb_client.is_none() {
             return Err(KeystoreError::new(
                 KeystoreErrorKind::Configuration,
@@ -134,6 +156,11 @@ impl BranchKeyStore {
                  use BranchKeyStore::new to build defaults for absent clients",
             ));
         }
+
+        // The config's KMS client might be ours or one the caller passed in.
+        // Add the user agent here so both get it.
+        // Doing it in `new` would only cover the client we build.
+        config.kms_client = config.kms_client.take().map(with_user_agent);
 
         let keystore_id = config
             .id
@@ -229,12 +256,7 @@ impl BranchKeyStore {
             .key(ATTR_TYPE, AttributeValue::S(sort_key.to_string()))
             .send()
             .await
-            .map_err(|e| {
-                KeystoreError::new(
-                    KeystoreErrorKind::Dynamodb,
-                    format!("DynamoDB GetItem failed: {e}"),
-                )
-            })?;
+            .map_err(|e| map_ddb_error("GetItem", e))?;
 
         let item = response.item.ok_or_else(|| {
             KeystoreError::new(
@@ -296,10 +318,7 @@ impl Keystore for BranchKeyStore {
                     .as_service_error()
                     .is_some_and(DescribeTableError::is_resource_not_found_exception);
                 if !is_not_found {
-                    return Err(KeystoreError::new(
-                        KeystoreErrorKind::Dynamodb,
-                        format!("DynamoDB DescribeTable failed: {err}"),
-                    ));
+                    return Err(map_ddb_error("DescribeTable", err));
                 }
 
                 let resp = self
@@ -311,12 +330,7 @@ impl Keystore for BranchKeyStore {
                     .billing_mode(BillingMode::PayPerRequest)
                     .send()
                     .await
-                    .map_err(|e| {
-                        KeystoreError::new(
-                            KeystoreErrorKind::Dynamodb,
-                            format!("DynamoDB CreateTable failed: {e}"),
-                        )
-                    })?;
+                    .map_err(|e| map_ddb_error("CreateTable", e))?;
 
                 let table = resp.table_description().ok_or_else(|| {
                     KeystoreError::new(
@@ -406,12 +420,7 @@ impl Keystore for BranchKeyStore {
             .set_transact_items(Some(transact_items))
             .send()
             .await
-            .map_err(|e| {
-                KeystoreError::new(
-                    KeystoreErrorKind::Dynamodb,
-                    format!("DynamoDB TransactWriteItems failed: {e}"),
-                )
-            })?;
+            .map_err(|e| map_ddb_error("TransactWriteItems", e))?;
 
         Ok(branch_key_id)
     }
@@ -539,12 +548,7 @@ impl Keystore for BranchKeyStore {
             .set_transact_items(Some(transact_items))
             .send()
             .await
-            .map_err(|e| {
-                KeystoreError::new(
-                    KeystoreErrorKind::Dynamodb,
-                    format!("DynamoDB TransactWriteItems failed: {e}"),
-                )
-            })?;
+            .map_err(|e| map_ddb_error("TransactWriteItems", e))?;
 
         Ok(())
     }
@@ -695,9 +699,30 @@ fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, Keyst
 
 /// Map a DynamoDB request-builder `BuildError` into a `KeystoreError`.
 fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> KeystoreError {
-    KeystoreError::new(
+    KeystoreError::with_cause(
         KeystoreErrorKind::Internal,
         format!("failed to build a DynamoDB request: {e}"),
+        e,
+    )
+}
+
+/// Map a failed DynamoDB SDK call into a `KeystoreError`, naming the
+/// `operation` that failed. Every SDK error variant collapses into
+/// `KeystoreErrorKind::Dynamodb`; the originating SDK error is retained as the
+/// `cause`, reachable through [`std::error::Error::source`], so a caller
+/// needing a specific DynamoDB exception can downcast to it.
+///
+/// `SdkError`'s `Display` is a bare lifecycle label ("service error",
+/// "dispatch failure"), so the message names this layer only.
+/// `aws_sdk_dynamodb::error::DisplayErrorContext` prints the whole chain.
+fn map_ddb_error<E>(operation: &str, err: E) -> KeystoreError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    KeystoreError::with_cause(
+        KeystoreErrorKind::Dynamodb,
+        format!("DynamoDB {operation} failed"),
+        err,
     )
 }
 
@@ -820,4 +845,25 @@ fn record_from_ddb_item(
         attributes,
         enc: enc_blob.into_inner(),
     })
+}
+
+/// Internal accessors exposed solely so integration tests under `tests/` can
+/// assert on the SDK clients resolved during construction. Gated behind
+/// `test-utils` so it is not compiled for library consumers. Not part of the
+/// public API. Do not use.
+///
+/// Everything in this module is exempt from semantic versioning and may be
+/// changed, renamed, or removed at any time.
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    use super::BranchKeyStore;
+
+    pub fn kms_client(store: &BranchKeyStore) -> &aws_sdk_kms::Client {
+        store.kms_client()
+    }
+
+    pub fn ddb_client(store: &BranchKeyStore) -> &aws_sdk_dynamodb::Client {
+        store.ddb_client()
+    }
 }

@@ -8,7 +8,6 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use fixtures::*;
 use test_helpers::*;
 
@@ -16,7 +15,7 @@ use test_helpers::*;
 async fn test_decrypt_output_includes_encryption_context() {
     let keyring = test_keyring().await;
     let ec = small_encryption_context(SmallEncryptionContextVariation::AB);
-    let enc_input = EncryptInput::with_legacy_keyring(b"ec test", ec.clone(), keyring.clone());
+    let enc_input = EncryptInput::with_keyring(b"ec test", ec.clone(), keyring.clone());
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     let dec_input = DecryptInput::from_encrypt(&ct, &enc_input);
@@ -34,7 +33,7 @@ async fn test_decrypt_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
     let suite = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(b"suite test", EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(b"suite test", EncryptionContext::new(), keyring.clone());
     enc_input.algorithm_suite_id = Some(suite);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
@@ -58,8 +57,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     // unlike tampering the post-authentication signature).
     let keyring = test_keyring().await;
     let pt = vec![0xABu8; 20];
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
+    let mut enc_input = EncryptInput::with_keyring(&pt, EncryptionContext::new(), keyring.clone());
     enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     enc_input.frame_length = FrameLength::new(10).unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -90,7 +88,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let keyring = test_keyring().await;
     let plaintext = b"discard on failure test";
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     // frame_length 4096 exceeds the plaintext, keeping this a single-frame
     // message so decrypt_stream exercises signature verification.
     enc_input.frame_length = FrameLength::new(4096).unwrap();
@@ -107,7 +105,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+    let stream_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#security-considerations
     //= type=test

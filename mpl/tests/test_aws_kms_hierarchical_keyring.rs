@@ -17,6 +17,8 @@
 //! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
 //! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
+use std::error::Error as _;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -821,7 +823,7 @@ fn wrap_unwrap_round_trip_recovers_plaintext() {
     let recovered = branch_key_unwrap(&materials, materials.encryption_context(), &ciphertext)
         .expect("unwrap must succeed");
 
-    // Round-trip success requires the IV value passed to AES-GCM seal on
+    // Round-trip success requires the IV value passed to AES-GCM encrypt on
     // wrap to match the IV bytes stored on-wire (which unwrap reads via
     // `Nonce::assume_unique_for_key(iv_bytes)`). If wrap had passed a
     // different IV to AES-GCM than the one written into the layout, the
@@ -1436,9 +1438,10 @@ mod onencrypt {
                 &self,
                 _branch_key_id: String,
             ) -> Result<BranchKeyMaterials, KeystoreError> {
-                Err(KeystoreError::new(
+                Err(KeystoreError::with_cause(
                     KeystoreErrorKind::RecordNotFound,
                     "no such branch key",
+                    IoError::new(IoErrorKind::NotFound, "ddb: item not found"),
                 ))
             }
             async fn get_branch_key_version(
@@ -1473,6 +1476,30 @@ mod onencrypt {
             Err(e) => e,
         };
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+
+        // The keystore failure is attached as the cause, not merely formatted
+        // into the message, so a caller can recover the originating
+        // `KeystoreError` by type instead of parsing text.
+        let cause = err
+            .source()
+            .expect("the keystore failure must be attached as the cause");
+        let keystore_err = cause
+            .downcast_ref::<KeystoreError>()
+            .expect("the cause must be the originating KeystoreError");
+        assert_eq!(keystore_err.kind(), &KeystoreErrorKind::RecordNotFound);
+
+        // The chain is walkable past the keystore boundary too: whatever the
+        // keystore itself wrapped stays reachable. In production this level is
+        // the AWS SDK error carrying the concrete KMS or DDB exception.
+        let root = keystore_err
+            .source()
+            .expect("the keystore's own cause must remain reachable");
+        assert_eq!(
+            root.downcast_ref::<IoError>()
+                .expect("the root cause must survive unchanged")
+                .kind(),
+            IoErrorKind::NotFound,
+        );
     }
 
     #[tokio::test]
@@ -1706,8 +1733,9 @@ mod ondecrypt {
     }
 
     #[tokio::test]
-    async fn on_decrypt_fails_when_no_edk_matches_filter() {
-        // Empty EDK list → nothing matches → the keyring fails per spec.
+    async fn on_decrypt_with_no_edks_reports_no_match_rather_than_an_empty_aggregate() {
+        // Nothing was attempted, so this is not an aggregate of zero failures
+        // but a distinct one: no encrypted data key matched.
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
@@ -1716,24 +1744,51 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &[])
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
-        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+
+        assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
         assert!(
-            err.message.contains("failed to decrypt any"),
-            "error must identify the no-match path; got: {}",
-            err.message,
+            !err.is_collection(),
+            "with nothing attempted there is nothing to collect; got: {err}",
         );
     }
 
     #[tokio::test]
-    async fn on_decrypt_collects_per_edk_errors_into_final_error() {
+    async fn on_decrypt_with_only_non_matching_edks_reports_no_match() {
+        // The common misconfiguration: EDKs are present but none is this
+        // keyring's, so none is attempted. That is the same non-aggregate
+        // no-match as supplying no EDKs at all.
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
+        let suite_id = non_signing_suite();
+
+        let foreign = EncryptedDataKey::new(
+            "some-other-provider".to_string(),
+            b"some-other-info".to_vec(),
+            vec![0u8; 64],
+        );
+
+        let err = keyring
+            .on_decrypt(empty_decryption_materials(suite_id), &[foreign])
+            .await
+            .expect_err("an EDK from another provider MUST NOT be decrypted");
+
+        assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
+        assert!(
+            !err.is_collection(),
+            "a filtered-out EDK is not an attempt, so there is nothing to collect; got: {err}",
+        );
+    }
+
+    #[tokio::test]
+    async fn on_decrypt_with_a_single_failing_edk_attaches_it_as_the_cause() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         // EDK that passes the filter (correct provider id + provider info)
         // but whose ciphertext is shorter than the spec's salt+iv+version
-        // overhead (28 bytes). The keyring MUST collect the per-EDK error
-        // and surface it in the final error message.
+        // overhead (28 bytes). The keyring MUST surface the per-EDK error
+        // in the final error message.
         let truncated = EncryptedDataKey::new(
             "aws-kms-hierarchy".to_string(),
             FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
@@ -1746,9 +1801,97 @@ mod ondecrypt {
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
         assert!(
-            err.message.contains("ciphertext too short"),
-            "final error must surface the collected per-EDK error; got: {}",
-            err.message,
+            err.to_string().contains("ciphertext too short"),
+            "the rendered error must surface the collected per-EDK error; got: {err}",
+        );
+
+        // Exactly one candidate EDK failed, so that failure is attached as the
+        // cause rather than only being formatted into the message.
+        let per_edk = err
+            .source()
+            .expect("the single per-EDK failure must be attached as the cause")
+            .downcast_ref::<MaterialsError>()
+            .expect("the cause must be the per-EDK MaterialsError");
+        assert!(
+            per_edk.message.contains("ciphertext too short"),
+            "the cause must be the per-EDK error itself; got: {}",
+            per_edk.message,
+        );
+
+        // It is also present on `collected`, so a caller has one uniform place
+        // to read the collected failures without branching on how many there
+        // were.
+        assert_eq!(
+            err.collected_errors(),
+            std::slice::from_ref(per_edk),
+            "the single failure must also be collected",
+        );
+    }
+
+    #[tokio::test]
+    async fn on_decrypt_with_several_failing_edks_aggregates_without_a_single_cause() {
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
+        let suite_id = non_signing_suite();
+
+        // Two candidate EDKs, both too short but by different amounts so each
+        // produces a distinguishable message in the aggregate.
+        let truncated_4 = EncryptedDataKey::new(
+            "aws-kms-hierarchy".to_string(),
+            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
+            vec![0u8; 4],
+        );
+        let truncated_8 = EncryptedDataKey::new(
+            "aws-kms-hierarchy".to_string(),
+            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
+            vec![0u8; 8],
+        );
+
+        let err = keyring
+            .on_decrypt(
+                empty_decryption_materials(suite_id),
+                &[truncated_4, truncated_8],
+            )
+            .await
+            .expect_err("on_decrypt must fail when every EDK attempt errors");
+        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("4 bytes") && rendered.contains("8 bytes"),
+            "the aggregate must surface every per-EDK error; got: {rendered}",
+        );
+
+        // The collected failures stay typed, not merely formatted into the
+        // message, so a caller can inspect each attempt. This is what carries
+        // the spec's "MUST yield an error that includes all the collected
+        // errors" structurally rather than as prose.
+        let collected = err.collected_errors();
+        assert_eq!(
+            collected.len(),
+            2,
+            "both candidate EDK failures must be collected; got: {collected:?}",
+        );
+        for per_edk in collected {
+            assert_eq!(per_edk.kind, MaterialsErrorKind::KeyringFailed);
+            assert!(
+                per_edk.message.contains("ciphertext too short"),
+                "each collected error must be the per-EDK failure itself; got: {}",
+                per_edk.message,
+            );
+        }
+        // Collected in attempt order, so a caller can tell which EDK is which.
+        assert!(collected[0].message.contains("4 bytes"));
+        assert!(collected[1].message.contains("8 bytes"));
+
+        // With more than one failure there is no single error to nominate as
+        // the cause; the typed failures live on `collected` instead. If this
+        // starts failing, on_decrypt picked a cause among several and the
+        // choice needs to be justified.
+        assert!(
+            err.source().is_none(),
+            "an aggregate over several failures must not attach one of them as \
+             the cause; got: {err}",
         );
     }
 
@@ -1829,11 +1972,28 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
         assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+        // The per-attempt text is rendered by Display from `collected`, not
+        // baked into `message`, so the assertion reads the rendered form.
         assert!(
-            err.message.contains("get_branch_key_version failed"),
-            "final error must surface the keystore failure; got: {}",
-            err.message,
+            err.to_string().contains("get_branch_key_version failed"),
+            "the rendered error must surface the keystore failure; got: {err}",
         );
+
+        // One candidate EDK, so on_decrypt attaches that per-EDK failure as
+        // the cause and the chain stays walkable all the way to the keystore.
+        let per_edk = err
+            .source()
+            .expect("a single failing EDK must be attached as the cause")
+            .downcast_ref::<MaterialsError>()
+            .expect("the cause must be the per-EDK MaterialsError");
+        assert_eq!(per_edk.kind, MaterialsErrorKind::KeyringFailed);
+
+        let keystore_err = per_edk
+            .source()
+            .expect("the per-EDK failure must itself carry the keystore cause")
+            .downcast_ref::<KeystoreError>()
+            .expect("the root cause must be the originating KeystoreError");
+        assert_eq!(keystore_err.kind(), &KeystoreErrorKind::RecordNotFound);
     }
 
     #[tokio::test]

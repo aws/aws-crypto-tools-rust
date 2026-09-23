@@ -20,8 +20,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     // frame auth tag is the integrity layer under test.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0u8..=200).collect(); // 201 bytes / frame_length 50 → 4 regular + 1 final
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
+    let mut enc_input = EncryptInput::with_keyring(&pt, EncryptionContext::new(), keyring.clone());
     enc_input.frame_length = FrameLength::new(50).unwrap();
     enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -230,15 +229,14 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
     // All-distinct bytes: any reorder, skip, or duplication breaks equality.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0..=255).collect();
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
+    let mut enc_input = EncryptInput::with_keyring(&pt, EncryptionContext::new(), keyring.clone());
     enc_input.frame_length = FrameLength::new(50).unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
     //# - The plaintext MUST be the next subsequence of consumable plaintext bytes that have not yet been encrypted.
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
     let result = decrypt(&dec_input).await.unwrap().plaintext;
     assert_eq!(result, pt);
 }
@@ -345,7 +343,7 @@ async fn test_construct_frame_final_frame_field_serialization() {
 async fn test_construct_frame_streaming_frame_released() {
     let keyring = test_keyring().await;
     let mut stream_input =
-        EncryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring.clone());
+        EncryptStreamInput::with_keyring(EncryptionContext::new(), keyring.clone());
     stream_input.frame_length = FrameLength::new(10).unwrap();
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
@@ -366,7 +364,7 @@ async fn test_construct_frame_streaming_frame_released() {
     //# the serialized frame MUST be released.
     assert!(!output.is_empty());
 
-    let dec_input = DecryptInput::with_legacy_keyring(&output, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_keyring(&output, EncryptionContext::new(), keyring);
     let decrypted = decrypt(&dec_input).await.unwrap();
     assert_eq!(decrypted.plaintext, plaintext);
 }

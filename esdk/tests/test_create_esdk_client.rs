@@ -1,10 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use aws_crypto_mpl::cmm::DefaultCmm;
+use aws_crypto_mpl::keyring::{self, RawAesKeyring};
 use aws_esdk::{
     Cmm, DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, Keyring, decrypt,
-    encrypt, mpl,
+    encrypt,
 };
+use aws_mpl_primitives::AesGcm;
+use std::sync::Arc;
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -43,17 +47,17 @@ const ESDK_NET_V400_MESSAGE: &[u8] = &[
 // the message must fail header authentication rather than decrypt.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_net_v400_message_is_not_readable() {
-    let raw_aes_keyring = mpl()
-        .create_raw_aes_keyring()
-        .key_namespace("Some managed raw keys")
-        .key_name("My 256-bit AES wrapping key")
-        .wrapping_key(aws_smithy_types::Blob::new([0; 32]))
-        .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        .send()
-        .await
-        .unwrap();
+    let raw_aes_keyring: Arc<dyn keyring::Keyring> = Arc::new(
+        RawAesKeyring::new(
+            "Some managed raw keys",
+            "My 256-bit AES wrapping key",
+            vec![0u8; 32],
+            AesGcm::Aes256Gcm,
+        )
+        .expect("raw AES keyring construction must succeed for the .NET v4.0.0 regression key"),
+    );
 
-    let input = DecryptInput::with_legacy_keyring(
+    let input = DecryptInput::with_keyring(
         ESDK_NET_V400_MESSAGE,
         EncryptionContext::new(),
         raw_aes_keyring,
@@ -69,23 +73,52 @@ async fn test_net_v400_message_is_not_readable() {
     );
 }
 
-#[test]
-fn test_default_commitment_policy() {
+// An absent commitment policy is resolved by the operation, not by the input's
+// Default, so the resolved value is proven by its effect. Two observations pin
+// it: rejecting a non-committing suite on encrypt rules out
+// FORBID_ENCRYPT_ALLOW_DECRYPT (the only policy that permits one), and rejecting
+// a non-committing message on decrypt rules out REQUIRE_ENCRYPT_ALLOW_DECRYPT
+// (which permits one). Together only REQUIRE_ENCRYPT_REQUIRE_DECRYPT remains.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_default_commitment_policy() {
+    assert!(
+        EncryptInput::default().commitment_policy.is_none(),
+        "the field must default to absent so the operation resolves it"
+    );
+    assert!(
+        DecryptInput::default().commitment_policy.is_none(),
+        "the field must default to absent so the operation resolves it"
+    );
+
+    let keyring = test_keyring().await;
+    let mut enc = EncryptInput::with_keyring(
+        b"default commitment policy",
+        EncryptionContext::new(),
+        keyring.clone(),
+    );
+    enc.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+
     //= spec/client-apis/client.md#initialization
     //= type=test
-    //= reason=EncryptInput::default() and DecryptInput::default() both return RequireEncryptRequireDecrypt
+    //= reason=With no policy set, encrypt rejects a non-committing suite; only the two REQUIRE_ENCRYPT policies do that
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    let expected = aws_mpl_legacy::commitment::EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
-    assert_eq!(
-        EncryptInput::default().commitment_policy,
-        expected,
-        "EncryptInput default commitment policy"
-    );
-    assert_eq!(
-        DecryptInput::default().commitment_policy,
-        expected,
-        "DecryptInput default commitment policy"
-    );
+    let err = encrypt(&enc)
+        .await
+        .expect_err("the resolved default must forbid encrypting under a non-committing suite");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got: {err:?}");
+
+    // A non-committing (V1) message, written with an explicit policy that permits it.
+    let v1 = test_helpers::encrypt_v1(b"default commitment policy").await;
+    let dec = DecryptInput::with_keyring(&v1, EncryptionContext::new(), keyring);
+
+    //= spec/client-apis/client.md#initialization
+    //= type=test
+    //= reason=With no policy set, decrypt rejects a non-committing message; only REQUIRE_ENCRYPT_REQUIRE_DECRYPT does that
+    //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
+    let err = decrypt(&dec)
+        .await
+        .expect_err("the resolved default must forbid decrypting a non-committing message");
+    assert_eq!(err.kind, ErrorKind::ValidationError, "got: {err:?}");
 }
 
 #[test]
@@ -152,8 +185,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     //= type=test
     //= reason=encrypt_input.algorithm_suite_id is set to Some(non-default V1 suite); encrypt() succeeds
     //# - Encrypt operation input MUST accept an optional [Algorithm Suite](#algorithm-suite) argument.
-    encrypt_input.algorithm_suite_id =
-        Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+    encrypt_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
 
     //= spec/client-apis/client.md#initialization
     //= type=test
@@ -163,10 +195,9 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     //
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
-    //= reason=commitment_policy is an EsdkCommitmentPolicy from aws_mpl_legacy; encrypt() honors it
+    //= reason=commitment_policy is an EsdkCommitmentPolicy from aws_esdk; encrypt() honors it
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    encrypt_input.commitment_policy =
-        aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    encrypt_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
@@ -195,9 +226,9 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
-    //= reason=encrypt_input.keyring is Some(Keyring::Legacy(...)); encrypt() succeeds
+    //= reason=encrypt_input.keyring is Some(Keyring::from(...)); encrypt() succeeds
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
-    encrypt_input.keyring = Some(Keyring::Legacy(keyring.clone()));
+    encrypt_input.keyring = Some(Keyring::from(keyring.clone()));
 
     let encrypt_output = encrypt(&encrypt_input)
         .await
@@ -225,12 +256,11 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
-    //= reason=decrypt_input.keyring is Some(Keyring::Legacy(...)); decrypt() succeeds
+    //= reason=decrypt_input.keyring is Some(Keyring::from(...)); decrypt() succeeds
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
-    decrypt_input.keyring = Some(Keyring::Legacy(keyring));
+    decrypt_input.keyring = Some(Keyring::from(keyring));
 
-    decrypt_input.commitment_policy =
-        aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    decrypt_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     decrypt_input.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(5).unwrap());
 
     let decrypt_output = decrypt(&decrypt_input)
@@ -255,12 +285,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_accepts_cmm() {
     let keyring = test_keyring().await;
-    let cmm = mpl()
-        .create_default_cryptographic_materials_manager()
-        .keyring(keyring)
-        .send()
-        .await
-        .expect("default CMM construction must succeed for the test keyring");
+    let cmm = Cmm::new(DefaultCmm::new(keyring));
     let plaintext = b"cmm round-trip plaintext";
 
     let mut encrypt_input = EncryptInput::new();
@@ -268,9 +293,9 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
-    //= reason=encrypt_input.cmm is Some(Cmm::Legacy(...)); encrypt() succeeds
+    //= reason=encrypt_input.cmm is Some(Cmm::new(...)); encrypt() succeeds
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    encrypt_input.cmm = Some(Cmm::Legacy(cmm.clone()));
+    encrypt_input.cmm = Some(cmm.clone());
 
     let encrypt_output = encrypt(&encrypt_input)
         .await
@@ -281,9 +306,9 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
-    //= reason=decrypt_input.cmm is Some(Cmm::Legacy(...)); decrypt() succeeds
+    //= reason=decrypt_input.cmm is Some(Cmm::new(...)); decrypt() succeeds
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    decrypt_input.cmm = Some(Cmm::Legacy(cmm));
+    decrypt_input.cmm = Some(cmm);
 
     let decrypt_output = decrypt(&decrypt_input)
         .await
@@ -301,12 +326,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm = mpl()
-        .create_default_cryptographic_materials_manager()
-        .keyring(keyring.clone())
-        .send()
-        .await
-        .expect("default CMM construction must succeed for the test keyring");
+    let cmm = Cmm::new(DefaultCmm::new(keyring.clone()));
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
@@ -328,8 +348,8 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
 
     let mut both = EncryptInput::new();
     both.plaintext = b"two sources";
-    both.keyring = Some(Keyring::Legacy(keyring));
-    both.cmm = Some(Cmm::Legacy(cmm));
+    both.keyring = Some(Keyring::from(keyring));
+    both.cmm = Some(cmm);
     let err = encrypt(&both)
         .await
         .expect_err("encrypt must fail when both keyring and cmm are set");
@@ -346,12 +366,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm = mpl()
-        .create_default_cryptographic_materials_manager()
-        .keyring(keyring.clone())
-        .send()
-        .await
-        .expect("default CMM construction must succeed for the test keyring");
+    let cmm = Cmm::new(DefaultCmm::new(keyring.clone()));
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
@@ -370,8 +385,8 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
         err.kind
     );
 
-    neither.keyring = Some(Keyring::Legacy(keyring));
-    neither.cmm = Some(Cmm::Legacy(cmm));
+    neither.keyring = Some(Keyring::from(keyring));
+    neither.cmm = Some(cmm);
     let err = decrypt(&neither)
         .await
         .expect_err("decrypt must fail when both keyring and cmm are set");
@@ -384,21 +399,19 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
 
 // Esdk client tests
 
+use aws_esdk::EsdkAlgorithmSuiteId;
+use aws_esdk::EsdkCommitmentPolicy;
 use aws_esdk::{Esdk, EsdkConfig};
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 
 #[test]
 fn test_esdk_default_uses_default_config() {
     // Default Esdk has the spec-default commitment policy and no EDK cap.
     let esdk = Esdk::default();
-    //= spec/client-apis/client.md#initialization
-    //= type=test
-    //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    assert_eq!(
-        esdk.config().commitment_policy,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
-        "Esdk::default() must use the default commitment policy"
+    // Carries no override; the operation resolves the spec default, which
+    // test_default_commitment_policy proves behaviourally.
+    assert!(
+        esdk.config().commitment_policy.is_none(),
+        "Esdk::default() must not pin a commitment policy"
     );
     //= spec/client-apis/client.md#initialization
     //= type=test
@@ -421,7 +434,7 @@ fn test_esdk_builder_sets_commitment_policy() {
         .build();
     assert_eq!(
         esdk.config().commitment_policy,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt),
         "builder().commitment_policy(...) must set it on the resulting Esdk's config"
     );
 }
@@ -445,12 +458,12 @@ fn test_esdk_builder_sets_max_encrypted_data_keys() {
 fn test_esdk_new_takes_explicit_config() {
     // Direct construction from a built EsdkConfig is also supported.
     let mut config = EsdkConfig::default();
-    config.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    config.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     config.max_encrypted_data_keys = std::num::NonZeroUsize::new(7);
     let esdk = Esdk::new(config);
     assert_eq!(
         esdk.config().commitment_policy,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt
+        Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
     );
     assert_eq!(
         esdk.config().max_encrypted_data_keys,
@@ -464,10 +477,10 @@ fn test_esdk_new_takes_explicit_config() {
 // real keyring for these tests.
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_encrypt_rejects_input_with_non_default_commitment_policy() {
+async fn test_esdk_encrypt_rejects_input_with_commitment_policy() {
     let esdk = Esdk::default();
     let mut input = EncryptInput::new();
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
 
     let err = esdk
         .encrypt(&input)
@@ -477,6 +490,35 @@ async fn test_esdk_encrypt_rejects_input_with_non_default_commitment_policy() {
         matches!(err.kind, ErrorKind::ValidationError),
         "expected ValidationError, got {:?}",
         err.kind
+    );
+}
+
+// Setting the policy to the same value the client would resolve is still setting
+// it in two places. The former check compared against the default value, so this
+// case was silently accepted and the client's config overwrote it; an absent
+// field is now the only way to defer to the client.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_esdk_encrypt_rejects_input_with_explicitly_default_commitment_policy() {
+    let esdk = Esdk::default();
+    let mut input = EncryptInput::new();
+    input.commitment_policy = Some(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt);
+
+    let err = esdk.encrypt(&input).await.expect_err(
+        "Esdk::encrypt must reject input that sets commitment_policy, even to the default value",
+    );
+    assert!(
+        matches!(err.kind, ErrorKind::ValidationError),
+        "expected ValidationError, got {:?}",
+        err.kind
+    );
+    // Pin the message: this input also sets no keyring, so a bare ValidationError
+    // would be satisfied by the keyring-or-CMM check inside encrypt() and would
+    // pass even if the conflict check never fired.
+    assert!(
+        err.message
+            .contains("provided by both the Esdk client and the input struct"),
+        "must be rejected by the two-places conflict check, got: {}",
+        err.message
     );
 }
 
@@ -498,10 +540,10 @@ async fn test_esdk_encrypt_rejects_input_with_max_encrypted_data_keys() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_decrypt_rejects_input_with_non_default_commitment_policy() {
+async fn test_esdk_decrypt_rejects_input_with_commitment_policy() {
     let esdk = Esdk::default();
     let mut input = DecryptInput::new();
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
 
     let err = esdk
         .decrypt(&input)
@@ -544,7 +586,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
         .build();
 
     let ec = EncryptionContext::new();
-    let enc_input = EncryptInput::with_legacy_keyring(plaintext, ec.clone(), keyring.clone());
+    let enc_input = EncryptInput::with_keyring(plaintext, ec.clone(), keyring.clone());
     //= spec/client-apis/client.md#encrypt
     //= type=test
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
@@ -554,7 +596,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
         .await
         .expect("Esdk::encrypt must succeed for a default input + configured client");
 
-    let dec_input = DecryptInput::with_legacy_keyring(&ct.ciphertext, ec, keyring);
+    let dec_input = DecryptInput::with_keyring(&ct.ciphertext, ec, keyring);
     //= spec/client-apis/client.md#decrypt
     //= type=test
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
@@ -584,7 +626,7 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
 
-    let mut enc_input = EncryptInput::with_legacy_keyring(b"x", EncryptionContext::new(), keyring);
+    let mut enc_input = EncryptInput::with_keyring(b"x", EncryptionContext::new(), keyring);
     // Explicitly request a V2 committing suite. ForbidEncryptAllowDecrypt
     // forbids committing on encrypt → must fail.
     enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
@@ -592,20 +634,24 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         .encrypt(&enc_input)
         .await
         .expect_err("ForbidEncryptAllowDecrypt + committing V2 suite must fail encrypt");
-    // The MPL surfaces the policy conflict as InvalidAlgorithmSuiteInfoOnEncrypt.
-    // Match on the variant name (a stable type identity) rather than message text
-    // so the test doesn't break on MPL message rewording.
-    let ErrorKind::LegacyError(legacy) = &err.kind else {
-        panic!("expected LegacyError, got {:?}: {}", err.kind, err.message);
-    };
-    let inner = format!("{legacy:?}");
+    // The ESDK gates the algorithm suite against the commitment policy before
+    // calling the MPL, surfacing the conflict as a ValidationError. Match on the
+    // variant (a stable type identity) rather than message text.
+    assert_eq!(
+        err.kind,
+        ErrorKind::ValidationError,
+        "expected ValidationError, got {:?}: {}",
+        err.kind,
+        err.message
+    );
+    let inner = err.to_string();
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
-    //= reason=the InvalidAlgorithmSuiteInfoOnEncrypt error comes from the MPL's commitment-policy enforcement
+    //= reason=the ESDK gates the algorithm suite against the commitment policy and yields a ValidationError
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
     assert!(
-        inner.contains("InvalidAlgorithmSuiteInfoOnEncrypt"),
-        "expected InvalidAlgorithmSuiteInfoOnEncrypt MPL error, got: {inner}"
+        inner.contains("commitment policy"),
+        "expected a commitment-policy rejection, got: {inner}"
     );
 }
 
@@ -640,7 +686,7 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     let esdk = Esdk::builder()
         .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
-    let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
 
     let out = esdk
         .decrypt(&dec_input)
@@ -659,16 +705,20 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     let err = default_esdk.decrypt(&dec_input).await.expect_err(
         "default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
     );
-    let ErrorKind::LegacyError(legacy) = &err.kind else {
-        panic!("expected LegacyError, got {:?}: {}", err.kind, err.message);
-    };
-    let inner = format!("{legacy:?}");
+    assert_eq!(
+        err.kind,
+        ErrorKind::ValidationError,
+        "expected ValidationError, got {:?}: {}",
+        err.kind,
+        err.message
+    );
+    let inner = err.to_string();
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
-    //= reason=the InvalidAlgorithmSuiteInfoOnDecrypt error comes from the MPL's commitment-policy enforcement
+    //= reason=the ESDK gates the parsed algorithm suite against the commitment policy and yields a ValidationError
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
     assert!(
-        inner.contains("InvalidAlgorithmSuiteInfoOnDecrypt"),
-        "expected InvalidAlgorithmSuiteInfoOnDecrypt MPL error, got: {inner}"
+        inner.contains("commitment policy"),
+        "expected a commitment-policy rejection, got: {inner}"
     );
 }
