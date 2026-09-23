@@ -12,7 +12,7 @@ use crate::message::serialize_functions::{
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::primitives::aes_decrypt;
+use aws_mpl_primitives::aes_decrypt;
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 fn release_previous_frame(
@@ -42,12 +42,12 @@ pub(crate) fn read_and_decrypt_framed_message_body(
 
     //= spec/data-format/message-body.md#regular-frame-iv
     //# The IV length MUST be equal to the IV length of the algorithm suite specified by the [Algorithm Suite ID](message-header.md#algorithm-suite-id) field.
-    let mut iv = vec![0u8; usize::from(get_iv_length(&header.suite))];
+    let mut iv = vec![0u8; get_iv_length(&header.suite)];
 
     //= spec/data-format/message-body.md#regular-frame-authentication-tag
     //# The authentication tag length MUST be equal to the authentication tag length of the algorithm suite
     //# specified by the [Algorithm Suite ID](message-header.md#algorithm-suite-id) field.
-    let mut auth_tag = vec![0u8; usize::from(get_tag_length(&header.suite))];
+    let mut auth_tag = vec![0u8; get_tag_length(&header.suite)];
     let alg_suite = get_alg_suite(&header.suite)?;
     let frame_length_u64 = u64::from(header.body.frame_length());
     let Ok(frame_length_usize) = usize::try_from(header.body.frame_length()) else {
@@ -535,12 +535,8 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //= type=implication
     //= reason=read_vec returns Vec<u8>
     //# The IV MUST be interpreted as bytes.
-    let iv = serialize_functions::read_vec(
-        ciphertext,
-        usize::from(get_iv_length(&header.suite)),
-        sig_digest,
-    )?;
-    debug_assert_eq!(iv.len(), usize::from(get_iv_length(&header.suite)));
+    let iv = serialize_functions::read_vec(ciphertext, get_iv_length(&header.suite), sig_digest)?;
+    debug_assert_eq!(iv.len(), get_iv_length(&header.suite));
 
     //= spec/data-format/message-body.md#nonframed-data-encrypted-content-length
     //# The encrypted content length MUST be interpreted as a UInt64.
@@ -591,12 +587,9 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //= type=implication
     //= reason=read_vec returns Vec<u8>
     //# The authentication tag value MUST be interpreted as bytes.
-    let auth_tag = serialize_functions::read_vec(
-        ciphertext,
-        usize::from(get_tag_length(&header.suite)),
-        sig_digest,
-    )?;
-    debug_assert_eq!(auth_tag.len(), usize::from(get_tag_length(&header.suite)));
+    let auth_tag =
+        serialize_functions::read_vec(ciphertext, get_tag_length(&header.suite), sig_digest)?;
+    debug_assert_eq!(auth_tag.len(), get_tag_length(&header.suite));
     let mut aad = Vec::new();
 
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption

@@ -68,6 +68,10 @@ pub struct BranchKeyStore {
     keystore_id: String,
 }
 
+/// DynamoDB's documented table-name bounds.
+const DDB_TABLE_NAME_MIN_LEN: usize = 3;
+const DDB_TABLE_NAME_MAX_LEN: usize = 255;
+
 impl BranchKeyStore {
     /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`], resolving
     /// any absent AWS SDK client.
@@ -92,6 +96,20 @@ impl BranchKeyStore {
         // malformed ARN fails before any operation is dispatched, and before
         // its Region is used to build a default client.
         config.kms_configuration.validate()?;
+
+        // DynamoDB documents a 3-255 character limit,
+        // and without this the failure is deferred to the first
+        // request.
+        // Not a keystore-spec requirement — it mirrors the service constraint.
+        let name_len = config.ddb_table_name.len();
+        if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
+            return Err(KeystoreError::new(
+                KeystoreErrorKind::Configuration,
+                format!(
+                    "ddb_table_name must be between {DDB_TABLE_NAME_MIN_LEN} and {DDB_TABLE_NAME_MAX_LEN} characters, got {name_len}",
+                ),
+            ));
+        }
 
         // Resolve any absent client to a default built from the Region in
         // the KMS ARN, storing it back into the config so the config always
