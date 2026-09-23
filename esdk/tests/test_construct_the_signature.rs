@@ -41,19 +41,16 @@ async fn test_signature_uses_signing_algorithm() {
     // Strategy: encrypt with a P-384 signing suite, extract the footer signature,
     // and verify it succeeds with EcdsaP384 but fails with EcdsaP256. This proves
     // the specific algorithm from the suite was used.
-    use aws_mpl_legacy::primitives::{
-        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
-    };
+    use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
+    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
         b"algorithm choice test",
         aws_esdk::EncryptionContext::new(),
         keyring,
     );
-    enc_input.algorithm_suite_id = Some(
-        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-    );
+    enc_input.algorithm_suite_id =
+        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
@@ -109,19 +106,16 @@ async fn test_signature_key_is_signing_key() {
     // from the ciphertext, rebuild a digest over header+body, and verify the signature
     // with that key. Success proves the signing key that produced the footer corresponds
     // to the verification key in the encryption materials.
-    use aws_mpl_legacy::primitives::{
-        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
-    };
+    use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
+    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
         b"signing key direct test",
         aws_esdk::EncryptionContext::new(),
         keyring,
     );
-    enc_input.algorithm_suite_id = Some(
-        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-    );
+    enc_input.algorithm_suite_id =
+        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
@@ -302,19 +296,16 @@ async fn test_footer_equals_calculated() {
     // Prove the footer in the output is a valid signature over header+body by
     // independently verifying it. If the output footer differed from the calculated
     // footer, verification would fail.
-    use aws_mpl_legacy::primitives::{
-        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
-    };
+    use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
+    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
         b"footer equals calculated test",
         aws_esdk::EncryptionContext::new(),
         keyring.clone(),
     );
-    enc_input.algorithm_suite_id = Some(
-        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-    );
+    enc_input.algorithm_suite_id =
+        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
@@ -342,11 +333,8 @@ async fn test_footer_equals_calculated() {
     );
 
     // Round-trip corroboration.
-    let dec_input = aws_esdk::DecryptInput::with_legacy_keyring(
-        ct,
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
+    let dec_input =
+        aws_esdk::DecryptInput::with_keyring(ct, aws_esdk::EncryptionContext::new(), keyring);
     let pt = aws_esdk::decrypt(&dec_input).await.unwrap().plaintext;
     assert_eq!(pt, b"footer equals calculated test");
 }
@@ -378,14 +366,13 @@ async fn test_no_signature_without_signing_suite() {
 async fn test_footer_serialized_releases_all_bytes() {
     // Signing suite output ends exactly at the footer; proves all bytes released atomically.
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_legacy_keyring(
+    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
         b"release all bytes test",
         aws_esdk::EncryptionContext::new(),
         keyring.clone(),
     );
-    enc_input.algorithm_suite_id = Some(
-        aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-    );
+    enc_input.algorithm_suite_id =
+        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let ct = aws_esdk::encrypt(&enc_input).await.unwrap().ciphertext;
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);
