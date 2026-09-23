@@ -84,7 +84,7 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     //= reason=Mismatched reproduced EC value triggers MPL "does not match reproduced encryption context" error, proving the reproduced EC was used
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     assert!(
-        inner.contains("disagrees with the message's encryption context"),
+        inner.contains("does not match reproduced encryption context"),
         "expected reproduced-EC mismatch error, got: {inner}"
     );
 

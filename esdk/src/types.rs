@@ -39,12 +39,6 @@ impl std::fmt::Debug for Cmm {
 
 impl Keyring {
     /// Wrap a caller's keyring implementation.
-    ///
-    /// Prefer this over [`Keyring::from`] when you own the value: `From` takes
-    /// an `Arc<dyn Keyring>`, and because the compiler has to infer that type
-    /// parameter it cannot apply the unsizing coercion, so callers are forced to
-    /// write `Arc::new(k) as Arc<dyn Keyring>` at the call site. Use `From` when
-    /// you already hold a shared handle you want to reuse.
     #[must_use]
     pub fn new<K: keyring::Keyring + 'static>(keyring: K) -> Self {
         Self(Arc::new(keyring))
@@ -59,9 +53,6 @@ impl From<Arc<dyn keyring::Keyring>> for Keyring {
 
 impl Cmm {
     /// Wrap a caller's CMM implementation.
-    ///
-    /// Prefer this over [`Cmm::from`] when you own the value; see
-    /// [`Keyring::new`] for why.
     #[must_use]
     pub fn new<C: cmm::Cmm + 'static>(cmm: C) -> Self {
         Self(Arc::new(cmm))

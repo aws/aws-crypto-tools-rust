@@ -284,7 +284,7 @@ async fn test_suite_from_materials_used() {
     );
 }
 
-// TODO(native-mpl): relies on multi-keyring, intentionally omitted from the native MPL
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 // #[tokio::test(flavor = "multi_thread")]
 // async fn test_max_edk_exceeded_error() {
 //     // Set max_encrypted_data_keys to 0 (impossible to satisfy) — should fail.
@@ -670,7 +670,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must halt and indicate failure when a step fails");
     // Native path: the failing step (suite-vs-commitment-policy validation) surfaces
-    // as a ValidationError from the ESDK encrypt front-end.
+    // as a ValidationError from the ESDK encrypt.
     assert_eq!(
         err.kind,
         ErrorKind::ValidationError,

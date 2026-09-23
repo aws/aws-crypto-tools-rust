@@ -53,8 +53,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .await
         .expect_err("wrong keyring must fail to obtain materials");
     // Natively, the wrapped keyring's on_decrypt returns a MaterialsError that
-    // the ESDK surfaces as ErrorKind::MplError (the analogue of the legacy
-    // default-CMM CollectionOfErrors).
+    // the ESDK surfaces as ErrorKind::MplError
     assert_eq!(
         err.kind,
         ErrorKind::MplError,
@@ -87,7 +86,7 @@ async fn test_pre_cmm_commitment_policy_check() {
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Policy that allows the parsed suite → Ok; policy that doesn't → pre-CMM ValidationError
+    //= reason=Policy that allows the parsed suite → Ok; policy that doesn't → ValidationError
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
@@ -104,8 +103,7 @@ async fn test_pre_cmm_commitment_policy_check() {
         .await
         .expect_err("policy that requires committing must reject non-committing suite");
     // The parsed-suite-vs-commitment-policy check runs pre-CMM in decrypt.rs and
-    // yields a ValidationError (the native analogue of the legacy
-    // InvalidAlgorithmSuiteInfoOnDecrypt).
+    // yields a ValidationError.
     assert_eq!(
         err.kind,
         ErrorKind::ValidationError,

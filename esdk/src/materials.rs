@@ -109,9 +109,16 @@ pub(crate) async fn get_decryption_materials(
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<ValidatedMaterials<DecryptionMaterials>, Error> {
     let policy = CommitmentPolicy::Esdk(commitment_policy);
+    //= spec/client-apis/decrypt.md#get-the-decryption-materials
+    //# - Encryption Context: This MUST be the parsed [encryption context](../data-format/message-header.md#aad)
+    //# from the message header.
     let encryption_context = to_mpl_ec(&from_canonical_pairs(
         header_body.encryption_context().clone(),
     ));
+
+    //= spec/client-apis/decrypt.md#get-the-decryption-materials
+    //# - Encrypted Data Keys: This MUST be the parsed [encrypted data keys](../data-format/message-header.md#encrypted-data-keys)
+    //# from the message header.
     let edks: Vec<EncryptedDataKey> = header_body.encrypted_data_keys().to_vec();
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -138,6 +145,12 @@ pub(crate) async fn get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# This operation MUST obtain this set of [decryption materials](../framework/structures.md#decryption-materials),
     //# by calling [Decrypt Materials](../framework/cmm-interface.md#decrypt-materials) on a [CMM](../framework/cmm-interface.md).
+    //
+    //= spec/client-apis/decrypt.md#cryptographic-materials-manager
+    //# This CMM MUST obtain the [decryption materials](../framework/structures.md#decryption-materials) required for decryption.
+    //
+    //= spec/client-apis/decrypt.md#keyring
+    //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
     let materials = cmm.0.decrypt_materials(request).await?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -190,6 +203,10 @@ pub(crate) async fn get_encryption_materials(
     //
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# - Encryption Context: If provided, this MUST be the [input encryption context](#encryption-context).
+    //
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= reason=Encryption context is empty by default
+    //# Otherwise, this MUST be an empty encryption context.
     let mut request = EncryptionMaterialsRequest::new(to_mpl_ec(&encryption_context), policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials

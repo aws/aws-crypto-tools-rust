@@ -63,7 +63,7 @@ async fn test_verify_header_fails_on_tampered_header() {
 }
 
 // TODO(native-mpl): relies on the smithy `mpl()` client + required-encryption-context
-// CMM (create_required_encryption_context_cmm), intentionally omitted from native
+// CMM (create_required_encryption_context_cmm), not yet implemented in native
 // aws-crypto-mpl (no RequiredEncryptionContextCmm type; EncryptInput exposes no
 // required_encryption_context_keys). The EC-to-only-authenticate AAD path can be
 // re-covered once/if a native required-EC CMM lands.

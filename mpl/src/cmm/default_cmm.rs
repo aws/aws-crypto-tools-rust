@@ -250,7 +250,7 @@ fn merge_reproduced_encryption_context(
             Some(message_value) => {
                 if message_value != value {
                     return Err(MaterialsError::encryption_context_value_mismatch(format!(
-                        "decrypt_materials: reproduced encryption context disagrees with the message's encryption context on key '{}'",
+                        "decrypt_materials: message encryption context does not match reproduced encryption context on key '{}'",
                         String::from_utf8_lossy(key),
                     )));
                 }

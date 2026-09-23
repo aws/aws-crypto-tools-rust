@@ -120,9 +120,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         "expected MplError, got: {:?}",
         err.kind
     );
-    // Assert the MPL's typed error kind, not its message. The message is not a
-    // contract and has already been reworded once; the kind is what the keyring
-    // promises.
+    // Assert the MPL's typed error kind, not its message.
     let cause = err
         .cause
         .as_ref()

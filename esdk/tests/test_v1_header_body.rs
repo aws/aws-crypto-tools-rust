@@ -137,7 +137,7 @@ async fn test_v1_header_message_id() {
 }
 
 // TODO(native-mpl): relies on required-encryption-context CMM
-// (create_required_encryption_context_cmm) intentionally omitted; native
+// (create_required_encryption_context_cmm) not yet implemented; native
 // aws-crypto-mpl exposes no required-EC CMM and EncryptInput has no
 // required_encryption_context_keys field.
 /*

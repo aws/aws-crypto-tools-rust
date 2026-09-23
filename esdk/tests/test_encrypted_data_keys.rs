@@ -11,7 +11,7 @@ use aws_esdk::*;
 use fixtures::*;
 use test_helpers::*;
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypted_data_keys_ordering() {
@@ -60,7 +60,7 @@ async fn test_encrypted_data_keys_ordering() {
 }
 */
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_edk_section_length_fields_are_big_endian_uint16() {
@@ -181,7 +181,7 @@ async fn test_edk_count_zero_rejected_on_decrypt() {
     }
 }
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_edk_count_max_enforcement() {
@@ -298,7 +298,7 @@ async fn test_edk_entry_field_order() {
     }
 }
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_edk_entries_preserve_keyring_order() {
@@ -329,7 +329,7 @@ async fn test_edk_entries_preserve_keyring_order() {
 }
 */
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_edk_entry_lengths_match_fields() {
@@ -374,7 +374,7 @@ async fn test_edk_entry_lengths_match_fields() {
 }
 */
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_key_provider_id_is_utf8() {

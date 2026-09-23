@@ -161,7 +161,7 @@ async fn test_unsupported_type_rejected() {
     );
 }
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL intentionally omits
+// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_max_encrypted_data_keys_enforcement() {

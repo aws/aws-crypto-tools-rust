@@ -235,18 +235,7 @@ pub enum CacheType {
     StormTracking(StormTrackingCache),
 }
 
-/// Materialize a [`CacheType`] into a concrete cache.
-///
-/// This is the single place the mapping from configuration to implementation
-/// lives, so a CMP that accepts a `CacheType` and a caller that wants a
-/// standalone cache to share across CMPs both produce the same thing.
-///
-/// `CacheType::StormTracking` carries a `grace_period` that the specification
-/// requires to be less than the consuming CMP's cache-limit TTL. That bound
-/// relates two different objects' configuration, so it is **not** checked here —
-/// a standalone cache has no TTL to compare against. The consuming CMP checks it
-/// before calling this function; see
-/// [`HierarchicalKeyring::new`](crate::aws_kms::hierarchical_keyring::HierarchicalKeyring::new).
+/// Helper function that turns [`CacheType`] into a concrete cache.
 ///
 /// # Errors
 ///

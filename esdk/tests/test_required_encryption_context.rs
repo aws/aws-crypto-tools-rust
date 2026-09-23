@@ -8,7 +8,7 @@
 //!
 //! TODO(native-mpl): every test in this file is disabled during the migration
 //! to the native `aws-crypto-mpl`. They depend on capabilities the native MPL
-//! intentionally omits:
+//! does not yet implement:
 //!   - the Required Encryption Context CMM
 //!     (`create_required_encryption_context_cmm`) — native MPL exposes only
 //!     `DefaultCmm`, and `EncryptInput` has no required-encryption-context-keys
@@ -139,6 +139,10 @@ async fn test_repr_encryption_context_with_same_ec_happy_case() {
         rsa_keyring.clone(),
     );
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
+    //= spec/client-apis/decrypt.md#get-the-decryption-materials
+    //= type=test
+    //= reason=Decrypt supplies the same EC used on encrypt and succeeds, proving the reproduced EC is the input EC
+    //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test KMS
@@ -203,12 +207,24 @@ async fn test_remove_on_encrypt_and_supply_on_decrypt_happy_case() {
     let encrypt_output = encrypt(&encrypt_input).await.unwrap();
     let esdk_ciphertext = encrypt_output.ciphertext;
 
+    //= spec/client-apis/decrypt.md#get-the-decryption-materials
+    //= type=test
+    //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     let mut decrypt_input = DecryptInput::with_legacy_keyring(
         &esdk_ciphertext,
         reproduced_encryption_context,
         rsa_keyring.clone(),
     );
     let decrypt_output = decrypt(&decrypt_input).await.unwrap();
+    //= spec/client-apis/encrypt.md#authentication-tag
+    //= type=test
+    //= reason=Decrypt with reproduced EC succeeds; proves encrypt AAD included filtered EC
+    //# The encryption context to only authenticate MUST be the [encryption context](../framework/structures.md#encryption-context)
+    //# in the [encryption materials](../framework/structures.md#encryption-materials)
+    //# filtered to only contain key value pairs listed in
+    //# the [encryption material's](../framework/structures.md#encryption-materials)
+    //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys)
+    //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
     assert_eq!(decrypt_output.plaintext, plaintext);
 
     // Test KMS

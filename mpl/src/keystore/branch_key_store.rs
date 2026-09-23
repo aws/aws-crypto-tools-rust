@@ -97,13 +97,10 @@ impl BranchKeyStore {
         // its Region is used to build a default client.
         config.kms_configuration.validate()?;
 
-        // Same rationale for the table name: DynamoDB documents a 3-255
-        // character limit, and without this the failure is deferred to the first
-        // request, so it needs credentials and a network round trip to surface.
+        // DynamoDB documents a 3-255 character limit,
+        // and without this the failure is deferred to the first
+        // request.
         // Not a keystore-spec requirement — it mirrors the service constraint.
-        //
-        // Byte length is the character count here: DynamoDB's permitted alphabet
-        // is `[a-zA-Z0-9_.-]`, and a multi-byte name fails on the alphabet anyway.
         let name_len = config.ddb_table_name.len();
         if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
             return Err(KeystoreError::new(
