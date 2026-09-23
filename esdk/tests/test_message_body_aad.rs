@@ -394,7 +394,7 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
 
     // Attempt to decrypt the tampered ciphertext. Must fail.
     let keyring = test_keyring().await;
-    let dec_input = DecryptInput::with_legacy_keyring(&tampered, EncryptionContext::new(), keyring);
+    let dec_input = DecryptInput::with_keyring(&tampered, EncryptionContext::new(), keyring);
     let err = decrypt(&dec_input)
         .await
         .expect_err("tampering frame 1's sequence number must cause decrypt to fail");

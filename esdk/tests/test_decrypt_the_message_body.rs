@@ -8,7 +8,6 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -45,9 +44,9 @@ async fn test_decrypt_final_frame_content_length_validation() {
 
     let keyring = test_keyring().await;
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let tampered_input =
-        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -73,9 +72,9 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
 
     let keyring = test_keyring().await;
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let tampered_input =
-        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -221,9 +220,9 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
 
     let keyring = test_keyring().await;
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let tampered_input =
-        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -249,8 +248,7 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     // pending signature verification and never released.
     let keyring = test_keyring().await;
     let pt = vec![0xABu8; 16];
-    let mut enc_input =
-        EncryptInput::with_legacy_keyring(&pt, EncryptionContext::new(), keyring.clone());
+    let mut enc_input = EncryptInput::with_keyring(&pt, EncryptionContext::new(), keyring.clone());
     enc_input.frame_length = FrameLength::new(4096).unwrap();
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
@@ -262,9 +260,9 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     tampered_ct[last] ^= 0xFF;
 
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let tampered_input =
-        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test

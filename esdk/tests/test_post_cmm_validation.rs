@@ -8,8 +8,6 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -43,9 +41,9 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
     let keyring = test_keyring().await;
     let pt = b"test encrypt non-committing fails";
     // Non-committing suite with RequireEncryptRequireDecrypt: should fail
-    let mut enc_input = EncryptInput::with_legacy_keyring(pt, EncryptionContext::new(), keyring);
+    let mut enc_input = EncryptInput::with_keyring(pt, EncryptionContext::new(), keyring);
     enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
+    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt);
     let result = encrypt(&enc_input).await;
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -53,13 +51,16 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
     //# configured in the [client](client.md) encrypt MUST yield an error.
     let err = result
         .expect_err("encrypt must fail when algorithm suite is not supported by commitment policy");
-    let ErrorKind::LegacyError(legacy) = &err.kind else {
-        panic!("expected LegacyError, got: {:?}", err.kind);
-    };
-    let inner = format!("{legacy:?}");
+    assert_eq!(
+        err.kind,
+        ErrorKind::ValidationError,
+        "expected ValidationError, got: {:?}",
+        err.kind
+    );
+    let inner = err.to_string();
     assert!(
-        inner.contains("InvalidAlgorithmSuiteInfoOnEncrypt"),
-        "expected InvalidAlgorithmSuiteInfoOnEncrypt, got: {inner}"
+        inner.contains("commitment policy"),
+        "expected a commitment-policy rejection, got: {inner}"
     );
 }
 
@@ -77,8 +78,8 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     )
     .await;
     // Decrypt with RequireEncryptRequireDecrypt: should fail because suite is non-committing
-    let mut dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
+    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
+    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt);
     let result = decrypt(&dec_input).await;
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
@@ -86,13 +87,16 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     //# configured in the [client](client.md) decrypt MUST yield an error.
     let err = result
         .expect_err("decrypt must fail when algorithm suite is not supported by commitment policy");
-    let ErrorKind::LegacyError(legacy) = &err.kind else {
-        panic!("expected LegacyError, got: {:?}", err.kind);
-    };
-    let inner = format!("{legacy:?}");
+    assert_eq!(
+        err.kind,
+        ErrorKind::ValidationError,
+        "expected ValidationError, got: {:?}",
+        err.kind
+    );
+    let inner = err.to_string();
     assert!(
-        inner.contains("InvalidAlgorithmSuiteInfoOnDecrypt"),
-        "expected InvalidAlgorithmSuiteInfoOnDecrypt, got: {inner}"
+        inner.contains("commitment policy"),
+        "expected a commitment-policy rejection, got: {inner}"
     );
 }
 

@@ -55,14 +55,14 @@ const MAX_GROWTH_BYTES: isize = 512 * 1024;
 async fn round_trip(plaintext: &[u8]) {
     // Fresh keyring per iteration so keyring construction is measured too.
     let keyring = test_helpers::test_keyring().await;
-    let out = encrypt(&EncryptInput::with_legacy_keyring(
+    let out = encrypt(&EncryptInput::with_keyring(
         plaintext,
         EncryptionContext::new(),
         keyring.clone(),
     ))
     .await
     .unwrap();
-    let dec = decrypt(&DecryptInput::with_legacy_keyring(
+    let dec = decrypt(&DecryptInput::with_keyring(
         &out.ciphertext,
         EncryptionContext::new(),
         keyring,

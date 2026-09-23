@@ -219,7 +219,11 @@ async fn test_on_decrypt_key_name_mismatch() {
     let err = result.expect_err("a key name mismatch must not decrypt");
     assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
     assert!(
-        err.message.contains("EncryptedDataKey 0 did not match"),
+        err.is_collection(),
+        "the rejected EDK must still be reported, collected on the error: {err}",
+    );
+    assert!(
+        err.to_string().contains("EncryptedDataKey 0 did not match"),
         "error must report the non-matching EDK by index: {}",
         err.message
     );
@@ -494,7 +498,7 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
         .await;
 
     let err = result.expect_err("a mismatched encryption context must fail authentication");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
 }
 
 #[tokio::test]
@@ -524,7 +528,7 @@ async fn test_on_decrypt_rejects_tampered_iv() {
         .await;
 
     let err = result.expect_err("a tampered IV must fail authentication");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
 }
 
 #[tokio::test]
@@ -635,9 +639,11 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
         .await;
 
     let err = result.expect_err("a ciphertext shorter than the tag must fail");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    // The provider info matched, so this EDK was attempted and the failure is
+    // a decryption failure rather than a no-match.
+    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
     assert!(
-        err.message.contains("insufficient data to decrypt"),
+        err.to_string().contains("insufficient data to decrypt"),
         "error must name the truncated ciphertext: {}",
         err.message
     );
