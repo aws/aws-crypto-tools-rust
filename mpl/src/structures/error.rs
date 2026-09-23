@@ -43,7 +43,7 @@ pub enum MaterialsErrorKind {
     /// `cmm-interface.md#get-encryption-materials` /
     /// `cmm-interface.md#decrypt-materials`.
     RequiredEncryptionContextKeyMissing,
-    /// The customer-supplied reproduced encryption context disagrees with
+    /// The customer-supplied reproduced encryption context does not match
     /// the message's encryption context on a shared key. Traces to
     /// `cmm-interface.md#decrypt-materials`: "the values MUST be equal or
     /// the operation MUST fail".

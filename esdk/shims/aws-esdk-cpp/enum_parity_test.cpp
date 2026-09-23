@@ -38,8 +38,7 @@ static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Esdk, 0), "ShimErrorKind::Esdk")
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::SerializationError, 1), "ShimErrorKind::SerializationError");
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CryptographicError, 2), "ShimErrorKind::CryptographicError");
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::MplError, 3), "ShimErrorKind::MplError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::LegacyError, 4), "ShimErrorKind::LegacyError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::ValidationError, 5), "ShimErrorKind::ValidationError");
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::ValidationError, 4), "ShimErrorKind::ValidationError");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
