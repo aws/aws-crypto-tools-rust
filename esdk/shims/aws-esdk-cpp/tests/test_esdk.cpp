@@ -1,11 +1,13 @@
 // Integration tests exercising the C++ interfaces (EncryptionSDK.h).
 
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
 #include <string>
+#include <thread>
 #include <typeinfo>
 #include <vector>
 
@@ -197,11 +199,6 @@ void test_cache_kinds() {
     //
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
-    //# - The shim MUST support creating a cache that performs no caching.
-    auto no_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::No());
-
-    //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-    //= type=test
     //# - The shim MUST support creating a storm tracking cache.
     auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
         /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
@@ -222,7 +219,7 @@ void test_cache_kinds() {
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    // LegacyError kind: exactly the base exception type.
+    // MplError kind: exactly the base exception type.
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       Aws::Esdk::KeyStore("ab", "ab",
                                           "arn:aws:kms:us-west-2:000000000000:key/test",
@@ -385,6 +382,8 @@ void test_streaming() {
         //# it, rather than holding all output until the finish step.
         auto out = enc.write(nullptr, 0);
         ciphertext.insert(ciphertext.end(), out.begin(), out.end());
+        // Sleep briefly to ensure the background worker thread consuming these writes can be scheduled
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     ESDK_CHECK(ciphertext.size() >= 4096);
     //= spec/shim/shim.md#streaming

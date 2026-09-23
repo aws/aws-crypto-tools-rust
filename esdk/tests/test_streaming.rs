@@ -5,9 +5,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{
-    Cmm, DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind, Keyring, mpl,
-};
+use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind};
 use test_helpers::{
     CallStyle, multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, run_decrypt_stream,
     run_encrypt_stream, test_keyring,
@@ -25,7 +23,7 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
 
         // Encrypt via streaming API
         let ec = EncryptionContext::new();
-        let enc_input = EncryptStreamInput::with_legacy_keyring(ec.clone(), keyring.clone());
+        let enc_input = EncryptStreamInput::with_keyring(ec.clone(), keyring.clone());
 
         let mut pt_cursor = std::io::Cursor::new(&plaintext[..]);
         let mut ciphertext: Vec<u8> = Vec::new();
@@ -63,7 +61,7 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
         );
 
         // Decrypt via streaming API
-        let dec_input = DecryptStreamInput::with_legacy_keyring(ec, keyring);
+        let dec_input = DecryptStreamInput::with_keyring(ec, keyring);
         let mut ct_cursor = std::io::Cursor::new(&ciphertext[..]);
         let mut decrypted: Vec<u8> = Vec::new();
 
@@ -110,7 +108,7 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
     for style in CallStyle::ALL {
         let (_plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
 
-        let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+        let dec_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
@@ -137,7 +135,7 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     for style in CallStyle::ALL {
         let (plaintext, keyring, ct) = multi_frame_unsigned_for_stream().await;
 
-        let dec_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+        let dec_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
@@ -159,12 +157,8 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
 async fn test_streaming_rejects_neither_and_both_sources() {
     for style in CallStyle::ALL {
         let keyring = test_keyring().await;
-        let cmm = mpl()
-            .create_default_cryptographic_materials_manager()
-            .keyring(keyring.clone())
-            .send()
-            .await
-            .expect("default CMM construction must succeed for the test keyring");
+        let cmm: std::sync::Arc<dyn aws_crypto_mpl::cmm::Cmm> =
+            std::sync::Arc::new(aws_crypto_mpl::cmm::DefaultCmm::new(keyring.clone()));
 
         //= spec/client-apis/encrypt.md#input
         //= type=test
@@ -186,8 +180,8 @@ async fn test_streaming_rejects_neither_and_both_sources() {
         );
 
         let mut both = EncryptStreamInput::new();
-        both.keyring = Some(Keyring::Legacy(keyring.clone()));
-        both.cmm = Some(Cmm::Legacy(cmm.clone()));
+        both.keyring = Some(keyring.clone().into());
+        both.cmm = Some(cmm.clone().into());
         let mut pt = std::io::Cursor::new(&b""[..]);
         let mut ct: Vec<u8> = Vec::new();
         let err = run_encrypt_stream(style, &mut pt, &mut ct, &both)
@@ -219,8 +213,8 @@ async fn test_streaming_rejects_neither_and_both_sources() {
         );
 
         let mut both = DecryptStreamInput::new();
-        both.keyring = Some(Keyring::Legacy(keyring));
-        both.cmm = Some(Cmm::Legacy(cmm));
+        both.keyring = Some(keyring.into());
+        both.cmm = Some(cmm.into());
         let mut ct = std::io::Cursor::new(&b""[..]);
         let mut pt: Vec<u8> = Vec::new();
         let err = run_decrypt_stream(style, &mut ct, &mut pt, &both)

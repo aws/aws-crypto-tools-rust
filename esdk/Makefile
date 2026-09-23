@@ -5,14 +5,12 @@ clippy:
 	cargo clippy --tests --no-default-features
 	cargo clippy --tests --no-default-features --features kms
 	cargo clippy --tests --no-default-features --features ddb
-	cargo clippy --tests --no-default-features --features legacy
 
 test:
 	cargo test
 	cargo test --no-default-features
 	cargo test --no-default-features --features kms
 	cargo test --no-default-features --features ddb
-	cargo test --no-default-features --features legacy
 
 # Run `make examples LOCAL_ONLY=--local-only` to skip examples that need AWS credentials.
 # Otherwise `make examples` runs all examples by default.
