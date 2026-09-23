@@ -12,7 +12,7 @@ use super::header_types::{
 use super::serialize_functions::{read_u32, read_vec, write_bytes, write_u32};
 use super::{Error, ser_err};
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::suites::DerivationAlgorithm;
+use aws_crypto_mpl::structures::AlgorithmSuite;
 
 pub(crate) fn write_v2_header_body(
     w: &mut dyn SafeWrite,
@@ -54,7 +54,7 @@ pub(crate) fn write_v2_header_body(
     //# - MUST serialize the [Message ID](../data-format/message-header.md#message-id).
     //
     //= spec/client-apis/encrypt.md#v2-header
-    //= reason=randomness is sourced via aws_mpl_legacy::primitives::generate_random_bytes
+    //= reason=randomness is sourced via aws_mpl_primitives::generate_random_bytes
     //# The process used to generate this identifier MUST use a good source of randomness
     //# to make the chance of duplicate identifiers negligible.
     write_message_id(w, &body.message_id)?;
@@ -111,15 +111,15 @@ pub(crate) fn write_v2_header_body(
     write_bytes(w, &body.suite_data)
 }
 
-pub(crate) fn get_hkdf(x: &DerivationAlgorithm) -> Result<&aws_mpl_legacy::suites::Hkdf, Error> {
-    if let DerivationAlgorithm::Hkdf(x) = x {
-        Ok(x)
-    } else {
-        ser_err("DerivationAlgorithm must be HKDF")
-    }
+/// Length in bytes of the algorithm-suite commit key (the V2 "algorithm suite
+/// data" field). Zero for non-committing suites.
+pub(crate) const fn commit_key_length(suite: &AlgorithmSuite) -> usize {
+    suite.algorithm_suite_data_length()
 }
-pub(crate) const fn has_hkdf(x: &DerivationAlgorithm) -> bool {
-    matches!(x, DerivationAlgorithm::Hkdf(_))
+
+/// True when the suite carries a key-commitment KDF.
+pub(crate) const fn has_commitment(suite: &AlgorithmSuite) -> bool {
+    suite.key_commitment()
 }
 
 pub(crate) fn read_v2_header_body(
@@ -143,7 +143,7 @@ pub(crate) fn read_v2_header_body(
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Algorithm Suite ID](../data-format/message-header.md#algorithm-suite-id).
     let algorithm_suite = read_esdk_suite_id(r, raw)?;
-    if !has_hkdf(&algorithm_suite.commitment) {
+    if !has_commitment(&algorithm_suite) {
         return ser_err("Algorithm suite must support commitment");
     }
 
@@ -179,10 +179,7 @@ pub(crate) fn read_v2_header_body(
 
     // Algorithm Suite Data
 
-    let len = get_hkdf(&algorithm_suite.commitment)?.output_key_length;
-    let Ok(len_usize) = usize::try_from(len) else {
-        return ser_err("Algorithm suite data length exceeds platform capacity");
-    };
+    let len_usize = commit_key_length(&algorithm_suite);
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Algorithm Suite Data](../data-format/message-header.md#algorithm-suite-data).
     //
@@ -199,7 +196,7 @@ pub(crate) fn read_v2_header_body(
     //# the caller indicates an end to the encrypted message.
 
     Ok(V2HeaderBody {
-        algorithm_suite: algorithm_suite.clone(),
+        algorithm_suite,
         message_id,
         encryption_context,
         encrypted_data_keys,
