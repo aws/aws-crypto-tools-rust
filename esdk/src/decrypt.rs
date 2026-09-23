@@ -14,7 +14,7 @@ use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
-use crate::suites::get_ecdsa_alg;
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptionContext,
     EsdkCommitmentPolicy, MaterialSource, SafeRead, SafeWrite,
@@ -108,9 +108,7 @@ pub async fn decrypt_stream(
         &input.encryption_context,
         DecryptMode::Streaming,
         input.max_encrypted_data_keys,
-        input
-            .commitment_policy
-            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
+        input.commitment_policy,
     )
     .await
 }
@@ -145,9 +143,7 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         &input.encryption_context,
         DecryptMode::Buffered,
         input.max_encrypted_data_keys,
-        input
-            .commitment_policy
-            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
+        input.commitment_policy,
     )
     .await?;
 
@@ -246,7 +242,7 @@ async fn internal_decrypt(
     )
     .await?;
 
-    crate::suites::algorithm_suite_id_from_bytes(state.header.suite.id())?;
+    algorithm_suite_id_from_bytes(state.header.suite.id())?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= reason=verification_key presence must match suite's signature algorithm; mismatch means misbehaving CMM
@@ -322,7 +318,7 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        algorithm_suite_id: crate::suites::algorithm_suite_id_from_bytes(state.header.suite.id())?,
+        algorithm_suite_id: algorithm_suite_id_from_bytes(state.header.suite.id())?,
     })
 }
 
@@ -380,8 +376,7 @@ async fn step_get_decryption_materials(
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
-    let algorithm_suite_id =
-        crate::suites::algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
+    let algorithm_suite_id = algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
     let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
     if !policy.allows_for_decrypt(algorithm_suite_id) {
         return Err(val_err(

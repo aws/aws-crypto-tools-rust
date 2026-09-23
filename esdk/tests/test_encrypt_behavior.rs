@@ -113,7 +113,7 @@ async fn test_input_suite_vs_commitment_policy_error() {
     let mut enc_input =
         EncryptInput::with_keyring(b"commitment check", EncryptionContext::new(), keyring);
     enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt);
+    enc_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must fail when input suite violates commitment policy");
     // Native path: the input-suite-vs-commitment-policy check runs in the ESDK
@@ -428,7 +428,7 @@ async fn test_message_format_version_matches_suite() {
     let mut enc_input_v1 =
         EncryptInput::with_keyring(b"version test v1", EncryptionContext::new(), keyring);
     enc_input_v1.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input_v1.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    enc_input_v1.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     let ct_v1 = encrypt(&enc_input_v1).await.unwrap().ciphertext;
     assert_eq!(
         ct_v1[0], 0x01,
@@ -666,7 +666,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
     let keyring = test_keyring().await;
     let mut enc_input = EncryptInput::with_keyring(b"halt test", EncryptionContext::new(), keyring);
     enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt);
+    enc_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must halt and indicate failure when a step fails");
     // Native path: the failing step (suite-vs-commitment-policy validation) surfaces

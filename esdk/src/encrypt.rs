@@ -17,7 +17,7 @@ use crate::message::serializable_types::{
     ESDKCanonicalEncryptionContext, get_encrypt_key_length, get_iv_length, to_canonical_pairs,
 };
 use crate::message::{DigestWriter, body, footer, header};
-use crate::suites::get_ecdsa_alg;
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
 use crate::types::{
     EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
     EsdkCommitmentPolicy, FrameLength, MaterialSource, SafeRead, SafeWrite,
@@ -91,9 +91,7 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
         input.algorithm_suite_id,
         input.frame_length,
         input.max_encrypted_data_keys,
-        input
-            .commitment_policy
-            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
+        input.commitment_policy,
     )
     .await?;
 
@@ -164,9 +162,7 @@ pub async fn encrypt_stream(
         input.algorithm_suite_id,
         input.frame_length,
         input.max_encrypted_data_keys,
-        input
-            .commitment_policy
-            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
+        input.commitment_policy,
     )
     .await
 }
@@ -286,7 +282,7 @@ async fn internal_encrypt(
         //# the Encrypt operation MUST NOT construct a signature.
     }
 
-    let suite_id = crate::suites::algorithm_suite_id_from_bytes(header.suite.id())?;
+    let suite_id = algorithm_suite_id_from_bytes(header.suite.id())?;
 
     //= spec/client-apis/encrypt.md#behavior
     //= reason=Ok follows the last write; no bytes appended after footer

@@ -133,6 +133,7 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration};
+use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -446,8 +447,9 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
     match kind {
         ErrorKind::SerializationError => ffi::ShimErrorKind::SerializationError,
         ErrorKind::CryptographicError => ffi::ShimErrorKind::CryptographicError,
-        ErrorKind::MplError => ffi::ShimErrorKind::MplError,
-        ErrorKind::KeystoreError | ErrorKind::CacheError => ffi::ShimErrorKind::MplError,
+        ErrorKind::MplError | ErrorKind::KeystoreError | ErrorKind::CacheError => {
+            ffi::ShimErrorKind::MplError
+        }
         ErrorKind::ValidationError => ffi::ShimErrorKind::ValidationError,
         _ => ffi::ShimErrorKind::Esdk,
     }
@@ -476,10 +478,8 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
 //# algorithm suite that has the same two-byte ID.
-fn alg_id_target_to_core(
-    e: ffi::EsdkAlgorithmSuiteId,
-) -> Result<aws_esdk::EsdkAlgorithmSuiteId, String> {
-    use aws_esdk::EsdkAlgorithmSuiteId as Core;
+fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<AlgorithmSuiteId, String> {
+    use AlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Target::AlgAes128GcmIv12Tag16NoKdf => Ok(Core::AlgAes128GcmIv12Tag16NoKdf),
@@ -516,10 +516,8 @@ fn alg_id_target_to_core(
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
-fn alg_id_core_to_target(
-    e: aws_esdk::EsdkAlgorithmSuiteId,
-) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
-    use aws_esdk::EsdkAlgorithmSuiteId as Core;
+fn alg_id_core_to_target(e: AlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
+    use AlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Core::AlgAes128GcmIv12Tag16NoKdf => Ok(Target::AlgAes128GcmIv12Tag16NoKdf),
@@ -544,7 +542,7 @@ fn alg_id_core_to_target(
     }
     //= spec/shim/esdk-shim.md#algorithm-suite-identifier
     //= type=implication
-    //= reason=aws_esdk::EsdkAlgorithmSuiteId is a closed enum and every variant is mapped above, so a core algorithm suite the shim does not define is unrepresentable; no error arm can exist.
+    //= reason=AlgorithmSuiteId is a closed enum and every variant is mapped above, so a core algorithm suite the shim does not define is unrepresentable; no error arm can exist.
     //# - The shim MUST return an error when the core ESDK produces an algorithm suite
     //# the shim does not define.
 }
@@ -555,8 +553,8 @@ fn alg_id_core_to_target(
 //# commitment policy of the same meaning.
 fn commitment_policy_target_to_core(
     x: ffi::EsdkCommitmentPolicy,
-) -> Result<aws_esdk::EsdkCommitmentPolicy, String> {
-    use aws_esdk::EsdkCommitmentPolicy as Core;
+) -> Result<EsdkCommitmentPolicy, String> {
+    use EsdkCommitmentPolicy as Core;
     use ffi::EsdkCommitmentPolicy as Target;
     match x {
         Target::ForbidEncryptAllowDecrypt => Ok(Core::ForbidEncryptAllowDecrypt),
@@ -645,13 +643,6 @@ fn make_kms_config(
         ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a multi-Region-key discovery configuration.
-        //
-        // The core's MrDiscovery requires the region used for MRK ARN rewrites,
-        // which the Dafny MPL derived internally. The bridge carries a single
-        // kms_configuration_value whose meaning is already type-dependent (an ARN
-        // for the two ARN kinds, unused for Discovery), so it carries the region
-        // here. No C++ caller can reach this arm today: KeyStore's constructor
-        // hardcodes KmsConfigurationType::KmsKeyArn.
         ffi::KmsConfigurationType::MrDiscovery => Ok(KmsConfiguration::MrDiscovery {
             region: value.to_string(),
         }),
@@ -669,12 +660,6 @@ fn make_kms_config(
 // Create an ESDK Rust CacheType from the given FFI CacheType
 fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
     let op = "create_cryptographic_materials_cache";
-    // Bound the target-supplied sizes. The core's fields are `usize`, so nothing
-    // in the type system forces a limit here — but an unbounded entry capacity
-    // reaches `LruCache::new`, which preallocates and aborts the process on
-    // allocation failure instead of returning an error. u32::MAX entries is a
-    // ~68 GiB request. i32::MAX is the bound this bridge has always documented,
-    // and `test_esdk.cpp` asserts a capacity above it is rejected.
     let capacity = |field: &str, v: u32| -> Result<usize, String> {
         let bounded = i32::try_from(v).map_err(|_| {
             shim_err(
@@ -731,7 +716,7 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
         }
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //= type=exception
-        //= reason=Removed from the shim's public surface; a no-caching request now reaches this error arm.
+        //= reason=Will be added in the future
         //# - The shim MUST support creating a cache that performs no caching.
         //
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
@@ -871,9 +856,8 @@ fn apply_encrypt_options(
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     if input.commitment_policy.set {
-        core_input.commitment_policy = Some(commitment_policy_target_to_core(
-            input.commitment_policy.value,
-        )?);
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
@@ -901,9 +885,8 @@ fn apply_decrypt_options(
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     if input.commitment_policy.set {
-        core_input.commitment_policy = Some(commitment_policy_target_to_core(
-            input.commitment_policy.value,
-        )?);
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     Ok(())
 }
@@ -1117,13 +1100,12 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
 fn create_hierarchical_keyring(
     input: &ffi::HierarchicalKeyringInput,
 ) -> Result<Box<Keyring>, String> {
-    let op = "create_hierarchical_keyring";
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST require a key store handle, checked as
     //# defined in
     //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes),
     //# and MUST provide it to the core ESDK.
-    let key_store = require_handle(input.key_store, "key_store", op)?;
+    let key_store = require_handle(input.key_store, "key_store", "create_hierarchical_keyring")?;
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= reason=The builder receives a cache only when the target supplied one; otherwise it keeps the core ESDK's default cache.
@@ -1160,14 +1142,19 @@ fn create_hierarchical_keyring(
         cache_type,
         partition_id,
     )
-    .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, op, e))?;
+    .map_err(|e| {
+        shim_err(
+            ffi::ShimErrorKind::MplError,
+            "create_hierarchical_keyring",
+            e,
+        )
+    })?;
 
     Ok(Box::new(Keyring {
         client: aws_esdk::Keyring::new(keyring),
     }))
 }
 
-// ESDK Rust calls read() to get new bytes from the ChannelReader.
 // Streaming
 
 /// Feeds chunks from C++ to a Rust ESDK input channel
@@ -1391,9 +1378,8 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
     if input.commitment_policy.set {
-        core_input.commitment_policy = Some(commitment_policy_target_to_core(
-            input.commitment_policy.value,
-        )?);
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
@@ -1434,9 +1420,8 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
             max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
     if input.commitment_policy.set {
-        core_input.commitment_policy = Some(commitment_policy_target_to_core(
-            input.commitment_policy.value,
-        )?);
+        core_input.commitment_policy =
+            commitment_policy_target_to_core(input.commitment_policy.value)?;
     }
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {

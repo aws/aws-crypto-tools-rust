@@ -59,7 +59,7 @@ pub async fn encrypt_v1(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
     let mut input = EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring);
     input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     encrypt(&input).await.unwrap().ciphertext
 }
 
@@ -68,7 +68,7 @@ pub async fn encrypt_v1_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Vec<
     let keyring = test_keyring().await;
     let mut input = EncryptInput::with_keyring(plaintext, ec, keyring);
     input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     encrypt(&input).await.unwrap().ciphertext
 }
 
@@ -105,7 +105,7 @@ pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -
     let keyring = test_keyring().await;
     let mut input = EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring);
     input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     input.frame_length = FrameLength::new(frame_length).unwrap();
     encrypt(&input).await.unwrap().ciphertext
 }
@@ -138,7 +138,7 @@ pub async fn encrypt_with_v1_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
     let mut input = EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring);
     input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
-    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     encrypt(&input).await.unwrap().ciphertext
 }
 
@@ -185,7 +185,7 @@ pub async fn encrypt_with_suite(
     let mut enc_input =
         EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     enc_input.algorithm_suite_id = Some(suite);
-    enc_input.commitment_policy = Some(policy);
+    enc_input.commitment_policy = policy;
     encrypt(&enc_input).await.unwrap().ciphertext
 }
 
@@ -198,7 +198,7 @@ pub async fn encrypt_with_version(
     let mut input = EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring);
     if let Version::V1 = version {
         input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-        input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+        input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     }
     encrypt(&input).await.unwrap().ciphertext
 }
@@ -219,7 +219,7 @@ pub async fn encrypt_no_sign_with_ec(
     match version {
         Version::V1 => {
             input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-            input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+            input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
         }
         Version::V2 => {
             input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
@@ -239,7 +239,7 @@ pub async fn encrypt_no_sign_ec_keyring(
     match version {
         Version::V1 => {
             input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-            input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+            input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
         }
         Version::V2 => {
             input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
@@ -259,7 +259,7 @@ pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &KeyringRef) -> Ve
 pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &KeyringRef) -> Vec<u8> {
     let mut dec_input =
         DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     decrypt(&dec_input).await.unwrap().plaintext
 }
 
@@ -280,7 +280,7 @@ pub async fn decrypt_v1_with_keyring_ec(
     keyring: &KeyringRef,
 ) -> Vec<u8> {
     let mut dec_input = DecryptInput::with_keyring(ciphertext, ec, keyring.clone());
-    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     decrypt(&dec_input).await.unwrap().plaintext
 }
 
@@ -301,7 +301,7 @@ pub async fn try_decrypt_v1_with_keyring(
 ) -> Result<DecryptOutput, Error> {
     let mut dec_input =
         DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     decrypt(&dec_input).await
 }
 
@@ -328,7 +328,7 @@ pub async fn decrypt_with(
 ) -> DecryptOutput {
     let mut dec_input =
         DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring.clone());
-    dec_input.commitment_policy = Some(policy);
+    dec_input.commitment_policy = policy;
     decrypt(&dec_input).await.unwrap()
 }
 
@@ -340,7 +340,7 @@ pub async fn decrypt_with_version(ciphertext: &[u8], version: Version) -> Decryp
     let keyring = test_keyring().await;
     let mut dec_input = DecryptInput::with_keyring(ciphertext, EncryptionContext::new(), keyring);
     if let Version::V1 = version {
-        dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+        dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     }
     decrypt(&dec_input).await.unwrap()
 }
@@ -371,7 +371,7 @@ pub async fn round_trip_v1(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let keyring = test_keyring().await;
     let ct = encrypt_v1_with_ec(plaintext, ec).await;
     let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     decrypt(&dec_input).await.unwrap().plaintext
 }
 
@@ -1254,10 +1254,10 @@ pub async fn try_decrypt_external_nonframed(
 
     let mut dec_input = DecryptInput::with_keyring(msg, EncryptionContext::new(), keyring);
     // V1 suite 0x0178 is non-committing; V2 suite 0x0478 is committing.
-    dec_input.commitment_policy = Some(match version {
+    dec_input.commitment_policy = match version {
         Version::V1 => EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
         Version::V2 => EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
-    });
+    };
     decrypt(&dec_input).await.map(|o| o.plaintext)
 }
 

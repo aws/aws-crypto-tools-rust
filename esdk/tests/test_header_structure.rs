@@ -111,7 +111,7 @@ async fn test_encrypted_data_key_count_greater_than_zero() {
         let mut dec_input =
             DecryptInput::with_keyring(&tampered, EncryptionContext::new(), keyring.clone());
         if let Version::V1 = version {
-            dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+            dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
         }
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //= type=test
@@ -245,7 +245,7 @@ async fn test_nonframed_nonzero_frame_length_rejected() {
         let mut dec_input =
             DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
         if let Version::V1 = version {
-            dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+            dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
         }
 
         let err = decrypt(&dec_input).await.expect_err(&format!(

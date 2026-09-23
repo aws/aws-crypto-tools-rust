@@ -268,7 +268,7 @@ pub struct DecryptStreamOutput {
     /// Encryption context recovered from the encrypted message.
     pub encryption_context: EncryptionContext,
 }
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt`](crate::encrypt).
 //= spec/client-apis/encrypt.md#input
@@ -346,7 +346,22 @@ pub struct EncryptInput<'a> {
     //= spec/client-apis/client.md#initialization
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
-    pub commitment_policy: Option<EsdkCommitmentPolicy>,
+    pub commitment_policy: EsdkCommitmentPolicy,
+}
+
+impl Default for EncryptInput<'_> {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: None,
+            encryption_context: EncryptionContext::new(),
+            frame_length: FrameLength::default(),
+            keyring: None,
+            cmm: None,
+            plaintext: &[],
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
+    }
 }
 
 impl<'a> EncryptInput<'a> {
@@ -393,7 +408,7 @@ impl<'a> EncryptInput<'a> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`encrypt_stream`](crate::encrypt_stream).
 pub struct EncryptStreamInput {
@@ -425,7 +440,22 @@ pub struct EncryptStreamInput {
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave at the default when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
-    pub commitment_policy: Option<EsdkCommitmentPolicy>,
+    pub commitment_policy: EsdkCommitmentPolicy,
+}
+
+impl Default for EncryptStreamInput {
+    fn default() -> Self {
+        Self {
+            algorithm_suite_id: None,
+            encryption_context: EncryptionContext::new(),
+            frame_length: FrameLength::default(),
+            keyring: None,
+            cmm: None,
+            data_size: None,
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
+    }
 }
 
 impl EncryptStreamInput {
@@ -461,7 +491,7 @@ impl EncryptStreamInput {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`decrypt`](crate::decrypt).
 pub struct DecryptInput<'a> {
@@ -495,10 +525,10 @@ pub struct DecryptInput<'a> {
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave at the default when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
-    pub commitment_policy: Option<EsdkCommitmentPolicy>,
+    pub commitment_policy: EsdkCommitmentPolicy,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 /// Input for [`decrypt_stream`](crate::decrypt_stream).
 pub struct DecryptStreamInput {
@@ -518,7 +548,20 @@ pub struct DecryptStreamInput {
     /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave at the default when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
-    pub commitment_policy: Option<EsdkCommitmentPolicy>,
+    pub commitment_policy: EsdkCommitmentPolicy,
+}
+
+impl Default for DecryptInput<'_> {
+    fn default() -> Self {
+        Self {
+            ciphertext: &[],
+            encryption_context: EncryptionContext::new(),
+            keyring: None,
+            cmm: None,
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
+    }
 }
 
 impl<'a> DecryptInput<'a> {
@@ -577,6 +620,18 @@ impl<'a> DecryptInput<'a> {
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
         resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
+    }
+}
+
+impl Default for DecryptStreamInput {
+    fn default() -> Self {
+        Self {
+            encryption_context: EncryptionContext::new(),
+            keyring: None,
+            cmm: None,
+            max_encrypted_data_keys: None,
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+        }
     }
 }
 
