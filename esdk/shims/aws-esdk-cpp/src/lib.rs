@@ -871,8 +871,9 @@ fn apply_encrypt_options(
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+        core_input.commitment_policy = Some(commitment_policy_target_to_core(
+            input.commitment_policy.value,
+        )?);
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
@@ -900,8 +901,9 @@ fn apply_decrypt_options(
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
     if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+        core_input.commitment_policy = Some(commitment_policy_target_to_core(
+            input.commitment_policy.value,
+        )?);
     }
     Ok(())
 }
@@ -1389,8 +1391,9 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
     if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+        core_input.commitment_policy = Some(commitment_policy_target_to_core(
+            input.commitment_policy.value,
+        )?);
     }
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
@@ -1431,8 +1434,9 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
             max_edks_target_to_core(input.max_encrypted_data_keys.value);
     }
     if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+        core_input.commitment_policy = Some(commitment_policy_target_to_core(
+            input.commitment_policy.value,
+        )?);
     }
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {

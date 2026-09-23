@@ -482,7 +482,7 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
     ct[reserved_offset] = 0x01;
 
     let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
 
     //= spec/data-format/message-header.md#reserved
     //= type=test
@@ -511,7 +511,7 @@ async fn test_v1_iv_length_mismatch_rejected() {
     ct[iv_length_offset] = 11;
 
     let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
 
     //= spec/data-format/message-header.md#iv-length
     //= type=test

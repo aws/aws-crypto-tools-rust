@@ -631,7 +631,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, C::ForbidEncryptAllowDecrypt);
+    assert_eq!(core.commitment_policy, Some(C::ForbidEncryptAllowDecrypt));
 }
 
 #[test]
@@ -658,7 +658,7 @@ fn apply_decrypt_options_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
+    assert_eq!(core.commitment_policy, Some(C::RequireEncryptAllowDecrypt));
 }
 
 // AWS SDK client configuration

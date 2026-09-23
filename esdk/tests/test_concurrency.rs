@@ -64,7 +64,7 @@ fn concurrent_round_trips(
                             keyring.clone(),
                         );
                         enc_input.algorithm_suite_id = suite;
-                        enc_input.commitment_policy = policy;
+                        enc_input.commitment_policy = Some(policy);
                         let out = encrypt(&enc_input).await.unwrap();
                         ids.lock().unwrap().push(extract_id(&out.ciphertext));
 
@@ -74,7 +74,7 @@ fn concurrent_round_trips(
                             EncryptionContext::new(),
                             keyring.clone(),
                         );
-                        dec_input.commitment_policy = policy;
+                        dec_input.commitment_policy = Some(policy);
                         let dec = decrypt(&dec_input).await.unwrap();
                         assert_eq!(
                             dec.plaintext, plaintext,

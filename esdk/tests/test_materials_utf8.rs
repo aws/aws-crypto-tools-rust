@@ -90,7 +90,7 @@ impl Cmm for FabricatingCmm {
 async fn encrypt_err(pairs: &[(&[u8], &[u8])], required: &[&[u8]]) -> aws_esdk::Error {
     let cmm = FabricatingCmm::boxed(pairs, required);
     let mut input = EncryptInput::with_cmm(b"utf8 boundary test", EncryptionContext::new(), cmm);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     input.algorithm_suite_id = Some(SUITE);
     encrypt(&input)
         .await
@@ -106,7 +106,7 @@ async fn decrypt_err(
 ) -> aws_esdk::Error {
     let cmm = FabricatingCmm::boxed(pairs, required);
     let mut input = DecryptInput::with_cmm(ciphertext, EncryptionContext::new(), cmm);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     decrypt(&input)
         .await
         .expect_err("non-UTF-8 encryption context must be rejected")

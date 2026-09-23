@@ -162,7 +162,7 @@ async fn test_edk_count_zero_rejected_on_decrypt() {
         ct[offset + 1] = 0x00;
         let mut dec = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
         if let Version::V1 = version {
-            dec.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+            dec.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
         }
 
         //= spec/data-format/message-header.md#encrypted-data-key-count

@@ -80,9 +80,9 @@ async fn test_pre_cmm_commitment_policy_check() {
     // rejects it pre-CMM.
     let mut valid_input =
         DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
-    valid_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    valid_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     let mut invalid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    invalid_input.commitment_policy = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
+    invalid_input.commitment_policy = Some(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
@@ -137,7 +137,7 @@ async fn test_algorithm_suite_from_decryption_materials() {
 
     // Decrypt and verify the output suite matches what the header contained
     let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     let result = decrypt(&dec_input).await.unwrap();
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -240,7 +240,7 @@ async fn test_kdf_algorithm_from_materials_suite() {
     );
 
     let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=KDF is an invisible AEAD input; a wrong KDF derives a wrong key → AES-GCM tag fails, so decrypt success proves the suite's HKDF was used

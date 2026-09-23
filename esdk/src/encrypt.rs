@@ -91,7 +91,9 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
         input.algorithm_suite_id,
         input.frame_length,
         input.max_encrypted_data_keys,
-        input.commitment_policy,
+        input
+            .commitment_policy
+            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
     )
     .await?;
 
@@ -162,7 +164,9 @@ pub async fn encrypt_stream(
         input.algorithm_suite_id,
         input.frame_length,
         input.max_encrypted_data_keys,
-        input.commitment_policy,
+        input
+            .commitment_policy
+            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
     )
     .await
 }

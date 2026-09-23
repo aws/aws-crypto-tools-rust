@@ -108,7 +108,9 @@ pub async fn decrypt_stream(
         &input.encryption_context,
         DecryptMode::Streaming,
         input.max_encrypted_data_keys,
-        input.commitment_policy,
+        input
+            .commitment_policy
+            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
     )
     .await
 }
@@ -143,7 +145,9 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         &input.encryption_context,
         DecryptMode::Buffered,
         input.max_encrypted_data_keys,
-        input.commitment_policy,
+        input
+            .commitment_policy
+            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
     )
     .await?;
 
