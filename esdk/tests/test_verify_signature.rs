@@ -7,8 +7,8 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::*;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -19,7 +19,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let plaintext = b"tamper footer test";
 
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -32,9 +32,9 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     tampered_ct[signature_start] ^= 0xFF;
 
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let tampered_input =
-        DecryptInput::with_legacy_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test
@@ -72,12 +72,10 @@ async fn test_verify_signature_inputs_directly_verified() {
     // algorithm, key, and input — together with negative cases for wrong
     // algorithm, wrong key, and wrong input — gives direct proof that
     // decrypt's verify-the-signature step uses these same values.
-    use aws_mpl_legacy::primitives::{
-        DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context,
-    };
+    use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = EncryptInput::with_legacy_keyring(
+    let mut enc_input = EncryptInput::with_keyring(
         b"verify inputs direct test",
         EncryptionContext::new(),
         keyring,
@@ -197,7 +195,7 @@ async fn test_footer_wait_truncated_message_fails() {
     let plaintext = b"truncated footer test";
 
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     enc_input.algorithm_suite_id =
         Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -207,9 +205,9 @@ async fn test_footer_wait_truncated_message_fails() {
     let truncated_ct = valid_ct[..footer_offset + 2].to_vec();
 
     let valid_input =
-        DecryptInput::with_legacy_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
+        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
     let truncated_input =
-        DecryptInput::with_legacy_keyring(&truncated_ct, EncryptionContext::new(), keyring);
+        DecryptInput::with_keyring(&truncated_ct, EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test

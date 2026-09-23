@@ -7,9 +7,11 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::*;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
-use fixtures::*;
+// TODO(native-mpl): re-enable with test_verify_header_encryption_context_to_only_authenticate
+// (the only consumer of fixtures::* here); disabled pending a native required-EC CMM.
+// use fixtures::*;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -18,7 +20,7 @@ async fn test_verify_header_fails_on_tampered_header() {
     let plaintext = b"tamper header test";
 
     let enc_input =
-        EncryptInput::with_legacy_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Tamper with a byte in the header body (byte 10 is safely within the header body).
@@ -60,6 +62,12 @@ async fn test_verify_header_fails_on_tampered_header() {
     );
 }
 
+// TODO(native-mpl): relies on the smithy `mpl()` client + required-encryption-context
+// CMM (create_required_encryption_context_cmm), not yet implemented in native
+// aws-crypto-mpl (no RequiredEncryptionContextCmm type; EncryptInput exposes no
+// required_encryption_context_keys). The EC-to-only-authenticate AAD path can be
+// re-covered once/if a native required-EC CMM lands.
+/*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_verify_header_encryption_context_to_only_authenticate() {
     let keyring = test_keyring().await;
@@ -85,7 +93,7 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
         .await
         .unwrap();
 
-    let enc_input = EncryptInput::with_legacy_cmm(plaintext, encryption_context, req_cmm);
+    let enc_input = EncryptInput::with_cmm(plaintext, encryption_context, req_cmm);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // The required-EC CMM removed keyA from the header and listed it as required;
@@ -94,7 +102,7 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
     // authenticated input that never appears on the wire, so it can't be parsed —
     // a successful encrypt/decrypt agreement across the two independent paths
     // (encrypt-side required-EC CMM vs decrypt-side filtering) is the observable.
-    let valid_input = DecryptInput::with_legacy_keyring(&ct, reproduced_ec, keyring.clone());
+    let valid_input = DecryptInput::with_keyring(&ct, reproduced_ec, keyring.clone());
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
     //= reason=Filtered EC-to-only-authenticate is an off-wire authenticated input; encrypt and decrypt agree only if decrypt filters/serializes it to the required keys per spec
@@ -116,18 +124,19 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
     // wrapping AAD, so a wrong value fails at EDK unwrap before header verification.
     let wrong_reproduced_ec =
         small_mismatched_encryption_context(SmallEncryptionContextVariation::A);
-    let bad_input = DecryptInput::with_legacy_keyring(&ct, wrong_reproduced_ec, keyring);
+    let bad_input = DecryptInput::with_keyring(&ct, wrong_reproduced_ec, keyring);
     let err = decrypt(&bad_input)
         .await
         .expect_err("wrong reproduced EC value must fail decryption");
-    let ErrorKind::LegacyError(legacy) = &err.kind else {
-        panic!("expected LegacyError, got: {:?}", err.kind);
+    let ErrorKind::MplError(legacy) = &err.kind else {
+        panic!("expected MplError, got: {:?}", err.kind);
     };
     assert!(
         format!("{legacy:?}").contains("unable to decrypt any encrypted data key"),
         "wrong reproduced required-key value must be rejected, got: {legacy:?}"
     );
 }
+*/
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streamed_signed_output_not_signed_until_complete() {
@@ -137,7 +146,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
     let mut enc_input =
-        EncryptInput::with_legacy_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
+        EncryptInput::with_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
     // frame_length 4096 exceeds the 30-byte plaintext, keeping this a
     // single-frame message so decrypt_stream exercises signature verification.
     enc_input.frame_length = FrameLength::new(4096).unwrap();
@@ -153,7 +162,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+    let stream_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
@@ -186,12 +195,12 @@ async fn test_streamed_release_parsed_header_after_verification() {
 
     let mut ec = EncryptionContext::new();
     ec.insert("release-key".to_string(), "release-value".to_string());
-    let enc_input = EncryptInput::with_legacy_keyring(plaintext, ec, keyring.clone());
+    let enc_input = EncryptInput::with_keyring(plaintext, ec, keyring.clone());
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
-    let stream_input = DecryptStreamInput::with_legacy_keyring(EncryptionContext::new(), keyring);
+    let stream_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
     let result = decrypt_stream(&mut cursor, &mut output, &stream_input)
         .await
         .unwrap();

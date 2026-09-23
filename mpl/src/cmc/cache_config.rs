@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use crate::cmc::{Cmc, TimeUnits};
+use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc, TimeUnits};
 use crate::structures::MaterialsError;
 
 /// Entry capacity a CMP uses when the caller configures no cache at all.
@@ -233,4 +233,40 @@ pub enum CacheType {
     /// the carried [`StormTrackingCache`] parameters. The consuming CMP
     /// validates that `grace_period < cache limit TTL`.
     StormTracking(StormTrackingCache),
+}
+
+/// Helper function that turns [`CacheType`] into a concrete cache.
+///
+/// # Errors
+///
+/// Returns an error if the underlying cache rejects the supplied parameters.
+pub fn create_cryptographic_materials_cache(
+    cache_type: CacheType,
+) -> Result<Arc<dyn Cmc>, MaterialsError> {
+    match cache_type {
+        CacheType::Default(default_cache) => {
+            let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
+                .map_err(|e| {
+                    MaterialsError::new(format!("failed to initialize default LocalCmc: {e}"))
+                })?;
+            Ok(Arc::new(local))
+        }
+        CacheType::Shared(cache) => Ok(cache),
+        CacheType::StormTracking(params) => {
+            let storm = StormTrackingCmc::new(
+                params.entry_capacity,
+                params.entry_pruning_tail_size,
+                params.grace_period,
+                params.grace_interval,
+                params.fan_out,
+                params.inflight_ttl,
+                params.sleep_milli,
+                params.time_units,
+            )
+            .map_err(|e| {
+                MaterialsError::new(format!("failed to initialize StormTrackingCmc: {e}"))
+            })?;
+            Ok(Arc::new(storm))
+        }
+    }
 }
