@@ -12,11 +12,7 @@ const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 
 /// Step 2: define your keyring.
 ///
-/// This example wraps the MPL's own raw AES keyring, which is the smallest thing
-/// that demonstrates the handoff. To supply behavior of your own instead,
-/// implement `aws_crypto_mpl::keyring::Keyring` on your own type and hand that
-/// to `aws_esdk::Keyring::new` — the shim does not care which implementation it
-/// receives.
+/// TODO: provide custom implementations of the Keyring interface's methods
 fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
     let keyring = aws_crypto_mpl::keyring::RawAesKeyring::new(
         "custom-keyring-example",
