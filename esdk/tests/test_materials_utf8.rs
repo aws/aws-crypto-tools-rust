@@ -25,7 +25,6 @@ use aws_crypto_mpl::structures::{
 };
 use aws_esdk::*;
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 /// A non-committing, non-signing suite, so the fabricated materials below need
 /// no signing or verification key and pass under ForbidEncryptAllowDecrypt.
@@ -42,15 +41,15 @@ struct FabricatingCmm {
 }
 
 impl FabricatingCmm {
-    fn boxed(pairs: &[(&[u8], &[u8])], required: &[&[u8]]) -> Arc<dyn Cmm> {
+    fn new(pairs: &[(&[u8], &[u8])], required: &[&[u8]]) -> Self {
         let mut ec = MplEncryptionContext::new();
         for (k, v) in pairs {
             ec.insert((*k).to_vec(), (*v).to_vec());
         }
-        Arc::new(Self {
+        Self {
             encryption_context: ec,
             required_keys: required.iter().map(|k| (*k).to_vec()).collect(),
-        })
+        }
     }
 }
 
@@ -88,7 +87,7 @@ impl Cmm for FabricatingCmm {
 
 /// Drive encrypt with a CMM returning the given context, and return the error.
 async fn encrypt_err(pairs: &[(&[u8], &[u8])], required: &[&[u8]]) -> aws_esdk::Error {
-    let cmm = FabricatingCmm::boxed(pairs, required);
+    let cmm = FabricatingCmm::new(pairs, required);
     let mut input = EncryptInput::with_cmm(b"utf8 boundary test", EncryptionContext::new(), cmm);
     input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     input.algorithm_suite_id = Some(SUITE);
@@ -104,7 +103,7 @@ async fn decrypt_err(
     pairs: &[(&[u8], &[u8])],
     required: &[&[u8]],
 ) -> aws_esdk::Error {
-    let cmm = FabricatingCmm::boxed(pairs, required);
+    let cmm = FabricatingCmm::new(pairs, required);
     let mut input = DecryptInput::with_cmm(ciphertext, EncryptionContext::new(), cmm);
     input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
     decrypt(&input)

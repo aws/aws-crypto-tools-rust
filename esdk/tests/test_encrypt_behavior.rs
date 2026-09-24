@@ -180,11 +180,11 @@ async fn test_cmm_used_must_be_input_cmm() {
     let inner_cmm = DefaultCmm::new(keyring.clone());
     let observed_suite = Arc::new(std::sync::Mutex::new(None));
     let observed_len = Arc::new(std::sync::Mutex::new(None));
-    let spy: Arc<dyn Cmm> = Arc::new(SpyCmm {
+    let spy = SpyCmm {
         inner: inner_cmm,
         observed_algorithm_suite_id: observed_suite.clone(),
         observed_max_plaintext_length: observed_len.clone(),
-    });
+    };
     let pt = b"input cmm test";
     let enc_input = EncryptInput::with_cmm(pt, EncryptionContext::new(), spy);
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -330,7 +330,7 @@ impl Cmm for DuplicateEdkCmm {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_max_edk_exceeded_error() {
     // The CMM returns 2 EDKs; the client allows at most 1.
-    let cmm: Arc<dyn Cmm> = Arc::new(DuplicateEdkCmm {
+    let cmm = SharedCmm::from(DuplicateEdkCmm {
         inner: DefaultCmm::new(test_keyring().await),
     });
     let mut enc_input =
@@ -634,11 +634,11 @@ async fn test_cmm_request_no_algorithm_suite_field() {
     let inner_cmm = DefaultCmm::new(keyring.clone());
     let observed_suite = std::sync::Arc::new(std::sync::Mutex::new(None));
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let cmm_ref: Arc<dyn Cmm> = Arc::new(SpyCmm {
+    let cmm_ref = SpyCmm {
         inner: inner_cmm,
         observed_algorithm_suite_id: observed_suite.clone(),
         observed_max_plaintext_length: observed_len.clone(),
-    });
+    };
 
     let pt = b"no suite spy test";
     let enc_input = EncryptInput::with_cmm(pt, EncryptionContext::new(), cmm_ref);
@@ -675,11 +675,11 @@ async fn test_cmm_request_max_plaintext_length_equals_input() {
     let inner_cmm = DefaultCmm::new(keyring.clone());
     let observed_suite = std::sync::Arc::new(std::sync::Mutex::new(None));
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let cmm_ref: Arc<dyn Cmm> = Arc::new(SpyCmm {
+    let cmm_ref = SpyCmm {
         inner: inner_cmm,
         observed_algorithm_suite_id: observed_suite.clone(),
         observed_max_plaintext_length: observed_len.clone(),
-    });
+    };
 
     let pt = b"spy plaintext 23 bytes!"; // 23 bytes
     let enc_input = EncryptInput::with_cmm(pt, EncryptionContext::new(), cmm_ref);
@@ -734,11 +734,11 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
     let keyring = test_keyring().await;
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let cmm_ref: Arc<dyn Cmm> = Arc::new(SpyCmm {
+    let cmm_ref = SpyCmm {
         inner: inner_cmm,
         observed_algorithm_suite_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
         observed_max_plaintext_length: observed_len.clone(),
-    });
+    };
     let mut stream_input = EncryptStreamInput::with_cmm(EncryptionContext::new(), cmm_ref);
 
     //= spec/client-apis/encrypt.md#input
@@ -775,11 +775,11 @@ async fn test_no_plaintext_length_bound_field_not_included() {
     let keyring = test_keyring().await;
     let inner_cmm = DefaultCmm::new(keyring);
     let observed_len = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let cmm_ref: Arc<dyn Cmm> = Arc::new(SpyCmm {
+    let cmm_ref = SpyCmm {
         inner: inner_cmm,
         observed_algorithm_suite_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
         observed_max_plaintext_length: observed_len.clone(),
-    });
+    };
     let mut stream_input = EncryptStreamInput::with_cmm(EncryptionContext::new(), cmm_ref);
     stream_input.data_size = None;
     let plaintext = vec![0xBBu8; 50];

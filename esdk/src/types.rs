@@ -4,73 +4,14 @@
 
 use crate::Error;
 use crate::val_err;
-use aws_crypto_mpl::cmm;
-use aws_crypto_mpl::keyring;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
-
-/// A keyring supplied to an encrypt or decrypt operation.
-///
-/// Wraps a shared reference to any type implementing the MPL
-/// [`Keyring`](aws_crypto_mpl::keyring::Keyring) trait.
-#[derive(Clone)]
-#[non_exhaustive]
-pub struct Keyring(pub(crate) Arc<dyn keyring::Keyring>);
-
-impl std::fmt::Debug for Keyring {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Keyring").finish_non_exhaustive()
-    }
-}
-
-/// A cryptographic materials manager (CMM) supplied to an encrypt or decrypt operation.
-///
-/// Wraps a shared reference to any type implementing the MPL
-/// [`Cmm`](aws_crypto_mpl::cmm::Cmm) trait.
-#[derive(Clone)]
-#[non_exhaustive]
-pub struct Cmm(pub(crate) Arc<dyn cmm::Cmm>);
-
-impl std::fmt::Debug for Cmm {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Cmm").finish_non_exhaustive()
-    }
-}
-
-impl Keyring {
-    /// Wrap a caller's keyring implementation.
-    #[must_use]
-    pub fn new<K: keyring::Keyring + 'static>(keyring: K) -> Self {
-        Self(Arc::new(keyring))
-    }
-}
-
-impl From<Arc<dyn keyring::Keyring>> for Keyring {
-    fn from(keyring: Arc<dyn keyring::Keyring>) -> Self {
-        Self(keyring)
-    }
-}
-
-impl Cmm {
-    /// Wrap a caller's CMM implementation.
-    #[must_use]
-    pub fn new<C: cmm::Cmm + 'static>(cmm: C) -> Self {
-        Self(Arc::new(cmm))
-    }
-}
-
-impl From<Arc<dyn cmm::Cmm>> for Cmm {
-    fn from(cmm: Arc<dyn cmm::Cmm>) -> Self {
-        Self(cmm)
-    }
-}
 
 /// Internal union of the two ways a caller can supply materials, resolved from
 /// the `keyring` / `cmm` input fields and consumed by `create_cmm_from_input`.
 #[derive(Clone)]
 pub(crate) enum MaterialSource {
-    Cmm(Arc<dyn cmm::Cmm>),
-    Keyring(Arc<dyn keyring::Keyring>),
+    Cmm(SharedCmm),
+    Keyring(SharedKeyring),
 }
 
 impl std::fmt::Debug for MaterialSource {
@@ -85,18 +26,21 @@ impl std::fmt::Debug for MaterialSource {
 /// Resolve the caller-supplied `keyring` / `cmm` fields into the internal
 /// [`MaterialSource`], or `None` if not exactly one is set.
 pub(crate) fn resolve_material_source(
-    keyring: Option<&Keyring>,
-    cmm: Option<&Cmm>,
+    keyring: Option<&SharedKeyring>,
+    cmm: Option<&SharedCmm>,
 ) -> Option<MaterialSource> {
     match (keyring, cmm) {
-        (Some(Keyring(k)), None) => Some(MaterialSource::Keyring(k.clone())),
-        (None, Some(Cmm(c))) => Some(MaterialSource::Cmm(c.clone())),
+        (Some(k), None) => Some(MaterialSource::Keyring(k.clone())),
+        (None, Some(c)) => Some(MaterialSource::Cmm(c.clone())),
         _ => None,
     }
 }
 
 /// Shared input validation: exactly one of `keyring` or `cmm` must be set.
-fn validate_material_source(keyring: Option<&Keyring>, cmm: Option<&Cmm>) -> Result<(), Error> {
+fn validate_material_source(
+    keyring: Option<&SharedKeyring>,
+    cmm: Option<&SharedCmm>,
+) -> Result<(), Error> {
     match (keyring.is_some(), cmm.is_some()) {
         (true, false) | (false, true) => Ok(()),
         _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
@@ -187,6 +131,14 @@ impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
 
 /// Algorithm suite identifiers for the ESDK.
 pub use aws_crypto_mpl::structures::AlgorithmSuiteId as EsdkAlgorithmSuiteId;
+
+/// The Material Providers Library's shared keyring handle, re-exported. The
+/// `keyring` input of every operation holds one.
+pub use aws_crypto_mpl::keyring::SharedKeyring;
+
+/// The Material Providers Library's shared CMM handle, re-exported. The `cmm`
+/// input of every operation holds one.
+pub use aws_crypto_mpl::cmm::SharedCmm;
 
 /// Key-Value pairs to associate with the encrypted data.
 ///
@@ -300,12 +252,12 @@ pub struct EncryptInput<'a> {
     /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
-    pub keyring: Option<Keyring>,
+    pub keyring: Option<SharedKeyring>,
     /// The cryptographic materials manager (CMM) to use for this operation.
     /// Provide exactly one of `keyring` or `cmm`.
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    pub cmm: Option<Cmm>,
+    pub cmm: Option<SharedCmm>,
     /// data to be encrypted
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept a required [plaintext](#plaintext) argument.
@@ -370,27 +322,27 @@ impl<'a> EncryptInput<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct an `EncryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
+    /// Construct an `EncryptInput` with a CMM (anything convertible into a [`SharedCmm`])
     #[must_use]
-    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
+    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: impl Into<SharedCmm>) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
-            cmm: Some(Cmm(cmm)),
+            cmm: Some(cmm.into()),
             ..Default::default()
         }
     }
-    /// Construct an `EncryptInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
+    /// Construct an `EncryptInput` with a keyring (anything convertible into a [`SharedKeyring`])
     #[must_use]
     pub fn with_keyring(
         plaintext: &'a [u8],
         ec: EncryptionContext,
-        keyring: Arc<dyn keyring::Keyring>,
+        keyring: impl Into<SharedKeyring>,
     ) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
-            keyring: Some(Keyring(keyring)),
+            keyring: Some(keyring.into()),
             ..Default::default()
         }
     }
@@ -419,10 +371,10 @@ pub struct EncryptStreamInput {
     /// Bytes of plaintext data per frame. Default 4096.
     pub frame_length: FrameLength,
     /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
-    pub keyring: Option<Keyring>,
+    pub keyring: Option<SharedKeyring>,
     /// The cryptographic materials manager (CMM) to use for this operation.
     /// Provide exactly one of `keyring` or `cmm`.
-    pub cmm: Option<Cmm>,
+    pub cmm: Option<SharedCmm>,
     /// Optional expected size of the input plaintext stream.
     ///
     /// Most CMMs and keyrings ignore this; provide it only when the configured
@@ -464,21 +416,21 @@ impl EncryptStreamInput {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct an `EncryptStreamInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
+    /// Construct an `EncryptStreamInput` with a CMM (anything convertible into a [`SharedCmm`])
     #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: impl Into<SharedCmm>) -> Self {
         Self {
             encryption_context: ec,
-            cmm: Some(Cmm(cmm)),
+            cmm: Some(cmm.into()),
             ..Default::default()
         }
     }
-    /// Construct an `EncryptStreamInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
+    /// Construct an `EncryptStreamInput` with a keyring (anything convertible into a [`SharedKeyring`])
     #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn keyring::Keyring>) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: impl Into<SharedKeyring>) -> Self {
         Self {
             encryption_context: ec,
-            keyring: Some(Keyring(keyring)),
+            keyring: Some(keyring.into()),
             ..Default::default()
         }
     }
@@ -512,12 +464,12 @@ pub struct DecryptInput<'a> {
     /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
-    pub keyring: Option<Keyring>,
+    pub keyring: Option<SharedKeyring>,
     /// The cryptographic materials manager (CMM) to use for this operation.
     /// Provide exactly one of `keyring` or `cmm`.
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    pub cmm: Option<Cmm>,
+    pub cmm: Option<SharedCmm>,
     /// Default is no limit on the number of encrypted data keys.
     ///
     /// Leave as `None` when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
@@ -537,10 +489,10 @@ pub struct DecryptStreamInput {
     /// message's encryption context (subset check).
     pub encryption_context: EncryptionContext,
     /// The keyring to use for this operation. Provide exactly one of `keyring` or `cmm`.
-    pub keyring: Option<Keyring>,
+    pub keyring: Option<SharedKeyring>,
     /// The cryptographic materials manager (CMM) to use for this operation.
     /// Provide exactly one of `keyring` or `cmm`.
-    pub cmm: Option<Cmm>,
+    pub cmm: Option<SharedCmm>,
     /// Default is no limit on the number of encrypted data keys.
     ///
     /// Leave as `None` when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
@@ -570,27 +522,31 @@ impl<'a> DecryptInput<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct a `DecryptInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
+    /// Construct a `DecryptInput` with a CMM (anything convertible into a [`SharedCmm`])
     #[must_use]
-    pub fn with_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
-        Self {
-            ciphertext,
-            encryption_context: ec,
-            cmm: Some(Cmm(cmm)),
-            ..Default::default()
-        }
-    }
-    /// Construct a `DecryptInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
-    #[must_use]
-    pub fn with_keyring(
+    pub fn with_cmm(
         ciphertext: &'a [u8],
         ec: EncryptionContext,
-        keyring: Arc<dyn keyring::Keyring>,
+        cmm: impl Into<SharedCmm>,
     ) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
-            keyring: Some(Keyring(keyring)),
+            cmm: Some(cmm.into()),
+            ..Default::default()
+        }
+    }
+    /// Construct a `DecryptInput` with a keyring (anything convertible into a [`SharedKeyring`])
+    #[must_use]
+    pub fn with_keyring(
+        ciphertext: &'a [u8],
+        ec: EncryptionContext,
+        keyring: impl Into<SharedKeyring>,
+    ) -> Self {
+        Self {
+            ciphertext,
+            encryption_context: ec,
+            keyring: Some(keyring.into()),
             ..Default::default()
         }
     }
@@ -641,21 +597,21 @@ impl DecryptStreamInput {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct a `DecryptStreamInput` with a CMM (any `aws_crypto_mpl::cmm::Cmm`)
+    /// Construct a `DecryptStreamInput` with a CMM (anything convertible into a [`SharedCmm`])
     #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: Arc<dyn cmm::Cmm>) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: impl Into<SharedCmm>) -> Self {
         Self {
             encryption_context: ec,
-            cmm: Some(Cmm(cmm)),
+            cmm: Some(cmm.into()),
             ..Default::default()
         }
     }
-    /// Construct a `DecryptStreamInput` with a keyring (any `aws_crypto_mpl::keyring::Keyring`)
+    /// Construct a `DecryptStreamInput` with a keyring (anything convertible into a [`SharedKeyring`])
     #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: Arc<dyn keyring::Keyring>) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: impl Into<SharedKeyring>) -> Self {
         Self {
             encryption_context: ec,
-            keyring: Some(Keyring(keyring)),
+            keyring: Some(keyring.into()),
             ..Default::default()
         }
     }

@@ -16,7 +16,7 @@
 //!
 //! This is the strongest property we can assert without a spy on the CMM
 //! construction in `materials.rs` — the MPL doesn't expose a way to ask an
-//! `Arc<dyn Cmm>` "are you the default CMM?" at runtime.
+//! `SharedCmm` "are you the default CMM?" at runtime.
 //!
 
 #[allow(clippy::duplicate_mod)]
@@ -30,8 +30,8 @@ use test_helpers::*;
 /// Helper: independently construct a default CMM from a keyring via the MPL.
 /// Mirrors the call in `materials.rs::create_cmm_from_input` for the
 /// keyring arm.
-fn default_cmm_from(keyring: KeyringRef) -> std::sync::Arc<dyn aws_crypto_mpl::cmm::Cmm> {
-    std::sync::Arc::new(aws_crypto_mpl::cmm::DefaultCmm::new(keyring))
+fn default_cmm_from(keyring: SharedKeyring) -> aws_crypto_mpl::cmm::DefaultCmm {
+    aws_crypto_mpl::cmm::DefaultCmm::new(keyring)
 }
 
 #[tokio::test(flavor = "multi_thread")]

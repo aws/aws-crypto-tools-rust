@@ -157,8 +157,7 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
 async fn test_streaming_rejects_neither_and_both_sources() {
     for style in CallStyle::ALL {
         let keyring = test_keyring().await;
-        let cmm: std::sync::Arc<dyn aws_crypto_mpl::cmm::Cmm> =
-            std::sync::Arc::new(aws_crypto_mpl::cmm::DefaultCmm::new(keyring.clone()));
+        let cmm = aws_crypto_mpl::cmm::DefaultCmm::new(keyring.clone());
 
         //= spec/client-apis/encrypt.md#input
         //= type=test
@@ -180,7 +179,7 @@ async fn test_streaming_rejects_neither_and_both_sources() {
         );
 
         let mut both = EncryptStreamInput::new();
-        both.keyring = Some(keyring.clone().into());
+        both.keyring = Some(keyring.clone());
         both.cmm = Some(cmm.clone().into());
         let mut pt = std::io::Cursor::new(&b""[..]);
         let mut ct: Vec<u8> = Vec::new();
@@ -213,7 +212,7 @@ async fn test_streaming_rejects_neither_and_both_sources() {
         );
 
         let mut both = DecryptStreamInput::new();
-        both.keyring = Some(keyring.into());
+        both.keyring = Some(keyring);
         both.cmm = Some(cmm.into());
         let mut ct = std::io::Cursor::new(&b""[..]);
         let mut pt: Vec<u8> = Vec::new();
