@@ -541,12 +541,15 @@ fn alg_id_core_to_target(e: AlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteI
         Core::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
             Ok(Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         }
+        //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+        //# - The shim MUST return an error when the core ESDK produces an algorithm suite
+        //# the shim does not define.
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::Esdk,
+            "algorithm suite translation",
+            "core returned an algorithm suite id unknown to the C++ bindings",
+        )),
     }
-    //= spec/shim/esdk-shim.md#algorithm-suite-identifier
-    //= type=implication
-    //= reason=AlgorithmSuiteId is a closed enum and every variant is mapped above, so a core algorithm suite the shim does not define is unrepresentable; no error arm can exist.
-    //# - The shim MUST return an error when the core ESDK produces an algorithm suite
-    //# the shim does not define.
 }
 
 // C++ to Rust for Commitment Policy

@@ -192,28 +192,18 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
+// Catches a missing C++ mapping when the core adds a suite: the new id falls
+// through to the error arm of `alg_id_core_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
-    use super::AlgorithmSuiteId as C;
-    let pairs: [(C, u16); 11] = [
-        (C::AlgAes128GcmIv12Tag16NoKdf, 0x0014),
-        (C::AlgAes192GcmIv12Tag16NoKdf, 0x0046),
-        (C::AlgAes256GcmIv12Tag16NoKdf, 0x0078),
-        (C::AlgAes128GcmIv12Tag16HkdfSha256, 0x0114),
-        (C::AlgAes192GcmIv12Tag16HkdfSha256, 0x0146),
-        (C::AlgAes256GcmIv12Tag16HkdfSha256, 0x0178),
-        (C::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256, 0x0214),
-        (C::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384, 0x0346),
-        (C::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384, 0x0378),
-        (C::AlgAes256GcmHkdfSha512CommitKey, 0x0478),
-        (C::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, 0x0578),
-    ];
-    for (core, repr) in pairs {
+    for &core in super::AlgorithmSuiteId::ALL {
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
         //= type=test
         //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
         //# suite identifier that has the same two-byte ID.
-        assert_eq!(alg_id_core_to_target(core).unwrap().repr, repr);
+        let target = alg_id_core_to_target(core)
+            .unwrap_or_else(|e| panic!("{core:?} has no C++ mapping: {e}"));
+        assert_eq!(target.repr, u16::from_be_bytes(core.id_bytes()));
     }
 }
 
