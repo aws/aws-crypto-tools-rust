@@ -1,12 +1,12 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use anyhow::Result;
+use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
+use aws_crypto_mpl::{HierarchicalKeyring, Keyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::{Esdk, EsdkCommitmentPolicy};
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::client::Client as KeystoreClient;
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::KmsConfiguration;
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::key_store_config::KeyStoreConfig;
-use aws_mpl_legacy::dafny::types::keyring::KeyringRef;
 use log::info;
 use sysinfo::System;
 
@@ -27,7 +27,7 @@ const BRANCH_KEY_ID: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
 
 pub struct EsdkBenchmark {
     pub esdk_client: Esdk,
-    pub keyring: KeyringRef,
+    pub keyring: Arc<dyn Keyring>,
     pub config: TestConfig,
     pub results: Vec<BenchmarkResult>,
     pub cpu_count: usize,
@@ -60,37 +60,37 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk() -> Result<(Esdk, KeyringRef)> {
+    async fn setup_esdk() -> Result<(Esdk, Arc<dyn Keyring>)> {
         let esdk_client = Esdk::builder()
             .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
             .build();
-
-        let mpl = aws_esdk::mpl();
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let kms_client = aws_sdk_kms::Client::new(&sdk_config);
         let ddb_client = aws_sdk_dynamodb::Client::new(&sdk_config);
 
-        let key_store_config = KeyStoreConfig::builder()
-            .kms_client(kms_client)
-            .ddb_client(ddb_client)
-            .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
-            .build()
-            .map_err(|e| anyhow::anyhow!("failed to build key store config: {e:?}"))?;
+        let key_store = BranchKeyStore::new(KeyStoreConfig {
+            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
+            kms_configuration: KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()),
+            logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
+            id: None,
+            grant_tokens: None,
+            ddb_client: Some(ddb_client),
+            kms_client: Some(kms_client),
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to build key store: {e:?}"))?;
 
-        let key_store = KeystoreClient::from_conf(key_store_config)
-            .map_err(|e| anyhow::anyhow!("failed to build key store client: {e:?}"))?;
-
-        let keyring = mpl
-            .create_aws_kms_hierarchical_keyring()
-            .key_store(key_store)
-            .branch_key_id(BRANCH_KEY_ID)
-            .ttl_seconds(600_000)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to create hierarchical keyring: {e:?}"))?;
+        let keyring = HierarchicalKeyring::new(
+            Arc::new(key_store),
+            600_000,
+            Some(BRANCH_KEY_ID.to_string()),
+            None,
+            None,
+            None,
+        )
+        .map_err(|e| anyhow::anyhow!("failed to create hierarchical keyring: {e:?}"))?;
+        let keyring: Arc<dyn Keyring> = Arc::new(keyring);
 
         Ok((esdk_client, keyring))
     }
