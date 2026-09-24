@@ -3,29 +3,29 @@
 
 //! Encryption context serialization for message header and AAD.
 
-use super::serializable_types::ESDKCanonicalEncryptionContext;
 use super::serialize_functions::{read_str_u16, read_u16, write_bytes, write_u16};
 use super::{Error, ser_err};
-use crate::types::{SafeRead, SafeWrite};
+use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 
 /// Read the header's AAD encryption context sub-section.
-pub(crate) fn read_canonical_ec(
+pub(crate) fn read_encryption_context(
     r: &mut dyn SafeRead,
     raw: &mut dyn SafeWrite,
-) -> Result<ESDKCanonicalEncryptionContext, Error> {
+) -> Result<EncryptionContext, Error> {
+    let mut result = EncryptionContext::new();
+
     // Empty EC: length 0, no further bytes.
     let bytes = usize::from(read_u16(r, raw)?);
     if bytes == 0 {
-        return Ok(Vec::new());
+        return Ok(result);
     }
 
     // Count, then `count` (key, value) pairs.
     let count = usize::from(read_u16(r, raw)?);
-    let mut result: ESDKCanonicalEncryptionContext = Vec::with_capacity(count);
     for _ in 0..count {
         let key = read_str_u16(r, raw)?;
         let value = read_str_u16(r, raw)?;
-        result.push((key, value));
+        result.insert(key, value);
     }
 
     Ok(result)
@@ -34,7 +34,7 @@ pub(crate) fn read_canonical_ec(
 /// Write canonical EC bytes for signing/AES-GCM AAD; empty EC writes nothing.
 pub(crate) fn write_empty_ec_or_write_aad(
     w: &mut dyn SafeWrite,
-    data: &ESDKCanonicalEncryptionContext,
+    data: &EncryptionContext,
 ) -> Result<(), Error> {
     if data.is_empty() {
         //= spec/data-format/message-header.md#key-value-pairs
@@ -47,12 +47,12 @@ pub(crate) fn write_empty_ec_or_write_aad(
 }
 
 /// Serialized length of the key-value-pairs body in bytes.
-fn get_length(data: &ESDKCanonicalEncryptionContext) -> usize {
+fn get_length(data: &EncryptionContext) -> usize {
     let mut length = 0;
-    for pair in data {
+    for (key, value) in data.iter() {
         // key_len(2) + key bytes + val_len(2) + val bytes.
-        // `.len()` on a String returns the number of UTF-8 bytes, which is what we serialize.
-        length += 2 + pair.0.len() + 2 + pair.1.len();
+        // `.len()` on a str returns the number of UTF-8 bytes, which is what we serialize.
+        length += 2 + key.len() + 2 + value.len();
     }
     length
 }
@@ -60,7 +60,7 @@ fn get_length(data: &ESDKCanonicalEncryptionContext) -> usize {
 /// Write the header's AAD EC sub-section: length + key-value pairs.
 pub(crate) fn write_aad_section(
     w: &mut dyn SafeWrite,
-    data: &ESDKCanonicalEncryptionContext,
+    data: &EncryptionContext,
 ) -> Result<(), Error> {
     if data.is_empty() {
         //= spec/data-format/message-header.md#key-value-pairs-length
@@ -96,33 +96,30 @@ pub(crate) fn write_aad_section(
 }
 
 /// Write the key-value-pairs body: count, then (key, value) pairs.
-pub(crate) fn write_aad(
-    w: &mut dyn SafeWrite,
-    data: &ESDKCanonicalEncryptionContext,
-) -> Result<(), Error> {
+pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Result<(), Error> {
     // Count.
     let Ok(data_len) = u16::try_from(data.len()) else {
         return ser_err("Encryption context key value pair count is too large for u16");
     };
     write_u16(w, data_len)?;
 
-    for pair in data {
+    for (key, value) in data.iter() {
         //= spec/data-format/message-header.md#key-value-pairs
         //# The encryption context key-value pairs MUST be serialized according to its [specification for serialization](../framework/structures.md#serialization).
 
         // Key: length + UTF-8 bytes.
-        let Ok(key_len) = u16::try_from(pair.0.len()) else {
+        let Ok(key_len) = u16::try_from(key.len()) else {
             return ser_err("Encryption context key length is too large for u16");
         };
         write_u16(w, key_len)?;
-        write_bytes(w, pair.0.as_bytes())?;
+        write_bytes(w, key.as_bytes())?;
 
         // Value: length + UTF-8 bytes.
-        let Ok(val_len) = u16::try_from(pair.1.len()) else {
+        let Ok(val_len) = u16::try_from(value.len()) else {
             return ser_err("Encryption context value length is too large for u16");
         };
         write_u16(w, val_len)?;
-        write_bytes(w, pair.1.as_bytes())?;
+        write_bytes(w, value.as_bytes())?;
     }
     Ok(())
 }

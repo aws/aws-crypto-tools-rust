@@ -88,12 +88,9 @@ async fn test_verify_signature_inputs_directly_verified() {
     // Verification key is base64-encoded in the output encryption context.
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .expect("signing suite must publish verification key in EC");
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .unwrap();
+    let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
 
     // Parse the footer per Message Footer spec: [sig_len: UInt16 BE][signature: sig_len bytes].
     let (footer_offset, sig_len) = find_footer_offset(ct);

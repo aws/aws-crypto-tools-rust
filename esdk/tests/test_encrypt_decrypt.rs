@@ -137,11 +137,8 @@ async fn test_encrypt_decrypt_ec() {
 
         assert_eq!(decrypt_output.plaintext, plaintext);
         assert_eq!(
-            decrypt_output
-                .encryption_context
-                .get(b"stuff")
-                .map(|v| v.as_slice()),
-            Some(b"junk".as_slice()),
+            decrypt_output.encryption_context.get("stuff"),
+            Some("junk"),
             "input EC pair (stuff, junk) must round-trip to the decrypt output under {style:?}, got: {:?}",
             decrypt_output.encryption_context
         );

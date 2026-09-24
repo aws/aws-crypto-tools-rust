@@ -56,12 +56,9 @@ async fn test_signature_uses_signing_algorithm() {
 
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .unwrap();
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .unwrap();
+    let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
     let (footer_offset, sig_len) = find_footer_offset(ct);
     let signature = &ct[footer_offset + 2..footer_offset + 2 + sig_len as usize];
     let signed_content = &ct[..footer_offset];
@@ -125,12 +122,10 @@ async fn test_signature_key_is_signing_key() {
     // Extract verification key from output encryption context.
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .expect("signing suite must produce aws-crypto-public-key in EC");
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .expect("public key must be valid base64");
+    let verification_key =
+        aws_smithy_types::base64::decode(pub_key_b64).expect("public key must be valid base64");
 
     // Parse the footer: last 2+sig_len bytes of ciphertext.
     let (footer_offset, sig_len) = find_footer_offset(ct);
@@ -316,12 +311,9 @@ async fn test_footer_equals_calculated() {
 
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .unwrap();
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .unwrap();
+    let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
     let (footer_offset, sig_len) = find_footer_offset(ct);
     let signature = &ct[footer_offset + 2..footer_offset + 2 + sig_len as usize];
     let signed_content = &ct[..footer_offset];

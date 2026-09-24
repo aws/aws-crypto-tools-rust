@@ -30,25 +30,24 @@ pub enum SmallEncryptionContextVariation {
     CD,
 }
 
-/// Build an encryption context from string pairs. The context is byte-keyed;
-/// tests overwhelmingly use UTF-8 literals, so this keeps them readable.
+/// Build an encryption context from string pairs.
 pub fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    for (k, v) in pairs {
-        ec.insert(k.as_bytes().to_vec(), v.as_bytes().to_vec());
+    for &(k, v) in pairs {
+        ec.insert(k, v);
     }
     ec
 }
 
 pub fn small_encryption_context(v: SmallEncryptionContextVariation) -> EncryptionContext {
-    let key_a = b"keyA".to_vec();
-    let val_a = b"valA".to_vec();
-    let key_b = b"keyB".to_vec();
-    let val_b = b"valB".to_vec();
-    let key_c = b"keyC".to_vec();
-    let val_c = b"valC".to_vec();
-    let key_d = b"keyD".to_vec();
-    let val_d = b"valD".to_vec();
+    let key_a = "keyA";
+    let val_a = "valA";
+    let key_b = "keyB";
+    let val_b = "valB";
+    let key_c = "keyC";
+    let val_c = "valC";
+    let key_d = "keyD";
+    let val_d = "valD";
 
     let mut h = EncryptionContext::new();
     match v {
@@ -80,10 +79,7 @@ pub fn small_encryption_context(v: SmallEncryptionContextVariation) -> Encryptio
 
 pub fn get_reserved_ec_map() -> EncryptionContext {
     let mut h = EncryptionContext::new();
-    h.insert(
-        b"aws-crypto-public-key".to_vec(),
-        b"not a real public key".to_vec(),
-    );
+    h.insert("aws-crypto-public-key", "not a real public key");
     h
 }
 
@@ -120,14 +116,14 @@ pub fn small_encryption_context_keys(v: SmallEncryptionContextVariation) -> Vec<
 pub fn small_mismatched_encryption_context(
     v: SmallEncryptionContextVariation,
 ) -> EncryptionContext {
-    let key_a = b"keyA".to_vec();
-    let val_a = b"valA".to_vec();
-    let key_b = b"keyB".to_vec();
-    let val_b = b"valB".to_vec();
-    let key_c = b"keyC".to_vec();
-    let val_c = b"valC".to_vec();
-    let key_d = b"keyD".to_vec();
-    let val_d = b"valD".to_vec();
+    let key_a = "keyA";
+    let val_a = "valA";
+    let key_b = "keyB";
+    let val_b = "valB";
+    let key_c = "keyC";
+    let val_c = "valC";
+    let key_d = "keyD";
+    let val_d = "valD";
 
     let mut h: EncryptionContext = EncryptionContext::new();
     match v {

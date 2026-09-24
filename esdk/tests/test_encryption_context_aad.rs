@@ -247,3 +247,30 @@ async fn test_aad_empty_encryption_context_no_kvp_field() {
         );
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_aad_non_ascii_keys_serialize_in_utf8_byte_order() {
+    // U+FF5E (EF BD 9E) sorts before U+1F600 (F0 9F 98 80) by UTF-8 bytes, but
+    // after it by UTF-16 code units (U+1F600 is the surrogate pair D83D DE00).
+    let ec = EncryptionContext::from([("\u{1F600}", "\u{1F980}"), ("\u{FF5E}", "caf\u{E9}")]);
+    let expected_aad: &[u8] = &[
+        0x00, 0x1A, // key value pairs length = 26
+        0x00, 0x02, // count = 2
+        0x00, 0x03, 0xEF, 0xBD, 0x9E, // key U+FF5E
+        0x00, 0x05, b'c', b'a', b'f', 0xC3, 0xA9, // value "cafe" with U+00E9
+        0x00, 0x04, 0xF0, 0x9F, 0x98, 0x80, // key U+1F600
+        0x00, 0x04, 0xF0, 0x9F, 0xA6, 0x80, // value U+1F980
+    ];
+    for version in VERSIONS {
+        let ct = encrypt_no_sign_with_ec(b"utf-8 order", ec.clone(), version).await;
+        let off = aad_offset(version);
+        assert_eq!(
+            &ct[off..off + expected_aad.len()],
+            expected_aad,
+            "{version:?}: header AAD must list keys in UTF-8 byte order"
+        );
+
+        let dec = decrypt_with_version(&ct, version).await;
+        assert_eq!(dec.encryption_context, ec, "{version:?}: round trip");
+    }
+}
