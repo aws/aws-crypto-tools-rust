@@ -110,6 +110,33 @@ fn test_reserved_id_00_00_is_not_used() {
     }
 }
 
+// --- Suite table and reverse lookup ---
+
+#[test]
+fn test_all_lists_every_variant_once() {
+    let listed: HashSet<_> = AlgorithmSuiteId::ALL.iter().copied().collect();
+    assert_eq!(
+        listed.len(),
+        AlgorithmSuiteId::ALL.len(),
+        "AlgorithmSuiteId::ALL must not contain duplicates"
+    );
+    assert_eq!(listed, HashSet::from(ALL_SUITES));
+}
+
+#[test]
+fn test_from_id_bytes_inverts_id_bytes() {
+    for &id in AlgorithmSuiteId::ALL {
+        assert_eq!(AlgorithmSuiteId::from_id_bytes(id.id_bytes()), Some(id));
+    }
+}
+
+#[test]
+fn test_from_id_bytes_rejects_unknown_ids() {
+    for bytes in [[0x00, 0x00], [0xFF, 0xFF]] {
+        assert_eq!(AlgorithmSuiteId::from_id_bytes(bytes), None);
+    }
+}
+
 // --- Format enum name pins ---
 
 #[test]
