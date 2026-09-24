@@ -161,7 +161,7 @@ fn non_signing_suite() -> AlgorithmSuiteId {
 /// <https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/AwsKms/AwsKmsHierarchicalKeyring/TestAwsKmsHierarchicalKeyring.dfy#L64>
 fn fresh_materials() -> EncryptionMaterials {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    ec.insert("region", "us-west-2");
     EncryptionMaterials::new(
         non_signing_suite(),
         Vec::new(),
@@ -423,7 +423,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     let zeroed = vec![0u8; key_len];
 
     let mut ec = EncryptionContext::new();
-    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    ec.insert("region", "us-west-2");
     let materials_in = EncryptionMaterials::new(
         suite,
         Vec::new(),

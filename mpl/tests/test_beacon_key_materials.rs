@@ -77,7 +77,7 @@ fn test_beacon_key_getter_some_path() {
 #[test]
 fn test_beacon_encryption_context_getter() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), b"v".to_vec());
+    ec.insert("k", "v");
     let mat = BeaconKeyMaterials::new("id".to_string(), ec, None, None);
     assert_eq!(mat.encryption_context().len(), 1);
 }

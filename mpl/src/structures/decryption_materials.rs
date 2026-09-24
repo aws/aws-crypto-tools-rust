@@ -17,7 +17,7 @@ use super::error::MaterialsError;
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<Vec<u8>>,
+    required_encryption_context_keys: BTreeSet<String>,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -28,7 +28,7 @@ impl DecryptionMaterials {
     pub fn new(
         algorithm_suite_id: AlgorithmSuiteId,
         encryption_context: EncryptionContext,
-        required_encryption_context_keys: BTreeSet<Vec<u8>>,
+        required_encryption_context_keys: BTreeSet<String>,
         plaintext_data_key: Option<PlaintextDataKey>,
         verification_key: Option<VerificationKey>,
         symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -94,7 +94,7 @@ impl DecryptionMaterials {
         &self.encryption_context
     }
 
-    pub fn required_encryption_context_keys(&self) -> &BTreeSet<Vec<u8>> {
+    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
     }
 
@@ -114,7 +114,7 @@ impl DecryptionMaterials {
     pub fn validate_aws_crypto_public_key(&self) -> Result<(), MaterialsError> {
         let has_key = self
             .encryption_context
-            .contains_key(b"aws-crypto-public-key");
+            .contains_key("aws-crypto-public-key");
         if self.verification_key.is_some() && !has_key {
             return Err(MaterialsError::new(
                 "Encryption context MUST include 'aws-crypto-public-key' when verification key is present",
