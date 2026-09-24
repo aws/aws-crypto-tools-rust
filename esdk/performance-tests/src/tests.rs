@@ -3,15 +3,13 @@
 
 use crate::alloc;
 use anyhow::Result;
-use aws_crypto_mpl::Keyring;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk, Keyring};
 use chrono::Utc;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
 use memory_stats::memory_stats;
 use rand::Rng;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::benchmark::{EsdkBenchmark, MEMORY_TEST_ITERATIONS};
@@ -28,14 +26,13 @@ impl EsdkBenchmark {
     /// Runs one encrypt+decrypt cycle and returns (encrypt_ms, decrypt_ms).
     async fn encrypt_decrypt(
         esdk_client: &Esdk,
-        keyring: &Arc<dyn Keyring>,
+        keyring: &Keyring,
         data: &[u8],
     ) -> Result<(f64, f64)> {
-        let encrypt_input = EncryptInput::with_keyring(
-            data,
-            Self::benchmark_encryption_context(data.len()),
-            keyring.clone(),
-        );
+        let mut encrypt_input = EncryptInput::new();
+        encrypt_input.plaintext = data;
+        encrypt_input.encryption_context = Self::benchmark_encryption_context(data.len());
+        encrypt_input.keyring = Some(keyring.clone());
 
         let encrypt_start = Instant::now();
         let encrypt_output = esdk_client
@@ -46,8 +43,9 @@ impl EsdkBenchmark {
 
         let ciphertext = encrypt_output.ciphertext;
 
-        let decrypt_input =
-            DecryptInput::with_keyring(&ciphertext, EncryptionContext::new(), keyring.clone());
+        let mut decrypt_input = DecryptInput::new();
+        decrypt_input.ciphertext = &ciphertext;
+        decrypt_input.keyring = Some(keyring.clone());
 
         let decrypt_start = Instant::now();
         let decrypt_output = esdk_client

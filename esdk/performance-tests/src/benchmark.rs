@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, Keyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::{Esdk, EsdkCommitmentPolicy};
+use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::{Esdk, EsdkCommitmentPolicy, Keyring};
 use log::info;
 use sysinfo::System;
 
@@ -27,7 +27,7 @@ const BRANCH_KEY_ID: &str = "3f43a9af-08c5-4317-b694-3d3e883dcaef";
 
 pub struct EsdkBenchmark {
     pub esdk_client: Esdk,
-    pub keyring: Arc<dyn Keyring>,
+    pub keyring: Keyring,
     pub config: TestConfig,
     pub results: Vec<BenchmarkResult>,
     pub cpu_count: usize,
@@ -60,7 +60,7 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk() -> Result<(Esdk, Arc<dyn Keyring>)> {
+    async fn setup_esdk() -> Result<(Esdk, Keyring)> {
         let esdk_client = Esdk::builder()
             .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
             .build();
@@ -90,7 +90,7 @@ impl EsdkBenchmark {
             None,
         )
         .map_err(|e| anyhow::anyhow!("failed to create hierarchical keyring: {e:?}"))?;
-        let keyring: Arc<dyn Keyring> = Arc::new(keyring);
+        let keyring = Keyring::new(keyring);
 
         Ok((esdk_client, keyring))
     }
