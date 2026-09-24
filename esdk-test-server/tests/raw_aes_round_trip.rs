@@ -1,4 +1,4 @@
-//! An offline Raw-AES client encrypts and decrypts through the native MPL
+//! An offline Raw-AES client encrypts and decrypts through the MPL
 //! keyring, carrying the encryption context across both calls, and decrypt
 //! rejects a context that disagrees with the one bound into the message.
 
