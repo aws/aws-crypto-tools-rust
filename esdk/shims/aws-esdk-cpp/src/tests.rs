@@ -406,6 +406,8 @@ fn classify_core_error_maps_each_kind() {
             ErrorKind::ValidationError,
             ffi::ShimErrorKind::ValidationError,
         ),
+        (ErrorKind::KeystoreError, ffi::ShimErrorKind::KeystoreError),
+        (ErrorKind::CacheError, ffi::ShimErrorKind::CacheError),
     ];
     for (kind, expected) in cases {
         assert_eq!(

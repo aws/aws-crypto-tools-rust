@@ -219,7 +219,7 @@ void test_cache_kinds() {
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    // MplError kind: exactly the base exception type.
+    // KeystoreError kind: no C++ class of its own, so exactly the base exception type.
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       Aws::Esdk::KeyStore("ab", "ab",
                                           "arn:aws:kms:us-west-2:000000000000:key/test",

@@ -213,6 +213,8 @@ mod ffi {
         CryptographicError,
         MplError,
         ValidationError,
+        KeystoreError,
+        CacheError,
     }
 
     struct EncryptionContextItem {
@@ -447,9 +449,9 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
     match kind {
         ErrorKind::SerializationError => ffi::ShimErrorKind::SerializationError,
         ErrorKind::CryptographicError => ffi::ShimErrorKind::CryptographicError,
-        ErrorKind::MplError | ErrorKind::KeystoreError | ErrorKind::CacheError => {
-            ffi::ShimErrorKind::MplError
-        }
+        ErrorKind::MplError => ffi::ShimErrorKind::MplError,
+        ErrorKind::KeystoreError => ffi::ShimErrorKind::KeystoreError,
+        ErrorKind::CacheError => ffi::ShimErrorKind::CacheError,
         ErrorKind::ValidationError => ffi::ShimErrorKind::ValidationError,
         _ => ffi::ShimErrorKind::Esdk,
     }
@@ -1035,7 +1037,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
 
     let store = TOKIO_RUNTIME
         .block_on(BranchKeyStore::new(config))
-        .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, op, e))?;
+        .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
     Ok(Box::new(KeyStore {
         client: Arc::new(store),
     }))
