@@ -370,6 +370,12 @@ async fn step_get_encryption_materials(
     //= reason=Code uses materials.algorithm_suite regardless of input
     //# Note that the algorithm suite in the retrieved encryption materials MAY be different
     //# from the [input algorithm suite](#algorithm-suite).
+    //
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=implication
+    //= reason=AlgorithmSuiteId enumerates only ESDK suites, so the materials cannot carry another
+    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+    //# encrypt MUST yield an error.
     let algorithm_suite = materials.algorithm_suite();
 
     let message_id = header::generate_message_id(&algorithm_suite)?;

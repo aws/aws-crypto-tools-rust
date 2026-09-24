@@ -183,6 +183,11 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         //# - Decrypt operation output MUST include an [algorithm suite](#algorithm-suite) value.
         //
         //= spec/client-apis/decrypt.md#algorithm-suite
+        //= type=implication
+        //= reason=EsdkAlgorithmSuiteId enumerates only ESDK suites, so the output cannot carry another
+        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
+        //
+        //= spec/client-apis/decrypt.md#algorithm-suite
         //= type=exception
         //= reason=The algorithm suite is returned directly as a field, not via a parsed header struct
         //# This output MAY be satisfied by outputting a [parsed header](#parsed-header) containing this value.
@@ -397,6 +402,12 @@ async fn step_get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
+    //
+    //= spec/client-apis/decrypt.md#get-the-decryption-materials
+    //= type=implication
+    //= reason=AlgorithmSuiteId enumerates only ESDK suites, so the materials cannot carry another
+    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+    //# decrypt MUST yield an error.
     let suite = dec_mat.algorithm_suite();
 
     if &suite != header_body.algorithm_suite() {

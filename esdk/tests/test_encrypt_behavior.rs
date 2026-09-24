@@ -284,46 +284,87 @@ async fn test_suite_from_materials_used() {
     );
 }
 
-// TODO(native-mpl): relies on multi-keyring which the native MPL doesn't yet implement.
-// #[tokio::test(flavor = "multi_thread")]
-// async fn test_max_edk_exceeded_error() {
-//     // Set max_encrypted_data_keys to 0 (impossible to satisfy) — should fail.
-//     // NonZeroUsize minimum is 1, but even 1 EDK from a single keyring should be exactly 1.
-//     // We use two keyrings to produce 2 EDKs, then set max to 1.
-//     let keyring1 = test_keyring().await;
-//     let (ns2, name2) = namespace_and_name(1);
-//     let keyring2 = mpl()
-//         .create_raw_aes_keyring()
-//         .key_namespace(ns2)
-//         .key_name(name2)
-//         .wrapping_key(aws_smithy_types::Blob::new([1u8; 32]))
-//         .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-//         .send()
-//         .await
-//         .unwrap();
-//     let multi_keyring = mpl()
-//         .create_multi_keyring()
-//         .generator(keyring1)
-//         .child_keyrings(vec![keyring2])
-//         .send()
-//         .await
-//         .unwrap();
-//     let mut enc_input =
-//         EncryptInput::with_keyring(b"max edk test", EncryptionContext::new(), multi_keyring);
-//     enc_input.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
-//     let result = encrypt(&enc_input).await;
-//     let err = result.expect_err("encrypt must fail when EDK count exceeds max");
-//     assert_eq!(
-//         err.kind,
-//         ErrorKind::ValidationError,
-//         "expected ValidationError, got: {err:?}"
-//     );
-//     assert!(
-//         err.message.contains("exceed") && err.message.contains("maximum"),
-//         "error must indicate EDK count exceeds maximum, got: {}",
-//         err.message
-//     );
-// }
+/// CMM that forwards to a default CMM, then republishes the materials with the
+/// first encrypted data key duplicated.
+///
+/// The native MPL has no multi-keyring, so a keyring can only ever produce one
+/// EDK. Returning two from a caller-implemented CMM is the only way to drive the
+/// ESDK's maximum-EDK check on encrypt.
+struct DuplicateEdkCmm {
+    inner: DefaultCmm,
+}
+
+#[async_trait::async_trait]
+impl Cmm for DuplicateEdkCmm {
+    async fn get_encryption_materials(
+        &self,
+        request: EncryptionMaterialsRequest,
+    ) -> Result<EncryptionMaterials, MaterialsError> {
+        let materials = self.inner.get_encryption_materials(request).await?;
+        let mut edks = materials.encrypted_data_keys().to_vec();
+        let Some(first) = edks.first().cloned() else {
+            return Err(MaterialsError::new(
+                "inner CMM returned no encrypted data keys",
+            ));
+        };
+        edks.push(first);
+        EncryptionMaterials::new(
+            materials.algorithm_suite_id(),
+            edks,
+            materials.encryption_context().clone(),
+            materials.required_encryption_context_keys().clone(),
+            materials.plaintext_data_key().cloned(),
+            materials.signing_key().cloned(),
+            materials.symmetric_signing_keys().map(<[_]>::to_vec),
+        )
+    }
+
+    async fn decrypt_materials(
+        &self,
+        request: DecryptMaterialsRequest,
+    ) -> Result<DecryptionMaterials, MaterialsError> {
+        self.inner.decrypt_materials(request).await
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_max_edk_exceeded_error() {
+    // The CMM returns 2 EDKs; the client allows at most 1.
+    let cmm: Arc<dyn Cmm> = Arc::new(DuplicateEdkCmm {
+        inner: DefaultCmm::new(test_keyring().await),
+    });
+    let mut enc_input =
+        EncryptInput::with_cmm(b"max edk test", EncryptionContext::new(), cmm.clone());
+    enc_input.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
+
+    let err = encrypt(&enc_input)
+        .await
+        .expect_err("encrypt must fail when EDK count exceeds max");
+
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= type=test
+    //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
+    //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md) encrypt MUST yield an error.
+    assert_eq!(
+        err.kind,
+        ErrorKind::ValidationError,
+        "expected ValidationError, got: {err:?}"
+    );
+    assert!(
+        err.message.contains("exceeds") && err.message.contains("maximum"),
+        "error must indicate EDK count exceeds maximum, got: {}",
+        err.message
+    );
+
+    // The same CMM under a maximum of 2 encrypts, so the failure above is the
+    // maximum-EDK check and not the extra EDK being rejected some other way.
+    let mut allowed = EncryptInput::with_cmm(b"max edk test", EncryptionContext::new(), cmm);
+    allowed.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(2).unwrap());
+    assert!(
+        encrypt(&allowed).await.is_ok(),
+        "2 EDKs must encrypt when the configured maximum is 2"
+    );
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_data_key_derived_from_plaintext_data_key() {

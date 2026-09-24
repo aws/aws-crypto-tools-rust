@@ -213,6 +213,11 @@ pub(crate) async fn get_encryption_materials(
     //# this length MUST be used.
     //
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
+    //= reason=The caller's Plaintext Length Bound arrives as max_plaintext_length for unknown-length input
+    //# If the input [plaintext](#plaintext) has unknown length and a [Plaintext Length Bound](#plaintext-length-bound)
+    //# was provided, this MUST be the [Plaintext Length Bound](#plaintext-length-bound).
+    //
+    //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= reason=max_plaintext_length is Option; None means the field is not set on the request
     //# If no Plaintext Length Bound is provided, this field MUST NOT be included.
     if let Some(len) = max_plaintext_length {
