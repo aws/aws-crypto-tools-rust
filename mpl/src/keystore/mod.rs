@@ -72,3 +72,13 @@ pub trait Keystore: Send + Sync {
         branch_key_id: String,
     ) -> Result<BeaconKeyMaterials, KeystoreError>;
 }
+
+crate::shared::shared_handle!(
+    /// A shared handle to any [`Keystore`].
+    ///
+    /// Every API that accepts a keystore takes `impl Into<SharedKeystore>`, so
+    /// a concrete keystore, an `Arc` of one, or an existing handle can be
+    /// passed. Cloning is cheap: the clone shares the same keystore instance.
+    SharedKeystore,
+    Keystore
+);

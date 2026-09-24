@@ -159,8 +159,16 @@ impl ValidatedConfig {
 /// protection.  See the module-level docs and
 /// `spec/framework/storm-tracking-cryptographic-materials-cache.md` for the
 /// full behavioral specification.
+///
+/// Cloning is cheap and the clone shares state with the original, including
+/// the stored entries and the inflight map.
+#[derive(Clone)]
 pub struct StormTrackingCmc {
-    inner: LocalCmc,
+    inner: Arc<StormTrackingCmcInner>,
+}
+
+struct StormTrackingCmcInner {
+    local: LocalCmc,
     grace_period: Duration,
     grace_interval: Duration,
     fan_out: usize,
@@ -261,48 +269,50 @@ impl StormTrackingCmc {
         let now_arc: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(now);
         let inner_clock = Arc::clone(&now_arc);
 
-        let inner =
+        let local =
             LocalCmc::with_clock_impl(entry_capacity, entry_pruning_tail_size, move || {
                 inner_clock()
             })?;
 
         Ok(Self {
-            inner,
-            grace_period: cfg.grace_period,
-            grace_interval: cfg.grace_interval,
-            fan_out: cfg.fan_out,
-            inflight_ttl: cfg.inflight_ttl,
-            sleep_milli: cfg.sleep_milli,
-            time_units: cfg.time_units,
-            state: Mutex::new(StormTrackingState {
-                inflight: HashMap::new(),
+            inner: Arc::new(StormTrackingCmcInner {
+                local,
+                grace_period: cfg.grace_period,
+                grace_interval: cfg.grace_interval,
+                fan_out: cfg.fan_out,
+                inflight_ttl: cfg.inflight_ttl,
+                sleep_milli: cfg.sleep_milli,
+                time_units: cfg.time_units,
+                state: Mutex::new(StormTrackingState {
+                    inflight: HashMap::new(),
+                }),
+                now: now_arc,
             }),
-            now: now_arc,
         })
     }
 
     pub fn grace_period(&self) -> Duration {
-        self.grace_period
+        self.inner.grace_period
     }
 
     pub fn grace_interval(&self) -> Duration {
-        self.grace_interval
+        self.inner.grace_interval
     }
 
     pub fn fan_out(&self) -> usize {
-        self.fan_out
+        self.inner.fan_out
     }
 
     pub fn inflight_ttl(&self) -> Duration {
-        self.inflight_ttl
+        self.inner.inflight_ttl
     }
 
     pub fn sleep_milli(&self) -> Duration {
-        self.sleep_milli
+        self.inner.sleep_milli
     }
 
     pub fn time_units(&self) -> TimeUnits {
-        self.time_units
+        self.inner.time_units
     }
 
     /// Borrow the inner `LocalCmc`. Useful in tests to verify that the
@@ -310,7 +320,7 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn inner(&self) -> &LocalCmc {
-        &self.inner
+        &self.inner.local
     }
 
     /// Peek the inflight map for `cache_id`. Returns the most recent time
@@ -320,7 +330,11 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn peek_inflight(&self, cache_id: &[u8]) -> Option<SystemTime> {
-        let state = self.state.lock().expect("StormTrackingCmc lock poisoned");
+        let state = self
+            .inner
+            .state
+            .lock()
+            .expect("StormTrackingCmc lock poisoned");
         state.inflight.get(cache_id).copied()
     }
 
@@ -329,7 +343,11 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn inflight_count(&self) -> usize {
-        let state = self.state.lock().expect("StormTrackingCmc lock poisoned");
+        let state = self
+            .inner
+            .state
+            .lock()
+            .expect("StormTrackingCmc lock poisoned");
         state.inflight.len()
     }
 
@@ -339,7 +357,11 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn mark_inflight(&self, cache_id: &[u8], when: SystemTime) {
-        let mut state = self.state.lock().expect("StormTrackingCmc lock poisoned");
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .expect("StormTrackingCmc lock poisoned");
         state.inflight.insert(cache_id.to_vec(), when);
     }
 
@@ -356,10 +378,10 @@ impl StormTrackingCmc {
         now: SystemTime,
         skip_key: &[u8],
     ) -> Result<MutexGuard<'_, StormTrackingState>, CmcError> {
-        let mut guard = self.state.lock().map_err(|e| {
+        let mut guard = self.inner.state.lock().map_err(|e| {
             CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
         })?;
-        let ttl = self.inflight_ttl;
+        let ttl = self.inner.inflight_ttl;
         guard.inflight.retain(|k, t| {
             k.as_slice() == skip_key
                 || now
@@ -384,14 +406,14 @@ impl StormTrackingCmc {
         match cached {
             Some(entry) => {
                 // Cache hit.
-                if state.inflight.len() >= self.fan_out {
+                if state.inflight.len() >= self.inner.fan_out {
                     // Fan-out saturated: serve the cached entry even if
                     // within the grace period; storm tracking is disabled
                     // until slots free up.
                     return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
                 }
 
-                if !within_grace_period(entry.expiry_time, now, self.grace_period) {
+                if !within_grace_period(entry.expiry_time, now, self.inner.grace_period) {
                     return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
                 }
 
@@ -403,7 +425,7 @@ impl StormTrackingCmc {
                         Ok(GetDecision::Ready(None))
                     }
                     Some(inflight_t) => {
-                        if within_grace_interval(inflight_t, now, self.grace_interval) {
+                        if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
                             // Another thread is already refreshing; serve
                             // the cached copy.
                             Ok(GetDecision::Ready(Some(Arc::clone(entry))))
@@ -420,7 +442,7 @@ impl StormTrackingCmc {
                 // Cache miss.
                 match state.inflight.get(cache_id).copied() {
                     None => {
-                        if state.inflight.len() >= self.fan_out {
+                        if state.inflight.len() >= self.inner.fan_out {
                             // No slot; do not mark inflight yet — the wait
                             // loop will mark once a slot opens.
                             Ok(GetDecision::Wait { deadline: None })
@@ -432,18 +454,18 @@ impl StormTrackingCmc {
                     Some(inflight_t) => {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
-                        if elapsed > self.inflight_ttl {
+                        if elapsed > self.inner.inflight_ttl {
                             return Err(CmcError::storage_failed("InFlightTTL exceeded"));
                         }
 
-                        if within_grace_interval(inflight_t, now, self.grace_interval) {
+                        if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
                             // Another thread is fetching; wait until it
                             // completes or its grace interval elapses.
                             // The per-waiter deadline mirrors the Dafny
                             // reference extern: computed once here, checked
                             // each iteration in `wait_for_leader`.
                             Ok(GetDecision::Wait {
-                                deadline: Some(now + self.inflight_ttl),
+                                deadline: Some(now + self.inner.inflight_ttl),
                             })
                         } else {
                             // Grace interval elapsed; take the leader slot.
@@ -476,13 +498,13 @@ impl StormTrackingCmc {
         deadline: Option<SystemTime>,
     ) -> Result<Option<Arc<CacheEntry>>, CmcError> {
         loop {
-            tokio::time::sleep(self.sleep_milli).await;
+            tokio::time::sleep(self.inner.sleep_milli).await;
 
-            if let Some(hit) = self.inner.get_cache_entry(cache_id).await? {
+            if let Some(hit) = self.inner.local.get_cache_entry(cache_id).await? {
                 return Ok(Some(hit));
             }
 
-            let now = (self.now)();
+            let now = (self.inner.now)();
 
             // Per-waiter TTL check (only present for the "key inflight"
             // classification). Fires if this getter has been in the loop
@@ -499,12 +521,12 @@ impl StormTrackingCmc {
             // elapsed). Prune runs inside `state_locked` so the fan-out
             // check reflects live state.
             let mut state = self.state_locked(now, cache_id)?;
-            let slot_open = state.inflight.len() < self.fan_out;
+            let slot_open = state.inflight.len() < self.inner.fan_out;
             let leader_permitted = state
                 .inflight
                 .get(cache_id)
                 .copied()
-                .is_none_or(|t| !within_grace_interval(t, now, self.grace_interval));
+                .is_none_or(|t| !within_grace_interval(t, now, self.inner.grace_interval));
 
             if slot_open && leader_permitted {
                 state.inflight.insert(cache_id.to_vec(), now);
@@ -545,17 +567,17 @@ impl Cmc for StormTrackingCmc {
         // and start a redundant refresh — defeating storm-tracking
         // coalescing. It also preserves inflight state if the inner put
         // fails, so a failed refresh doesn't lose the leader signal.
-        self.inner.put_cache_entry(cache_id, entry).await?;
+        self.inner.local.put_cache_entry(cache_id, entry).await?;
 
-        let now = (self.now)();
+        let now = (self.inner.now)();
         let mut state = self.state_locked(now, cache_id)?;
         state.inflight.remove(cache_id);
         Ok(())
     }
 
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
-        let cached = self.inner.get_cache_entry(cache_id).await?;
-        let now = (self.now)();
+        let cached = self.inner.local.get_cache_entry(cache_id).await?;
+        let now = (self.inner.now)();
 
         // Classify with the lock held; drop the lock before any await.
         let decision = {
@@ -570,6 +592,6 @@ impl Cmc for StormTrackingCmc {
     }
 
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
-        self.inner.delete_cache_entry(cache_id).await
+        self.inner.local.delete_cache_entry(cache_id).await
     }
 }

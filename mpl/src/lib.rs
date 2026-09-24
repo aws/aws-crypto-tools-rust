@@ -17,6 +17,7 @@ pub mod cmm;
 pub mod error_chain;
 pub mod keyring;
 pub mod keystore;
+mod shared;
 pub mod structures;
 
 pub use client::*;
@@ -37,12 +38,12 @@ pub use aws_sdk_kms;
 
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
-    LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
-    TimeUnits, UsageMetadata,
+    LocalCmc, MessageUsage, SharedCmc, StormTrackingCache, StormTrackingCacheBuilder,
+    StormTrackingCmc, TimeUnits, UsageMetadata,
 };
-pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-pub use keyring::{Keyring, RawAesKeyring};
+pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
+pub use keyring::{Keyring, RawAesKeyring, SharedKeyring};
 pub use keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
-    encryption_context, kms_config, record,
+    SharedKeystore, encryption_context, kms_config, record,
 };

@@ -897,19 +897,17 @@ async fn test_get_hit_within_grace_inflight_outside_interval_returns_none_and_up
 #[tokio::test]
 async fn test_get_miss_blocks_when_fanout_saturated_until_key_appears() {
     // This test requires real concurrency — use real clock + tokio spawn + timeout.
-    let cmc = Arc::new(
-        StormTrackingCmc::new(
-            32,
-            4,
-            GRACE_PERIOD_SECS,
-            GRACE_INTERVAL_SECS,
-            FAN_OUT,
-            INFLIGHT_TTL_SECS,
-            SLEEP_MILLI,
-            None,
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::new(
+        32,
+        4,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+    )
+    .expect("constructs");
 
     let now = SystemTime::now();
     let expiry = now + Duration::from_secs(3600);
@@ -919,7 +917,7 @@ async fn test_get_miss_blocks_when_fanout_saturated_until_key_appears() {
         cmc.mark_inflight(&[i as u8], now);
     }
 
-    let cmc_getter = Arc::clone(&cmc);
+    let cmc_getter = cmc.clone();
     let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
 
     // Give the getter a moment to block, then put the entry.
@@ -988,19 +986,17 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
 async fn test_get_miss_inflight_within_interval_blocks_until_unblocked() {
     // Real concurrency test — pre-mark inflight just now (within grace interval),
     // saturate fan-out so the only unblock path is "key appears in cache".
-    let cmc = Arc::new(
-        StormTrackingCmc::new(
-            32,
-            4,
-            GRACE_PERIOD_SECS,
-            GRACE_INTERVAL_SECS,
-            FAN_OUT,
-            INFLIGHT_TTL_SECS,
-            SLEEP_MILLI,
-            None,
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::new(
+        32,
+        4,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+    )
+    .expect("constructs");
 
     let now = SystemTime::now();
     let expiry = now + Duration::from_secs(3600);
@@ -1012,7 +1008,7 @@ async fn test_get_miss_inflight_within_interval_blocks_until_unblocked() {
     }
     assert_eq!(cmc.inflight_count(), FAN_OUT);
 
-    let cmc_getter = Arc::clone(&cmc);
+    let cmc_getter = cmc.clone();
     let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
 
     // Pause briefly, then put the entry (which also clears "target" from inflight).
@@ -1074,20 +1070,18 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = Arc::new(
-        StormTrackingCmc::with_clock(
-            32,
-            4,
-            GRACE_PERIOD_SECS,
-            GRACE_INTERVAL_SECS,
-            FAN_OUT,
-            INFLIGHT_TTL_SECS,
-            SLEEP_MILLI,
-            None,
-            move || *clock_reader.lock().expect("clock lock"),
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::with_clock(
+        32,
+        4,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || *clock_reader.lock().expect("clock lock"),
+    )
+    .expect("constructs");
 
     // Saturate fan-out with target + two other keys, all inflight at start.
     // With fan-out saturated AND target within grace interval, the waiter
@@ -1102,7 +1096,7 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
     // Getter enters classify at start: cache miss, target inflight,
     // elapsed=0 (< TTL), within grace interval → Wait { deadline =
     // start + INFLIGHT_TTL_SECS = start + 5s }.
-    let cmc_getter = Arc::clone(&cmc);
+    let cmc_getter = cmc.clone();
     let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
 
     // Let the getter reach the wait loop.
@@ -1219,27 +1213,25 @@ async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = Arc::new(
-        StormTrackingCmc::with_clock(
-            32,
-            4,
-            GRACE_PERIOD_SECS,
-            GRACE_INTERVAL_SECS,
-            FAN_OUT,
-            INFLIGHT_TTL_SECS,
-            SLEEP_MILLI,
-            None,
-            move || *clock_reader.lock().expect("clock lock"),
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::with_clock(
+        32,
+        4,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || *clock_reader.lock().expect("clock lock"),
+    )
+    .expect("constructs");
 
     for i in 0..FAN_OUT {
         cmc.mark_inflight(&[i as u8], start);
     }
     assert_eq!(cmc.inflight_count(), FAN_OUT);
 
-    let cmc_getter = Arc::clone(&cmc);
+    let cmc_getter = cmc.clone();
     let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"new-key").await });
 
     // Let the getter enter the block loop.
@@ -1291,20 +1283,18 @@ async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_in
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = Arc::new(
-        StormTrackingCmc::with_clock(
-            32,
-            4,
-            GP_SECS,
-            GI_SECS,
-            FAN_OUT,
-            TTL_SECS,
-            SLEEP_MILLI,
-            None,
-            move || *clock_reader.lock().expect("clock lock"),
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::with_clock(
+        32,
+        4,
+        GP_SECS,
+        GI_SECS,
+        FAN_OUT,
+        TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || *clock_reader.lock().expect("clock lock"),
+    )
+    .expect("constructs");
 
     // Saturate fan-out: target + 2 other keys, all inflight at start.
     cmc.mark_inflight(b"target", start);
@@ -1312,7 +1302,7 @@ async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_in
     cmc.mark_inflight(&[2], start);
     assert_eq!(cmc.inflight_count(), FAN_OUT);
 
-    let cmc_getter = Arc::clone(&cmc);
+    let cmc_getter = cmc.clone();
     let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
 
     // Let the getter enter the block loop.
@@ -1390,20 +1380,18 @@ async fn test_block_miss_inflight_uses_per_waiter_deadline_not_per_key() {
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = Arc::new(
-        StormTrackingCmc::with_clock(
-            32,
-            4,
-            GP_SECS,
-            GI_SECS,
-            FAN_OUT,
-            TTL_SECS,
-            SLEEP_MILLI,
-            None,
-            move || *clock_reader.lock().expect("clock lock"),
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::with_clock(
+        32,
+        4,
+        GP_SECS,
+        GI_SECS,
+        FAN_OUT,
+        TTL_SECS,
+        SLEEP_MILLI,
+        None,
+        move || *clock_reader.lock().expect("clock lock"),
+    )
+    .expect("constructs");
 
     // Mark target inflight at start; saturate fan-out with other keys.
     cmc.mark_inflight(b"target", start);
@@ -1416,7 +1404,7 @@ async fn test_block_miss_inflight_uses_per_waiter_deadline_not_per_key() {
 
     // Spawn getter. decide reads captured inflight_t = start, elapsed=5.
     // Getter's enter_time is start+5 → per-waiter deadline = start+15.
-    let cmc_getter = Arc::clone(&cmc);
+    let cmc_getter = cmc.clone();
     let getter = tokio::spawn(async move { cmc_getter.get_cache_entry(b"target").await });
 
     tokio::time::sleep(Duration::from_millis(30)).await;
@@ -1499,26 +1487,24 @@ async fn test_concurrent_gets_on_same_key_coalesce_to_one_refresh() {
     const LEADER_FETCH_DELAY_MS: u64 = 100;
     const STORM_FAN_OUT: usize = 20;
 
-    let cmc = Arc::new(
-        StormTrackingCmc::new(
-            32,
-            4,
-            GRACE_PERIOD_SECS,
-            GRACE_INTERVAL_SECS,
-            STORM_FAN_OUT,
-            INFLIGHT_TTL_SECS,
-            SLEEP_MILLI,
-            None,
-        )
-        .expect("constructs"),
-    );
+    let cmc = StormTrackingCmc::new(
+        32,
+        4,
+        GRACE_PERIOD_SECS,
+        GRACE_INTERVAL_SECS,
+        STORM_FAN_OUT,
+        INFLIGHT_TTL_SECS,
+        SLEEP_MILLI,
+        None,
+    )
+    .expect("constructs");
 
     let leader_count = Arc::new(AtomicUsize::new(0));
     let waiter_count = Arc::new(AtomicUsize::new(0));
 
     let mut handles = Vec::with_capacity(N_TASKS);
     for _ in 0..N_TASKS {
-        let cmc = Arc::clone(&cmc);
+        let cmc = cmc.clone();
         let leader_count = Arc::clone(&leader_count);
         let waiter_count = Arc::clone(&waiter_count);
         handles.push(tokio::spawn(async move {
@@ -1567,5 +1553,26 @@ async fn test_concurrent_gets_on_same_key_coalesce_to_one_refresh() {
         "every non-leader task must be served the entry the leader put \
          (got {leaders} leaders, {waiters} waiters, expected {} waiters)",
         N_TASKS - 1
+    );
+}
+
+#[tokio::test]
+async fn test_clone_shares_entries_with_original() {
+    let now = anchor_now();
+    let original = make_storm_tracking(now);
+    let clone = original.clone();
+
+    original
+        .put_cache_entry(b"id-1", make_entry_at(now, now + Duration::from_secs(3600)))
+        .await
+        .expect("put succeeds");
+
+    assert!(
+        clone
+            .get_cache_entry(b"id-1")
+            .await
+            .expect("get succeeds")
+            .is_some(),
+        "an entry put through the original MUST be visible through a clone"
     );
 }

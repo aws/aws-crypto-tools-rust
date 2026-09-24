@@ -28,7 +28,15 @@ type Inner = LruCache<Vec<u8>, Arc<CacheEntry>>;
 /// `entry_pruning_tail_size` (number of least-recently-used entries the
 /// cache scans for TTL-expired evictees during pruning). It implements the
 /// abstract [`Cmc`] trait so callers can plug it into a caching CMM.
+///
+/// Cloning is cheap and the clone shares state with the original: an entry put
+/// through one is visible through the other.
+#[derive(Clone)]
 pub struct LocalCmc {
+    inner: Arc<LocalCmcInner>,
+}
+
+struct LocalCmcInner {
     /// Configured maximum number of stored entries. The cache MUST NOT
     /// exceed this value once `put` has returned.
     entry_capacity: usize,
@@ -37,7 +45,7 @@ pub struct LocalCmc {
     /// All shared state lives behind a single `Mutex` so updates are
     /// serialized at the cache layer. `None` when `entry_capacity == 0`
     /// (no-store cache); `Some(LruCache)` otherwise.
-    inner: Mutex<Option<Inner>>,
+    store: Mutex<Option<Inner>>,
     /// Clock seam — `SystemTime::now`.
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
@@ -85,21 +93,23 @@ impl LocalCmc {
         // `Some(LruCache::new(cap))` otherwise.
         let inner = NonZeroUsize::new(entry_capacity).map(LruCache::new);
         Ok(Self {
-            entry_capacity,
-            entry_pruning_tail_size,
-            inner: Mutex::new(inner),
-            now: Arc::new(now),
+            inner: Arc::new(LocalCmcInner {
+                entry_capacity,
+                entry_pruning_tail_size,
+                store: Mutex::new(inner),
+                now: Arc::new(now),
+            }),
         })
     }
 
     /// Configured entry capacity.
-    pub const fn entry_capacity(&self) -> usize {
-        self.entry_capacity
+    pub fn entry_capacity(&self) -> usize {
+        self.inner.entry_capacity
     }
 
     /// Configured entry pruning tail size.
-    pub const fn entry_pruning_tail_size(&self) -> usize {
-        self.entry_pruning_tail_size
+    pub fn entry_pruning_tail_size(&self) -> usize {
+        self.inner.entry_pruning_tail_size
     }
 
     /// Number of currently stored entries. Useful for tests asserting
@@ -107,6 +117,7 @@ impl LocalCmc {
     pub fn len(&self) -> Result<usize, CmcError> {
         let inner = self
             .inner
+            .store
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
         Ok(inner.as_ref().map_or(0, LruCache::len))
@@ -125,11 +136,11 @@ impl LocalCmc {
     /// and is a `DoubleEndedIterator`, so `iter().rev().take(N)` gives
     /// the `N` least-recently-used entries.
     fn prune_tail(&self, cache: &mut Inner) {
-        let take_n = self.entry_pruning_tail_size.min(cache.len());
+        let take_n = self.inner.entry_pruning_tail_size.min(cache.len());
         if take_n == 0 {
             return;
         }
-        let now = (self.now)();
+        let now = (self.inner.now)();
         let to_remove: Vec<Vec<u8>> = cache
             .iter()
             .rev()
@@ -148,6 +159,7 @@ impl Cmc for LocalCmc {
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
         let mut inner = self
             .inner
+            .store
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
         let Some(cache) = inner.as_mut() else {
@@ -165,6 +177,7 @@ impl Cmc for LocalCmc {
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
         let mut inner = self
             .inner
+            .store
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
         let Some(cache) = inner.as_mut() else {
@@ -173,7 +186,7 @@ impl Cmc for LocalCmc {
 
         self.prune_tail(cache);
 
-        let now = (self.now)();
+        let now = (self.inner.now)();
         // Peek first (no LRU promotion) so a TTL-expired entry is not
         // promoted before being evicted.
         let is_fresh = cache.peek(cache_id).map(|entry| entry.expiry_time > now);
@@ -194,6 +207,7 @@ impl Cmc for LocalCmc {
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
         let mut inner = self
             .inner
+            .store
             .lock()
             .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
         let Some(cache) = inner.as_mut() else {

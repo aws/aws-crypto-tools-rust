@@ -147,3 +147,14 @@ pub trait Cmc: Send + Sync {
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#delete-cache-entry).
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError>;
 }
+
+crate::shared::shared_handle!(
+    /// A shared handle to any [`Cmc`].
+    ///
+    /// Every API that accepts a cache takes `impl Into<SharedCmc>`, so a
+    /// concrete cache, an `Arc` of one, or an existing handle can be passed.
+    /// Cloning is cheap: the clone shares the same cache instance, so entries
+    /// put through one handle are visible through every other.
+    SharedCmc,
+    Cmc
+);

@@ -3,6 +3,8 @@
 
 //! Raw AES keyring.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
 
@@ -50,8 +52,15 @@ const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 /// See [`RawAesKeyring::new`] for construction. The [`Keyring`] impl performs
 /// AES-GCM encryption of the plaintext data key using the serialized
 /// encryption context as additional authenticated data.
+///
+/// Cloning is cheap and the clone shares state with the original. The wrapping
+/// key is held once, not copied per clone.
 #[derive(Clone)]
 pub struct RawAesKeyring {
+    inner: Arc<RawAesKeyringInner>,
+}
+
+struct RawAesKeyringInner {
     key_namespace: String,
     key_name: String,
     wrapping_key: Vec<u8>,
@@ -61,13 +70,13 @@ pub struct RawAesKeyring {
 impl std::fmt::Debug for RawAesKeyring {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawAesKeyring")
-            .field("key_namespace", &self.key_namespace)
-            .field("key_name", &self.key_name)
+            .field("key_namespace", &self.inner.key_namespace)
+            .field("key_name", &self.inner.key_name)
             .field(
                 "wrapping_key",
-                &format_args!("[REDACTED; {} bytes]", self.wrapping_key.len()),
+                &format_args!("[REDACTED; {} bytes]", self.inner.wrapping_key.len()),
             )
-            .field("wrapping_alg", &self.wrapping_alg)
+            .field("wrapping_alg", &self.inner.wrapping_alg)
             .finish()
     }
 }
@@ -112,30 +121,32 @@ impl RawAesKeyring {
         }
 
         Ok(Self {
-            key_namespace,
-            key_name: key_name.into(),
-            wrapping_key,
-            wrapping_alg,
+            inner: Arc::new(RawAesKeyringInner {
+                key_namespace,
+                key_name: key_name.into(),
+                wrapping_key,
+                wrapping_alg,
+            }),
         })
     }
 
     /// The key namespace, used as the key provider ID of EDKs this keyring produces.
     #[must_use]
     pub fn key_namespace(&self) -> &str {
-        &self.key_namespace
+        &self.inner.key_namespace
     }
 
     /// The key name, serialized into the key provider information of EDKs this
     /// keyring produces.
     #[must_use]
     pub fn key_name(&self) -> &str {
-        &self.key_name
+        &self.inner.key_name
     }
 
     /// The configured wrapping algorithm.
     #[must_use]
-    pub const fn wrapping_alg(&self) -> AesGcm {
-        self.wrapping_alg
+    pub fn wrapping_alg(&self) -> AesGcm {
+        self.inner.wrapping_alg
     }
 
     /// Serialize the key provider information:
@@ -146,7 +157,7 @@ impl RawAesKeyring {
             "serialize_provider_info: iv must be {IV_LENGTH} bytes, got {}",
             iv.len()
         );
-        let name = self.key_name.as_bytes();
+        let name = self.inner.key_name.as_bytes();
         let mut info = Vec::with_capacity(name.len() + AUTH_TAG_LEN_LEN + IV_LEN_LEN + iv.len());
         info.extend_from_slice(name);
         info.extend_from_slice(&TAG_LENGTH_BITS.to_be_bytes());
@@ -161,12 +172,12 @@ impl RawAesKeyring {
     /// key name matches, and the IV and authentication tag lengths equal those
     /// specified by this keyring's wrapping algorithm.
     fn decryptable_edk_iv<'e>(&self, edk: &'e EncryptedDataKey) -> Option<&'e [u8]> {
-        if edk.key_provider_id != self.key_namespace {
+        if edk.key_provider_id != self.inner.key_namespace {
             return None;
         }
 
         let info = &edk.key_provider_info;
-        let name = self.key_name.as_bytes();
+        let name = self.inner.key_name.as_bytes();
         if info.len() != name.len() + AUTH_TAG_LEN_LEN + IV_LEN_LEN + IV_LENGTH {
             return None;
         }
@@ -223,9 +234,9 @@ impl Keyring for RawAesKeyring {
         // authentication tag, which is the EDK ciphertext structure.
         let mut ciphertext = Vec::new();
         aes_encrypt(
-            self.wrapping_alg,
+            self.inner.wrapping_alg,
             &iv,
-            &self.wrapping_key,
+            &self.inner.wrapping_key,
             plaintext_dk.as_bytes(),
             &aad,
             &mut ciphertext,
@@ -238,7 +249,7 @@ impl Keyring for RawAesKeyring {
         })?;
 
         let edk = EncryptedDataKey::new(
-            self.key_namespace.clone(),
+            self.inner.key_namespace.clone(),
             self.serialize_provider_info(&iv),
             ciphertext,
         );
@@ -290,7 +301,7 @@ impl Keyring for RawAesKeyring {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
                 collected_errors.push(MaterialsError::no_matching_data_key(format!(
                     "EncryptedDataKey {index} did not match AESKeyring. Expected: keyProviderId: {}.",
-                    self.key_namespace,
+                    self.inner.key_namespace,
                 )));
                 continue;
             };
@@ -308,8 +319,8 @@ impl Keyring for RawAesKeyring {
 
             let mut plaintext_dk = vec![0u8; encrypted_key.len()];
             if let Err(e) = aes_decrypt(
-                self.wrapping_alg,
-                &self.wrapping_key,
+                self.inner.wrapping_alg,
+                &self.inner.wrapping_key,
                 encrypted_key,
                 auth_tag,
                 iv,

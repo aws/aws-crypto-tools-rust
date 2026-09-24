@@ -36,3 +36,13 @@ pub trait Cmm: Send + Sync {
         request: DecryptMaterialsRequest,
     ) -> Result<DecryptionMaterials, MaterialsError>;
 }
+
+crate::shared::shared_handle!(
+    /// A shared handle to any [`Cmm`].
+    ///
+    /// Every API that accepts a CMM takes `impl Into<SharedCmm>`, so a concrete
+    /// CMM, an `Arc` of one, or an existing handle can be passed. Cloning is
+    /// cheap: the clone shares the same CMM instance.
+    SharedCmm,
+    Cmm
+);

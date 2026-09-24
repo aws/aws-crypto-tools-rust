@@ -38,3 +38,13 @@ pub trait Keyring: Send + Sync {
         encrypted_data_keys: &[EncryptedDataKey],
     ) -> Result<DecryptionMaterials, MaterialsError>;
 }
+
+crate::shared::shared_handle!(
+    /// A shared handle to any [`Keyring`].
+    ///
+    /// Every API that accepts a keyring takes `impl Into<SharedKeyring>`, so a
+    /// concrete keyring, an `Arc` of one, or an existing handle can be passed.
+    /// Cloning is cheap: the clone shares the same keyring instance.
+    SharedKeyring,
+    Keyring
+);
