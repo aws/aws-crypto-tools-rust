@@ -190,11 +190,11 @@ pub use aws_crypto_mpl::structures::AlgorithmSuiteId as EsdkAlgorithmSuiteId;
 
 /// Key-Value pairs to associate with the encrypted data.
 ///
-/// The ESDK encryption context is a map of UTF-8 string keys to UTF-8 string
-/// values. It is converted to the MPL's byte-oriented
-/// [`EncryptionContext`](aws_crypto_mpl::structures::EncryptionContext) at the
-/// CMM boundary.
-pub type EncryptionContext = std::collections::HashMap<String, String>;
+/// This is the Material Providers Library's own encryption context, re-exported,
+/// so no conversion happens at the CMM boundary. The specification defines its
+/// entries as UTF-8 encoded strings; that is enforced where the header is
+/// serialized, and on the read side by the parser.
+pub use aws_crypto_mpl::structures::EncryptionContext;
 
 /// Commitment policies governing key commitment behavior.
 ///

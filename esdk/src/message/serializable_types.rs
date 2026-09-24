@@ -3,6 +3,7 @@
 
 //! Type aliases and helper functions for message serialization.
 
+use crate::error::{Error, val_err};
 use crate::types::EncryptionContext;
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::EncryptedDataKey;
@@ -50,25 +51,42 @@ pub(crate) const fn get_encrypt_key_length(a: &AlgorithmSuite) -> usize {
 /// accumulator — the `usize` sum and `as u64` cast are safe by construction.
 pub(crate) fn length(encryption_context: &ESDKEncryptionContext) -> u64 {
     let mut length: usize = 0;
-    for (key, value) in encryption_context {
+    for (key, value) in encryption_context.iter() {
         length += 2 + key.len() + 2 + value.len();
     }
     length as u64
 }
 
-/// Sort by key to produce the canonical on-wire ordering.
+/// Decode to the canonical on-wire ordering.
+///
+/// The encryption context is a `BTreeMap` keyed by the raw bytes, so iteration
+/// already yields the ascending-by-UTF-8-byte-value order the format requires
+/// and no sort is needed.
+///
+/// # Errors
+/// Returns an error if any key or value is not valid UTF-8. The specification
+/// defines encryption context entries as UTF-8 encoded strings, and this is the
+/// boundary where they become the strings the header serializer writes.
+// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
 pub(crate) fn to_canonical_pairs(
-    encryption_context: ESDKEncryptionContext,
-) -> ESDKCanonicalEncryptionContext {
-    let mut pairs: Vec<(String, String)> = encryption_context.into_iter().collect();
-    pairs.sort_by(|a, b| a.0.cmp(&b.0));
-    pairs
+    encryption_context: &ESDKEncryptionContext,
+) -> Result<ESDKCanonicalEncryptionContext, Error> {
+    encryption_context
+        .iter()
+        .map(|(key, value)| {
+            let key = String::from_utf8(key.clone())
+                .map_err(|_| val_err("Encryption context key is not valid UTF-8"))?;
+            let value = String::from_utf8(value.clone())
+                .map_err(|_| val_err("Encryption context value is not valid UTF-8"))?;
+            Ok((key, value))
+        })
+        .collect()
 }
 
 pub(crate) fn from_canonical_pairs(pairs: ESDKCanonicalEncryptionContext) -> ESDKEncryptionContext {
-    let mut map: ESDKEncryptionContext = ESDKEncryptionContext::new();
+    let mut map = ESDKEncryptionContext::new();
     for (key, value) in pairs {
-        map.insert(key, value);
+        map.insert(key.into_bytes(), value.into_bytes());
     }
     map
 }
@@ -82,7 +100,7 @@ pub(crate) fn is_esdk_encryption_context(ec: &EncryptionContext) -> bool {
     if length(ec) > ESDK_CANONICAL_ENCRYPTION_CONTEXT_MAX_LENGTH {
         return false;
     }
-    for (key, value) in ec {
+    for (key, value) in ec.iter() {
         if key.len() > usize::from(u16::MAX) {
             return false;
         }

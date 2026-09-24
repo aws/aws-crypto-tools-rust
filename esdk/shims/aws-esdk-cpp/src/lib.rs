@@ -580,8 +580,15 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> Result<std::collections::HashMap<String, String>, String> {
-    Ok(x.iter().map(|x| (x.key.clone(), x.value.clone())).collect())
+) -> Result<aws_esdk::EncryptionContext, String> {
+    let mut ec = aws_esdk::EncryptionContext::new();
+    for item in x {
+        ec.insert(
+            item.key.clone().into_bytes(),
+            item.value.clone().into_bytes(),
+        );
+    }
+    Ok(ec)
 }
 
 // Rust to C++ for Encryption Context
@@ -590,11 +597,28 @@ fn encryption_context_target_to_core(
 //# key-value map, to the target's list of key-value pairs, preserving every pair
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
-    x: std::collections::HashMap<String, String>,
+    x: aws_esdk::EncryptionContext,
 ) -> Result<Vec<ffi::EncryptionContextItem>, String> {
-    Ok(x.into_iter()
-        .map(|(k, v)| ffi::EncryptionContextItem { key: k, value: v })
-        .collect())
+    // The core validates that the encryption context is UTF-8 before it reaches
+    // the header, so this decode does not fail in practice; report rather than
+    // panic if a future core path lets non-UTF-8 through.
+    x.iter()
+        .map(|(k, v)| {
+            let decode = |b: &Vec<u8>| {
+                String::from_utf8(b.clone()).map_err(|_| {
+                    shim_err(
+                        ffi::ShimErrorKind::SerializationError,
+                        "encryption context translation",
+                        "core returned an encryption context entry that is not valid UTF-8",
+                    )
+                })
+            };
+            Ok(ffi::EncryptionContextItem {
+                key: decode(k)?,
+                value: decode(v)?,
+            })
+        })
+        .collect()
 }
 
 // C++ to Rust for Maximum Encrypted Data Keys

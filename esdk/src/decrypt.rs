@@ -301,8 +301,8 @@ async fn internal_decrypt(
     // header before serialization); on any overlap, prefer the authenticate-only value
     // because it was verified as AAD and is the source of truth.
     let mut ec = state.header.encryption_context;
-    for (k, v) in state.encryption_context_to_only_authenticate {
-        ec.insert(k, v);
+    for (k, v) in state.encryption_context_to_only_authenticate.iter() {
+        ec.insert(k.clone(), v.clone());
     }
 
     //= spec/client-apis/streaming.md#outputs
@@ -495,7 +495,7 @@ fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys-1)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
     let canonical_req_encryption_context =
-        to_canonical_pairs(state.encryption_context_to_only_authenticate.clone());
+        to_canonical_pairs(&state.encryption_context_to_only_authenticate)?;
     let mut serialized_req_encryption_context = Vec::new();
     encryption_context::write_empty_ec_or_write_aad(
         &mut serialized_req_encryption_context,
@@ -659,11 +659,17 @@ fn build_encryption_context_to_only_authenticate(
     encryption_context: &EncryptionContext,
     required_encryption_context_keys: &[String],
 ) -> EncryptionContext {
-    encryption_context
+    let required_keys: std::collections::BTreeSet<&[u8]> = required_encryption_context_keys
         .iter()
-        .filter(|(k, _)| required_encryption_context_keys.contains(*k))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
+        .map(String::as_bytes)
+        .collect();
+    let mut out = EncryptionContext::new();
+    for (key, value) in encryption_context.iter() {
+        if required_keys.contains(key.as_slice()) {
+            out.insert(key.clone(), value.clone());
+        }
+    }
+    out
 }
 
 fn verify_signature(

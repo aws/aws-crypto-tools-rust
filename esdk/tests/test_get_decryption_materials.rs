@@ -336,7 +336,7 @@ impl cmm::Cmm for DecryptSpyCmm {
 async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let keyring = test_keyring().await;
     let mut ec = EncryptionContext::new();
-    ec.insert("spy-key".to_string(), "spy-val".to_string());
+    ec.insert(b"spy-key".to_vec(), b"spy-val".to_vec());
     let pt = b"spy cmm decrypt test";
     let enc_input = EncryptInput::with_keyring(pt, ec, keyring.clone());
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;

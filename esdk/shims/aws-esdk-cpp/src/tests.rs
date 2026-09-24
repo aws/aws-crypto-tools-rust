@@ -260,10 +260,9 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn encryption_context_round_trips() {
-    use std::collections::HashMap;
-    let mut m = HashMap::new();
-    m.insert("k1".to_string(), "v1".to_string());
-    m.insert("k2".to_string(), "v2".to_string());
+    let mut m = aws_esdk::EncryptionContext::new();
+    m.insert(b"k1".to_vec(), b"v1".to_vec());
+    m.insert(b"k2".to_vec(), b"v2".to_vec());
     let list = encryption_context_core_to_target(m.clone()).unwrap();
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
@@ -271,11 +270,15 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the core ESDK's encryption context, given as a
     //# key-value map, to the target's list of key-value pairs, preserving every pair
     //# and the exact key and value of each.
-    for (k, v) in &m {
+    for (k, v) in m.iter() {
         assert_eq!(
-            list.iter().filter(|i| &i.key == k && &i.value == v).count(),
+            list.iter()
+                .filter(|i| i.key.as_bytes() == k.as_slice() && i.value.as_bytes() == v.as_slice())
+                .count(),
             1,
-            "pair {k}={v} must appear exactly once"
+            "pair {:?}={:?} must appear exactly once",
+            String::from_utf8_lossy(k),
+            String::from_utf8_lossy(v)
         );
     }
     //= spec/shim/esdk-shim.md#encryption-context
@@ -288,8 +291,7 @@ fn encryption_context_round_trips() {
 
 #[test]
 fn encryption_context_empty() {
-    use std::collections::HashMap;
-    let empty: HashMap<String, String> = HashMap::new();
+    let empty = aws_esdk::EncryptionContext::new();
     assert!(encryption_context_core_to_target(empty).unwrap().is_empty());
     assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
 }

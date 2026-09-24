@@ -194,7 +194,7 @@ async fn test_streamed_release_parsed_header_after_verification() {
     let plaintext = b"streamed header release test";
 
     let mut ec = EncryptionContext::new();
-    ec.insert("release-key".to_string(), "release-value".to_string());
+    ec.insert(b"release-key".to_vec(), b"release-value".to_vec());
     let enc_input = EncryptInput::with_keyring(plaintext, ec, keyring.clone());
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
@@ -208,9 +208,9 @@ async fn test_streamed_release_parsed_header_after_verification() {
     assert_eq!(
         result
             .encryption_context
-            .get("release-key")
-            .map(String::as_str),
-        Some("release-value"),
+            .get(b"release-key")
+            .map(|v| v.as_slice()),
+        Some(b"release-value".as_slice()),
     );
     assert_eq!(
         result.algorithm_suite_id,

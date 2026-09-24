@@ -122,8 +122,7 @@ async fn test_encrypt_decrypt_ec() {
     for style in CallStyle::ALL {
         let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
-        let encryption_context =
-            std::collections::HashMap::from([("stuff".to_string(), "junk".to_string())]);
+        let encryption_context = fixtures::ec_of(&[("stuff", "junk")]);
         let encrypt_input =
             EncryptInput::with_keyring(plaintext, encryption_context, keyring.clone());
         let encrypt_output = run_encrypt(style, &encrypt_input)
@@ -140,9 +139,9 @@ async fn test_encrypt_decrypt_ec() {
         assert_eq!(
             decrypt_output
                 .encryption_context
-                .get("stuff")
-                .map(String::as_str),
-            Some("junk"),
+                .get(b"stuff")
+                .map(|v| v.as_slice()),
+            Some(b"junk".as_slice()),
             "input EC pair (stuff, junk) must round-trip to the decrypt output under {style:?}, got: {:?}",
             decrypt_output.encryption_context
         );
@@ -154,8 +153,7 @@ async fn test_encrypt_decrypt_bad_ec() {
     for style in CallStyle::ALL {
         let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
-        let encryption_context =
-            std::collections::HashMap::from([("aws-crypto-stuff".to_string(), "junk".to_string())]);
+        let encryption_context = fixtures::ec_of(&[("aws-crypto-stuff", "junk")]);
         let encrypt_input = EncryptInput::with_keyring(plaintext, encryption_context, keyring);
         let encrypt_output = run_encrypt(style, &encrypt_input).await;
 

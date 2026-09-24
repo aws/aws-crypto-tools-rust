@@ -146,10 +146,7 @@ async fn test_auth_tag_present_with_required_ec_v1() {
     //= reason=with a non-empty required EC the encryption-context-to-only-authenticate is non-empty, exercising the AAD-concatenation and required-EC-filtering code paths; the tag bytes prove an AEAD output was produced for this scenario and the round-trip proves encrypt and decrypt agree on the AAD construction
     //# - The AAD MUST be the concatenation of the serialized [message header body](../data-format/message-header.md#header-body)
     //# and the serialization of encryption context to only authenticate.
-    let ec = std::collections::HashMap::from([
-        ("test-public-key".to_string(), "testval".to_string()),
-        ("user-key".to_string(), "user-val".to_string()),
-    ]);
+    let ec = fixtures::ec_of(&[("test-public-key", "testval"), ("user-key", "user-val")]);
     let keyring = test_keyring().await;
     let pt = b"v1 required ec with auth tag";
     let ct = encrypt_no_sign_ec_keyring(pt, ec.clone(), Version::V1, &keyring).await;
@@ -179,10 +176,7 @@ async fn test_auth_tag_present_with_required_ec_v2() {
     //= reason=with a non-empty required EC the encryption-context-to-only-authenticate is non-empty, exercising the AAD-concatenation and required-EC-filtering code paths; the tag bytes prove an AEAD output was produced for this scenario and the round-trip proves encrypt and decrypt agree on the AAD construction
     //# - The AAD MUST be the concatenation of the serialized [message header body](../data-format/message-header.md#header-body)
     //# and the serialization of encryption context to only authenticate.
-    let ec = std::collections::HashMap::from([
-        ("test-public-key".to_string(), "testval".to_string()),
-        ("user-key".to_string(), "user-val".to_string()),
-    ]);
+    let ec = fixtures::ec_of(&[("test-public-key", "testval"), ("user-key", "user-val")]);
     let keyring = test_keyring().await;
     let pt = b"v2 required ec with auth tag";
     let ct = encrypt_no_sign_ec_keyring(pt, ec.clone(), Version::V2, &keyring).await;

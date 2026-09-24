@@ -213,14 +213,14 @@ async fn test_cmm_used_must_be_input_cmm() {
 async fn test_cmm_request_encryption_context() {
     // Encrypt with a non-empty encryption context and verify it appears in the output.
     let keyring = test_keyring().await;
-    let ec = std::collections::HashMap::from([("mykey".to_string(), "myval".to_string())]);
+    let ec = fixtures::ec_of(&[("mykey", "myval")]);
     let enc_input = EncryptInput::with_keyring(b"ec test", ec.clone(), keyring.clone());
     let output = encrypt(&enc_input).await.unwrap();
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# - Encryption Context: If provided, this MUST be the [input encryption context](#encryption-context).
     assert!(
-        output.encryption_context.contains_key("mykey"),
+        output.encryption_context.contains_key(b"mykey"),
         "output encryption context must contain the input key"
     );
 }
@@ -241,8 +241,8 @@ async fn test_cmm_request_empty_encryption_context() {
     assert!(
         !output
             .encryption_context
-            .keys()
-            .any(|k| !k.starts_with("aws-crypto-")),
+            .iter()
+            .any(|(k, _)| !k.starts_with(b"aws-crypto-")),
         "output encryption context must not contain user-provided keys when input EC is empty"
     );
 }
@@ -460,14 +460,14 @@ async fn test_output_includes_encrypted_message() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_output_includes_encryption_context() {
     let keyring = test_keyring().await;
-    let ec = std::collections::HashMap::from([("testkey".to_string(), "testval".to_string())]);
+    let ec = fixtures::ec_of(&[("testkey", "testval")]);
     let enc_input = EncryptInput::with_keyring(b"output ec test", ec, keyring);
     let output = encrypt(&enc_input).await.unwrap();
     //= spec/client-apis/encrypt.md#output
     //= type=test
     //# - Encrypt operation output MUST include an [encryption context](#encryption-context) value.
     assert!(
-        output.encryption_context.contains_key("testkey"),
+        output.encryption_context.contains_key(b"testkey"),
         "output must include the encryption context"
     );
 }
@@ -496,7 +496,7 @@ async fn test_output_includes_algorithm_suite() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_reserved_encryption_context_prefix_must_fail() {
     let keyring = test_keyring().await;
-    let ec = std::collections::HashMap::from([("aws-crypto-foo".to_string(), "bar".to_string())]);
+    let ec = fixtures::ec_of(&[("aws-crypto-foo", "bar")]);
     let enc_input = EncryptInput::with_keyring(b"should fail", ec, keyring);
     let result = encrypt(&enc_input).await;
     let err =
@@ -522,7 +522,7 @@ async fn test_reserved_encryption_context_prefix_must_fail() {
 async fn test_reserved_encryption_context_prefix_boundary_no_dash() {
     // Proves only 'aws-crypto-' (with dash) is reserved; 'aws-crypto' alone is valid.
     let keyring = test_keyring().await;
-    let ec = std::collections::HashMap::from([("aws-crypto".to_string(), "bar".to_string())]);
+    let ec = fixtures::ec_of(&[("aws-crypto", "bar")]);
     let enc_input = EncryptInput::with_keyring(b"should succeed", ec, keyring);
     let result = encrypt(&enc_input).await;
     assert!(

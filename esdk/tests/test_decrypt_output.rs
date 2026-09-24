@@ -20,7 +20,7 @@ async fn test_decrypt_output_includes_encryption_context() {
 
     let dec_input = DecryptInput::from_encrypt(&ct, &enc_input);
     let result = decrypt(&dec_input).await.unwrap();
-    for (k, v) in &ec {
+    for (k, v) in ec.iter() {
         //= spec/client-apis/decrypt.md#output
         //= type=test
         //# - Decrypt operation output MUST include an [encryption context](#encryption-context) value.

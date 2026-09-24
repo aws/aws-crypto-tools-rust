@@ -551,8 +551,8 @@ fn step_construct_signature(
 const RESERVED_ENCRYPTION_CONTEXT: &str = "aws-crypto-";
 
 fn validate_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
-    for key in ec.keys() {
-        if key.starts_with(RESERVED_ENCRYPTION_CONTEXT) {
+    for (key, _) in ec.iter() {
+        if key.starts_with(RESERVED_ENCRYPTION_CONTEXT.as_bytes()) {
             return Err(val_err(
                 "Encryption context keys cannot contain reserved prefix 'aws-crypto-'",
             ));
@@ -570,8 +570,6 @@ fn build_header_for_encrypt(
     frame_length: u32,
     derived_data_keys: &key_derivation::ExpandedKeyMaterial,
 ) -> Result<header::HeaderInfo, Error> {
-    let mut stored_encryption_context = encryption_context.clone();
-
     //= spec/client-apis/encrypt.md#authentication-tag
     //# The encryption context to only authenticate MUST be the [encryption context](../framework/structures.md#encryption-context)
     //# in the [encryption materials](../framework/structures.md#encryption-materials)
@@ -579,13 +577,20 @@ fn build_header_for_encrypt(
     //# the [encryption material's](../framework/structures.md#encryption-materials)
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
-    let mut required_encryption_context_map: EncryptionContext = EncryptionContext::new();
-    for key in required_encryption_context_keys {
-        if let Some(val) = stored_encryption_context.remove(key) {
-            required_encryption_context_map.insert(key.clone(), val);
+    let required_keys: std::collections::BTreeSet<&[u8]> = required_encryption_context_keys
+        .iter()
+        .map(String::as_bytes)
+        .collect();
+    let mut stored_encryption_context = EncryptionContext::new();
+    let mut required_encryption_context_map = EncryptionContext::new();
+    for (key, value) in encryption_context.iter() {
+        if required_keys.contains(key.as_slice()) {
+            required_encryption_context_map.insert(key.clone(), value.clone());
+        } else {
+            stored_encryption_context.insert(key.clone(), value.clone());
         }
     }
-    let canonical_stored_encryption_context = to_canonical_pairs(stored_encryption_context);
+    let canonical_stored_encryption_context = to_canonical_pairs(&stored_encryption_context)?;
 
     let body: HeaderBody = build_header_body(
         message_id,
@@ -596,7 +601,7 @@ fn build_header_for_encrypt(
         derived_data_keys.commitment_key.as_deref().cloned(),
     )?;
 
-    let canonical_req_encryption_context = to_canonical_pairs(required_encryption_context_map);
+    let canonical_req_encryption_context = to_canonical_pairs(&required_encryption_context_map)?;
     let mut serialized_req_encryption_context = Vec::new();
     write_empty_ec_or_write_aad(
         &mut serialized_req_encryption_context,

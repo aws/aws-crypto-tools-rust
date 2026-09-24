@@ -28,7 +28,7 @@ fn aad_offset(version: Version) -> usize {
 /// Used to verify the encryption context survives the round trip intact,
 /// while ignoring any keys the SDK may add (e.g. `aws-crypto-public-key`)
 fn assert_ec_contains(actual: &EncryptionContext, expected: &EncryptionContext, version: Version) {
-    for (k, v) in expected {
+    for (k, v) in expected.iter() {
         assert_eq!(
             actual.get(k),
             Some(v),
