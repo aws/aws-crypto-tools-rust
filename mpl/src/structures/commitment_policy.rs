@@ -15,6 +15,7 @@ use super::algorithm_suite::AlgorithmSuiteId;
 /// `ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT` becomes
 /// `CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum CommitmentPolicy {
     /// ESDK format commitment policies.
     Esdk(Esdk),
@@ -23,6 +24,7 @@ pub enum CommitmentPolicy {
 /// ESDK Format Commitment Policy ENUM. Its variants correspond 1:1 to the
 /// rows of the ESDK Commitment Policy ENUM table in `commitment-policy.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Esdk {
     /// `ESDK.FORBID_ENCRYPT_ALLOW_DECRYPT` — encrypt with non-committing suites
     /// only; decrypt any ESDK suite.

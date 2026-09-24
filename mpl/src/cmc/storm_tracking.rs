@@ -44,6 +44,7 @@ use super::{CacheEntry, Cmc, CmcError, LocalCmc};
 /// Applies to `grace_period`, `grace_interval`, and `inflight_ttl`.
 /// Does NOT apply to `sleep_milli` (always milliseconds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum TimeUnits {
     /// Interpret numeric values as seconds (the default).
     #[default]

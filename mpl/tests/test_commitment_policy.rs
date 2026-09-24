@@ -70,6 +70,7 @@ fn test_union_commitment_policy_enum_exposes_all_variants() {
             CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt) => {
                 "ESDK.REQUIRE_ENCRYPT_REQUIRE_DECRYPT"
             }
+            other => panic!("unexpected commitment policy {other:?}"),
         };
         assert!(
             matched.starts_with("ESDK."),

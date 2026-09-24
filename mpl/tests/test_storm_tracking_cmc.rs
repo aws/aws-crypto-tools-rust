@@ -1176,6 +1176,7 @@ async fn test_all_material_variants_round_trip() {
             CachedMaterials::Decryption(_) => "Decryption",
             CachedMaterials::BranchKey(_) => "BranchKey",
             CachedMaterials::BeaconKey(_) => "BeaconKey",
+            other => panic!("unexpected cached materials {other:?}"),
         };
         assert_eq!(
             got_variant, label,

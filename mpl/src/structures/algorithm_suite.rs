@@ -15,6 +15,7 @@ use std::fmt;
 /// not implemented (see the `type=exception` annotations on this declaration).
 /// Construct an `AlgorithmSuite` from a variant via [`Self::specification`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum AlgorithmSuiteId {
     /// 00 14 — ESDK.ALG_AES_128_GCM_IV12_TAG16_NO_KDF
     AlgAes128GcmIv12Tag16NoKdf,
@@ -342,18 +343,21 @@ const VERIFICATION_KEY_LEN_P384: usize = 49;
 
 /// Block cipher encryption algorithm. Always AES for every ESDK suite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum EncryptionAlgorithm {
     Aes,
 }
 
 /// Block cipher mode of operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum EncryptionAlgorithmMode {
     Gcm,
 }
 
 /// Key derivation algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum KeyDerivationAlgorithm {
     /// Identity KDF — input bytes are returned unchanged.
     IdentityKdf,
@@ -364,6 +368,7 @@ pub enum KeyDerivationAlgorithm {
 
 /// Asymmetric signature algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum AsymmetricSignatureAlgorithm {
     /// ECDSA with P-256 curve and SHA-256.
     EcdsaP256,
@@ -374,6 +379,7 @@ pub enum AsymmetricSignatureAlgorithm {
 /// Symmetric signature algorithm. No ESDK suite uses one; the variant exists so
 /// `Option<SymmetricSignatureAlgorithm>` can express "OPTIONAL" per spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SymmetricSignatureAlgorithm {
     HmacSha384,
 }
@@ -385,6 +391,7 @@ pub enum SymmetricSignatureAlgorithm {
 /// Cryptographic format identifier. Only the ESDK format is implemented in this
 /// MPL — uniqueness of short and long name is trivial (single variant).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Format {
     /// AWS Encryption SDK Message Format / "ESDK".
     Esdk,
