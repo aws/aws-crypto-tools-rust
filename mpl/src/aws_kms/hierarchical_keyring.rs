@@ -99,7 +99,7 @@ pub trait BranchKeySupplier: Send + Sync {
 
 /// AWS KMS Hierarchical Keyring.
 ///
-/// See [`HierarchicalKeyring::new`] for construction. The [`Keyring`]
+/// See [`HierarchicalKeyring::builder`] for construction. The [`Keyring`]
 /// impl wires the configured cache and keystore into the OnEncrypt /
 /// OnDecrypt algorithms.
 ///
@@ -113,11 +113,13 @@ pub struct HierarchicalKeyring {
 struct HierarchicalKeyringInner {
     keystore: SharedKeystore,
 
-    ttl_seconds: u64,
+    /// A non-zero whole number of seconds, checked in
+    /// [`HierarchicalKeyringBuilder::build`].
+    ttl: Duration,
 
     /// The single branch key id this keyring wraps and unwraps with, when
     /// configured with one. Exactly one of this and `branch_key_id_supplier`
-    /// is `Some`, checked in [`HierarchicalKeyring::new`].
+    /// is `Some`, checked in [`HierarchicalKeyringBuilder::build`].
     branch_key_id: Option<String>,
 
     /// The supplier that chooses a branch key id per operation, when
@@ -128,7 +130,7 @@ struct HierarchicalKeyringInner {
 
     /// The keystore's logical name, which the cache identifier formulas bind.
     /// Not a construction parameter: it is read from the keystore's own
-    /// `get_key_store_info` once in [`HierarchicalKeyring::new`].
+    /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
     logical_keystore_name: String,
 
     /// Cryptographic-materials cache for branch-key materials. Either a
@@ -138,29 +140,173 @@ struct HierarchicalKeyringInner {
 }
 
 impl HierarchicalKeyring {
-    /// Construct a new hierarchical keyring.
+    /// Start building a hierarchical keyring. See [`HierarchicalKeyringBuilder`].
+    #[must_use]
+    pub fn builder() -> HierarchicalKeyringBuilder {
+        HierarchicalKeyringBuilder::default()
+    }
+
+    /// The configured TTL for cached branch-key materials. Always a non-zero
+    /// whole number of seconds.
+    pub fn ttl(&self) -> Duration {
+        self.inner.ttl
+    }
+
+    /// The configured static branch key id, if this keyring was built with one
+    /// rather than with a [`BranchKeySupplier`].
+    pub fn branch_key_id(&self) -> Option<&str> {
+        self.inner.branch_key_id.as_deref()
+    }
+
+    /// The configured branch key id supplier, if this keyring was built with
+    /// one rather than with a static branch key id.
+    pub fn branch_key_id_supplier(&self) -> Option<&Arc<dyn BranchKeySupplier>> {
+        self.inner.branch_key_id_supplier.as_ref()
+    }
+
+    /// The configured keystore.
+    pub fn keystore(&self) -> &SharedKeystore {
+        &self.inner.keystore
+    }
+
+    /// The 16-byte partition id of this keyring. Either the UTF-8 bytes of the
+    /// caller-provided string, or a freshly-generated v4 UUID.
     ///
-    /// `ttl_seconds` must be greater than zero.
+    /// Hidden from the public API surface; intended for tests verifying the
+    /// v4-UUID variant/version bits and round-tripping of caller-provided
+    /// strings.
+    #[doc(hidden)]
+    pub fn partition_id_bytes(&self) -> &[u8] {
+        &self.inner.partition_id_bytes
+    }
+
+    /// The configured cache. Hidden from the public API surface;
+    /// intended for tests asserting that `CacheType::Shared(...)` round-
+    /// trips the supplied cache verbatim.
+    #[doc(hidden)]
+    pub fn cache(&self) -> &SharedCmc {
+        &self.inner.cache
+    }
+}
+
+/// Builder for [`HierarchicalKeyring`], returned by
+/// [`HierarchicalKeyring::builder`].
+///
+/// [`key_store`](Self::key_store) and [`ttl`](Self::ttl) are required, as is
+/// exactly one of [`branch_key_id`](Self::branch_key_id) and
+/// [`branch_key_id_supplier`](Self::branch_key_id_supplier). All checks run in
+/// [`build`](Self::build).
+#[derive(Default)]
+pub struct HierarchicalKeyringBuilder {
+    key_store: Option<SharedKeystore>,
+    ttl: Option<Duration>,
+    branch_key_id: Option<String>,
+    branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
+    cache: Option<CacheType>,
+    partition_id: Option<String>,
+}
+
+impl std::fmt::Debug for HierarchicalKeyringBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HierarchicalKeyringBuilder")
+            .field("ttl", &self.ttl)
+            .field("branch_key_id", &self.branch_key_id)
+            .field("partition_id", &self.partition_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl HierarchicalKeyringBuilder {
+    /// The keystore that supplies branch keys. Required.
+    #[must_use]
+    pub fn key_store(mut self, key_store: impl Into<SharedKeystore>) -> Self {
+        self.key_store = Some(key_store.into());
+        self
+    }
+
+    /// The time-to-live of cached branch-key materials. Required, and must be
+    /// a non-zero whole number of seconds.
+    #[must_use]
+    pub fn ttl(mut self, ttl: Duration) -> Self {
+        self.ttl = Some(ttl);
+        self
+    }
+
+    /// The single branch key id to wrap and unwrap with. Set this or
+    /// [`branch_key_id_supplier`](Self::branch_key_id_supplier), not both.
+    #[must_use]
+    pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
+        self.branch_key_id = Some(branch_key_id.into());
+        self
+    }
+
+    /// A supplier that chooses the branch key id per operation. Set this or
+    /// [`branch_key_id`](Self::branch_key_id), not both.
+    #[must_use]
+    pub fn branch_key_id_supplier(mut self, supplier: Arc<dyn BranchKeySupplier>) -> Self {
+        self.branch_key_id_supplier = Some(supplier);
+        self
+    }
+
+    /// The cache backing, see [`CacheType`]. When unset, a keyring-local
+    /// default cache of [`DEFAULT_CACHE_ENTRY_CAPACITY`] entries is built.
+    #[must_use]
+    pub fn cache(mut self, cache: CacheType) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// The partition id, stored as its UTF-8 bytes. When unset, a fresh v4
+    /// UUID is generated and stored as the 16-byte partition id.
+    #[must_use]
+    pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
+        self.partition_id = Some(partition_id.into());
+        self
+    }
+
+    /// Validate the configuration and build the keyring.
     ///
-    /// If `partition_id` is `None`, a fresh v4 UUID is generated and stored
-    /// as the 16-byte partition id.
+    /// # Errors
     ///
-    /// `cache_type` selects the cache backing — see [`CacheType`]. When
-    /// `None`, behaves as `Some(CacheType::Default(DefaultCache::default()))`.
-    pub fn new(
-        keystore: impl Into<SharedKeystore>,
-        ttl_seconds: u64,
-        branch_key_id: Option<String>,
-        branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
-        cache_type: Option<CacheType>,
-        partition_id: Option<String>,
-    ) -> Result<Self, MaterialsError> {
-        let keystore = keystore.into();
-        if ttl_seconds == 0 {
+    /// Returns a `Validation` error when the key store is unset; the TTL is
+    /// unset, zero, or not a whole number of seconds; both or neither of a
+    /// branch key id and a supplier are set; or a storm-tracking cache's grace
+    /// period is not less than the TTL. Also fails when the cache cannot be
+    /// built, the partition id cannot be generated, or the keystore's
+    /// `get_key_store_info` fails.
+    pub fn build(self) -> Result<HierarchicalKeyring, MaterialsError> {
+        let Self {
+            key_store,
+            ttl,
+            branch_key_id,
+            branch_key_id_supplier,
+            cache,
+            partition_id,
+        } = self;
+
+        let Some(keystore) = key_store else {
             return Err(MaterialsError::new(
-                "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",
+                "HierarchicalKeyring: a key store is required",
+            ));
+        };
+
+        let Some(ttl) = ttl else {
+            return Err(MaterialsError::new(
+                "HierarchicalKeyring: a TTL is required",
+            ));
+        };
+        if ttl.is_zero() {
+            return Err(MaterialsError::new(
+                "HierarchicalKeyring TTL must be greater than zero",
             ));
         }
+        // The spec defines the TTL in whole seconds.
+        if ttl.subsec_nanos() != 0 {
+            return Err(MaterialsError::new(format!(
+                "HierarchicalKeyring TTL must be a whole number of seconds; got {ttl:?}",
+            )));
+        }
+        let ttl_seconds = ttl.as_secs();
 
         if branch_key_id.is_some() && branch_key_id_supplier.is_some() {
             return Err(MaterialsError::new(
@@ -173,10 +319,10 @@ impl HierarchicalKeyring {
             ));
         }
 
-        // An absent `cache_type` is where the 1000-entry default lives: the
-        // model requires `DefaultCache.entryCapacity`, and documents this
-        // number on the keyring's own `cache` member.
-        let cache_type = cache_type.unwrap_or(CacheType::Default(DefaultCache::new(
+        // An absent `cache` is where the 1000-entry default lives: the model
+        // requires `DefaultCache.entryCapacity`, and documents this number on
+        // the keyring's own `cache` member.
+        let cache_type = cache.unwrap_or(CacheType::Default(DefaultCache::new(
             DEFAULT_CACHE_ENTRY_CAPACITY,
         )));
 
@@ -217,10 +363,10 @@ impl HierarchicalKeyring {
             })?
             .logical_keystore_name;
 
-        Ok(Self {
+        Ok(HierarchicalKeyring {
             inner: Arc::new(HierarchicalKeyringInner {
                 keystore,
-                ttl_seconds,
+                ttl,
                 branch_key_id,
                 branch_key_id_supplier,
                 partition_id_bytes,
@@ -228,47 +374,6 @@ impl HierarchicalKeyring {
                 cache,
             }),
         })
-    }
-
-    /// The configured TTL for cached branch-key materials, in seconds.
-    pub fn ttl_seconds(&self) -> u64 {
-        self.inner.ttl_seconds
-    }
-
-    /// The configured static branch key id, if this keyring was built with one
-    /// rather than with a [`BranchKeySupplier`].
-    pub fn branch_key_id(&self) -> Option<&str> {
-        self.inner.branch_key_id.as_deref()
-    }
-
-    /// The configured branch key id supplier, if this keyring was built with
-    /// one rather than with a static branch key id.
-    pub fn branch_key_id_supplier(&self) -> Option<&Arc<dyn BranchKeySupplier>> {
-        self.inner.branch_key_id_supplier.as_ref()
-    }
-
-    /// The configured keystore.
-    pub fn keystore(&self) -> &SharedKeystore {
-        &self.inner.keystore
-    }
-
-    /// The 16-byte partition id of this keyring. Either the UTF-8 bytes of the
-    /// caller-provided string, or a freshly-generated v4 UUID.
-    ///
-    /// Hidden from the public API surface; intended for tests verifying the
-    /// v4-UUID variant/version bits and round-tripping of caller-provided
-    /// strings.
-    #[doc(hidden)]
-    pub fn partition_id_bytes(&self) -> &[u8] {
-        &self.inner.partition_id_bytes
-    }
-
-    /// The configured cache. Hidden from the public API surface;
-    /// intended for tests asserting that `CacheType::Shared(...)` round-
-    /// trips the supplied cache verbatim.
-    #[doc(hidden)]
-    pub fn cache(&self) -> &SharedCmc {
-        &self.inner.cache
     }
 }
 
@@ -335,7 +440,7 @@ impl Keyring for HierarchicalKeyring {
             })?;
 
         let ciphertext = match cached {
-            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl_seconds) => {
+            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
                 let bkm = as_branch_key_materials(&entry)?;
                 branch_key_wrap::wrap(bkm, materials.encryption_context(), plaintext_dk.as_bytes())?
             }
@@ -356,7 +461,7 @@ impl Keyring for HierarchicalKeyring {
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    now + Duration::from_secs(self.inner.ttl_seconds),
+                    now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
                 self.inner
@@ -586,7 +691,7 @@ impl HierarchicalKeyring {
             })?;
 
         let bkm = match cached {
-            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl_seconds) => {
+            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
                 as_branch_key_materials(&entry)?.clone()
             }
             _ => {
@@ -606,7 +711,7 @@ impl HierarchicalKeyring {
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    now + Duration::from_secs(self.inner.ttl_seconds),
+                    now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
                 self.inner
@@ -642,12 +747,15 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, M
 
 /// Whether a cache entry is still within its TTL:
 /// `time.now() - cacheEntryCreationTime <= ttlSeconds`.
-fn cache_entry_within_limits(entry: &CacheEntry, ttl_seconds: u64) -> bool {
+///
+/// Compares whole seconds: `ttl` has no sub-second part, and the elapsed time
+/// is truncated to whole seconds.
+fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
     let now = SystemTime::now();
     let elapsed = now
         .duration_since(entry.creation_time)
         .unwrap_or(Duration::ZERO);
-    elapsed.as_secs() <= ttl_seconds
+    elapsed.as_secs() <= ttl.as_secs()
 }
 
 /// Extract a borrowed [`BranchKeyMaterials`] reference from a cache

@@ -60,6 +60,7 @@
 //! [shared-cache]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
 
 use std::error::Error as _;
+use std::time::Duration;
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -109,13 +110,13 @@ async fn build_keystore() -> BranchKeyStore {
     .unwrap()
 }
 
-/// Default TTL for the fixture keyrings, in seconds. Long enough that no test
+/// Default TTL for the fixture keyrings. Long enough that no test
 /// races an expiry.
-const FIXTURE_TTL_SECONDS: u64 = 3600;
+const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
 /// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
 /// default cache. Every test varies only these three things, so they share one
-/// fixture rather than repeating the six-argument constructor.
+/// fixture rather than repeating the builder chain.
 fn keyring_for(
     keystore: impl Into<SharedKeystore>,
     branch_key_id: &str,
@@ -137,15 +138,14 @@ fn keyring_with_cache(
     partition: &str,
     cache: CacheType,
 ) -> HierarchicalKeyring {
-    HierarchicalKeyring::new(
-        keystore,
-        FIXTURE_TTL_SECONDS,
-        Some(branch_key_id.to_string()),
-        None,
-        Some(cache),
-        Some(partition.to_string()),
-    )
-    .expect("fixture keyring configuration must be valid")
+    HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(branch_key_id)
+        .cache(cache)
+        .partition_id(partition)
+        .build()
+        .expect("fixture keyring configuration must be valid")
 }
 
 /// Pick a non-signing suite so signing-key invariants don't intrude.
@@ -529,24 +529,20 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     // Not built through `keyring_for` / `keyring_with_cache`: those supply a
     // partition id, and the point of this test is the `None` case, where each
     // keyring generates its own distinct v4 UUID partition id.
-    let hk1 = HierarchicalKeyring::new(
-        keystore_west,
-        FIXTURE_TTL_SECONDS,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache.clone())),
-        None,
-    )
-    .unwrap();
-    let hk2 = HierarchicalKeyring::new(
-        keystore_east,
-        FIXTURE_TTL_SECONDS,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache)),
-        None,
-    )
-    .unwrap();
+    let hk1 = HierarchicalKeyring::builder()
+        .key_store(keystore_west)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(BRANCH_KEY_ID)
+        .cache(CacheType::Shared(cache.clone()))
+        .build()
+        .unwrap();
+    let hk2 = HierarchicalKeyring::builder()
+        .key_store(keystore_east)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(BRANCH_KEY_ID)
+        .cache(CacheType::Shared(cache))
+        .build()
+        .unwrap();
 
     assert_failed_at_kms(
         hk2.on_encrypt(shared_cache_materials()).await,
