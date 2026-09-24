@@ -136,6 +136,7 @@ use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration,
 use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::LazyLock;
+use std::time::Duration;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -1158,18 +1159,20 @@ fn create_hierarchical_keyring(
         None
     };
 
-    let keyring = HierarchicalKeyring::new(
-        key_store.inner.clone(),
+    let mut builder = HierarchicalKeyring::builder()
+        .key_store(key_store.inner.clone())
         //= spec/shim/esdk-shim.md#create-hierarchical-keyring
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
-        u64::from(input.ttl_seconds),
-        Some(input.branch_key_id.clone()),
-        None,
-        cache_type,
-        partition_id,
-    )
-    .map_err(|e| {
+        .ttl(Duration::from_secs(u64::from(input.ttl_seconds)))
+        .branch_key_id(input.branch_key_id.clone());
+    if let Some(cache_type) = cache_type {
+        builder = builder.cache(cache_type);
+    }
+    if let Some(partition_id) = partition_id {
+        builder = builder.partition_id(partition_id);
+    }
+    let keyring = builder.build().map_err(|e| {
         shim_err(
             ffi::ShimErrorKind::MplError,
             "create_hierarchical_keyring",
