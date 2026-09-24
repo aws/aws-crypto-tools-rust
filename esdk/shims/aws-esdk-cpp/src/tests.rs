@@ -261,9 +261,9 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
 #[test]
 fn encryption_context_round_trips() {
     let mut m = aws_esdk::EncryptionContext::new();
-    m.insert(b"k1".to_vec(), b"v1".to_vec());
-    m.insert(b"k2".to_vec(), b"v2".to_vec());
-    let list = encryption_context_core_to_target(m.clone()).unwrap();
+    m.insert("k1", "v1");
+    m.insert("k2", "\u{1F600}");
+    let list = encryption_context_core_to_target(m.clone());
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
@@ -272,13 +272,9 @@ fn encryption_context_round_trips() {
     //# and the exact key and value of each.
     for (k, v) in m.iter() {
         assert_eq!(
-            list.iter()
-                .filter(|i| i.key.as_bytes() == k.as_slice() && i.value.as_bytes() == v.as_slice())
-                .count(),
+            list.iter().filter(|i| i.key == k && i.value == v).count(),
             1,
-            "pair {:?}={:?} must appear exactly once",
-            String::from_utf8_lossy(k),
-            String::from_utf8_lossy(v)
+            "pair {k:?}={v:?} must appear exactly once"
         );
     }
     //= spec/shim/esdk-shim.md#encryption-context
@@ -286,14 +282,14 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the target's encryption context, given as a list of
     //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
     //# the exact key and value of each.
-    assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
+    assert_eq!(encryption_context_target_to_core(&list), m);
 }
 
 #[test]
 fn encryption_context_empty() {
     let empty = aws_esdk::EncryptionContext::new();
-    assert!(encryption_context_core_to_target(empty).unwrap().is_empty());
-    assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
+    assert!(encryption_context_core_to_target(empty).is_empty());
+    assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
 #[test]
