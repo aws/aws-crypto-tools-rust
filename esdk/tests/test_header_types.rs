@@ -1,12 +1,15 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for message-header.md: supported-versions, supported-types, version, type, content-type
+//! Tests for message-header.md: supported-versions, supported-types, version, type, content-type,
+//! algorithm-suite-id
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
+use aws_crypto_mpl::structures::AlgorithmSuiteId;
+use aws_esdk::__test_internals::algorithm_suite_id_from_bytes;
 use aws_esdk::*;
 use test_helpers::*;
 
@@ -192,4 +195,15 @@ async fn test_unsupported_type_rejected_v1() {
         msg.contains("message type"),
         "unsupported type 0x00 must be rejected with type error, got: {msg}"
     );
+}
+
+// Every MPL suite is an ESDK suite, so every entry of `AlgorithmSuiteId::ALL`
+// must resolve.
+#[test]
+fn test_every_mpl_suite_resolves_as_esdk_suite() {
+    for &id in AlgorithmSuiteId::ALL {
+        let resolved = algorithm_suite_id_from_bytes(id.id_bytes())
+            .unwrap_or_else(|e| panic!("{id:?} must resolve as an ESDK suite: {e}"));
+        assert_eq!(resolved, id);
+    }
 }
