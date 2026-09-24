@@ -25,6 +25,21 @@ pub(crate) fn read_encryption_context(
     for _ in 0..count {
         let key = read_str_u16(r, raw)?;
         let value = read_str_u16(r, raw)?;
+
+        //= spec/framework/structures.md#key-value-pair-entries
+        //# This sequence MUST NOT contain duplicate entries.
+        //
+        //= spec/framework/structures.md#key-value-pair-entries
+        //# These entries MUST be sorted, by key,
+        //# in ascending order according to the UTF-8 encoded binary value.
+        if let Some((previous, _)) = result.as_map().last_key_value() {
+            if key == *previous {
+                return ser_err("Encryption context contains a duplicate key");
+            }
+            if key < *previous {
+                return ser_err("Encryption context keys are not in ascending order");
+            }
+        }
         result.insert(key, value);
     }
 

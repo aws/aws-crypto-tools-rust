@@ -274,3 +274,59 @@ async fn test_aad_non_ascii_keys_serialize_in_utf8_byte_order() {
         assert_eq!(dec.encryption_context, ec, "{version:?}: round trip");
     }
 }
+
+/// Encrypt `{"keyA": "valA", "keyB": "valB"}`, replace the header's second
+/// key with `second_key`, and return the decrypt error. The pair entries are
+/// fixed-width, so the edit changes no length field.
+async fn decrypt_err_with_second_key(version: Version, second_key: &[u8; 4]) -> Error {
+    let keyring = test_keyring().await;
+    let ec = small_encryption_context(SmallEncryptionContextVariation::AB);
+    let mut ct = encrypt_no_sign_ec_keyring(b"strict order", ec, version, &keyring).await;
+
+    // Length(2) + count(2) + first entry(2 + 4 + 2 + 4) + second key length(2).
+    let key2 = aad_offset(version) + 2 + 2 + 12 + 2;
+    assert_eq!(&ct[key2..key2 + 4], b"keyB", "{version:?}: fixture layout");
+    ct[key2..key2 + 4].copy_from_slice(second_key);
+
+    let result = match version {
+        Version::V1 => try_decrypt_v1_with_keyring(&ct, &keyring).await,
+        Version::V2 => try_decrypt_with_keyring(&ct, &keyring).await,
+    };
+    result.expect_err("header with non-ascending keys must not decrypt")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_duplicate_encryption_context_key() {
+    for version in VERSIONS {
+        //= spec/framework/structures.md#key-value-pair-entries
+        //= type=test
+        //# This sequence MUST NOT contain duplicate entries.
+        let err = decrypt_err_with_second_key(version, b"keyA").await;
+        assert_eq!(
+            err.kind,
+            ErrorKind::SerializationError,
+            "{version:?}: {err:?}"
+        );
+        assert_eq!(err.message, "Encryption context contains a duplicate key");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_out_of_order_encryption_context_keys() {
+    for version in VERSIONS {
+        //= spec/framework/structures.md#key-value-pair-entries
+        //= type=test
+        //# These entries MUST be sorted, by key,
+        //# in ascending order according to the UTF-8 encoded binary value.
+        let err = decrypt_err_with_second_key(version, b"key0").await;
+        assert_eq!(
+            err.kind,
+            ErrorKind::SerializationError,
+            "{version:?}: {err:?}"
+        );
+        assert_eq!(
+            err.message,
+            "Encryption context keys are not in ascending order"
+        );
+    }
+}
