@@ -1,7 +1,7 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
 //! [`Keyring`](aws_esdk::Keyring).
 //!
-//! Both keyrings are built from the native MPL ([`aws_crypto_mpl`]):
+//! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
 //! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over a [`BranchKeyStore`].
 //!
@@ -96,11 +96,12 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, Serv
     Ok(EsdkKeyring::new(keyring))
 }
 
-/// Build a hierarchical keyring over a native MPL branch key store.
+/// Build a hierarchical keyring over an MPL branch key store.
 ///
 /// No KMS or DynamoDB client is supplied, so the key store builds its own from
-/// the ambient AWS configuration; branch-key retrieval reaches KMS and DynamoDB
-/// when the client encrypts or decrypts.
+/// the ambient AWS configuration, with the region taken from the KMS key ARN
+/// (not `AWS_REGION`); branch-key retrieval reaches KMS and DynamoDB when the
+/// client encrypts or decrypts.
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
 ) -> Result<EsdkKeyring, ServerError> {

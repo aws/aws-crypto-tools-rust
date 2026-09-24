@@ -1,6 +1,6 @@
 //! A real rpcv2Cbor `CreateClient` with the offline Raw-AES / Default-CMM config
 //! (identical to the commons `BlobRoundTrip` config) drives the server to build
-//! a Raw-AES keyring through the native MPL. The server MUST accept it and return
+//! a Raw-AES keyring through the MPL. The server MUST accept it and return
 //! a client id.
 
 use std::sync::Arc;
