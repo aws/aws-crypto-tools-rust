@@ -6,10 +6,11 @@
 //! Requires an existing key store with a provisioned branch key.
 //! Unlike the other examples this one needs AWS credentials, a KMS key, and a DynamoDB table, and does not run offline.
 
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt, mpl};
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::client::Client as KeystoreClient;
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::KmsConfiguration;
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::key_store_config::KeyStoreConfig;
+use std::sync::Arc;
+
+use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
+use aws_crypto_mpl::{HierarchicalKeyring, Keyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,37 +21,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store_config = KeyStoreConfig::builder()
-        .kms_client(kms_client)
-        .ddb_client(ddb_client)
-        .ddb_table_name("KeyStoreDdbTable")
-        .logical_key_store_name("KeyStoreDdbTable")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(
+    let key_store = BranchKeyStore::with_clients(KeyStoreConfig {
+        ddb_table_name: "KeyStoreDdbTable".to_string(),
+        logical_keystore_name: "KeyStoreDdbTable".to_string(),
+        kms_configuration: KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
                 .to_string(),
-        ))
-        .build()?;
-    let key_store = KeystoreClient::from_conf(key_store_config)?;
+        ),
+        id: None,
+        grant_tokens: None,
+        kms_client: Some(kms_client),
+        ddb_client: Some(ddb_client),
+    })?;
 
-    let keyring = mpl()
-        .create_aws_kms_hierarchical_keyring()
-        .key_store(key_store)
-        .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
+    let keyring: Arc<dyn Keyring> = Arc::new(HierarchicalKeyring::new(
+        Arc::new(key_store),
         // ttl_seconds: how long cached branch-key material may be reused.
-        .ttl_seconds(600)
-        .send()
-        .await?;
+        600,
+        Some("3f43a9af-08c5-4317-b694-3d3e883dcaef".to_string()),
+        None, // branch_key_id_supplier
+        None, // cache_type
+        None, // partition_id
+    )?);
 
     let plaintext = b"Hello World";
 
-    let encrypted = encrypt(&EncryptInput::with_legacy_keyring(
+    let encrypted = encrypt(&EncryptInput::with_keyring(
         plaintext,
         EncryptionContext::new(),
         keyring.clone(),
     ))
     .await?;
 
-    let decrypted = decrypt(&DecryptInput::with_legacy_keyring(
+    let decrypted = decrypt(&DecryptInput::with_keyring(
         &encrypted.ciphertext,
         EncryptionContext::new(),
         keyring,

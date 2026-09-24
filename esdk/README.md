@@ -35,36 +35,35 @@ Building from source needs:
 A one-shot encrypt/decrypt round trip with a raw AES keyring:
 
 ```rust
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt, mpl};
-use aws_mpl_legacy::dafny::types::AesWrappingAlg;
-use aws_smithy_types::Blob;
+use std::sync::Arc;
+
+use aws_crypto_mpl::{AesGcm, Keyring, RawAesKeyring};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // For demonstration only: a real application must source its wrapping key
     // from a secure store and never hardcode it.
-    let keyring = mpl()
-        .create_raw_aes_keyring()
-        .key_namespace("my-key-namespace")
-        .key_name("my-key-name")
-        .wrapping_key(Blob::new([0x01u8; 32]))
-        .wrapping_alg(AesWrappingAlg::AlgAes256GcmIv12Tag16)
-        .send()
-        .await?;
+    let keyring: Arc<dyn Keyring> = Arc::new(RawAesKeyring::new(
+        "my-key-namespace",
+        "my-key-name",
+        vec![0x01u8; 32],
+        AesGcm::Aes256Gcm,
+    )?);
 
     // The encryption context is authenticated, not encrypted, and is bound to
     // the message.
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose".to_string(), "quickstart".to_string());
 
-    let encrypted = encrypt(&EncryptInput::with_legacy_keyring(
+    let encrypted = encrypt(&EncryptInput::with_keyring(
         b"the quick brown fox",
         encryption_context.clone(),
         keyring.clone(),
     ))
     .await?;
 
-    let decrypted = decrypt(&DecryptInput::with_legacy_keyring(
+    let decrypted = decrypt(&DecryptInput::with_keyring(
         &encrypted.ciphertext,
         encryption_context,
         keyring,
