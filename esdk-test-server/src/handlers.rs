@@ -11,10 +11,9 @@ use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
     EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
 };
-use aws_esdk::{DecryptInput, EncryptInput, Keyring as EsdkKeyring};
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy as MplCommitmentPolicy;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
-use aws_mpl_legacy::EncryptionContext;
+use aws_esdk::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
+use aws_esdk::EsdkCommitmentPolicy as MplCommitmentPolicy;
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Keyring as EsdkKeyring};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
@@ -88,7 +87,14 @@ fn max_edks(config: &EsdkClientConfig) -> Result<Option<NonZeroUsize>, ServerErr
 fn encryption_context(
     map: Option<std::collections::BTreeMap<String, String>>,
 ) -> EncryptionContext {
-    map.map(|m| m.into_iter().collect()).unwrap_or_default()
+    map.map(|m| {
+        EncryptionContext::from_map(
+            m.into_iter()
+                .map(|(k, v)| (k.into_bytes(), v.into_bytes()))
+                .collect(),
+        )
+    })
+    .unwrap_or_default()
 }
 
 impl AppState {
