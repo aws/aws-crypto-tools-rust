@@ -197,8 +197,7 @@ async fn test_unsupported_type_rejected_v1() {
     );
 }
 
-// Every MPL suite is an ESDK suite, so every entry of `AlgorithmSuiteId::ALL`
-// must resolve.
+// Fails once the MPL adds a non-ESDK suite; see `algorithm_suite_id_from_bytes`.
 #[test]
 fn test_every_mpl_suite_resolves_as_esdk_suite() {
     for &id in AlgorithmSuiteId::ALL {

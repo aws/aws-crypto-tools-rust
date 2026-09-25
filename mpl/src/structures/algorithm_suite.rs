@@ -41,9 +41,6 @@ pub enum AlgorithmSuiteId {
     AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
 }
 
-/// Backing array for [`AlgorithmSuiteId::ALL`], in ascending on-wire id order.
-///
-/// Kept in step with the enum by `exhaustive_over_algorithm_suite_id` below.
 const ALL_SUITES: [AlgorithmSuiteId; 11] = [
     AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
     AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
@@ -58,10 +55,10 @@ const ALL_SUITES: [AlgorithmSuiteId; 11] = [
     AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
 ];
 
-// Ties `ALL_SUITES` to `AlgorithmSuiteId` at compile time. The match has no
-// wildcard arm, so a suite added to `AlgorithmSuiteId` fails to compile until it
-// is mapped here; each arm indexes `ALL_SUITES`, so the array must grow to match
-// or the index fails const evaluation. Never called -- the coupling is the point.
+// Ties `ALL_SUITES` to `AlgorithmSuiteId` at compile time.
+// The match has no wildcard arm, so a new suite fails to compile until it is mapped here.
+// Each arm indexes `ALL_SUITES`, so the array must grow to match or const evaluation fails.
+// Never called; the coupling is the point.
 #[expect(
     dead_code,
     reason = "exists for its exhaustiveness check, not to be called"
@@ -86,10 +83,9 @@ impl AlgorithmSuiteId {
     /// Every algorithm suite id, in ascending on-wire id order.
     pub const ALL: &'static [AlgorithmSuiteId] = &ALL_SUITES;
 
-    /// Resolves a 2-byte on-wire algorithm suite identifier to its suite id.
-    /// The inverse of [`Self::id_bytes`].
+    /// Looks up the suite with the given on-wire id; the inverse of [`Self::id_bytes`].
     ///
-    /// Returns `None` if no suite has that identifier.
+    /// Returns `None` if no suite has that id.
     pub fn from_id_bytes(bytes: [u8; 2]) -> Option<AlgorithmSuiteId> {
         Self::ALL.iter().copied().find(|id| id.id_bytes() == bytes)
     }

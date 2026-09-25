@@ -6,10 +6,9 @@
 //! The Material Providers Library (`aws_crypto_mpl`) exposes an
 //! [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) enum and an
 //! opaque [`AlgorithmSuite`](aws_crypto_mpl::structures::AlgorithmSuite)
-//! specification (fields private, read via accessor methods). This module wraps
-//! the MPL's `bytes -> id` lookup in the ESDK error type and supplies small
-//! accessors that adapt the MPL suite shape to the values the ESDK
-//! serialization and key-derivation code needs.
+//! specification (fields private, read via accessor methods).
+//! This module wraps the MPL's `bytes -> id` lookup in the ESDK error type.
+//! Its other helpers map MPL suite fields to the types the ESDK needs.
 
 use crate::error::{Error, esdk_err, val_err};
 use aws_crypto_mpl::structures::{
@@ -19,13 +18,12 @@ use aws_mpl_primitives::{DigestAlg, EcdsaSignatureAlgorithm};
 
 /// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuiteId`].
 ///
-/// Every [`AlgorithmSuiteId`] is an ESDK suite, so any id the MPL resolves is
-/// supported for the ESDK. When the MPL adds a non-ESDK suite, this function
-/// must also reject suites whose format is not the ESDK format.
-///
 /// # Errors
 /// Returns an error if `bytes` is not a supported ESDK algorithm suite id.
 pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuiteId, Error> {
+    // Every `AlgorithmSuiteId` is an ESDK suite today.
+    // Once the MPL adds a suite for another format, filter it out here.
+    //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The value (hex) of this field MUST be a value that exists in the
     //# [Supported Algorithm Suites](../framework/algorithm-suites.md#supported-algorithm-suites) table.
@@ -52,8 +50,7 @@ pub fn algorithm_suite_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuite, Erro
 /// drives its HKDF, or an error if the KDF is the identity KDF (no hash).
 ///
 /// # Errors
-/// Returns an error if `kdf` is the identity KDF or a KDF the ESDK does not
-/// support.
+/// Returns an error if `kdf` is the identity KDF or a KDF the ESDK does not support.
 pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error> {
     match kdf {
         KeyDerivationAlgorithm::HkdfSha256 => Ok(DigestAlg::Sha256),
@@ -70,8 +67,7 @@ pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error
 /// [`AsymmetricSignatureAlgorithm`] to the primitives [`EcdsaSignatureAlgorithm`].
 ///
 /// # Errors
-/// Returns an error if the suite has no asymmetric signature algorithm or has
-/// one the ESDK does not support.
+/// Returns an error if the suite has no asymmetric signature algorithm the ESDK supports.
 pub fn get_ecdsa_alg(suite: &AlgorithmSuite) -> Result<EcdsaSignatureAlgorithm, Error> {
     match suite.asymmetric_signature_algorithm() {
         Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Ok(EcdsaSignatureAlgorithm::EcdsaP256),
