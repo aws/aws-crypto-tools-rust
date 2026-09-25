@@ -6,11 +6,6 @@
 //! One macro defines every handle,
 //! so their conversions and trait impls stay identical.
 
-/// Define a handle `$name` around `Arc<dyn $trait>`.
-///
-/// The handle deliberately does not implement `$trait`.
-/// If it did, the blanket `From<T: $trait>` would overlap
-/// with the standard library's reflexive `From<$name> for $name`.
 macro_rules! shared_handle {
     ($(#[$meta:meta])* $name:ident, $trait:ident) => {
         $(#[$meta])*
