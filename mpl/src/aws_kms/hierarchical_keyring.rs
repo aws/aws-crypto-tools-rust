@@ -102,9 +102,6 @@ pub trait BranchKeySupplier: Send + Sync {
 /// See [`HierarchicalKeyring::new`] for construction. The [`Keyring`]
 /// impl wires the configured cache and keystore into the OnEncrypt /
 /// OnDecrypt algorithms.
-///
-/// Cloning is cheap and the clone shares state with the original,
-/// including its branch-key cache.
 #[derive(Clone)]
 pub struct HierarchicalKeyring {
     inner: Arc<HierarchicalKeyringInner>,
