@@ -20,6 +20,7 @@
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -36,7 +37,7 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
-    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
@@ -89,24 +90,33 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// `HierarchicalKeyring::new` only stores the handle, and the keystore is
 /// first consulted inside OnEncrypt / OnDecrypt. Tests that do exercise those
 /// operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod
-/// ondecrypt` instead. Both SDK clients are supplied, so this goes through the
-/// synchronous [`BranchKeyStore::with_clients`] — there is nothing to resolve
-/// and so nothing to await.
+/// ondecrypt` instead. Both SDK clients are supplied, so there is nothing to
+/// resolve and so nothing to await.
 fn keystore_never_consulted() -> BranchKeyStore {
     let (kms, ddb) = dummy_clients();
-    BranchKeyStore::with_clients(KeyStoreConfig {
-        ddb_table_name: "test-table".to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                .to_string(),
-        ),
-        logical_keystore_name: "test-logical".to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .expect("BranchKeyStore construction with a valid config must succeed")
+    build_without_io(
+        BranchKeyStore::builder()
+            .ddb_table_name("test-table")
+            .kms_configuration(KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                    .to_string(),
+            ))
+            .logical_keystore_name("test-logical")
+            .kms_client(kms)
+            .ddb_client(ddb),
+    )
+}
+
+/// Builds `builder` by polling its future once. With both clients supplied,
+/// `build` does no IO, so it is ready on the first poll.
+fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
+    use std::future::Future;
+    use std::task::{Context, Poll, Waker};
+    let mut fut = std::pin::pin!(builder.build());
+    match fut.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+        Poll::Ready(result) => result.expect("BranchKeyStore construction must succeed"),
+        Poll::Pending => panic!("build with both clients supplied must not await"),
+    }
 }
 
 #[test]
@@ -432,16 +442,16 @@ fn new_with_shared_cache_round_trips_provided_cache() {
 
 #[test]
 fn new_with_storm_tracking_cache_succeeds() {
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 60,
-        grace_interval: 1,
-        fan_out: 4,
-        inflight_ttl: 30,
-        sleep_milli: 10,
-        time_units: None,
-    };
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_secs(60))
+        .grace_interval(Duration::from_secs(1))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_secs(30))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
     HierarchicalKeyring::new(
         keystore_never_consulted(),
         3600, // ttl_seconds — strictly greater than grace_period (60).
@@ -455,16 +465,16 @@ fn new_with_storm_tracking_cache_succeeds() {
 
 #[test]
 fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 60,
-        grace_interval: 1,
-        fan_out: 4,
-        inflight_ttl: 30,
-        sleep_milli: 10,
-        time_units: None,
-    };
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_secs(60))
+        .grace_interval(Duration::from_secs(1))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_secs(30))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
     let err = match HierarchicalKeyring::new(
         keystore_never_consulted(),
         60, // ttl_seconds == grace_period — must fail.
@@ -485,16 +495,16 @@ fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
 
 #[test]
 fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 120, // > ttl_seconds below
-        grace_interval: 1,
-        fan_out: 4,
-        inflight_ttl: 30,
-        sleep_milli: 10,
-        time_units: None,
-    };
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_secs(120))
+        .grace_interval(Duration::from_secs(1))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_secs(30))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
     let err = match HierarchicalKeyring::new(
         keystore_never_consulted(),
         60,
@@ -515,19 +525,18 @@ fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 
 #[test]
 fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
-    use aws_crypto_mpl::TimeUnits;
     // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 5_000,
-        grace_interval: 100,
-        fan_out: 4,
-        inflight_ttl: 1_000,
-        sleep_milli: 10,
-        time_units: Some(TimeUnits::Milliseconds),
-    };
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_millis(5_000))
+        .grace_interval(Duration::from_millis(100))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_millis(1_000))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
     HierarchicalKeyring::new(
         keystore_never_consulted(),
         60,

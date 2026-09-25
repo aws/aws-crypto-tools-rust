@@ -76,7 +76,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
-use aws_crypto_mpl::{KeyStoreConfig, Keyring, KmsConfiguration, SharedCmc};
+use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -96,17 +96,15 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
 
 async fn build_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 /// Default TTL for the fixture keyrings, in seconds. Long enough that no test
@@ -289,17 +287,15 @@ async fn build_keystore_with_kms_and_logical_name(
     kms: KmsClient,
     logical_keystore_name: &str,
 ) -> BranchKeyStore {
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-        logical_keystore_name: logical_keystore_name.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb_client_us_west_2().await),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(logical_keystore_name)
+        .ddb_client(ddb_client_us_west_2().await)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 /// Assert that `hk2`'s encrypt failed, and failed at the KMS call rather than
@@ -672,17 +668,15 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 /// record's own `kms-arn` is used for the KMS Decrypt.
 async fn build_discovery_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::Discovery,
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::Discovery)
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -825,19 +819,17 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 /// rewritten into `region` first.
 async fn build_mr_discovery_keystore(region: &str) -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::MrDiscovery {
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::MrDiscovery {
             region: region.to_string(),
-        },
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+        })
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 #[tokio::test]

@@ -20,7 +20,7 @@ use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::cache_config::{
     CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache, create_cryptographic_materials_cache,
 };
-use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc, TimeUnits, UsageMetadata};
+use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc, UsageMetadata};
 use crate::keystore::SharedKeystore;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
@@ -184,18 +184,13 @@ impl HierarchicalKeyring {
         // keyring's TTL, so it is checked here rather than inside
         // `create_cryptographic_materials_cache`, which has no TTL to compare
         // against when a cache is built standalone.
-        if let CacheType::StormTracking(params) = &cache_type {
-            let grace_in_seconds = match params.time_units.unwrap_or_default() {
-                TimeUnits::Seconds => params.grace_period,
-                TimeUnits::Milliseconds => params.grace_period / 1000,
-            };
-            if grace_in_seconds >= ttl_seconds {
-                return Err(MaterialsError::new(format!(
-                    "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
-                    params.grace_period,
-                    params.time_units.unwrap_or_default(),
-                )));
-            }
+        if let CacheType::StormTracking(params) = &cache_type
+            && params.grace_period() >= Duration::from_secs(ttl_seconds)
+        {
+            return Err(MaterialsError::new(format!(
+                "HierarchicalKeyring: storm-tracking grace period ({:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
+                params.grace_period(),
+            )));
         }
 
         let cache = create_cryptographic_materials_cache(cache_type)

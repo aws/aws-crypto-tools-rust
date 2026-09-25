@@ -37,20 +37,7 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 
-use super::{CacheEntry, Cmc, CmcError, LocalCmc};
-
-/// Which unit the caller uses for the numeric time knobs.
-///
-/// Applies to `grace_period`, `grace_interval`, and `inflight_ttl`.
-/// Does NOT apply to `sleep_milli` (always milliseconds).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TimeUnits {
-    /// Interpret numeric values as seconds (the default).
-    #[default]
-    Seconds,
-    /// Interpret numeric values as milliseconds.
-    Milliseconds,
-}
+use super::{CacheEntry, Cmc, CmcError, LocalCmc, StormTrackingCache};
 
 /// Per-key inflight tracking state, held under a `Mutex`.
 struct StormTrackingState {
@@ -73,86 +60,6 @@ enum GetDecision {
     Wait { deadline: Option<SystemTime> },
 }
 
-/// The result of validating and interpreting a raw `StormTrackingCmc` config.
-struct ValidatedConfig {
-    grace_period: Duration,
-    grace_interval: Duration,
-    inflight_ttl: Duration,
-    sleep_milli: Duration,
-    fan_out: usize,
-    time_units: TimeUnits,
-}
-
-impl ValidatedConfig {
-    /// Validate raw config values and produce the interpreted `Duration`s.
-    ///
-    /// Spec: `grace_period`, `grace_interval`, `inflight_ttl`, `sleep_milli`,
-    /// and `fan_out` all MUST be at least 1.
-    fn from_raw(
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-    ) -> Result<Self, CmcError> {
-        let time_units = time_units.unwrap_or_default();
-        let to_duration = |v: u64| -> Duration {
-            match time_units {
-                TimeUnits::Seconds => Duration::from_secs(v),
-                TimeUnits::Milliseconds => Duration::from_millis(v),
-            }
-        };
-
-        // Lower bounds.
-        if grace_period == 0 {
-            return Err(CmcError::invalid_entry("grace_period must be at least 1"));
-        }
-        if grace_interval == 0 {
-            return Err(CmcError::invalid_entry("grace_interval must be at least 1"));
-        }
-        if inflight_ttl == 0 {
-            return Err(CmcError::invalid_entry("inflight_ttl must be at least 1"));
-        }
-        if fan_out == 0 {
-            return Err(CmcError::invalid_entry("fan_out must be at least 1"));
-        }
-        if sleep_milli == 0 {
-            return Err(CmcError::invalid_entry("sleep_milli must be at least 1"));
-        }
-
-        let grace_period = to_duration(grace_period);
-        let grace_interval = to_duration(grace_interval);
-        let inflight_ttl = to_duration(inflight_ttl);
-
-        // Ordering: grace_interval <= inflight_ttl <= grace_period.
-        if grace_interval > grace_period {
-            return Err(CmcError::invalid_entry(
-                "grace_interval must be <= grace_period",
-            ));
-        }
-        if inflight_ttl > grace_period {
-            return Err(CmcError::invalid_entry(
-                "inflight_ttl must be <= grace_period",
-            ));
-        }
-        if grace_interval > inflight_ttl {
-            return Err(CmcError::invalid_entry(
-                "grace_interval must be <= inflight_ttl",
-            ));
-        }
-
-        Ok(Self {
-            grace_period,
-            grace_interval,
-            inflight_ttl,
-            sleep_milli: Duration::from_millis(sleep_milli),
-            fan_out,
-            time_units,
-        })
-    }
-}
-
 /// Storm-tracking Cryptographic Materials Cache.
 ///
 /// Wraps a [`LocalCmc`] and adds grace-period / grace-interval storm
@@ -173,36 +80,16 @@ struct StormTrackingCmcInner {
     grace_interval: Duration,
     fan_out: usize,
     inflight_ttl: Duration,
-    sleep_milli: Duration,
-    time_units: TimeUnits,
+    sleep: Duration,
     state: Mutex<StormTrackingState>,
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
 impl StormTrackingCmc {
-    /// Construct a `StormTrackingCmc` using `SystemTime::now` as the clock.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-    ) -> Result<Self, CmcError> {
-        Self::with_clock_impl(
-            entry_capacity,
-            entry_pruning_tail_size,
-            grace_period,
-            grace_interval,
-            fan_out,
-            inflight_ttl,
-            sleep_milli,
-            time_units,
-            SystemTime::now,
-        )
+    /// Construct a `StormTrackingCmc` from `config` using `SystemTime::now`
+    /// as the clock.
+    pub fn new(config: &StormTrackingCache) -> Result<Self, CmcError> {
+        Self::with_clock_impl(config, SystemTime::now)
     }
 
     /// Test-only constructor with clock injection. Gated behind the
@@ -210,79 +97,41 @@ impl StormTrackingCmc {
     /// Tests use this to advance time deterministically without sleeping.
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_clock<F>(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-        now: F,
-    ) -> Result<Self, CmcError>
+    pub fn with_clock<F>(config: &StormTrackingCache, now: F) -> Result<Self, CmcError>
     where
         F: Fn() -> SystemTime + Send + Sync + 'static,
     {
-        Self::with_clock_impl(
-            entry_capacity,
-            entry_pruning_tail_size,
-            grace_period,
-            grace_interval,
-            fan_out,
-            inflight_ttl,
-            sleep_milli,
-            time_units,
-            now,
-        )
+        Self::with_clock_impl(config, now)
     }
 
     /// Internal constructor that accepts an arbitrary clock. `pub(crate)`
     /// to mirror `LocalCmc::with_clock_impl`'s visibility for consistency
     /// across the two cache implementations; not part of the public API.
     /// Callers use `new` (production) or `with_clock` (test-utils feature).
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn with_clock_impl<F>(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-        now: F,
-    ) -> Result<Self, CmcError>
+    ///
+    /// `config` needs no validation here: [`StormTrackingCache`] can only
+    /// be built through its validating builder.
+    pub(crate) fn with_clock_impl<F>(config: &StormTrackingCache, now: F) -> Result<Self, CmcError>
     where
         F: Fn() -> SystemTime + Send + Sync + 'static,
     {
-        let cfg = ValidatedConfig::from_raw(
-            grace_period,
-            grace_interval,
-            fan_out,
-            inflight_ttl,
-            sleep_milli,
-            time_units,
-        )?;
-
         let now_arc: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(now);
         let inner_clock = Arc::clone(&now_arc);
 
-        let local =
-            LocalCmc::with_clock_impl(entry_capacity, entry_pruning_tail_size, move || {
-                inner_clock()
-            })?;
+        let local = LocalCmc::with_clock_impl(
+            config.entry_capacity(),
+            config.entry_pruning_tail_size(),
+            move || inner_clock(),
+        )?;
 
         Ok(Self {
             inner: Arc::new(StormTrackingCmcInner {
                 local,
-                grace_period: cfg.grace_period,
-                grace_interval: cfg.grace_interval,
-                fan_out: cfg.fan_out,
-                inflight_ttl: cfg.inflight_ttl,
-                sleep_milli: cfg.sleep_milli,
-                time_units: cfg.time_units,
+                grace_period: config.grace_period(),
+                grace_interval: config.grace_interval(),
+                fan_out: config.fan_out(),
+                inflight_ttl: config.inflight_ttl(),
+                sleep: config.sleep(),
                 state: Mutex::new(StormTrackingState {
                     inflight: HashMap::new(),
                 }),
@@ -307,12 +156,8 @@ impl StormTrackingCmc {
         self.inner.inflight_ttl
     }
 
-    pub fn sleep_milli(&self) -> Duration {
-        self.inner.sleep_milli
-    }
-
-    pub fn time_units(&self) -> TimeUnits {
-        self.inner.time_units
+    pub fn sleep(&self) -> Duration {
+        self.inner.sleep
     }
 
     /// Borrow the inner `LocalCmc`. Useful in tests to verify that the
@@ -498,7 +343,7 @@ impl StormTrackingCmc {
         deadline: Option<SystemTime>,
     ) -> Result<Option<Arc<CacheEntry>>, CmcError> {
         loop {
-            tokio::time::sleep(self.inner.sleep_milli).await;
+            tokio::time::sleep(self.inner.sleep).await;
 
             if let Some(hit) = self.inner.local.get_cache_entry(cache_id).await? {
                 return Ok(Some(hit));

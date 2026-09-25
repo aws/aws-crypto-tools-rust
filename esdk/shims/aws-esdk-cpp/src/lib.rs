@@ -128,14 +128,15 @@ use aws_config::{AppName, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
-    CacheType, DefaultCache, SharedCmc, StormTrackingCache, TimeUnits,
+    CacheType, DefaultCache, SharedCmc, StormTrackingCache,
     create_cryptographic_materials_cache as create_cryptographic_materials_cache_core,
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration, SharedKeystore};
+use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
 use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::LazyLock;
+use std::time::Duration;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -402,6 +403,33 @@ mod ffi {
         fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<StreamFinishOutput>;
     }
 }
+
+// `ffi::CacheType` holds only `Copy` fields. `Clone` is implemented here, not
+// derived in the bridge, so the bridge is unchanged.
+impl Clone for ffi::CacheType {
+    fn clone(&self) -> Self {
+        Self { ..*self }
+    }
+}
+
+macro_rules! opt_to_option {
+    ($($opt:ident => $t:ty),* $(,)?) => {$(
+        impl ffi::$opt {
+            /// `Some(value)` when `set` is true, else `None`.
+            fn to_option(&self) -> Option<$t> {
+                self.set.then(|| self.value.clone())
+            }
+        }
+    )*};
+}
+
+opt_to_option!(
+    OptU32 => u32,
+    OptString => String,
+    OptAlgId => ffi::EsdkAlgorithmSuiteId,
+    OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
+    OptCacheType => ffi::CacheType,
+);
 
 // Resources
 
@@ -682,6 +710,22 @@ fn make_kms_config(
     }
 }
 
+/// The conversion from a storm-tracking time value to a `Duration`: `Unset`
+/// and `Seconds` read the value as seconds, `Milliseconds` as milliseconds.
+fn time_unit(units: ffi::TimeUnits, op: &str) -> Result<fn(u32) -> Duration, String> {
+    match units {
+        ffi::TimeUnits::Unset | ffi::TimeUnits::Seconds => {
+            Ok(|v| Duration::from_secs(u64::from(v)))
+        }
+        ffi::TimeUnits::Milliseconds => Ok(|v| Duration::from_millis(u64::from(v))),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            op,
+            "unrecognized time_units",
+        )),
+    }
+}
+
 // Create an ESDK Rust CacheType from the given FFI CacheType
 fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
     let op = "create_cryptographic_materials_cache";
@@ -711,29 +755,27 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a storm tracking cache.
         ffi::CacheKind::StormTracking => {
-            let mut params = StormTrackingCache::builder()
+            let duration = time_unit(cache.time_units, op)?;
+            StormTrackingCache::builder()
                 .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
                 .entry_pruning_tail_size(capacity(
                     "entry_pruning_tail_size",
                     cache.entry_pruning_tail_size,
                 )?)
-                .grace_period(u64::from(cache.grace_period))
-                .grace_interval(u64::from(cache.grace_interval))
+                .grace_period(duration(cache.grace_period))
+                .grace_interval(duration(cache.grace_interval))
                 .fan_out(capacity("fan_out", cache.fan_out)?)
-                .inflight_ttl(u64::from(cache.inflight_ttl))
-                .sleep_milli(u64::from(cache.sleep_milli));
-            match cache.time_units {
-                ffi::TimeUnits::Seconds => params = params.time_units(TimeUnits::Seconds),
-                ffi::TimeUnits::Milliseconds => params = params.time_units(TimeUnits::Milliseconds),
-                _ => {}
-            }
-            Ok(CacheType::StormTracking(params.build().map_err(|e| {
-                shim_err(
-                    ffi::ShimErrorKind::ValidationError,
-                    op,
-                    format!("failed to build StormTrackingCache: {e}"),
-                )
-            })?))
+                .inflight_ttl(duration(cache.inflight_ttl))
+                .sleep(Duration::from_millis(u64::from(cache.sleep_milli)))
+                .build()
+                .map(CacheType::StormTracking)
+                .map_err(|e| {
+                    shim_err(
+                        ffi::ShimErrorKind::ValidationError,
+                        op,
+                        format!("failed to build StormTrackingCache: {e}"),
+                    )
+                })
         }
         ffi::CacheKind::Shared => {
             let shared = require_handle(cache.shared, "shared cache", op)?;
@@ -777,7 +819,8 @@ fn create_cryptographic_materials_cache(
 
 /// C++ to Rust for AWS SDK call retry config
 fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
-    if !config.mode_adaptive && !config.max_attempts.set {
+    let max_attempts = config.max_attempts.to_option();
+    if !config.mode_adaptive && max_attempts.is_none() {
         return None;
     }
     let mut out_config = if config.mode_adaptive {
@@ -785,8 +828,8 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
     } else {
         aws_config::retry::RetryConfig::standard()
     };
-    if config.max_attempts.set {
-        out_config = out_config.with_max_attempts(config.max_attempts.value);
+    if let Some(max_attempts) = max_attempts {
+        out_config = out_config.with_max_attempts(max_attempts);
     }
     Some(out_config)
 }
@@ -851,8 +894,8 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
     }
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target supplies a region, the shim MUST apply it to each service client.
-    if input.region.set {
-        builder = builder.region(Region::new(input.region.value.clone()));
+    if let Some(region) = input.region.to_option() {
+        builder = builder.region(Region::new(region));
     }
     Ok(builder.build())
 }
@@ -867,29 +910,26 @@ fn apply_encrypt_options(
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
+    if let Some(max_edks) = input.max_encrypted_data_keys.to_option() {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(max_edks);
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    if input.frame_length.set {
-        core_input.frame_length = make_frame_length(input.frame_length.value)?;
+    if let Some(frame_length) = input.frame_length.to_option() {
+        core_input.frame_length = make_frame_length(frame_length)?;
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+    if let Some(policy) = input.commitment_policy.to_option() {
+        core_input.commitment_policy = commitment_policy_target_to_core(policy)?;
     }
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //# - MUST provide the target-supplied algorithm suite to the core ESDK,
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
-    if input.algorithm_suite_id.set {
-        core_input.algorithm_suite_id =
-            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
+    if let Some(alg_id) = input.algorithm_suite_id.to_option() {
+        core_input.algorithm_suite_id = Some(alg_id_target_to_core(alg_id)?);
     }
     Ok(())
 }
@@ -902,16 +942,14 @@ fn apply_decrypt_options(
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
+    if let Some(max_edks) = input.max_encrypted_data_keys.to_option() {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(max_edks);
     }
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+    if let Some(policy) = input.commitment_policy.to_option() {
+        core_input.commitment_policy = commitment_policy_target_to_core(policy)?;
     }
     Ok(())
 }
@@ -1017,55 +1055,48 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
     let op = "create_keystore";
-    //= spec/shim/esdk-shim.md#create-key-store
-    //# - Creating a key store MUST provide the target-supplied KMS configuration to the
-    //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
-    let kms_configuration =
-        make_kms_config(input.kms_configuration_type, &input.kms_configuration_value)?;
-
-    //= spec/shim/esdk-shim.md#create-key-store
-    //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
-    //# each checked as defined in
-    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
-    //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
-    //# left for the core ESDK to default.
-    //
-    // A null handle means "not supplied": leaving it None makes the core build its
-    // own default client. SAFETY: a non-null handle is a valid client borrowed for
-    // this call.
-    let kms_client = unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone());
-    let ddb_client = unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone());
-
-    let config = KeyStoreConfig {
+    let builder = BranchKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
-        ddb_table_name: input.ddb_table_name.clone(),
-        logical_keystore_name: input.logical_key_store_name.clone(),
-        kms_configuration,
+        .ddb_table_name(input.ddb_table_name.clone())
+        .logical_keystore_name(input.logical_key_store_name.clone())
+        //= spec/shim/esdk-shim.md#create-key-store
+        //# - Creating a key store MUST provide the target-supplied KMS configuration to the
+        //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
+        .kms_configuration(make_kms_config(
+            input.kms_configuration_type,
+            &input.kms_configuration_value,
+        )?)
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied key store id and grant
         //# tokens to the core ESDK when present; an unset value is omitted.
-        id: if input.id.set {
-            Some(input.id.value.clone())
-        } else {
-            None
-        },
-        grant_tokens: if input.grant_tokens.is_empty() {
-            None
-        } else {
-            Some(input.grant_tokens.iter().map(ToString::to_string).collect())
-        },
-        ddb_client,
-        kms_client,
-    };
+        .set_id(input.id.to_option())
+        .set_grant_tokens(non_empty(&input.grant_tokens))
+        //= spec/shim/esdk-shim.md#create-key-store
+        //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+        //# each checked as defined in
+        //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+        //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+        //# left for the core ESDK to default.
+        //
+        // A null handle means "not supplied": leaving it None makes the core build its
+        // own default client. SAFETY: a non-null handle is a valid client borrowed for
+        // this call.
+        .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
+        .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
     let store = TOKIO_RUNTIME
-        .block_on(BranchKeyStore::new(config))
+        .block_on(builder.build())
         .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
     Ok(Box::new(KeyStore {
         inner: store.into(),
     }))
+}
+
+/// An empty target list means no grant tokens were supplied.
+fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
+    (!tokens.is_empty()).then(|| tokens.to_vec())
 }
 
 //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
@@ -1143,20 +1174,16 @@ fn create_hierarchical_keyring(
     //= reason=A Shared CacheType carries an existing cache handle, which make_cache_type converts to the core's Shared cache referencing that exact instance.
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
-    let cache_type = if input.cache.set {
-        Some(make_cache_type(&input.cache.value)?)
-    } else {
-        None
-    };
+    let cache_type = input
+        .cache
+        .to_option()
+        .map(|cache| make_cache_type(&cache))
+        .transpose()?;
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
     //# the core ESDK when present; an unset value is omitted.
-    let partition_id = if input.partition_id.set {
-        Some(input.partition_id.value.clone())
-    } else {
-        None
-    };
+    let partition_id = input.partition_id.to_option();
 
     let keyring = HierarchicalKeyring::new(
         key_store.inner.clone(),
@@ -1393,20 +1420,17 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     let mut core_input = aws_esdk::EncryptStreamInput::new();
     core_input.keyring = Some(keyring.inner.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    if input.algorithm_suite_id.set {
-        core_input.algorithm_suite_id =
-            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
+    if let Some(alg_id) = input.algorithm_suite_id.to_option() {
+        core_input.algorithm_suite_id = Some(alg_id_target_to_core(alg_id)?);
     }
-    if input.frame_length.set {
-        core_input.frame_length = make_frame_length(input.frame_length.value)?;
+    if let Some(frame_length) = input.frame_length.to_option() {
+        core_input.frame_length = make_frame_length(frame_length)?;
     }
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
+    if let Some(max_edks) = input.max_encrypted_data_keys.to_option() {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(max_edks);
     }
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+    if let Some(policy) = input.commitment_policy.to_option() {
+        core_input.commitment_policy = commitment_policy_target_to_core(policy)?;
     }
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
@@ -1442,13 +1466,11 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let mut core_input = aws_esdk::DecryptStreamInput::new();
     core_input.keyring = Some(keyring.inner.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
+    if let Some(max_edks) = input.max_encrypted_data_keys.to_option() {
+        core_input.max_encrypted_data_keys = max_edks_target_to_core(max_edks);
     }
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
+    if let Some(policy) = input.commitment_policy.to_option() {
+        core_input.commitment_policy = commitment_policy_target_to_core(policy)?;
     }
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
