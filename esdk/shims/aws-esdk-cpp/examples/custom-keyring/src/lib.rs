@@ -13,7 +13,7 @@ const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 /// Step 2: define your keyring.
 ///
 /// TODO: provide custom implementations of the Keyring interface's methods
-fn build_keyring() -> Result<aws_crypto_mpl::keyring::RawAesKeyring, Box<dyn std::error::Error>> {
+fn build_keyring() -> Result<impl aws_esdk::Keyring, Box<dyn std::error::Error>> {
     Ok(aws_crypto_mpl::keyring::RawAesKeyring::new(
         "custom-keyring-example",
         "demo-key",
