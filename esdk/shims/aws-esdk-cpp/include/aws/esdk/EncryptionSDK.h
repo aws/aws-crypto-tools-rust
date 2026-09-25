@@ -428,6 +428,7 @@ public:
     EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Key-value pairs to associate with the encrypted data.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#encryption-context>
+    /// Keys and values must be valid UTF-8; encrypt throws ValidationException otherwise.
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
@@ -449,6 +450,7 @@ public:
     /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
     DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
+    /// Keys and values must be valid UTF-8; decrypt throws ValidationException otherwise.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// 0 means no limit.
     DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }

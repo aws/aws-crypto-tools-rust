@@ -286,6 +286,38 @@ void test_client_configuration() {
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
 }
 
+void test_non_utf8_input_throws_validation() {
+    const std::string invalid = "\xff\xfe";
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> bad_key{{invalid, "value"}};
+    const std::map<std::string, std::string> bad_value{{"key", invalid}};
+
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      sdk.encrypt(to_bytes("pt"), keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_key)));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      sdk.encrypt(to_bytes("pt"), keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_value)));
+
+    auto ciphertext = sdk.encrypt(to_bytes("pt"), keyring).ciphertext;
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      sdk.decrypt(ciphertext, keyring,
+                                  Aws::Esdk::DecryptOptions().with_encryption_context(bad_key)));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      sdk.decrypt(ciphertext, keyring,
+                                  Aws::Esdk::DecryptOptions().with_encryption_context(bad_value)));
+
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::ClientConfig().with_region(invalid));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::RawAesKeyring(
+                          invalid, "test-key", key,
+                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
+}
+
 // String-view and Bytes ergonomics for non-std::vector input/output types
 void test_bytes_and_string_ergonomics() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -699,6 +731,7 @@ int main(int argc, char** argv) {
         test_keystore_rejects_short_table_name();
         test_error_kinds();
         test_client_configuration();
+        test_non_utf8_input_throws_validation();
         test_bytes_and_string_ergonomics();
         test_streaming();
         test_streaming_signed_message_refused();
