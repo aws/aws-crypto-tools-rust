@@ -403,6 +403,33 @@ mod ffi {
     }
 }
 
+// `ffi::CacheType` holds only `Copy` fields. `Clone` is implemented here, not
+// derived in the bridge, so the bridge is unchanged.
+impl Clone for ffi::CacheType {
+    fn clone(&self) -> Self {
+        Self { ..*self }
+    }
+}
+
+macro_rules! opt_to_option {
+    ($($opt:ident => $t:ty),* $(,)?) => {$(
+        impl ffi::$opt {
+            /// `Some(value)` when `set` is true, else `None`.
+            fn to_option(&self) -> Option<$t> {
+                self.set.then(|| self.value.clone())
+            }
+        }
+    )*};
+}
+
+opt_to_option!(
+    OptU32 => u32,
+    OptString => String,
+    OptAlgId => ffi::EsdkAlgorithmSuiteId,
+    OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
+    OptCacheType => ffi::CacheType,
+);
+
 // Resources
 
 struct MplKmsClient {
@@ -457,6 +484,12 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
 }
 
 /// Validates a C++-supplied resource handle, then borrows the resource behind it.
+/// Map a core input builder's `build()` error through the shim's error
+/// translation.
+fn build_core_input<T>(built: Result<T, aws_esdk::Error>, operation: &str) -> Result<T, String> {
+    built.map_err(|e| shim_err(classify_core_error(&e.kind), operation, e))
+}
+
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
     // Only validation right now is null-checking; could be extended in future (ex. method/field checks)
     //= spec/shim/shim.md#handles-and-lifetimes
@@ -851,69 +884,86 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
     }
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target supplies a region, the shim MUST apply it to each service client.
-    if input.region.set {
-        builder = builder.region(Region::new(input.region.value.clone()));
+    if let Some(region) = input.region.to_option() {
+        builder = builder.region(Region::new(region));
     }
     Ok(builder.build())
 }
 
 // ESDK/MPL Client Operations
 
-fn apply_encrypt_options(
-    core_input: &mut aws_esdk::EncryptInput<'_>,
+fn apply_encrypt_options<'a>(
+    builder: aws_esdk::EncryptInputBuilder<'a>,
     input: &ffi::EncryptInput<'_>,
-) -> Result<(), String> {
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-    //# the core ESDK, converted as defined in
-    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
-    }
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied frame length to the core ESDK,
-    //# converted as defined in [Frame length](#frame-length).
-    if input.frame_length.set {
-        core_input.frame_length = make_frame_length(input.frame_length.value)?;
-    }
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied commitment policy to the core ESDK,
-    //# converted as defined in [Commitment policy](#commitment-policy).
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
-    }
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
-    //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
-    if input.algorithm_suite_id.set {
-        core_input.algorithm_suite_id =
-            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
-    }
-    Ok(())
+) -> Result<aws_esdk::EncryptInputBuilder<'a>, String> {
+    Ok(builder
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+        //# the core ESDK, converted as defined in
+        //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+        .set_max_encrypted_data_keys(
+            input
+                .max_encrypted_data_keys
+                .to_option()
+                .and_then(max_edks_target_to_core),
+        )
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST provide the target-supplied frame length to the core ESDK,
+        //# converted as defined in [Frame length](#frame-length).
+        .set_frame_length(
+            input
+                .frame_length
+                .to_option()
+                .map(make_frame_length)
+                .transpose()?,
+        )
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST provide the target-supplied commitment policy to the core ESDK,
+        //# converted as defined in [Commitment policy](#commitment-policy).
+        .set_commitment_policy(
+            input
+                .commitment_policy
+                .to_option()
+                .map(commitment_policy_target_to_core)
+                .transpose()?,
+        )
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST provide the target-supplied algorithm suite to the core ESDK,
+        //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
+        .set_algorithm_suite_id(
+            input
+                .algorithm_suite_id
+                .to_option()
+                .map(alg_id_target_to_core)
+                .transpose()?,
+        ))
 }
 
-fn apply_decrypt_options(
-    core_input: &mut aws_esdk::DecryptInput<'_>,
+fn apply_decrypt_options<'a>(
+    builder: aws_esdk::DecryptInputBuilder<'a>,
     input: &ffi::DecryptInput<'_>,
-) -> Result<(), String> {
-    //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-    //# the core ESDK, converted as defined in
-    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
-    }
-    //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - MUST provide the target-supplied commitment policy to the core ESDK,
-    //# converted as defined in [Commitment policy](#commitment-policy).
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
-    }
-    Ok(())
+) -> Result<aws_esdk::DecryptInputBuilder<'a>, String> {
+    Ok(builder
+        //= spec/shim/esdk-shim.md#decrypt-inputs
+        //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+        //# the core ESDK, converted as defined in
+        //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+        .set_max_encrypted_data_keys(
+            input
+                .max_encrypted_data_keys
+                .to_option()
+                .and_then(max_edks_target_to_core),
+        )
+        //= spec/shim/esdk-shim.md#decrypt-inputs
+        //# - MUST provide the target-supplied commitment policy to the core ESDK,
+        //# converted as defined in [Commitment policy](#commitment-policy).
+        .set_commitment_policy(
+            input
+                .commitment_policy
+                .to_option()
+                .map(commitment_policy_target_to_core)
+                .transpose()?,
+        ))
 }
 
 fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
@@ -922,21 +972,23 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     //# materials source is supplied.
     let keyring = require_handle(input.keyring, "keyring", "encrypt")?;
 
-    let mut core_input = aws_esdk::EncryptInput::new();
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
-    core_input.plaintext = input.plaintext;
-    //= spec/shim/esdk-shim.md#encrypt-inputs
-    //# - MUST provide the target-supplied encryption context to the core ESDK,
-    //# converted as defined in [Encryption context](#encryption-context).
-    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    //= spec/shim/esdk-shim.md#materials-source
-    //= type=implication
-    //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
-    //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
-    //# source (see [Resources](#resources)).
-    core_input.keyring = Some(keyring.inner.clone());
-    apply_encrypt_options(&mut core_input, input)?;
+    let builder = aws_esdk::EncryptInput::builder()
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
+        .plaintext(input.plaintext)
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST provide the target-supplied encryption context to the core ESDK,
+        //# converted as defined in [Encryption context](#encryption-context).
+        .encryption_context(encryption_context_target_to_core(
+            &input.encryption_context,
+        )?)
+        //= spec/shim/esdk-shim.md#materials-source
+        //= type=implication
+        //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
+        //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
+        //# source (see [Resources](#resources)).
+        .keyring(keyring.inner.clone());
+    let core_input = build_core_input(apply_encrypt_options(builder, input)?.build(), "encrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
     let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt", e))?;
     Ok(ffi::EncryptOutput {
@@ -960,16 +1012,18 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     //# materials source is supplied.
     let keyring = require_handle(input.keyring, "keyring", "decrypt")?;
 
-    let mut core_input = aws_esdk::DecryptInput::new();
-    //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
-    core_input.ciphertext = input.ciphertext;
-    //= spec/shim/esdk-shim.md#decrypt-inputs
-    //# - MUST provide the target-supplied encryption context to the core ESDK,
-    //# converted as defined in [Encryption context](#encryption-context).
-    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    core_input.keyring = Some(keyring.inner.clone());
-    apply_decrypt_options(&mut core_input, input)?;
+    let builder = aws_esdk::DecryptInput::builder()
+        //= spec/shim/esdk-shim.md#decrypt-inputs
+        //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
+        .ciphertext(input.ciphertext)
+        //= spec/shim/esdk-shim.md#decrypt-inputs
+        //# - MUST provide the target-supplied encryption context to the core ESDK,
+        //# converted as defined in [Encryption context](#encryption-context).
+        .encryption_context(encryption_context_target_to_core(
+            &input.encryption_context,
+        )?)
+        .keyring(keyring.inner.clone());
+    let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
     let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt", e))?;
     Ok(ffi::DecryptOutput {
@@ -1046,11 +1100,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied key store id and grant
         //# tokens to the core ESDK when present; an unset value is omitted.
-        id: if input.id.set {
-            Some(input.id.value.clone())
-        } else {
-            None
-        },
+        id: input.id.to_option(),
         grant_tokens: if input.grant_tokens.is_empty() {
             None
         } else {
@@ -1143,20 +1193,16 @@ fn create_hierarchical_keyring(
     //= reason=A Shared CacheType carries an existing cache handle, which make_cache_type converts to the core's Shared cache referencing that exact instance.
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
-    let cache_type = if input.cache.set {
-        Some(make_cache_type(&input.cache.value)?)
-    } else {
-        None
-    };
+    let cache_type = input
+        .cache
+        .to_option()
+        .map(|cache| make_cache_type(&cache))
+        .transpose()?;
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
     //# the core ESDK when present; an unset value is omitted.
-    let partition_id = if input.partition_id.set {
-        Some(input.partition_id.value.clone())
-    } else {
-        None
-    };
+    let partition_id = input.partition_id.to_option();
 
     let keyring = HierarchicalKeyring::new(
         key_store.inner.clone(),
@@ -1390,24 +1436,40 @@ struct DecryptStream {
 //# target supplies incrementally.
 fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
-    let mut core_input = aws_esdk::EncryptStreamInput::new();
-    core_input.keyring = Some(keyring.inner.clone());
-    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    if input.algorithm_suite_id.set {
-        core_input.algorithm_suite_id =
-            Some(alg_id_target_to_core(input.algorithm_suite_id.value)?);
-    }
-    if input.frame_length.set {
-        core_input.frame_length = make_frame_length(input.frame_length.value)?;
-    }
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
-    }
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
-    }
+    let core_input = aws_esdk::EncryptStreamInput::builder()
+        .keyring(keyring.inner.clone())
+        .encryption_context(encryption_context_target_to_core(
+            &input.encryption_context,
+        )?)
+        .set_algorithm_suite_id(
+            input
+                .algorithm_suite_id
+                .to_option()
+                .map(alg_id_target_to_core)
+                .transpose()?,
+        )
+        .set_frame_length(
+            input
+                .frame_length
+                .to_option()
+                .map(make_frame_length)
+                .transpose()?,
+        )
+        .set_max_encrypted_data_keys(
+            input
+                .max_encrypted_data_keys
+                .to_option()
+                .and_then(max_edks_target_to_core),
+        )
+        .set_commitment_policy(
+            input
+                .commitment_policy
+                .to_option()
+                .map(commitment_policy_target_to_core)
+                .transpose()?,
+        )
+        .build();
+    let core_input = build_core_input(core_input, "encrypt_stream")?;
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1439,17 +1501,26 @@ fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<ffi::StreamFinish
 
 fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
-    let mut core_input = aws_esdk::DecryptStreamInput::new();
-    core_input.keyring = Some(keyring.inner.clone());
-    core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    if input.max_encrypted_data_keys.set {
-        core_input.max_encrypted_data_keys =
-            max_edks_target_to_core(input.max_encrypted_data_keys.value);
-    }
-    if input.commitment_policy.set {
-        core_input.commitment_policy =
-            commitment_policy_target_to_core(input.commitment_policy.value)?;
-    }
+    let core_input = aws_esdk::DecryptStreamInput::builder()
+        .keyring(keyring.inner.clone())
+        .encryption_context(encryption_context_target_to_core(
+            &input.encryption_context,
+        )?)
+        .set_max_encrypted_data_keys(
+            input
+                .max_encrypted_data_keys
+                .to_option()
+                .and_then(max_edks_target_to_core),
+        )
+        .set_commitment_policy(
+            input
+                .commitment_policy
+                .to_option()
+                .map(commitment_policy_target_to_core)
+                .transpose()?,
+        )
+        .build();
+    let core_input = build_core_input(core_input, "decrypt_stream")?;
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME

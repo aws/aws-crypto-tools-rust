@@ -155,11 +155,13 @@ async fn custom_keyring_round_trips_via_public_api() {
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.
-    let out = encrypt(&EncryptInput::with_keyring(
-        plaintext,
-        EncryptionContext::new(),
-        keyring.clone(),
-    ))
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(plaintext)
+            .keyring(keyring.clone())
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
 
@@ -172,11 +174,13 @@ async fn custom_keyring_round_trips_via_public_api() {
     );
 
     // Decrypt back through the same keyring.
-    let dec = decrypt(&DecryptInput::with_keyring(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        keyring,
-    ))
+    let dec = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
     assert_eq!(dec.plaintext, plaintext);
@@ -185,21 +189,25 @@ async fn custom_keyring_round_trips_via_public_api() {
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_wrong_kek_fails_decrypt() {
     let enc_keyring = LocalKekKeyring { kek: [7u8; 32] };
-    let out = encrypt(&EncryptInput::with_keyring(
-        b"wrong kek must fail",
-        EncryptionContext::new(),
-        enc_keyring,
-    ))
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"wrong kek must fail")
+            .keyring(enc_keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
 
     // A keyring with a different KEK cannot unwrap the data key.
     let wrong_keyring = LocalKekKeyring { kek: [8u8; 32] };
-    let err = decrypt(&DecryptInput::with_keyring(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        wrong_keyring,
-    ))
+    let err = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(wrong_keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .expect_err("decrypt under a different KEK must fail");
     assert!(

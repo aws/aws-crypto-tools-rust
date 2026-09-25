@@ -66,7 +66,6 @@ struct EncryptionMaterialsResult {
 /// # Errors
 ///
 /// Returns an error if:
-/// - No keyring or CMM is provided (input validation fails)
 /// - The encryption context contains keys with the reserved `aws-crypto-` prefix
 /// - The algorithm suite is incompatible with the commitment policy
 /// - Encryption materials cannot be obtained from the CMM
@@ -76,8 +75,6 @@ struct EncryptionMaterialsResult {
 //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
 //# that adheres to [encrypt](./encrypt.md).
 pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
-    input.validate()?;
-
     let mut cursor = std::io::Cursor::new(input.plaintext);
 
     let total_size = estimated_ciphertext_capacity(input.plaintext.len(), input.frame_length);
@@ -86,7 +83,7 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
         &mut cursor,
         &mut ciphertext,
         Some(input.plaintext.len()),
-        input.material_source(),
+        input.material_source.clone(),
         &input.encryption_context,
         input.algorithm_suite_id,
         input.frame_length,
@@ -120,7 +117,6 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 /// # Errors
 ///
 /// Returns an error if:
-/// - No keyring or CMM is provided (input validation fails)
 /// - The encryption context contains keys with the reserved `aws-crypto-` prefix
 /// - The algorithm suite is incompatible with the commitment policy
 /// - Encryption materials cannot be obtained from the CMM
@@ -151,13 +147,11 @@ pub async fn encrypt_stream(
     ciphertext: &mut dyn SafeWrite,
     input: &EncryptStreamInput,
 ) -> Result<EncryptStreamOutput, Error> {
-    input.validate()?;
-
     internal_encrypt(
         plaintext,
         ciphertext,
         input.data_size,
-        input.material_source(),
+        input.material_source.clone(),
         &input.encryption_context,
         input.algorithm_suite_id,
         input.frame_length,
@@ -173,7 +167,7 @@ async fn internal_encrypt(
     // ciphertext is the output buffer for this function
     ciphertext: &mut dyn SafeWrite,
     plaintext_len: Option<usize>,
-    input_source: Option<MaterialSource>,
+    input_source: MaterialSource,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     frame_length: FrameLength,
@@ -304,7 +298,7 @@ async fn internal_encrypt(
 /// materials from the CMM, validates EDK count, generates a message ID, and derives keys.
 async fn step_get_encryption_materials(
     plaintext_len: Option<usize>,
-    input_source: Option<MaterialSource>,
+    input_source: MaterialSource,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
@@ -312,7 +306,7 @@ async fn step_get_encryption_materials(
 ) -> Result<EncryptionMaterialsResult, Error> {
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The CMM used MUST be the input CMM, if supplied.
-    let cmm = materials::create_cmm_from_input(input_source)?;
+    let cmm = materials::create_cmm_from_input(input_source);
 
     //= spec/client-apis/encrypt.md#algorithm-suite
     //# The [algorithm suite](../framework/algorithm-suites.md) that MUST be used for encryption.

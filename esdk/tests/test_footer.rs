@@ -192,7 +192,11 @@ async fn test_unrecognized_algorithm_suite_errors() {
         ct[suite_offset] = 0xFF;
         ct[suite_offset + 1] = 0xFF;
         let keyring = test_keyring().await;
-        let dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
+        let dec_input = DecryptInput::builder()
+            .ciphertext(&ct)
+            .keyring(keyring)
+            .build()
+            .unwrap();
         let err = decrypt(&dec_input).await.unwrap_err();
 
         assert!(
