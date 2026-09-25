@@ -18,6 +18,9 @@ pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 
 use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
 
+/// The interface every CMM implements.
+///
+/// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
 pub trait Cmm: Send + Sync {
     /// Assemble encryption materials for an encrypt request. Mirrors the
@@ -38,12 +41,15 @@ pub trait Cmm: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// An owned handle to some [`Cmm`].
+    /// A CMM whose concrete type is not known at compile time.
     ///
-    /// `Cmm` is the trait a CMM implements.
-    /// `SharedCmm` is how an API accepts and stores one without knowing its concrete type.
-    /// Every API that accepts a CMM takes `impl Into<SharedCmm>`,
-    /// so pass a concrete CMM, an `Arc` of one, or an existing handle.
+    /// [`Cmm`] is the trait a CMM implements.
+    /// `SharedCmm` holds any value that implements it.
+    /// APIs that accept a CMM take `impl Into<SharedCmm>`,
+    /// so callers usually pass the concrete CMM and never name this type.
+    ///
+    /// Name it when your own variable, field, or collection must hold
+    /// a CMM chosen at runtime, e.g. from configuration.
     SharedCmm,
     Cmm
 );

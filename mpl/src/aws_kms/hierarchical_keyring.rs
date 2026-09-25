@@ -89,6 +89,8 @@ impl GetBranchKeyIdOutput {
 /// synchronous. An implementation that must perform IO to reach its answer is
 /// responsible for bridging to it itself (for example
 /// `tokio::task::block_in_place`).
+///
+/// To hold a supplier whose concrete type is chosen at runtime, use [`SharedBranchKeySupplier`].
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
     fn get_branch_key_id(
@@ -98,10 +100,15 @@ pub trait BranchKeySupplier: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// An owned handle to some [`BranchKeySupplier`].
+    /// A branch key supplier whose concrete type is not known at compile time.
     ///
-    /// `BranchKeySupplier` is the trait a branch key supplier implements.
-    /// `SharedBranchKeySupplier` is how an API accepts and stores one without knowing its concrete type.
+    /// [`BranchKeySupplier`] is the trait a branch key supplier implements.
+    /// `SharedBranchKeySupplier` holds any value that implements it.
+    /// APIs that accept a branch key supplier take `impl Into<SharedBranchKeySupplier>`,
+    /// so callers usually pass the concrete branch key supplier and never name this type.
+    ///
+    /// Name it when your own variable, field, or collection must hold
+    /// a branch key supplier chosen at runtime, e.g. from configuration.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
