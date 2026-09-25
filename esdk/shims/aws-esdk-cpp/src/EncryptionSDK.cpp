@@ -330,10 +330,23 @@ Keyring Keyring::adopt(void* raw_handle) {
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
 
+namespace detail {
+// Split a C++ duration into the bridge's seconds + nanoseconds pair.
+::ffi::Duration to_ffi(std::chrono::nanoseconds d) {
+    if (d.count() < 0) {
+        throw ValidationException("HierarchicalKeyring TTL must not be negative");
+    }
+    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(d);
+    return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
+                           static_cast<std::uint32_t>((d - secs).count())};
+}
+}  // namespace detail
+
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
-                                         std::uint32_t ttl_seconds,
-                                         const HierarchicalKeyringOptions& options)
+                                         std::chrono::nanoseconds ttl,
+                                         const HierarchicalKeyringOptions& options,
+                                         Tag)
     : Keyring(std::make_shared<detail::KeyringImpl>(
           (options.cache_ && options.cache_->shared_)
               ? detail::Retained{key_store.impl_, options.cache_->shared_}
@@ -342,7 +355,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
               ::ffi::HierarchicalKeyringInput in{};
               in.branch_key_id = ::rust::String(branch_key_id);
               in.key_store = &*key_store.impl_->handle;
-              in.ttl_seconds = ttl_seconds;
+              in.ttl = detail::to_ffi(ttl);
               in.partition_id = detail::to_opt(options.partition_id_);
               in.cache = options.cache_
                              ? ::ffi::OptCacheType{true,

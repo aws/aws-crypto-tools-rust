@@ -91,7 +91,7 @@ fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::new(),
         key_store: std::ptr::null(),
-        ttl_seconds: 0,
+        ttl: ffi::Duration { secs: 0, nanos: 0 },
         cache: unset_cache(),
         partition_id: unset_string(),
     }
@@ -516,6 +516,61 @@ fn create_hierarchical_keyring_reports_bad_cache() {
     let err = expect_err(create_hierarchical_keyring(&input));
     assert!(
         err.contains("unrecognized or unset cache kind"),
+        "unexpected error: {err}"
+    );
+}
+
+fn hierarchical_keyring_input_with_ttl(
+    keystore: &KeyStore,
+    ttl: ffi::Duration,
+) -> ffi::HierarchicalKeyringInput {
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = keystore as *const KeyStore;
+    input.branch_key_id = "branch-key-id".to_string();
+    input.ttl = ttl;
+    input
+}
+
+#[test]
+fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
+        &keystore,
+        ffi::Duration {
+            secs: 600,
+            nanos: 0,
+        },
+    ))
+    .expect("a whole-second TTL must be accepted");
+
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(
+            &keystore,
+            ffi::Duration {
+                secs: 1,
+                nanos: 500_000_000,
+            },
+        ),
+    ));
+    assert!(
+        err.contains("whole number of seconds"),
+        "unexpected error: {err}"
+    );
+
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(
+            &keystore,
+            ffi::Duration {
+                secs: u64::MAX,
+                nanos: 1_000_000_000,
+            },
+        ),
+    ));
+    assert!(
+        err.contains("ttl is out of range"),
         "unexpected error: {err}"
     );
 }
