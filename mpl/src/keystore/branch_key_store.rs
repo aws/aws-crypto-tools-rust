@@ -58,8 +58,6 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 /// at construction time and resolves the optional caller-supplied
 /// `id` against a freshly-generated v4 UUID per
 /// `branch-key-store.md#keystore-id`.
-///
-/// Cloning is cheap and the clone shares state with the original.
 #[derive(Clone)]
 pub struct BranchKeyStore {
     inner: Arc<BranchKeyStoreInner>,

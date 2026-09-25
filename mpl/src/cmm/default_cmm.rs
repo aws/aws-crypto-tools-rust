@@ -49,8 +49,6 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///   context contains the reserved `aws-crypto-public-key`.
 /// - Calls the wrapped keyring's `on_decrypt` to populate the plaintext data
 ///   key.
-///
-/// Cloning is cheap and the clone shares state with the original.
 #[derive(Clone)]
 pub struct DefaultCmm {
     keyring: SharedKeyring,

@@ -149,12 +149,16 @@ pub trait Cmc: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A shared handle to any [`Cmc`].
+    /// An owned handle to some [`Cmc`].
     ///
-    /// Every API that accepts a cache takes `impl Into<SharedCmc>`, so a
-    /// concrete cache, an `Arc` of one, or an existing handle can be passed.
-    /// Cloning is cheap: the clone shares the same cache instance, so entries
-    /// put through one handle are visible through every other.
+    /// `Cmc` is the trait a cache implements.
+    /// `SharedCmc` is how an API accepts and stores one without knowing its concrete type.
+    /// Every API that accepts a cache takes `impl Into<SharedCmc>`,
+    /// so pass a concrete cache, an `Arc` of one, or an existing handle.
+    ///
+    /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
+    /// Give several keyrings clones of one handle through [`CacheType::Shared`]
+    /// and they read and write the same entries.
     SharedCmc,
     Cmc
 );

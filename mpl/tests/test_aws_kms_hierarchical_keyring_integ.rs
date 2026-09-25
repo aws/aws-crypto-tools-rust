@@ -455,8 +455,8 @@ fn shared_cache_materials() -> EncryptionMaterials {
     fresh_materials()
 }
 
-/// Build a fresh `LocalCmc` handle, suitable for constructing a
-/// `CacheType::Shared` for each of HK1 and HK2.
+/// Build a fresh `LocalCmc`,
+/// suitable for constructing a `CacheType::Shared` for each of HK1 and HK2.
 fn shared_cache() -> SharedCmc {
     aws_crypto_mpl::LocalCmc::new(100, 50).unwrap().into()
 }

@@ -97,14 +97,20 @@ pub trait BranchKeySupplier: Send + Sync {
     ) -> Result<GetBranchKeyIdOutput, MaterialsError>;
 }
 
+crate::shared::shared_handle!(
+    /// An owned handle to some [`BranchKeySupplier`].
+    ///
+    /// `BranchKeySupplier` is the trait a branch key supplier implements.
+    /// `SharedBranchKeySupplier` is how an API accepts and stores one without knowing its concrete type.
+    SharedBranchKeySupplier,
+    BranchKeySupplier
+);
+
 /// AWS KMS Hierarchical Keyring.
 ///
 /// See [`HierarchicalKeyring::builder`] for construction. The [`Keyring`]
 /// impl wires the configured cache and keystore into the OnEncrypt /
 /// OnDecrypt algorithms.
-///
-/// Cloning is cheap and the clone shares state with the original, including
-/// its branch-key cache.
 #[derive(Clone)]
 pub struct HierarchicalKeyring {
     inner: Arc<HierarchicalKeyringInner>,
@@ -124,7 +130,7 @@ struct HierarchicalKeyringInner {
 
     /// The supplier that chooses a branch key id per operation, when
     /// configured with one instead of a static `branch_key_id`.
-    branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
+    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
 
     partition_id_bytes: Vec<u8>,
 
@@ -160,7 +166,7 @@ impl HierarchicalKeyring {
 
     /// The configured branch key id supplier, if this keyring was built with
     /// one rather than with a static branch key id.
-    pub fn branch_key_id_supplier(&self) -> Option<&Arc<dyn BranchKeySupplier>> {
+    pub fn branch_key_id_supplier(&self) -> Option<&SharedBranchKeySupplier> {
         self.inner.branch_key_id_supplier.as_ref()
     }
 
@@ -201,7 +207,7 @@ pub struct HierarchicalKeyringBuilder {
     key_store: Option<SharedKeystore>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
-    branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
+    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
     cache: Option<CacheType>,
     partition_id: Option<String>,
 }
@@ -243,8 +249,8 @@ impl HierarchicalKeyringBuilder {
     /// A supplier that chooses the branch key id per operation. Set this or
     /// [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
-    pub fn branch_key_id_supplier(mut self, supplier: Arc<dyn BranchKeySupplier>) -> Self {
-        self.branch_key_id_supplier = Some(supplier);
+    pub fn branch_key_id_supplier(mut self, supplier: impl Into<SharedBranchKeySupplier>) -> Self {
+        self.branch_key_id_supplier = Some(supplier.into());
         self
     }
 

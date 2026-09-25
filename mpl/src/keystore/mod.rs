@@ -74,11 +74,12 @@ pub trait Keystore: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A shared handle to any [`Keystore`].
+    /// An owned handle to some [`Keystore`].
     ///
-    /// Every API that accepts a keystore takes `impl Into<SharedKeystore>`, so
-    /// a concrete keystore, an `Arc` of one, or an existing handle can be
-    /// passed. Cloning is cheap: the clone shares the same keystore instance.
+    /// `Keystore` is the trait a keystore implements.
+    /// `SharedKeystore` is how an API accepts and stores one without knowing its concrete type.
+    /// Every API that accepts a keystore takes `impl Into<SharedKeystore>`,
+    /// so pass a concrete keystore, an `Arc` of one, or an existing handle.
     SharedKeystore,
     Keystore
 );

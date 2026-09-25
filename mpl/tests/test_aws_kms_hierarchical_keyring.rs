@@ -144,9 +144,7 @@ fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("branch-key-id")
-        .branch_key_id_supplier(
-            Arc::new(FixedBranchKeySupplier("unused")) as Arc<dyn BranchKeySupplier>
-        )
+        .branch_key_id_supplier(FixedBranchKeySupplier("unused"))
         .build()
     {
         Err(e) => e,
@@ -398,8 +396,7 @@ fn build_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
-    let supplier: Arc<dyn BranchKeySupplier> =
-        Arc::new(FixedBranchKeySupplier("branch-id-from-supplier"));
+    let supplier = FixedBranchKeySupplier("branch-id-from-supplier");
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
@@ -1593,9 +1590,7 @@ mod onencrypt {
         let keyring = HierarchicalKeyring::builder()
             .key_store(Arc::clone(&keystore))
             .ttl(Duration::from_secs(3600))
-            .branch_key_id_supplier(
-                Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID)) as Arc<dyn BranchKeySupplier>
-            )
+            .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
             .cache(CacheType::Default(DefaultCache::new(1000)))
             .build()
             .unwrap();
@@ -2084,9 +2079,7 @@ mod ondecrypt {
         let keyring = HierarchicalKeyring::builder()
             .key_store(Arc::clone(&keystore))
             .ttl(Duration::from_secs(3600))
-            .branch_key_id_supplier(
-                Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID)) as Arc<dyn BranchKeySupplier>
-            )
+            .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
             .cache(CacheType::Default(DefaultCache::new(1000)))
             .partition_id("partition-id")
             .build()
