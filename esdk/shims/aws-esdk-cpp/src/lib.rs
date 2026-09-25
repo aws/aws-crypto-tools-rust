@@ -133,7 +133,7 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration};
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
+use aws_crypto_mpl::structures::{Esdk as EsdkCommitmentPolicy, EsdkAlgorithmSuiteId};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -480,8 +480,8 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
 //# algorithm suite that has the same two-byte ID.
-fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<AlgorithmSuiteId, String> {
-    use AlgorithmSuiteId as Core;
+fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<EsdkAlgorithmSuiteId, String> {
+    use EsdkAlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Target::AlgAes128GcmIv12Tag16NoKdf => Ok(Core::AlgAes128GcmIv12Tag16NoKdf),
@@ -518,8 +518,8 @@ fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<AlgorithmSuiteI
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
-fn alg_id_core_to_target(e: AlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
-    use AlgorithmSuiteId as Core;
+fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
+    use EsdkAlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Core::AlgAes128GcmIv12Tag16NoKdf => Ok(Target::AlgAes128GcmIv12Tag16NoKdf),

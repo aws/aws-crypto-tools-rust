@@ -158,7 +158,7 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn alg_id_target_to_core_maps_each_repr_to_matching_variant() {
-    use super::AlgorithmSuiteId as C;
+    use super::EsdkAlgorithmSuiteId as C;
     let pairs: [(u16, C); 11] = [
         (0x0014, C::AlgAes128GcmIv12Tag16NoKdf),
         (0x0046, C::AlgAes192GcmIv12Tag16NoKdf),
@@ -196,7 +196,7 @@ fn alg_id_target_to_core_rejects_unknown() {
 // the new id falls through to the error arm of `alg_id_core_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
-    for &core in super::AlgorithmSuiteId::ALL {
+    for &core in super::EsdkAlgorithmSuiteId::ALL {
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
         //= type=test
         //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
