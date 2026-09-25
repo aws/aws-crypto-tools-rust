@@ -53,8 +53,8 @@ const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 /// AES-GCM encryption of the plaintext data key using the serialized
 /// encryption context as additional authenticated data.
 ///
-/// Cloning is cheap and the clone shares state with the original. The wrapping
-/// key is held once, not copied per clone.
+/// Cloning is cheap and the clone shares state with the original.
+/// The wrapping key is held once, not copied per clone.
 #[derive(Clone)]
 pub struct RawAesKeyring {
     inner: Arc<RawAesKeyringInner>,

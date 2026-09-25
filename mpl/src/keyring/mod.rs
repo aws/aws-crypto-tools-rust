@@ -42,8 +42,8 @@ pub trait Keyring: Send + Sync {
 crate::shared::shared_handle!(
     /// A shared handle to any [`Keyring`].
     ///
-    /// Every API that accepts a keyring takes `impl Into<SharedKeyring>`, so a
-    /// concrete keyring, an `Arc` of one, or an existing handle can be passed.
+    /// Every API that accepts a keyring takes `impl Into<SharedKeyring>`.
+    /// Pass a concrete keyring, an `Arc` of one, or an existing handle.
     /// Cloning is cheap: the clone shares the same keyring instance.
     SharedKeyring,
     Keyring

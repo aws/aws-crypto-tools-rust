@@ -40,8 +40,9 @@ fn cache() -> LocalCmc {
 }
 
 /// Asserts the three `Arc`-reusing conversions of one handle type:
-/// from `Arc<T>`, from `Arc<dyn Trait>`, and from an existing handle passed
-/// where `impl Into<Handle>` is accepted.
+/// - from `Arc<T>`
+/// - from `Arc<dyn Trait>`
+/// - from an existing handle, passed where `impl Into<Handle>` is accepted
 macro_rules! assert_reuses_arc {
     ($handle:ident, $trait:ident, $make:expr) => {{
         fn into_handle(component: impl Into<$handle>) -> $handle {

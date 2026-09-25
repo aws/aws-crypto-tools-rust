@@ -132,20 +132,20 @@ impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
 /// Algorithm suite identifiers for the ESDK.
 pub use aws_crypto_mpl::structures::AlgorithmSuiteId as EsdkAlgorithmSuiteId;
 
-/// The Material Providers Library's shared keyring handle, re-exported. The
-/// `keyring` input of every operation holds one.
+/// The Material Providers Library's shared keyring handle, re-exported.
+/// The `keyring` input of every operation holds one.
 pub use aws_crypto_mpl::keyring::SharedKeyring;
 
-/// The Material Providers Library's shared CMM handle, re-exported. The `cmm`
-/// input of every operation holds one.
+/// The Material Providers Library's shared CMM handle, re-exported.
+/// The `cmm` input of every operation holds one.
 pub use aws_crypto_mpl::cmm::SharedCmm;
 
-/// The Material Providers Library's keyring trait, re-exported. Implement it
-/// to supply a custom keyring.
+/// The Material Providers Library's keyring trait, re-exported.
+/// Implement it to supply a custom keyring.
 pub use aws_crypto_mpl::keyring::Keyring;
 
-/// The Material Providers Library's CMM trait, re-exported. Implement it to
-/// supply a custom CMM.
+/// The Material Providers Library's CMM trait, re-exported.
+/// Implement it to supply a custom CMM.
 pub use aws_crypto_mpl::cmm::Cmm;
 
 /// Key-Value pairs to associate with the encrypted data.

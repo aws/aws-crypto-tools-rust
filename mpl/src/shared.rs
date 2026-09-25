@@ -3,14 +3,14 @@
 
 //! Generator for the `Shared*` handles over the pluggable-component traits.
 //!
-//! One macro defines all four handles so their conversions and trait impls
-//! stay identical.
+//! One macro defines all four handles,
+//! so their conversions and trait impls stay identical.
 
 /// Define a cheaply-cloneable handle `$name` around `Arc<dyn $trait>`.
 ///
-/// The handle deliberately does not implement `$trait`: that would make the
-/// blanket `From<T: $trait>` overlap with the standard library's reflexive
-/// `From<$name> for $name`.
+/// The handle deliberately does not implement `$trait`.
+/// If it did, the blanket `From<T: $trait>` would overlap
+/// with the standard library's reflexive `From<$name> for $name`.
 macro_rules! shared_handle {
     ($(#[$meta:meta])* $name:ident, $trait:ident) => {
         $(#[$meta])*
