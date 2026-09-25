@@ -9,14 +9,60 @@ use std::fmt;
 // Algorithm suite ID enum
 // ============================================================================
 
-/// Identifies an algorithm suite supported by this Material Providers Library.
+/// Union Algorithm Suite ENUM across all supported formats.
 ///
-/// This enum exposes only the ESDK supported formats; DBE and S3EC suites are
-/// not implemented (see the `type=exception` annotations on this declaration).
-/// Construct an `AlgorithmSuite` from a variant via [`Self::specification`].
+/// Each variant tags a format and carries that format's Algorithm Suite ENUM,
+/// matching the spec's `Format.FormatENUM` notation.
+/// For example, `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` becomes
+/// `AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)`.
+/// Only the ESDK format is implemented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum AlgorithmSuiteId {
+    /// ESDK format algorithm suites.
+    Esdk(EsdkAlgorithmSuiteId),
+}
+
+impl AlgorithmSuiteId {
+    /// Materialize the [`AlgorithmSuite`] specification table for this suite ID.
+    pub const fn specification(self) -> AlgorithmSuite {
+        match self {
+            Self::Esdk(id) => id.specification(),
+        }
+    }
+
+    /// Returns the 2-byte algorithm suite identifier.
+    ///
+    /// Identifiers are unique within a format, not across formats.
+    pub const fn id_bytes(self) -> [u8; 2] {
+        self.specification().id
+    }
+
+    /// Returns true when this suite has an asymmetric signature algorithm.
+    pub const fn has_asymmetric_signing(self) -> bool {
+        self.specification()
+            .asymmetric_signature_algorithm
+            .is_some()
+    }
+
+    /// Returns true when this suite has a symmetric signature algorithm.
+    pub const fn has_symmetric_signing(self) -> bool {
+        self.specification().symmetric_signature_algorithm.is_some()
+    }
+}
+
+impl From<EsdkAlgorithmSuiteId> for AlgorithmSuiteId {
+    fn from(id: EsdkAlgorithmSuiteId) -> Self {
+        Self::Esdk(id)
+    }
+}
+/// ESDK Format Algorithm Suite ENUM.
+/// Its variants correspond 1:1 to the ESDK rows of the Supported Algorithm Suites table.
+///
+/// Construct an `AlgorithmSuite` from a variant via [`Self::specification`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EsdkAlgorithmSuiteId {
     /// 00 14 — ESDK.ALG_AES_128_GCM_IV12_TAG16_NO_KDF
     AlgAes128GcmIv12Tag16NoKdf,
     /// 00 46 — ESDK.ALG_AES_192_GCM_IV12_TAG16_NO_KDF
@@ -41,21 +87,21 @@ pub enum AlgorithmSuiteId {
     AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
 }
 
-const ALL_SUITES: [AlgorithmSuiteId; 11] = [
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
-    AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+const ALL_SUITES: [EsdkAlgorithmSuiteId; 11] = [
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf,
+    EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf,
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256,
+    EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256,
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256,
+    EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384,
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384,
+    EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+    EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
 ];
 
-// Ties `ALL_SUITES` to `AlgorithmSuiteId` at compile time.
+// Ties `ALL_SUITES` to `EsdkAlgorithmSuiteId` at compile time.
 // The match has no wildcard arm, so a new suite fails to compile until it is mapped here.
 // Each arm indexes `ALL_SUITES`, so the array must grow to match or const evaluation fails.
 // Never called; the coupling is the point.
@@ -63,30 +109,30 @@ const ALL_SUITES: [AlgorithmSuiteId; 11] = [
     dead_code,
     reason = "exists for its exhaustiveness check, not to be called"
 )]
-const fn exhaustive_over_algorithm_suite_id(id: AlgorithmSuiteId) -> AlgorithmSuiteId {
+const fn exhaustive_over_algorithm_suite_id(id: EsdkAlgorithmSuiteId) -> EsdkAlgorithmSuiteId {
     match id {
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => ALL_SUITES[0],
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => ALL_SUITES[1],
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => ALL_SUITES[2],
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => ALL_SUITES[3],
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => ALL_SUITES[4],
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => ALL_SUITES[5],
-        AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => ALL_SUITES[6],
-        AlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => ALL_SUITES[7],
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => ALL_SUITES[8],
-        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => ALL_SUITES[9],
-        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => ALL_SUITES[10],
+        EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf => ALL_SUITES[0],
+        EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16NoKdf => ALL_SUITES[1],
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf => ALL_SUITES[2],
+        EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256 => ALL_SUITES[3],
+        EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha256 => ALL_SUITES[4],
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256 => ALL_SUITES[5],
+        EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256 => ALL_SUITES[6],
+        EsdkAlgorithmSuiteId::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384 => ALL_SUITES[7],
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384 => ALL_SUITES[8],
+        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey => ALL_SUITES[9],
+        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => ALL_SUITES[10],
     }
 }
 
-impl AlgorithmSuiteId {
+impl EsdkAlgorithmSuiteId {
     /// Every algorithm suite id, in ascending on-wire id order.
-    pub const ALL: &'static [AlgorithmSuiteId] = &ALL_SUITES;
+    pub const ALL: &'static [EsdkAlgorithmSuiteId] = &ALL_SUITES;
 
     /// Looks up the suite with the given on-wire id; the inverse of [`Self::id_bytes`].
     ///
     /// Returns `None` if no suite has that id.
-    pub fn from_id_bytes(bytes: [u8; 2]) -> Option<AlgorithmSuiteId> {
+    pub fn from_id_bytes(bytes: [u8; 2]) -> Option<EsdkAlgorithmSuiteId> {
         Self::ALL.iter().copied().find(|id| id.id_bytes() == bytes)
     }
 
@@ -256,7 +302,7 @@ impl AlgorithmSuiteId {
 
     /// Returns the on-wire 2-byte algorithm suite identifier.
     ///
-    /// The byte pair is unique across the supported-suites table. Reserved
+    /// The byte pair is unique across the ESDK suites. Reserved
     /// value `00 00` is never produced.
     //
     pub const fn id_bytes(self) -> [u8; 2] {
@@ -273,7 +319,7 @@ impl AlgorithmSuiteId {
     /// Returns true when this suite has a symmetric signature algorithm.
     ///
     /// No ESDK suite includes a symmetric signature algorithm; this is always
-    /// `false` for any constructible variant of `AlgorithmSuiteId`. The
+    /// `false` for any constructible variant of `EsdkAlgorithmSuiteId`. The
     /// MUST-NOT-generate / MUST-NOT-verify clauses are enforced at the
     /// `EncryptionMaterials::new` / `DecryptionMaterials::new` boundary.
     pub const fn has_symmetric_signing(self) -> bool {

@@ -19,13 +19,13 @@ use aws_crypto_mpl::cmc::{
     StormTrackingCmc, TimeUnits, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials,
+    BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
+    EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+const SUITE: EsdkAlgorithmSuiteId = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
 
 /// "Now" anchor for frozen-clock tests.
 fn anchor_now() -> SystemTime {
@@ -45,7 +45,7 @@ const SLEEP_MILLI: u64 = 5;
 
 fn make_encryption_materials() -> EncryptionMaterials {
     EncryptionMaterials::new(
-        SUITE,
+        SUITE.into(),
         vec![],
         EncryptionContext::new(),
         BTreeSet::new(),
@@ -58,7 +58,7 @@ fn make_encryption_materials() -> EncryptionMaterials {
 
 fn make_decryption_materials() -> DecryptionMaterials {
     DecryptionMaterials::new(
-        SUITE,
+        SUITE.into(),
         EncryptionContext::new(),
         BTreeSet::new(),
         None,

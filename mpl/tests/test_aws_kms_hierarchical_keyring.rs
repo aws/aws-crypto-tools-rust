@@ -39,8 +39,8 @@ use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
 };
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+    BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
 };
 use aws_crypto_mpl::{Cmc, LocalCmc};
 
@@ -1318,9 +1318,9 @@ fn fake_branch_key_materials() -> BranchKeyMaterials {
 
 /// Empty encryption materials for `suite_id`. Suite choice is arbitrary unless
 /// a test depends on `encryption_key_length`.
-fn empty_encryption_materials(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
+fn empty_encryption_materials(suite_id: EsdkAlgorithmSuiteId) -> EncryptionMaterials {
     EncryptionMaterials::new(
-        suite_id,
+        suite_id.into(),
         Vec::new(),
         EncryptionContext::new(),
         Default::default(),
@@ -1333,9 +1333,9 @@ fn empty_encryption_materials(suite_id: AlgorithmSuiteId) -> EncryptionMaterials
 
 /// Empty decryption materials for `suite_id`. Used only by the OnDecrypt
 /// suite; there is no OnEncrypt counterpart.
-fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials {
+fn empty_decryption_materials(suite_id: EsdkAlgorithmSuiteId) -> DecryptionMaterials {
     DecryptionMaterials::new(
-        suite_id,
+        suite_id.into(),
         EncryptionContext::new(),
         Default::default(),
         None,
@@ -1361,8 +1361,8 @@ fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> Hierarchic
 
 /// Pick a non-signing suite so `signing_key` / `symmetric_signing_keys`
 /// invariants don't intrude on the test.
-fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+fn non_signing_suite() -> EsdkAlgorithmSuiteId {
+    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
 }
 
 mod onencrypt {
@@ -1549,7 +1549,7 @@ mod ondecrypt {
     /// round-trip on_decrypt test.
     async fn produce_edk(
         keyring: &HierarchicalKeyring,
-        suite_id: AlgorithmSuiteId,
+        suite_id: EsdkAlgorithmSuiteId,
     ) -> (PlaintextDataKey, Vec<EncryptedDataKey>) {
         let materials_in = empty_encryption_materials(suite_id);
         let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
@@ -1577,7 +1577,7 @@ mod ondecrypt {
 
         // Build DM that ALREADY carries a plaintext data key.
         let dm = DecryptionMaterials::new(
-            suite_id,
+            suite_id.into(),
             EncryptionContext::new(),
             Default::default(),
             Some(pdk),

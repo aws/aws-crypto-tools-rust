@@ -13,8 +13,9 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, Esdk, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
+    CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
+    EncryptionMaterials, Esdk, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
+    PlaintextDataKey,
 };
 use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify, signature_len};
 
@@ -105,16 +106,16 @@ impl Keyring for MockKeyring {
 
 // ===== Helpers =====
 
-fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+fn non_signing_suite() -> EsdkAlgorithmSuiteId {
+    EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
 }
 
-fn signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+fn signing_suite() -> EsdkAlgorithmSuiteId {
+    EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
 }
 
-fn p256_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+fn p256_signing_suite() -> EsdkAlgorithmSuiteId {
+    EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
 }
 
 fn forbid_policy() -> CommitmentPolicy {
@@ -142,7 +143,7 @@ async fn test_get_encryption_materials_does_not_mutate_callers_ec() {
     let mut caller_ec = EncryptionContext::new();
     caller_ec.insert(b"user-key".to_vec(), b"user-value".to_vec());
     let request = EncryptionMaterialsRequest::new(caller_ec, allow_policy())
-        .with_algorithm_suite_id(signing_suite());
+        .with_algorithm_suite_id(signing_suite().into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let returned_ec = materials.encryption_context();
     assert_eq!(
@@ -192,7 +193,7 @@ async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
         EncryptionContext::new(),
         CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt),
     )
-    .with_algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    .with_algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey.into());
     let err = cmm
         .get_encryption_materials(request)
         .await
@@ -206,9 +207,9 @@ async fn test_get_encryption_materials_returns_same_suite_when_request_specifies
     let cmm = DefaultCmm::new(keyring);
     let suite = non_signing_suite();
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
-        .with_algorithm_suite_id(suite);
+        .with_algorithm_suite_id(suite.into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
-    assert_eq!(materials.algorithm_suite_id(), suite);
+    assert_eq!(materials.algorithm_suite_id(), suite.into());
 }
 
 #[tokio::test]
@@ -216,7 +217,7 @@ async fn test_get_encryption_materials_signing_suite_attaches_generated_signing_
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
-        .with_algorithm_suite_id(signing_suite());
+        .with_algorithm_suite_id(signing_suite().into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let sk = materials
         .signing_key()
@@ -235,7 +236,7 @@ async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_k
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
-        .with_algorithm_suite_id(signing_suite());
+        .with_algorithm_suite_id(signing_suite().into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let ec = materials.encryption_context();
     let vk_b64 = ec
@@ -250,7 +251,7 @@ async fn test_get_encryption_materials_calls_keyring_on_encrypt_once() {
     let keyring = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
-        .with_algorithm_suite_id(non_signing_suite());
+        .with_algorithm_suite_id(non_signing_suite().into());
     cmm.get_encryption_materials(request).await.unwrap();
     assert_eq!(keyring.encrypt_calls.load(Ordering::SeqCst), 1);
 }
@@ -260,7 +261,7 @@ async fn test_get_encryption_materials_returns_pdk_set_by_keyring() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
-        .with_algorithm_suite_id(non_signing_suite());
+        .with_algorithm_suite_id(non_signing_suite().into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     // Mock keyring sets sentinel 0xAA PDK; assertion proves CMM passed it through unchanged.
     let pdk = materials.plaintext_data_key().expect("PDK must be present");
@@ -272,7 +273,7 @@ async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
-        .with_algorithm_suite_id(non_signing_suite());
+        .with_algorithm_suite_id(non_signing_suite().into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     // Mock keyring injects EDK with known provider ID; assertion proves CMM passed it through unchanged.
     assert_eq!(materials.encrypted_data_keys().len(), 1);
@@ -295,7 +296,7 @@ async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
     let vk_b64 = BASE64_STANDARD.encode(&vk_raw);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
-    let request = DecryptMaterialsRequest::new(signing_suite(), allow_policy(), vec![], ec);
+    let request = DecryptMaterialsRequest::new(signing_suite().into(), allow_policy(), vec![], ec);
     let materials = cmm.decrypt_materials(request).await.unwrap();
     let vk = materials
         .verification_key()
@@ -308,7 +309,7 @@ async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
-        signing_suite(),
+        signing_suite().into(),
         allow_policy(),
         vec![],
         EncryptionContext::new(),
@@ -323,7 +324,8 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
     let cmm = DefaultCmm::new(keyring);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), b"some-value".to_vec());
-    let request = DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], ec);
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite().into(), allow_policy(), vec![], ec);
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
     assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyUnexpected);
 }
@@ -334,7 +336,7 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
     let cmm = DefaultCmm::new(keyring);
     // RequireEncryptRequireDecrypt only allows committing suites
     let request = DecryptMaterialsRequest::new(
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf.into(),
         CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt),
         vec![],
         EncryptionContext::new(),
@@ -348,7 +350,7 @@ async fn test_decrypt_materials_calls_keyring_on_decrypt_once() {
     let keyring = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         EncryptionContext::new(),
@@ -362,7 +364,7 @@ async fn test_decrypt_materials_returns_pdk_set_by_keyring() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         EncryptionContext::new(),
@@ -378,7 +380,7 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), forbid_policy())
-        .with_algorithm_suite_id(p256_signing_suite());
+        .with_algorithm_suite_id(p256_signing_suite().into());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let sk = materials
         .signing_key()
@@ -405,7 +407,7 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
         b"aws-crypto-public-key".to_vec(),
         b"not-valid-base64!!!".to_vec(),
     );
-    let request = DecryptMaterialsRequest::new(signing_suite(), allow_policy(), vec![], ec);
+    let request = DecryptMaterialsRequest::new(signing_suite().into(), allow_policy(), vec![], ec);
     let err = cmm
         .decrypt_materials(request)
         .await
@@ -423,7 +425,7 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
     let vk_b64 = BASE64_STANDARD.encode(&wrong_length_bytes);
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
-    let request = DecryptMaterialsRequest::new(signing_suite(), allow_policy(), vec![], ec);
+    let request = DecryptMaterialsRequest::new(signing_suite().into(), allow_policy(), vec![], ec);
     let err = cmm
         .decrypt_materials(request)
         .await
@@ -443,9 +445,13 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
     message_ec.insert(b"message-only".to_vec(), b"m".to_vec());
     let mut reproduced_ec = EncryptionContext::new();
     reproduced_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
-    let request =
-        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
-            .with_reproduced_encryption_context(reproduced_ec);
+    let request = DecryptMaterialsRequest::new(
+        non_signing_suite().into(),
+        allow_policy(),
+        vec![],
+        message_ec,
+    )
+    .with_reproduced_encryption_context(reproduced_ec);
     let materials = cmm
         .decrypt_materials(request)
         .await
@@ -477,9 +483,13 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
     message_ec.insert(b"shared".to_vec(), b"message-value".to_vec());
     let mut reproduced_ec = EncryptionContext::new();
     reproduced_ec.insert(b"shared".to_vec(), b"reproduced-value".to_vec());
-    let request =
-        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
-            .with_reproduced_encryption_context(reproduced_ec);
+    let request = DecryptMaterialsRequest::new(
+        non_signing_suite().into(),
+        allow_policy(),
+        vec![],
+        message_ec,
+    )
+    .with_reproduced_encryption_context(reproduced_ec);
     let err = cmm
         .decrypt_materials(request)
         .await
@@ -503,9 +513,13 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
     let message_ec = EncryptionContext::new();
     let mut reproduced_ec = EncryptionContext::new();
     reproduced_ec.insert(b"only-in-reproduced".to_vec(), b"v".to_vec());
-    let request =
-        DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
-            .with_reproduced_encryption_context(reproduced_ec);
+    let request = DecryptMaterialsRequest::new(
+        non_signing_suite().into(),
+        allow_policy(),
+        vec![],
+        message_ec,
+    )
+    .with_reproduced_encryption_context(reproduced_ec);
     let materials = cmm
         .decrypt_materials(request)
         .await
@@ -570,7 +584,7 @@ async fn test_decrypt_materials_appends_reproduced_only_pairs_to_the_keyring_con
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         ec_of(&[("b", "b")]),
@@ -597,7 +611,7 @@ async fn test_decrypt_materials_appends_when_reproduced_context_is_disjoint() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         ec_of(&[("a", "a")]),
@@ -621,7 +635,7 @@ async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         EncryptionContext::new(),
@@ -648,7 +662,7 @@ async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_k
     let keyring = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         ec_of(&[("a", "a")]),
@@ -675,7 +689,7 @@ async fn test_decrypt_materials_without_reproduced_context_is_unchanged() {
     let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         ec_of(&[("a", "a")]),
@@ -703,7 +717,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
         BASE64_STANDARD.encode(&vk).into_bytes(),
     );
     let request = DecryptMaterialsRequest::new(
-        signing_suite(),
+        signing_suite().into(),
         allow_policy(),
         vec![],
         EncryptionContext::new(),
@@ -730,7 +744,7 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
     let mut reproduced = EncryptionContext::new();
     reproduced.insert(b"aws-crypto-public-key".to_vec(), b"some-value".to_vec());
     let request = DecryptMaterialsRequest::new(
-        non_signing_suite(),
+        non_signing_suite().into(),
         allow_policy(),
         vec![],
         EncryptionContext::new(),
