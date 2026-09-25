@@ -14,7 +14,8 @@ use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
+    CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
+    EsdkAlgorithmSuiteId,
 };
 
 /// A cryptographic materials manager resolved from the caller's input: either
@@ -97,7 +98,7 @@ pub(crate) fn create_cmm_from_input(
 
 pub(crate) async fn get_decryption_materials(
     cmm: ResolvedCmm,
-    algorithm_suite_id: AlgorithmSuiteId,
+    algorithm_suite_id: EsdkAlgorithmSuiteId,
     header_body: &HeaderBody,
     reproduced_encryption_context: &EncryptionContext,
     commitment_policy: EsdkCommitmentPolicy,
@@ -125,7 +126,7 @@ pub(crate) async fn get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
     let mut request =
-        DecryptMaterialsRequest::new(algorithm_suite_id, policy, edks, encryption_context);
+        DecryptMaterialsRequest::new(algorithm_suite_id.into(), policy, edks, encryption_context);
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
@@ -182,7 +183,7 @@ pub(crate) async fn get_decryption_materials(
 
 pub(crate) async fn get_encryption_materials(
     cmm: ResolvedCmm,
-    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     encryption_context: EncryptionContext,
     max_plaintext_length: Option<usize>,
     commitment_policy: EsdkCommitmentPolicy,
@@ -205,7 +206,7 @@ pub(crate) async fn get_encryption_materials(
     //= reason=algorithm_suite_id is Option; None means the field is not set on the request
     //# If no Algorithm Suite is provided, this field MUST NOT be included.
     if let Some(id) = algorithm_suite_id {
-        request = request.with_algorithm_suite_id(id);
+        request = request.with_algorithm_suite_id(id.into());
     }
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials

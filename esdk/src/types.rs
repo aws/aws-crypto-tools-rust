@@ -186,7 +186,7 @@ pub trait SafeRead: std::io::Read + Send + Sync + std::fmt::Debug {}
 impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
 
 /// Algorithm suite identifiers for the ESDK.
-pub use aws_crypto_mpl::structures::AlgorithmSuiteId as EsdkAlgorithmSuiteId;
+pub use aws_crypto_mpl::structures::EsdkAlgorithmSuiteId;
 
 /// Key-Value pairs to associate with the encrypted data.
 ///

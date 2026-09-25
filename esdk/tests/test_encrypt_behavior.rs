@@ -13,7 +13,7 @@ mod test_helpers;
 
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, DecryptionMaterials, EncryptionMaterials, MaterialsError,
+    DecryptionMaterials, EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError,
 };
 use aws_esdk::*;
 use std::sync::Arc;
@@ -601,7 +601,8 @@ async fn test_algorithm_suite_used_for_encryption() {
 // Spy CMM that records what inputs it received, then delegates to a real CMM.
 struct SpyCmm {
     inner: DefaultCmm,
-    observed_algorithm_suite_id: Arc<std::sync::Mutex<Option<Option<AlgorithmSuiteId>>>>,
+    observed_algorithm_suite_id:
+        Arc<std::sync::Mutex<Option<Option<aws_crypto_mpl::structures::AlgorithmSuiteId>>>>,
     observed_max_plaintext_length: Arc<std::sync::Mutex<Option<Option<i64>>>>,
 }
 

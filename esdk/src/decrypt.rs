@@ -14,7 +14,7 @@ use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
-use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptionContext,
     EsdkCommitmentPolicy, MaterialSource, SafeRead, SafeWrite,
@@ -383,7 +383,7 @@ async fn step_get_decryption_materials(
     //# configured in the [client](client.md) decrypt MUST yield an error.
     let algorithm_suite_id = algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
     let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-    if !policy.allows_for_decrypt(algorithm_suite_id) {
+    if !policy.allows_for_decrypt(algorithm_suite_id.into()) {
         return Err(val_err(
             "Parsed algorithm suite is not supported by the configured commitment policy for decryption",
         ));
@@ -403,12 +403,7 @@ async fn step_get_decryption_materials(
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
     //
-    //= spec/client-apis/decrypt.md#get-the-decryption-materials
-    //= type=implication
-    //= reason=AlgorithmSuiteId enumerates only ESDK suites, so the materials cannot carry another
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# decrypt MUST yield an error.
-    let suite = dec_mat.algorithm_suite();
+    let suite = get_esdk_algorithm_suite_id(dec_mat.algorithm_suite_id())?.specification();
 
     if &suite != header_body.algorithm_suite() {
         return Err(val_err(

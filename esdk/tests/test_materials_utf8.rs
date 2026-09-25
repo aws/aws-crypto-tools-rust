@@ -20,8 +20,8 @@ mod test_helpers;
 
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, DecryptionMaterials, EncryptionContext as MplEncryptionContext,
-    EncryptionMaterials, MaterialsError, PlaintextDataKey,
+    DecryptionMaterials, EncryptionContext as MplEncryptionContext, EncryptionMaterials,
+    EsdkAlgorithmSuiteId, MaterialsError, PlaintextDataKey,
 };
 use aws_esdk::*;
 use std::collections::BTreeSet;
@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 /// A non-committing, non-signing suite, so the fabricated materials below need
 /// no signing or verification key and pass under ForbidEncryptAllowDecrypt.
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
+const SUITE: EsdkAlgorithmSuiteId = EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
 
 /// `0xFF` is not a valid UTF-8 byte in any position.
 const BAD: &[u8] = b"\xff";
@@ -61,7 +61,7 @@ impl Cmm for FabricatingCmm {
         _request: EncryptionMaterialsRequest,
     ) -> Result<EncryptionMaterials, MaterialsError> {
         EncryptionMaterials::new(
-            SUITE,
+            SUITE.into(),
             Vec::new(),
             self.encryption_context.clone(),
             self.required_keys.clone(),
@@ -76,7 +76,7 @@ impl Cmm for FabricatingCmm {
         _request: DecryptMaterialsRequest,
     ) -> Result<DecryptionMaterials, MaterialsError> {
         DecryptionMaterials::new(
-            SUITE,
+            SUITE.into(),
             self.encryption_context.clone(),
             self.required_keys.clone(),
             Some(PlaintextDataKey::new(vec![0u8; 32])),

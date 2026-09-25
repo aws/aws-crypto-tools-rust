@@ -38,7 +38,7 @@ impl Cmm for SuiteOverrideCmm {
             request.encryption_context().clone(),
             request.commitment_policy(),
         )
-        .with_algorithm_suite_id(self.suite);
+        .with_algorithm_suite_id(self.suite.into());
         if let Some(keys) = request.required_encryption_context_keys() {
             inner_request = inner_request.with_required_encryption_context_keys(keys.clone());
         }

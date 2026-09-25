@@ -17,15 +17,15 @@ use crate::message::serializable_types::{
     ESDKCanonicalEncryptionContext, get_encrypt_key_length, get_iv_length, to_canonical_pairs,
 };
 use crate::message::{DigestWriter, body, footer, header};
-use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
     EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
     EsdkCommitmentPolicy, FrameLength, MaterialSource, SafeRead, SafeWrite,
 };
 use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::structures::EncryptionMaterials;
+use aws_crypto_mpl::structures::EsdkAlgorithmSuiteId;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
 
 /// AES-GCM IV length in bytes (used for body frames; header IV length varies by suite).
@@ -175,7 +175,7 @@ async fn internal_encrypt(
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
-    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     frame_length: FrameLength,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: EsdkCommitmentPolicy,
@@ -306,7 +306,7 @@ async fn step_get_encryption_materials(
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
-    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<EncryptionMaterialsResult, Error> {
@@ -327,7 +327,7 @@ async fn step_get_encryption_materials(
         //# that is not supported by the [commitment policy](client.md#commitment-policy)
         //# configured in the [client](client.md) encrypt MUST yield an error.
         let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-        if !policy.allows_for_encrypt(id) {
+        if !policy.allows_for_encrypt(id.into()) {
             return Err(val_err(
                 "Input algorithm suite is not supported by the configured commitment policy for encryption",
             ));
@@ -371,12 +371,8 @@ async fn step_get_encryption_materials(
     //# Note that the algorithm suite in the retrieved encryption materials MAY be different
     //# from the [input algorithm suite](#algorithm-suite).
     //
-    //= spec/client-apis/encrypt.md#get-the-encryption-materials
-    //= type=implication
-    //= reason=AlgorithmSuiteId enumerates only ESDK suites, so the materials cannot carry another
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# encrypt MUST yield an error.
-    let algorithm_suite = materials.algorithm_suite();
+    let algorithm_suite =
+        get_esdk_algorithm_suite_id(materials.algorithm_suite_id())?.specification();
 
     let message_id = header::generate_message_id(&algorithm_suite)?;
 

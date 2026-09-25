@@ -12,30 +12,46 @@
 
 use crate::error::{Error, esdk_err, val_err};
 use aws_crypto_mpl::structures::{
-    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, KeyDerivationAlgorithm,
+    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EsdkAlgorithmSuiteId,
+    KeyDerivationAlgorithm,
 };
 use aws_mpl_primitives::{DigestAlg, EcdsaSignatureAlgorithm};
 
-/// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuiteId`].
+/// Resolve a 2-byte on-wire algorithm suite id to its [`EsdkAlgorithmSuiteId`].
 ///
 /// # Errors
 /// Returns an error if `bytes` is not a supported ESDK algorithm suite id.
-pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuiteId, Error> {
-    // Every `AlgorithmSuiteId` is an ESDK suite today.
-    // Once the MPL adds a suite for another format, filter it out here.
-    //
+pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<EsdkAlgorithmSuiteId, Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The value (hex) of this field MUST be a value that exists in the
     //# [Supported Algorithm Suites](../framework/algorithm-suites.md#supported-algorithm-suites) table.
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    AlgorithmSuiteId::from_id_bytes(bytes).ok_or_else(|| {
+    EsdkAlgorithmSuiteId::from_id_bytes(bytes).ok_or_else(|| {
         esdk_err(format!(
             "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
             bytes[0], bytes[1]
         ))
     })
+}
+
+/// Extracts the ESDK algorithm suite id from a generic MPL algorithm suite id.
+///
+/// # Errors
+/// Returns an error if `id` is not an ESDK algorithm suite.
+pub fn get_esdk_algorithm_suite_id(id: AlgorithmSuiteId) -> Result<EsdkAlgorithmSuiteId, Error> {
+    match id {
+        AlgorithmSuiteId::Esdk(id) => Ok(id),
+        //= spec/client-apis/encrypt.md#get-the-encryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# encrypt MUST yield an error.
+        //
+        //= spec/client-apis/decrypt.md#get-the-decryption-materials
+        //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
+        //# decrypt MUST yield an error.
+        other => Err(esdk_err(format!("Unsupported algorithm suite: {other:?}"))),
+    }
 }
 
 /// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuite`] specification.
