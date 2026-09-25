@@ -38,11 +38,12 @@ pub trait Cmm: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A shared handle to any [`Cmm`].
+    /// An owned handle to some [`Cmm`].
     ///
-    /// Every API that accepts a CMM takes `impl Into<SharedCmm>`.
-    /// Pass a concrete CMM, an `Arc` of one, or an existing handle.
-    /// Cloning is cheap: the clone shares the same CMM instance.
+    /// `Cmm` is the trait a CMM implements.
+    /// `SharedCmm` is how an API accepts and stores one without knowing its concrete type.
+    /// Every API that accepts a CMM takes `impl Into<SharedCmm>`,
+    /// so pass a concrete CMM, an `Arc` of one, or an existing handle.
     SharedCmm,
     Cmm
 );

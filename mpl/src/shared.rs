@@ -6,7 +6,7 @@
 //! One macro defines all four handles,
 //! so their conversions and trait impls stay identical.
 
-/// Define a cheaply-cloneable handle `$name` around `Arc<dyn $trait>`.
+/// Define a handle `$name` around `Arc<dyn $trait>`.
 ///
 /// The handle deliberately does not implement `$trait`.
 /// If it did, the blanket `From<T: $trait>` would overlap
