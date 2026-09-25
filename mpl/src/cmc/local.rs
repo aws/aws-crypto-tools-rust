@@ -28,9 +28,6 @@ type Inner = LruCache<Vec<u8>, Arc<CacheEntry>>;
 /// `entry_pruning_tail_size` (number of least-recently-used entries the
 /// cache scans for TTL-expired evictees during pruning). It implements the
 /// abstract [`Cmc`] trait so callers can plug it into a caching CMM.
-///
-/// Cloning is cheap and the clone shares state with the original:
-/// an entry put through one is visible through the other.
 #[derive(Clone)]
 pub struct LocalCmc {
     inner: Arc<LocalCmcInner>,
