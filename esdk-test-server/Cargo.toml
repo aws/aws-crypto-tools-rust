@@ -15,11 +15,9 @@ path = "src/main.rs"
 [dependencies]
 # Real product SDK under test, from this repo's head of main.
 aws-esdk = { path = "../esdk" }
-# The vendored MPL, aliased exactly as aws-esdk aliases it, so keyring/commitment
-# types line up across the crates.
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../unsafe-unreviewed-mpl/mpl" }
-# Blob, for the raw-AES wrapping key passed to the Dafny MPL keyring builder.
-aws-smithy-types = "1.3.6"
+# The MPL aws-esdk is built on, for the keyrings and key store the server
+# constructs.
+aws-crypto-mpl = { path = "../mpl" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.7"
