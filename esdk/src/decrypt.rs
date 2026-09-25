@@ -102,7 +102,7 @@ pub async fn decrypt_stream(
     internal_decrypt(
         ciphertext,
         plaintext,
-        input.material_source.clone(),
+        input.material_source(),
         &input.encryption_context,
         DecryptMode::Streaming,
         input.max_encrypted_data_keys,
@@ -136,7 +136,7 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let out = internal_decrypt(
         &mut cursor,
         &mut plaintext,
-        input.material_source.clone(),
+        input.material_source(),
         &input.encryption_context,
         DecryptMode::Buffered,
         input.max_encrypted_data_keys,
@@ -218,7 +218,7 @@ struct DecryptState {
 async fn internal_decrypt(
     ciphertext: &mut dyn SafeRead,
     plaintext: &mut dyn SafeWrite,
-    input_source: MaterialSource,
+    input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     mode: DecryptMode,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
@@ -361,7 +361,7 @@ async fn step_get_decryption_materials(
     ciphertext: &mut dyn SafeRead,
     header_body: &header_types::HeaderBody,
     raw_header: Vec<u8>,
-    input_source: MaterialSource,
+    input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     commitment_policy: EsdkCommitmentPolicy,
     mut sig_digest: DigestWriter,
@@ -372,7 +372,7 @@ async fn step_get_decryption_materials(
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If a CMM is not supplied as the input, the decrypt operation MUST construct a [default CMM](../framework/default-cmm.md)
     //# from the input [keyring](../framework/keyring-interface.md).
-    let cmm = materials::create_cmm_from_input(input_source);
+    let cmm = materials::create_cmm_from_input(input_source)?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)

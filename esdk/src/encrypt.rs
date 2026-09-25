@@ -83,7 +83,7 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
         &mut cursor,
         &mut ciphertext,
         Some(input.plaintext.len()),
-        input.material_source.clone(),
+        input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
         input.frame_length,
@@ -151,7 +151,7 @@ pub async fn encrypt_stream(
         plaintext,
         ciphertext,
         input.data_size,
-        input.material_source.clone(),
+        input.material_source(),
         &input.encryption_context,
         input.algorithm_suite_id,
         input.frame_length,
@@ -167,7 +167,7 @@ async fn internal_encrypt(
     // ciphertext is the output buffer for this function
     ciphertext: &mut dyn SafeWrite,
     plaintext_len: Option<usize>,
-    input_source: MaterialSource,
+    input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     frame_length: FrameLength,
@@ -298,7 +298,7 @@ async fn internal_encrypt(
 /// materials from the CMM, validates EDK count, generates a message ID, and derives keys.
 async fn step_get_encryption_materials(
     plaintext_len: Option<usize>,
-    input_source: MaterialSource,
+    input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
@@ -306,7 +306,7 @@ async fn step_get_encryption_materials(
 ) -> Result<EncryptionMaterialsResult, Error> {
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The CMM used MUST be the input CMM, if supplied.
-    let cmm = materials::create_cmm_from_input(input_source);
+    let cmm = materials::create_cmm_from_input(input_source)?;
 
     //= spec/client-apis/encrypt.md#algorithm-suite
     //# The [algorithm suite](../framework/algorithm-suites.md) that MUST be used for encryption.

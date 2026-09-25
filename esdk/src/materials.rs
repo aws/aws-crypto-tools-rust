@@ -71,9 +71,11 @@ pub(crate) struct ValidatedMaterials<M> {
 /// Resolve the CMM for an operation from the resolved material source.
 /// A supplied CMM is used directly.
 /// A supplied keyring is wrapped in a [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
-pub(crate) fn create_cmm_from_input(input_source: MaterialSource) -> SharedCmm {
-    match input_source {
-        MaterialSource::Cmm(cmm) => cmm,
+pub(crate) fn create_cmm_from_input(
+    input_source: Option<MaterialSource>,
+) -> Result<SharedCmm, Error> {
+    match input_source.ok_or_else(|| val_err("A Materials Source must be provided"))? {
+        MaterialSource::Cmm(cmm) => Ok(cmm),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials
             //# If instead the caller supplied a [keyring](../framework/keyring-interface.md),
@@ -83,7 +85,7 @@ pub(crate) fn create_cmm_from_input(input_source: MaterialSource) -> SharedCmm {
             //= spec/client-apis/decrypt.md#keyring
             //# If the Keyring is provided as the input, the client MUST construct a [default CMM](../framework/default-cmm.md) that uses this keyring,
             //# to obtain the [decryption materials](../framework/structures.md#decryption-materials) that is required for decryption.
-            DefaultCmm::new(keyring).into()
+            Ok(DefaultCmm::new(keyring).into())
         }
     }
 }

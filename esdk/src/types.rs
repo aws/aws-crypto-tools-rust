@@ -6,8 +6,8 @@ use crate::Error;
 use crate::val_err;
 use std::num::NonZeroUsize;
 
-/// Internal union of the two ways a caller can supply materials,
-/// set by the input builders and consumed by `create_cmm_from_input`.
+/// Internal union of the two ways a caller can supply materials, resolved from
+/// the `keyring` / `cmm` input fields and consumed by `create_cmm_from_input`.
 #[derive(Clone)]
 pub(crate) enum MaterialSource {
     Cmm(SharedCmm),
@@ -23,28 +23,27 @@ impl std::fmt::Debug for MaterialSource {
     }
 }
 
-impl MaterialSource {
-    /// Resolve a builder's `keyring` / `cmm` fields, failing unless exactly one is set.
-    fn exactly_one(keyring: Option<SharedKeyring>, cmm: Option<SharedCmm>) -> Result<Self, Error> {
-        match (keyring, cmm) {
-            (Some(k), None) => Ok(Self::Keyring(k)),
-            (None, Some(c)) => Ok(Self::Cmm(c)),
-            _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
-        }
+/// Resolve the caller-supplied `keyring` / `cmm` fields into the internal
+/// [`MaterialSource`], or `None` if not exactly one is set.
+pub(crate) fn resolve_material_source(
+    keyring: Option<&SharedKeyring>,
+    cmm: Option<&SharedCmm>,
+) -> Option<MaterialSource> {
+    match (keyring, cmm) {
+        (Some(k), None) => Some(MaterialSource::Keyring(k.clone())),
+        (None, Some(c)) => Some(MaterialSource::Cmm(c.clone())),
+        _ => None,
     }
+}
 
-    const fn keyring(&self) -> Option<&SharedKeyring> {
-        match self {
-            Self::Keyring(k) => Some(k),
-            Self::Cmm(_) => None,
-        }
-    }
-
-    const fn cmm(&self) -> Option<&SharedCmm> {
-        match self {
-            Self::Cmm(c) => Some(c),
-            Self::Keyring(_) => None,
-        }
+/// Shared input validation: exactly one of `keyring` or `cmm` must be set.
+fn validate_material_source(
+    keyring: Option<&SharedKeyring>,
+    cmm: Option<&SharedCmm>,
+) -> Result<(), Error> {
+    match (keyring.is_some(), cmm.is_some()) {
+        (true, false) | (false, true) => Ok(()),
+        _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
     }
 }
 
@@ -256,7 +255,10 @@ pub struct EncryptInput<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [Frame Length](#frame-length) argument.
     pub(crate) frame_length: FrameLength,
-    pub(crate) material_source: MaterialSource,
+    /// The keyring to use for this operation.
+    pub(crate) keyring: Option<SharedKeyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    pub(crate) cmm: Option<SharedCmm>,
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept a required [plaintext](#plaintext) argument.
     //
@@ -321,13 +323,17 @@ impl<'a> EncryptInput<'a> {
     /// The keyring, if this input was built with one.
     #[must_use]
     pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.material_source.keyring()
+        self.keyring.as_ref()
     }
 
     /// The CMM, if this input was built with one.
     #[must_use]
     pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.material_source.cmm()
+        self.cmm.as_ref()
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     /// The data to be encrypted.
@@ -522,12 +528,13 @@ impl<'a> EncryptInputBuilder<'a> {
         //
         //= spec/client-apis/encrypt.md#input
         //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-        let material_source = MaterialSource::exactly_one(self.keyring, self.cmm)?;
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
             frame_length: self.frame_length.unwrap_or_default(),
-            material_source,
+            keyring: self.keyring,
+            cmm: self.cmm,
             plaintext,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
@@ -543,7 +550,10 @@ pub struct EncryptStreamInput {
     pub(crate) algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     pub(crate) encryption_context: EncryptionContext,
     pub(crate) frame_length: FrameLength,
-    pub(crate) material_source: MaterialSource,
+    /// The keyring to use for this operation.
+    pub(crate) keyring: Option<SharedKeyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    pub(crate) cmm: Option<SharedCmm>,
     //= spec/client-apis/encrypt.md#input
     //= reason=EncryptStreamInput accepts unknown-length plaintext via a stream; data_size serves as the optional Plaintext Length Bound
     //# If the [plaintext](#plaintext) is of unknown length, the caller MAY also input a
@@ -582,13 +592,17 @@ impl EncryptStreamInput {
     /// The keyring, if this input was built with one.
     #[must_use]
     pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.material_source.keyring()
+        self.keyring.as_ref()
     }
 
     /// The CMM, if this input was built with one.
     #[must_use]
     pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.material_source.cmm()
+        self.cmm.as_ref()
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     /// The expected size of the input plaintext stream, if one was set.
@@ -784,12 +798,13 @@ impl EncryptStreamInputBuilder {
     ///
     /// Returns a `ValidationError` if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptStreamInput, Error> {
-        let material_source = MaterialSource::exactly_one(self.keyring, self.cmm)?;
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptStreamInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
             frame_length: self.frame_length.unwrap_or_default(),
-            material_source,
+            keyring: self.keyring,
+            cmm: self.cmm,
             data_size: self.data_size,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
@@ -812,7 +827,10 @@ pub struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
     pub(crate) encryption_context: EncryptionContext,
-    pub(crate) material_source: MaterialSource,
+    /// The keyring to use for this operation.
+    pub(crate) keyring: Option<SharedKeyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    pub(crate) cmm: Option<SharedCmm>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     pub(crate) commitment_policy: EsdkCommitmentPolicy,
 }
@@ -854,13 +872,17 @@ impl<'a> DecryptInput<'a> {
     /// The keyring, if this input was built with one.
     #[must_use]
     pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.material_source.keyring()
+        self.keyring.as_ref()
     }
 
     /// The CMM, if this input was built with one.
     #[must_use]
     pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.material_source.cmm()
+        self.cmm.as_ref()
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     /// The cap on the number of encrypted data keys, if one was set.
@@ -1012,11 +1034,12 @@ impl<'a> DecryptInputBuilder<'a> {
         //
         //= spec/client-apis/decrypt.md#input
         //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-        let material_source = MaterialSource::exactly_one(self.keyring, self.cmm)?;
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(DecryptInput {
             ciphertext,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            material_source,
+            keyring: self.keyring,
+            cmm: self.cmm,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
         })
@@ -1029,7 +1052,10 @@ impl<'a> DecryptInputBuilder<'a> {
 /// Construct via [`DecryptStreamInput::builder`].
 pub struct DecryptStreamInput {
     pub(crate) encryption_context: EncryptionContext,
-    pub(crate) material_source: MaterialSource,
+    /// The keyring to use for this operation.
+    pub(crate) keyring: Option<SharedKeyring>,
+    /// The cryptographic materials manager (CMM) to use for this operation.
+    pub(crate) cmm: Option<SharedCmm>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     pub(crate) commitment_policy: EsdkCommitmentPolicy,
 }
@@ -1063,13 +1089,17 @@ impl DecryptStreamInput {
     /// The keyring, if this input was built with one.
     #[must_use]
     pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.material_source.keyring()
+        self.keyring.as_ref()
     }
 
     /// The CMM, if this input was built with one.
     #[must_use]
     pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.material_source.cmm()
+        self.cmm.as_ref()
+    }
+
+    pub(crate) fn material_source(&self) -> Option<MaterialSource> {
+        resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
 
     /// The cap on the number of encrypted data keys, if one was set.
@@ -1201,10 +1231,11 @@ impl DecryptStreamInputBuilder {
     ///
     /// Returns a `ValidationError` if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptStreamInput, Error> {
-        let material_source = MaterialSource::exactly_one(self.keyring, self.cmm)?;
+        validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(DecryptStreamInput {
             encryption_context: self.encryption_context.unwrap_or_default(),
-            material_source,
+            keyring: self.keyring,
+            cmm: self.cmm,
             max_encrypted_data_keys: self.max_encrypted_data_keys,
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
         })
