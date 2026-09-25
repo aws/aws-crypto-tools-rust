@@ -3,7 +3,7 @@
 
 //! Generator for the `Shared*` handles over the pluggable-component traits.
 //!
-//! One macro defines all four handles,
+//! One macro defines every handle,
 //! so their conversions and trait impls stay identical.
 
 /// Define a handle `$name` around `Arc<dyn $trait>`.
@@ -16,6 +16,13 @@ macro_rules! shared_handle {
         $(#[$meta])*
         #[derive(Clone)]
         pub struct $name(::std::sync::Arc<dyn $trait>);
+
+        impl $name {
+            /// Wrap `component` in a new handle.
+            pub fn new(component: impl $trait + 'static) -> Self {
+                Self(::std::sync::Arc::new(component))
+            }
+        }
 
         impl ::std::ops::Deref for $name {
             type Target = dyn $trait;

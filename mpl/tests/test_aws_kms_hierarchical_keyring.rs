@@ -31,7 +31,7 @@ use aws_crypto_mpl::aws_kms::__test_internals::{
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
+    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT, SharedBranchKeySupplier,
 };
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
@@ -146,7 +146,9 @@ fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
         keystore_never_consulted(),
         3600,
         Some("branch-key-id".to_string()),
-        Some(Arc::new(FixedBranchKeySupplier("unused")) as Arc<dyn BranchKeySupplier>),
+        Some(SharedBranchKeySupplier::new(FixedBranchKeySupplier(
+            "unused",
+        ))),
         None,
         None,
     ) {
@@ -351,8 +353,7 @@ fn new_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
-    let supplier: Arc<dyn BranchKeySupplier> =
-        Arc::new(FixedBranchKeySupplier("branch-id-from-supplier"));
+    let supplier = SharedBranchKeySupplier::new(FixedBranchKeySupplier("branch-id-from-supplier"));
     let keyring = HierarchicalKeyring::new(
         keystore_never_consulted(),
         3600,
@@ -1503,17 +1504,17 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring =
-            HierarchicalKeyring::new(
-                Arc::clone(&keystore),
-                3600,
-                None,
-                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-                    as Arc<dyn BranchKeySupplier>),
-                Some(CacheType::Default(DefaultCache::new(1000))),
-                None,
-            )
-            .unwrap();
+        let keyring = HierarchicalKeyring::new(
+            Arc::clone(&keystore),
+            3600,
+            None,
+            Some(SharedBranchKeySupplier::new(FixedBranchKeySupplier(
+                FAKE_BRANCH_KEY_ID,
+            ))),
+            Some(CacheType::Default(DefaultCache::new(1000))),
+            None,
+        )
+        .unwrap();
 
         let materials_out = keyring
             .on_encrypt(empty_encryption_materials(non_signing_suite()))
@@ -1997,17 +1998,17 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring =
-            HierarchicalKeyring::new(
-                Arc::clone(&keystore),
-                3600,
-                None,
-                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-                    as Arc<dyn BranchKeySupplier>),
-                Some(CacheType::Default(DefaultCache::new(1000))),
-                Some("partition-id".to_string()),
-            )
-            .unwrap();
+        let keyring = HierarchicalKeyring::new(
+            Arc::clone(&keystore),
+            3600,
+            None,
+            Some(SharedBranchKeySupplier::new(FixedBranchKeySupplier(
+                FAKE_BRANCH_KEY_ID,
+            ))),
+            Some(CacheType::Default(DefaultCache::new(1000))),
+            Some("partition-id".to_string()),
+        )
+        .unwrap();
         let suite_id = non_signing_suite();
 
         let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;

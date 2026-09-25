@@ -27,7 +27,9 @@ pub use client::*;
 pub use aws_mpl_primitives::AesGcm;
 
 pub use aws_config;
-pub use aws_kms::hierarchical_keyring::HierarchicalKeyring;
+pub use aws_kms::hierarchical_keyring::{
+    BranchKeySupplier, HierarchicalKeyring, SharedBranchKeySupplier,
+};
 
 // Re-exported because both SDK clients appear in the public signature of
 // `KeyStoreConfig`, and because a `KeystoreError` carries these crates' SDK

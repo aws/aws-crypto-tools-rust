@@ -97,6 +97,15 @@ pub trait BranchKeySupplier: Send + Sync {
     ) -> Result<GetBranchKeyIdOutput, MaterialsError>;
 }
 
+crate::shared::shared_handle!(
+    /// An owned handle to some [`BranchKeySupplier`].
+    ///
+    /// `BranchKeySupplier` is the trait a branch key supplier implements.
+    /// `SharedBranchKeySupplier` is how an API accepts and stores one without knowing its concrete type.
+    SharedBranchKeySupplier,
+    BranchKeySupplier
+);
+
 /// AWS KMS Hierarchical Keyring.
 ///
 /// See [`HierarchicalKeyring::new`] for construction. The [`Keyring`]
@@ -119,7 +128,7 @@ struct HierarchicalKeyringInner {
 
     /// The supplier that chooses a branch key id per operation, when
     /// configured with one instead of a static `branch_key_id`.
-    branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
+    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
 
     partition_id_bytes: Vec<u8>,
 
@@ -148,7 +157,7 @@ impl HierarchicalKeyring {
         keystore: impl Into<SharedKeystore>,
         ttl_seconds: u64,
         branch_key_id: Option<String>,
-        branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
+        branch_key_id_supplier: Option<SharedBranchKeySupplier>,
         cache_type: Option<CacheType>,
         partition_id: Option<String>,
     ) -> Result<Self, MaterialsError> {
@@ -240,7 +249,7 @@ impl HierarchicalKeyring {
 
     /// The configured branch key id supplier, if this keyring was built with
     /// one rather than with a static branch key id.
-    pub fn branch_key_id_supplier(&self) -> Option<&Arc<dyn BranchKeySupplier>> {
+    pub fn branch_key_id_supplier(&self) -> Option<&SharedBranchKeySupplier> {
         self.inner.branch_key_id_supplier.as_ref()
     }
 

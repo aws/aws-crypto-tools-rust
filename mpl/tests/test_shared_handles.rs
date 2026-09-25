@@ -7,9 +7,12 @@ use std::ptr::addr_eq;
 use std::sync::Arc;
 
 use aws_config::{BehaviorVersion, SdkConfig};
+use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
+use aws_crypto_mpl::structures::MaterialsError;
 use aws_crypto_mpl::{
-    AesGcm, BranchKeyStore, Cmc, Cmm, DefaultCmm, KeyStoreConfig, Keyring, Keystore,
-    KmsConfiguration, LocalCmc, RawAesKeyring, SharedCmc, SharedCmm, SharedKeyring, SharedKeystore,
+    AesGcm, BranchKeyStore, BranchKeySupplier, Cmc, Cmm, DefaultCmm, KeyStoreConfig, Keyring,
+    Keystore, KmsConfiguration, LocalCmc, RawAesKeyring, SharedBranchKeySupplier, SharedCmc,
+    SharedCmm, SharedKeyring, SharedKeystore,
 };
 
 fn keyring() -> RawAesKeyring {
@@ -37,6 +40,17 @@ fn keystore() -> BranchKeyStore {
 
 fn cache() -> LocalCmc {
     LocalCmc::new(1, 1).unwrap()
+}
+
+struct Supplier;
+
+impl BranchKeySupplier for Supplier {
+    fn get_branch_key_id(
+        &self,
+        _input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+        Ok(GetBranchKeyIdOutput::new("branch-key-id".to_string()))
+    }
 }
 
 /// Asserts the three `Arc`-reusing conversions of one handle type:
@@ -93,4 +107,9 @@ fn shared_keystore_reuses_arc() {
 #[test]
 fn shared_cmc_reuses_arc() {
     assert_reuses_arc!(SharedCmc, Cmc, cache());
+}
+
+#[test]
+fn shared_branch_key_supplier_reuses_arc() {
+    assert_reuses_arc!(SharedBranchKeySupplier, BranchKeySupplier, Supplier);
 }
