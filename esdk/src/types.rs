@@ -140,6 +140,14 @@ pub use aws_crypto_mpl::keyring::SharedKeyring;
 /// input of every operation holds one.
 pub use aws_crypto_mpl::cmm::SharedCmm;
 
+/// The Material Providers Library's keyring trait, re-exported. Implement it
+/// to supply a custom keyring.
+pub use aws_crypto_mpl::keyring::Keyring;
+
+/// The Material Providers Library's CMM trait, re-exported. Implement it to
+/// supply a custom CMM.
+pub use aws_crypto_mpl::cmm::Cmm;
+
 /// Key-Value pairs to associate with the encrypted data.
 ///
 /// This is the Material Providers Library's own encryption context, re-exported,
