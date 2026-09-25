@@ -6,8 +6,8 @@ use crate::Error;
 use crate::val_err;
 use std::num::NonZeroUsize;
 
-/// Internal union of the two ways a caller can supply materials, set by the
-/// input builders and consumed by `create_cmm_from_input`.
+/// Internal union of the two ways a caller can supply materials,
+/// set by the input builders and consumed by `create_cmm_from_input`.
 #[derive(Clone)]
 pub(crate) enum MaterialSource {
     Cmm(SharedCmm),
@@ -24,8 +24,7 @@ impl std::fmt::Debug for MaterialSource {
 }
 
 impl MaterialSource {
-    /// Resolve a builder's `keyring` / `cmm` fields, failing unless exactly
-    /// one is set.
+    /// Resolve a builder's `keyring` / `cmm` fields, failing unless exactly one is set.
     fn exactly_one(keyring: Option<SharedKeyring>, cmm: Option<SharedCmm>) -> Result<Self, Error> {
         match (keyring, cmm) {
             (Some(k), None) => Ok(Self::Keyring(k)),
@@ -232,7 +231,8 @@ pub struct DecryptStreamOutput {
 }
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`encrypt`](crate::encrypt). Construct via [`EncryptInput::builder`].
+/// Input for [`encrypt`](crate::encrypt).
+/// Construct via [`EncryptInput::builder`].
 //= spec/client-apis/encrypt.md#input
 //= type=exception
 //= reason=EncryptInput plaintext is &[u8] with known length; Plaintext Length Bound is not implemented here
@@ -371,8 +371,9 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the algorithm suite, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::algorithm_suite_id`].
+    /// Set the algorithm suite from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
@@ -390,30 +391,34 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the encryption context, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::encryption_context`].
+    /// Set the encryption context from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
     }
 
-    /// Set the bytes of plaintext data per frame. Default is 4096.
+    /// Set the bytes of plaintext data per frame.
+    /// Default is 4096.
     #[must_use]
     pub const fn frame_length(mut self, frame_length: FrameLength) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
 
-    /// Set the frame length, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::frame_length`].
+    /// Set the frame length from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::frame_length`].
     #[must_use]
     pub const fn set_frame_length(mut self, frame_length: Option<FrameLength>) -> Self {
         self.frame_length = frame_length;
         self
     }
 
-    /// Set the keyring. Provide exactly one of a keyring or a CMM.
+    /// Set the keyring.
+    /// Provide exactly one of a keyring or a CMM.
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
     #[must_use]
@@ -422,16 +427,17 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the keyring, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::keyring`].
+    /// Set the keyring from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::keyring`].
     #[must_use]
     pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
 
-    /// Set the cryptographic materials manager (CMM). Provide exactly one of a
-    /// keyring or a CMM.
+    /// Set the cryptographic materials manager (CMM).
+    /// Provide exactly one of a keyring or a CMM.
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
@@ -440,22 +446,25 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the CMM, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::cmm`].
+    /// Set the CMM from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::cmm`].
     #[must_use]
     pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
         self
     }
 
-    /// Set the data to be encrypted. Required.
+    /// Set the data to be encrypted.
+    /// Required.
     #[must_use]
     pub const fn plaintext(mut self, plaintext: &'a [u8]) -> Self {
         self.plaintext = Some(plaintext);
         self
     }
 
-    /// Set the maximum number of encrypted data keys. Default is no limit.
+    /// Set the maximum number of encrypted data keys.
+    /// Default is no limit.
     ///
     /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
     #[must_use]
@@ -464,8 +473,9 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the maximum number of encrypted data keys, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::max_encrypted_data_keys`].
+    /// Set the maximum number of encrypted data keys from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
     pub const fn set_max_encrypted_data_keys(
         mut self,
@@ -475,8 +485,8 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the commitment policy. Default is
-    /// `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Set the commitment policy.
+    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
     #[must_use]
@@ -485,8 +495,9 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
-    /// Set the commitment policy, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::commitment_policy`].
+    /// Set the commitment policy from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::commitment_policy`].
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
@@ -500,8 +511,8 @@ impl<'a> EncryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if no plaintext was set, or if not exactly
-    /// one of a keyring or CMM was set.
+    /// Returns a `ValidationError` if no plaintext was set,
+    /// or if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptInput<'a>, Error> {
         let plaintext = self
             .plaintext
@@ -526,8 +537,8 @@ impl<'a> EncryptInputBuilder<'a> {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`encrypt_stream`](crate::encrypt_stream). Construct via
-/// [`EncryptStreamInput::builder`].
+/// Input for [`encrypt_stream`](crate::encrypt_stream).
+/// Construct via [`EncryptStreamInput::builder`].
 pub struct EncryptStreamInput {
     pub(crate) algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     pub(crate) encryption_context: EncryptionContext,
@@ -621,8 +632,9 @@ impl EncryptStreamInputBuilder {
         self
     }
 
-    /// Set the algorithm suite, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::algorithm_suite_id`].
+    /// Set the algorithm suite from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
@@ -640,54 +652,60 @@ impl EncryptStreamInputBuilder {
         self
     }
 
-    /// Set the encryption context, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::encryption_context`].
+    /// Set the encryption context from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
     }
 
-    /// Set the bytes of plaintext data per frame. Default is 4096.
+    /// Set the bytes of plaintext data per frame.
+    /// Default is 4096.
     #[must_use]
     pub const fn frame_length(mut self, frame_length: FrameLength) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
 
-    /// Set the frame length, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::frame_length`].
+    /// Set the frame length from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::frame_length`].
     #[must_use]
     pub const fn set_frame_length(mut self, frame_length: Option<FrameLength>) -> Self {
         self.frame_length = frame_length;
         self
     }
 
-    /// Set the keyring. Provide exactly one of a keyring or a CMM.
+    /// Set the keyring.
+    /// Provide exactly one of a keyring or a CMM.
     #[must_use]
     pub fn keyring(mut self, keyring: impl Into<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into());
         self
     }
 
-    /// Set the keyring, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::keyring`].
+    /// Set the keyring from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::keyring`].
     #[must_use]
     pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
 
-    /// Set the cryptographic materials manager (CMM). Provide exactly one of a
-    /// keyring or a CMM.
+    /// Set the cryptographic materials manager (CMM).
+    /// Provide exactly one of a keyring or a CMM.
     #[must_use]
     pub fn cmm(mut self, cmm: impl Into<SharedCmm>) -> Self {
         self.cmm = Some(cmm.into());
         self
     }
 
-    /// Set the CMM, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::cmm`].
+    /// Set the CMM from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::cmm`].
     #[must_use]
     pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
@@ -705,25 +723,29 @@ impl EncryptStreamInputBuilder {
         self
     }
 
-    /// Set the expected plaintext stream size, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::data_size`].
+    /// Set the expected plaintext stream size from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::data_size`].
     #[must_use]
     pub const fn set_data_size(mut self, data_size: Option<usize>) -> Self {
         self.data_size = data_size;
         self
     }
 
-    /// Set the maximum number of encrypted data keys. Default is no limit.
+    /// Set the maximum number of encrypted data keys.
+    /// Default is no limit.
     ///
-    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client provides this.
+    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
+    /// provides this.
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
         self
     }
 
-    /// Set the maximum number of encrypted data keys, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::max_encrypted_data_keys`].
+    /// Set the maximum number of encrypted data keys from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
     pub const fn set_max_encrypted_data_keys(
         mut self,
@@ -733,18 +755,20 @@ impl EncryptStreamInputBuilder {
         self
     }
 
-    /// Set the commitment policy. Default is
-    /// `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Set the commitment policy.
+    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client provides this.
+    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
+    /// provides this.
     #[must_use]
     pub const fn commitment_policy(mut self, p: EsdkCommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
         self
     }
 
-    /// Set the commitment policy, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::commitment_policy`].
+    /// Set the commitment policy from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::commitment_policy`].
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
@@ -775,7 +799,8 @@ impl EncryptStreamInputBuilder {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`decrypt`](crate::decrypt). Construct via [`DecryptInput::builder`].
+/// Input for [`decrypt`](crate::decrypt).
+/// Construct via [`DecryptInput::builder`].
 pub struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept a required [Encrypted Message](#encrypted-message) argument.
@@ -799,9 +824,9 @@ impl<'a> DecryptInput<'a> {
         DecryptInputBuilder::default()
     }
 
-    /// Start a `DecryptInput` builder with the encryption context, keyring or
-    /// CMM, commitment policy, and EDK cap of `e`. Set the ciphertext before
-    /// building.
+    /// Start a `DecryptInput` builder with the encryption context, keyring or CMM,
+    /// commitment policy, and EDK cap of `e`.
+    /// Set the ciphertext before building.
     #[must_use]
     pub fn builder_from_encrypt(e: &EncryptInput<'_>) -> DecryptInputBuilder<'a> {
         DecryptInputBuilder {
@@ -863,8 +888,8 @@ pub struct DecryptInputBuilder<'a> {
 }
 
 impl<'a> DecryptInputBuilder<'a> {
-    /// Set the encrypted message (the serialized AWS Encryption SDK message)
-    /// to decrypt. Required.
+    /// Set the encrypted message (the serialized AWS Encryption SDK message) to decrypt.
+    /// Required.
     #[must_use]
     pub const fn ciphertext(mut self, ciphertext: &'a [u8]) -> Self {
         self.ciphertext = Some(ciphertext);
@@ -872,23 +897,26 @@ impl<'a> DecryptInputBuilder<'a> {
     }
 
     /// Set the encryption context to verify against the encrypted message.
-    /// If non-empty, decrypt requires every entry to be present in the
-    /// message's encryption context (subset check). Default is empty.
+    /// If non-empty, decrypt requires every entry to be present in the message's encryption
+    /// context (subset check).
+    /// Default is empty.
     #[must_use]
     pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
         self.encryption_context = Some(ec);
         self
     }
 
-    /// Set the encryption context, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::encryption_context`].
+    /// Set the encryption context from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
     }
 
-    /// Set the keyring. Provide exactly one of a keyring or a CMM.
+    /// Set the keyring.
+    /// Provide exactly one of a keyring or a CMM.
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
     #[must_use]
@@ -897,16 +925,17 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the keyring, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::keyring`].
+    /// Set the keyring from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::keyring`].
     #[must_use]
     pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
 
-    /// Set the cryptographic materials manager (CMM). Provide exactly one of a
-    /// keyring or a CMM.
+    /// Set the cryptographic materials manager (CMM).
+    /// Provide exactly one of a keyring or a CMM.
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
@@ -915,15 +944,17 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the CMM, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::cmm`].
+    /// Set the CMM from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::cmm`].
     #[must_use]
     pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
         self
     }
 
-    /// Set the maximum number of encrypted data keys. Default is no limit.
+    /// Set the maximum number of encrypted data keys.
+    /// Default is no limit.
     ///
     /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     #[must_use]
@@ -932,8 +963,9 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the maximum number of encrypted data keys, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::max_encrypted_data_keys`].
+    /// Set the maximum number of encrypted data keys from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
     pub const fn set_max_encrypted_data_keys(
         mut self,
@@ -943,8 +975,8 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the commitment policy. Default is
-    /// `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Set the commitment policy.
+    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     #[must_use]
@@ -953,8 +985,9 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
-    /// Set the commitment policy, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::commitment_policy`].
+    /// Set the commitment policy from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::commitment_policy`].
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
@@ -968,8 +1001,8 @@ impl<'a> DecryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if no ciphertext was set, or if not exactly
-    /// one of a keyring or CMM was set.
+    /// Returns a `ValidationError` if no ciphertext was set,
+    /// or if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptInput<'a>, Error> {
         let ciphertext = self
             .ciphertext
@@ -992,8 +1025,8 @@ impl<'a> DecryptInputBuilder<'a> {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`decrypt_stream`](crate::decrypt_stream). Construct via
-/// [`DecryptStreamInput::builder`].
+/// Input for [`decrypt_stream`](crate::decrypt_stream).
+/// Construct via [`DecryptStreamInput::builder`].
 pub struct DecryptStreamInput {
     pub(crate) encryption_context: EncryptionContext,
     pub(crate) material_source: MaterialSource,
@@ -1008,8 +1041,8 @@ impl DecryptStreamInput {
         DecryptStreamInputBuilder::default()
     }
 
-    /// Start a `DecryptStreamInput` builder with the encryption context,
-    /// keyring or CMM, commitment policy, and EDK cap of `e`.
+    /// Start a `DecryptStreamInput` builder with the encryption context, keyring or CMM,
+    /// commitment policy, and EDK cap of `e`.
     #[must_use]
     pub fn builder_from_encrypt(e: &EncryptInput<'_>) -> DecryptStreamInputBuilder {
         DecryptStreamInputBuilder {
@@ -1064,64 +1097,72 @@ pub struct DecryptStreamInputBuilder {
 
 impl DecryptStreamInputBuilder {
     /// Set the encryption context to verify against the encrypted message.
-    /// If non-empty, `decrypt_stream` requires every entry to be present in the
-    /// message's encryption context (subset check). Default is empty.
+    /// If non-empty, `decrypt_stream` requires every entry to be present in the message's
+    /// encryption context (subset check).
+    /// Default is empty.
     #[must_use]
     pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
         self.encryption_context = Some(ec);
         self
     }
 
-    /// Set the encryption context, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::encryption_context`].
+    /// Set the encryption context from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::encryption_context`].
     #[must_use]
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
     }
 
-    /// Set the keyring. Provide exactly one of a keyring or a CMM.
+    /// Set the keyring.
+    /// Provide exactly one of a keyring or a CMM.
     #[must_use]
     pub fn keyring(mut self, keyring: impl Into<SharedKeyring>) -> Self {
         self.keyring = Some(keyring.into());
         self
     }
 
-    /// Set the keyring, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::keyring`].
+    /// Set the keyring from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::keyring`].
     #[must_use]
     pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
 
-    /// Set the cryptographic materials manager (CMM). Provide exactly one of a
-    /// keyring or a CMM.
+    /// Set the cryptographic materials manager (CMM).
+    /// Provide exactly one of a keyring or a CMM.
     #[must_use]
     pub fn cmm(mut self, cmm: impl Into<SharedCmm>) -> Self {
         self.cmm = Some(cmm.into());
         self
     }
 
-    /// Set the CMM, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::cmm`].
+    /// Set the CMM from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::cmm`].
     #[must_use]
     pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
         self
     }
 
-    /// Set the maximum number of encrypted data keys. Default is no limit.
+    /// Set the maximum number of encrypted data keys.
+    /// Default is no limit.
     ///
-    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
+    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
+    /// provides this.
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
         self
     }
 
-    /// Set the maximum number of encrypted data keys, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::max_encrypted_data_keys`].
+    /// Set the maximum number of encrypted data keys from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
     pub const fn set_max_encrypted_data_keys(
         mut self,
@@ -1131,18 +1172,20 @@ impl DecryptStreamInputBuilder {
         self
     }
 
-    /// Set the commitment policy. Default is
-    /// `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Set the commitment policy.
+    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client provides this.
+    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
+    /// provides this.
     #[must_use]
     pub const fn commitment_policy(mut self, p: EsdkCommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
         self
     }
 
-    /// Set the commitment policy, or leave it unset with `None`. For forwarding an
-    /// existing `Option`; otherwise use [`Self::commitment_policy`].
+    /// Set the commitment policy from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::commitment_policy`].
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,

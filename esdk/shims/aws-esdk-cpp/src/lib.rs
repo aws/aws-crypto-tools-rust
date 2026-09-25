@@ -483,13 +483,12 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
     }
 }
 
-/// Validates a C++-supplied resource handle, then borrows the resource behind it.
-/// Map a core input builder's `build()` error through the shim's error
-/// translation.
+/// Map a core input builder's `build()` error through the shim's error translation.
 fn build_core_input<T>(built: Result<T, aws_esdk::Error>, operation: &str) -> Result<T, String> {
     built.map_err(|e| shim_err(classify_core_error(&e.kind), operation, e))
 }
 
+/// Validates a C++-supplied resource handle, then borrows the resource behind it.
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
     // Only validation right now is null-checking; could be extended in future (ex. method/field checks)
     //= spec/shim/shim.md#handles-and-lifetimes

@@ -75,8 +75,8 @@ impl Default for EsdkConfig {
 /// validation error. Override semantics may be defined in a future release;
 /// callers should set the fields in exactly one place.
 ///
-/// Note: an input commitment policy set to its default value is not detected
-/// as a conflict; configure it via [`Esdk::builder`] only.
+/// Note: an input commitment policy set to its default value is not detected as a conflict;
+/// configure it via [`Esdk::builder`] only.
 ///
 /// # Example
 ///
@@ -128,10 +128,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the
-    /// default or its EDK cap is set (config provided
-    /// in two places). Otherwise, returns whatever
-    /// [`encrypt`](crate::encrypt) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set (config provided in two places).
+    /// Otherwise, returns whatever [`encrypt`](crate::encrypt) returns.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
@@ -143,9 +142,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the
-    /// default or its EDK cap is set. Otherwise,
-    /// returns whatever [`decrypt`](crate::decrypt) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`decrypt`](crate::decrypt) returns.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
@@ -157,9 +156,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the
-    /// default or its EDK cap is set. Otherwise,
-    /// returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
     pub async fn encrypt_stream(
         &self,
         plaintext: &mut dyn SafeRead,
@@ -174,9 +173,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the
-    /// default or its EDK cap is set. Otherwise,
-    /// returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
     pub async fn decrypt_stream(
         &self,
         ciphertext: &mut dyn SafeRead,
