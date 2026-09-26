@@ -49,9 +49,6 @@ crate::shared::shared_handle!(
     /// `SharedKeyring` holds any value that implements it.
     /// APIs that accept a keyring take `impl Into<SharedKeyring>`,
     /// so callers usually pass the concrete keyring and never name this type.
-    ///
-    /// Name it when your own variable, field, or collection must hold
-    /// a keyring chosen at runtime, e.g. from configuration.
     SharedKeyring,
     Keyring
 );

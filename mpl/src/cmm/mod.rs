@@ -47,9 +47,6 @@ crate::shared::shared_handle!(
     /// `SharedCmm` holds any value that implements it.
     /// APIs that accept a CMM take `impl Into<SharedCmm>`,
     /// so callers usually pass the concrete CMM and never name this type.
-    ///
-    /// Name it when your own variable, field, or collection must hold
-    /// a CMM chosen at runtime, e.g. from configuration.
     SharedCmm,
     Cmm
 );

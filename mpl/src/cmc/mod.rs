@@ -159,9 +159,6 @@ crate::shared::shared_handle!(
     /// APIs that accept a cache take `impl Into<SharedCmc>`,
     /// so callers usually pass the concrete cache and never name this type.
     ///
-    /// Name it when your own variable, field, or collection must hold
-    /// a cache chosen at runtime, e.g. from configuration.
-    ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
     /// Give several keyrings clones of one handle through [`CacheType::Shared`]
     /// and they read and write the same entries.

@@ -83,9 +83,6 @@ crate::shared::shared_handle!(
     /// `SharedKeystore` holds any value that implements it.
     /// APIs that accept a keystore take `impl Into<SharedKeystore>`,
     /// so callers usually pass the concrete keystore and never name this type.
-    ///
-    /// Name it when your own variable, field, or collection must hold
-    /// a keystore chosen at runtime, e.g. from configuration.
     SharedKeystore,
     Keystore
 );

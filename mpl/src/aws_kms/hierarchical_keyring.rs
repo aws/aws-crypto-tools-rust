@@ -106,9 +106,6 @@ crate::shared::shared_handle!(
     /// `SharedBranchKeySupplier` holds any value that implements it.
     /// APIs that accept a branch key supplier take `impl Into<SharedBranchKeySupplier>`,
     /// so callers usually pass the concrete branch key supplier and never name this type.
-    ///
-    /// Name it when your own variable, field, or collection must hold
-    /// a branch key supplier chosen at runtime, e.g. from configuration.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
