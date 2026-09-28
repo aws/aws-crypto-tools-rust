@@ -7,6 +7,8 @@ on:
       - "esdk/**"
       - ".github/workflows/aws-esdk-cpp-test-server.yml"
   push:
+    branches:
+      - main
     paths:
       - "esdk-cpp-test-server/**"
       - "esdk/**"

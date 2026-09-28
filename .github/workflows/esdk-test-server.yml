@@ -9,6 +9,8 @@ on:
       - "esdk/**"
       - ".github/workflows/esdk-test-server.yml"
   push:
+    branches:
+      - main
     paths:
       - "esdk-test-server/**"
       - "esdk/**"
