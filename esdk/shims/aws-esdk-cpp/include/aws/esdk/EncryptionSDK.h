@@ -293,10 +293,6 @@ public:
     explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
-/// inflight_ttl. Left unset, they are seconds.
-enum class TimeUnits { Seconds, Milliseconds };
-
 // TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
@@ -309,21 +305,19 @@ public:
     /// For a cache with sensible defaults, use Default instead.
     /// \param entry_capacity Maximum number of entries cached.
     /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    /// \param grace_period Time before expiration to begin refreshing, in time_units.
-    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param grace_period Time before expiration to begin refreshing.
+    /// \param grace_interval Time between refresh attempts.
     /// \param fan_out Maximum number of simultaneous refresh attempts.
-    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
-    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
-    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten.
+    /// \param sleep Time a thread sleeps when fan_out is exceeded.
     static CacheType StormTracking(
         std::uint32_t entry_capacity,
         std::uint32_t entry_pruning_tail_size,
-        std::uint32_t grace_period,
-        std::uint32_t grace_interval,
+        std::chrono::nanoseconds grace_period,
+        std::chrono::nanoseconds grace_interval,
         std::uint32_t fan_out,
-        std::uint32_t inflight_ttl,
-        std::uint32_t sleep_milli,
-        std::optional<TimeUnits> time_units = std::nullopt);
+        std::chrono::nanoseconds inflight_ttl,
+        std::chrono::nanoseconds sleep);
     /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
     /// the user should provide an already constructed CryptographicMaterialsCache
     /// to the Hierarchical Keyring at initialization.
@@ -335,12 +329,11 @@ private:
     Kind kind_;
     std::uint32_t entry_capacity_ = 0;
     std::uint32_t entry_pruning_tail_size_ = 0;
-    std::uint32_t grace_period_ = 0;
-    std::uint32_t grace_interval_ = 0;
+    std::chrono::nanoseconds grace_period_{};
+    std::chrono::nanoseconds grace_interval_{};
     std::uint32_t fan_out_ = 0;
-    std::uint32_t inflight_ttl_ = 0;
-    std::uint32_t sleep_milli_ = 0;
-    std::optional<TimeUnits> time_units_;
+    std::chrono::nanoseconds inflight_ttl_{};
+    std::chrono::nanoseconds sleep_{};
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
     friend class CryptographicMaterialsCache;
     friend class HierarchicalKeyring;
