@@ -133,7 +133,9 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy, MaterialsErrorKind,
+};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -343,10 +345,17 @@ mod ffi {
         Milliseconds,
     }
 
+    // cxx has no mapping for std::chrono or std::time::Duration.
+    // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
+    struct Duration {
+        secs: u64,
+        nanos: u32,
+    }
+
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
-        ttl_seconds: u32,
+        ttl: Duration,
         cache: OptCacheType,
         partition_id: OptString,
     }
@@ -481,6 +490,14 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
         ErrorKind::CacheError => ffi::ShimErrorKind::CacheError,
         ErrorKind::ValidationError => ffi::ShimErrorKind::ValidationError,
         _ => ffi::ShimErrorKind::Esdk,
+    }
+}
+
+/// Map an MPL materials error kind to its ffi error kind.
+fn classify_mpl_error(kind: &MaterialsErrorKind) -> ffi::ShimErrorKind {
+    match kind {
+        MaterialsErrorKind::Validation => ffi::ShimErrorKind::ValidationError,
+        _ => ffi::ShimErrorKind::MplError,
     }
 }
 
@@ -809,7 +826,7 @@ fn create_cryptographic_materials_cache(
     let cache_type = make_cache_type(cache)?;
     let created = create_cryptographic_materials_cache_core(cache_type).map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::MplError,
+            classify_mpl_error(&e.kind),
             "create_cryptographic_materials_cache",
             e,
         )
@@ -1090,7 +1107,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .block_on(builder.build())
         .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
     Ok(Box::new(KeyStore {
-        inner: store.into(),
+        inner: SharedKeystore::new(store),
     }))
 }
 
@@ -1145,10 +1162,10 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
         wrapping_alg_target_to_core(input.wrapping_alg)?,
     )
-    .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, "create_raw_aes_keyring", e))?;
+    .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1185,27 +1202,39 @@ fn create_hierarchical_keyring(
     //# the core ESDK when present; an unset value is omitted.
     let partition_id = input.partition_id.to_option();
 
-    let keyring = HierarchicalKeyring::new(
-        key_store.inner.clone(),
+    let ttl = Duration::from_secs(input.ttl.secs)
+        .checked_add(Duration::from_nanos(u64::from(input.ttl.nanos)))
+        .ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                "create_hierarchical_keyring",
+                "ttl is out of range",
+            )
+        })?;
+
+    let mut builder = HierarchicalKeyring::builder()
+        .key_store(key_store.inner.clone())
         //= spec/shim/esdk-shim.md#create-hierarchical-keyring
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
-        u64::from(input.ttl_seconds),
-        Some(input.branch_key_id.clone()),
-        None,
-        cache_type,
-        partition_id,
-    )
-    .map_err(|e| {
+        .ttl(ttl)
+        .branch_key_id(input.branch_key_id.clone());
+    if let Some(cache_type) = cache_type {
+        builder = builder.cache(cache_type);
+    }
+    if let Some(partition_id) = partition_id {
+        builder = builder.partition_id(partition_id);
+    }
+    let keyring = builder.build().map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::MplError,
+            classify_mpl_error(&e.kind),
             "create_hierarchical_keyring",
             e,
         )
     })?;
 
     Ok(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1531,9 +1560,11 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Converts an ESDK Rust keyring into a C++ shim keyring handle.
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
-pub fn into_keyring_handle(keyring: impl Into<SharedKeyring>) -> *mut std::ffi::c_void {
+pub fn into_keyring_handle(
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
     .cast()
 }

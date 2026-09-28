@@ -6,6 +6,7 @@
 //! decode end to end.
 
 use super::*;
+use aws_crypto_mpl::keystore::Keystore as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -91,7 +92,7 @@ fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::new(),
         key_store: std::ptr::null(),
-        ttl_seconds: 0,
+        ttl: ffi::Duration { secs: 0, nanos: 0 },
         cache: unset_cache(),
         partition_id: unset_string(),
     }
@@ -420,6 +421,31 @@ fn classify_core_error_maps_each_kind() {
     }
 }
 
+#[test]
+fn classify_mpl_error_maps_validation_and_defaults_to_mpl_error() {
+    let cases = [
+        (
+            MaterialsErrorKind::Validation,
+            ffi::ShimErrorKind::ValidationError,
+        ),
+        (
+            MaterialsErrorKind::KeyringFailed,
+            ffi::ShimErrorKind::MplError,
+        ),
+        (
+            MaterialsErrorKind::NoMatchingDataKey,
+            ffi::ShimErrorKind::MplError,
+        ),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(
+            classify_mpl_error(&kind).repr,
+            expected.repr,
+            "for {kind:?}"
+        );
+    }
+}
+
 // Inputs the facade cannot express, so must be tested in Rust
 //
 // - Null resource handles (the facade passes references)
@@ -520,6 +546,47 @@ fn create_hierarchical_keyring_reports_bad_cache() {
     );
 }
 
+fn hierarchical_keyring_input_with_ttl(
+    keystore: &KeyStore,
+    ttl: ffi::Duration,
+) -> ffi::HierarchicalKeyringInput {
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = keystore as *const KeyStore;
+    input.branch_key_id = "branch-key-id".to_string();
+    input.ttl = ttl;
+    input
+}
+
+#[test]
+fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
+        &keystore,
+        ffi::Duration {
+            secs: 0,
+            nanos: 500_000_000,
+        },
+    ))
+    .expect("a 500 ms TTL must be accepted");
+
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(
+            &keystore,
+            ffi::Duration {
+                secs: u64::MAX,
+                nanos: 1_000_000_000,
+            },
+        ),
+    ));
+    assert!(
+        err.contains("ttl is out of range"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn create_cache_rejects_unknown_kind() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
@@ -569,7 +636,7 @@ fn shared_cache_type_references_the_supplied_cache() {
     let Ok(CacheType::Shared(referenced)) = make_cache_type(&shared) else {
         panic!("a Shared cache kind must yield CacheType::Shared");
     };
-    assert!(std::ptr::addr_eq(&*referenced, &*cache.inner));
+    assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
 }
 
 fn storm_tracking_cache_input(time_units: ffi::TimeUnits) -> ffi::CacheType {

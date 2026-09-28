@@ -290,6 +290,7 @@ async fn test_suite_from_materials_used() {
 /// The native MPL has no multi-keyring, so a keyring can only ever produce one
 /// EDK. Returning two from a caller-implemented CMM is the only way to drive the
 /// ESDK's maximum-EDK check on encrypt.
+#[derive(Clone)]
 struct DuplicateEdkCmm {
     inner: DefaultCmm,
 }
@@ -330,9 +331,9 @@ impl Cmm for DuplicateEdkCmm {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_max_edk_exceeded_error() {
     // The CMM returns 2 EDKs; the client allows at most 1.
-    let cmm = SharedCmm::from(DuplicateEdkCmm {
+    let cmm = DuplicateEdkCmm {
         inner: DefaultCmm::new(test_keyring().await),
-    });
+    };
     let mut enc_input =
         EncryptInput::with_cmm(b"max edk test", EncryptionContext::new(), cmm.clone());
     enc_input.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());

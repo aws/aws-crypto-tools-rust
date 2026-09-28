@@ -15,8 +15,8 @@
 //! would diverge and the cross-decrypt would fail.
 //!
 //! This is the strongest property we can assert without a spy on the CMM
-//! construction in `materials.rs` — the MPL doesn't expose a way to ask an
-//! `SharedCmm` "are you the default CMM?" at runtime.
+//! construction in `materials.rs` — the MPL doesn't expose a way to ask a
+//! CMM "are you the default CMM?" at runtime.
 //!
 
 #[allow(clippy::duplicate_mod)]
@@ -30,7 +30,9 @@ use test_helpers::*;
 /// Helper: independently construct a default CMM from a keyring via the MPL.
 /// Mirrors the call in `materials.rs::create_cmm_from_input` for the
 /// keyring arm.
-fn default_cmm_from(keyring: SharedKeyring) -> aws_crypto_mpl::cmm::DefaultCmm {
+fn default_cmm_from(
+    keyring: aws_crypto_mpl::keyring::RawAesKeyring,
+) -> aws_crypto_mpl::cmm::DefaultCmm {
     aws_crypto_mpl::cmm::DefaultCmm::new(keyring)
 }
 

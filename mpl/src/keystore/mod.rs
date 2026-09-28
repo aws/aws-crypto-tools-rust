@@ -29,6 +29,7 @@ pub use error::{KeystoreError, KeystoreErrorKind};
 
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
+/// To hold a keystore whose concrete type is chosen at runtime, use [`SharedKeystore`].
 #[async_trait]
 pub trait Keystore: Send + Sync {
     /// Returns the keystore information for this keystore.
@@ -74,11 +75,57 @@ pub trait Keystore: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A shared handle to any [`Keystore`].
+    /// A keystore whose concrete type is chosen at runtime.
     ///
-    /// Every API that accepts a keystore takes `impl Into<SharedKeystore>`, so
-    /// a concrete keystore, an `Arc` of one, or an existing handle can be
-    /// passed. Cloning is cheap: the clone shares the same keystore instance.
+    /// It implements [`Keystore`], so it can be passed anywhere a keystore is accepted.
+    /// Callers that know their keystore's type pass it directly and never need this one.
     SharedKeystore,
     Keystore
 );
+
+#[async_trait]
+impl Keystore for SharedKeystore {
+    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+        self.0.get_key_store_info()
+    }
+
+    async fn create_key_store(&self) -> Result<String, KeystoreError> {
+        self.0.create_key_store().await
+    }
+
+    async fn create_key(
+        &self,
+        branch_key_id: Option<String>,
+        encryption_context: Option<EncryptionContext>,
+    ) -> Result<String, KeystoreError> {
+        self.0.create_key(branch_key_id, encryption_context).await
+    }
+
+    async fn version_key(&self, branch_key_id: String) -> Result<(), KeystoreError> {
+        self.0.version_key(branch_key_id).await
+    }
+
+    async fn get_active_branch_key(
+        &self,
+        branch_key_id: String,
+    ) -> Result<BranchKeyMaterials, KeystoreError> {
+        self.0.get_active_branch_key(branch_key_id).await
+    }
+
+    async fn get_branch_key_version(
+        &self,
+        branch_key_id: String,
+        branch_key_version: String,
+    ) -> Result<BranchKeyMaterials, KeystoreError> {
+        self.0
+            .get_branch_key_version(branch_key_id, branch_key_version)
+            .await
+    }
+
+    async fn get_beacon_key(
+        &self,
+        branch_key_id: String,
+    ) -> Result<BeaconKeyMaterials, KeystoreError> {
+        self.0.get_beacon_key(branch_key_id).await
+    }
+}

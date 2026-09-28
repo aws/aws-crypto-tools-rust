@@ -1,25 +1,22 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
-//! [`Keyring`](aws_esdk::Keyring).
+//! [`SharedKeyring`](aws_esdk::SharedKeyring).
 //!
-//! Both keyrings resolve through the Dafny MPL reached via [`aws_esdk::mpl`],
-//! yielding a [`Keyring::Legacy`](aws_esdk::Keyring::Legacy):
-//! - Raw AES via `create_raw_aes_keyring`.
-//! - AWS KMS Hierarchical via `create_aws_kms_hierarchical_keyring` over the
-//!   Dafny MPL key store client.
+//! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
+//! - Raw AES via [`RawAesKeyring`].
+//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over a [`BranchKeyStore`].
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
+
+use std::time::Duration;
 
 use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
-use aws_esdk::Keyring as EsdkKeyring;
-use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::client::Client as KeyStoreClient;
-use aws_mpl_legacy::dafny::deps::aws_cryptography_keyStore::types::{
-    KeyStoreConfig, KmsConfiguration,
-};
-use aws_mpl_legacy::dafny::types::AesWrappingAlg as MplAesWrappingAlg;
+use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
+use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
+use aws_esdk::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
 ///
@@ -27,7 +24,7 @@ use aws_mpl_legacy::dafny::types::AesWrappingAlg as MplAesWrappingAlg;
 /// default CMM).
 pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
-) -> Result<EsdkKeyring, ServerError> {
+) -> Result<SharedKeyring, ServerError> {
     let set = [
         cmm.default_cmm.is_some(),
         cmm.required_encryption_context.is_some(),
@@ -50,8 +47,8 @@ pub async fn keyring_for_cmm(
     ))
 }
 
-/// Build an `aws-esdk` [`Keyring`](aws_esdk::Keyring) from a modeled `Keyring`.
-pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, ServerError> {
+/// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::SharedKeyring) from a modeled `Keyring`.
+pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, ServerError> {
     let set = [
         keyring.aws_kms.is_some(),
         keyring.aws_kms_mrk.is_some(),
@@ -83,47 +80,49 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, Server
     ))
 }
 
-async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, ServerError> {
+async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, ServerError> {
     let wrapping_alg = match config.wrapping_alg {
-        crate::model::AesWrappingAlg::Alg128 => MplAesWrappingAlg::AlgAes128GcmIv12Tag16,
-        crate::model::AesWrappingAlg::Alg192 => MplAesWrappingAlg::AlgAes192GcmIv12Tag16,
-        crate::model::AesWrappingAlg::Alg256 => MplAesWrappingAlg::AlgAes256GcmIv12Tag16,
+        crate::model::AesWrappingAlg::Alg128 => AesGcm::Aes128Gcm,
+        crate::model::AesWrappingAlg::Alg192 => AesGcm::Aes192Gcm,
+        crate::model::AesWrappingAlg::Alg256 => AesGcm::Aes256Gcm,
     };
-    let keyring = aws_esdk::mpl()
-        .create_raw_aes_keyring()
-        .key_namespace(config.key_namespace.clone())
-        .key_name(config.key_name.clone())
-        .wrapping_key(aws_smithy_types::Blob::new(config.wrapping_key.clone()))
-        .wrapping_alg(wrapping_alg)
-        .send()
-        .await
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
-    Ok(EsdkKeyring::Legacy(keyring))
+    let keyring = RawAesKeyring::new(
+        config.key_namespace.clone(),
+        config.key_name.clone(),
+        config.wrapping_key.clone(),
+        wrapping_alg,
+    )
+    .map_err(|e| ServerError::esdk(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
 }
 
-/// Build a hierarchical keyring via the legacy (Dafny) MPL key store client.
+/// Build a hierarchical keyring over an MPL branch key store.
 ///
-/// The key store's DynamoDB and KMS clients are resolved from the ambient AWS
-/// configuration (region via `AWS_REGION`); branch-key retrieval reaches KMS and
-/// DynamoDB when the client encrypts or decrypts.
+/// No KMS or DynamoDB client is supplied, so the key store builds its own from
+/// the ambient AWS configuration, with the region taken from the KMS key ARN
+/// (not `AWS_REGION`); branch-key retrieval reaches KMS and DynamoDB when the
+/// client encrypts or decrypts.
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
-) -> Result<EsdkKeyring, ServerError> {
-    let key_store_config = KeyStoreConfig::builder()
+) -> Result<SharedKeyring, ServerError> {
+    let key_store = BranchKeyStore::builder()
         .ddb_table_name(config.key_store_table_name.clone())
-        .logical_key_store_name(config.logical_key_store_name.clone())
+        .logical_keystore_name(config.logical_key_store_name.clone())
         .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
         .build()
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
-    let key_store = KeyStoreClient::from_conf(key_store_config)
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
-    let keyring = aws_esdk::mpl()
-        .create_aws_kms_hierarchical_keyring()
-        .branch_key_id(config.branch_key_id.clone())
-        .key_store(key_store)
-        .ttl_seconds(config.ttl_seconds)
-        .send()
         .await
         .map_err(|e| ServerError::esdk(e.to_string()))?;
-    Ok(EsdkKeyring::Legacy(keyring))
+    let ttl_seconds = u64::try_from(config.ttl_seconds).map_err(|_| {
+        ServerError::generic(format!(
+            "ttlSeconds must be non-negative, got {}",
+            config.ttl_seconds
+        ))
+    })?;
+    let keyring = HierarchicalKeyring::builder()
+        .key_store(key_store)
+        .ttl(Duration::from_secs(ttl_seconds))
+        .branch_key_id(config.branch_key_id.clone())
+        .build()
+        .map_err(|e| ServerError::esdk(e.to_string()))?;
+    Ok(SharedKeyring::new(keyring))
 }

@@ -380,8 +380,8 @@ pub enum CacheType {
     /// to state. Omitting the cache entirely is what selects the CMP's own
     /// default capacity.
     Default(DefaultCache),
-    /// Use the caller-supplied cache directly. Common when one cache is
-    /// shared across multiple Hierarchical Keyrings (or other CMPs).
+    /// Use the cache the caller passed in.
+    /// Common when one cache is shared across multiple Hierarchical Keyrings (or other CMPs).
     Shared(SharedCmc),
     /// Build a CMP-local [`StormTrackingCmc`](super::StormTrackingCmc) with
     /// the carried [`StormTrackingCache`] parameters. The consuming CMP
@@ -403,14 +403,14 @@ pub fn create_cryptographic_materials_cache(
                 .map_err(|e| {
                     MaterialsError::new(format!("failed to initialize default LocalCmc: {e}"))
                 })?;
-            Ok(local.into())
+            Ok(SharedCmc::new(local))
         }
         CacheType::Shared(cache) => Ok(cache),
         CacheType::StormTracking(params) => {
             let storm = StormTrackingCmc::new(&params).map_err(|e| {
                 MaterialsError::new(format!("failed to initialize StormTrackingCmc: {e}"))
             })?;
-            Ok(storm.into())
+            Ok(SharedCmc::new(storm))
         }
     }
 }

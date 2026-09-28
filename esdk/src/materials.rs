@@ -11,7 +11,7 @@ use crate::message::serializable_types::{
 };
 use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
+use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };
@@ -68,9 +68,9 @@ pub(crate) struct ValidatedMaterials<M> {
     pub(crate) required_encryption_context_keys: Vec<String>,
 }
 
-/// Resolve the CMM for an operation from the resolved material source. A
-/// supplied CMM is used directly; a supplied keyring is wrapped in a
-/// [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
+/// Resolve the CMM for an operation from the resolved material source.
+/// A supplied CMM is used directly.
+/// A supplied keyring is wrapped in a [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
 pub(crate) fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
 ) -> Result<SharedCmm, Error> {
@@ -85,7 +85,7 @@ pub(crate) fn create_cmm_from_input(
             //= spec/client-apis/decrypt.md#keyring
             //# If the Keyring is provided as the input, the client MUST construct a [default CMM](../framework/default-cmm.md) that uses this keyring,
             //# to obtain the [decryption materials](../framework/structures.md#decryption-materials) that is required for decryption.
-            Ok(DefaultCmm::new(keyring).into())
+            Ok(SharedCmm::new(DefaultCmm::new(keyring)))
         }
     }
 }

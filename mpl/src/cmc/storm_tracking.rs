@@ -66,9 +66,6 @@ enum GetDecision {
 /// protection.  See the module-level docs and
 /// `spec/framework/storm-tracking-cryptographic-materials-cache.md` for the
 /// full behavioral specification.
-///
-/// Cloning is cheap and the clone shares state with the original, including
-/// the stored entries and the inflight map.
 #[derive(Clone)]
 pub struct StormTrackingCmc {
     inner: Arc<StormTrackingCmcInner>,
