@@ -987,9 +987,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
@@ -1027,9 +1025,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .keyring(keyring.inner.clone());
     let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
@@ -1095,15 +1091,20 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied key store id and grant
         //# tokens to the core ESDK when present; an unset value is omitted.
-        id: input.id.to_option(),
-        grant_tokens: if input.grant_tokens.is_empty() {
-            None
-        } else {
-            Some(input.grant_tokens.iter().map(ToString::to_string).collect())
-        },
-        ddb_client,
-        kms_client,
-    };
+        .set_id(input.id.to_option())
+        .set_grant_tokens(non_empty(&input.grant_tokens))
+        //= spec/shim/esdk-shim.md#create-key-store
+        //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
+        //# each checked as defined in
+        //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
+        //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
+        //# left for the core ESDK to default.
+        //
+        // A null handle means "not supplied": leaving it None makes the core build its
+        // own default client. SAFETY: a non-null handle is a valid client borrowed for
+        // this call.
+        .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
+        .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
     let store = TOKIO_RUNTIME
         .block_on(builder.build())
@@ -1450,9 +1451,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
     let core_input = aws_esdk::EncryptStreamInput::builder()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .set_algorithm_suite_id(
             input
                 .algorithm_suite_id
@@ -1515,9 +1514,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
     let core_input = aws_esdk::DecryptStreamInput::builder()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .set_max_encrypted_data_keys(
             input
                 .max_encrypted_data_keys
