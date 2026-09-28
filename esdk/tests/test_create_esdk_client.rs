@@ -4,8 +4,7 @@
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_esdk::{
-    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, SharedCmm, decrypt,
-    encrypt,
+    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, decrypt, encrypt,
 };
 use aws_mpl_primitives::AesGcm;
 
@@ -270,7 +269,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_accepts_cmm() {
     let keyring = test_keyring().await;
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring));
+    let cmm = DefaultCmm::new(keyring);
     let plaintext = b"cmm round-trip plaintext";
 
     let encrypt_input = EncryptInput::builder()
@@ -312,7 +311,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring.clone()));
+    let cmm = DefaultCmm::new(keyring.clone());
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
@@ -349,7 +348,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring.clone()));
+    let cmm = DefaultCmm::new(keyring.clone());
 
     //= spec/client-apis/decrypt.md#input
     //= type=test

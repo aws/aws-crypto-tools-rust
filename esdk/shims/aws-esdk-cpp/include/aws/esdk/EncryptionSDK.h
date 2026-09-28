@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <istream>
 #include <map>
@@ -12,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #if defined(__has_include)
@@ -382,14 +384,36 @@ public:
     ///        wrapping and unwrapping data keys.
     /// \param branch_key_id The identifier for the single Branch Key responsible for
     ///        wrapping and unwrapping the data key.
-    /// \param ttl_seconds How many seconds the Branch Key material is allowed to be reused
-    ///        within the local cache before it is re-retrieved from Amazon DynamoDB and
+    /// \param ttl How long the Branch Key material is allowed to be reused within the
+    ///        local cache before it is re-retrieved from Amazon DynamoDB and
     ///        re-authenticated with AWS KMS.
     /// \param options Optional Hierarchical Keyring parameters.
+    template <class Rep, class Period>
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
-                        std::uint32_t ttl_seconds,
-                        const HierarchicalKeyringOptions& options = {});
+                        std::chrono::duration<Rep, Period> ttl,
+                        const HierarchicalKeyringOptions& options = {})
+        : HierarchicalKeyring(std::move(key_store), branch_key_id, to_nanoseconds(ttl), options,
+                              Tag{}) {}
+
+private:
+    // Keeps the private constructor out of overload resolution for callers,
+    // so a std::chrono::nanoseconds argument still selects the public template.
+    struct Tag {};
+
+    template <class Rep, class Period>
+    static std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> ttl) {
+        static_assert(
+            std::is_convertible_v<std::chrono::duration<Rep, Period>, std::chrono::nanoseconds>,
+            "ttl must be an integer std::chrono::duration, such as std::chrono::seconds");
+        return ttl;
+    }
+
+    HierarchicalKeyring(KeyStore key_store,
+                        const std::string& branch_key_id,
+                        std::chrono::nanoseconds ttl,
+                        const HierarchicalKeyringOptions& options,
+                        Tag);
 };
 
 /// Keyring that wraps and unwraps data keys locally with AES-GCM.

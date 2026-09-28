@@ -41,11 +41,12 @@ fn assert_signing_key_composes(alg: EcdsaSignatureAlgorithm, sk: &[u8], vk_compr
 
 // ===== Mock Keyring =====
 
+#[derive(Clone)]
 struct MockKeyring {
     pdk_byte: u8,
     edk_provider_id: String,
-    encrypt_calls: AtomicU32,
-    decrypt_calls: AtomicU32,
+    encrypt_calls: Arc<AtomicU32>,
+    decrypt_calls: Arc<AtomicU32>,
 }
 
 impl MockKeyring {
@@ -53,8 +54,8 @@ impl MockKeyring {
         Self {
             pdk_byte: 0xAA,
             edk_provider_id: "mock-keyring".to_string(),
-            encrypt_calls: AtomicU32::new(0),
-            decrypt_calls: AtomicU32::new(0),
+            encrypt_calls: Arc::new(AtomicU32::new(0)),
+            decrypt_calls: Arc::new(AtomicU32::new(0)),
         }
     }
 }
@@ -158,8 +159,8 @@ async fn test_get_encryption_materials_does_not_mutate_callers_ec() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_fails_when_ec_already_has_aws_crypto_public_key() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(Arc::clone(&keyring));
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let mut ec = EncryptionContext::new();
     ec.insert(b"aws-crypto-public-key".to_vec(), b"existing".to_vec());
     let request = EncryptionMaterialsRequest::new(ec, allow_policy());
@@ -247,8 +248,8 @@ async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_k
 
 #[tokio::test]
 async fn test_get_encryption_materials_calls_keyring_on_encrypt_once() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(Arc::clone(&keyring));
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(non_signing_suite());
     cmm.get_encryption_materials(request).await.unwrap();
@@ -345,8 +346,8 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
 
 #[tokio::test]
 async fn test_decrypt_materials_calls_keyring_on_decrypt_once() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(Arc::clone(&keyring));
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
         allow_policy(),
@@ -645,8 +646,8 @@ async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty
 
 #[tokio::test]
 async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_keyring() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(Arc::clone(&keyring));
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
         allow_policy(),

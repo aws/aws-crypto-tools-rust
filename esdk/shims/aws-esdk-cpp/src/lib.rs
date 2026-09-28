@@ -128,14 +128,17 @@ use aws_config::{AppName, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
-    CacheType, DefaultCache, SharedCmc, StormTrackingCache, TimeUnits,
+    CacheType, DefaultCache, SharedCmc, StormTrackingCache,
     create_cryptographic_materials_cache as create_cryptographic_materials_cache_core,
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration, SharedKeystore};
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
+use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy, MaterialsErrorKind,
+};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::LazyLock;
+use std::time::Duration;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -342,10 +345,17 @@ mod ffi {
         Milliseconds,
     }
 
+    // cxx has no mapping for std::chrono or std::time::Duration.
+    // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
+    struct Duration {
+        secs: u64,
+        nanos: u32,
+    }
+
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
-        ttl_seconds: u32,
+        ttl: Duration,
         cache: OptCacheType,
         partition_id: OptString,
     }
@@ -486,6 +496,14 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
 /// Map a core input builder's `build()` error through the shim's error translation.
 fn build_core_input<T>(built: Result<T, aws_esdk::Error>, operation: &str) -> Result<T, String> {
     built.map_err(|e| shim_err(classify_core_error(&e.kind), operation, e))
+}
+
+/// Map an MPL materials error kind to its ffi error kind.
+fn classify_mpl_error(kind: &MaterialsErrorKind) -> ffi::ShimErrorKind {
+    match kind {
+        MaterialsErrorKind::Validation => ffi::ShimErrorKind::ValidationError,
+        _ => ffi::ShimErrorKind::MplError,
+    }
 }
 
 /// Validates a C++-supplied resource handle, then borrows the resource behind it.
@@ -714,6 +732,22 @@ fn make_kms_config(
     }
 }
 
+/// The conversion from a storm-tracking time value to a `Duration`: `Unset`
+/// and `Seconds` read the value as seconds, `Milliseconds` as milliseconds.
+fn time_unit(units: ffi::TimeUnits, op: &str) -> Result<fn(u32) -> Duration, String> {
+    match units {
+        ffi::TimeUnits::Unset | ffi::TimeUnits::Seconds => {
+            Ok(|v| Duration::from_secs(u64::from(v)))
+        }
+        ffi::TimeUnits::Milliseconds => Ok(|v| Duration::from_millis(u64::from(v))),
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            op,
+            "unrecognized time_units",
+        )),
+    }
+}
+
 // Create an ESDK Rust CacheType from the given FFI CacheType
 fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
     let op = "create_cryptographic_materials_cache";
@@ -743,29 +777,27 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a storm tracking cache.
         ffi::CacheKind::StormTracking => {
-            let mut params = StormTrackingCache::builder()
+            let duration = time_unit(cache.time_units, op)?;
+            StormTrackingCache::builder()
                 .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
                 .entry_pruning_tail_size(capacity(
                     "entry_pruning_tail_size",
                     cache.entry_pruning_tail_size,
                 )?)
-                .grace_period(u64::from(cache.grace_period))
-                .grace_interval(u64::from(cache.grace_interval))
+                .grace_period(duration(cache.grace_period))
+                .grace_interval(duration(cache.grace_interval))
                 .fan_out(capacity("fan_out", cache.fan_out)?)
-                .inflight_ttl(u64::from(cache.inflight_ttl))
-                .sleep_milli(u64::from(cache.sleep_milli));
-            match cache.time_units {
-                ffi::TimeUnits::Seconds => params = params.time_units(TimeUnits::Seconds),
-                ffi::TimeUnits::Milliseconds => params = params.time_units(TimeUnits::Milliseconds),
-                _ => {}
-            }
-            Ok(CacheType::StormTracking(params.build().map_err(|e| {
-                shim_err(
-                    ffi::ShimErrorKind::ValidationError,
-                    op,
-                    format!("failed to build StormTrackingCache: {e}"),
-                )
-            })?))
+                .inflight_ttl(duration(cache.inflight_ttl))
+                .sleep(Duration::from_millis(u64::from(cache.sleep_milli)))
+                .build()
+                .map(CacheType::StormTracking)
+                .map_err(|e| {
+                    shim_err(
+                        ffi::ShimErrorKind::ValidationError,
+                        op,
+                        format!("failed to build StormTrackingCache: {e}"),
+                    )
+                })
         }
         ffi::CacheKind::Shared => {
             let shared = require_handle(cache.shared, "shared cache", op)?;
@@ -799,7 +831,7 @@ fn create_cryptographic_materials_cache(
     let cache_type = make_cache_type(cache)?;
     let created = create_cryptographic_materials_cache_core(cache_type).map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::MplError,
+            classify_mpl_error(&e.kind),
             "create_cryptographic_materials_cache",
             e,
         )
@@ -809,7 +841,8 @@ fn create_cryptographic_materials_cache(
 
 /// C++ to Rust for AWS SDK call retry config
 fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::RetryConfig> {
-    if !config.mode_adaptive && !config.max_attempts.set {
+    let max_attempts = config.max_attempts.to_option();
+    if !config.mode_adaptive && max_attempts.is_none() {
         return None;
     }
     let mut out_config = if config.mode_adaptive {
@@ -817,8 +850,8 @@ fn make_retry_config(config: &ffi::RetryConfig) -> Option<aws_config::retry::Ret
     } else {
         aws_config::retry::RetryConfig::standard()
     };
-    if config.max_attempts.set {
-        out_config = out_config.with_max_attempts(config.max_attempts.value);
+    if let Some(max_attempts) = max_attempts {
+        out_config = out_config.with_max_attempts(max_attempts);
     }
     Some(out_config)
 }
@@ -1070,32 +1103,19 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
     let op = "create_keystore";
-    //= spec/shim/esdk-shim.md#create-key-store
-    //# - Creating a key store MUST provide the target-supplied KMS configuration to the
-    //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
-    let kms_configuration =
-        make_kms_config(input.kms_configuration_type, &input.kms_configuration_value)?;
-
-    //= spec/shim/esdk-shim.md#create-key-store
-    //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
-    //# each checked as defined in
-    //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
-    //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
-    //# left for the core ESDK to default.
-    //
-    // A null handle means "not supplied": leaving it None makes the core build its
-    // own default client. SAFETY: a non-null handle is a valid client borrowed for
-    // this call.
-    let kms_client = unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone());
-    let ddb_client = unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone());
-
-    let config = KeyStoreConfig {
+    let builder = BranchKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
-        ddb_table_name: input.ddb_table_name.clone(),
-        logical_keystore_name: input.logical_key_store_name.clone(),
-        kms_configuration,
+        .ddb_table_name(input.ddb_table_name.clone())
+        .logical_keystore_name(input.logical_key_store_name.clone())
+        //= spec/shim/esdk-shim.md#create-key-store
+        //# - Creating a key store MUST provide the target-supplied KMS configuration to the
+        //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
+        .kms_configuration(make_kms_config(
+            input.kms_configuration_type,
+            &input.kms_configuration_value,
+        )?)
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied key store id and grant
         //# tokens to the core ESDK when present; an unset value is omitted.
@@ -1110,11 +1130,16 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     };
 
     let store = TOKIO_RUNTIME
-        .block_on(BranchKeyStore::new(config))
+        .block_on(builder.build())
         .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
     Ok(Box::new(KeyStore {
-        inner: store.into(),
+        inner: SharedKeystore::new(store),
     }))
+}
+
+/// An empty target list means no grant tokens were supplied.
+fn non_empty(tokens: &[String]) -> Option<Vec<String>> {
+    (!tokens.is_empty()).then(|| tokens.to_vec())
 }
 
 //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
@@ -1163,10 +1188,10 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
         wrapping_alg_target_to_core(input.wrapping_alg)?,
     )
-    .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, "create_raw_aes_keyring", e))?;
+    .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1203,27 +1228,39 @@ fn create_hierarchical_keyring(
     //# the core ESDK when present; an unset value is omitted.
     let partition_id = input.partition_id.to_option();
 
-    let keyring = HierarchicalKeyring::new(
-        key_store.inner.clone(),
+    let ttl = Duration::from_secs(input.ttl.secs)
+        .checked_add(Duration::from_nanos(u64::from(input.ttl.nanos)))
+        .ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                "create_hierarchical_keyring",
+                "ttl is out of range",
+            )
+        })?;
+
+    let mut builder = HierarchicalKeyring::builder()
+        .key_store(key_store.inner.clone())
         //= spec/shim/esdk-shim.md#create-hierarchical-keyring
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
-        u64::from(input.ttl_seconds),
-        Some(input.branch_key_id.clone()),
-        None,
-        cache_type,
-        partition_id,
-    )
-    .map_err(|e| {
+        .ttl(ttl)
+        .branch_key_id(input.branch_key_id.clone());
+    if let Some(cache_type) = cache_type {
+        builder = builder.cache(cache_type);
+    }
+    if let Some(partition_id) = partition_id {
+        builder = builder.partition_id(partition_id);
+    }
+    let keyring = builder.build().map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::MplError,
+            classify_mpl_error(&e.kind),
             "create_hierarchical_keyring",
             e,
         )
     })?;
 
     Ok(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1579,9 +1616,11 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Converts an ESDK Rust keyring into a C++ shim keyring handle.
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
-pub fn into_keyring_handle(keyring: impl Into<SharedKeyring>) -> *mut std::ffi::c_void {
+pub fn into_keyring_handle(
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
     .cast()
 }

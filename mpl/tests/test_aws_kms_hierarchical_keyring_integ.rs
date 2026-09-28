@@ -60,6 +60,7 @@
 //! [shared-cache]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
 
 use std::error::Error as _;
+use std::time::Duration;
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -71,12 +72,12 @@ use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError, SharedKeystore};
+use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
-use aws_crypto_mpl::{KeyStoreConfig, Keyring, KmsConfiguration, SharedCmc};
+use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -96,28 +97,26 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
 
 async fn build_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
-/// Default TTL for the fixture keyrings, in seconds. Long enough that no test
-/// races an expiry.
-const FIXTURE_TTL_SECONDS: u64 = 3600;
+/// TTL for the fixture keyrings.
+/// Long enough that no test races an expiry.
+const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
 /// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
 /// default cache. Every test varies only these three things, so they share one
-/// fixture rather than repeating the six-argument constructor.
+/// fixture.
 fn keyring_for(
-    keystore: impl Into<SharedKeystore>,
+    keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
 ) -> HierarchicalKeyring {
@@ -132,20 +131,19 @@ fn keyring_for(
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
 /// two keyrings the same `SharedCmc`.
 fn keyring_with_cache(
-    keystore: impl Into<SharedKeystore>,
+    keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
     cache: CacheType,
 ) -> HierarchicalKeyring {
-    HierarchicalKeyring::new(
-        keystore,
-        FIXTURE_TTL_SECONDS,
-        Some(branch_key_id.to_string()),
-        None,
-        Some(cache),
-        Some(partition.to_string()),
-    )
-    .expect("fixture keyring configuration must be valid")
+    HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(branch_key_id)
+        .cache(cache)
+        .partition_id(partition)
+        .build()
+        .expect("fixture keyring configuration must be valid")
 }
 
 /// Pick a non-signing suite so signing-key invariants don't intrude.
@@ -289,17 +287,15 @@ async fn build_keystore_with_kms_and_logical_name(
     kms: KmsClient,
     logical_keystore_name: &str,
 ) -> BranchKeyStore {
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-        logical_keystore_name: logical_keystore_name.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb_client_us_west_2().await),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(logical_keystore_name)
+        .ddb_client(ddb_client_us_west_2().await)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 /// Assert that `hk2`'s encrypt failed, and failed at the KMS call rather than
@@ -458,7 +454,7 @@ fn shared_cache_materials() -> EncryptionMaterials {
 /// Build a fresh `LocalCmc`,
 /// suitable for constructing a `CacheType::Shared` for each of HK1 and HK2.
 fn shared_cache() -> SharedCmc {
-    aws_crypto_mpl::LocalCmc::new(100, 50).unwrap().into()
+    SharedCmc::new(aws_crypto_mpl::LocalCmc::new(100, 50).unwrap())
 }
 
 #[tokio::test]
@@ -529,24 +525,20 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     // Not built through `keyring_for` / `keyring_with_cache`: those supply a
     // partition id, and the point of this test is the `None` case, where each
     // keyring generates its own distinct v4 UUID partition id.
-    let hk1 = HierarchicalKeyring::new(
-        keystore_west,
-        FIXTURE_TTL_SECONDS,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache.clone())),
-        None,
-    )
-    .unwrap();
-    let hk2 = HierarchicalKeyring::new(
-        keystore_east,
-        FIXTURE_TTL_SECONDS,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache)),
-        None,
-    )
-    .unwrap();
+    let hk1 = HierarchicalKeyring::builder()
+        .key_store(keystore_west)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(BRANCH_KEY_ID)
+        .cache(CacheType::Shared(cache.clone()))
+        .build()
+        .unwrap();
+    let hk2 = HierarchicalKeyring::builder()
+        .key_store(keystore_east)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(BRANCH_KEY_ID)
+        .cache(CacheType::Shared(cache))
+        .build()
+        .unwrap();
 
     assert_failed_at_kms(
         hk2.on_encrypt(shared_cache_materials()).await,
@@ -672,17 +664,15 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 /// record's own `kms-arn` is used for the KMS Decrypt.
 async fn build_discovery_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::Discovery,
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::Discovery)
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -825,19 +815,17 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 /// rewritten into `region` first.
 async fn build_mr_discovery_keystore(region: &str) -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration: KmsConfiguration::MrDiscovery {
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::MrDiscovery {
             region: region.to_string(),
-        },
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .await
-    .unwrap()
+        })
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
+        .await
+        .unwrap()
 }
 
 #[tokio::test]

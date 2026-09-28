@@ -148,6 +148,10 @@ pub use aws_crypto_mpl::keyring::Keyring;
 /// Implement it to supply a custom CMM.
 pub use aws_crypto_mpl::cmm::Cmm;
 
+/// The Material Providers Library's conversion into a shared handle, re-exported.
+/// `keyring.into_shared()` returns a [`SharedKeyring`], reusing it if it already is one.
+pub use aws_crypto_mpl::IntoShared;
+
 /// Key-Value pairs to associate with the encrypted data.
 ///
 /// This is the Material Providers Library's own encryption context, re-exported,
@@ -428,8 +432,8 @@ impl<'a> EncryptInputBuilder<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Into<SharedKeyring>) -> Self {
-        self.keyring = Some(keyring.into());
+    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+        self.keyring = Some(keyring.into_shared());
         self
     }
 
@@ -447,8 +451,8 @@ impl<'a> EncryptInputBuilder<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Into<SharedCmm>) -> Self {
-        self.cmm = Some(cmm.into());
+    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+        self.cmm = Some(cmm.into_shared());
         self
     }
 
@@ -695,8 +699,8 @@ impl EncryptStreamInputBuilder {
     /// Set the keyring.
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Into<SharedKeyring>) -> Self {
-        self.keyring = Some(keyring.into());
+    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+        self.keyring = Some(keyring.into_shared());
         self
     }
 
@@ -712,8 +716,8 @@ impl EncryptStreamInputBuilder {
     /// Set the cryptographic materials manager (CMM).
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Into<SharedCmm>) -> Self {
-        self.cmm = Some(cmm.into());
+    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+        self.cmm = Some(cmm.into_shared());
         self
     }
 
@@ -942,8 +946,8 @@ impl<'a> DecryptInputBuilder<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Into<SharedKeyring>) -> Self {
-        self.keyring = Some(keyring.into());
+    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+        self.keyring = Some(keyring.into_shared());
         self
     }
 
@@ -961,8 +965,8 @@ impl<'a> DecryptInputBuilder<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Into<SharedCmm>) -> Self {
-        self.cmm = Some(cmm.into());
+    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+        self.cmm = Some(cmm.into_shared());
         self
     }
 
@@ -1148,8 +1152,8 @@ impl DecryptStreamInputBuilder {
     /// Set the keyring.
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Into<SharedKeyring>) -> Self {
-        self.keyring = Some(keyring.into());
+    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+        self.keyring = Some(keyring.into_shared());
         self
     }
 
@@ -1165,8 +1169,8 @@ impl DecryptStreamInputBuilder {
     /// Set the cryptographic materials manager (CMM).
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Into<SharedCmm>) -> Self {
-        self.cmm = Some(cmm.into());
+    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+        self.cmm = Some(cmm.into_shared());
         self
     }
 

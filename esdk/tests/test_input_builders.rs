@@ -31,16 +31,16 @@ fn frame_length() -> FrameLength {
 }
 
 fn same_keyring(a: Option<&SharedKeyring>, b: &SharedKeyring) -> bool {
-    a.is_some_and(|a| std::ptr::addr_eq(&**a, &**b))
+    a.is_some_and(|a| SharedKeyring::ptr_eq(a, b))
 }
 
 fn same_cmm(a: Option<&SharedCmm>, b: &SharedCmm) -> bool {
-    a.is_some_and(|a| std::ptr::addr_eq(&**a, &**b))
+    a.is_some_and(|a| SharedCmm::ptr_eq(a, b))
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_build_requires_plaintext_and_ciphertext() {
-    let keyring = test_keyring().await;
+    let keyring = SharedKeyring::new(test_keyring().await);
     let err = EncryptInput::builder()
         .keyring(keyring.clone())
         .build()
@@ -56,7 +56,7 @@ async fn test_build_requires_plaintext_and_ciphertext() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_input_setters_round_trip() {
-    let keyring = test_keyring().await;
+    let keyring = SharedKeyring::new(test_keyring().await);
     let ec = ec();
     let plaintext = b"plaintext";
 
@@ -120,7 +120,7 @@ async fn test_encrypt_input_setters_round_trip() {
     );
     assert!(input.encryption_context().is_empty());
 
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring.clone()));
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .cmm(cmm.clone())
@@ -142,7 +142,7 @@ async fn test_encrypt_input_setters_round_trip() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_stream_input_setters_round_trip() {
-    let keyring = test_keyring().await;
+    let keyring = SharedKeyring::new(test_keyring().await);
     let ec = ec();
 
     let input = EncryptStreamInput::builder()
@@ -188,7 +188,7 @@ async fn test_encrypt_stream_input_setters_round_trip() {
         .unwrap();
     assert_eq!(input.data_size(), None);
 
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring));
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
     let input = EncryptStreamInput::builder()
         .cmm(cmm.clone())
         .build()
@@ -203,7 +203,7 @@ async fn test_encrypt_stream_input_setters_round_trip() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_input_setters_round_trip() {
-    let keyring = test_keyring().await;
+    let keyring = SharedKeyring::new(test_keyring().await);
     let ec = ec();
     let ciphertext = b"ciphertext";
 
@@ -234,7 +234,7 @@ async fn test_decrypt_input_setters_round_trip() {
     assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
     assert_eq!(input.commitment_policy(), POLICY);
 
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring));
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
     let input = DecryptInput::builder()
         .ciphertext(ciphertext)
         .cmm(cmm.clone())
@@ -251,7 +251,7 @@ async fn test_decrypt_input_setters_round_trip() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_stream_input_setters_round_trip() {
-    let keyring = test_keyring().await;
+    let keyring = SharedKeyring::new(test_keyring().await);
     let ec = ec();
 
     let input = DecryptStreamInput::builder()
@@ -277,7 +277,7 @@ async fn test_decrypt_stream_input_setters_round_trip() {
     assert_eq!(input.max_encrypted_data_keys(), Some(cap()));
     assert_eq!(input.commitment_policy(), POLICY);
 
-    let cmm = SharedCmm::from(DefaultCmm::new(keyring));
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
     let input = DecryptStreamInput::builder()
         .cmm(cmm.clone())
         .build()
@@ -294,7 +294,7 @@ async fn test_decrypt_stream_input_setters_round_trip() {
 // encrypt input over.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_builder_from_encrypt_copies_shared_fields() {
-    let keyring = test_keyring().await;
+    let keyring = SharedKeyring::new(test_keyring().await);
     let ec = ec();
     let enc = EncryptInput::builder()
         .plaintext(b"pt")

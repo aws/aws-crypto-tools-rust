@@ -21,7 +21,7 @@ pub use cache_config::{
 };
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use local::LocalCmc;
-pub use storm_tracking::{StormTrackingCmc, TimeUnits};
+pub use storm_tracking::StormTrackingCmc;
 
 use std::fmt;
 use std::sync::Arc;
@@ -127,6 +127,7 @@ impl std::error::Error for CmcError {
 }
 
 //
+/// To hold a cache whose concrete type is chosen at runtime, use [`SharedCmc`].
 #[async_trait]
 pub trait Cmc: Send + Sync {
     /// Insert (or replace) the cache entry for the supplied cache identifier.
@@ -149,12 +150,10 @@ pub trait Cmc: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// An owned handle to some [`Cmc`].
+    /// A cache whose concrete type is chosen at runtime.
     ///
-    /// `Cmc` is the trait a cache implements.
-    /// `SharedCmc` is how an API accepts and stores one without knowing its concrete type.
-    /// Every API that accepts a cache takes `impl Into<SharedCmc>`,
-    /// so pass a concrete cache, an `Arc` of one, or an existing handle.
+    /// It implements [`Cmc`], so it can be passed anywhere a cache is accepted.
+    /// Callers that know their cache's type pass it directly and never need this one.
     ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
     /// Give several keyrings clones of one handle through [`CacheType::Shared`]
@@ -162,3 +161,18 @@ crate::shared::shared_handle!(
     SharedCmc,
     Cmc
 );
+
+#[async_trait]
+impl Cmc for SharedCmc {
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+        self.0.put_cache_entry(cache_id, entry).await
+    }
+
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+        self.0.get_cache_entry(cache_id).await
+    }
+
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
+        self.0.delete_cache_entry(cache_id).await
+    }
+}

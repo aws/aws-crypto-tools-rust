@@ -342,7 +342,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
 /// then delegates to an inner (real) default CMM so the returned materials are
 /// the genuine ones the ESDK uses to complete the round-trip.
 struct DecryptSpyCmm {
-    inner: SharedCmm,
+    inner: DefaultCmm,
     observed_edk_count: Arc<Mutex<Option<usize>>>,
     observed_ec_keys: Arc<Mutex<Option<Vec<String>>>>,
 }
@@ -391,7 +391,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let observed_edk_count = Arc::new(Mutex::new(None));
     let observed_ec_keys = Arc::new(Mutex::new(None));
     let spy_cmm = DecryptSpyCmm {
-        inner: inner_cmm.into(),
+        inner: inner_cmm,
         observed_edk_count: observed_edk_count.clone(),
         observed_ec_keys: observed_ec_keys.clone(),
     };

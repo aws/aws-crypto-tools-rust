@@ -4,10 +4,9 @@
 //! `BranchKeyStore` — concrete [`Keystore`] implementation backed by AWS KMS
 //! and Amazon DynamoDB.
 //!
-//! Construct with [`BranchKeyStore::new`], which takes a [`KeyStoreConfig`].
-//! The KMS and DynamoDB clients are optional config inputs; when omitted, a
-//! default client is built using the Region parsed from the configured KMS
-//! ARN, per `branch-key-store.md`.
+//! Construct with [`BranchKeyStore::builder`]. The KMS and DynamoDB clients
+//! are optional; when omitted, a default client is built using the Region
+//! parsed from the configured KMS ARN, per `branch-key-store.md`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -33,7 +32,7 @@ use crate::keystore::attributes::{
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, TYPE_BEACON_ACTIVE, TYPE_BRANCH_ACTIVE,
     TYPE_BRANCH_VERSION_PREFIX,
 };
-use crate::keystore::config::{KeyStoreConfig, KeyStoreInfo, KmsConfiguration};
+use crate::keystore::config::{KeyStoreInfo, KmsConfiguration};
 use crate::keystore::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
@@ -51,12 +50,11 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 
 /// Concrete `Keystore` implementation backed by AWS KMS + Amazon DynamoDB.
 ///
-/// Construct with [`BranchKeyStore::new`] from a [`KeyStoreConfig`]. The KMS
-/// and DynamoDB clients are optional config inputs; when omitted, a default
-/// client is built from the Region parsed from the configured KMS ARN. The
-/// keystore validates the [`KmsConfiguration`](crate::keystore::config::KmsConfiguration)
-/// at construction time and resolves the optional caller-supplied
-/// `id` against a freshly-generated v4 UUID per
+/// Construct with [`BranchKeyStore::builder`]. The KMS and DynamoDB clients
+/// are optional; when omitted, a default client is built from the Region
+/// parsed from the configured KMS ARN. The keystore validates the
+/// [`KmsConfiguration`] at construction time and resolves the optional
+/// caller-supplied `id` against a freshly-generated v4 UUID per
 /// `branch-key-store.md#keystore-id`.
 #[derive(Clone)]
 pub struct BranchKeyStore {
@@ -64,13 +62,16 @@ pub struct BranchKeyStore {
 }
 
 struct BranchKeyStoreInner {
-    /// Caller-supplied configuration, with the KMS and DynamoDB clients
-    /// resolved to concrete instances at construction (any `None` client
-    /// is replaced with a default built from the KMS ARN region).
-    config: KeyStoreConfig,
-    /// Resolved keystore identifier — either the caller-supplied value
-    /// from `config.id`, or a freshly-generated v4 UUID when the
-    /// caller passed `None`.
+    ddb_table_name: String,
+    logical_keystore_name: String,
+    kms_configuration: KmsConfiguration,
+    grant_tokens: Vec<String>,
+    /// Caller-supplied, or built from the KMS configuration's Region.
+    kms_client: KmsClient,
+    /// Caller-supplied, or built from the KMS configuration's Region.
+    ddb_client: DynamoDbClient,
+    /// Resolved keystore identifier: either the caller-supplied `id`, or a
+    /// freshly-generated v4 UUID when the caller set none.
     keystore_id: String,
 }
 
@@ -79,132 +80,25 @@ const DDB_TABLE_NAME_MIN_LEN: usize = 3;
 const DDB_TABLE_NAME_MAX_LEN: usize = 255;
 
 impl BranchKeyStore {
-    /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`], resolving
-    /// any absent AWS SDK client.
-    ///
-    /// Validates the KMS configuration ARN (when applicable) and resolves
-    /// the keystore id (caller-supplied `config.id`, else a fresh v4 UUID).
-    /// For each of the KMS and DynamoDB clients, the caller-supplied client
-    /// in the config is used when present; otherwise a default client is
-    /// built using the Region parsed from the configured KMS ARN (the SDK's
-    /// default region provider chain is used for `Discovery`) and stored
-    /// back into the config.
-    ///
-    /// Resolving a default client is the only reason this is `async`. Callers
-    /// that supply both clients — the common case, since a caller with its own
-    /// SDK configuration builds them itself — should use
-    /// [`BranchKeyStore::with_clients`] and avoid the needless `await`.
-    ///
-    /// Returns `KeystoreError::Configuration` if the KMS configuration is
-    /// invalid (malformed ARN, alias, non-`kms` service).
-    pub async fn new(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
-        // Validate the KMS configuration's ARN at construction time so a
-        // malformed ARN fails before any operation is dispatched, and before
-        // its Region is used to build a default client.
-        config.kms_configuration.validate()?;
-
-        // DynamoDB documents a 3-255 character limit,
-        // and without this the failure is deferred to the first
-        // request.
-        // Not a keystore-spec requirement — it mirrors the service constraint.
-        let name_len = config.ddb_table_name.len();
-        if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
-            return Err(KeystoreError::new(
-                KeystoreErrorKind::Configuration,
-                format!(
-                    "ddb_table_name must be between {DDB_TABLE_NAME_MIN_LEN} and {DDB_TABLE_NAME_MAX_LEN} characters, got {name_len}",
-                ),
-            ));
-        }
-
-        // Resolve any absent client to a default built from the Region in
-        // the KMS ARN, storing it back into the config so the config always
-        // holds concrete clients after construction.
-        if config.kms_client.is_none() || config.ddb_client.is_none() {
-            let sdk_config = default_sdk_config(&config.kms_configuration).await;
-            if config.kms_client.is_none() {
-                config.kms_client = Some(KmsClient::new(&sdk_config));
-            }
-            if config.ddb_client.is_none() {
-                config.ddb_client = Some(DynamoDbClient::new(&sdk_config));
-            }
-        }
-
-        Self::build(config)
+    /// Start a builder for `BranchKeyStore`.
+    #[must_use]
+    pub fn builder() -> BranchKeyStoreBuilder {
+        BranchKeyStoreBuilder::default()
     }
 
-    /// Construct a new `BranchKeyStore` from a [`KeyStoreConfig`] that already
-    /// carries both AWS SDK clients.
-    ///
-    /// Synchronous: with both clients supplied there is nothing to resolve, so
-    /// construction does no IO and needs no runtime. Same validation and
-    /// keystore-id resolution as [`BranchKeyStore::new`].
-    ///
-    /// Returns `KeystoreError::Configuration` if the KMS configuration is
-    /// invalid, or if either client is absent — use [`BranchKeyStore::new`] to
-    /// have absent clients defaulted.
-    pub fn with_clients(config: KeyStoreConfig) -> Result<Self, KeystoreError> {
-        config.kms_configuration.validate()?;
-        Self::build(config)
-    }
-
-    /// Shared code by both constructors:
-    /// require concrete clients,
-    /// add this crate's user agent identifier to the KMS client,
-    /// resolve the keystore id,
-    /// then assemble.
-    /// Assumes the KMS configuration has already been validated.
-    fn build(mut config: KeyStoreConfig) -> Result<Self, KeystoreError> {
-        if config.kms_client.is_none() || config.ddb_client.is_none() {
-            return Err(KeystoreError::new(
-                KeystoreErrorKind::Configuration,
-                "BranchKeyStore::with_clients requires both a kms_client and a ddb_client; \
-                 use BranchKeyStore::new to build defaults for absent clients",
-            ));
-        }
-
-        // The config's KMS client might be ours or one the caller passed in.
-        // Add the user agent here so both get it.
-        // Doing it in `new` would only cover the client we build.
-        config.kms_client = config.kms_client.take().map(with_user_agent);
-
-        let keystore_id = config
-            .id
-            .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-        Ok(Self {
-            inner: Arc::new(BranchKeyStoreInner {
-                config,
-                keystore_id,
-            }),
-        })
-    }
-
-    /// The resolved AWS KMS client. Guaranteed present after construction.
     fn kms_client(&self) -> &KmsClient {
-        self.inner
-            .config
-            .kms_client
-            .as_ref()
-            .expect("kms_client is resolved during construction")
+        &self.inner.kms_client
     }
 
-    /// The resolved Amazon DynamoDB client. Guaranteed present after
-    /// construction.
     fn ddb_client(&self) -> &DynamoDbClient {
-        self.inner
-            .config
-            .ddb_client
-            .as_ref()
-            .expect("ddb_client is resolved during construction")
+        &self.inner.ddb_client
     }
 
     /// The single configured KMS Key ARN. `CreateKey` / `VersionKey`
     /// require a single-key configuration; `Discovery` / `MRDiscovery`
     /// have no single ARN to wrap under and are rejected.
     fn configured_kms_key_arn(&self) -> Result<&str, KeystoreError> {
-        match &self.inner.config.kms_configuration {
+        match &self.inner.kms_configuration {
             KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn),
             KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => {
                 Err(KeystoreError::new(
@@ -224,7 +118,7 @@ impl BranchKeyStore {
 
     /// Borrow the configured grant tokens (or an empty slice if `None`).
     fn grant_tokens(&self) -> &[String] {
-        self.inner.config.grant_tokens.as_deref().unwrap_or(&[])
+        &self.inner.grant_tokens
     }
 
     /// Build the authenticated encryption context for a fetched record.
@@ -235,7 +129,7 @@ impl BranchKeyStore {
         let mut ec = record.attributes.clone();
         ec.insert(
             "tablename".to_string(),
-            self.inner.config.logical_keystore_name.clone(),
+            self.inner.logical_keystore_name.clone(),
         );
         ec
     }
@@ -258,7 +152,7 @@ impl BranchKeyStore {
         let response = self
             .ddb_client()
             .get_item()
-            .table_name(&self.inner.config.ddb_table_name)
+            .table_name(&self.inner.ddb_table_name)
             .key(
                 ATTR_BRANCH_KEY_ID,
                 AttributeValue::S(branch_key_id.to_string()),
@@ -279,20 +173,197 @@ impl BranchKeyStore {
     }
 }
 
+/// Builder for [`BranchKeyStore`].
+///
+/// `ddb_table_name`, `logical_keystore_name`, and `kms_configuration` are
+/// required. Everything else is optional.
+#[derive(Debug, Clone, Default)]
+pub struct BranchKeyStoreBuilder {
+    ddb_table_name: Option<String>,
+    logical_keystore_name: Option<String>,
+    kms_configuration: Option<KmsConfiguration>,
+    id: Option<String>,
+    grant_tokens: Option<Vec<String>>,
+    kms_client: Option<KmsClient>,
+    ddb_client: Option<DynamoDbClient>,
+}
+
+impl BranchKeyStoreBuilder {
+    /// Set the DynamoDB table name backing this keystore. Required.
+    #[must_use]
+    pub fn ddb_table_name(mut self, name: impl Into<String>) -> Self {
+        self.ddb_table_name = Some(name.into());
+        self
+    }
+
+    /// Set the logical name cryptographically bound to all keys in the
+    /// table. Required.
+    #[must_use]
+    pub fn logical_keystore_name(mut self, name: impl Into<String>) -> Self {
+        self.logical_keystore_name = Some(name.into());
+        self
+    }
+
+    /// Set the KMS key configuration governing encryption and decryption.
+    /// Required.
+    #[must_use]
+    pub fn kms_configuration(mut self, config: KmsConfiguration) -> Self {
+        self.kms_configuration = Some(config);
+        self
+    }
+
+    /// Set the keystore identifier. Defaults to a fresh v4 UUID.
+    #[must_use]
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Set or clear the keystore identifier, for forwarding an existing
+    /// `Option`. See [`id`](Self::id).
+    #[must_use]
+    pub fn set_id(mut self, id: Option<String>) -> Self {
+        self.id = id;
+        self
+    }
+
+    /// Set the AWS KMS grant tokens. Defaults to none.
+    #[must_use]
+    pub fn grant_tokens(mut self, tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.grant_tokens = Some(tokens.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Set or clear the AWS KMS grant tokens, for forwarding an existing
+    /// `Option`. See [`grant_tokens`](Self::grant_tokens).
+    #[must_use]
+    pub fn set_grant_tokens(mut self, tokens: Option<Vec<String>>) -> Self {
+        self.grant_tokens = tokens;
+        self
+    }
+
+    /// Set the AWS KMS client. Defaults to a client for the Region parsed
+    /// from the KMS configuration (the SDK's default region provider chain
+    /// for `Discovery`).
+    #[must_use]
+    pub fn kms_client(mut self, client: KmsClient) -> Self {
+        self.kms_client = Some(client);
+        self
+    }
+
+    /// Set or clear the AWS KMS client, for forwarding an existing
+    /// `Option`. See [`kms_client`](Self::kms_client).
+    #[must_use]
+    pub fn set_kms_client(mut self, client: Option<KmsClient>) -> Self {
+        self.kms_client = client;
+        self
+    }
+
+    /// Set the Amazon DynamoDB client. Defaults to a client for the Region
+    /// parsed from the KMS configuration (the SDK's default region provider
+    /// chain for `Discovery`).
+    #[must_use]
+    pub fn ddb_client(mut self, client: DynamoDbClient) -> Self {
+        self.ddb_client = Some(client);
+        self
+    }
+
+    /// Set or clear the Amazon DynamoDB client, for forwarding an existing
+    /// `Option`. See [`ddb_client`](Self::ddb_client).
+    #[must_use]
+    pub fn set_ddb_client(mut self, client: Option<DynamoDbClient>) -> Self {
+        self.ddb_client = client;
+        self
+    }
+
+    /// Validate the configuration, default any absent client, and resolve
+    /// the keystore id.
+    ///
+    /// Building a default client is the only reason this is `async`: with
+    /// both clients supplied it performs no IO and completes on first poll.
+    ///
+    /// # Errors
+    ///
+    /// Returns `KeystoreError::Configuration` if a required field is unset,
+    /// the table name is outside DynamoDB's 3-255 character bounds, or the
+    /// KMS configuration is invalid (malformed ARN, alias, non-`kms`
+    /// service).
+    pub async fn build(self) -> Result<BranchKeyStore, KeystoreError> {
+        let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
+        let logical_keystore_name = required(self.logical_keystore_name, "logical_keystore_name")?;
+        let kms_configuration = required(self.kms_configuration, "kms_configuration")?;
+
+        // Validate the KMS configuration's ARN at construction time so a
+        // malformed ARN fails before any operation is dispatched, and before
+        // its Region is used to build a default client.
+        kms_configuration.validate()?;
+
+        // DynamoDB documents a 3-255 character limit,
+        // and without this the failure is deferred to the first
+        // request.
+        // Not a keystore-spec requirement — it mirrors the service constraint.
+        let name_len = ddb_table_name.len();
+        if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
+            return Err(KeystoreError::new(
+                KeystoreErrorKind::Configuration,
+                format!(
+                    "ddb_table_name must be between {DDB_TABLE_NAME_MIN_LEN} and {DDB_TABLE_NAME_MAX_LEN} characters, got {name_len}",
+                ),
+            ));
+        }
+
+        let (kms_client, ddb_client) = match (self.kms_client, self.ddb_client) {
+            (Some(kms), Some(ddb)) => (kms, ddb),
+            (kms, ddb) => {
+                let sdk_config = default_sdk_config(&kms_configuration).await;
+                (
+                    kms.unwrap_or_else(|| KmsClient::new(&sdk_config)),
+                    ddb.unwrap_or_else(|| DynamoDbClient::new(&sdk_config)),
+                )
+            }
+        };
+
+        let keystore_id = self.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        Ok(BranchKeyStore {
+            inner: Arc::new(BranchKeyStoreInner {
+                ddb_table_name,
+                logical_keystore_name,
+                kms_configuration,
+                grant_tokens: self.grant_tokens.unwrap_or_default(),
+                // The KMS client might be ours or one the caller passed in.
+                // Adding the user agent here covers both.
+                kms_client: with_user_agent(kms_client),
+                ddb_client,
+                keystore_id,
+            }),
+        })
+    }
+}
+
+fn required<T>(value: Option<T>, field: &str) -> Result<T, KeystoreError> {
+    value.ok_or_else(|| {
+        KeystoreError::new(
+            KeystoreErrorKind::Configuration,
+            format!("BranchKeyStore: {field} is required"),
+        )
+    })
+}
+
 #[async_trait]
 impl Keystore for BranchKeyStore {
     fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
         Ok(KeyStoreInfo {
             keystore_id: self.inner.keystore_id.clone(),
-            keystore_name: self.inner.config.ddb_table_name.clone(),
-            logical_keystore_name: self.inner.config.logical_keystore_name.clone(),
-            grant_tokens: self.inner.config.grant_tokens.clone().unwrap_or_default(),
-            kms_configuration: self.inner.config.kms_configuration.clone(),
+            keystore_name: self.inner.ddb_table_name.clone(),
+            logical_keystore_name: self.inner.logical_keystore_name.clone(),
+            grant_tokens: self.inner.grant_tokens.clone(),
+            kms_configuration: self.inner.kms_configuration.clone(),
         })
     }
 
     async fn create_key_store(&self) -> Result<String, KeystoreError> {
-        let table_name = &self.inner.config.ddb_table_name;
+        let table_name = &self.inner.ddb_table_name;
 
         // Per branch-key-store.md#createkeystore: first DescribeTable.
         match self
@@ -377,7 +448,7 @@ impl Keystore for BranchKeyStore {
         let ec_input = EncryptionContextInput {
             branch_key_id: &branch_key_id,
             create_time: &timestamp,
-            logical_keystore_name: &self.inner.config.logical_keystore_name,
+            logical_keystore_name: &self.inner.logical_keystore_name,
             kms_arn: &key_arn,
             hierarchy_version: 1,
             custom_ec: encryption_context.as_ref(),
@@ -416,7 +487,7 @@ impl Keystore for BranchKeyStore {
         let mut transact_items = Vec::with_capacity(items.len());
         for item in items {
             let put = Put::builder()
-                .table_name(&self.inner.config.ddb_table_name)
+                .table_name(&self.inner.ddb_table_name)
                 .set_item(Some(item))
                 .condition_expression("attribute_not_exists(#branch_key_id)")
                 .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
@@ -458,8 +529,7 @@ impl Keystore for BranchKeyStore {
                 )
             })?
             .clone();
-        let resolved_arn =
-            resolve_keystore_arn(&self.inner.config.kms_configuration, &stored_kms_arn)?;
+        let resolved_arn = resolve_keystore_arn(&self.inner.kms_configuration, &stored_kms_arn)?;
 
         // The encryption context reconstructed from the stored item (the
         // logical keystore name is bound as `tablename`).
@@ -528,7 +598,7 @@ impl Keystore for BranchKeyStore {
         // ACTIVE only if it is unchanged since the read (optimistic lock).
         let decrypt_only_item = item_from_ec_and_enc(&new_decrypt_only_ec, wrapped_decrypt_only);
         let decrypt_only_put = Put::builder()
-            .table_name(&self.inner.config.ddb_table_name)
+            .table_name(&self.inner.ddb_table_name)
             .set_item(Some(decrypt_only_item))
             .condition_expression("attribute_not_exists(#branch_key_id)")
             .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
@@ -537,7 +607,7 @@ impl Keystore for BranchKeyStore {
 
         let active_item = item_from_ec_and_enc(&new_active_ec, wrapped_active);
         let active_put = Put::builder()
-            .table_name(&self.inner.config.ddb_table_name)
+            .table_name(&self.inner.ddb_table_name)
             .set_item(Some(active_item))
             .condition_expression("attribute_exists(#branch_key_id) AND #enc = :encOld")
             .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
@@ -574,9 +644,9 @@ impl Keystore for BranchKeyStore {
 
         let plaintext = decrypt_branch_key(
             self.kms_client(),
-            &self.inner.config.kms_configuration,
+            &self.inner.kms_configuration,
             &record,
-            &self.inner.config.logical_keystore_name,
+            &self.inner.logical_keystore_name,
             self.grant_tokens(),
         )
         .await?;
@@ -596,9 +666,9 @@ impl Keystore for BranchKeyStore {
 
         let plaintext = decrypt_branch_key(
             self.kms_client(),
-            &self.inner.config.kms_configuration,
+            &self.inner.kms_configuration,
             &record,
-            &self.inner.config.logical_keystore_name,
+            &self.inner.logical_keystore_name,
             self.grant_tokens(),
         )
         .await?;
@@ -618,9 +688,9 @@ impl Keystore for BranchKeyStore {
 
         let plaintext = decrypt_branch_key(
             self.kms_client(),
-            &self.inner.config.kms_configuration,
+            &self.inner.kms_configuration,
             &record,
-            &self.inner.config.logical_keystore_name,
+            &self.inner.logical_keystore_name,
             self.grant_tokens(),
         )
         .await?;

@@ -16,11 +16,11 @@ use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcErrorKind, LocalCmc, MessageUsage,
-    StormTrackingCmc, TimeUnits, UsageMetadata,
+    StormTrackingCache, StormTrackingCmc, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials,
+    EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -96,17 +96,56 @@ fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
     )
 }
 
+/// Unit applied to the grace period, grace interval, and inflight TTL
+/// arguments of [`storm_config`].
+#[derive(Clone, Copy)]
+enum Unit {
+    Secs,
+    Millis,
+}
+
+/// Build a `StormTrackingCache` from integer settings, the grace period,
+/// grace interval, and inflight TTL in `unit` and the sleep in milliseconds.
+#[allow(clippy::too_many_arguments)]
+fn storm_config(
+    entry_capacity: usize,
+    entry_pruning_tail_size: usize,
+    grace_period: u64,
+    grace_interval: u64,
+    fan_out: usize,
+    inflight_ttl: u64,
+    sleep_milli: u64,
+    unit: Unit,
+) -> Result<StormTrackingCache, MaterialsError> {
+    let d = |v| match unit {
+        Unit::Secs => Duration::from_secs(v),
+        Unit::Millis => Duration::from_millis(v),
+    };
+    StormTrackingCache::builder()
+        .entry_capacity(entry_capacity)
+        .entry_pruning_tail_size(entry_pruning_tail_size)
+        .grace_period(d(grace_period))
+        .grace_interval(d(grace_interval))
+        .fan_out(fan_out)
+        .inflight_ttl(d(inflight_ttl))
+        .sleep(Duration::from_millis(sleep_milli))
+        .build()
+}
+
 /// Construct a `StormTrackingCmc` with a frozen clock at `now`.
 fn make_storm_tracking(now: SystemTime) -> StormTrackingCmc {
     StormTrackingCmc::with_clock(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || now,
     )
     .expect("StormTrackingCmc constructs")
@@ -120,14 +159,17 @@ async fn test_initialization_accepts_local_cmc_parameters() {
     let expiry = now + Duration::from_secs(3600);
 
     let cmc = StormTrackingCmc::with_clock(
-        8,
-        2,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            8,
+            2,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || now,
     )
     .expect("construction with explicit LocalCmc parameters succeeds");
@@ -145,14 +187,17 @@ async fn test_initialization_requires_storm_tracking_parameters() {
     let now = anchor_now();
 
     let cmc = StormTrackingCmc::with_clock(
-        8,
-        2,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            8,
+            2,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || now,
     )
     .expect("construction succeeds");
@@ -164,40 +209,7 @@ async fn test_initialization_requires_storm_tracking_parameters() {
     );
     assert_eq!(cmc.fan_out(), FAN_OUT);
     assert_eq!(cmc.inflight_ttl(), Duration::from_secs(INFLIGHT_TTL_SECS));
-    assert_eq!(cmc.sleep_milli(), Duration::from_millis(SLEEP_MILLI));
-}
-
-#[tokio::test]
-async fn test_initialization_time_units_is_optional() {
-    let now = anchor_now();
-
-    let cmc_default = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        None, // None = unset
-        move || now,
-    )
-    .expect("construction without time_units succeeds");
-    assert_eq!(cmc_default.time_units(), TimeUnits::Seconds);
-
-    let cmc_ms = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        Some(TimeUnits::Milliseconds),
-        move || now,
-    )
-    .expect("construction with Milliseconds time_units succeeds");
-    assert_eq!(cmc_ms.time_units(), TimeUnits::Milliseconds);
+    assert_eq!(cmc.sleep(), Duration::from_millis(SLEEP_MILLI));
 }
 
 #[tokio::test]
@@ -225,39 +237,6 @@ async fn test_initialization_instantiates_local_cmc() {
 // ── Group 2 — Time Units ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_time_units_only_seconds_or_milliseconds() {
-    let now = anchor_now();
-
-    let cmc_s = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        Some(TimeUnits::Seconds),
-        move || now,
-    )
-    .expect("Seconds variant constructs");
-    assert_eq!(cmc_s.time_units(), TimeUnits::Seconds);
-
-    let cmc_ms = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        Some(TimeUnits::Milliseconds),
-        move || now,
-    )
-    .expect("Milliseconds variant constructs");
-    assert_eq!(cmc_ms.time_units(), TimeUnits::Milliseconds);
-}
-
-#[tokio::test]
 async fn test_time_units_seconds_means_seconds() {
     // grace_period=10 with Seconds → expiry-10s <= now to be in grace period.
     // expiry = anchor + 11s; grace_period = 10s
@@ -268,14 +247,7 @@ async fn test_time_units_seconds_means_seconds() {
     let now_at_threshold = anchor + Duration::from_secs(1);
 
     let cmc = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        None, // None == Seconds
+        &storm_config(8, 2, 10, 2, FAN_OUT, 5, SLEEP_MILLI, Unit::Secs).expect("valid config"),
         move || now_at_threshold,
     )
     .expect("construction succeeds");
@@ -293,14 +265,7 @@ async fn test_time_units_seconds_means_seconds() {
     // Mirror: same numeric value 10 but with Milliseconds → threshold = 10ms after
     // anchor; now = anchor + 1s is WAY past the grace period → not within grace → Some(entry).
     let cmc_ms = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        Some(TimeUnits::Milliseconds),
+        &storm_config(8, 2, 10, 2, FAN_OUT, 5, SLEEP_MILLI, Unit::Millis).expect("valid config"),
         move || now_at_threshold,
     )
     .expect("construction succeeds");
@@ -324,14 +289,7 @@ async fn test_time_units_milliseconds_means_milliseconds() {
     let now_ms = anchor + Duration::from_millis(1);
 
     let cmc = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        SLEEP_MILLI,
-        Some(TimeUnits::Milliseconds),
+        &storm_config(8, 2, 10, 2, FAN_OUT, 5, SLEEP_MILLI, Unit::Millis).expect("valid config"),
         move || now_ms,
     )
     .expect("construction succeeds");
@@ -349,262 +307,177 @@ async fn test_time_units_milliseconds_means_milliseconds() {
 // ── Group 3 — SleepMilli ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_sleep_milli_unaffected_by_time_units() {
+async fn test_sleep_unaffected_by_time_units() {
     let now = anchor_now();
 
-    let cmc_s = StormTrackingCmc::with_clock(8, 2, 10, 2, FAN_OUT, 5, 20, None, move || now)
-        .expect("Seconds variant");
+    let cmc_s = StormTrackingCmc::with_clock(
+        &storm_config(8, 2, 10, 2, FAN_OUT, 5, 20, Unit::Secs).expect("valid config"),
+        move || now,
+    )
+    .expect("Seconds variant");
 
     let cmc_ms = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        5,
-        20,
-        Some(TimeUnits::Milliseconds),
+        &storm_config(8, 2, 10, 2, FAN_OUT, 5, 20, Unit::Millis).expect("valid config"),
         move || now,
     )
     .expect("Milliseconds variant");
 
-    assert_eq!(
-        cmc_s.sleep_milli(),
-        Duration::from_millis(20),
-        "sleep_milli with Seconds time_units must be exactly 20ms"
+    assert_eq!(cmc_s.sleep(), Duration::from_millis(20));
+    assert_eq!(cmc_ms.sleep(), Duration::from_millis(20));
+}
+
+// ── Group 4 — Builder defaults and validation ─────────────────────────────────
+
+fn assert_rejected(result: Result<StormTrackingCache, MaterialsError>, what: &str) {
+    let err = result.expect_err(what);
+    assert_eq!(err.kind, MaterialsErrorKind::Validation, "{what}: {err:?}");
+}
+
+#[test]
+fn test_builder_defaults() {
+    let config = StormTrackingCache::builder()
+        .build()
+        .expect("the defaults are consistent");
+    assert_eq!(config.entry_capacity(), 1000);
+    assert_eq!(config.entry_pruning_tail_size(), 1);
+    assert_eq!(config.grace_period(), Duration::from_secs(10));
+    assert_eq!(config.grace_interval(), Duration::from_secs(1));
+    assert_eq!(config.fan_out(), 20);
+    assert_eq!(config.inflight_ttl(), Duration::from_secs(10));
+    assert_eq!(config.sleep(), Duration::from_millis(20));
+}
+
+#[test]
+fn test_builder_applies_each_default_when_its_setter_is_omitted() {
+    let config = StormTrackingCache::builder()
+        .entry_capacity(5000)
+        .grace_period(Duration::from_secs(30))
+        .build()
+        .expect("valid config");
+    assert_eq!(config.entry_capacity(), 5000);
+    assert_eq!(config.grace_period(), Duration::from_secs(30));
+    assert_eq!(config.entry_pruning_tail_size(), 1);
+    assert_eq!(config.grace_interval(), Duration::from_secs(1));
+    assert_eq!(config.fan_out(), 20);
+    assert_eq!(config.inflight_ttl(), Duration::from_secs(10));
+    assert_eq!(config.sleep(), Duration::from_millis(20));
+}
+
+#[test]
+fn test_builder_set_none_applies_the_default() {
+    let config = StormTrackingCache::builder()
+        .grace_interval(Duration::from_secs(5))
+        .set_grace_interval(None)
+        .set_fan_out(Some(3))
+        .build()
+        .expect("valid config");
+    assert_eq!(config.grace_interval(), Duration::from_secs(1));
+    assert_eq!(config.fan_out(), 3);
+}
+
+#[test]
+fn test_zero_values_are_rejected() {
+    let zero = Duration::ZERO;
+    assert_rejected(
+        StormTrackingCache::builder().grace_period(zero).build(),
+        "grace_period = 0",
     );
-    assert_eq!(
-        cmc_ms.sleep_milli(),
-        Duration::from_millis(20),
-        "sleep_milli with Milliseconds time_units must still be exactly 20ms"
+    assert_rejected(
+        StormTrackingCache::builder().grace_interval(zero).build(),
+        "grace_interval = 0",
+    );
+    assert_rejected(
+        StormTrackingCache::builder().inflight_ttl(zero).build(),
+        "inflight_ttl = 0",
+    );
+    assert_rejected(
+        StormTrackingCache::builder().sleep(zero).build(),
+        "sleep = 0",
+    );
+    assert_rejected(
+        StormTrackingCache::builder().fan_out(0).build(),
+        "fan_out = 0",
     );
 }
 
-// ── Group 4 — Consistency ─────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_grace_interval_must_not_exceed_grace_period() {
-    let now = anchor_now();
-
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        20,
-        FAN_OUT,
-        10,
-        SLEEP_MILLI,
-        None,
-        move || now, // grace_interval=20 > grace_period=10
+#[test]
+fn test_sub_millisecond_durations_are_rejected() {
+    let sub_ms = Duration::from_micros(1_500);
+    assert_rejected(
+        StormTrackingCache::builder().grace_period(sub_ms).build(),
+        "grace_period with a sub-millisecond part",
     );
-    assert!(result.is_err(), "grace_interval > grace_period must fail");
-    let err = result.err().expect("error value");
-    assert_eq!(
-        err.kind,
-        CmcErrorKind::InvalidEntry,
-        "expected InvalidEntry, got {err:?}"
+    assert_rejected(
+        StormTrackingCache::builder().grace_interval(sub_ms).build(),
+        "grace_interval with a sub-millisecond part",
     );
-}
-
-#[tokio::test]
-async fn test_inflight_ttl_must_not_exceed_grace_period() {
-    let now = anchor_now();
-
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        10,
-        2,
-        FAN_OUT,
-        30,
-        SLEEP_MILLI,
-        None,
-        move || now, // inflight_ttl=30 > grace_period=10
+    assert_rejected(
+        StormTrackingCache::builder().inflight_ttl(sub_ms).build(),
+        "inflight_ttl with a sub-millisecond part",
     );
-    assert!(result.is_err(), "inflight_ttl > grace_period must fail");
-    let err = result.err().expect("error value");
-    assert_eq!(
-        err.kind,
-        CmcErrorKind::InvalidEntry,
-        "expected InvalidEntry, got {err:?}"
+    assert_rejected(
+        StormTrackingCache::builder().sleep(sub_ms).build(),
+        "sleep with a sub-millisecond part",
+    );
+    assert_rejected(
+        StormTrackingCache::builder()
+            .sleep(Duration::from_micros(999))
+            .build(),
+        "sleep under 1 millisecond",
     );
 }
 
-#[tokio::test]
-async fn test_grace_interval_must_not_exceed_inflight_ttl() {
-    let now = anchor_now();
+#[test]
+fn test_one_millisecond_durations_are_accepted() {
+    let ms = Duration::from_millis(1);
+    let config = StormTrackingCache::builder()
+        .grace_period(ms)
+        .grace_interval(ms)
+        .inflight_ttl(ms)
+        .sleep(ms)
+        .build()
+        .expect("1 ms is the minimum");
+    assert_eq!(config.grace_period(), ms);
+}
 
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        20,
-        15,
-        FAN_OUT,
-        10,
-        SLEEP_MILLI,
-        None,
-        move || now, // grace_interval=15 > inflight_ttl=10
-    );
-    assert!(result.is_err(), "grace_interval > inflight_ttl must fail");
-    let err = result.err().expect("error value");
-    assert_eq!(
-        err.kind,
-        CmcErrorKind::InvalidEntry,
-        "expected InvalidEntry, got {err:?}"
+//= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
+//= type=test
+//# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Grace Period](#grace-period).
+#[test]
+fn test_grace_interval_must_not_exceed_grace_period() {
+    assert_rejected(
+        storm_config(8, 2, 10, 20, FAN_OUT, 10, SLEEP_MILLI, Unit::Secs),
+        "grace_interval > grace_period",
     );
 }
 
-// What: `StormTrackingCmc::with_clock_impl` must reject `fan_out == 0` at
-// construction time by returning `InvalidEntry`.
-//
-// Why: the spec states `FanOut: A number (at least 1, default 20)`. Beyond
-// the spec, the value drives internal control flow — the block loops check
-// `inflight.len() < fan_out` to decide when a slot has opened, and that
-// comparison is `usize < 0` when `fan_out == 0`, which is impossible for
-// `usize`. So a `fan_out == 0` cache would deadlock any `get_cache_entry`
-// that misses on a saturated map. Rejecting at construction turns a silent
-// runtime deadlock into a caller-visible validation error.
-#[tokio::test]
-async fn test_fan_out_zero_is_rejected() {
-    let now = anchor_now();
-
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        0, // fan_out = 0 — must be rejected
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
-        move || now,
+//= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
+//= type=test
+//# - The [Inflight TTL](#inflight-ttl) MUST be less than or equal to the [Grace Period](#grace-period).
+#[test]
+fn test_inflight_ttl_must_not_exceed_grace_period() {
+    assert_rejected(
+        storm_config(8, 2, 10, 2, FAN_OUT, 30, SLEEP_MILLI, Unit::Secs),
+        "inflight_ttl > grace_period",
     );
-    assert!(result.is_err(), "fan_out = 0 must be rejected");
-    let err = result.err().expect("error value");
-    assert_eq!(
-        err.kind,
-        CmcErrorKind::InvalidEntry,
-        "expected InvalidEntry, got {err:?}"
+    // The spec's listed defaults (grace period 10, inflight TTL 20) break
+    // this rule.
+    assert_rejected(
+        StormTrackingCache::builder()
+            .inflight_ttl(Duration::from_secs(20))
+            .build(),
+        "inflight_ttl 20 s > default grace_period 10 s",
     );
 }
 
-// What: `grace_period == 0` must be rejected at construction.
-//
-// Why: the spec states `Grace Period: A number of seconds (at least 1,
-// default 10)`. Beyond the spec, `within_grace_period(expiry, now, 0)`
-// reduces to `expiry <= now`, i.e., every already-expired entry is
-// trivially "within the grace period." Storm tracking would then kick in
-// only for already-expired entries — the opposite of its intended
-// pre-expiry refresh behavior.
-#[tokio::test]
-async fn test_grace_period_zero_is_rejected() {
-    let now = anchor_now();
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        0, // grace_period = 0
-        0,
-        FAN_OUT,
-        0,
-        SLEEP_MILLI,
-        None,
-        move || now,
-    );
-    assert!(result.is_err(), "grace_period = 0 must be rejected");
-    assert_eq!(
-        result.err().expect("error").kind,
-        CmcErrorKind::InvalidEntry
-    );
-}
-
-// What: `grace_interval == 0` must be rejected at construction.
-//
-// Why: the spec states `Grace Interval: A number of seconds (at least 1,
-// default 1)`. `within_grace_interval(inflight, now, 0)` is `now <
-// inflight + 0`, which is always false for `now >= inflight`. That means
-// no thread would ever be served the cached entry during the grace
-// interval — every getter would be told the key is inflight but never
-// benefit from the fan-out coalescing that the grace interval enables.
-#[tokio::test]
-async fn test_grace_interval_zero_is_rejected() {
-    let now = anchor_now();
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        GRACE_PERIOD_SECS,
-        0, // grace_interval = 0
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
-        move || now,
-    );
-    assert!(result.is_err(), "grace_interval = 0 must be rejected");
-    assert_eq!(
-        result.err().expect("error").kind,
-        CmcErrorKind::InvalidEntry
-    );
-}
-
-// What: `inflight_ttl == 0` must be rejected at construction.
-//
-// Why: the spec states `Inflight TTL: A number (at least 1, default 20)`.
-// With `inflight_ttl == 0`, any inflight key with `elapsed > 0`
-// immediately exceeds the TTL, so `decide` returns `InFlightTTL exceeded`
-// for essentially every subsequent get on an inflight key. The
-// storm-tracking mechanism becomes a synchronous error-generator instead
-// of a refresh coordinator.
-//
-// Uses `grace_interval = 1` so the `inflight_ttl >= 1` lower-bound check
-// fires directly — the earlier `grace_interval >= 1` check would mask it
-// if both were zero.
-#[tokio::test]
-async fn test_inflight_ttl_zero_is_rejected() {
-    let now = anchor_now();
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        GRACE_PERIOD_SECS,
-        1, // grace_interval = 1 (valid, so it doesn't mask the field under test)
-        FAN_OUT,
-        0, // inflight_ttl = 0 — the field under test
-        SLEEP_MILLI,
-        None,
-        move || now,
-    );
-    assert!(result.is_err(), "inflight_ttl = 0 must be rejected");
-    assert_eq!(
-        result.err().expect("error").kind,
-        CmcErrorKind::InvalidEntry
-    );
-}
-
-// What: `sleep_milli == 0` must be rejected at construction.
-//
-// Why: the spec states `SleepMilli: A number of milliseconds (at least 1,
-// default 20)`. `sleep_milli == 0` turns the block loops into a hot spin:
-// `tokio::time::sleep(Duration::ZERO)` yields but returns immediately, so
-// blocked getters would burn a CPU core repeatedly re-acquiring the
-// storm-tracking mutex and hammering the inner cache. Any non-zero value
-// gives the runtime a chance to schedule other work between polls.
-#[tokio::test]
-async fn test_sleep_milli_zero_is_rejected() {
-    let now = anchor_now();
-    let result = StormTrackingCmc::with_clock(
-        8,
-        2,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        0, // sleep_milli = 0
-        None,
-        move || now,
-    );
-    assert!(result.is_err(), "sleep_milli = 0 must be rejected");
-    assert_eq!(
-        result.err().expect("error").kind,
-        CmcErrorKind::InvalidEntry
+//= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
+//= type=test
+//# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Inflight TTL](#inflight-ttl).
+#[test]
+fn test_grace_interval_must_not_exceed_inflight_ttl() {
+    assert_rejected(
+        storm_config(8, 2, 20, 15, FAN_OUT, 10, SLEEP_MILLI, Unit::Secs),
+        "grace_interval > inflight_ttl",
     );
 }
 
@@ -655,14 +528,17 @@ async fn test_inflight_records_most_recent_nosuchentry_time() {
     // grace_interval = 2s, so use t1 + 3s to be outside the grace interval.
     let t2 = t1 + Duration::from_secs(3); // > grace_interval=2s
     let cmc2 = StormTrackingCmc::with_clock(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || t2,
     )
     .expect("constructs");
@@ -898,14 +774,17 @@ async fn test_get_hit_within_grace_inflight_outside_interval_returns_none_and_up
 async fn test_get_miss_blocks_when_fanout_saturated_until_key_appears() {
     // This test requires real concurrency — use real clock + tokio spawn + timeout.
     let cmc = StormTrackingCmc::new(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
     )
     .expect("constructs");
 
@@ -987,14 +866,17 @@ async fn test_get_miss_inflight_within_interval_blocks_until_unblocked() {
     // Real concurrency test — pre-mark inflight just now (within grace interval),
     // saturate fan-out so the only unblock path is "key appears in cache".
     let cmc = StormTrackingCmc::new(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
     )
     .expect("constructs");
 
@@ -1071,14 +953,17 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
     let clock_reader = Arc::clone(&clock);
 
     let cmc = StormTrackingCmc::with_clock(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || *clock_reader.lock().expect("clock lock"),
     )
     .expect("constructs");
@@ -1214,14 +1099,17 @@ async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
     let clock_reader = Arc::clone(&clock);
 
     let cmc = StormTrackingCmc::with_clock(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || *clock_reader.lock().expect("clock lock"),
     )
     .expect("constructs");
@@ -1284,14 +1172,17 @@ async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_in
     let clock_reader = Arc::clone(&clock);
 
     let cmc = StormTrackingCmc::with_clock(
-        32,
-        4,
-        GP_SECS,
-        GI_SECS,
-        FAN_OUT,
-        TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GP_SECS,
+            GI_SECS,
+            FAN_OUT,
+            TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || *clock_reader.lock().expect("clock lock"),
     )
     .expect("constructs");
@@ -1381,14 +1272,17 @@ async fn test_block_miss_inflight_uses_per_waiter_deadline_not_per_key() {
     let clock_reader = Arc::clone(&clock);
 
     let cmc = StormTrackingCmc::with_clock(
-        32,
-        4,
-        GP_SECS,
-        GI_SECS,
-        FAN_OUT,
-        TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GP_SECS,
+            GI_SECS,
+            FAN_OUT,
+            TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
         move || *clock_reader.lock().expect("clock lock"),
     )
     .expect("constructs");
@@ -1488,14 +1382,17 @@ async fn test_concurrent_gets_on_same_key_coalesce_to_one_refresh() {
     const STORM_FAN_OUT: usize = 20;
 
     let cmc = StormTrackingCmc::new(
-        32,
-        4,
-        GRACE_PERIOD_SECS,
-        GRACE_INTERVAL_SECS,
-        STORM_FAN_OUT,
-        INFLIGHT_TTL_SECS,
-        SLEEP_MILLI,
-        None,
+        &storm_config(
+            32,
+            4,
+            GRACE_PERIOD_SECS,
+            GRACE_INTERVAL_SECS,
+            STORM_FAN_OUT,
+            INFLIGHT_TTL_SECS,
+            SLEEP_MILLI,
+            Unit::Secs,
+        )
+        .expect("valid config"),
     )
     .expect("constructs");
 

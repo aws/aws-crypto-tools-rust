@@ -22,24 +22,22 @@ pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::EsdkCommitmentPolicy;
-use aws_esdk::SharedKeyring;
 use aws_mpl_primitives::AesGcm;
 
-/// Build a native raw-AES keyring handle.
-fn raw_aes(ns: String, name: String, key: [u8; 32]) -> SharedKeyring {
+/// Build a native raw-AES keyring.
+fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
     RawAesKeyring::new(ns, name, key.to_vec(), AesGcm::Aes256Gcm)
         .expect("raw AES keyring construction must succeed for test key material")
-        .into()
 }
 
 /// Create a raw AES keyring for testing (no KMS needed).
-pub async fn test_keyring() -> SharedKeyring {
+pub async fn test_keyring() -> RawAesKeyring {
     let (ns, name) = namespace_and_name(0);
     raw_aes(ns, name, [0u8; 32])
 }
 
 /// Create a raw AES keyring with key material derived from `n`.
-pub async fn aes_keyring(n: u8) -> SharedKeyring {
+pub async fn aes_keyring(n: u8) -> RawAesKeyring {
     let (ns, name) = namespace_and_name(n);
     raw_aes(ns, name, [n; 32])
 }
@@ -109,7 +107,7 @@ pub async fn encrypt_with_frame_length(plaintext: &[u8], frame_length: u32) -> V
 pub async fn encrypt_framed_with_keyring(
     plaintext: &[u8],
     frame_length: u32,
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
     let input = EncryptInput::builder()
         .plaintext(plaintext)
@@ -151,7 +149,7 @@ pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
 /// signing suite, returning `(plaintext, keyring, ciphertext)` for streaming
 /// decrypt tests that need a multi-frame signed payload and the matching
 /// keyring to re-feed into `decrypt_stream`.
-pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, SharedKeyring, Vec<u8>) {
+pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xAAu8; 30];
     let input = EncryptInput::builder()
@@ -208,7 +206,7 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
 /// Encrypt a 30-byte 0xBB plaintext with frame_length=10 under a non-signing
 /// suite, returning `(plaintext, keyring, ciphertext)` for streaming decrypt
 /// tests that need a multi-frame unsigned payload.
-pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, SharedKeyring, Vec<u8>) {
+pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
     let input = EncryptInput::builder()
@@ -227,7 +225,7 @@ pub async fn encrypt_with_suite(
     plaintext: &[u8],
     suite: EsdkAlgorithmSuiteId,
     policy: EsdkCommitmentPolicy,
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
@@ -252,7 +250,7 @@ pub fn commitment_policy_for(version: Version) -> EsdkCommitmentPolicy {
 pub async fn encrypt_with_version(
     plaintext: &[u8],
     version: Version,
-    keyring: SharedKeyring,
+    keyring: RawAesKeyring,
 ) -> Vec<u8> {
     let mut builder = EncryptInput::builder()
         .plaintext(plaintext)
@@ -299,7 +297,7 @@ pub async fn encrypt_no_sign_ec_keyring(
     plaintext: &[u8],
     ec: EncryptionContext,
     version: Version,
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
     let builder = EncryptInput::builder()
         .plaintext(plaintext)
@@ -319,7 +317,7 @@ pub async fn encrypt_no_sign_ec_keyring(
 }
 
 /// Decrypt ciphertext with a caller-supplied keyring, return plaintext bytes.
-pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &SharedKeyring) -> Vec<u8> {
+pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring) -> Vec<u8> {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
         .keyring(keyring.clone())
@@ -329,7 +327,7 @@ pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &SharedKeyring) ->
 }
 
 /// Decrypt V1 ciphertext with a caller-supplied keyring, return plaintext bytes.
-pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &SharedKeyring) -> Vec<u8> {
+pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring) -> Vec<u8> {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
         .keyring(keyring.clone())
@@ -343,7 +341,7 @@ pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &SharedKeyring)
 pub async fn decrypt_with_keyring_ec(
     ciphertext: &[u8],
     ec: EncryptionContext,
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
@@ -358,7 +356,7 @@ pub async fn decrypt_with_keyring_ec(
 pub async fn decrypt_v1_with_keyring_ec(
     ciphertext: &[u8],
     ec: EncryptionContext,
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Vec<u8> {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
@@ -373,7 +371,7 @@ pub async fn decrypt_v1_with_keyring_ec(
 /// Try to decrypt ciphertext with a caller-supplied keyring, return Result.
 pub async fn try_decrypt_with_keyring(
     ciphertext: &[u8],
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Result<DecryptOutput, Error> {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
@@ -386,7 +384,7 @@ pub async fn try_decrypt_with_keyring(
 /// Try to decrypt V1 ciphertext with a caller-supplied keyring, return Result.
 pub async fn try_decrypt_v1_with_keyring(
     ciphertext: &[u8],
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> Result<DecryptOutput, Error> {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
@@ -424,7 +422,7 @@ pub async fn decrypt_ciphertext_result(ciphertext: &[u8]) -> Result<DecryptOutpu
 pub async fn decrypt_with(
     ciphertext: &[u8],
     policy: EsdkCommitmentPolicy,
-    keyring: &SharedKeyring,
+    keyring: &RawAesKeyring,
 ) -> DecryptOutput {
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)

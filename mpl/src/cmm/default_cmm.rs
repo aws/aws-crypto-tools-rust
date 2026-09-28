@@ -14,7 +14,8 @@ use base64::Engine;
 
 use super::Cmm;
 use super::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
-use crate::keyring::SharedKeyring;
+use crate::keyring::{Keyring, SharedKeyring};
+use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
     MaterialsError, SigningKey, VerificationKey,
@@ -56,9 +57,9 @@ pub struct DefaultCmm {
 
 impl DefaultCmm {
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: impl Into<SharedKeyring>) -> Self {
+    pub fn new(keyring: impl Keyring + 'static) -> Self {
         Self {
-            keyring: keyring.into(),
+            keyring: keyring.into_shared(),
         }
     }
 }

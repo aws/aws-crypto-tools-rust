@@ -6,6 +6,7 @@
 //! decode end to end.
 
 use super::*;
+use aws_crypto_mpl::keystore::Keystore as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -101,7 +102,7 @@ fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::new(),
         key_store: std::ptr::null(),
-        ttl_seconds: 0,
+        ttl: ffi::Duration { secs: 0, nanos: 0 },
         cache: unset_cache(),
         partition_id: unset_string(),
     }
@@ -430,6 +431,31 @@ fn classify_core_error_maps_each_kind() {
     }
 }
 
+#[test]
+fn classify_mpl_error_maps_validation_and_defaults_to_mpl_error() {
+    let cases = [
+        (
+            MaterialsErrorKind::Validation,
+            ffi::ShimErrorKind::ValidationError,
+        ),
+        (
+            MaterialsErrorKind::KeyringFailed,
+            ffi::ShimErrorKind::MplError,
+        ),
+        (
+            MaterialsErrorKind::NoMatchingDataKey,
+            ffi::ShimErrorKind::MplError,
+        ),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(
+            classify_mpl_error(&kind).repr,
+            expected.repr,
+            "for {kind:?}"
+        );
+    }
+}
+
 // Inputs the facade cannot express, so must be tested in Rust
 //
 // - Null resource handles (the facade passes references)
@@ -530,6 +556,47 @@ fn create_hierarchical_keyring_reports_bad_cache() {
     );
 }
 
+fn hierarchical_keyring_input_with_ttl(
+    keystore: &KeyStore,
+    ttl: ffi::Duration,
+) -> ffi::HierarchicalKeyringInput {
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = keystore as *const KeyStore;
+    input.branch_key_id = "branch-key-id".to_string();
+    input.ttl = ttl;
+    input
+}
+
+#[test]
+fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
+        &keystore,
+        ffi::Duration {
+            secs: 0,
+            nanos: 500_000_000,
+        },
+    ))
+    .expect("a 500 ms TTL must be accepted");
+
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(
+            &keystore,
+            ffi::Duration {
+                secs: u64::MAX,
+                nanos: 1_000_000_000,
+            },
+        ),
+    ));
+    assert!(
+        err.contains("ttl is out of range"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn create_cache_rejects_unknown_kind() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
@@ -579,33 +646,124 @@ fn shared_cache_type_references_the_supplied_cache() {
     let Ok(CacheType::Shared(referenced)) = make_cache_type(&shared) else {
         panic!("a Shared cache kind must yield CacheType::Shared");
     };
-    assert!(std::ptr::addr_eq(&*referenced, &*cache.inner));
+    assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
+}
+
+fn storm_tracking_cache_input(time_units: ffi::TimeUnits) -> ffi::CacheType {
+    ffi::CacheType {
+        kind: ffi::CacheKind::StormTracking,
+        entry_capacity: 10,
+        entry_pruning_tail_size: 1,
+        grace_period: 10,
+        grace_interval: 1,
+        fan_out: 20,
+        inflight_ttl: 10,
+        sleep_milli: 20,
+        time_units,
+        shared: std::ptr::null(),
+    }
 }
 
 #[test]
 fn create_storm_tracking_cache_honors_time_units() {
-    // time_units governs how grace_period/grace_interval/inflight_ttl are
-    // interpreted; Unset (the core default of seconds), Seconds, and
-    // Milliseconds must each build a usable cache.
-    for time_units in [
-        ffi::TimeUnits::Unset,
-        ffi::TimeUnits::Seconds,
-        ffi::TimeUnits::Milliseconds,
+    use std::time::Duration;
+    // Unset and Seconds read the values as seconds, Milliseconds as
+    // milliseconds; sleep_milli is always milliseconds.
+    for (time_units, unit) in [
+        (ffi::TimeUnits::Unset, Duration::from_secs(1)),
+        (ffi::TimeUnits::Seconds, Duration::from_secs(1)),
+        (ffi::TimeUnits::Milliseconds, Duration::from_millis(1)),
     ] {
-        create_cryptographic_materials_cache(&ffi::CacheType {
-            kind: ffi::CacheKind::StormTracking,
-            entry_capacity: 10,
-            entry_pruning_tail_size: 1,
-            grace_period: 10,
-            grace_interval: 1,
-            fan_out: 20,
-            inflight_ttl: 10,
-            sleep_milli: 20,
-            time_units,
-            shared: std::ptr::null(),
-        })
-        .expect("storm-tracking cache should build");
+        let input = storm_tracking_cache_input(time_units);
+        let Ok(CacheType::StormTracking(params)) = make_cache_type(&input) else {
+            panic!("storm-tracking cache input must convert to a storm-tracking cache");
+        };
+        assert_eq!(params.entry_capacity(), 10);
+        assert_eq!(params.entry_pruning_tail_size(), 1);
+        assert_eq!(params.grace_period(), unit * 10);
+        assert_eq!(params.grace_interval(), unit);
+        assert_eq!(params.fan_out(), 20);
+        assert_eq!(params.inflight_ttl(), unit * 10);
+        assert_eq!(params.sleep(), Duration::from_millis(20));
+        create_cryptographic_materials_cache(&input).expect("storm-tracking cache should build");
     }
+}
+
+#[test]
+fn create_storm_tracking_cache_rejects_unrecognized_time_units() {
+    let err = expect_err(make_cache_type(&storm_tracking_cache_input(
+        ffi::TimeUnits { repr: 99 },
+    )));
+    let validation = ffi::ShimErrorKind::ValidationError.repr;
+    assert!(
+        err.starts_with(&format!("{validation}{ERROR_KIND_SEPARATOR}")),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.contains("unrecognized time_units"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_storm_tracking_cache_rejects_zero_values() {
+    let mut input = storm_tracking_cache_input(ffi::TimeUnits::Unset);
+    input.sleep_milli = 0;
+    let err = expect_err(make_cache_type(&input));
+    assert!(err.contains("sleep"), "unexpected error: {err}");
+}
+
+#[test]
+fn opt_to_option_returns_the_value_only_when_set() {
+    assert_eq!(unset_u32().to_option(), None);
+    assert_eq!(set_u32(7).to_option(), Some(7));
+
+    assert_eq!(unset_string().to_option(), None);
+    let set_string = ffi::OptString {
+        set: true,
+        value: "v".to_string(),
+    };
+    assert_eq!(set_string.to_option(), Some("v".to_string()));
+
+    // The bridge enums don't implement Debug, so compare their reprs.
+    assert!(unset_alg_id().to_option().is_none());
+    let alg = F::AlgAes256GcmHkdfSha512CommitKey;
+    assert_eq!(set_alg_id(alg).to_option().map(|a| a.repr), Some(alg.repr));
+
+    assert!(unset_policy().to_option().is_none());
+    let policy = P::RequireEncryptRequireDecrypt;
+    assert_eq!(
+        set_policy(policy).to_option().map(|p| p.repr),
+        Some(policy.repr)
+    );
+
+    assert!(unset_cache().to_option().is_none());
+    let mut cache = unset_cache();
+    cache.set = true;
+    cache.value.entry_capacity = 42;
+    let got = cache.to_option().expect("a set cache is Some");
+    assert_eq!(got.entry_capacity, 42);
+}
+
+#[test]
+fn create_keystore_forwards_id_and_grant_tokens() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+
+    let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+    let info = unset.inner.get_key_store_info().expect("info");
+    assert!(info.grant_tokens.is_empty());
+
+    let mut cfg = keystore_config_with_clients(&kms, &ddb);
+    cfg.id = ffi::OptString {
+        set: true,
+        value: "the-id".to_string(),
+    };
+    cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
+    let store = create_keystore(&cfg).expect("key store");
+    let info = store.inner.get_key_store_info().expect("info");
+    assert_eq!(info.keystore_id, "the-id");
+    assert_eq!(info.grant_tokens, vec!["g1", "g2"]);
 }
 
 #[test]
