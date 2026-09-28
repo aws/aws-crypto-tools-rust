@@ -1091,20 +1091,15 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied key store id and grant
         //# tokens to the core ESDK when present; an unset value is omitted.
-        .set_id(input.id.to_option())
-        .set_grant_tokens(non_empty(&input.grant_tokens))
-        //= spec/shim/esdk-shim.md#create-key-store
-        //# - Creating a key store MAY be supplied with a KMS client and a DynamoDB client,
-        //# each checked as defined in
-        //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes); a
-        //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
-        //# left for the core ESDK to default.
-        //
-        // A null handle means "not supplied": leaving it None makes the core build its
-        // own default client. SAFETY: a non-null handle is a valid client borrowed for
-        // this call.
-        .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
-        .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
+        id: input.id.to_option(),
+        grant_tokens: if input.grant_tokens.is_empty() {
+            None
+        } else {
+            Some(input.grant_tokens.iter().map(ToString::to_string).collect())
+        },
+        ddb_client,
+        kms_client,
+    };
 
     let store = TOKIO_RUNTIME
         .block_on(builder.build())
