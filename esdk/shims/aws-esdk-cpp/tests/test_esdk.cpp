@@ -228,36 +228,6 @@ void test_keystore_rejects_short_table_name() {
                                               .with_ddb_client(ddb)));
 }
 
-void test_hierarchical_keyring_ttl() {
-    using namespace std::chrono_literals;
-    Aws::Esdk::KmsClient kms;
-    Aws::Esdk::DdbClient ddb;
-    auto keystore = Aws::Esdk::KeyStore(
-        "test-table", "test-logical",
-        "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
-        Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
-
-    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
-
-    // The core requires the grace period to be less than the TTL,
-    // so these pin the exact TTL value that reaches it.
-    auto with_grace_ms = [](std::uint32_t grace_period) {
-        return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CacheType::StormTracking(
-                /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
-                /*grace_interval=*/100, /*fan_out=*/4, /*inflight_ttl=*/100,
-                /*sleep_milli=*/10, Aws::Esdk::TimeUnits::Milliseconds));
-    };
-    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1499));
-    CHECK_THROWS_TYPE(
-        Aws::Esdk::ValidationException,
-        Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1500)));
-}
-
 // Assert a particular error scenario forwards the error raised by ESDK Rust
 void test_error_kinds() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -557,7 +527,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
         cfg.branch_key_id,
-        std::chrono::seconds{600},
+        /*ttl_seconds=*/600,
         Aws::Esdk::HierarchicalKeyringOptions()
             //= spec/shim/esdk-shim.md#create-hierarchical-keyring
             //= type=test
@@ -727,7 +697,6 @@ int main(int argc, char** argv) {
         test_raw_aes_mismatched_key_length_throws();
         test_cache_kinds();
         test_keystore_rejects_short_table_name();
-        test_hierarchical_keyring_ttl();
         test_error_kinds();
         test_client_configuration();
         test_bytes_and_string_ergonomics();

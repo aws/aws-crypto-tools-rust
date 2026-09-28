@@ -123,7 +123,7 @@ fn build_with_zero_ttl_returns_validation_error() {
     let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::builder()
         .key_store(keystore)
-        .ttl(Duration::from_secs(0))
+        .ttl_seconds(0)
         .branch_key_id("branch-key-id")
         .build();
 
@@ -150,7 +150,7 @@ fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
     // one" rule is enforced here rather than by the type system.
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("branch-key-id")
         .branch_key_id_supplier(FixedBranchKeySupplier("unused"))
         .build()
@@ -171,7 +171,7 @@ fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
 fn build_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .build()
     {
         Err(e) => e,
@@ -198,7 +198,7 @@ fn build_err(builder: HierarchicalKeyringBuilder, label: &str) -> MaterialsError
 fn build_without_key_store_returns_validation_error() {
     let err = build_err(
         HierarchicalKeyring::builder()
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id("branch-key-id"),
         "no key store",
     );
@@ -223,62 +223,17 @@ fn build_without_ttl_returns_validation_error() {
 }
 
 #[test]
-fn build_with_sub_second_ttl_keeps_it_exactly() {
-    for ttl in [
-        Duration::from_millis(1500),
-        Duration::from_millis(500),
-        Duration::from_nanos(1),
-    ] {
-        let keyring = HierarchicalKeyring::builder()
-            .key_store(keystore_never_consulted())
-            .ttl(ttl)
-            .branch_key_id("branch-key-id")
-            .build()
-            .unwrap_or_else(|e| panic!("{ttl:?} must be accepted: {e}"));
-        assert_eq!(keyring.ttl(), ttl);
-    }
-}
-
-#[test]
-fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
-    let with_grace_ms = |grace_period_ms| {
-        let params = StormTrackingCache::builder()
-            .entry_capacity(16)
-            .entry_pruning_tail_size(4)
-            .grace_period(Duration::from_millis(grace_period_ms))
-            .grace_interval(Duration::from_millis(100))
-            .fan_out(4)
-            .inflight_ttl(Duration::from_millis(100))
-            .sleep(Duration::from_millis(10))
-            .build()
-            .expect("valid StormTrackingCache");
-        HierarchicalKeyring::builder()
-            .key_store(keystore_never_consulted())
-            .ttl(Duration::from_millis(1500))
-            .branch_key_id("bk")
-            .cache(CacheType::StormTracking(params))
-            .build()
-    };
-    with_grace_ms(1_499).expect("1499 ms grace period < 1500 ms TTL must succeed");
-    let err = match with_grace_ms(1_500) {
-        Ok(_) => panic!("1500 ms grace period == 1500 ms TTL must fail"),
-        Err(e) => e,
-    };
-    assert!(err.message.contains("grace period"), "got: {}", err.message);
-}
-
-#[test]
 fn build_with_positive_ttl_succeeds() {
     let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::builder()
         .key_store(keystore)
-        .ttl(Duration::from_secs(1))
+        .ttl_seconds(1)
         .branch_key_id("branch-key-id")
         .cache(CacheType::Default(DefaultCache::new(1000)))
         .build();
 
     let keyring = result.expect("a 1-second TTL must be accepted");
-    assert_eq!(keyring.ttl(), Duration::from_secs(1));
+    assert_eq!(keyring.ttl_seconds(), 1);
 }
 
 #[test]
@@ -286,7 +241,7 @@ fn partition_id_default_is_16_byte_v4_uuid() {
     let keystore = keystore_never_consulted();
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore)
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("branch-key-id")
         .build()
         .expect("constructor with no partition id must succeed");
@@ -323,14 +278,14 @@ fn partition_id_default_two_calls_are_distinct() {
     // length / version-bit checks.
     let a = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("branch-key-id")
         .build()
         .expect("first constructor call must succeed");
 
     let b = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("branch-key-id")
         .build()
         .expect("second constructor call must succeed");
@@ -374,7 +329,7 @@ fn partition_id_provided_is_utf8_round_tripped() {
     for (label, original) in cases {
         let keyring = HierarchicalKeyring::builder()
             .key_store(keystore_never_consulted())
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id("branch-key-id")
             .partition_id(*original)
             .build()
@@ -402,7 +357,7 @@ fn partition_id_is_not_unicode_normalized() {
     let id_of = |partition: &str| {
         HierarchicalKeyring::builder()
             .key_store(keystore_never_consulted())
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id("branch-key-id")
             .partition_id(partition)
             .build()
@@ -428,7 +383,7 @@ fn build_with_branch_key_id_supplier_succeeds() {
     let supplier = FixedBranchKeySupplier("branch-id-from-supplier");
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id_supplier(supplier)
         .build()
         .expect("constructor with supplier variant must succeed");
@@ -454,7 +409,7 @@ fn build_with_branch_key_id_supplier_succeeds() {
 fn build_with_default_cache_succeeds() {
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("bk")
         .cache(CacheType::Default(DefaultCache::new(1)))
         .build()
@@ -465,7 +420,7 @@ fn build_with_default_cache_succeeds() {
 fn build_with_cache_type_none_succeeds() {
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("bk")
         .build()
         .expect("None cache_type must default to a built-in cache");
@@ -477,7 +432,7 @@ fn build_with_shared_cache_round_trips_provided_cache() {
 
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id("bk")
         .cache(CacheType::Shared(supplied.clone()))
         .build()
@@ -507,7 +462,7 @@ fn build_with_storm_tracking_cache_succeeds() {
         .expect("valid StormTrackingCache");
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600)) // strictly greater than grace_period (60).
+        .ttl_seconds(3600) // strictly greater than grace_period (60).
         .branch_key_id("bk")
         .cache(CacheType::StormTracking(params))
         .build()
@@ -528,7 +483,7 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         .expect("valid StormTrackingCache");
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(60)) // equal to grace_period (60).
+        .ttl_seconds(60) // equal to grace_period (60).
         .branch_key_id("bk")
         .cache(CacheType::StormTracking(params))
         .build()
@@ -557,7 +512,7 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         .expect("valid StormTrackingCache");
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(60))
+        .ttl_seconds(60)
         .branch_key_id("bk")
         .cache(CacheType::StormTracking(params))
         .build()
@@ -588,7 +543,7 @@ fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
         .expect("valid StormTrackingCache");
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(60))
+        .ttl_seconds(60)
         .branch_key_id("bk")
         .cache(CacheType::StormTracking(params))
         .build()
@@ -1405,7 +1360,7 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
 fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(keystore)
-        .ttl(Duration::from_secs(3600))
+        .ttl_seconds(3600)
         .branch_key_id(branch_key_id)
         .cache(CacheType::Default(DefaultCache::new(1000)))
         .partition_id("partition-id")
@@ -1493,7 +1448,7 @@ mod onencrypt {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = HierarchicalKeyring::builder()
             .key_store(keystore.clone())
-            .ttl(Duration::from_millis(1500))
+            .ttl_seconds(1)
             .branch_key_id(FAKE_BRANCH_KEY_ID)
             .cache(CacheType::Shared(SharedCmc::new(cache)))
             .partition_id(PARTITION)
@@ -1507,14 +1462,15 @@ mod onencrypt {
     }
 
     #[tokio::test]
-    async fn on_encrypt_ttl_compares_the_full_duration() {
+    async fn on_encrypt_ttl_compares_whole_seconds() {
+        // A 1 s TTL keeps an entry until its age reaches 2 whole seconds.
         assert!(
-            !on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1000)).await,
-            "an entry aged 1 s is within a 1.5 s TTL",
+            !on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1500)).await,
+            "an entry aged 1.5 s is within a 1 s TTL under whole-second comparison",
         );
         assert!(
-            on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1800)).await,
-            "an entry aged 1.8 s is past a 1.5 s TTL",
+            on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(2500)).await,
+            "an entry aged 2.5 s is past a 1 s TTL",
         );
     }
 
@@ -1572,7 +1528,7 @@ mod onencrypt {
         }
         let keyring = HierarchicalKeyring::builder()
             .key_store(FailingKeystore)
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id("bk")
             .cache(CacheType::Default(DefaultCache::new(1000)))
             .build()
@@ -1617,7 +1573,7 @@ mod onencrypt {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = HierarchicalKeyring::builder()
             .key_store(keystore.clone())
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
             .cache(CacheType::Default(DefaultCache::new(1000)))
             .build()
@@ -2065,7 +2021,7 @@ mod ondecrypt {
 
         let keyring = HierarchicalKeyring::builder()
             .key_store(FailingKeystore)
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id(FAKE_BRANCH_KEY_ID)
             .cache(CacheType::Default(DefaultCache::new(1000)))
             .partition_id("partition-id")
@@ -2106,7 +2062,7 @@ mod ondecrypt {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = HierarchicalKeyring::builder()
             .key_store(keystore.clone())
-            .ttl(Duration::from_secs(3600))
+            .ttl_seconds(3600)
             .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
             .cache(CacheType::Default(DefaultCache::new(1000)))
             .partition_id("partition-id")

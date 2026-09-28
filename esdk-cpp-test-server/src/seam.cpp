@@ -3,7 +3,6 @@
 // the C++ shim surface is what gets exercised end to end.
 
 #include <algorithm>
-#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -95,8 +94,7 @@ int esdk_cpp_create_hierarchical_client(const char* region,
                                       Aws::Esdk::KeyStoreOptions()
                                           .with_kms_client(std::move(kms))
                                           .with_ddb_client(std::move(ddb)));
-        Aws::Esdk::Keyring* keyring = new HierarchicalKeyring(std::move(key_store), branch_key_id,
-                                                              std::chrono::seconds{ttl_seconds});
+        Aws::Esdk::Keyring* keyring = new HierarchicalKeyring(std::move(key_store), branch_key_id, ttl_seconds);
         *out_client = keyring;
         return 0;
     } catch (const std::exception& e) {

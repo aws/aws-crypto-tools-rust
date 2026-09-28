@@ -8,8 +8,6 @@
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
 
-use std::time::Duration;
-
 use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
@@ -120,7 +118,7 @@ async fn build_hierarchical(
     })?;
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store)
-        .ttl(Duration::from_secs(ttl_seconds))
+        .ttl_seconds(ttl_seconds)
         .branch_key_id(config.branch_key_id.clone())
         .build()
         .map_err(|e| ServerError::esdk(e.to_string()))?;

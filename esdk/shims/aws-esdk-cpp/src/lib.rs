@@ -345,17 +345,10 @@ mod ffi {
         Milliseconds,
     }
 
-    // cxx has no mapping for std::chrono or std::time::Duration.
-    // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
-    struct Duration {
-        secs: u64,
-        nanos: u32,
-    }
-
     struct HierarchicalKeyringInput {
         branch_key_id: String,
         key_store: *const KeyStore,
-        ttl: Duration,
+        ttl_seconds: u32,
         cache: OptCacheType,
         partition_id: OptString,
     }
@@ -1202,22 +1195,12 @@ fn create_hierarchical_keyring(
     //# the core ESDK when present; an unset value is omitted.
     let partition_id = input.partition_id.to_option();
 
-    let ttl = Duration::from_secs(input.ttl.secs)
-        .checked_add(Duration::from_nanos(u64::from(input.ttl.nanos)))
-        .ok_or_else(|| {
-            shim_err(
-                ffi::ShimErrorKind::ValidationError,
-                "create_hierarchical_keyring",
-                "ttl is out of range",
-            )
-        })?;
-
     let mut builder = HierarchicalKeyring::builder()
         .key_store(key_store.inner.clone())
         //= spec/shim/esdk-shim.md#create-hierarchical-keyring
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
-        .ttl(ttl)
+        .ttl_seconds(u64::from(input.ttl_seconds))
         .branch_key_id(input.branch_key_id.clone());
     if let Some(cache_type) = cache_type {
         builder = builder.cache(cache_type);

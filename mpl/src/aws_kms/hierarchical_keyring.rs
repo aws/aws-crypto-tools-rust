@@ -131,7 +131,7 @@ pub struct HierarchicalKeyring {
 struct HierarchicalKeyringInner {
     keystore: SharedKeystore,
 
-    ttl: Duration,
+    ttl_seconds: u64,
 
     /// The single branch key id this keyring wraps and unwraps with, when
     /// configured with one. Exactly one of this and `branch_key_id_supplier`
@@ -162,9 +162,9 @@ impl HierarchicalKeyring {
         HierarchicalKeyringBuilder::default()
     }
 
-    /// The configured TTL for cached branch-key materials.
-    pub fn ttl(&self) -> Duration {
-        self.inner.ttl
+    /// The configured TTL for cached branch-key materials, in seconds.
+    pub fn ttl_seconds(&self) -> u64 {
+        self.inner.ttl_seconds
     }
 
     /// The configured static branch key id, if this keyring was built with one
@@ -209,7 +209,7 @@ impl HierarchicalKeyring {
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
     key_store: Option<SharedKeystore>,
-    ttl: Option<Duration>,
+    ttl_seconds: Option<u64>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
     cache: Option<CacheType>,
@@ -219,7 +219,7 @@ pub struct HierarchicalKeyringBuilder {
 impl std::fmt::Debug for HierarchicalKeyringBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HierarchicalKeyringBuilder")
-            .field("ttl", &self.ttl)
+            .field("ttl_seconds", &self.ttl_seconds)
             .field("branch_key_id", &self.branch_key_id)
             .field("partition_id", &self.partition_id)
             .finish_non_exhaustive()
@@ -234,11 +234,11 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
-    /// The TTL for cached branch-key materials.
+    /// The TTL for cached branch-key materials, in seconds.
     /// Required, and must be greater than zero.
     #[must_use]
-    pub fn ttl(mut self, ttl: Duration) -> Self {
-        self.ttl = Some(ttl);
+    pub const fn ttl_seconds(mut self, ttl_seconds: u64) -> Self {
+        self.ttl_seconds = Some(ttl_seconds);
         self
     }
 
@@ -278,7 +278,7 @@ impl HierarchicalKeyringBuilder {
     pub fn build(self) -> Result<HierarchicalKeyring, MaterialsError> {
         let Self {
             key_store,
-            ttl,
+            ttl_seconds,
             branch_key_id,
             branch_key_id_supplier,
             cache,
@@ -291,14 +291,14 @@ impl HierarchicalKeyringBuilder {
             ));
         };
 
-        let Some(ttl) = ttl else {
+        let Some(ttl_seconds) = ttl_seconds else {
             return Err(MaterialsError::new(
                 "HierarchicalKeyring: a TTL is required",
             ));
         };
-        if ttl.is_zero() {
+        if ttl_seconds == 0 {
             return Err(MaterialsError::new(
-                "HierarchicalKeyring TTL must be greater than zero",
+                "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",
             ));
         }
 
@@ -325,10 +325,10 @@ impl HierarchicalKeyringBuilder {
         // `create_cryptographic_materials_cache`, which has no TTL to compare
         // against when a cache is built standalone.
         if let CacheType::StormTracking(params) = &cache_type
-            && params.grace_period() >= ttl
+            && params.grace_period() >= Duration::from_secs(ttl_seconds)
         {
             return Err(MaterialsError::new(format!(
-                "HierarchicalKeyring: storm-tracking grace period ({:?}) must be less than the cache limit TTL ({ttl:?})",
+                "HierarchicalKeyring: storm-tracking grace period ({:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
                 params.grace_period(),
             )));
         }
@@ -355,7 +355,7 @@ impl HierarchicalKeyringBuilder {
         Ok(HierarchicalKeyring {
             inner: Arc::new(HierarchicalKeyringInner {
                 keystore,
-                ttl,
+                ttl_seconds,
                 branch_key_id,
                 branch_key_id_supplier,
                 partition_id_bytes,
@@ -429,7 +429,7 @@ impl Keyring for HierarchicalKeyring {
             })?;
 
         let ciphertext = match cached {
-            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
+            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl_seconds) => {
                 let bkm = as_branch_key_materials(&entry)?;
                 branch_key_wrap::wrap(bkm, materials.encryption_context(), plaintext_dk.as_bytes())?
             }
@@ -450,7 +450,7 @@ impl Keyring for HierarchicalKeyring {
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    now + self.inner.ttl,
+                    now + Duration::from_secs(self.inner.ttl_seconds),
                     UsageMetadata::default(),
                 );
                 self.inner
@@ -680,7 +680,7 @@ impl HierarchicalKeyring {
             })?;
 
         let bkm = match cached {
-            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
+            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl_seconds) => {
                 as_branch_key_materials(&entry)?.clone()
             }
             _ => {
@@ -700,7 +700,7 @@ impl HierarchicalKeyring {
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    now + self.inner.ttl,
+                    now + Duration::from_secs(self.inner.ttl_seconds),
                     UsageMetadata::default(),
                 );
                 self.inner
@@ -736,12 +736,12 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, M
 
 /// Whether a cache entry is still within its TTL:
 /// `time.now() - cacheEntryCreationTime <= ttlSeconds`.
-fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
+fn cache_entry_within_limits(entry: &CacheEntry, ttl_seconds: u64) -> bool {
     let now = SystemTime::now();
     let elapsed = now
         .duration_since(entry.creation_time)
         .unwrap_or(Duration::ZERO);
-    elapsed <= ttl
+    elapsed.as_secs() <= ttl_seconds
 }
 
 /// Extract a borrowed [`BranchKeyMaterials`] reference from a cache

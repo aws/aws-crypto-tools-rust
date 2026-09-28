@@ -9,12 +9,9 @@
 //
 // Requires an existing key store with a provisioned branch key.
 
-#include <chrono>
 #include <iostream>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
-
-using namespace std::chrono_literals;
 
 int main() {
     try {
@@ -37,7 +34,7 @@ int main() {
         const std::string branch_key_id = "3ce7656b-e166-40f3-8c9b-a920ce6596cd";
         auto make_keyring = [&] {
             return Aws::Esdk::HierarchicalKeyring(
-                keystore, branch_key_id, 4242s,
+                keystore, branch_key_id, 4242,
                 Aws::Esdk::HierarchicalKeyringOptions()
                     .with_cache(Aws::Esdk::CacheType::Shared(cache))
                     .with_partition_id("shared-partition"));
