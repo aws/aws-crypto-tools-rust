@@ -165,7 +165,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    // Decrypt fails unless the message's encryption context contains every pair given here.
     let decrypted = decrypt(
         &DecryptInput::builder()
             .ciphertext(&encrypted.ciphertext)
