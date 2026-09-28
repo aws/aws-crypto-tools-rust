@@ -24,12 +24,12 @@ use aws_crypto_mpl::{Keyring, RawAesKeyring};
 use aws_mpl_primitives::AesGcm;
 
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
+    DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
+    EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
 };
 
 /// Mirrors the Dafny tests' `ALG_AES_256_GCM_IV12_TAG16_NO_KDF`.
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
+const SUITE: EsdkAlgorithmSuiteId = EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
 
 /// Byte length of the serialized authentication-tag-length and IV-length
 /// fields of the key provider information.
@@ -49,7 +49,7 @@ fn namespace_and_name() -> (String, String) {
 /// Mirrors Dafny `TestUtils.SmallEncryptionContext(A)`.
 fn small_encryption_context_a() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"keyA".to_vec(), b"valA".to_vec());
+    ec.insert("keyA", "valA");
     ec
 }
 
@@ -58,7 +58,7 @@ fn small_encryption_context_a() -> EncryptionContext {
 /// Dafny `generateUnserializableEncryptionContext`.
 fn unserializable_encryption_context() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"keyA".to_vec(), vec![0u8; 0x1_0000]);
+    ec.insert("keyA", "\0".repeat(0x1_0000));
     ec
 }
 
@@ -80,7 +80,7 @@ fn default_keyring() -> RawAesKeyring {
 
 fn encryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> EncryptionMaterials {
     EncryptionMaterials::new(
-        SUITE,
+        SUITE.into(),
         vec![],
         ec,
         BTreeSet::new(),
@@ -93,7 +93,7 @@ fn encryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> Encrypti
 
 fn decryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> DecryptionMaterials {
     DecryptionMaterials::new(
-        SUITE,
+        SUITE.into(),
         ec,
         BTreeSet::new(),
         pdk.map(PlaintextDataKey::new),
@@ -491,7 +491,7 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
     // A different encryption context yields different AAD, so authentication
     // must fail. This is what proves the serialized context is used as the AAD.
     let mut tampered_ec = EncryptionContext::new();
-    tampered_ec.insert(b"keyA".to_vec(), b"valB".to_vec());
+    tampered_ec.insert("keyA", "valB");
 
     let result = keyring
         .on_decrypt(decryption_materials(tampered_ec, None), &[edk])
@@ -757,4 +757,38 @@ fn test_debug_does_not_leak_the_wrapping_key() {
         rendered.contains("child0 Namespace") && rendered.contains("child0 Name"),
         "Debug must still show the non-secret configuration: {rendered}"
     );
+}
+
+#[tokio::test]
+async fn test_clone_is_interchangeable_with_original() {
+    let original = default_keyring();
+    let clone = original.clone();
+    let ec = small_encryption_context_a();
+
+    for (encryptor, decryptor) in [(&original, &clone), (&clone, &original)] {
+        let encrypt_output = encryptor
+            .on_encrypt(encryption_materials(ec.clone(), None))
+            .await
+            .expect("on_encrypt succeeds");
+        let pdk = encrypt_output
+            .plaintext_data_key()
+            .expect("on_encrypt must set a plaintext data key")
+            .as_bytes()
+            .to_vec();
+
+        let decrypt_output = decryptor
+            .on_decrypt(
+                decryption_materials(ec.clone(), None),
+                encrypt_output.encrypted_data_keys(),
+            )
+            .await
+            .expect("on_decrypt succeeds");
+        assert_eq!(
+            decrypt_output
+                .plaintext_data_key()
+                .expect("on_decrypt must set a plaintext data key")
+                .as_bytes(),
+            &pdk,
+        );
+    }
 }

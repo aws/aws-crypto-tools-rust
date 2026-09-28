@@ -19,7 +19,7 @@ pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,
     encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<Vec<u8>>,
+    required_encryption_context_keys: BTreeSet<String>,
     plaintext_data_key: Option<PlaintextDataKey>,
     signing_key: Option<SigningKey>,
     symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
@@ -31,7 +31,7 @@ impl EncryptionMaterials {
         algorithm_suite_id: AlgorithmSuiteId,
         encrypted_data_keys: Vec<EncryptedDataKey>,
         encryption_context: EncryptionContext,
-        required_encryption_context_keys: BTreeSet<Vec<u8>>,
+        required_encryption_context_keys: BTreeSet<String>,
         plaintext_data_key: Option<PlaintextDataKey>,
         signing_key: Option<SigningKey>,
         symmetric_signing_keys: Option<Vec<SymmetricSigningKey>>,
@@ -106,7 +106,7 @@ impl EncryptionMaterials {
         &self.encryption_context
     }
 
-    pub fn required_encryption_context_keys(&self) -> &BTreeSet<Vec<u8>> {
+    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
     }
 
@@ -126,7 +126,7 @@ impl EncryptionMaterials {
     pub fn validate_aws_crypto_public_key(&self) -> Result<(), MaterialsError> {
         let has_key = self
             .encryption_context
-            .contains_key(b"aws-crypto-public-key");
+            .contains_key("aws-crypto-public-key");
         if self.signing_key.is_some() && !has_key {
             return Err(MaterialsError::new(
                 "Encryption context MUST include 'aws-crypto-public-key' when signing key is present",

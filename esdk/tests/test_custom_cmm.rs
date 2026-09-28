@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Caller-implemented CMM. Forwards materials requests to an inner default
 /// CMM and records that each trait method was invoked.
+#[derive(Clone)]
 struct RecordingCmm {
     inner: DefaultCmm,
     saw_get_encryption_materials: Arc<AtomicBool>,
@@ -57,26 +58,30 @@ async fn custom_cmm_round_trips_via_public_api() {
     let saw_decrypt_materials = Arc::new(AtomicBool::new(false));
 
     // Custom CMM over a default CMM backed by a local raw AES keyring.
-    let cmm: Arc<dyn Cmm> = Arc::new(RecordingCmm {
+    let cmm = RecordingCmm {
         inner: DefaultCmm::new(test_helpers::test_keyring().await),
         saw_get_encryption_materials: Arc::clone(&saw_get_encryption_materials),
         saw_decrypt_materials: Arc::clone(&saw_decrypt_materials),
-    });
+    };
     let plaintext = b"custom cmm round trip";
 
     // Encrypt and decrypt entirely through the custom CMM.
-    let out = encrypt(&EncryptInput::with_cmm(
-        plaintext,
-        EncryptionContext::new(),
-        cmm.clone(),
-    ))
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(plaintext)
+            .cmm(cmm.clone())
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
-    let dec = decrypt(&DecryptInput::with_cmm(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        cmm,
-    ))
+    let dec = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .cmm(cmm)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
     assert_eq!(dec.plaintext, plaintext);

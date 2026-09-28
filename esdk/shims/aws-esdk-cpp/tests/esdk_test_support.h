@@ -14,6 +14,7 @@
 //   ESDK_TEST_REGION            (optional) AWS region
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -126,7 +127,7 @@ inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const TestConfig
                                      .with_kms_client(kms)
                                      .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
-        std::move(keystore), cfg.branch_key_id, /*ttl_seconds=*/600,
+        std::move(keystore), cfg.branch_key_id, std::chrono::seconds{600},
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(
             Aws::Esdk::CacheType::StormTracking(
                 /*entry_capacity=*/ 100,

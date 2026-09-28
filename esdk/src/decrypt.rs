@@ -9,12 +9,11 @@ use crate::error::{Error, esdk_err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::header_types::ContentType;
-use crate::message::serializable_types::{from_canonical_pairs, to_canonical_pairs};
 use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
 };
-use crate::suites::get_ecdsa_alg;
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptionContext,
     EsdkCommitmentPolicy, MaterialSource, SafeRead, SafeWrite,
@@ -94,8 +93,6 @@ pub async fn decrypt_stream(
     plaintext: &mut dyn SafeWrite,
     input: &DecryptStreamInput,
 ) -> Result<DecryptStreamOutput, Error> {
-    input.validate()?;
-
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
     //= reason=No such configuration option is provided; multi-frame signed streaming unconditionally fails during body decode and single-frame signed is buffered until after signature verification, so unverified plaintext is never released early.
@@ -108,9 +105,7 @@ pub async fn decrypt_stream(
         &input.encryption_context,
         DecryptMode::Streaming,
         input.max_encrypted_data_keys,
-        input
-            .commitment_policy
-            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
+        input.commitment_policy,
     )
     .await
 }
@@ -123,7 +118,6 @@ pub async fn decrypt_stream(
 /// # Errors
 /// Returns an error if input validation, header parsing, decryption, or signature verification fails.
 pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
-    input.validate()?;
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
     //= spec/client-apis/decrypt.md#behavior
@@ -145,9 +139,7 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         &input.encryption_context,
         DecryptMode::Buffered,
         input.max_encrypted_data_keys,
-        input
-            .commitment_policy
-            .unwrap_or(crate::types::DEFAULT_COMMITMENT_POLICY),
+        input.commitment_policy,
     )
     .await?;
 
@@ -185,6 +177,11 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
         encryption_context: out.encryption_context,
         //= spec/client-apis/decrypt.md#output
         //# - Decrypt operation output MUST include an [algorithm suite](#algorithm-suite) value.
+        //
+        //= spec/client-apis/decrypt.md#algorithm-suite
+        //= type=implication
+        //= reason=EsdkAlgorithmSuiteId enumerates only ESDK suites, so the output cannot carry another
+        //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
         //
         //= spec/client-apis/decrypt.md#algorithm-suite
         //= type=exception
@@ -246,7 +243,7 @@ async fn internal_decrypt(
     )
     .await?;
 
-    crate::suites::algorithm_suite_id_from_bytes(state.header.suite.id())?;
+    algorithm_suite_id_from_bytes(state.header.suite.id())?;
 
     //= spec/client-apis/decrypt.md#behavior
     //= reason=verification_key presence must match suite's signature algorithm; mismatch means misbehaving CMM
@@ -305,9 +302,7 @@ async fn internal_decrypt(
     // header before serialization); on any overlap, prefer the authenticate-only value
     // because it was verified as AAD and is the source of truth.
     let mut ec = state.header.encryption_context;
-    for (k, v) in state.encryption_context_to_only_authenticate {
-        ec.insert(k, v);
-    }
+    ec.extend(state.encryption_context_to_only_authenticate);
 
     //= spec/client-apis/streaming.md#outputs
     //= reason=All bytes written to SafeWrite before Ok is returned
@@ -322,7 +317,7 @@ async fn internal_decrypt(
     //# as soon as tag verification succeeds.
     Ok(DecryptStreamOutput {
         encryption_context: ec,
-        algorithm_suite_id: crate::suites::algorithm_suite_id_from_bytes(state.header.suite.id())?,
+        algorithm_suite_id: algorithm_suite_id_from_bytes(state.header.suite.id())?,
     })
 }
 
@@ -380,16 +375,15 @@ async fn step_get_decryption_materials(
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
-    let algorithm_suite_id =
-        crate::suites::algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
+    let algorithm_suite_id = algorithm_suite_id_from_bytes(header_body.algorithm_suite().id())?;
     let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-    if !policy.allows_for_decrypt(algorithm_suite_id) {
+    if !policy.allows_for_decrypt(algorithm_suite_id.into()) {
         return Err(val_err(
             "Parsed algorithm suite is not supported by the configured commitment policy for decryption",
         ));
     }
 
-    let validated = materials::get_decryption_materials(
+    let dec_mat = materials::get_decryption_materials(
         cmm,
         algorithm_suite_id,
         header_body,
@@ -397,12 +391,12 @@ async fn step_get_decryption_materials(
         commitment_policy,
     )
     .await?;
-    let dec_mat = validated.materials;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
     //# included in the [decryption materials](../framework/structures.md#decryption-materials).
-    let suite = dec_mat.algorithm_suite();
+    //
+    let suite = get_esdk_algorithm_suite_id(dec_mat.algorithm_suite_id())?.specification();
 
     if &suite != header_body.algorithm_suite() {
         return Err(val_err(
@@ -467,10 +461,10 @@ async fn step_get_decryption_materials(
         )?;
     }
 
-    let header_encryption_context = from_canonical_pairs(header_body.encryption_context().clone());
+    let header_encryption_context = header_body.encryption_context().clone();
     let encryption_context_to_only_authenticate = build_encryption_context_to_only_authenticate(
-        &validated.encryption_context,
-        &validated.required_encryption_context_keys,
+        dec_mat.encryption_context(),
+        dec_mat.required_encryption_context_keys(),
     );
 
     let header = header::HeaderInfo {
@@ -499,12 +493,10 @@ fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
     //# the [decryption material's](../framework/structures.md#decryption-materials)
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys-1)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
-    let canonical_req_encryption_context =
-        to_canonical_pairs(state.encryption_context_to_only_authenticate.clone());
     let mut serialized_req_encryption_context = Vec::new();
     encryption_context::write_empty_ec_or_write_aad(
         &mut serialized_req_encryption_context,
-        &canonical_req_encryption_context,
+        &state.encryption_context_to_only_authenticate,
     )?;
 
     //= spec/client-apis/decrypt.md#verify-the-header
@@ -662,12 +654,11 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
 // in the decryption material's required encryption context keys.
 fn build_encryption_context_to_only_authenticate(
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &[String],
+    required_encryption_context_keys: &std::collections::BTreeSet<String>,
 ) -> EncryptionContext {
     encryption_context
         .iter()
-        .filter(|(k, _)| required_encryption_context_keys.contains(*k))
-        .map(|(k, v)| (k.clone(), v.clone()))
+        .filter(|(key, _)| required_encryption_context_keys.contains(*key))
         .collect()
 }
 

@@ -12,14 +12,14 @@
 //! function with those fields filled in from the client.
 //!
 //! Callers who don't want a client can keep using the free functions and set
-//! `commitment_policy` / `max_encrypted_data_keys` directly on the input.
+//! `commitment_policy` / `max_encrypted_data_keys` on the input's builder.
 //!
 //! Per-call config on the input AND a configured `Esdk` is currently rejected:
 //! returning an error today is forward-compatible (override semantics can be
 //! defined later without breaking callers); committing to a precedence rule
 //! today is not.
 
-use crate::types::EsdkCommitmentPolicy;
+use crate::types::{DEFAULT_COMMITMENT_POLICY, EsdkCommitmentPolicy};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptInput,
     EncryptOutput, EncryptStreamInput, EncryptStreamOutput, SafeRead, SafeWrite,
@@ -40,7 +40,7 @@ use std::num::NonZeroUsize;
 //= spec/client-apis/client.md#initialization
 //= reason=EsdkConfig::default() sets commitment_policy to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct EsdkConfig {
     /// Commitment policy applied to every operation. Default is
@@ -48,10 +48,19 @@ pub struct EsdkConfig {
     //= spec/client-apis/client.md#commitment-policy
     //= reason=EsdkCommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::Esdk
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    pub commitment_policy: Option<EsdkCommitmentPolicy>,
+    pub commitment_policy: EsdkCommitmentPolicy,
     /// Optional cap on the number of encrypted data keys per message.
     /// Default is `None` (no cap beyond the message-format limit).
     pub max_encrypted_data_keys: Option<NonZeroUsize>,
+}
+
+impl Default for EsdkConfig {
+    fn default() -> Self {
+        Self {
+            commitment_policy: DEFAULT_COMMITMENT_POLICY,
+            max_encrypted_data_keys: None,
+        }
+    }
 }
 
 /// Optional client over the free encrypt/decrypt functions.
@@ -66,13 +75,20 @@ pub struct EsdkConfig {
 /// validation error. Override semantics may be defined in a future release;
 /// callers should set the fields in exactly one place.
 ///
+/// Note: an input commitment policy set to its default value is not detected as a conflict;
+/// configure it via [`Esdk::builder`] only.
+///
 /// # Example
 ///
 /// ```ignore
 /// let esdk = Esdk::builder()
 ///     .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build();
-/// let input = EncryptInput::with_keyring(plaintext, ec, keyring);
+/// let input = EncryptInput::builder()
+///     .plaintext(plaintext)
+///     .encryption_context(ec)
+///     .keyring(keyring)
+///     .build()?;
 /// let output = esdk.encrypt(&input).await?;
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
@@ -112,10 +128,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some` (config provided
-    /// in two places). Otherwise, returns whatever
-    /// [`encrypt`](crate::encrypt) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set (config provided in two places).
+    /// Otherwise, returns whatever [`encrypt`](crate::encrypt) returns.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
@@ -127,9 +142,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some`. Otherwise,
-    /// returns whatever [`decrypt`](crate::decrypt) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`decrypt`](crate::decrypt) returns.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
@@ -141,9 +156,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some`. Otherwise,
-    /// returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
     pub async fn encrypt_stream(
         &self,
         plaintext: &mut dyn SafeRead,
@@ -158,9 +173,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some`. Otherwise,
-    /// returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
     pub async fn decrypt_stream(
         &self,
         ciphertext: &mut dyn SafeRead,
@@ -176,22 +191,22 @@ impl Esdk {
 /// "client-config" fields. Used by [`fill_or_reject`] so the four `Esdk`
 /// methods don't repeat the rejection-and-fill logic.
 trait HasClientConfigFields {
-    fn client_commitment_policy(&self) -> Option<EsdkCommitmentPolicy>;
+    fn client_commitment_policy(&self) -> EsdkCommitmentPolicy;
     fn client_max_encrypted_data_keys(&self) -> Option<NonZeroUsize>;
-    fn set_client_commitment_policy(&mut self, p: Option<EsdkCommitmentPolicy>);
+    fn set_client_commitment_policy(&mut self, p: EsdkCommitmentPolicy);
     fn set_client_max_encrypted_data_keys(&mut self, n: Option<NonZeroUsize>);
 }
 
 macro_rules! impl_client_config_fields {
     ($t:ty) => {
         impl HasClientConfigFields for $t {
-            fn client_commitment_policy(&self) -> Option<EsdkCommitmentPolicy> {
+            fn client_commitment_policy(&self) -> EsdkCommitmentPolicy {
                 self.commitment_policy
             }
             fn client_max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
                 self.max_encrypted_data_keys
             }
-            fn set_client_commitment_policy(&mut self, p: Option<EsdkCommitmentPolicy>) {
+            fn set_client_commitment_policy(&mut self, p: EsdkCommitmentPolicy) {
                 self.commitment_policy = p;
             }
             fn set_client_max_encrypted_data_keys(&mut self, n: Option<NonZeroUsize>) {
@@ -216,7 +231,7 @@ fn fill_or_reject<I>(input: &I, config: &EsdkConfig) -> Result<I, Error>
 where
     I: HasClientConfigFields + Clone,
 {
-    if input.client_commitment_policy().is_some()
+    if input.client_commitment_policy() != DEFAULT_COMMITMENT_POLICY
         || input.client_max_encrypted_data_keys().is_some()
     {
         return Err(val_err(
@@ -263,10 +278,10 @@ impl EsdkBuilder {
     /// Build the `Esdk`. Unset fields use their defaults
     /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
     #[must_use]
-    pub const fn build(self) -> Esdk {
+    pub fn build(self) -> Esdk {
         Esdk {
             config: EsdkConfig {
-                commitment_policy: self.commitment_policy,
+                commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
                 max_encrypted_data_keys: self.max_encrypted_data_keys,
             },
         }

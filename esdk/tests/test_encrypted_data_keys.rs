@@ -160,10 +160,12 @@ async fn test_edk_count_zero_rejected_on_decrypt() {
         // Tamper: set count to 0.
         ct[offset] = 0x00;
         ct[offset + 1] = 0x00;
-        let mut dec = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
-        if let Version::V1 = version {
-            dec.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
-        }
+        let dec = DecryptInput::builder()
+            .ciphertext(&ct)
+            .keyring(keyring.clone())
+            .commitment_policy(commitment_policy_for(version))
+            .build()
+            .unwrap();
 
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //= type=test
@@ -203,9 +205,8 @@ async fn test_edk_count_max_enforcement() {
     //# This value MUST be less than or equal to the [maximum number of encrypted data keys](../client-apis/client.md#maximum-number-of-encrypted-data-keys) if the maximum number is configured.
 
     // Encrypt with 2 EDKs and max=1 → error.
-    let mut enc_over =
-        EncryptInput::with_keyring(b"max edk encrypt", EncryptionContext::new(), mk.clone());
-    enc_over.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
+    let enc_over =
+        EncryptInput::builder().plaintext(b"max edk encrypt").keyring(mk.clone()).max_encrypted_data_keys(std::num::NonZeroUsize::new(1).unwrap()).build().unwrap();
     expect_exceed(
         &encrypt(&enc_over)
             .await
@@ -214,8 +215,7 @@ async fn test_edk_count_max_enforcement() {
 
     // Decrypt a 2-EDK message with max=1 → error.
     let ct = encrypt_with_version(b"max edk decrypt", Version::V2, mk.clone()).await;
-    let mut dec_over = DecryptInput::with_keyring(&ct, EncryptionContext::new(), mk.clone());
-    dec_over.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
+    let dec_over = DecryptInput::builder().ciphertext(&ct).keyring(mk.clone()).max_encrypted_data_keys(std::num::NonZeroUsize::new(1).unwrap()).build().unwrap();
     expect_exceed(
         &decrypt(&dec_over)
             .await
@@ -223,8 +223,7 @@ async fn test_edk_count_max_enforcement() {
     );
 
     // Encrypt with 2 EDKs and max=2 → ok (the "equal to" side of ≤).
-    let mut enc_at = EncryptInput::with_keyring(b"at max", EncryptionContext::new(), mk);
-    enc_at.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(2).unwrap());
+    let enc_at = EncryptInput::builder().plaintext(b"at max").keyring(mk).max_encrypted_data_keys(std::num::NonZeroUsize::new(2).unwrap()).build().unwrap();
     assert!(
         encrypt(&enc_at).await.is_ok(),
         "encrypt must succeed when EDK count equals max"

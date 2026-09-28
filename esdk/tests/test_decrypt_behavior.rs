@@ -18,8 +18,13 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     let ec = EncryptionContext::new();
 
     // Encrypt with a non-signing algorithm suite
-    let mut encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring.clone());
-    encrypt_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    let encrypt_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .encryption_context(ec)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .build()
+        .unwrap();
     let ct = encrypt(&encrypt_input).await.unwrap().ciphertext;
 
     // Prove the ciphertext has no footer — so if decrypt tried to run the
@@ -30,7 +35,10 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
         "non-signing suite must not produce a footer"
     );
 
-    let decrypt_input = DecryptInput::from_encrypt(&ct, &encrypt_input);
+    let decrypt_input = DecryptInput::builder_from_encrypt(&encrypt_input)
+        .ciphertext(&ct)
+        .build()
+        .unwrap();
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
     //= reason=No footer on wire + decrypt succeeds → signature step was not attempted
@@ -44,17 +52,26 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
 async fn test_decrypt_halts_on_incomplete_message() {
     let keyring = test_keyring().await;
     let plaintext = b"truncation test data";
-    let enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Truncate to ~60% of the message — enough for the header but not the full body.
     let truncated_ct = valid_ct[..valid_ct.len() * 3 / 5].to_vec();
 
-    let valid_input =
-        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let truncated_input =
-        DecryptInput::with_keyring(&truncated_ct, EncryptionContext::new(), keyring);
+    let valid_input = DecryptInput::builder()
+        .ciphertext(&valid_ct)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
+    let truncated_input = DecryptInput::builder()
+        .ciphertext(&truncated_ct)
+        .keyring(keyring)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
@@ -74,18 +91,27 @@ async fn test_decrypt_halts_on_incomplete_message() {
 async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     let keyring = test_keyring().await;
     let plaintext = b"trailing bytes test";
-    let enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Append extra bytes after the valid message.
     let mut trailing_ct = valid_ct.clone();
     trailing_ct.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
 
-    let valid_input =
-        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let trailing_input =
-        DecryptInput::with_keyring(&trailing_ct, EncryptionContext::new(), keyring);
+    let valid_input = DecryptInput::builder()
+        .ciphertext(&valid_ct)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
+    let trailing_input = DecryptInput::builder()
+        .ciphertext(&trailing_ct)
+        .keyring(keyring)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
@@ -109,14 +135,19 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let keyring = test_keyring().await;
     // 30 bytes with frame_length=10 → 3 frames (2 regular + 1 final)
     let plaintext = vec![0xAAu8; 30];
-    let mut enc_input =
-        EncryptInput::with_keyring(&plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.frame_length = FrameLength::new(10).unwrap();
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = EncryptInput::builder()
+        .plaintext(&plaintext)
+        .keyring(keyring.clone())
+        .frame_length(FrameLength::new(10).unwrap())
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
-    let stream_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
+    let stream_input = DecryptStreamInput::builder()
+        .keyring(keyring)
+        .build()
+        .unwrap();
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
@@ -141,10 +172,12 @@ async fn test_signing_suite_must_perform_signature_step() {
     let plaintext = b"signing suite signature step test";
 
     // Encrypt with a signing algorithm suite (ECDSA P384)
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Tamper with the footer (signature area) to prove the signature step runs.
@@ -153,8 +186,14 @@ async fn test_signing_suite_must_perform_signature_step() {
     let len = tampered_ct.len();
     tampered_ct[len - 3] ^= 0xFF;
 
-    let valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    let tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test

@@ -30,20 +30,19 @@
 #![cfg(feature = "test-utils")]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, MessageUsage, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials,
+    BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
+    EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 
 // Fixtures
 
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+const SUITE: EsdkAlgorithmSuiteId = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
 
 /// TTL offset for entries that should be TTL-expired against `FROZEN_NOW_OFFSET`.
 /// `creation + TTL_EXPIRED_OFFSET < creation + FROZEN_NOW_OFFSET` so any entry
@@ -66,7 +65,7 @@ const STANDARD_TTL: Duration = Duration::from_secs(3600);
 
 fn make_encryption_materials() -> EncryptionMaterials {
     EncryptionMaterials::new(
-        SUITE,
+        SUITE.into(),
         vec![],
         EncryptionContext::new(),
         BTreeSet::new(),
@@ -79,7 +78,7 @@ fn make_encryption_materials() -> EncryptionMaterials {
 
 fn make_decryption_materials() -> DecryptionMaterials {
     DecryptionMaterials::new(
-        SUITE,
+        SUITE.into(),
         EncryptionContext::new(),
         BTreeSet::new(),
         None,
@@ -515,15 +514,15 @@ async fn test_usage_metadata_round_trips_through_put_get() {
 #[tokio::test]
 async fn test_concurrent_put_atomic_visibility() {
     let now = anchor_now();
-    let cmc = Arc::new(LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs"));
+    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
     let usage_a = UsageMetadata::new(MessageUsage(11), BytesUsage(111));
     let usage_b = UsageMetadata::new(MessageUsage(22), BytesUsage(222));
 
-    let cmc_a = Arc::clone(&cmc);
-    let cmc_b = Arc::clone(&cmc);
+    let cmc_a = cmc.clone();
+    let cmc_b = cmc.clone();
 
     let task_a = tokio::spawn(async move {
         cmc_a
@@ -672,5 +671,26 @@ async fn test_get_evicts_expired_entry_outside_tail_window() {
         cmc.len().expect("len succeeds"),
         1,
         "only the fresh-tail entry remains"
+    );
+}
+
+#[tokio::test]
+async fn test_clone_shares_entries_with_original() {
+    let now = anchor_now();
+    let original = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+    let clone = original.clone();
+
+    original
+        .put_cache_entry(b"id-1", make_entry_at(now, now + STANDARD_TTL))
+        .await
+        .expect("put succeeds");
+
+    assert!(
+        clone
+            .get_cache_entry(b"id-1")
+            .await
+            .expect("get succeeds")
+            .is_some(),
+        "an entry put through the original MUST be visible through a clone"
     );
 }

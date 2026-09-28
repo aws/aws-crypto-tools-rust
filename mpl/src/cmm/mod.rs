@@ -18,6 +18,7 @@ pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 
 use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
 
+/// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
 pub trait Cmm: Send + Sync {
     /// Assemble encryption materials for an encrypt request. Mirrors the
@@ -35,4 +36,30 @@ pub trait Cmm: Send + Sync {
         &self,
         request: DecryptMaterialsRequest,
     ) -> Result<DecryptionMaterials, MaterialsError>;
+}
+
+crate::shared::shared_handle!(
+    /// A CMM whose concrete type is chosen at runtime.
+    ///
+    /// It implements [`Cmm`], so it can be passed anywhere a CMM is accepted.
+    /// Callers that know their CMM's type pass it directly and never need this one.
+    SharedCmm,
+    Cmm
+);
+
+#[async_trait]
+impl Cmm for SharedCmm {
+    async fn get_encryption_materials(
+        &self,
+        request: EncryptionMaterialsRequest,
+    ) -> Result<EncryptionMaterials, MaterialsError> {
+        self.0.get_encryption_materials(request).await
+    }
+
+    async fn decrypt_materials(
+        &self,
+        request: DecryptMaterialsRequest,
+    ) -> Result<DecryptionMaterials, MaterialsError> {
+        self.0.decrypt_materials(request).await
+    }
 }

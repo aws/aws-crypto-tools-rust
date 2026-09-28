@@ -141,5 +141,6 @@ pub mod __test_internals {
     pub use crate::message::header_types::HeaderBody;
     pub use crate::suites::{
         algorithm_suite_from_bytes, algorithm_suite_id_from_bytes, get_ecdsa_alg,
+        get_esdk_algorithm_suite_id,
     };
 }

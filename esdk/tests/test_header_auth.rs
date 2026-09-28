@@ -157,11 +157,12 @@ async fn test_corrupted_header_auth_tag_fails_decrypt() {
         };
         ct[tag_offset] ^= 0xFF;
 
-        let mut dec_input =
-            DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
-        if let Version::V1 = version {
-            dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
-        }
+        let dec_input = DecryptInput::builder()
+            .ciphertext(&ct)
+            .keyring(keyring.clone())
+            .commitment_policy(commitment_policy_for(version))
+            .build()
+            .unwrap();
 
         //= spec/client-apis/decrypt.md#verify-the-header
         //= type=test

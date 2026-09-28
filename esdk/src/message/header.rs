@@ -7,14 +7,13 @@ use super::header_types::{
     ContentType, HeaderAuth, HeaderBody, MESSAGE_ID_LEN_V1, MESSAGE_ID_LEN_V2,
     MessageFormatVersion, MessageId, read_msg_format_version,
 };
-use super::serializable_types::ESDKEncryptionContext;
 use super::v1_header_body::{read_v1_header_body, write_v1_header_body};
 use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
 use crate::error::val_err;
-use crate::types::{SafeRead, SafeWrite};
+use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_lc_rs::constant_time;
 
@@ -36,7 +35,7 @@ pub(crate) const SAFE_MAX_ENCRYPT: u64 = 0x000F_FFFF_FFE0;
 pub struct HeaderInfo {
     pub(crate) body: HeaderBody,
     pub(crate) raw_header: Vec<u8>,
-    pub(crate) encryption_context: ESDKEncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     pub(crate) suite: AlgorithmSuite,
     pub(crate) header_auth: HeaderAuth,
 }

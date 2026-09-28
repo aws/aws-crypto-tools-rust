@@ -27,15 +27,6 @@ pub struct ExpandedKeyMaterial {
 // both the input (plaintext data key) length and the output (derived key)
 // length. Only HKDF suites carry a length; the identity KDF reaching here is a
 // config error.
-//
-// The specification lists "Key Derivation Input Length" and the encryption key
-// length as separate values, and they are equal for every ESDK suite: the
-// input-length column of the encryption-key-derivation-settings table is
-// 128/192/256 bits, matching each suite's AES key size, and for the identity-KDF
-// suites the equality is mandated outright. The MPL's AlgorithmSuite does not
-// model the input length as a distinct field, so there is nothing separate to
-// read; if it ever gains one, these two uses should be split apart again.
-// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings
 fn hkdf_key_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
     match suite.encryption_kdf() {
         KeyDerivationAlgorithm::IdentityKdf => Err(val_err(

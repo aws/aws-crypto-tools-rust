@@ -6,6 +6,7 @@
 //! decode end to end.
 
 use super::*;
+use aws_crypto_mpl::keystore::Keystore as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -65,6 +66,16 @@ fn unset_cache() -> ffi::OptCacheType {
     }
 }
 
+fn test_keyring() -> Box<Keyring> {
+    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x2A; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("raw AES keyring should build")
+}
+
 fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
     ffi::EncryptInput {
         algorithm_suite_id: unset_alg_id(),
@@ -91,7 +102,7 @@ fn unset_hierarchical_keyring_input() -> ffi::HierarchicalKeyringInput {
     ffi::HierarchicalKeyringInput {
         branch_key_id: String::new(),
         key_store: std::ptr::null(),
-        ttl_seconds: 0,
+        ttl: ffi::Duration { secs: 0, nanos: 0 },
         cache: unset_cache(),
         partition_id: unset_string(),
     }
@@ -158,7 +169,7 @@ fn alg_id_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn alg_id_target_to_core_maps_each_repr_to_matching_variant() {
-    use aws_esdk::EsdkAlgorithmSuiteId as C;
+    use super::EsdkAlgorithmSuiteId as C;
     let pairs: [(u16, C); 11] = [
         (0x0014, C::AlgAes128GcmIv12Tag16NoKdf),
         (0x0046, C::AlgAes192GcmIv12Tag16NoKdf),
@@ -192,28 +203,18 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
+// Catches a suite the core adds without a C++ mapping:
+// the new id falls through to the error arm of `alg_id_core_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
-    use aws_esdk::EsdkAlgorithmSuiteId as C;
-    let pairs: [(C, u16); 11] = [
-        (C::AlgAes128GcmIv12Tag16NoKdf, 0x0014),
-        (C::AlgAes192GcmIv12Tag16NoKdf, 0x0046),
-        (C::AlgAes256GcmIv12Tag16NoKdf, 0x0078),
-        (C::AlgAes128GcmIv12Tag16HkdfSha256, 0x0114),
-        (C::AlgAes192GcmIv12Tag16HkdfSha256, 0x0146),
-        (C::AlgAes256GcmIv12Tag16HkdfSha256, 0x0178),
-        (C::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256, 0x0214),
-        (C::AlgAes192GcmIv12Tag16HkdfSha384EcdsaP384, 0x0346),
-        (C::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384, 0x0378),
-        (C::AlgAes256GcmHkdfSha512CommitKey, 0x0478),
-        (C::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, 0x0578),
-    ];
-    for (core, repr) in pairs {
+    for &core in super::EsdkAlgorithmSuiteId::ALL {
         //= spec/shim/esdk-shim.md#algorithm-suite-identifier
         //= type=test
         //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
         //# suite identifier that has the same two-byte ID.
-        assert_eq!(alg_id_core_to_target(core).unwrap().repr, repr);
+        let target = alg_id_core_to_target(core)
+            .unwrap_or_else(|e| panic!("{core:?} has no C++ mapping: {e}"));
+        assert_eq!(target.repr, u16::from_be_bytes(core.id_bytes()));
     }
 }
 
@@ -228,7 +229,7 @@ fn alg_id_round_trips_through_both_conversions() {
 
 #[test]
 fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
-    use aws_esdk::EsdkCommitmentPolicy as C;
+    use super::EsdkCommitmentPolicy as C;
     let pairs: [(P, C); 3] = [
         (P::ForbidEncryptAllowDecrypt, C::ForbidEncryptAllowDecrypt),
         (P::RequireEncryptAllowDecrypt, C::RequireEncryptAllowDecrypt),
@@ -260,22 +261,21 @@ fn commitment_policy_target_to_core_accepts_exactly_known_reprs() {
 
 #[test]
 fn encryption_context_round_trips() {
-    use std::collections::HashMap;
-    let mut m = HashMap::new();
-    m.insert("k1".to_string(), "v1".to_string());
-    m.insert("k2".to_string(), "v2".to_string());
-    let list = encryption_context_core_to_target(m.clone()).unwrap();
+    let mut m = aws_esdk::EncryptionContext::new();
+    m.insert("k1", "v1");
+    m.insert("k2", "\u{1F600}");
+    let list = encryption_context_core_to_target(m.clone());
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
     //# - The shim MUST translate the core ESDK's encryption context, given as a
     //# key-value map, to the target's list of key-value pairs, preserving every pair
     //# and the exact key and value of each.
-    for (k, v) in &m {
+    for (k, v) in m.iter() {
         assert_eq!(
-            list.iter().filter(|i| &i.key == k && &i.value == v).count(),
+            list.iter().filter(|i| i.key == k && i.value == v).count(),
             1,
-            "pair {k}={v} must appear exactly once"
+            "pair {k:?}={v:?} must appear exactly once"
         );
     }
     //= spec/shim/esdk-shim.md#encryption-context
@@ -283,15 +283,14 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the target's encryption context, given as a list of
     //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
     //# the exact key and value of each.
-    assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
+    assert_eq!(encryption_context_target_to_core(&list), m);
 }
 
 #[test]
 fn encryption_context_empty() {
-    use std::collections::HashMap;
-    let empty: HashMap<String, String> = HashMap::new();
-    assert!(encryption_context_core_to_target(empty).unwrap().is_empty());
-    assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
+    let empty = aws_esdk::EncryptionContext::new();
+    assert!(encryption_context_core_to_target(empty).is_empty());
+    assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 
 #[test]
@@ -406,10 +405,37 @@ fn classify_core_error_maps_each_kind() {
             ErrorKind::ValidationError,
             ffi::ShimErrorKind::ValidationError,
         ),
+        (ErrorKind::KeystoreError, ffi::ShimErrorKind::KeystoreError),
+        (ErrorKind::CacheError, ffi::ShimErrorKind::CacheError),
     ];
     for (kind, expected) in cases {
         assert_eq!(
             classify_core_error(&kind).repr,
+            expected.repr,
+            "for {kind:?}"
+        );
+    }
+}
+
+#[test]
+fn classify_mpl_error_maps_validation_and_defaults_to_mpl_error() {
+    let cases = [
+        (
+            MaterialsErrorKind::Validation,
+            ffi::ShimErrorKind::ValidationError,
+        ),
+        (
+            MaterialsErrorKind::KeyringFailed,
+            ffi::ShimErrorKind::MplError,
+        ),
+        (
+            MaterialsErrorKind::NoMatchingDataKey,
+            ffi::ShimErrorKind::MplError,
+        ),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(
+            classify_mpl_error(&kind).repr,
             expected.repr,
             "for {kind:?}"
         );
@@ -516,6 +542,47 @@ fn create_hierarchical_keyring_reports_bad_cache() {
     );
 }
 
+fn hierarchical_keyring_input_with_ttl(
+    keystore: &KeyStore,
+    ttl: ffi::Duration,
+) -> ffi::HierarchicalKeyringInput {
+    let mut input = unset_hierarchical_keyring_input();
+    input.key_store = keystore as *const KeyStore;
+    input.branch_key_id = "branch-key-id".to_string();
+    input.ttl = ttl;
+    input
+}
+
+#[test]
+fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+
+    create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
+        &keystore,
+        ffi::Duration {
+            secs: 0,
+            nanos: 500_000_000,
+        },
+    ))
+    .expect("a 500 ms TTL must be accepted");
+
+    let err = expect_err(create_hierarchical_keyring(
+        &hierarchical_keyring_input_with_ttl(
+            &keystore,
+            ffi::Duration {
+                secs: u64::MAX,
+                nanos: 1_000_000_000,
+            },
+        ),
+    ));
+    assert!(
+        err.contains("ttl is out of range"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn create_cache_rejects_unknown_kind() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
@@ -543,29 +610,146 @@ fn create_cache_rejects_unknown_kind() {
 }
 
 #[test]
-fn create_storm_tracking_cache_honors_time_units() {
-    // time_units governs how grace_period/grace_interval/inflight_ttl are
-    // interpreted; Unset (the core default of seconds), Seconds, and
-    // Milliseconds must each build a usable cache.
-    for time_units in [
-        ffi::TimeUnits::Unset,
-        ffi::TimeUnits::Seconds,
-        ffi::TimeUnits::Milliseconds,
-    ] {
-        create_cryptographic_materials_cache(&ffi::CacheType {
-            kind: ffi::CacheKind::StormTracking,
-            entry_capacity: 10,
-            entry_pruning_tail_size: 1,
-            grace_period: 10,
-            grace_interval: 1,
-            fan_out: 20,
-            inflight_ttl: 10,
-            sleep_milli: 20,
-            time_units,
-            shared: std::ptr::null(),
-        })
-        .expect("storm-tracking cache should build");
+fn shared_cache_type_references_the_supplied_cache() {
+    let base = ffi::CacheType {
+        kind: ffi::CacheKind::Default,
+        entry_capacity: 10,
+        entry_pruning_tail_size: 0,
+        grace_period: 0,
+        grace_interval: 0,
+        fan_out: 0,
+        inflight_ttl: 0,
+        sleep_milli: 0,
+        time_units: ffi::TimeUnits::Unset,
+        shared: std::ptr::null(),
+    };
+    let cache = create_cryptographic_materials_cache(&base).expect("default cache should build");
+    let shared = ffi::CacheType {
+        kind: ffi::CacheKind::Shared,
+        shared: &*cache as *const CryptographicMaterialsCache,
+        ..base
+    };
+    let Ok(CacheType::Shared(referenced)) = make_cache_type(&shared) else {
+        panic!("a Shared cache kind must yield CacheType::Shared");
+    };
+    assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
+}
+
+fn storm_tracking_cache_input(time_units: ffi::TimeUnits) -> ffi::CacheType {
+    ffi::CacheType {
+        kind: ffi::CacheKind::StormTracking,
+        entry_capacity: 10,
+        entry_pruning_tail_size: 1,
+        grace_period: 10,
+        grace_interval: 1,
+        fan_out: 20,
+        inflight_ttl: 10,
+        sleep_milli: 20,
+        time_units,
+        shared: std::ptr::null(),
     }
+}
+
+#[test]
+fn create_storm_tracking_cache_honors_time_units() {
+    use std::time::Duration;
+    // Unset and Seconds read the values as seconds, Milliseconds as
+    // milliseconds; sleep_milli is always milliseconds.
+    for (time_units, unit) in [
+        (ffi::TimeUnits::Unset, Duration::from_secs(1)),
+        (ffi::TimeUnits::Seconds, Duration::from_secs(1)),
+        (ffi::TimeUnits::Milliseconds, Duration::from_millis(1)),
+    ] {
+        let input = storm_tracking_cache_input(time_units);
+        let Ok(CacheType::StormTracking(params)) = make_cache_type(&input) else {
+            panic!("storm-tracking cache input must convert to a storm-tracking cache");
+        };
+        assert_eq!(params.entry_capacity(), 10);
+        assert_eq!(params.entry_pruning_tail_size(), 1);
+        assert_eq!(params.grace_period(), unit * 10);
+        assert_eq!(params.grace_interval(), unit);
+        assert_eq!(params.fan_out(), 20);
+        assert_eq!(params.inflight_ttl(), unit * 10);
+        assert_eq!(params.sleep(), Duration::from_millis(20));
+        create_cryptographic_materials_cache(&input).expect("storm-tracking cache should build");
+    }
+}
+
+#[test]
+fn create_storm_tracking_cache_rejects_unrecognized_time_units() {
+    let err = expect_err(make_cache_type(&storm_tracking_cache_input(
+        ffi::TimeUnits { repr: 99 },
+    )));
+    let validation = ffi::ShimErrorKind::ValidationError.repr;
+    assert!(
+        err.starts_with(&format!("{validation}{ERROR_KIND_SEPARATOR}")),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.contains("unrecognized time_units"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn create_storm_tracking_cache_rejects_zero_values() {
+    let mut input = storm_tracking_cache_input(ffi::TimeUnits::Unset);
+    input.sleep_milli = 0;
+    let err = expect_err(make_cache_type(&input));
+    assert!(err.contains("sleep"), "unexpected error: {err}");
+}
+
+#[test]
+fn opt_to_option_returns_the_value_only_when_set() {
+    assert_eq!(unset_u32().to_option(), None);
+    assert_eq!(set_u32(7).to_option(), Some(7));
+
+    assert_eq!(unset_string().to_option(), None);
+    let set_string = ffi::OptString {
+        set: true,
+        value: "v".to_string(),
+    };
+    assert_eq!(set_string.to_option(), Some("v".to_string()));
+
+    // The bridge enums don't implement Debug, so compare their reprs.
+    assert!(unset_alg_id().to_option().is_none());
+    let alg = F::AlgAes256GcmHkdfSha512CommitKey;
+    assert_eq!(set_alg_id(alg).to_option().map(|a| a.repr), Some(alg.repr));
+
+    assert!(unset_policy().to_option().is_none());
+    let policy = P::RequireEncryptRequireDecrypt;
+    assert_eq!(
+        set_policy(policy).to_option().map(|p| p.repr),
+        Some(policy.repr)
+    );
+
+    assert!(unset_cache().to_option().is_none());
+    let mut cache = unset_cache();
+    cache.set = true;
+    cache.value.entry_capacity = 42;
+    let got = cache.to_option().expect("a set cache is Some");
+    assert_eq!(got.entry_capacity, 42);
+}
+
+#[test]
+fn create_keystore_forwards_id_and_grant_tokens() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+
+    let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+    let info = unset.inner.get_key_store_info().expect("info");
+    assert!(info.grant_tokens.is_empty());
+
+    let mut cfg = keystore_config_with_clients(&kms, &ddb);
+    cfg.id = ffi::OptString {
+        set: true,
+        value: "the-id".to_string(),
+    };
+    cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
+    let store = create_keystore(&cfg).expect("key store");
+    let info = store.inner.get_key_store_info().expect("info");
+    assert_eq!(info.keystore_id, "the-id");
+    assert_eq!(info.grant_tokens, vec!["g1", "g2"]);
 }
 
 #[test]
@@ -601,7 +785,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
 
 #[test]
 fn apply_encrypt_options_forwards_every_optional_input() {
-    use aws_esdk::EsdkCommitmentPolicy as C;
+    use super::EsdkCommitmentPolicy as C;
     let input = ffi::EncryptInput {
         algorithm_suite_id: set_alg_id(F { repr: 0x0578 }),
         encryption_context: Vec::new(),
@@ -611,32 +795,67 @@ fn apply_encrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(5),
         commitment_policy: set_policy(P::ForbidEncryptAllowDecrypt),
     };
-    let mut core = aws_esdk::EncryptInput::default();
-    apply_encrypt_options(&mut core, &input).expect("options apply");
+    let builder = aws_esdk::EncryptInput::builder()
+        .plaintext(&[])
+        .keyring(test_keyring().inner.clone());
+    let core = apply_encrypt_options(builder, &input)
+        .expect("options apply")
+        .build()
+        .expect("input builds");
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(5));
+    assert_eq!(
+        core.max_encrypted_data_keys(),
+        std::num::NonZeroUsize::new(5)
+    );
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    assert_eq!(core.frame_length.0.get(), 1024);
+    assert_eq!(core.frame_length().0.get(), 1024);
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, Some(C::ForbidEncryptAllowDecrypt));
+    assert_eq!(core.commitment_policy(), C::ForbidEncryptAllowDecrypt);
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
+    //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
+    assert_eq!(
+        core.algorithm_suite_id(),
+        Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+    );
+}
+
+#[test]
+fn apply_encrypt_options_leaves_unset_inputs_defaulted() {
+    let builder = aws_esdk::EncryptInput::builder()
+        .plaintext(&[])
+        .keyring(test_keyring().inner.clone());
+    let core = apply_encrypt_options(builder, &unset_encrypt_input())
+        .expect("options apply")
+        .build()
+        .expect("input builds");
+    assert_eq!(core.max_encrypted_data_keys(), None);
+    assert_eq!(core.frame_length(), aws_esdk::FrameLength::default());
+    assert_eq!(
+        core.commitment_policy(),
+        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
+    );
+    assert_eq!(core.algorithm_suite_id(), None);
 }
 
 #[test]
 fn apply_decrypt_options_forwards_every_optional_input() {
-    use aws_esdk::EsdkCommitmentPolicy as C;
+    use super::EsdkCommitmentPolicy as C;
     let input = ffi::DecryptInput {
         ciphertext: &[],
         encryption_context: Vec::new(),
@@ -644,21 +863,59 @@ fn apply_decrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(7),
         commitment_policy: set_policy(P::RequireEncryptAllowDecrypt),
     };
-    let mut core = aws_esdk::DecryptInput::default();
-    apply_decrypt_options(&mut core, &input).expect("options apply");
+    let builder = aws_esdk::DecryptInput::builder()
+        .ciphertext(&[])
+        .keyring(test_keyring().inner.clone());
+    let core = apply_decrypt_options(builder, &input)
+        .expect("options apply")
+        .build()
+        .expect("input builds");
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(7));
+    assert_eq!(
+        core.max_encrypted_data_keys(),
+        std::num::NonZeroUsize::new(7)
+    );
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, Some(C::RequireEncryptAllowDecrypt));
+    assert_eq!(core.commitment_policy(), C::RequireEncryptAllowDecrypt);
+}
+
+#[test]
+fn opt_to_option_is_some_only_when_set() {
+    assert_eq!(set_u32(5).to_option(), Some(5));
+    assert_eq!(unset_u32().to_option(), None);
+
+    let region = ffi::OptString {
+        set: true,
+        value: "us-west-2".to_string(),
+    };
+    assert_eq!(region.to_option().as_deref(), Some("us-west-2"));
+    assert_eq!(unset_string().to_option(), None);
+
+    assert_eq!(
+        set_alg_id(F { repr: 0x0578 }).to_option().map(|v| v.repr),
+        Some(0x0578)
+    );
+    assert!(unset_alg_id().to_option().is_none());
+
+    assert!(
+        set_policy(P::ForbidEncryptAllowDecrypt).to_option() == Some(P::ForbidEncryptAllowDecrypt)
+    );
+    assert!(unset_policy().to_option().is_none());
+
+    let mut cache = unset_cache();
+    assert!(cache.to_option().is_none());
+    cache.set = true;
+    cache.value.entry_capacity = 9;
+    assert_eq!(cache.to_option().map(|c| c.entry_capacity), Some(9));
 }
 
 // AWS SDK client configuration
@@ -748,7 +1005,7 @@ fn into_keyring_handle_boxes_the_keyring() {
         wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
     })
     .expect("raw AES keyring should build");
-    let handle = into_keyring_handle(keyring.client.clone());
+    let handle = into_keyring_handle(keyring.inner.clone());
     assert!(!handle.is_null());
     unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
 }

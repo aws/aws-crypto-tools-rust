@@ -28,7 +28,7 @@ fn aad_offset(version: Version) -> usize {
 /// Used to verify the encryption context survives the round trip intact,
 /// while ignoring any keys the SDK may add (e.g. `aws-crypto-public-key`)
 fn assert_ec_contains(actual: &EncryptionContext, expected: &EncryptionContext, version: Version) {
-    for (k, v) in expected {
+    for (k, v) in expected.iter() {
         assert_eq!(
             actual.get(k),
             Some(v),
@@ -244,6 +244,87 @@ async fn test_aad_empty_encryption_context_no_kvp_field() {
             dec.encryption_context.is_empty(),
             "{version:?}: decrypted EC must be empty, got {:?}",
             dec.encryption_context
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_aad_non_ascii_keys_serialize_in_utf8_byte_order() {
+    // U+FF5E (EF BD 9E) sorts before U+1F600 (F0 9F 98 80) by UTF-8 bytes.
+    // By UTF-16 code units it sorts after: U+1F600 is the surrogate pair D83D DE00.
+    let ec = EncryptionContext::from([("\u{1F600}", "\u{1F980}"), ("\u{FF5E}", "caf\u{E9}")]);
+    let expected_aad: &[u8] = &[
+        0x00, 0x1A, // key value pairs length = 26
+        0x00, 0x02, // count = 2
+        0x00, 0x03, 0xEF, 0xBD, 0x9E, // key U+FF5E
+        0x00, 0x05, b'c', b'a', b'f', 0xC3, 0xA9, // value "caf" U+00E9
+        0x00, 0x04, 0xF0, 0x9F, 0x98, 0x80, // key U+1F600
+        0x00, 0x04, 0xF0, 0x9F, 0xA6, 0x80, // value U+1F980
+    ];
+    for version in VERSIONS {
+        let ct = encrypt_no_sign_with_ec(b"utf-8 order", ec.clone(), version).await;
+        let off = aad_offset(version);
+        assert_eq!(
+            &ct[off..off + expected_aad.len()],
+            expected_aad,
+            "{version:?}: header AAD must list keys in UTF-8 byte order"
+        );
+
+        let dec = decrypt_with_version(&ct, version).await;
+        assert_eq!(dec.encryption_context, ec, "{version:?}: round trip");
+    }
+}
+
+/// Encrypt `{"keyA": "valA", "keyB": "valB"}`,
+/// overwrite the header's second key with `second_key`,
+/// and return the decrypt error.
+/// Every key is 4 bytes, so the edit changes no length field.
+async fn decrypt_err_with_second_key(version: Version, second_key: &[u8; 4]) -> Error {
+    let keyring = test_keyring().await;
+    let ec = small_encryption_context(SmallEncryptionContextVariation::AB);
+    let mut ct = encrypt_no_sign_ec_keyring(b"strict order", ec, version, &keyring).await;
+
+    // Length(2) + count(2) + first entry(2 + 4 + 2 + 4) + second key length(2).
+    let key2 = aad_offset(version) + 2 + 2 + 12 + 2;
+    assert_eq!(&ct[key2..key2 + 4], b"keyB", "{version:?}: fixture layout");
+    ct[key2..key2 + 4].copy_from_slice(second_key);
+
+    let result = match version {
+        Version::V1 => try_decrypt_v1_with_keyring(&ct, &keyring).await,
+        Version::V2 => try_decrypt_with_keyring(&ct, &keyring).await,
+    };
+    result.expect_err("header with non-ascending keys must not decrypt")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_duplicate_encryption_context_key() {
+    for version in VERSIONS {
+        let err = decrypt_err_with_second_key(version, b"keyA").await;
+        assert_eq!(
+            err.kind,
+            ErrorKind::SerializationError,
+            "{version:?}: {err:?}"
+        );
+        assert!(
+            err.message.contains("Duplicate key in encryption context"),
+            "{version:?}: {err:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decrypt_rejects_out_of_order_encryption_context_keys() {
+    for version in VERSIONS {
+        let err = decrypt_err_with_second_key(version, b"key0").await;
+        assert_eq!(
+            err.kind,
+            ErrorKind::SerializationError,
+            "{version:?}: {err:?}"
+        );
+        assert!(
+            err.message
+                .contains("Encryption context keys are not in ascending order"),
+            "{version:?}: {err:?}"
         );
     }
 }

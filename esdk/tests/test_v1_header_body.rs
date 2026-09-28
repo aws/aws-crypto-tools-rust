@@ -209,13 +209,7 @@ async fn test_v1_header_aad() {
     );
 
     // Round-trip proves the message is still valid when required EC is supplied on decrypt
-    let mut dec_input = DecryptInput::with_keyring(
-        &ct,
-        std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())]),
-        keyring,
-    );
-    dec_input.commitment_policy =
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    let dec_input = DecryptInput::builder().ciphertext(&ct).encryption_context(std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())])).keyring(keyring).commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt).build().unwrap();
     let result = decrypt(&dec_input).await.unwrap();
     assert_eq!(
         result.plaintext, pt,
@@ -481,8 +475,12 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
     // Tamper: set reserved bytes to non-zero
     ct[reserved_offset] = 0x01;
 
-    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let dec_input = DecryptInput::builder()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/data-format/message-header.md#reserved
     //= type=test
@@ -510,8 +508,12 @@ async fn test_v1_iv_length_mismatch_rejected() {
     assert_eq!(ct[iv_length_offset], 12, "baseline: IV length should be 12");
     ct[iv_length_offset] = 11;
 
-    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let dec_input = DecryptInput::builder()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/data-format/message-header.md#iv-length
     //= type=test

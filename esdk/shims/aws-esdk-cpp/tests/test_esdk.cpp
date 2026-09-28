@@ -166,6 +166,50 @@ void test_raw_aes_round_trip() {
     }
 }
 
+void test_raw_aes_non_ascii_encryption_context_round_trips() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> ec = {
+        {"\xEF\xBD\x9E", "caf\xC3\xA9"},              // U+FF5E -> "cafe" with U+00E9
+        {"\xF0\x9F\x98\x80", "\xF0\x9F\xA6\x80"},  // U+1F600 -> U+1F980
+    };
+    auto ciphertext =
+        sdk.encrypt(to_bytes("non-ascii ec"), keyring,
+                    Aws::Esdk::EncryptOptions().with_encryption_context(ec))
+            .ciphertext;
+    auto decrypted = sdk.decrypt(ciphertext, keyring,
+                                 Aws::Esdk::DecryptOptions().with_encryption_context(ec));
+    for (const auto& kv : ec) {
+        auto it = decrypted.encryption_context.find(kv.first);
+        ESDK_CHECK(it != decrypted.encryption_context.end() && it->second == kv.second);
+    }
+}
+
+void test_non_utf8_encryption_context_throws_invalid_argument() {
+    // cxx's rust::String constructor throws std::invalid_argument on non-UTF-8 bytes,
+    // before the call reaches Rust.
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> bad_key = {{"\xFF", "value"}};
+    const std::map<std::string, std::string> bad_value = {{"key", "\xC3"}};
+    auto plaintext = to_bytes("non-utf-8 ec");
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_key)));
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_value)));
+
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.decrypt(ciphertext, keyring,
+                                  Aws::Esdk::DecryptOptions().with_encryption_context(bad_key)));
+}
+
 void test_raw_aes_mismatched_key_length_throws() {
     std::vector<std::uint8_t> short_key(16, 0x01);
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
@@ -173,7 +217,7 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
     //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
     //# wrapping algorithm of the same meaning.
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::RawAesKeyring(
                           "test-ns", "test-key", short_key,
                           Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
@@ -219,13 +263,43 @@ void test_cache_kinds() {
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    // MplError kind: exactly the base exception type.
+    // KeystoreError kind: no C++ class of its own, so exactly the base exception type.
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       Aws::Esdk::KeyStore("ab", "ab",
                                           "arn:aws:kms:us-west-2:000000000000:key/test",
                                           Aws::Esdk::KeyStoreOptions()
                                               .with_kms_client(kms)
                                               .with_ddb_client(ddb)));
+}
+
+void test_hierarchical_keyring_ttl() {
+    using namespace std::chrono_literals;
+    Aws::Esdk::KmsClient kms;
+    Aws::Esdk::DdbClient ddb;
+    auto keystore = Aws::Esdk::KeyStore(
+        "test-table", "test-logical",
+        "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+        Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
+
+    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
+
+    // The core requires the grace period to be less than the TTL,
+    // so these pin the exact TTL value that reaches it.
+    auto with_grace_ms = [](std::uint32_t grace_period) {
+        return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
+            Aws::Esdk::CacheType::StormTracking(
+                /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
+                /*grace_interval=*/100, /*fan_out=*/4, /*inflight_ttl=*/100,
+                /*sleep_milli=*/10, Aws::Esdk::TimeUnits::Milliseconds));
+    };
+    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1499));
+    CHECK_THROWS_TYPE(
+        Aws::Esdk::ValidationException,
+        Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1500)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
@@ -527,7 +601,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
         cfg.branch_key_id,
-        /*ttl_seconds=*/600,
+        std::chrono::seconds{600},
         Aws::Esdk::HierarchicalKeyringOptions()
             //= spec/shim/esdk-shim.md#create-hierarchical-keyring
             //= type=test
@@ -693,10 +767,13 @@ int main(int argc, char** argv) {
     // Always run offline tests
     try {
         test_raw_aes_round_trip();
+        test_raw_aes_non_ascii_encryption_context_round_trips();
+        test_non_utf8_encryption_context_throws_invalid_argument();
         test_raw_aes_wrong_keyring_fails();
         test_raw_aes_mismatched_key_length_throws();
         test_cache_kinds();
         test_keystore_rejects_short_table_name();
+        test_hierarchical_keyring_ttl();
         test_error_kinds();
         test_client_configuration();
         test_bytes_and_string_ergonomics();
