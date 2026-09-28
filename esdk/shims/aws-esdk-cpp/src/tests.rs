@@ -537,7 +537,6 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // Zero seconds plus 500 ms: rejected as a zero TTL if the nanos were dropped.
     create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
         &keystore,
         ffi::Duration {

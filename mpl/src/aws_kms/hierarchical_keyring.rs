@@ -119,7 +119,6 @@ pub struct HierarchicalKeyring {
 struct HierarchicalKeyringInner {
     keystore: SharedKeystore,
 
-    /// Non-zero, checked in [`HierarchicalKeyringBuilder::build`].
     ttl: Duration,
 
     /// The single branch key id this keyring wraps and unwraps with, when
@@ -145,13 +144,13 @@ struct HierarchicalKeyringInner {
 }
 
 impl HierarchicalKeyring {
-    /// Start building a hierarchical keyring. See [`HierarchicalKeyringBuilder`].
+    /// Construct a new hierarchical keyring. See [`HierarchicalKeyringBuilder`].
     #[must_use]
     pub fn builder() -> HierarchicalKeyringBuilder {
         HierarchicalKeyringBuilder::default()
     }
 
-    /// The configured TTL for cached branch-key materials. Always non-zero.
+    /// The configured TTL for cached branch-key materials.
     pub fn ttl(&self) -> Duration {
         self.inner.ttl
     }
@@ -195,11 +194,6 @@ impl HierarchicalKeyring {
 
 /// Builder for [`HierarchicalKeyring`], returned by
 /// [`HierarchicalKeyring::builder`].
-///
-/// [`key_store`](Self::key_store) and [`ttl`](Self::ttl) are required, as is
-/// exactly one of [`branch_key_id`](Self::branch_key_id) and
-/// [`branch_key_id_supplier`](Self::branch_key_id_supplier). All checks run in
-/// [`build`](Self::build).
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
     key_store: Option<SharedKeystore>,
@@ -221,22 +215,22 @@ impl std::fmt::Debug for HierarchicalKeyringBuilder {
 }
 
 impl HierarchicalKeyringBuilder {
-    /// The keystore that supplies branch keys. Required.
+    /// The keystore. Required.
     #[must_use]
     pub fn key_store(mut self, key_store: impl Into<SharedKeystore>) -> Self {
         self.key_store = Some(key_store.into());
         self
     }
 
-    /// The time-to-live of cached branch-key materials. Required, and must be
-    /// non-zero.
+    /// The TTL for cached branch-key materials. Required, and must be greater
+    /// than zero.
     #[must_use]
     pub fn ttl(mut self, ttl: Duration) -> Self {
         self.ttl = Some(ttl);
         self
     }
 
-    /// The single branch key id to wrap and unwrap with. Set this or
+    /// A static branch key id. Set this or
     /// [`branch_key_id_supplier`](Self::branch_key_id_supplier), not both.
     #[must_use]
     pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
@@ -244,7 +238,7 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
-    /// A supplier that chooses the branch key id per operation. Set this or
+    /// A [`BranchKeySupplier`]. Set this or
     /// [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
     pub fn branch_key_id_supplier(mut self, supplier: impl Into<SharedBranchKeySupplier>) -> Self {
@@ -252,16 +246,16 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
-    /// The cache backing, see [`CacheType`]. When unset, a keyring-local
-    /// default cache of [`DEFAULT_CACHE_ENTRY_CAPACITY`] entries is built.
+    /// Selects the cache backing — see [`CacheType`]. When unset, behaves as
+    /// `CacheType::Default(DefaultCache::new(1000))`.
     #[must_use]
     pub fn cache(mut self, cache: CacheType) -> Self {
         self.cache = Some(cache);
         self
     }
 
-    /// The partition id, stored as its UTF-8 bytes. When unset, a fresh v4
-    /// UUID is generated and stored as the 16-byte partition id.
+    /// The partition id. If unset, a fresh v4 UUID is generated and stored as
+    /// the 16-byte partition id.
     #[must_use]
     pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
         self.partition_id = Some(partition_id.into());
@@ -269,15 +263,6 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Validate the configuration and build the keyring.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `Validation` error when the key store is unset; the TTL is
-    /// unset or zero; both or neither of a
-    /// branch key id and a supplier are set; or a storm-tracking cache's grace
-    /// period is not less than the TTL. Also fails when the cache cannot be
-    /// built, the partition id cannot be generated, or the keystore's
-    /// `get_key_store_info` fails.
     pub fn build(self) -> Result<HierarchicalKeyring, MaterialsError> {
         let Self {
             key_store,

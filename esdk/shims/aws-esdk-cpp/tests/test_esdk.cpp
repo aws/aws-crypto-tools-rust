@@ -240,7 +240,6 @@ void test_hierarchical_keyring_ttl() {
 
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 2000ms);
-    // Rejected as a zero TTL if the sub-second part were dropped.
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 500ms);
     CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));

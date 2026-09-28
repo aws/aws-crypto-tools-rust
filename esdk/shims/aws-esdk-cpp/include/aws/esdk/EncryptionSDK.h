@@ -386,8 +386,7 @@ public:
     ///        wrapping and unwrapping the data key.
     /// \param ttl How long the Branch Key material is allowed to be reused within the
     ///        local cache before it is re-retrieved from Amazon DynamoDB and
-    ///        re-authenticated with AWS KMS. Any integer std::chrono::duration, such as
-    ///        `600s`, `1500ms`, or `std::chrono::minutes{10}`; it must be greater than zero.
+    ///        re-authenticated with AWS KMS.
     /// \param options Optional Hierarchical Keyring parameters.
     template <class Rep, class Period>
     HierarchicalKeyring(KeyStore key_store,
