@@ -990,9 +990,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
@@ -1030,9 +1028,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .keyring(keyring.inner.clone());
     let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
@@ -1453,9 +1449,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
     let core_input = aws_esdk::EncryptStreamInput::builder()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .set_algorithm_suite_id(
             input
                 .algorithm_suite_id
@@ -1518,9 +1512,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
     let core_input = aws_esdk::DecryptStreamInput::builder()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        ))
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .set_max_encrypted_data_keys(
             input
                 .max_encrypted_data_keys
