@@ -1,18 +1,15 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Each `Shared*` handle wraps an `Arc` it is given without re-wrapping it.
-
-use std::ptr::addr_eq;
-use std::sync::Arc;
+//! Converting an existing `Shared*` handle reuses it instead of nesting it.
 
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::structures::MaterialsError;
 use aws_crypto_mpl::{
-    AesGcm, BranchKeyStore, BranchKeySupplier, Cmc, Cmm, DefaultCmm, KeyStoreConfig, Keyring,
-    Keystore, KmsConfiguration, LocalCmc, RawAesKeyring, SharedBranchKeySupplier, SharedCmc,
-    SharedCmm, SharedKeyring, SharedKeystore,
+    AesGcm, BranchKeyStore, BranchKeySupplier, Cmc, Cmm, DefaultCmm, IntoShared, KeyStoreConfig,
+    Keyring, Keystore, KmsConfiguration, LocalCmc, RawAesKeyring, SharedBranchKeySupplier,
+    SharedCmc, SharedCmm, SharedKeyring, SharedKeystore,
 };
 
 fn keyring() -> RawAesKeyring {
@@ -53,63 +50,53 @@ impl BranchKeySupplier for Supplier {
     }
 }
 
-/// Asserts the three `Arc`-reusing conversions of one handle type:
-/// - from `Arc<T>`
-/// - from `Arc<dyn Trait>`
-/// - from an existing handle, passed where `impl Into<Handle>` is accepted
-macro_rules! assert_reuses_arc {
+/// Asserts that `new` and `into_shared` reuse an existing handle instead of nesting it.
+macro_rules! assert_reuses_handle {
     ($handle:ident, $trait:ident, $make:expr) => {{
-        fn into_handle(component: impl Into<$handle>) -> $handle {
-            component.into()
+        fn into_handle(component: impl $trait + 'static) -> $handle {
+            component.into_shared()
         }
 
-        let concrete = Arc::new($make);
-        let from_concrete = into_handle(Arc::clone(&concrete));
+        let original = $handle::new($make);
         assert!(
-            addr_eq(Arc::as_ptr(&concrete), &*from_concrete),
-            "{} from Arc<T> must reuse the caller's Arc",
+            $handle::ptr_eq(&original, &into_handle(original.clone())),
+            "into_shared on a {} must reuse it",
             stringify!($handle),
         );
-
-        let erased: Arc<dyn $trait> = Arc::new($make);
-        let from_erased = into_handle(Arc::clone(&erased));
         assert!(
-            addr_eq(Arc::as_ptr(&erased), &*from_erased),
-            "{} from Arc<dyn {}> must reuse the caller's Arc",
+            $handle::ptr_eq(&original, &$handle::new(original.clone())),
+            "{}::new on a {} must reuse it",
             stringify!($handle),
-            stringify!($trait),
+            stringify!($handle),
         );
-
-        let from_handle = into_handle(from_concrete.clone());
         assert!(
-            addr_eq(&*from_concrete, &*from_handle),
-            "{} from an existing handle must not re-wrap it",
-            stringify!($handle),
+            !$handle::ptr_eq(&original, &$handle::new($make)),
+            "separately built components must not compare equal",
         );
     }};
 }
 
 #[test]
-fn shared_keyring_reuses_arc() {
-    assert_reuses_arc!(SharedKeyring, Keyring, keyring());
+fn shared_keyring_reuses_handle() {
+    assert_reuses_handle!(SharedKeyring, Keyring, keyring());
 }
 
 #[test]
-fn shared_cmm_reuses_arc() {
-    assert_reuses_arc!(SharedCmm, Cmm, DefaultCmm::new(keyring()));
+fn shared_cmm_reuses_handle() {
+    assert_reuses_handle!(SharedCmm, Cmm, DefaultCmm::new(keyring()));
 }
 
 #[test]
-fn shared_keystore_reuses_arc() {
-    assert_reuses_arc!(SharedKeystore, Keystore, keystore());
+fn shared_keystore_reuses_handle() {
+    assert_reuses_handle!(SharedKeystore, Keystore, keystore());
 }
 
 #[test]
-fn shared_cmc_reuses_arc() {
-    assert_reuses_arc!(SharedCmc, Cmc, cache());
+fn shared_cmc_reuses_handle() {
+    assert_reuses_handle!(SharedCmc, Cmc, cache());
 }
 
 #[test]
-fn shared_branch_key_supplier_reuses_arc() {
-    assert_reuses_arc!(SharedBranchKeySupplier, BranchKeySupplier, Supplier);
+fn shared_branch_key_supplier_reuses_handle() {
+    assert_reuses_handle!(SharedBranchKeySupplier, BranchKeySupplier, Supplier);
 }

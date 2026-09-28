@@ -17,10 +17,11 @@ pub mod cmm;
 pub mod error_chain;
 pub mod keyring;
 pub mod keystore;
-mod shared;
+pub mod shared;
 pub mod structures;
 
 pub use client::*;
+pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
 // `RawAesKeyring::new`; without this a caller would have to depend on
 // `aws-mpl-primitives` directly just to name the wrapping algorithm.

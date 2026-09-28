@@ -20,8 +20,9 @@ use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::cache_config::{
     CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache, create_cryptographic_materials_cache,
 };
-use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc, TimeUnits, UsageMetadata};
-use crate::keystore::SharedKeystore;
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc, TimeUnits, UsageMetadata};
+use crate::keystore::{Keystore, SharedKeystore};
+use crate::shared::IntoShared;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
@@ -89,6 +90,8 @@ impl GetBranchKeyIdOutput {
 /// synchronous. An implementation that must perform IO to reach its answer is
 /// responsible for bridging to it itself (for example
 /// `tokio::task::block_in_place`).
+///
+/// To hold a supplier whose concrete type is chosen at runtime, use [`SharedBranchKeySupplier`].
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
     fn get_branch_key_id(
@@ -98,13 +101,22 @@ pub trait BranchKeySupplier: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// An owned handle to some [`BranchKeySupplier`].
+    /// A branch key supplier whose concrete type is chosen at runtime.
     ///
-    /// `BranchKeySupplier` is the trait a branch key supplier implements.
-    /// `SharedBranchKeySupplier` is how an API accepts and stores one without knowing its concrete type.
+    /// It implements [`BranchKeySupplier`], so it can be passed anywhere a branch key supplier is accepted.
+    /// Callers that know their branch key supplier's type pass it directly and never need this one.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
+
+impl BranchKeySupplier for SharedBranchKeySupplier {
+    fn get_branch_key_id(
+        &self,
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+        self.0.get_branch_key_id(input)
+    }
+}
 
 /// AWS KMS Hierarchical Keyring.
 ///
@@ -217,8 +229,8 @@ impl std::fmt::Debug for HierarchicalKeyringBuilder {
 impl HierarchicalKeyringBuilder {
     /// The keystore. Required.
     #[must_use]
-    pub fn key_store(mut self, key_store: impl Into<SharedKeystore>) -> Self {
-        self.key_store = Some(key_store.into());
+    pub fn key_store(mut self, key_store: impl Keystore + 'static) -> Self {
+        self.key_store = Some(key_store.into_shared());
         self
     }
 
@@ -241,8 +253,8 @@ impl HierarchicalKeyringBuilder {
     /// A [`BranchKeySupplier`].
     /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
-    pub fn branch_key_id_supplier(mut self, supplier: impl Into<SharedBranchKeySupplier>) -> Self {
-        self.branch_key_id_supplier = Some(supplier.into());
+    pub fn branch_key_id_supplier(mut self, supplier: impl BranchKeySupplier + 'static) -> Self {
+        self.branch_key_id_supplier = Some(supplier.into_shared());
         self
     }
 

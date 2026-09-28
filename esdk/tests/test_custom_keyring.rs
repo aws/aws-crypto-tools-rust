@@ -151,7 +151,7 @@ impl Keyring for LocalKekKeyring {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_round_trips_via_public_api() {
-    let keyring = SharedKeyring::from(LocalKekKeyring { kek: [7u8; 32] });
+    let keyring = SharedKeyring::new(LocalKekKeyring { kek: [7u8; 32] });
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.

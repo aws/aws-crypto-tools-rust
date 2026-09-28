@@ -1,5 +1,5 @@
 //! Translate the modeled CMM/Keyring configuration into an `aws-esdk`
-//! [`Keyring`](aws_esdk::Keyring).
+//! [`SharedKeyring`](aws_esdk::SharedKeyring).
 //!
 //! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
@@ -16,7 +16,7 @@ use crate::model::{
 };
 use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
 use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
-use aws_esdk::Keyring as EsdkKeyring;
+use aws_esdk::SharedKeyring;
 
 /// Resolve a CMM configuration to the keyring the ESDK client will use.
 ///
@@ -24,7 +24,7 @@ use aws_esdk::Keyring as EsdkKeyring;
 /// default CMM).
 pub async fn keyring_for_cmm(
     cmm: &CryptographicMaterialsManager,
-) -> Result<EsdkKeyring, ServerError> {
+) -> Result<SharedKeyring, ServerError> {
     let set = [
         cmm.default_cmm.is_some(),
         cmm.required_encryption_context.is_some(),
@@ -47,8 +47,8 @@ pub async fn keyring_for_cmm(
     ))
 }
 
-/// Build an `aws-esdk` [`Keyring`](aws_esdk::Keyring) from a modeled `Keyring`.
-pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, ServerError> {
+/// Build an `aws-esdk` [`SharedKeyring`](aws_esdk::SharedKeyring) from a modeled `Keyring`.
+pub async fn keyring_for_config(keyring: &Keyring) -> Result<SharedKeyring, ServerError> {
     let set = [
         keyring.aws_kms.is_some(),
         keyring.aws_kms_mrk.is_some(),
@@ -80,7 +80,7 @@ pub async fn keyring_for_config(keyring: &Keyring) -> Result<EsdkKeyring, Server
     ))
 }
 
-async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, ServerError> {
+async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, ServerError> {
     let wrapping_alg = match config.wrapping_alg {
         crate::model::AesWrappingAlg::Alg128 => AesGcm::Aes128Gcm,
         crate::model::AesWrappingAlg::Alg192 => AesGcm::Aes192Gcm,
@@ -93,7 +93,7 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, Serv
         wrapping_alg,
     )
     .map_err(|e| ServerError::esdk(e.to_string()))?;
-    Ok(EsdkKeyring::new(keyring))
+    Ok(SharedKeyring::new(keyring))
 }
 
 /// Build a hierarchical keyring over an MPL branch key store.
@@ -104,7 +104,7 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<EsdkKeyring, Serv
 /// client encrypts or decrypts.
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
-) -> Result<EsdkKeyring, ServerError> {
+) -> Result<SharedKeyring, ServerError> {
     let key_store = BranchKeyStore::new(KeyStoreConfig {
         ddb_table_name: config.key_store_table_name.clone(),
         kms_configuration: KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()),
@@ -128,5 +128,5 @@ async fn build_hierarchical(
         .branch_key_id(config.branch_key_id.clone())
         .build()
         .map_err(|e| ServerError::esdk(e.to_string()))?;
-    Ok(EsdkKeyring::new(keyring))
+    Ok(SharedKeyring::new(keyring))
 }

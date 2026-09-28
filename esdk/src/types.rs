@@ -148,6 +148,10 @@ pub use aws_crypto_mpl::keyring::Keyring;
 /// Implement it to supply a custom CMM.
 pub use aws_crypto_mpl::cmm::Cmm;
 
+/// The Material Providers Library's conversion into a shared handle, re-exported.
+/// `keyring.into_shared()` returns a [`SharedKeyring`], reusing it if it already is one.
+pub use aws_crypto_mpl::IntoShared;
+
 /// Key-Value pairs to associate with the encrypted data.
 ///
 /// This is the Material Providers Library's own encryption context, re-exported,
@@ -330,27 +334,27 @@ impl<'a> EncryptInput<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct an `EncryptInput` with a CMM (anything convertible into a [`SharedCmm`])
+    /// Construct an `EncryptInput` with a CMM (any [`Cmm`])
     #[must_use]
-    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: impl Into<SharedCmm>) -> Self {
+    pub fn with_cmm(plaintext: &'a [u8], ec: EncryptionContext, cmm: impl Cmm + 'static) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
-            cmm: Some(cmm.into()),
+            cmm: Some(cmm.into_shared()),
             ..Default::default()
         }
     }
-    /// Construct an `EncryptInput` with a keyring (anything convertible into a [`SharedKeyring`])
+    /// Construct an `EncryptInput` with a keyring (any [`Keyring`])
     #[must_use]
     pub fn with_keyring(
         plaintext: &'a [u8],
         ec: EncryptionContext,
-        keyring: impl Into<SharedKeyring>,
+        keyring: impl Keyring + 'static,
     ) -> Self {
         Self {
             plaintext,
             encryption_context: ec,
-            keyring: Some(keyring.into()),
+            keyring: Some(keyring.into_shared()),
             ..Default::default()
         }
     }
@@ -424,21 +428,21 @@ impl EncryptStreamInput {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct an `EncryptStreamInput` with a CMM (anything convertible into a [`SharedCmm`])
+    /// Construct an `EncryptStreamInput` with a CMM (any [`Cmm`])
     #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: impl Into<SharedCmm>) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: impl Cmm + 'static) -> Self {
         Self {
             encryption_context: ec,
-            cmm: Some(cmm.into()),
+            cmm: Some(cmm.into_shared()),
             ..Default::default()
         }
     }
-    /// Construct an `EncryptStreamInput` with a keyring (anything convertible into a [`SharedKeyring`])
+    /// Construct an `EncryptStreamInput` with a keyring (any [`Keyring`])
     #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: impl Into<SharedKeyring>) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: impl Keyring + 'static) -> Self {
         Self {
             encryption_context: ec,
-            keyring: Some(keyring.into()),
+            keyring: Some(keyring.into_shared()),
             ..Default::default()
         }
     }
@@ -530,31 +534,27 @@ impl<'a> DecryptInput<'a> {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct a `DecryptInput` with a CMM (anything convertible into a [`SharedCmm`])
+    /// Construct a `DecryptInput` with a CMM (any [`Cmm`])
     #[must_use]
-    pub fn with_cmm(
-        ciphertext: &'a [u8],
-        ec: EncryptionContext,
-        cmm: impl Into<SharedCmm>,
-    ) -> Self {
+    pub fn with_cmm(ciphertext: &'a [u8], ec: EncryptionContext, cmm: impl Cmm + 'static) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
-            cmm: Some(cmm.into()),
+            cmm: Some(cmm.into_shared()),
             ..Default::default()
         }
     }
-    /// Construct a `DecryptInput` with a keyring (anything convertible into a [`SharedKeyring`])
+    /// Construct a `DecryptInput` with a keyring (any [`Keyring`])
     #[must_use]
     pub fn with_keyring(
         ciphertext: &'a [u8],
         ec: EncryptionContext,
-        keyring: impl Into<SharedKeyring>,
+        keyring: impl Keyring + 'static,
     ) -> Self {
         Self {
             ciphertext,
             encryption_context: ec,
-            keyring: Some(keyring.into()),
+            keyring: Some(keyring.into_shared()),
             ..Default::default()
         }
     }
@@ -605,21 +605,21 @@ impl DecryptStreamInput {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Construct a `DecryptStreamInput` with a CMM (anything convertible into a [`SharedCmm`])
+    /// Construct a `DecryptStreamInput` with a CMM (any [`Cmm`])
     #[must_use]
-    pub fn with_cmm(ec: EncryptionContext, cmm: impl Into<SharedCmm>) -> Self {
+    pub fn with_cmm(ec: EncryptionContext, cmm: impl Cmm + 'static) -> Self {
         Self {
             encryption_context: ec,
-            cmm: Some(cmm.into()),
+            cmm: Some(cmm.into_shared()),
             ..Default::default()
         }
     }
-    /// Construct a `DecryptStreamInput` with a keyring (anything convertible into a [`SharedKeyring`])
+    /// Construct a `DecryptStreamInput` with a keyring (any [`Keyring`])
     #[must_use]
-    pub fn with_keyring(ec: EncryptionContext, keyring: impl Into<SharedKeyring>) -> Self {
+    pub fn with_keyring(ec: EncryptionContext, keyring: impl Keyring + 'static) -> Self {
         Self {
             encryption_context: ec,
-            keyring: Some(keyring.into()),
+            keyring: Some(keyring.into_shared()),
             ..Default::default()
         }
     }

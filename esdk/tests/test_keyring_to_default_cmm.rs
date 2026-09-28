@@ -30,7 +30,9 @@ use test_helpers::*;
 /// Helper: independently construct a default CMM from a keyring via the MPL.
 /// Mirrors the call in `materials.rs::create_cmm_from_input` for the
 /// keyring arm.
-fn default_cmm_from(keyring: SharedKeyring) -> aws_crypto_mpl::cmm::DefaultCmm {
+fn default_cmm_from(
+    keyring: aws_crypto_mpl::keyring::RawAesKeyring,
+) -> aws_crypto_mpl::cmm::DefaultCmm {
     aws_crypto_mpl::cmm::DefaultCmm::new(keyring)
 }
 

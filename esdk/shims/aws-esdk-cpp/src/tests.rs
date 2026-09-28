@@ -635,7 +635,7 @@ fn shared_cache_type_references_the_supplied_cache() {
     let Ok(CacheType::Shared(referenced)) = make_cache_type(&shared) else {
         panic!("a Shared cache kind must yield CacheType::Shared");
     };
-    assert!(std::ptr::addr_eq(&*referenced, &*cache.inner));
+    assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
 }
 
 #[test]

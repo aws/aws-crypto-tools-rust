@@ -1082,7 +1082,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .block_on(BranchKeyStore::new(config))
         .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
     Ok(Box::new(KeyStore {
-        inner: store.into(),
+        inner: SharedKeystore::new(store),
     }))
 }
 
@@ -1135,7 +1135,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
     .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1208,7 +1208,7 @@ fn create_hierarchical_keyring(
     })?;
 
     Ok(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1539,9 +1539,11 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Converts an ESDK Rust keyring into a C++ shim keyring handle.
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
-pub fn into_keyring_handle(keyring: impl Into<SharedKeyring>) -> *mut std::ffi::c_void {
+pub fn into_keyring_handle(
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+) -> *mut std::ffi::c_void {
     Box::into_raw(Box::new(Keyring {
-        inner: keyring.into(),
+        inner: SharedKeyring::new(keyring),
     }))
     .cast()
 }
