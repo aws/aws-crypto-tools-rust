@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   rust-language-server:
-    name: Rust server: fmt, clippy, unit tests
+    name: "Rust server: fmt, clippy, unit tests"
     runs-on: ubuntu-latest
     defaults:
       run:

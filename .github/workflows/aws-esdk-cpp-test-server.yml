@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   cpp-shim-language-server:
-    name: C++ shim server: fmt, clippy, unit tests
+    name: "C++ shim server: fmt, clippy, unit tests"
     strategy:
       fail-fast: false
       matrix:
