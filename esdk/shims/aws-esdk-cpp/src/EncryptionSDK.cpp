@@ -331,7 +331,6 @@ Keyring Keyring::adopt(void* raw_handle) {
 }
 
 namespace detail {
-// Split a C++ duration into the bridge's seconds + nanoseconds pair.
 ::ffi::Duration to_ffi(std::chrono::nanoseconds d) {
     if (d.count() < 0) {
         throw ValidationException("HierarchicalKeyring TTL must not be negative");

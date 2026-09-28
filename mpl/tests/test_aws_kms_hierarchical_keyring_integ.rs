@@ -110,13 +110,13 @@ async fn build_keystore() -> BranchKeyStore {
     .unwrap()
 }
 
-/// Default TTL for the fixture keyrings. Long enough that no test
-/// races an expiry.
+/// TTL for the fixture keyrings.
+/// Long enough that no test races an expiry.
 const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
 /// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
 /// default cache. Every test varies only these three things, so they share one
-/// fixture rather than repeating the builder chain.
+/// fixture.
 fn keyring_for(
     keystore: impl Into<SharedKeystore>,
     branch_key_id: &str,

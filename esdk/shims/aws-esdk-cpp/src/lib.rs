@@ -343,9 +343,8 @@ mod ffi {
         Milliseconds,
     }
 
-    /// A `std::time::Duration` in its own representation, so the bridge fixes
-    /// no unit and carries any value `Duration` can hold. cxx has no mapping
-    /// for `std::chrono` or `std::time::Duration`.
+    // cxx has no mapping for std::chrono or std::time::Duration.
+    // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
     struct Duration {
         secs: u64,
         nanos: u32,

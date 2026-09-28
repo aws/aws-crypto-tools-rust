@@ -144,7 +144,7 @@ struct HierarchicalKeyringInner {
 }
 
 impl HierarchicalKeyring {
-    /// Construct a new hierarchical keyring. See [`HierarchicalKeyringBuilder`].
+    /// Start configuring a hierarchical keyring. See [`HierarchicalKeyringBuilder`].
     #[must_use]
     pub fn builder() -> HierarchicalKeyringBuilder {
         HierarchicalKeyringBuilder::default()
@@ -222,47 +222,47 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
-    /// The TTL for cached branch-key materials. Required, and must be greater
-    /// than zero.
+    /// The TTL for cached branch-key materials.
+    /// Required, and must be greater than zero.
     #[must_use]
     pub fn ttl(mut self, ttl: Duration) -> Self {
         self.ttl = Some(ttl);
         self
     }
 
-    /// A static branch key id. Set this or
-    /// [`branch_key_id_supplier`](Self::branch_key_id_supplier), not both.
+    /// A static branch key id.
+    /// Set this or [`branch_key_id_supplier`](Self::branch_key_id_supplier), not both.
     #[must_use]
     pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
         self.branch_key_id = Some(branch_key_id.into());
         self
     }
 
-    /// A [`BranchKeySupplier`]. Set this or
-    /// [`branch_key_id`](Self::branch_key_id), not both.
+    /// A [`BranchKeySupplier`].
+    /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
     pub fn branch_key_id_supplier(mut self, supplier: impl Into<SharedBranchKeySupplier>) -> Self {
         self.branch_key_id_supplier = Some(supplier.into());
         self
     }
 
-    /// Selects the cache backing — see [`CacheType`]. When unset, behaves as
-    /// `CacheType::Default(DefaultCache::new(1000))`.
+    /// The cache backing; see [`CacheType`].
+    /// When unset, behaves as `CacheType::Default(DefaultCache::new(1000))`.
     #[must_use]
     pub fn cache(mut self, cache: CacheType) -> Self {
         self.cache = Some(cache);
         self
     }
 
-    /// The partition id. If unset, a fresh v4 UUID is generated and stored as
-    /// the 16-byte partition id.
+    /// The partition id.
+    /// When unset, the keyring generates a fresh v4 UUID and stores it as the 16-byte partition id.
     #[must_use]
     pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
         self.partition_id = Some(partition_id.into());
         self
     }
 
-    /// Validate the configuration and build the keyring.
+    /// Construct a new hierarchical keyring.
     pub fn build(self) -> Result<HierarchicalKeyring, MaterialsError> {
         let Self {
             key_store,

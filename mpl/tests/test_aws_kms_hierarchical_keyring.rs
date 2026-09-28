@@ -87,10 +87,9 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// The type is the one callers actually pass to the keyring, but it points at
 /// a table and KMS key that do not exist, so any keystore call would fail.
 /// That is safe here because no test using this helper makes one:
-/// `HierarchicalKeyringBuilder::build` only stores the handle, and the
-/// keystore is first consulted inside OnEncrypt / OnDecrypt. Tests that do exercise those
-/// operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod
-/// ondecrypt` instead. Both SDK clients are supplied, so this goes through the
+/// `HierarchicalKeyringBuilder::build` reads only the keystore's local configuration,
+/// and the keystore first reaches KMS or DynamoDB inside OnEncrypt / OnDecrypt.
+/// Tests that exercise those operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod ondecrypt` instead. Both SDK clients are supplied, so this goes through the
 /// synchronous [`BranchKeyStore::with_clients`] — there is nothing to resolve
 /// and so nothing to await.
 fn keystore_never_consulted() -> BranchKeyStore {
@@ -115,7 +114,7 @@ fn build_with_zero_ttl_returns_validation_error() {
     let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::builder()
         .key_store(keystore)
-        .ttl(Duration::from_secs(0)) // zero TTL — must be rejected
+        .ttl(Duration::from_secs(0))
         .branch_key_id("branch-key-id")
         .build();
 
@@ -178,7 +177,7 @@ fn build_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
     );
 }
 
-/// Unwrap the error `build()` must return for an invalid configuration.
+/// The error from `build()`; panics with `label` if the build succeeds.
 fn build_err(builder: HierarchicalKeyringBuilder, label: &str) -> MaterialsError {
     match builder.build() {
         Err(e) => e,
@@ -264,7 +263,7 @@ fn build_with_positive_ttl_succeeds() {
     let keystore = keystore_never_consulted();
     let result = HierarchicalKeyring::builder()
         .key_store(keystore)
-        .ttl(Duration::from_secs(1)) // smallest legal TTL
+        .ttl(Duration::from_secs(1))
         .branch_key_id("branch-key-id")
         .cache(CacheType::Default(DefaultCache::new(1000)))
         .build();
@@ -280,7 +279,6 @@ fn partition_id_default_is_16_byte_v4_uuid() {
         .key_store(keystore)
         .ttl(Duration::from_secs(3600))
         .branch_key_id("branch-key-id")
-        // no partition id supplied → must default to v4 UUID bytes
         .build()
         .expect("constructor with no partition id must succeed");
 
@@ -521,7 +519,7 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
     };
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(60)) // == grace_period — must fail.
+        .ttl(Duration::from_secs(60)) // equal to grace_period (60).
         .branch_key_id("bk")
         .cache(CacheType::StormTracking(params))
         .build()
@@ -568,7 +566,7 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 #[test]
 fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     use aws_crypto_mpl::TimeUnits;
-    // grace_period = 5_000 ms = 5 s, TTL = 60 s → strict less-than.
+    // grace_period = 5_000 ms = 5 s, less than the 60 s TTL.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
     let params = StormTrackingCache {
         entry_capacity: 16,
@@ -1453,9 +1451,9 @@ mod onencrypt {
         );
     }
 
-    /// Seed a shared cache with the encrypt-scope entry for `build_keyring`'s
-    /// configuration, created `age` ago and not yet expired by the cache, then
-    /// report whether on_encrypt went to the keystore.
+    /// Whether on_encrypt calls the keystore for a keyring with a 1.5 s TTL
+    /// whose cache already holds its entry, created `age` ago.
+    /// The entry's own expiry is an hour out, so only the keyring's TTL check can reject it.
     async fn on_encrypt_consults_keystore_for_entry_aged(age: Duration) -> bool {
         use aws_crypto_mpl::Cmc;
         use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials, UsageMetadata};
@@ -1501,7 +1499,6 @@ mod onencrypt {
 
     #[tokio::test]
     async fn on_encrypt_ttl_compares_the_full_duration() {
-        // A 1.5 s TTL.
         assert!(
             !on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1000)).await,
             "an entry aged 1 s is within a 1.5 s TTL",

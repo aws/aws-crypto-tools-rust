@@ -397,6 +397,8 @@ public:
                               Tag{}) {}
 
 private:
+    // Keeps the private constructor out of overload resolution for callers,
+    // so a std::chrono::nanoseconds argument still selects the public template.
     struct Tag {};
 
     template <class Rep, class Period>
