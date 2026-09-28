@@ -3,7 +3,7 @@
 
 //! Encryption context key-value mapping.
 
-use std::collections::{BTreeMap, HashMap, btree_map::Entry};
+use std::collections::{BTreeMap, HashMap};
 
 use super::error::MaterialsError;
 
@@ -131,7 +131,8 @@ impl EncryptionContext {
     ///
     /// # Errors
     /// Returns a `Validation` error if the bytes are malformed,
-    /// repeat a key, or hold a key or value that is not valid UTF-8.
+    /// list keys out of ascending order or repeat one,
+    /// or hold a key or value that is not valid UTF-8.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, MaterialsError> {
         if bytes.is_empty() {
             return Ok(Self::new());
@@ -178,17 +179,19 @@ impl EncryptionContext {
             let value = utf8(&bytes[offset..val_end], "value")?;
             offset = val_end;
 
-            match map.entry(key) {
-                Entry::Occupied(occupied) => {
+            if let Some((previous, _)) = map.last_key_value() {
+                if key == *previous {
                     return Err(MaterialsError::new(format!(
-                        "Duplicate key in encryption context: {:?}",
-                        occupied.key()
+                        "Duplicate key in encryption context: {key:?}"
                     )));
                 }
-                Entry::Vacant(vacant) => {
-                    vacant.insert(value);
+                if key < *previous {
+                    return Err(MaterialsError::new(
+                        "Encryption context keys are not in ascending order",
+                    ));
                 }
             }
+            map.insert(key, value);
         }
 
         if offset != bytes.len() {

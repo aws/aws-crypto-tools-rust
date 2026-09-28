@@ -65,6 +65,18 @@ fn test_duplicate_key_rejected_on_deserialize() {
 }
 
 #[test]
+fn test_out_of_order_keys_rejected_on_deserialize() {
+    let bytes: &[u8] = &[
+        0x00, 0x02, // count = 2
+        0x00, 0x01, b'b', 0x00, 0x01, b'2', // b -> 2
+        0x00, 0x01, b'a', 0x00, 0x01, b'1', // a -> 1
+    ];
+    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(err.message.contains("not in ascending order"));
+}
+
+#[test]
 fn test_round_trip_preserves_all_entries() {
     let mut ec = EncryptionContext::new();
     ec.insert("key1", "value1");

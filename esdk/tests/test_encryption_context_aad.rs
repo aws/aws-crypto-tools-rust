@@ -299,35 +299,32 @@ async fn decrypt_err_with_second_key(version: Version, second_key: &[u8; 4]) -> 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_duplicate_encryption_context_key() {
     for version in VERSIONS {
-        //= spec/framework/structures.md#key-value-pair-entries
-        //= type=test
-        //# This sequence MUST NOT contain duplicate entries.
         let err = decrypt_err_with_second_key(version, b"keyA").await;
         assert_eq!(
             err.kind,
             ErrorKind::SerializationError,
             "{version:?}: {err:?}"
         );
-        assert_eq!(err.message, "Encryption context contains a duplicate key");
+        assert!(
+            err.message.contains("Duplicate key in encryption context"),
+            "{version:?}: {err:?}"
+        );
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_out_of_order_encryption_context_keys() {
     for version in VERSIONS {
-        //= spec/framework/structures.md#key-value-pair-entries
-        //= type=test
-        //# These entries MUST be sorted, by key,
-        //# in ascending order according to the UTF-8 encoded binary value.
         let err = decrypt_err_with_second_key(version, b"key0").await;
         assert_eq!(
             err.kind,
             ErrorKind::SerializationError,
             "{version:?}: {err:?}"
         );
-        assert_eq!(
-            err.message,
-            "Encryption context keys are not in ascending order"
+        assert!(
+            err.message
+                .contains("Encryption context keys are not in ascending order"),
+            "{version:?}: {err:?}"
         );
     }
 }

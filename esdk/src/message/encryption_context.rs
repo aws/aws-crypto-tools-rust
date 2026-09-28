@@ -3,8 +3,12 @@
 
 //! Encryption context serialization for message header and AAD.
 
-use super::serialize_functions::{read_str_u16, read_u16, write_bytes, write_u16};
+use std::backtrace::Backtrace;
+use std::sync::Arc;
+
+use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
 use super::{Error, ser_err};
+use crate::error::ErrorKind;
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 
 /// Read the header's AAD encryption context sub-section.
@@ -12,38 +16,14 @@ pub(crate) fn read_encryption_context(
     r: &mut dyn SafeRead,
     raw: &mut dyn SafeWrite,
 ) -> Result<EncryptionContext, Error> {
-    let mut result = EncryptionContext::new();
-
-    // Empty EC: length 0, no further bytes.
-    let bytes = usize::from(read_u16(r, raw)?);
-    if bytes == 0 {
-        return Ok(result);
-    }
-
-    // Count, then `count` (key, value) pairs.
-    let count = usize::from(read_u16(r, raw)?);
-    for _ in 0..count {
-        let key = read_str_u16(r, raw)?;
-        let value = read_str_u16(r, raw)?;
-
-        //= spec/framework/structures.md#key-value-pair-entries
-        //# This sequence MUST NOT contain duplicate entries.
-        //
-        //= spec/framework/structures.md#key-value-pair-entries
-        //# These entries MUST be sorted, by key,
-        //# in ascending order according to the UTF-8 encoded binary value.
-        if let Some((previous, _)) = result.as_map().last_key_value() {
-            if key == *previous {
-                return ser_err("Encryption context contains a duplicate key");
-            }
-            if key < *previous {
-                return ser_err("Encryption context keys are not in ascending order");
-            }
-        }
-        result.insert(key, value);
-    }
-
-    Ok(result)
+    let len = usize::from(read_u16(r, raw)?);
+    let bytes = read_vec(r, len, raw)?;
+    EncryptionContext::deserialize(&bytes).map_err(|e| Error {
+        kind: ErrorKind::SerializationError,
+        message: format!("Invalid encryption context: {}", e.message),
+        backtrace: Arc::new(Backtrace::capture()),
+        cause: Some(Arc::new(e)),
+    })
 }
 
 /// Write canonical EC bytes for signing/AES-GCM AAD; empty EC writes nothing.
