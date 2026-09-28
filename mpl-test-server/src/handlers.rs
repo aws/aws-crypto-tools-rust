@@ -1,6 +1,6 @@
 //! Operation handlers and multi-type object registry.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use aws_crypto_mpl::AesGcm;
@@ -12,9 +12,12 @@ use aws_crypto_mpl::cmm::{
     EncryptionMaterialsRequest,
 };
 use aws_crypto_mpl::keyring::Keyring;
+use aws_crypto_mpl::structures::algorithm_suite::{
+    PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey,
+};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
-    EncryptedDataKey, EncryptionContext,
+    DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
 };
 
 use crate::error::ServerError;
@@ -62,15 +65,7 @@ impl AppState {
         &self,
         req: CreateDefaultCmmRequest,
     ) -> Result<CreateDefaultCmmResponse, ServerError> {
-        let keyring = self
-            .keyrings
-            .lock()
-            .expect("keyrings mutex")
-            .get(&req.keyring_id)
-            .cloned()
-            .ok_or_else(|| {
-                ServerError::generic(format!("unknown keyringId: {}", req.keyring_id))
-            })?;
+        let keyring = self.get_keyring(&req.keyring_id)?;
 
         let cmm = DefaultCmm::new(keyring);
         let id = uuid::Uuid::new_v4().to_string();
@@ -79,6 +74,74 @@ impl AppState {
             .expect("cmms mutex")
             .insert(id.clone(), Arc::new(cmm));
         Ok(CreateDefaultCmmResponse { cmm_id: id })
+    }
+
+    pub fn initialize_encryption_materials(
+        &self,
+        req: InitializeEncryptionMaterialsRequest,
+    ) -> Result<InitializeEncryptionMaterialsResponse, ServerError> {
+        let materials = EncryptionMaterials::new(
+            map_algorithm_suite_id(req.algorithm_suite_id),
+            Vec::new(),
+            map_encryption_context(&req.encryption_context),
+            map_required_keys(&req.required_encryption_context_keys),
+            None,
+            None,
+            None,
+        )
+        .map_err(|e| ServerError::mpl(e.to_string()))?;
+        Ok(InitializeEncryptionMaterialsResponse {
+            materials: encryption_materials_to_shape(&materials),
+        })
+    }
+
+    pub fn initialize_decryption_materials(
+        &self,
+        req: InitializeDecryptionMaterialsRequest,
+    ) -> Result<InitializeDecryptionMaterialsResponse, ServerError> {
+        let materials = DecryptionMaterials::new(
+            map_algorithm_suite_id(req.algorithm_suite_id),
+            map_encryption_context(&req.encryption_context),
+            map_required_keys(&req.required_encryption_context_keys),
+            None,
+            None,
+            None,
+        )
+        .map_err(|e| ServerError::mpl(e.to_string()))?;
+        Ok(InitializeDecryptionMaterialsResponse {
+            materials: decryption_materials_to_shape(&materials),
+        })
+    }
+
+    pub async fn on_encrypt(
+        &self,
+        req: OnEncryptRequest,
+    ) -> Result<OnEncryptResponse, ServerError> {
+        let keyring = self.get_keyring(&req.keyring_id)?;
+        let materials = shape_to_encryption_materials(req.materials)?;
+        let materials = keyring
+            .on_encrypt(materials)
+            .await
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
+        Ok(OnEncryptResponse {
+            materials: encryption_materials_to_shape(&materials),
+        })
+    }
+
+    pub async fn on_decrypt(
+        &self,
+        req: OnDecryptRequest,
+    ) -> Result<OnDecryptResponse, ServerError> {
+        let keyring = self.get_keyring(&req.keyring_id)?;
+        let materials = shape_to_decryption_materials(req.materials)?;
+        let edks = map_edks(req.encrypted_data_keys);
+        let materials = keyring
+            .on_decrypt(materials, &edks)
+            .await
+            .map_err(|e| ServerError::mpl(e.to_string()))?;
+        Ok(OnDecryptResponse {
+            materials: decryption_materials_to_shape(&materials),
+        })
     }
 
     pub async fn get_encryption_materials(
@@ -109,15 +172,7 @@ impl AppState {
             .as_bytes()
             .to_vec();
 
-        let edks: Vec<EncryptedDataKeyShape> = materials
-            .encrypted_data_keys()
-            .iter()
-            .map(|edk| EncryptedDataKeyShape {
-                key_provider_id: edk.key_provider_id.clone(),
-                key_provider_info: edk.key_provider_info.clone(),
-                ciphertext: edk.ciphertext.clone(),
-            })
-            .collect();
+        let edks = edks_to_shapes(materials.encrypted_data_keys());
 
         let ec_out = encryption_context_to_map(materials.encryption_context());
 
@@ -147,13 +202,7 @@ impl AppState {
         let suite = map_algorithm_suite_id(req.algorithm_suite_id);
         let policy = map_commitment_policy(req.commitment_policy);
         let ec = map_encryption_context(&req.encryption_context);
-        let edks: Vec<EncryptedDataKey> = req
-            .encrypted_data_keys
-            .into_iter()
-            .map(|edk| {
-                EncryptedDataKey::new(edk.key_provider_id, edk.key_provider_info, edk.ciphertext)
-            })
-            .collect();
+        let edks = map_edks(req.encrypted_data_keys);
 
         let mut mpl_req = MplDecryptMaterialsRequest::new(suite, policy, edks, ec);
         if let Some(reproduced) = req.reproduced_encryption_context {
@@ -199,11 +248,123 @@ impl AppState {
             .cloned()
             .ok_or_else(|| ServerError::generic(format!("unknown cmmId: {cmm_id}")))
     }
+
+    fn get_keyring(&self, keyring_id: &str) -> Result<Arc<dyn Keyring>, ServerError> {
+        if keyring_id.is_empty() {
+            return Err(ServerError::generic("keyringId must be non-empty"));
+        }
+        self.keyrings
+            .lock()
+            .expect("keyrings mutex")
+            .get(keyring_id)
+            .cloned()
+            .ok_or_else(|| ServerError::generic(format!("unknown keyringId: {keyring_id}")))
+    }
 }
 
 // ─── Mapping helpers ────────────────────────────────────────────────────────
 
-fn map_encryption_context(map: &std::collections::BTreeMap<String, String>) -> EncryptionContext {
+fn map_edks(edks: Vec<EncryptedDataKeyShape>) -> Vec<EncryptedDataKey> {
+    edks.into_iter()
+        .map(|edk| {
+            EncryptedDataKey::new(edk.key_provider_id, edk.key_provider_info, edk.ciphertext)
+        })
+        .collect()
+}
+
+fn edks_to_shapes(edks: &[EncryptedDataKey]) -> Vec<EncryptedDataKeyShape> {
+    edks.iter()
+        .map(|edk| EncryptedDataKeyShape {
+            key_provider_id: edk.key_provider_id.clone(),
+            key_provider_info: edk.key_provider_info.clone(),
+            ciphertext: edk.ciphertext.clone(),
+        })
+        .collect()
+}
+
+fn map_required_keys(keys: &[String]) -> BTreeSet<Vec<u8>> {
+    keys.iter().map(|k| k.as_bytes().to_vec()).collect()
+}
+
+fn required_keys_to_wire(keys: &BTreeSet<Vec<u8>>) -> Vec<String> {
+    keys.iter()
+        .map(|k| String::from_utf8_lossy(k).into_owned())
+        .collect()
+}
+
+/// Materials a client sends must satisfy the MPL's own invariants; a rejection
+/// is the MPL's, so it is an `MPLClientError`.
+fn shape_to_encryption_materials(
+    shape: EncryptionMaterialsShape,
+) -> Result<EncryptionMaterials, ServerError> {
+    EncryptionMaterials::new(
+        map_algorithm_suite_id(shape.algorithm_suite_id),
+        map_edks(shape.encrypted_data_keys),
+        map_encryption_context(&shape.encryption_context),
+        map_required_keys(&shape.required_encryption_context_keys),
+        shape.plaintext_data_key.map(PlaintextDataKey::new),
+        shape.signing_key.map(SigningKey::new),
+        shape.symmetric_signing_keys.map(|keys| {
+            keys.into_iter()
+                .map(|k| SymmetricSigningKey::new(k.into_vec()))
+                .collect()
+        }),
+    )
+    .map_err(|e| ServerError::mpl(e.to_string()))
+}
+
+fn shape_to_decryption_materials(
+    shape: DecryptionMaterialsShape,
+) -> Result<DecryptionMaterials, ServerError> {
+    DecryptionMaterials::new(
+        map_algorithm_suite_id(shape.algorithm_suite_id),
+        map_encryption_context(&shape.encryption_context),
+        map_required_keys(&shape.required_encryption_context_keys),
+        shape.plaintext_data_key.map(PlaintextDataKey::new),
+        shape.verification_key.map(VerificationKey::new),
+        shape.symmetric_signing_key.map(SymmetricSigningKey::new),
+    )
+    .map_err(|e| ServerError::mpl(e.to_string()))
+}
+
+fn encryption_materials_to_shape(materials: &EncryptionMaterials) -> EncryptionMaterialsShape {
+    EncryptionMaterialsShape {
+        algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id()),
+        encryption_context: encryption_context_to_map(materials.encryption_context()),
+        encrypted_data_keys: edks_to_shapes(materials.encrypted_data_keys()),
+        required_encryption_context_keys: required_keys_to_wire(
+            materials.required_encryption_context_keys(),
+        ),
+        plaintext_data_key: materials
+            .plaintext_data_key()
+            .map(|k| k.as_bytes().to_vec()),
+        signing_key: materials.signing_key().map(|k| k.as_bytes().to_vec()),
+        symmetric_signing_keys: materials.symmetric_signing_keys().map(|keys| {
+            keys.iter()
+                .map(|k| serde_bytes::ByteBuf::from(k.as_bytes().to_vec()))
+                .collect()
+        }),
+    }
+}
+
+fn decryption_materials_to_shape(materials: &DecryptionMaterials) -> DecryptionMaterialsShape {
+    DecryptionMaterialsShape {
+        algorithm_suite_id: reverse_map_algorithm_suite_id(materials.algorithm_suite_id()),
+        encryption_context: encryption_context_to_map(materials.encryption_context()),
+        required_encryption_context_keys: required_keys_to_wire(
+            materials.required_encryption_context_keys(),
+        ),
+        plaintext_data_key: materials
+            .plaintext_data_key()
+            .map(|k| k.as_bytes().to_vec()),
+        verification_key: materials.verification_key().map(|k| k.as_bytes().to_vec()),
+        symmetric_signing_key: materials
+            .symmetric_signing_key()
+            .map(|k| k.as_bytes().to_vec()),
+    }
+}
+
+fn map_encryption_context(map: &BTreeMap<String, String>) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
     for (k, v) in map {
         ec.insert(k.as_bytes().to_vec(), v.as_bytes().to_vec());
@@ -211,7 +372,7 @@ fn map_encryption_context(map: &std::collections::BTreeMap<String, String>) -> E
     ec
 }
 
-fn encryption_context_to_map(ec: &EncryptionContext) -> std::collections::BTreeMap<String, String> {
+fn encryption_context_to_map(ec: &EncryptionContext) -> BTreeMap<String, String> {
     ec.iter()
         .map(|(k, v)| {
             (

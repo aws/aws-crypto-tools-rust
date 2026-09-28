@@ -57,6 +57,20 @@ async fn dispatch(
         "CreateDefaultCmm" => decode::<CreateDefaultCmmRequest>(&body)
             .and_then(|req| state.create_default_cmm(req))
             .and_then(|resp| encode(&resp)),
+        "InitializeEncryptionMaterials" => decode::<InitializeEncryptionMaterialsRequest>(&body)
+            .and_then(|req| state.initialize_encryption_materials(req))
+            .and_then(|resp| encode(&resp)),
+        "InitializeDecryptionMaterials" => decode::<InitializeDecryptionMaterialsRequest>(&body)
+            .and_then(|req| state.initialize_decryption_materials(req))
+            .and_then(|resp| encode(&resp)),
+        "OnEncrypt" => match decode::<OnEncryptRequest>(&body) {
+            Ok(req) => state.on_encrypt(req).await.and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
+        "OnDecrypt" => match decode::<OnDecryptRequest>(&body) {
+            Ok(req) => state.on_decrypt(req).await.and_then(|resp| encode(&resp)),
+            Err(e) => Err(e),
+        },
         "GetEncryptionMaterials" => match decode::<GetEncryptionMaterialsRequest>(&body) {
             Ok(req) => state
                 .get_encryption_materials(req)

@@ -179,7 +179,132 @@ pub struct DecryptMaterialsResponse {
     pub symmetric_signing_key: Option<Vec<u8>>,
 }
 
-// ─── Shared shapes ──────────────────────────────────────────────────────────
+// ─── Materials ──────────────────────────────────────────────────────────────
+
+/// Wire form of the MPL's `EncryptionMaterials`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptionMaterialsShape {
+    #[serde(rename = "algorithmSuiteId")]
+    pub algorithm_suite_id: AlgorithmSuiteId,
+    #[serde(rename = "encryptionContext")]
+    pub encryption_context: BTreeMap<String, String>,
+    #[serde(rename = "encryptedDataKeys")]
+    pub encrypted_data_keys: Vec<EncryptedDataKeyShape>,
+    #[serde(rename = "requiredEncryptionContextKeys")]
+    pub required_encryption_context_keys: Vec<String>,
+    #[serde(
+        rename = "plaintextDataKey",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub plaintext_data_key: Option<Vec<u8>>,
+    #[serde(
+        rename = "signingKey",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub signing_key: Option<Vec<u8>>,
+    #[serde(
+        rename = "symmetricSigningKeys",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub symmetric_signing_keys: Option<Vec<serde_bytes::ByteBuf>>,
+}
+
+/// Wire form of the MPL's `DecryptionMaterials`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecryptionMaterialsShape {
+    #[serde(rename = "algorithmSuiteId")]
+    pub algorithm_suite_id: AlgorithmSuiteId,
+    #[serde(rename = "encryptionContext")]
+    pub encryption_context: BTreeMap<String, String>,
+    #[serde(rename = "requiredEncryptionContextKeys")]
+    pub required_encryption_context_keys: Vec<String>,
+    #[serde(
+        rename = "plaintextDataKey",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub plaintext_data_key: Option<Vec<u8>>,
+    #[serde(
+        rename = "verificationKey",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub verification_key: Option<Vec<u8>>,
+    #[serde(
+        rename = "symmetricSigningKey",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub symmetric_signing_key: Option<Vec<u8>>,
+}
+
+// ─── InitializeEncryptionMaterials / InitializeDecryptionMaterials ──────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeEncryptionMaterialsRequest {
+    #[serde(rename = "algorithmSuiteId")]
+    pub algorithm_suite_id: AlgorithmSuiteId,
+    #[serde(rename = "encryptionContext")]
+    pub encryption_context: BTreeMap<String, String>,
+    #[serde(rename = "requiredEncryptionContextKeys")]
+    pub required_encryption_context_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeEncryptionMaterialsResponse {
+    pub materials: EncryptionMaterialsShape,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeDecryptionMaterialsRequest {
+    #[serde(rename = "algorithmSuiteId")]
+    pub algorithm_suite_id: AlgorithmSuiteId,
+    #[serde(rename = "encryptionContext")]
+    pub encryption_context: BTreeMap<String, String>,
+    #[serde(rename = "requiredEncryptionContextKeys")]
+    pub required_encryption_context_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializeDecryptionMaterialsResponse {
+    pub materials: DecryptionMaterialsShape,
+}
+
+// ─── OnEncrypt / OnDecrypt ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnEncryptRequest {
+    #[serde(rename = "keyringId")]
+    pub keyring_id: String,
+    pub materials: EncryptionMaterialsShape,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnEncryptResponse {
+    pub materials: EncryptionMaterialsShape,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnDecryptRequest {
+    #[serde(rename = "keyringId")]
+    pub keyring_id: String,
+    pub materials: DecryptionMaterialsShape,
+    #[serde(rename = "encryptedDataKeys")]
+    pub encrypted_data_keys: Vec<EncryptedDataKeyShape>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnDecryptResponse {
+    pub materials: DecryptionMaterialsShape,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedDataKeyShape {

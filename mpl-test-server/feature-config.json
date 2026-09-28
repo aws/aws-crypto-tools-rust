@@ -3,13 +3,5 @@
     "raw-aes",
     "default-cmm"
   ],
-  "unsupportedFeatures": [
-    "hierarchical",
-    "caching-cmm",
-    "required-encryption-context-cmm",
-    "raw-rsa",
-    "aws-kms",
-    "multi-keyring",
-    "storm-tracking-cmc"
-  ]
+  "unsupportedFeatures": []
 }
