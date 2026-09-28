@@ -420,6 +420,31 @@ fn classify_core_error_maps_each_kind() {
     }
 }
 
+#[test]
+fn classify_mpl_error_maps_validation_and_defaults_to_mpl_error() {
+    let cases = [
+        (
+            MaterialsErrorKind::Validation,
+            ffi::ShimErrorKind::ValidationError,
+        ),
+        (
+            MaterialsErrorKind::KeyringFailed,
+            ffi::ShimErrorKind::MplError,
+        ),
+        (
+            MaterialsErrorKind::NoMatchingDataKey,
+            ffi::ShimErrorKind::MplError,
+        ),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(
+            classify_mpl_error(&kind).repr,
+            expected.repr,
+            "for {kind:?}"
+        );
+    }
+}
+
 // Inputs the facade cannot express, so must be tested in Rust
 //
 // - Null resource handles (the facade passes references)

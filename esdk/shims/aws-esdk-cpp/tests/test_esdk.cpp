@@ -173,7 +173,7 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
     //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
     //# wrapping algorithm of the same meaning.
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::RawAesKeyring(
                           "test-ns", "test-key", short_key,
                           Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
@@ -241,7 +241,7 @@ void test_hierarchical_keyring_ttl() {
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 2000ms);
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 500ms);
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));

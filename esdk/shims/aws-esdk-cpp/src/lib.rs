@@ -133,7 +133,9 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration, SharedKeystore};
-use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy, MaterialsErrorKind,
+};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -464,6 +466,14 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
     }
 }
 
+/// Map an MPL materials error kind to its ffi error kind.
+fn classify_mpl_error(kind: &MaterialsErrorKind) -> ffi::ShimErrorKind {
+    match kind {
+        MaterialsErrorKind::Validation => ffi::ShimErrorKind::ValidationError,
+        _ => ffi::ShimErrorKind::MplError,
+    }
+}
+
 /// Validates a C++-supplied resource handle, then borrows the resource behind it.
 fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&'a T, String> {
     // Only validation right now is null-checking; could be extended in future (ex. method/field checks)
@@ -775,7 +785,7 @@ fn create_cryptographic_materials_cache(
     let cache_type = make_cache_type(cache)?;
     let created = create_cryptographic_materials_cache_core(cache_type).map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::MplError,
+            classify_mpl_error(&e.kind),
             "create_cryptographic_materials_cache",
             e,
         )
@@ -1122,7 +1132,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
         wrapping_alg_target_to_core(input.wrapping_alg)?,
     )
-    .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, "create_raw_aes_keyring", e))?;
+    .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
         inner: keyring.into(),
@@ -1191,7 +1201,7 @@ fn create_hierarchical_keyring(
     }
     let keyring = builder.build().map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::MplError,
+            classify_mpl_error(&e.kind),
             "create_hierarchical_keyring",
             e,
         )
