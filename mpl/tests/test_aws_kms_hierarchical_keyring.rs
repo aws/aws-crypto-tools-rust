@@ -215,26 +215,48 @@ fn build_without_ttl_returns_validation_error() {
 }
 
 #[test]
-fn build_with_sub_second_ttl_returns_validation_error() {
+fn build_with_sub_second_ttl_keeps_it_exactly() {
     for ttl in [
         Duration::from_millis(1500),
         Duration::from_millis(500),
-        Duration::from_secs(1) + Duration::from_nanos(1),
+        Duration::from_nanos(1),
     ] {
-        let err = build_err(
-            HierarchicalKeyring::builder()
-                .key_store(keystore_never_consulted())
-                .ttl(ttl)
-                .branch_key_id("branch-key-id"),
-            &format!("{ttl:?}"),
-        );
-        assert_eq!(err.kind, MaterialsErrorKind::Validation, "{ttl:?}");
-        assert!(
-            err.message.contains("whole number of seconds"),
-            "{ttl:?}: got: {}",
-            err.message,
-        );
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(ttl)
+            .branch_key_id("branch-key-id")
+            .build()
+            .unwrap_or_else(|e| panic!("{ttl:?} must be accepted: {e}"));
+        assert_eq!(keyring.ttl(), ttl);
     }
+}
+
+#[test]
+fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
+    use aws_crypto_mpl::TimeUnits;
+    let with_grace_ms = |grace_period| {
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_millis(1500))
+            .branch_key_id("bk")
+            .cache(CacheType::StormTracking(StormTrackingCache {
+                entry_capacity: 16,
+                entry_pruning_tail_size: 4,
+                grace_period,
+                grace_interval: 100,
+                fan_out: 4,
+                inflight_ttl: 100,
+                sleep_milli: 10,
+                time_units: Some(TimeUnits::Milliseconds),
+            }))
+            .build()
+    };
+    with_grace_ms(1_499).expect("1499 ms grace period < 1500 ms TTL must succeed");
+    let err = match with_grace_ms(1_500) {
+        Ok(_) => panic!("1500 ms grace period == 1500 ms TTL must fail"),
+        Err(e) => e,
+    };
+    assert!(err.message.contains("grace period"), "got: {}", err.message);
 }
 
 #[test]
@@ -1464,7 +1486,7 @@ mod onencrypt {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = HierarchicalKeyring::builder()
             .key_store(Arc::clone(&keystore))
-            .ttl(Duration::from_secs(1))
+            .ttl(Duration::from_millis(1500))
             .branch_key_id(FAKE_BRANCH_KEY_ID)
             .cache(CacheType::Shared(cache.into()))
             .partition_id(PARTITION)
@@ -1478,15 +1500,15 @@ mod onencrypt {
     }
 
     #[tokio::test]
-    async fn on_encrypt_ttl_compares_whole_seconds() {
-        // A 1 s TTL keeps an entry until its age reaches 2 whole seconds.
+    async fn on_encrypt_ttl_compares_the_full_duration() {
+        // A 1.5 s TTL.
         assert!(
-            !on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1500)).await,
-            "an entry aged 1.5 s is within a 1 s TTL under whole-second comparison",
+            !on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1000)).await,
+            "an entry aged 1 s is within a 1.5 s TTL",
         );
         assert!(
-            on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(2500)).await,
-            "an entry aged 2.5 s is past a 1 s TTL",
+            on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1800)).await,
+            "an entry aged 1.8 s is past a 1.5 s TTL",
         );
     }
 

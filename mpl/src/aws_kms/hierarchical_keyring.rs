@@ -119,8 +119,7 @@ pub struct HierarchicalKeyring {
 struct HierarchicalKeyringInner {
     keystore: SharedKeystore,
 
-    /// A non-zero whole number of seconds, checked in
-    /// [`HierarchicalKeyringBuilder::build`].
+    /// Non-zero, checked in [`HierarchicalKeyringBuilder::build`].
     ttl: Duration,
 
     /// The single branch key id this keyring wraps and unwraps with, when
@@ -152,8 +151,7 @@ impl HierarchicalKeyring {
         HierarchicalKeyringBuilder::default()
     }
 
-    /// The configured TTL for cached branch-key materials. Always a non-zero
-    /// whole number of seconds.
+    /// The configured TTL for cached branch-key materials. Always non-zero.
     pub fn ttl(&self) -> Duration {
         self.inner.ttl
     }
@@ -231,7 +229,7 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// The time-to-live of cached branch-key materials. Required, and must be
-    /// a non-zero whole number of seconds.
+    /// non-zero.
     #[must_use]
     pub fn ttl(mut self, ttl: Duration) -> Self {
         self.ttl = Some(ttl);
@@ -275,7 +273,7 @@ impl HierarchicalKeyringBuilder {
     /// # Errors
     ///
     /// Returns a `Validation` error when the key store is unset; the TTL is
-    /// unset, zero, or not a whole number of seconds; both or neither of a
+    /// unset or zero; both or neither of a
     /// branch key id and a supplier are set; or a storm-tracking cache's grace
     /// period is not less than the TTL. Also fails when the cache cannot be
     /// built, the partition id cannot be generated, or the keystore's
@@ -306,13 +304,6 @@ impl HierarchicalKeyringBuilder {
                 "HierarchicalKeyring TTL must be greater than zero",
             ));
         }
-        // The spec defines the TTL in whole seconds.
-        if ttl.subsec_nanos() != 0 {
-            return Err(MaterialsError::new(format!(
-                "HierarchicalKeyring TTL must be a whole number of seconds; got {ttl:?}",
-            )));
-        }
-        let ttl_seconds = ttl.as_secs();
 
         if branch_key_id.is_some() && branch_key_id_supplier.is_some() {
             return Err(MaterialsError::new(
@@ -337,13 +328,13 @@ impl HierarchicalKeyringBuilder {
         // `create_cryptographic_materials_cache`, which has no TTL to compare
         // against when a cache is built standalone.
         if let CacheType::StormTracking(params) = &cache_type {
-            let grace_in_seconds = match params.time_units.unwrap_or_default() {
-                TimeUnits::Seconds => params.grace_period,
-                TimeUnits::Milliseconds => params.grace_period / 1000,
+            let grace_period = match params.time_units.unwrap_or_default() {
+                TimeUnits::Seconds => Duration::from_secs(params.grace_period),
+                TimeUnits::Milliseconds => Duration::from_millis(params.grace_period),
             };
-            if grace_in_seconds >= ttl_seconds {
+            if grace_period >= ttl {
                 return Err(MaterialsError::new(format!(
-                    "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
+                    "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl:?})",
                     params.grace_period,
                     params.time_units.unwrap_or_default(),
                 )));
@@ -753,15 +744,12 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, M
 
 /// Whether a cache entry is still within its TTL:
 /// `time.now() - cacheEntryCreationTime <= ttlSeconds`.
-///
-/// Compares whole seconds: `ttl` has no sub-second part, and the elapsed time
-/// is truncated to whole seconds.
 fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
     let now = SystemTime::now();
     let elapsed = now
         .duration_since(entry.creation_time)
         .unwrap_or(Duration::ZERO);
-    elapsed.as_secs() <= ttl.as_secs()
+    elapsed <= ttl
 }
 
 /// Extract a borrowed [`BranchKeyMaterials`] reference from a cache
