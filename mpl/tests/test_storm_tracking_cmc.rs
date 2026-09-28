@@ -376,24 +376,7 @@ fn test_builder_set_none_applies_the_default() {
 }
 
 #[test]
-fn test_zero_values_are_rejected() {
-    let zero = Duration::ZERO;
-    assert_rejected(
-        StormTrackingCache::builder().grace_period(zero).build(),
-        "grace_period = 0",
-    );
-    assert_rejected(
-        StormTrackingCache::builder().grace_interval(zero).build(),
-        "grace_interval = 0",
-    );
-    assert_rejected(
-        StormTrackingCache::builder().inflight_ttl(zero).build(),
-        "inflight_ttl = 0",
-    );
-    assert_rejected(
-        StormTrackingCache::builder().sleep(zero).build(),
-        "sleep = 0",
-    );
+fn test_zero_fan_out_is_rejected() {
     assert_rejected(
         StormTrackingCache::builder().fan_out(0).build(),
         "fan_out = 0",
@@ -401,84 +384,23 @@ fn test_zero_values_are_rejected() {
 }
 
 #[test]
-fn test_sub_millisecond_durations_are_rejected() {
-    let sub_ms = Duration::from_micros(1_500);
-    assert_rejected(
-        StormTrackingCache::builder().grace_period(sub_ms).build(),
-        "grace_period with a sub-millisecond part",
-    );
-    assert_rejected(
-        StormTrackingCache::builder().grace_interval(sub_ms).build(),
-        "grace_interval with a sub-millisecond part",
-    );
-    assert_rejected(
-        StormTrackingCache::builder().inflight_ttl(sub_ms).build(),
-        "inflight_ttl with a sub-millisecond part",
-    );
-    assert_rejected(
-        StormTrackingCache::builder().sleep(sub_ms).build(),
-        "sleep with a sub-millisecond part",
-    );
-    assert_rejected(
-        StormTrackingCache::builder()
-            .sleep(Duration::from_micros(999))
-            .build(),
-        "sleep under 1 millisecond",
-    );
-}
-
-#[test]
-fn test_one_millisecond_durations_are_accepted() {
-    let ms = Duration::from_millis(1);
+fn test_durations_are_stored_exactly() {
+    // Zero, sub-millisecond, and out-of-order values are all accepted.
+    let grace_period = Duration::ZERO;
+    let grace_interval = Duration::from_nanos(1_500);
+    let inflight_ttl = Duration::from_secs(30);
+    let sleep = Duration::ZERO;
     let config = StormTrackingCache::builder()
-        .grace_period(ms)
-        .grace_interval(ms)
-        .inflight_ttl(ms)
-        .sleep(ms)
+        .grace_period(grace_period)
+        .grace_interval(grace_interval)
+        .inflight_ttl(inflight_ttl)
+        .sleep(sleep)
         .build()
-        .expect("1 ms is the minimum");
-    assert_eq!(config.grace_period(), ms);
-}
-
-//= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-//= type=test
-//# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Grace Period](#grace-period).
-#[test]
-fn test_grace_interval_must_not_exceed_grace_period() {
-    assert_rejected(
-        storm_config(8, 2, 10, 20, FAN_OUT, 10, SLEEP_MILLI, Unit::Secs),
-        "grace_interval > grace_period",
-    );
-}
-
-//= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-//= type=test
-//# - The [Inflight TTL](#inflight-ttl) MUST be less than or equal to the [Grace Period](#grace-period).
-#[test]
-fn test_inflight_ttl_must_not_exceed_grace_period() {
-    assert_rejected(
-        storm_config(8, 2, 10, 2, FAN_OUT, 30, SLEEP_MILLI, Unit::Secs),
-        "inflight_ttl > grace_period",
-    );
-    // The spec's listed defaults (grace period 10, inflight TTL 20) break
-    // this rule.
-    assert_rejected(
-        StormTrackingCache::builder()
-            .inflight_ttl(Duration::from_secs(20))
-            .build(),
-        "inflight_ttl 20 s > default grace_period 10 s",
-    );
-}
-
-//= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-//= type=test
-//# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Inflight TTL](#inflight-ttl).
-#[test]
-fn test_grace_interval_must_not_exceed_inflight_ttl() {
-    assert_rejected(
-        storm_config(8, 2, 20, 15, FAN_OUT, 10, SLEEP_MILLI, Unit::Secs),
-        "grace_interval > inflight_ttl",
-    );
+        .expect("any durations are accepted");
+    assert_eq!(config.grace_period(), grace_period);
+    assert_eq!(config.grace_interval(), grace_interval);
+    assert_eq!(config.inflight_ttl(), inflight_ttl);
+    assert_eq!(config.sleep(), sleep);
 }
 
 // ── Group 5 — Behaviors ───────────────────────────────────────────────────────

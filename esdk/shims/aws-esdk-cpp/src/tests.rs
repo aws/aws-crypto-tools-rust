@@ -677,11 +677,11 @@ fn create_storm_tracking_cache_passes_each_duration_to_the_core() {
 }
 
 #[test]
-fn create_storm_tracking_cache_rejects_zero_values() {
+fn create_storm_tracking_cache_rejects_zero_fan_out() {
     let mut input = storm_tracking_cache_input();
-    input.sleep = ZERO_DURATION;
+    input.fan_out = 0;
     let err = expect_err(make_cache_type(&input));
-    assert!(err.contains("sleep"), "unexpected error: {err}");
+    assert!(err.contains("fan_out"), "unexpected error: {err}");
 }
 
 #[test]

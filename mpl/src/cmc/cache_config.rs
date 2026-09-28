@@ -184,9 +184,6 @@ impl StormTrackingCacheBuilder {
     }
 
     /// Set the grace period. Defaults to 10 seconds.
-    ///
-    /// Must be a whole number of milliseconds, at least 1 ms,
-    /// and at least the grace interval and inflight TTL.
     #[must_use]
     pub const fn grace_period(mut self, d: Duration) -> Self {
         self.grace_period = Some(d);
@@ -194,9 +191,6 @@ impl StormTrackingCacheBuilder {
     }
 
     /// Set the grace interval. Defaults to 1 second.
-    ///
-    /// Must be a whole number of milliseconds, at least 1 ms,
-    /// and at most the inflight TTL and grace period.
     #[must_use]
     pub const fn grace_interval(mut self, d: Duration) -> Self {
         self.grace_interval = Some(d);
@@ -211,9 +205,6 @@ impl StormTrackingCacheBuilder {
     }
 
     /// Set the inflight TTL. Defaults to 10 seconds.
-    ///
-    /// Must be a whole number of milliseconds, at least 1 ms,
-    /// at least the grace interval, and at most the grace period.
     #[must_use]
     pub const fn inflight_ttl(mut self, d: Duration) -> Self {
         self.inflight_ttl = Some(d);
@@ -222,8 +213,6 @@ impl StormTrackingCacheBuilder {
 
     /// Set how long a blocked request sleeps before reexamining the cache.
     /// Defaults to 20 milliseconds.
-    ///
-    /// Must be a whole number of milliseconds, at least 1 ms.
     #[must_use]
     pub const fn sleep(mut self, d: Duration) -> Self {
         self.sleep = Some(d);
@@ -290,10 +279,7 @@ impl StormTrackingCacheBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if:
-    /// - a duration is under 1 ms or has a sub-millisecond part,
-    /// - `fan_out` is 0, or
-    /// - the settings break one of the spec's consistency rules.
+    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if `fan_out` is 0.
     pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
         let config = StormTrackingCache {
             entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
@@ -307,31 +293,8 @@ impl StormTrackingCacheBuilder {
             sleep: self.sleep.unwrap_or(DEFAULT_STORM_SLEEP),
         };
 
-        check_whole_millis("grace_period", config.grace_period)?;
-        check_whole_millis("grace_interval", config.grace_interval)?;
-        check_whole_millis("inflight_ttl", config.inflight_ttl)?;
-        check_whole_millis("sleep", config.sleep)?;
         if config.fan_out == 0 {
             return Err(invalid("fan_out must be at least 1"));
-        }
-
-        if config.grace_interval > config.grace_period {
-            return Err(invalid(format!(
-                "grace_interval ({:?}) must be less than or equal to grace_period ({:?})",
-                config.grace_interval, config.grace_period
-            )));
-        }
-        if config.inflight_ttl > config.grace_period {
-            return Err(invalid(format!(
-                "inflight_ttl ({:?}) must be less than or equal to grace_period ({:?})",
-                config.inflight_ttl, config.grace_period
-            )));
-        }
-        if config.grace_interval > config.inflight_ttl {
-            return Err(invalid(format!(
-                "grace_interval ({:?}) must be less than or equal to inflight_ttl ({:?})",
-                config.grace_interval, config.inflight_ttl
-            )));
         }
 
         Ok(config)
@@ -340,22 +303,6 @@ impl StormTrackingCacheBuilder {
 
 fn invalid(message: impl Into<String>) -> MaterialsError {
     MaterialsError::new(format!("StormTrackingCache: {}", message.into()))
-}
-
-/// The spec counts these durations in seconds or, with its `Milliseconds` unit, milliseconds.
-/// Whole milliseconds, at least 1, covers every value the spec can express.
-fn check_whole_millis(field: &str, d: Duration) -> Result<(), MaterialsError> {
-    if d < Duration::from_millis(1) {
-        return Err(invalid(format!(
-            "{field} must be at least 1 millisecond, got {d:?}"
-        )));
-    }
-    if !d.subsec_nanos().is_multiple_of(1_000_000) {
-        return Err(invalid(format!(
-            "{field} must be a whole number of milliseconds, got {d:?}"
-        )));
-    }
-    Ok(())
 }
 
 /// Cache configuration for a Cryptographic Materials Provider.

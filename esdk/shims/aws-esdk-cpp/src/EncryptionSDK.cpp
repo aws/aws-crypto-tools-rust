@@ -265,7 +265,8 @@ CacheType CacheType::StormTracking(
     std::chrono::nanoseconds grace_interval,
     std::uint32_t fan_out,
     std::chrono::nanoseconds inflight_ttl,
-    std::chrono::nanoseconds sleep) {
+    std::chrono::nanoseconds sleep,
+    Tag) {
     CacheType c(Kind::StormTracking);
     c.entry_capacity_ = entry_capacity;
     c.entry_pruning_tail_size_ = entry_pruning_tail_size;
