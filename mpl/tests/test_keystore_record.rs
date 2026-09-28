@@ -101,15 +101,12 @@ fn record_format_optional_custom_ec_round_trips() {
         branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key()).unwrap();
     assert_eq!(result.encryption_context().len(), 2);
     assert_eq!(
-        result.encryption_context().get(b"tenant".as_ref()).unwrap(),
-        b"acme-corp"
+        result.encryption_context().get("tenant").unwrap(),
+        "acme-corp"
     );
     assert_eq!(
-        result
-            .encryption_context()
-            .get(b"department".as_ref())
-            .unwrap(),
-        b"finance"
+        result.encryption_context().get("department").unwrap(),
+        "finance"
     );
 }
 
@@ -227,10 +224,7 @@ fn materials_encryption_context_constructed_by_custom_ec() {
     let result =
         branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key()).unwrap();
     assert_eq!(result.encryption_context().len(), 1);
-    assert_eq!(
-        result.encryption_context().get(b"org".as_ref()).unwrap(),
-        b"amazon"
-    );
+    assert_eq!(result.encryption_context().get("org").unwrap(), "amazon");
 }
 
 #[test]
@@ -250,8 +244,8 @@ fn custom_ec_extraction_strips_prefix() {
     auth_ec.insert("branch-key-id".to_string(), "id".to_string());
 
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
-    assert!(result.contains_key(b"mykey"));
-    assert!(!result.contains_key(format!("{}mykey", CUSTOM_EC_PREFIX).as_bytes()));
+    assert!(result.contains_key("mykey"));
+    assert!(!result.contains_key(&format!("{}mykey", CUSTOM_EC_PREFIX)));
 }
 
 #[test]
@@ -261,8 +255,8 @@ fn custom_ec_extraction_preserves_values() {
     auth_ec.insert(format!("{}size", CUSTOM_EC_PREFIX), "large".to_string());
 
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
-    assert_eq!(result.get(b"color".as_ref()).unwrap(), b"blue");
-    assert_eq!(result.get(b"size".as_ref()).unwrap(), b"large");
+    assert_eq!(result.get("color").unwrap(), "blue");
+    assert_eq!(result.get("size").unwrap(), "large");
 }
 
 #[test]
@@ -275,7 +269,7 @@ fn custom_ec_extraction_ignores_non_prefixed_keys() {
 
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
     assert_eq!(result.len(), 1);
-    assert!(result.contains_key(b"included"));
+    assert!(result.contains_key("included"));
 }
 
 #[test]

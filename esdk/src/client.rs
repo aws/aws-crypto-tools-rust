@@ -12,7 +12,7 @@
 //! function with those fields filled in from the client.
 //!
 //! Callers who don't want a client can keep using the free functions and set
-//! `commitment_policy` / `max_encrypted_data_keys` directly on the input.
+//! `commitment_policy` / `max_encrypted_data_keys` on the input's builder.
 //!
 //! Per-call config on the input AND a configured `Esdk` is currently rejected:
 //! returning an error today is forward-compatible (override semantics can be
@@ -75,8 +75,8 @@ impl Default for EsdkConfig {
 /// validation error. Override semantics may be defined in a future release;
 /// callers should set the fields in exactly one place.
 ///
-/// Note: `input.commitment_policy` set to its default value is not detected as
-/// a conflict; configure it via [`Esdk::builder`] only.
+/// Note: an input commitment policy set to its default value is not detected as a conflict;
+/// configure it via [`Esdk::builder`] only.
 ///
 /// # Example
 ///
@@ -84,7 +84,11 @@ impl Default for EsdkConfig {
 /// let esdk = Esdk::builder()
 ///     .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build();
-/// let input = EncryptInput::with_keyring(plaintext, ec, keyring);
+/// let input = EncryptInput::builder()
+///     .plaintext(plaintext)
+///     .encryption_context(ec)
+///     .keyring(keyring)
+///     .build()?;
 /// let output = esdk.encrypt(&input).await?;
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
@@ -124,10 +128,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some` (config provided
-    /// in two places). Otherwise, returns whatever
-    /// [`encrypt`](crate::encrypt) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set (config provided in two places).
+    /// Otherwise, returns whatever [`encrypt`](crate::encrypt) returns.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
@@ -139,9 +142,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some`. Otherwise,
-    /// returns whatever [`decrypt`](crate::decrypt) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`decrypt`](crate::decrypt) returns.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
@@ -153,9 +156,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some`. Otherwise,
-    /// returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
     pub async fn encrypt_stream(
         &self,
         plaintext: &mut dyn SafeRead,
@@ -170,9 +173,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if `input.commitment_policy` is not the
-    /// default or `input.max_encrypted_data_keys` is `Some`. Otherwise,
-    /// returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
+    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// or its EDK cap is set.
+    /// Otherwise, returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
     pub async fn decrypt_stream(
         &self,
         ciphertext: &mut dyn SafeRead,

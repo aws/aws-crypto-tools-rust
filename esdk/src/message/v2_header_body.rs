@@ -4,7 +4,7 @@
 //! V2 message header body serialization and deserialization.
 
 use super::encrypted_data_keys::{read_edks, write_edks};
-use super::encryption_context::{read_canonical_ec, write_aad_section};
+use super::encryption_context::{read_encryption_context, write_aad_section};
 use super::header_types::{
     MessageFormatVersion, V2HeaderBody, read_content_type, read_esdk_suite_id, read_message_id_v2,
     write_content_type, write_esdk_suite_id, write_message_id, write_msg_format_version,
@@ -157,7 +157,7 @@ pub(crate) fn read_v2_header_body(
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [AAD](../data-format/message-header.md#aad).
-    let encryption_context: Vec<(String, String)> = read_canonical_ec(r, raw)?;
+    let encryption_context = read_encryption_context(r, raw)?;
 
     // Encrypted Data Keys
 

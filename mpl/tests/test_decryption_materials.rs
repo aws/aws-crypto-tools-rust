@@ -14,12 +14,8 @@ const P256_SIGN_SUITE: EsdkAlgorithmSuiteId =
 const SIGN_SUITE: EsdkAlgorithmSuiteId =
     EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384;
 
-fn make_ec_with_keys(keys: &[&[u8]]) -> EncryptionContext {
-    let mut ec = EncryptionContext::new();
-    for k in keys {
-        ec.insert(k.to_vec(), b"val".to_vec());
-    }
-    ec
+fn make_ec_with_keys(keys: &[&str]) -> EncryptionContext {
+    keys.iter().map(|&k| (k, "val")).collect()
 }
 
 // SEC1 compressed P-256 verification key: 1 byte tag (0x02) + 32 bytes X = 33 bytes.
@@ -48,8 +44,8 @@ fn test_valid_construction_minimal() {
 
 #[test]
 fn test_valid_construction_with_all_optional_fields() {
-    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
-    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
+    let reck = BTreeSet::from(["k1".to_string()]);
     let pdk = PlaintextDataKey::new(b"secret".to_vec());
     let vk = p384_verification_key();
 
@@ -60,8 +56,8 @@ fn test_valid_construction_with_all_optional_fields() {
 
 #[test]
 fn test_required_ec_keys_must_be_subset() {
-    let ec = make_ec_with_keys(&[b"existing"]);
-    let reck = BTreeSet::from([b"missing".to_vec()]);
+    let ec = make_ec_with_keys(&["existing"]);
+    let reck = BTreeSet::from(["missing".to_string()]);
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE.into(), ec, reck, None, None, None);
     assert!(result.is_err());
@@ -102,7 +98,7 @@ fn test_verification_key_length_must_match_algorithm_suite() {
         (SIGN_SUITE, 200),     // too long for P-384
     ];
     for (suite_id, bad_len) in cases {
-        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+        let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
         let reck = BTreeSet::new();
         let bad_vk = VerificationKey::new(vec![0x04; bad_len]);
 
@@ -127,7 +123,7 @@ fn test_verification_key_correct_length_succeeds() {
         (SIGN_SUITE, p384_verification_key()),
     ];
     for (suite_id, vk) in cases {
-        let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+        let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
         let reck = BTreeSet::new();
 
         let result = DecryptionMaterials::new(suite_id.into(), ec, reck, None, Some(vk), None);
@@ -156,7 +152,7 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
 
 #[test]
 fn test_validate_aws_crypto_public_key_happy_path() {
-    let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+    let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
     let reck = BTreeSet::new();
     let vk = p384_verification_key();
 
@@ -166,7 +162,7 @@ fn test_validate_aws_crypto_public_key_happy_path() {
 
 #[test]
 fn test_validate_aws_crypto_public_key_should_not_include_without_verification() {
-    let ec = make_ec_with_keys(&[b"aws-crypto-public-key"]);
+    let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
     let reck = BTreeSet::new();
 
     let mat = DecryptionMaterials::new(NO_SIGN_SUITE.into(), ec, reck, None, None, None).unwrap();
@@ -209,8 +205,8 @@ fn test_symmetric_signing_key_debug_redacted_dec() {
 
 #[test]
 fn test_field_getters_return_constructed_values() {
-    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
-    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
+    let reck = BTreeSet::from(["k1".to_string()]);
     let pdk = PlaintextDataKey::new(b"secret".to_vec());
     let vk = p384_verification_key();
 
@@ -246,8 +242,8 @@ fn test_field_getters_return_none_for_omitted_optional_fields() {
 
 #[test]
 fn test_debug_format_includes_all_fields() {
-    let ec = make_ec_with_keys(&[b"k1", b"aws-crypto-public-key"]);
-    let reck = BTreeSet::from([b"k1".to_vec()]);
+    let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
+    let reck = BTreeSet::from(["k1".to_string()]);
     let pdk = PlaintextDataKey::new(b"secret".to_vec());
     let vk = p384_verification_key();
 
@@ -267,7 +263,7 @@ fn test_debug_format_includes_all_fields() {
 #[test]
 fn test_validate_aws_crypto_public_key_should_include_with_verification() {
     // EC does NOT contain aws-crypto-public-key, but verification key IS present
-    let ec = make_ec_with_keys(&[b"other-key"]);
+    let ec = make_ec_with_keys(&["other-key"]);
     let reck = BTreeSet::new();
     let vk = p384_verification_key();
 

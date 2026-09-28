@@ -78,11 +78,7 @@ pub fn custom_encryption_context_from_authenticated_encryption_context(
 
     for (key, value) in authenticated_ec {
         if let Some(stripped) = key.strip_prefix(CUSTOM_EC_PREFIX) {
-            let ec_key = stripped.as_bytes().to_vec();
-
-            let ec_value = value.as_bytes().to_vec();
-
-            ec.insert(ec_key, ec_value);
+            ec.insert(stripped, value.as_str());
         }
     }
 

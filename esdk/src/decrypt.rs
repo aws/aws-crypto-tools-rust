@@ -9,7 +9,6 @@ use crate::error::{Error, esdk_err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::header_types::ContentType;
-use crate::message::serializable_types::{from_canonical_pairs, to_canonical_pairs};
 use crate::message::{
     DigestWriter, NoopWriter, body, encryption_context, footer, header, header_auth, header_types,
     serialize_functions, v2_header_body,
@@ -94,8 +93,6 @@ pub async fn decrypt_stream(
     plaintext: &mut dyn SafeWrite,
     input: &DecryptStreamInput,
 ) -> Result<DecryptStreamOutput, Error> {
-    input.validate()?;
-
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
     //= reason=No such configuration option is provided; multi-frame signed streaming unconditionally fails during body decode and single-frame signed is buffered until after signature verification, so unverified plaintext is never released early.
@@ -121,7 +118,6 @@ pub async fn decrypt_stream(
 /// # Errors
 /// Returns an error if input validation, header parsing, decryption, or signature verification fails.
 pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
-    input.validate()?;
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
     //= spec/client-apis/decrypt.md#behavior
@@ -306,9 +302,7 @@ async fn internal_decrypt(
     // header before serialization); on any overlap, prefer the authenticate-only value
     // because it was verified as AAD and is the source of truth.
     let mut ec = state.header.encryption_context;
-    for (k, v) in state.encryption_context_to_only_authenticate.iter() {
-        ec.insert(k.clone(), v.clone());
-    }
+    ec.extend(state.encryption_context_to_only_authenticate);
 
     //= spec/client-apis/streaming.md#outputs
     //= reason=All bytes written to SafeWrite before Ok is returned
@@ -389,7 +383,7 @@ async fn step_get_decryption_materials(
         ));
     }
 
-    let validated = materials::get_decryption_materials(
+    let dec_mat = materials::get_decryption_materials(
         cmm,
         algorithm_suite_id,
         header_body,
@@ -397,7 +391,6 @@ async fn step_get_decryption_materials(
         commitment_policy,
     )
     .await?;
-    let dec_mat = validated.materials;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# The algorithm suite used as input for all decryption described below MUST be the algorithm suite
@@ -468,10 +461,10 @@ async fn step_get_decryption_materials(
         )?;
     }
 
-    let header_encryption_context = from_canonical_pairs(header_body.encryption_context().clone());
+    let header_encryption_context = header_body.encryption_context().clone();
     let encryption_context_to_only_authenticate = build_encryption_context_to_only_authenticate(
-        &validated.encryption_context,
-        &validated.required_encryption_context_keys,
+        dec_mat.encryption_context(),
+        dec_mat.required_encryption_context_keys(),
     );
 
     let header = header::HeaderInfo {
@@ -500,12 +493,10 @@ fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
     //# the [decryption material's](../framework/structures.md#decryption-materials)
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys-1)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
-    let canonical_req_encryption_context =
-        to_canonical_pairs(&state.encryption_context_to_only_authenticate)?;
     let mut serialized_req_encryption_context = Vec::new();
     encryption_context::write_empty_ec_or_write_aad(
         &mut serialized_req_encryption_context,
-        &canonical_req_encryption_context,
+        &state.encryption_context_to_only_authenticate,
     )?;
 
     //= spec/client-apis/decrypt.md#verify-the-header
@@ -663,19 +654,12 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
 // in the decryption material's required encryption context keys.
 fn build_encryption_context_to_only_authenticate(
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &[String],
+    required_encryption_context_keys: &std::collections::BTreeSet<String>,
 ) -> EncryptionContext {
-    let required_keys: std::collections::BTreeSet<&[u8]> = required_encryption_context_keys
+    encryption_context
         .iter()
-        .map(String::as_bytes)
-        .collect();
-    let mut out = EncryptionContext::new();
-    for (key, value) in encryption_context.iter() {
-        if required_keys.contains(key.as_slice()) {
-            out.insert(key.clone(), value.clone());
-        }
-    }
-    out
+        .filter(|(key, _)| required_encryption_context_keys.contains(*key))
+        .collect()
 }
 
 fn verify_signature(

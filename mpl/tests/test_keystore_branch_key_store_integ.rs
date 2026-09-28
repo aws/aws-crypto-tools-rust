@@ -26,9 +26,7 @@ use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
 use aws_crypto_mpl::error_chain::aws_service_error_code;
-use aws_crypto_mpl::{
-    BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
-};
+use aws_crypto_mpl::{BranchKeyStore, Keystore, KmsConfiguration, keystore::KeystoreErrorKind};
 
 // ─── Fixtures (mirror Fixtures.dfy) ─────────────────────────────────────────
 
@@ -89,17 +87,15 @@ async fn build_store(
     kms_client: KmsClient,
     ddb_client: DynamoDbClient,
 ) -> BranchKeyStore {
-    BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-        kms_configuration,
-        logical_keystore_name: logical_keystore_name.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb_client),
-        kms_client: Some(kms_client),
-    })
-    .await
-    .expect("construction with valid config must succeed")
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(kms_configuration)
+        .logical_keystore_name(logical_keystore_name)
+        .ddb_client(ddb_client)
+        .kms_client(kms_client)
+        .build()
+        .await
+        .expect("construction with valid config must succeed")
 }
 
 // ─── TestGetActiveKey ───────────────────────────────────────────────────────
@@ -423,17 +419,15 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
     // as `Unhandled` carrying `AccessDeniedException`. A caller permitted on
     // the whole table namespace instead sees `ResourceNotFoundException`. Both
     // are the same nesting, which is what is under test here.
-    let store = BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: "aws-crypto-tools-rust-table-that-does-not-exist".to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-        logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb_client_us_west_2().await),
-        kms_client: Some(kms_client_for_region("us-west-2").await),
-    })
-    .await
-    .expect("construction does not touch DynamoDB, so it must succeed");
+    let store = BranchKeyStore::builder()
+        .ddb_table_name("aws-crypto-tools-rust-table-that-does-not-exist")
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb_client_us_west_2().await)
+        .kms_client(kms_client_for_region("us-west-2").await)
+        .build()
+        .await
+        .expect("construction does not touch DynamoDB, so it must succeed");
 
     let err = match store.get_active_branch_key(BRANCH_KEY_ID.to_string()).await {
         Ok(_) => panic!("GetItem against an unreachable table MUST fail"),

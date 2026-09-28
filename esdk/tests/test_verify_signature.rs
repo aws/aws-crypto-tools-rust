@@ -18,10 +18,12 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let keyring = test_keyring().await;
     let plaintext = b"tamper footer test";
 
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Footer layout per the Message Footer spec: [signature length: UInt16 BE (2 bytes)][signature].
@@ -31,10 +33,16 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[signature_start] ^= 0xFF;
 
-    let valid_input =
-        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let tampered_input =
-        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+    let valid_input = DecryptInput::builder()
+        .ciphertext(&valid_ct)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder()
+        .ciphertext(&tampered_ct)
+        .keyring(keyring)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test
@@ -75,25 +83,21 @@ async fn test_verify_signature_inputs_directly_verified() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = EncryptInput::with_keyring(
-        b"verify inputs direct test",
-        EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = EncryptInput::builder()
+        .plaintext(b"verify inputs direct test")
+        .keyring(keyring)
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
     // Verification key is base64-encoded in the output encryption context.
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .expect("signing suite must publish verification key in EC");
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .unwrap();
+    let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
 
     // Parse the footer per Message Footer spec: [sig_len: UInt16 BE][signature: sig_len bytes].
     let (footer_offset, sig_len) = find_footer_offset(ct);
@@ -197,20 +201,28 @@ async fn test_footer_wait_truncated_message_fails() {
     let keyring = test_keyring().await;
     let plaintext = b"truncated footer test";
 
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Truncate the footer signature: keep sig_len but drop the signature bytes.
     let footer_offset = find_footer_offset_only(&valid_ct);
     let truncated_ct = valid_ct[..footer_offset + 2].to_vec();
 
-    let valid_input =
-        DecryptInput::with_keyring(&valid_ct, EncryptionContext::new(), keyring.clone());
-    let truncated_input =
-        DecryptInput::with_keyring(&truncated_ct, EncryptionContext::new(), keyring);
+    let valid_input = DecryptInput::builder()
+        .ciphertext(&valid_ct)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
+    let truncated_input = DecryptInput::builder()
+        .ciphertext(&truncated_ct)
+        .keyring(keyring)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test

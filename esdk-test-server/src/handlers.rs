@@ -13,14 +13,14 @@ use crate::model::{
 };
 use aws_esdk::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
 use aws_esdk::EsdkCommitmentPolicy as MplCommitmentPolicy;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Keyring as EsdkKeyring};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, SharedKeyring};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 /// The materials a registered client encrypts/decrypts with.
 struct ClientEntry {
-    keyring: EsdkKeyring,
+    keyring: SharedKeyring,
     commitment_policy: MplCommitmentPolicy,
     max_encrypted_data_keys: Option<NonZeroUsize>,
 }
@@ -172,7 +172,7 @@ impl AppState {
     fn materials(
         &self,
         client_id: &str,
-    ) -> Result<(EsdkKeyring, MplCommitmentPolicy, Option<NonZeroUsize>), ServerError> {
+    ) -> Result<(SharedKeyring, MplCommitmentPolicy, Option<NonZeroUsize>), ServerError> {
         if client_id.is_empty() {
             return Err(ServerError::generic("clientId must be non-empty"));
         }

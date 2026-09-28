@@ -3,12 +3,11 @@
 
 //! Type definitions for message header fields.
 
-use super::serializable_types::ESDKCanonicalEncryptionContext;
 use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, write_u8};
 use super::{Error, ser_err};
 use crate::error::val_err_with_cause;
 use crate::suites::algorithm_suite_from_bytes;
-use crate::types::{SafeRead, SafeWrite};
+use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 
@@ -132,7 +131,7 @@ pub struct V1HeaderBody {
     pub(crate) message_type: MessageType,
     pub(crate) algorithm_suite: AlgorithmSuite,
     pub(crate) message_id: MessageId,
-    pub(crate) encryption_context: ESDKCanonicalEncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
     pub(crate) content_type: ContentType,
     pub(crate) header_iv_length: u8,
@@ -144,7 +143,7 @@ pub struct V1HeaderBody {
 pub struct V2HeaderBody {
     pub(crate) algorithm_suite: AlgorithmSuite,
     pub(crate) message_id: MessageId,
-    pub(crate) encryption_context: ESDKCanonicalEncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
     pub(crate) content_type: ContentType,
     pub(crate) frame_length: u32,
@@ -185,7 +184,7 @@ impl HeaderBody {
             Self::V2Body(body) => body.message_id.as_slice(),
         }
     }
-    pub(crate) const fn encryption_context(&self) -> &ESDKCanonicalEncryptionContext {
+    pub(crate) const fn encryption_context(&self) -> &EncryptionContext {
         match self {
             Self::V1Body(body) => &body.encryption_context,
             Self::V2Body(body) => &body.encryption_context,

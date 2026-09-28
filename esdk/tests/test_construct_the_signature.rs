@@ -44,24 +44,23 @@ async fn test_signature_uses_signing_algorithm() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"algorithm choice test",
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"algorithm choice test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring)
+        .algorithm_suite_id(
+            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .build()
+        .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .unwrap();
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .unwrap();
+    let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
     let (footer_offset, sig_len) = find_footer_offset(ct);
     let signature = &ct[footer_offset + 2..footer_offset + 2 + sig_len as usize];
     let signed_content = &ct[..footer_offset];
@@ -112,25 +111,25 @@ async fn test_signature_key_is_signing_key() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"signing key direct test",
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"signing key direct test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring)
+        .algorithm_suite_id(
+            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .build()
+        .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
     // Extract verification key from output encryption context.
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .expect("signing suite must produce aws-crypto-public-key in EC");
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .expect("public key must be valid base64");
+    let verification_key =
+        aws_smithy_types::base64::decode(pub_key_b64).expect("public key must be valid base64");
 
     // Parse the footer: last 2+sig_len bytes of ciphertext.
     let (footer_offset, sig_len) = find_footer_offset(ct);
@@ -304,24 +303,23 @@ async fn test_footer_equals_calculated() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"footer equals calculated test",
-        aws_esdk::EncryptionContext::new(),
-        keyring.clone(),
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"footer equals calculated test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring.clone())
+        .algorithm_suite_id(
+            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .build()
+        .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
     let pub_key_b64 = output
         .encryption_context
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .unwrap();
-    let verification_key = aws_smithy_types::base64::decode(
-        String::from_utf8(pub_key_b64.clone()).expect("EC value must be UTF-8"),
-    )
-    .unwrap();
+    let verification_key = aws_smithy_types::base64::decode(pub_key_b64).unwrap();
     let (footer_offset, sig_len) = find_footer_offset(ct);
     let signature = &ct[footer_offset + 2..footer_offset + 2 + sig_len as usize];
     let signed_content = &ct[..footer_offset];
@@ -341,8 +339,12 @@ async fn test_footer_equals_calculated() {
     );
 
     // Round-trip corroboration.
-    let dec_input =
-        aws_esdk::DecryptInput::with_keyring(ct, aws_esdk::EncryptionContext::new(), keyring);
+    let dec_input = aws_esdk::DecryptInput::builder()
+        .ciphertext(ct)
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring)
+        .build()
+        .unwrap();
     let pt = aws_esdk::decrypt(&dec_input).await.unwrap().plaintext;
     assert_eq!(pt, b"footer equals calculated test");
 }
@@ -374,13 +376,15 @@ async fn test_no_signature_without_signing_suite() {
 async fn test_footer_serialized_releases_all_bytes() {
     // Signing suite output ends exactly at the footer; proves all bytes released atomically.
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"release all bytes test",
-        aws_esdk::EncryptionContext::new(),
-        keyring.clone(),
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"release all bytes test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring.clone())
+        .algorithm_suite_id(
+            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        )
+        .build()
+        .unwrap();
     let ct = aws_esdk::encrypt(&enc_input).await.unwrap().ciphertext;
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);

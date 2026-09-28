@@ -1,7 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::structures::EncryptionContext;
+use std::collections::{BTreeMap, HashMap};
+
+use aws_crypto_mpl::structures::{EncryptionContext, MaterialsErrorKind};
 
 #[test]
 fn test_empty_serializes_to_empty_bytes() {
@@ -13,7 +15,7 @@ fn test_empty_serializes_to_empty_bytes() {
 #[test]
 fn test_single_entry_round_trip() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"key1".to_vec(), b"value1".to_vec());
+    ec.insert("key1", "value1");
 
     let serialized = ec.serialize().unwrap();
     let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
@@ -24,9 +26,9 @@ fn test_single_entry_round_trip() {
 fn test_multiple_entries_serialized_in_sorted_order() {
     let mut ec = EncryptionContext::new();
     // Insert in reverse order
-    ec.insert(b"zebra".to_vec(), b"z".to_vec());
-    ec.insert(b"apple".to_vec(), b"a".to_vec());
-    ec.insert(b"mango".to_vec(), b"m".to_vec());
+    ec.insert("zebra", "z");
+    ec.insert("apple", "a");
+    ec.insert("mango", "m");
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let serialized = ec.serialize().unwrap();
@@ -63,11 +65,23 @@ fn test_duplicate_key_rejected_on_deserialize() {
 }
 
 #[test]
+fn test_out_of_order_keys_rejected_on_deserialize() {
+    let bytes: &[u8] = &[
+        0x00, 0x02, // count = 2
+        0x00, 0x01, b'b', 0x00, 0x01, b'2', // b -> 2
+        0x00, 0x01, b'a', 0x00, 0x01, b'1', // a -> 1
+    ];
+    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(err.message.contains("not in ascending order"));
+}
+
+#[test]
 fn test_round_trip_preserves_all_entries() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"key1".to_vec(), b"value1".to_vec());
-    ec.insert(b"key2".to_vec(), b"value2".to_vec());
-    ec.insert(b"key3".to_vec(), b"value3".to_vec());
+    ec.insert("key1", "value1");
+    ec.insert("key2", "value2");
+    ec.insert("key3", "value3");
 
     let serialized = ec.serialize().unwrap();
     let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
@@ -86,45 +100,44 @@ fn test_key_value_pair_count_must_be_greater_than_zero() {
 }
 
 #[test]
-fn test_from_map_round_trip() {
-    let mut map = std::collections::BTreeMap::new();
-    map.insert(b"alpha".to_vec(), b"one".to_vec());
-    map.insert(b"beta".to_vec(), b"two".to_vec());
+fn test_from_btreemap_round_trip() {
+    let mut map = BTreeMap::new();
+    map.insert("alpha".to_string(), "one".to_string());
+    map.insert("beta".to_string(), "two".to_string());
 
-    let ec = EncryptionContext::from_map(map);
+    let ec = EncryptionContext::from(map.clone());
     assert_eq!(ec.len(), 2);
-    assert_eq!(ec.get(b"alpha").unwrap(), &b"one".to_vec());
+    assert_eq!(ec.get("alpha"), Some("one"));
+    assert_eq!(ec.as_map(), &map);
 }
 
 #[test]
 fn test_get_returns_none_for_absent_key() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"present".to_vec(), b"val".to_vec());
-    assert!(ec.get(b"missing").is_none());
+    ec.insert("present", "val");
+    assert!(ec.get("missing").is_none());
 }
 
 #[test]
 fn test_iter_yields_all_entries() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"a".to_vec(), b"1".to_vec());
-    ec.insert(b"b".to_vec(), b"2".to_vec());
-    ec.insert(b"c".to_vec(), b"3".to_vec());
+    ec.insert("a", "1");
+    ec.insert("b", "2");
+    ec.insert("c", "3");
 
     let entries: Vec<_> = ec.iter().collect();
     assert_eq!(entries.len(), 3);
-    assert_eq!(entries[0], (&b"a".to_vec(), &b"1".to_vec()));
-    assert_eq!(entries[1], (&b"b".to_vec(), &b"2".to_vec()));
-    assert_eq!(entries[2], (&b"c".to_vec(), &b"3".to_vec()));
+    assert_eq!(entries, vec![("a", "1"), ("b", "2"), ("c", "3")]);
 }
 
 #[test]
 fn test_as_map_returns_inner_btreemap() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), b"v".to_vec());
+    ec.insert("k", "v");
 
     let map = ec.as_map();
     assert_eq!(map.len(), 1);
-    assert_eq!(map.get(&b"k".to_vec()).unwrap(), &b"v".to_vec());
+    assert_eq!(map.get("k").map(String::as_str), Some("v"));
 }
 
 #[test]
@@ -133,14 +146,14 @@ fn test_is_empty_branches() {
     assert!(ec.is_empty());
 
     let mut ec2 = EncryptionContext::new();
-    ec2.insert(b"x".to_vec(), b"y".to_vec());
+    ec2.insert("x", "y");
     assert!(!ec2.is_empty());
 }
 
 #[test]
 fn test_debug_format() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"key".to_vec(), b"val".to_vec());
+    ec.insert("key", "val");
     let debug_str = format!("{:?}", ec);
     assert!(debug_str.contains("EncryptionContext"));
 }
@@ -230,7 +243,7 @@ fn test_deserialize_insufficient_bytes_for_value() {
 #[test]
 fn test_serialize_rejects_oversize_key() {
     let mut ec = EncryptionContext::new();
-    ec.insert(vec![0xAA; 70_000], b"val".to_vec());
+    ec.insert("a".repeat(70_000), "val");
 
     let result = ec.serialize();
     assert!(result.is_err());
@@ -242,7 +255,7 @@ fn test_serialize_rejects_oversize_key() {
 #[test]
 fn test_serialize_rejects_oversize_value() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"key".to_vec(), vec![0xBB; 70_000]);
+    ec.insert("key", "b".repeat(70_000));
 
     let result = ec.serialize();
     assert!(result.is_err());
@@ -261,7 +274,7 @@ fn test_deserialize_empty_bytes_returns_empty_context() {
 fn test_serialize_rejects_too_many_entries() {
     let mut ec = EncryptionContext::new();
     for i in 0..=u16::MAX as u32 {
-        ec.insert(i.to_be_bytes().to_vec(), b"v".to_vec());
+        ec.insert(i.to_string(), "v");
     }
 
     let result = ec.serialize();
@@ -274,9 +287,9 @@ fn test_serialize_rejects_too_many_entries() {
 #[test]
 fn test_contains_key() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"present".to_vec(), b"v".to_vec());
-    assert!(ec.contains_key(b"present"));
-    assert!(!ec.contains_key(b"absent"));
+    ec.insert("present", "v");
+    assert!(ec.contains_key("present"));
+    assert!(!ec.contains_key("absent"));
 }
 
 #[test]
@@ -291,23 +304,23 @@ fn test_default_produces_empty_context() {
 #[test]
 fn test_insert_overwrites_existing_key() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), b"v1".to_vec());
-    ec.insert(b"k".to_vec(), b"v2".to_vec());
-    assert_eq!(ec.get(b"k"), Some(&b"v2".to_vec()));
+    ec.insert("k", "v1");
+    ec.insert("k", "v2");
+    assert_eq!(ec.get("k"), Some("v2"));
     assert_eq!(ec.len(), 1);
 }
 
 #[test]
 fn test_equality_is_order_independent() {
     let mut ec_a = EncryptionContext::new();
-    ec_a.insert(b"b".to_vec(), b"2".to_vec());
-    ec_a.insert(b"a".to_vec(), b"1".to_vec());
-    ec_a.insert(b"c".to_vec(), b"3".to_vec());
+    ec_a.insert("b", "2");
+    ec_a.insert("a", "1");
+    ec_a.insert("c", "3");
 
     let mut ec_b = EncryptionContext::new();
-    ec_b.insert(b"a".to_vec(), b"1".to_vec());
-    ec_b.insert(b"b".to_vec(), b"2".to_vec());
-    ec_b.insert(b"c".to_vec(), b"3".to_vec());
+    ec_b.insert("a", "1");
+    ec_b.insert("b", "2");
+    ec_b.insert("c", "3");
 
     assert_eq!(ec_a, ec_b);
 
@@ -321,7 +334,7 @@ fn test_equality_is_order_independent() {
 fn test_serialize_produces_known_bytes() {
     // Pin the wire format with a hand-computed vector for {"a" -> "1"}.
     let mut ec = EncryptionContext::new();
-    ec.insert(b"a".to_vec(), b"1".to_vec());
+    ec.insert("a", "1");
 
     let expected: &[u8] = &[
         0x00, 0x01, // count = 1
@@ -339,30 +352,30 @@ fn test_deserialize_known_bytes_produces_expected_context() {
     let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, b'1'];
     let ec = EncryptionContext::deserialize(bytes).unwrap();
     assert_eq!(ec.len(), 1);
-    assert_eq!(ec.get(b"a"), Some(&b"1".to_vec()));
+    assert_eq!(ec.get("a"), Some("1"));
 }
 
 #[test]
 fn test_serialize_accepts_max_u16_key_length() {
     // Existing tests prove >u16::MAX is rejected; lock the at-max success path.
     let mut ec = EncryptionContext::new();
-    let max_key = vec![0xAA; u16::MAX as usize];
-    ec.insert(max_key.clone(), b"v".to_vec());
+    let max_key = "a".repeat(u16::MAX as usize);
+    ec.insert(max_key.clone(), "v");
 
     let serialized = ec.serialize().unwrap();
     let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
-    assert_eq!(deserialized.get(&max_key), Some(&b"v".to_vec()));
+    assert_eq!(deserialized.get(&max_key), Some("v"));
 }
 
 #[test]
 fn test_serialize_accepts_max_u16_value_length() {
     let mut ec = EncryptionContext::new();
-    let max_val = vec![0xBB; u16::MAX as usize];
-    ec.insert(b"k".to_vec(), max_val.clone());
+    let max_val = "b".repeat(u16::MAX as usize);
+    ec.insert("k", max_val.clone());
 
     let serialized = ec.serialize().unwrap();
     let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
-    assert_eq!(deserialized.get(b"k"), Some(&max_val));
+    assert_eq!(deserialized.get("k"), Some(max_val.as_str()));
 }
 
 #[test]
@@ -370,7 +383,7 @@ fn test_serialize_accepts_max_u16_entry_count() {
     let mut ec = EncryptionContext::new();
     // Insert exactly u16::MAX (65_535) distinct entries.
     for i in 0..u16::MAX as u32 {
-        ec.insert(i.to_be_bytes().to_vec(), b"v".to_vec());
+        ec.insert(i.to_string(), "v");
     }
     assert_eq!(ec.len(), u16::MAX as usize);
 
@@ -387,10 +400,10 @@ fn test_round_trip_preserves_multibyte_utf8() {
     //   3-byte CJK    : '日' (U+65E5)  -> [0xE6, 0x97, 0xA5]
     //   4-byte emoji  : '🦀' (U+1F980) -> [0xF0, 0x9F, 0xA6, 0x80]
     let mut ec = EncryptionContext::new();
-    ec.insert(b"a".to_vec(), "ascii".as_bytes().to_vec());
-    ec.insert("é".as_bytes().to_vec(), "latín".as_bytes().to_vec());
-    ec.insert("日".as_bytes().to_vec(), "中文".as_bytes().to_vec());
-    ec.insert("🦀".as_bytes().to_vec(), "🎉🦀".as_bytes().to_vec());
+    ec.insert("a", "ascii");
+    ec.insert("é", "latín");
+    ec.insert("日", "中文");
+    ec.insert("🦀", "🎉🦀");
 
     let serialized = ec.serialize().unwrap();
     let deserialized = EncryptionContext::deserialize(&serialized).unwrap();
@@ -400,11 +413,8 @@ fn test_round_trip_preserves_multibyte_utf8() {
     // codepoint order. The structures.md spec mandates "ascending order
     // according to the UTF-8 encoded binary value", and BTreeMap iterates by
     // binary byte order; this asserts both agree across byte-length boundaries.
-    let keys: Vec<_> = deserialized.iter().map(|(k, _)| k.clone()).collect();
-    assert_eq!(keys[0], b"a");
-    assert_eq!(keys[1], "é".as_bytes());
-    assert_eq!(keys[2], "日".as_bytes());
-    assert_eq!(keys[3], "🦀".as_bytes());
+    let keys: Vec<_> = deserialized.keys().collect();
+    assert_eq!(keys, vec!["a", "é", "日", "🦀"]);
 }
 
 #[test]
@@ -412,7 +422,7 @@ fn test_serialize_known_bytes_for_4byte_utf8() {
     // Lock the wire format for a 4-byte UTF-8 codepoint on both halves of an
     // entry. Complements test_serialize_produces_known_bytes (1-byte ASCII).
     let mut ec = EncryptionContext::new();
-    ec.insert("🦀".as_bytes().to_vec(), "🦀".as_bytes().to_vec());
+    ec.insert("🦀", "🦀");
 
     let expected: &[u8] = &[
         0x00, 0x01, // count = 1
@@ -454,29 +464,10 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
 // EncryptionContext: current behavior on empty keys
 // ============================================================================
 //
-// The current Rust implementation of `EncryptionContext` accepts empty byte
-// keys at every entry point to the type:
-//
-//   1. EncryptionContext::insert(...)   — accepts an empty Vec<u8> key
-//   2. EncryptionContext::from_map(...) — accepts a BTreeMap with an empty key
-//   3. EncryptionContext::deserialize() — accepts a wire form with key_len = 0
-//   4. EncryptionContext::serialize()   — by symmetry with (1)/(2), will emit
-//                                         key_len = 0 for any empty-keyed entry
-//
-// The structures.md spec's encryption-context section describes entries as
-// UTF-8 byte strings but does not itself require keys to be non-empty, so
-// this is NOT a spec-conformance gap — it is simply a permissive design
-// choice worth pinning with regression tests so any future tightening of the
-// contract produces a deliberate, reviewable test failure rather than
-// silently changing observable behavior.
-//
-// If the contract is ever tightened (e.g., an internal invariant added
-// alongside a broader EncryptionContext validation pass), these tests should
-// be flipped: each `assert! / assert_eq!` should become an assertion that
-// the entry point returns an `Err(MaterialsError { kind:
-// MaterialsErrorKind::Validation, .. })`, and `from_map`'s return type
-// would change from `Self` to `Result<Self, MaterialsError>` — a breaking
-// API change deferred to a future EncryptionContext-invariants pass.
+// EncryptionContext accepts an empty key at every entry point:
+// insert, From<BTreeMap>, deserialize (key_len = 0), and serialize.
+// structures.md does not require non-empty keys.
+// These tests pin the permissive behavior so tightening it fails a test instead of changing silently.
 // ============================================================================
 
 #[test]
@@ -486,22 +477,20 @@ fn test_insert_accepts_empty_key_currently_unenforced() {
     // error path is taken (e.g., insert is changed to return Result and
     // returns Err on empty input).
     let mut ec = EncryptionContext::new();
-    ec.insert(Vec::new(), b"value".to_vec());
+    ec.insert("", "value");
     assert_eq!(ec.len(), 1);
-    assert_eq!(ec.get(&[]), Some(&b"value".to_vec()));
+    assert_eq!(ec.get(""), Some("value"));
 }
 
 #[test]
-fn test_from_map_accepts_empty_key_currently_unenforced() {
-    // CURRENT BEHAVIOR (permissive): from_map silently accepts a
-    // BTreeMap whose keys include an empty Vec<u8>.
-    // If/when empty keys are rejected, from_map's signature must change to
-    // Result<Self, MaterialsError>; this test would become an Err assertion.
-    let mut map = std::collections::BTreeMap::new();
-    map.insert(Vec::new(), b"value".to_vec());
-    let ec = EncryptionContext::from_map(map);
+fn test_from_btreemap_accepts_empty_key_currently_unenforced() {
+    // CURRENT BEHAVIOR (permissive): From<BTreeMap> accepts an empty key.
+    // If empty keys are ever rejected, this conversion becomes TryFrom and this test asserts Err.
+    let mut map = BTreeMap::new();
+    map.insert(String::new(), "value".to_string());
+    let ec = EncryptionContext::from(map);
     assert_eq!(ec.len(), 1);
-    assert!(ec.contains_key(&[]));
+    assert!(ec.contains_key(""));
 }
 
 #[test]
@@ -518,5 +507,102 @@ fn test_deserialize_accepts_empty_key_length_currently_unenforced() {
     ];
     let ec = EncryptionContext::deserialize(bytes).unwrap();
     assert_eq!(ec.len(), 1);
-    assert_eq!(ec.get(&[]), Some(&b"1".to_vec()));
+    assert_eq!(ec.get(""), Some("1"));
+}
+
+#[test]
+fn test_serialize_orders_by_utf8_bytes_not_utf16_code_units() {
+    // U+FF5E (EF BD 9E) sorts before U+1F600 (F0 9F 98 80) by UTF-8 bytes.
+    // By UTF-16 code units it sorts after: U+1F600 is the surrogate pair D83D DE00.
+    let ec = EncryptionContext::from([("\u{1F600}", "b"), ("\u{FF5E}", "a")]);
+
+    let expected: &[u8] = &[
+        0x00, 0x02, // count = 2
+        0x00, 0x03, 0xEF, 0xBD, 0x9E, // key U+FF5E
+        0x00, 0x01, b'a', // value
+        0x00, 0x04, 0xF0, 0x9F, 0x98, 0x80, // key U+1F600
+        0x00, 0x01, b'b', // value
+    ];
+    assert_eq!(ec.serialize().unwrap().as_slice(), expected);
+    assert_eq!(EncryptionContext::deserialize(expected).unwrap(), ec);
+}
+
+#[test]
+fn test_deserialize_rejects_invalid_utf8_key() {
+    let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, 0xFF, 0x00, 0x01, b'1'];
+    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(err.message.contains("key is not valid UTF-8"));
+}
+
+#[test]
+fn test_deserialize_rejects_invalid_utf8_value() {
+    let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, 0xFF];
+    let err = EncryptionContext::deserialize(bytes).unwrap_err();
+    assert_eq!(err.kind, MaterialsErrorKind::Validation);
+    assert!(err.message.contains("value is not valid UTF-8"));
+}
+
+#[test]
+fn test_try_from_byte_map_rejects_invalid_utf8() {
+    let valid = BTreeMap::from([(b"k".to_vec(), "\u{1F600}".as_bytes().to_vec())]);
+    assert_eq!(
+        EncryptionContext::try_from(valid).unwrap(),
+        EncryptionContext::from([("k", "\u{1F600}")])
+    );
+
+    let bad_key = BTreeMap::from([(vec![0xC3], b"v".to_vec())]);
+    let err = EncryptionContext::try_from(bad_key).unwrap_err();
+    assert!(err.message.contains("key is not valid UTF-8"));
+
+    let bad_value = BTreeMap::from([(b"k".to_vec(), vec![0xC3])]);
+    let err = EncryptionContext::try_from(bad_value).unwrap_err();
+    assert!(err.message.contains("value is not valid UTF-8"));
+}
+
+#[test]
+fn test_try_insert_utf8_rejects_invalid_utf8_and_leaves_context_unchanged() {
+    let mut ec = EncryptionContext::new();
+    assert_eq!(ec.try_insert_utf8(b"k", b"v").unwrap(), None);
+
+    let err = ec.try_insert_utf8(&[0xFF], b"v").unwrap_err();
+    assert!(err.message.contains("key is not valid UTF-8"));
+    let err = ec.try_insert_utf8(b"k", &[0xFF]).unwrap_err();
+    assert!(err.message.contains("value is not valid UTF-8"));
+
+    assert_eq!(ec, EncryptionContext::from([("k", "v")]));
+}
+
+#[test]
+fn test_string_conversions_agree() {
+    let expected = EncryptionContext::from([("a", "1"), ("b", "2")]);
+
+    let hash: HashMap<String, String> =
+        HashMap::from([("b".into(), "2".into()), ("a".into(), "1".into())]);
+    assert_eq!(EncryptionContext::from(hash), expected);
+    assert_eq!(
+        [("b", "2"), ("a", "1")]
+            .into_iter()
+            .collect::<EncryptionContext>(),
+        expected
+    );
+
+    let mut extended = EncryptionContext::from([("a", "1")]);
+    extended.extend([("b".to_string(), "2".to_string())]);
+    assert_eq!(extended, expected);
+
+    let owned: Vec<(String, String)> = expected.clone().into_iter().collect();
+    assert_eq!(
+        owned,
+        vec![("a".into(), "1".into()), ("b".into(), "2".into())]
+    );
+    assert_eq!((&expected).into_iter().count(), 2);
+}
+
+#[test]
+fn test_remove_returns_value() {
+    let mut ec = EncryptionContext::from([("k", "v")]);
+    assert_eq!(ec.remove("k"), Some("v".to_string()));
+    assert_eq!(ec.remove("k"), None);
+    assert!(ec.is_empty());
 }
