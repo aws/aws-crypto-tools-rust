@@ -758,3 +758,37 @@ fn test_debug_does_not_leak_the_wrapping_key() {
         "Debug must still show the non-secret configuration: {rendered}"
     );
 }
+
+#[tokio::test]
+async fn test_clone_is_interchangeable_with_original() {
+    let original = default_keyring();
+    let clone = original.clone();
+    let ec = small_encryption_context_a();
+
+    for (encryptor, decryptor) in [(&original, &clone), (&clone, &original)] {
+        let encrypt_output = encryptor
+            .on_encrypt(encryption_materials(ec.clone(), None))
+            .await
+            .expect("on_encrypt succeeds");
+        let pdk = encrypt_output
+            .plaintext_data_key()
+            .expect("on_encrypt must set a plaintext data key")
+            .as_bytes()
+            .to_vec();
+
+        let decrypt_output = decryptor
+            .on_decrypt(
+                decryption_materials(ec.clone(), None),
+                encrypt_output.encrypted_data_keys(),
+            )
+            .await
+            .expect("on_decrypt succeeds");
+        assert_eq!(
+            decrypt_output
+                .plaintext_data_key()
+                .expect("on_decrypt must set a plaintext data key")
+                .as_bytes(),
+            &pdk,
+        );
+    }
+}

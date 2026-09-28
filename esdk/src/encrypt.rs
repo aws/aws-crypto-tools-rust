@@ -61,7 +61,6 @@ struct EncryptionMaterialsResult {
 /// # Errors
 ///
 /// Returns an error if:
-/// - No keyring or CMM is provided (input validation fails)
 /// - The encryption context contains keys with the reserved `aws-crypto-` prefix
 /// - The algorithm suite is incompatible with the commitment policy
 /// - Encryption materials cannot be obtained from the CMM
@@ -71,8 +70,6 @@ struct EncryptionMaterialsResult {
 //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
 //# that adheres to [encrypt](./encrypt.md).
 pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
-    input.validate()?;
-
     let mut cursor = std::io::Cursor::new(input.plaintext);
 
     let total_size = estimated_ciphertext_capacity(input.plaintext.len(), input.frame_length);
@@ -115,7 +112,6 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 /// # Errors
 ///
 /// Returns an error if:
-/// - No keyring or CMM is provided (input validation fails)
 /// - The encryption context contains keys with the reserved `aws-crypto-` prefix
 /// - The algorithm suite is incompatible with the commitment policy
 /// - Encryption materials cannot be obtained from the CMM
@@ -146,8 +142,6 @@ pub async fn encrypt_stream(
     ciphertext: &mut dyn SafeWrite,
     input: &EncryptStreamInput,
 ) -> Result<EncryptStreamOutput, Error> {
-    input.validate()?;
-
     internal_encrypt(
         plaintext,
         ciphertext,

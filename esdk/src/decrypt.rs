@@ -93,8 +93,6 @@ pub async fn decrypt_stream(
     plaintext: &mut dyn SafeWrite,
     input: &DecryptStreamInput,
 ) -> Result<DecryptStreamOutput, Error> {
-    input.validate()?;
-
     //= spec/client-apis/decrypt.md#behavior
     //= type=exception
     //= reason=No such configuration option is provided; multi-frame signed streaming unconditionally fails during body decode and single-frame signed is buffered until after signature verification, so unverified plaintext is never released early.
@@ -120,7 +118,6 @@ pub async fn decrypt_stream(
 /// # Errors
 /// Returns an error if input validation, header parsing, decryption, or signature verification fails.
 pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
-    input.validate()?;
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
     //= spec/client-apis/decrypt.md#behavior

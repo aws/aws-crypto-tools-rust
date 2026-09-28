@@ -41,11 +41,12 @@ fn assert_signing_key_composes(alg: EcdsaSignatureAlgorithm, sk: &[u8], vk_compr
 
 // ===== Mock Keyring =====
 
+#[derive(Clone)]
 struct MockKeyring {
     pdk_byte: u8,
     edk_provider_id: String,
-    encrypt_calls: AtomicU32,
-    decrypt_calls: AtomicU32,
+    encrypt_calls: Arc<AtomicU32>,
+    decrypt_calls: Arc<AtomicU32>,
 }
 
 impl MockKeyring {
@@ -53,8 +54,8 @@ impl MockKeyring {
         Self {
             pdk_byte: 0xAA,
             edk_provider_id: "mock-keyring".to_string(),
-            encrypt_calls: AtomicU32::new(0),
-            decrypt_calls: AtomicU32::new(0),
+            encrypt_calls: Arc::new(AtomicU32::new(0)),
+            decrypt_calls: Arc::new(AtomicU32::new(0)),
         }
     }
 }
@@ -129,7 +130,7 @@ fn allow_policy() -> CommitmentPolicy {
 
 #[tokio::test]
 async fn test_default_cmm_init_takes_only_keyring() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy());
     assert!(cmm.get_encryption_materials(request).await.is_ok());
@@ -137,7 +138,7 @@ async fn test_default_cmm_init_takes_only_keyring() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_does_not_mutate_callers_ec() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut caller_ec = EncryptionContext::new();
     caller_ec.insert("user-key", "user-value");
@@ -158,8 +159,8 @@ async fn test_get_encryption_materials_does_not_mutate_callers_ec() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_fails_when_ec_already_has_aws_crypto_public_key() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let mut ec = EncryptionContext::new();
     ec.insert("aws-crypto-public-key", "existing");
     let request = EncryptionMaterialsRequest::new(ec, allow_policy());
@@ -173,7 +174,7 @@ async fn test_get_encryption_materials_fails_when_ec_already_has_aws_crypto_publ
 
 #[tokio::test]
 async fn test_get_encryption_materials_no_suite_uses_commitment_policy_default() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
@@ -185,7 +186,7 @@ async fn test_get_encryption_materials_no_suite_uses_commitment_policy_default()
 
 #[tokio::test]
 async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     // ForbidEncryptAllowDecrypt only allows non-committing suites for encrypt
     let request = EncryptionMaterialsRequest::new(
@@ -202,7 +203,7 @@ async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_returns_same_suite_when_request_specifies_one() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let suite = non_signing_suite();
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
@@ -213,7 +214,7 @@ async fn test_get_encryption_materials_returns_same_suite_when_request_specifies
 
 #[tokio::test]
 async fn test_get_encryption_materials_signing_suite_attaches_generated_signing_key() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(signing_suite());
@@ -231,7 +232,7 @@ async fn test_get_encryption_materials_signing_suite_attaches_generated_signing_
 
 #[tokio::test]
 async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_key_in_ec() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(signing_suite());
@@ -246,8 +247,8 @@ async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_k
 
 #[tokio::test]
 async fn test_get_encryption_materials_calls_keyring_on_encrypt_once() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(non_signing_suite());
     cmm.get_encryption_materials(request).await.unwrap();
@@ -256,7 +257,7 @@ async fn test_get_encryption_materials_calls_keyring_on_encrypt_once() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_returns_pdk_set_by_keyring() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(non_signing_suite());
@@ -268,7 +269,7 @@ async fn test_get_encryption_materials_returns_pdk_set_by_keyring() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), allow_policy())
         .with_algorithm_suite_id(non_signing_suite());
@@ -283,7 +284,7 @@ async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
 
 #[tokio::test]
 async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let vk_raw = {
         // Valid P-384 SEC1-compressed shape: 0x02 tag + 48-byte X coordinate.
@@ -304,7 +305,7 @@ async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
 
 #[tokio::test]
 async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
         signing_suite(),
@@ -318,7 +319,7 @@ async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
 
 #[tokio::test]
 async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut ec = EncryptionContext::new();
     ec.insert("aws-crypto-public-key", "some-value");
@@ -329,7 +330,7 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
 
 #[tokio::test]
 async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     // RequireEncryptRequireDecrypt only allows committing suites
     let request = DecryptMaterialsRequest::new(
@@ -344,8 +345,8 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
 
 #[tokio::test]
 async fn test_decrypt_materials_calls_keyring_on_decrypt_once() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
         allow_policy(),
@@ -358,7 +359,7 @@ async fn test_decrypt_materials_calls_keyring_on_decrypt_once() {
 
 #[tokio::test]
 async fn test_decrypt_materials_returns_pdk_set_by_keyring() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
@@ -374,7 +375,7 @@ async fn test_decrypt_materials_returns_pdk_set_by_keyring() {
 
 #[tokio::test]
 async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = EncryptionMaterialsRequest::new(EncryptionContext::new(), forbid_policy())
         .with_algorithm_suite_id(p256_signing_suite());
@@ -397,7 +398,7 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
 
 #[tokio::test]
 async fn test_decrypt_materials_malformed_base64_public_key_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut ec = EncryptionContext::new();
     ec.insert("aws-crypto-public-key", "not-valid-base64!!!");
@@ -411,7 +412,7 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
 
 #[tokio::test]
 async fn test_decrypt_materials_wrong_verification_key_length_fails() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     // P-384 signing suite expects a 49-byte SEC1-compressed verification key;
     // provide a valid base64 that decodes to 10 bytes — wrong length.
@@ -432,7 +433,7 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
     // cmm-interface.md#decrypt-materials: keys present in both the reproduced
     // EC and the message EC with equal values MUST NOT fail.
     // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut message_ec = EncryptionContext::new();
     message_ec.insert("shared", "same-value");
@@ -467,7 +468,7 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
     // Reproduced Encryption Context and Encryption Context, the values MUST
     // be equal or the operation MUST fail."
     // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/cmm-interface.md#decrypt-materials
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut message_ec = EncryptionContext::new();
     message_ec.insert("shared", "message-value");
@@ -494,7 +495,7 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
     // So a reproduced-only pair must appear two ways in the returned materials:
     // added to the encryption context, and listed as a required key. The two
     // assertions below check exactly those, not just that the call succeeded.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let message_ec = EncryptionContext::new();
     let mut reproduced_ec = EncryptionContext::new();
@@ -558,7 +559,7 @@ async fn test_decrypt_materials_appends_reproduced_only_pairs_to_the_keyring_con
     // An encrypting CMM held "a" back from the message, so the keyring must be
     // handed {a, b} — not the message's {b} — or its AAD is short and
     // authentication fails.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
@@ -585,7 +586,7 @@ async fn test_decrypt_materials_appends_reproduced_only_pairs_to_the_keyring_con
 async fn test_decrypt_materials_appends_when_reproduced_context_is_disjoint() {
     // The reproduced context need not be a superset of the message's; it only
     // has to supply the keys the message lacks.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
@@ -609,7 +610,7 @@ async fn test_decrypt_materials_appends_when_reproduced_context_is_disjoint() {
 
 #[tokio::test]
 async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty() {
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
@@ -636,8 +637,8 @@ async fn test_decrypt_materials_appends_every_pair_when_message_context_is_empty
 
 #[tokio::test]
 async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_keyring() {
-    let keyring = Arc::new(MockKeyring::new());
-    let cmm = DefaultCmm::new(keyring.clone() as Arc<dyn Keyring>);
+    let keyring = MockKeyring::new();
+    let cmm = DefaultCmm::new(keyring.clone());
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
         allow_policy(),
@@ -663,7 +664,7 @@ async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_k
 async fn test_decrypt_materials_without_reproduced_context_is_unchanged() {
     // Regression guard: omitting the reproduced context must leave the message
     // context untouched and produce no required keys.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
@@ -685,7 +686,7 @@ async fn test_decrypt_materials_without_reproduced_context_is_unchanged() {
 async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context() {
     // The reserved verification key may arrive only via the reproduced context;
     // the CMM must look it up after the merge, not before.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let vk = vec![0x02; 49];
     let mut reproduced = EncryptionContext::new();
@@ -713,7 +714,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
 async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reproduced_context() {
     // The reserved-key rejection must also see the merged context, so it
     // cannot be smuggled past via the reproduced context.
-    let keyring: Arc<dyn Keyring> = Arc::new(MockKeyring::new());
+    let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut reproduced = EncryptionContext::new();
     reproduced.insert("aws-crypto-public-key", "some-value");
