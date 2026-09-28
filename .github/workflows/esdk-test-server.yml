@@ -66,7 +66,7 @@ jobs:
   # COMMONS_REPO_PAT secret (read on commons + java + rust).
   # The cross-language TestServer run, from the shared commons workflow. This
   # checkout supplies the rust server; every other server comes from its
-  # configured branch. Pull requests test only the pairs involving rust.
+  # configured branch. Only the pairs involving rust run; the full matrix runs in commons.
   test-server:
     name: Cross-language TestServer run
     permissions:
@@ -75,7 +75,7 @@ jobs:
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/test-server-fast-launch
     with:
-      focus: ${{ github.event_name == 'pull_request' && 'rust' || '' }}
+      focus: rust
       checkout-languages: rust
       commons-ref: lucmcdon/test-server-fast-launch
     secrets:
