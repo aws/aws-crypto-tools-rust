@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::{DecryptInput, EncryptInput, decrypt, encrypt};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,17 +42,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let plaintext = b"Hello World";
 
+    // The encryption context is authenticated, not encrypted, and is bound to the message.
+    let mut encryption_context = EncryptionContext::new();
+    encryption_context.insert("purpose", "example");
+    encryption_context.insert("is not", "secret");
+
     let encrypted = encrypt(
         &EncryptInput::builder()
             .plaintext(plaintext)
+            .encryption_context(encryption_context.clone())
             .keyring(keyring.clone())
             .build()?,
     )
     .await?;
 
+    // Decrypt fails unless the message's encryption context contains every pair given here.
     let decrypted = decrypt(
         &DecryptInput::builder()
             .ciphertext(&encrypted.ciphertext)
+            .encryption_context(encryption_context)
             .keyring(keyring)
             .build()?,
     )
