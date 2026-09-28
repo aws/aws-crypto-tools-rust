@@ -330,7 +330,7 @@ impl Cmm for DuplicateEdkCmm {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_max_edk_exceeded_error() {
     // The CMM returns 2 EDKs; the client allows at most 1.
-    let cmm = SharedCmm::from(DuplicateEdkCmm {
+    let cmm = SharedCmm::new(DuplicateEdkCmm {
         inner: DefaultCmm::new(test_keyring().await),
     });
     let mut enc_input =
