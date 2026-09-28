@@ -315,24 +315,18 @@ impl StormTrackingCacheBuilder {
             return Err(invalid("fan_out must be at least 1"));
         }
 
-        //= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-        //# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Grace Period](#grace-period).
         if config.grace_interval > config.grace_period {
             return Err(invalid(format!(
                 "grace_interval ({:?}) must be less than or equal to grace_period ({:?})",
                 config.grace_interval, config.grace_period
             )));
         }
-        //= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-        //# - The [Inflight TTL](#inflight-ttl) MUST be less than or equal to the [Grace Period](#grace-period).
         if config.inflight_ttl > config.grace_period {
             return Err(invalid(format!(
                 "inflight_ttl ({:?}) must be less than or equal to grace_period ({:?})",
                 config.inflight_ttl, config.grace_period
             )));
         }
-        //= spec/framework/storm-tracking-cryptographic-materials-cache.md#consistency
-        //# - The [Grace Interval](#grace-interval) MUST be less than or equal to the [Inflight TTL](#inflight-ttl).
         if config.grace_interval > config.inflight_ttl {
             return Err(invalid(format!(
                 "grace_interval ({:?}) must be less than or equal to inflight_ttl ({:?})",
