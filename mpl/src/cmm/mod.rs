@@ -44,9 +44,26 @@ crate::shared::shared_handle!(
     /// A CMM whose concrete type is not known at compile time.
     ///
     /// [`Cmm`] is the trait a CMM implements.
-    /// `SharedCmm` holds any value that implements it.
-    /// APIs that accept a CMM take `impl Into<SharedCmm>`,
+    /// `SharedCmm` holds any value that implements it, and implements it too.
+    /// APIs that accept a CMM take `impl Cmm + 'static`,
     /// so callers usually pass the concrete CMM and never name this type.
     SharedCmm,
     Cmm
 );
+
+#[async_trait]
+impl Cmm for SharedCmm {
+    async fn get_encryption_materials(
+        &self,
+        request: EncryptionMaterialsRequest,
+    ) -> Result<EncryptionMaterials, MaterialsError> {
+        self.0.get_encryption_materials(request).await
+    }
+
+    async fn decrypt_materials(
+        &self,
+        request: DecryptMaterialsRequest,
+    ) -> Result<DecryptionMaterials, MaterialsError> {
+        self.0.decrypt_materials(request).await
+    }
+}

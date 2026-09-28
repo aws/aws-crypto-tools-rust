@@ -46,9 +46,27 @@ crate::shared::shared_handle!(
     /// A keyring whose concrete type is not known at compile time.
     ///
     /// [`Keyring`] is the trait a keyring implements.
-    /// `SharedKeyring` holds any value that implements it.
-    /// APIs that accept a keyring take `impl Into<SharedKeyring>`,
+    /// `SharedKeyring` holds any value that implements it, and implements it too.
+    /// APIs that accept a keyring take `impl Keyring + 'static`,
     /// so callers usually pass the concrete keyring and never name this type.
     SharedKeyring,
     Keyring
 );
+
+#[async_trait]
+impl Keyring for SharedKeyring {
+    async fn on_encrypt(
+        &self,
+        materials: EncryptionMaterials,
+    ) -> Result<EncryptionMaterials, MaterialsError> {
+        self.0.on_encrypt(materials).await
+    }
+
+    async fn on_decrypt(
+        &self,
+        materials: DecryptionMaterials,
+        encrypted_data_keys: &[EncryptedDataKey],
+    ) -> Result<DecryptionMaterials, MaterialsError> {
+        self.0.on_decrypt(materials, encrypted_data_keys).await
+    }
+}

@@ -155,8 +155,8 @@ crate::shared::shared_handle!(
     /// A cache whose concrete type is not known at compile time.
     ///
     /// [`Cmc`] is the trait a cache implements.
-    /// `SharedCmc` holds any value that implements it.
-    /// APIs that accept a cache take `impl Into<SharedCmc>`,
+    /// `SharedCmc` holds any value that implements it, and implements it too.
+    /// APIs that accept a cache take `impl Cmc + 'static`,
     /// so callers usually pass the concrete cache and never name this type.
     ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
@@ -165,3 +165,18 @@ crate::shared::shared_handle!(
     SharedCmc,
     Cmc
 );
+
+#[async_trait]
+impl Cmc for SharedCmc {
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+        self.0.put_cache_entry(cache_id, entry).await
+    }
+
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+        self.0.get_cache_entry(cache_id).await
+    }
+
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
+        self.0.delete_cache_entry(cache_id).await
+    }
+}

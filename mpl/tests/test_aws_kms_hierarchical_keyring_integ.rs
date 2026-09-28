@@ -71,7 +71,7 @@ use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError, SharedKeystore};
+use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind,
@@ -117,7 +117,7 @@ const FIXTURE_TTL_SECONDS: u64 = 3600;
 /// default cache. Every test varies only these three things, so they share one
 /// fixture rather than repeating the six-argument constructor.
 fn keyring_for(
-    keystore: impl Into<SharedKeystore>,
+    keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
 ) -> HierarchicalKeyring {
@@ -132,7 +132,7 @@ fn keyring_for(
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
 /// two keyrings the same `SharedCmc`.
 fn keyring_with_cache(
-    keystore: impl Into<SharedKeystore>,
+    keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
     cache: CacheType,
@@ -458,7 +458,7 @@ fn shared_cache_materials() -> EncryptionMaterials {
 /// Build a fresh `LocalCmc`,
 /// suitable for constructing a `CacheType::Shared` for each of HK1 and HK2.
 fn shared_cache() -> SharedCmc {
-    aws_crypto_mpl::LocalCmc::new(100, 50).unwrap().into()
+    SharedCmc::new(aws_crypto_mpl::LocalCmc::new(100, 50).unwrap())
 }
 
 #[tokio::test]

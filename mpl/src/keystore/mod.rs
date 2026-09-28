@@ -80,9 +80,56 @@ crate::shared::shared_handle!(
     /// A keystore whose concrete type is not known at compile time.
     ///
     /// [`Keystore`] is the trait a keystore implements.
-    /// `SharedKeystore` holds any value that implements it.
-    /// APIs that accept a keystore take `impl Into<SharedKeystore>`,
+    /// `SharedKeystore` holds any value that implements it, and implements it too.
+    /// APIs that accept a keystore take `impl Keystore + 'static`,
     /// so callers usually pass the concrete keystore and never name this type.
     SharedKeystore,
     Keystore
 );
+
+#[async_trait]
+impl Keystore for SharedKeystore {
+    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+        self.0.get_key_store_info()
+    }
+
+    async fn create_key_store(&self) -> Result<String, KeystoreError> {
+        self.0.create_key_store().await
+    }
+
+    async fn create_key(
+        &self,
+        branch_key_id: Option<String>,
+        encryption_context: Option<EncryptionContext>,
+    ) -> Result<String, KeystoreError> {
+        self.0.create_key(branch_key_id, encryption_context).await
+    }
+
+    async fn version_key(&self, branch_key_id: String) -> Result<(), KeystoreError> {
+        self.0.version_key(branch_key_id).await
+    }
+
+    async fn get_active_branch_key(
+        &self,
+        branch_key_id: String,
+    ) -> Result<BranchKeyMaterials, KeystoreError> {
+        self.0.get_active_branch_key(branch_key_id).await
+    }
+
+    async fn get_branch_key_version(
+        &self,
+        branch_key_id: String,
+        branch_key_version: String,
+    ) -> Result<BranchKeyMaterials, KeystoreError> {
+        self.0
+            .get_branch_key_version(branch_key_id, branch_key_version)
+            .await
+    }
+
+    async fn get_beacon_key(
+        &self,
+        branch_key_id: String,
+    ) -> Result<BeaconKeyMaterials, KeystoreError> {
+        self.0.get_beacon_key(branch_key_id).await
+    }
+}

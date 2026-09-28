@@ -20,8 +20,9 @@ use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::cache_config::{
     CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache, create_cryptographic_materials_cache,
 };
-use crate::cmc::{CacheEntry, CachedMaterials, SharedCmc, TimeUnits, UsageMetadata};
-use crate::keystore::SharedKeystore;
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc, TimeUnits, UsageMetadata};
+use crate::keystore::{Keystore, SharedKeystore};
+use crate::shared::IntoShared;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
     EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
@@ -103,12 +104,21 @@ crate::shared::shared_handle!(
     /// A branch key supplier whose concrete type is not known at compile time.
     ///
     /// [`BranchKeySupplier`] is the trait a branch key supplier implements.
-    /// `SharedBranchKeySupplier` holds any value that implements it.
-    /// APIs that accept a branch key supplier take `impl Into<SharedBranchKeySupplier>`,
+    /// `SharedBranchKeySupplier` holds any value that implements it, and implements it too.
+    /// APIs that accept a branch key supplier take `impl BranchKeySupplier + 'static`,
     /// so callers usually pass the concrete branch key supplier and never name this type.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
+
+impl BranchKeySupplier for SharedBranchKeySupplier {
+    fn get_branch_key_id(
+        &self,
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+        self.0.get_branch_key_id(input)
+    }
+}
 
 /// AWS KMS Hierarchical Keyring.
 ///
@@ -158,14 +168,14 @@ impl HierarchicalKeyring {
     /// `cache_type` selects the cache backing — see [`CacheType`]. When
     /// `None`, behaves as `Some(CacheType::Default(DefaultCache::default()))`.
     pub fn new(
-        keystore: impl Into<SharedKeystore>,
+        keystore: impl Keystore + 'static,
         ttl_seconds: u64,
         branch_key_id: Option<String>,
         branch_key_id_supplier: Option<SharedBranchKeySupplier>,
         cache_type: Option<CacheType>,
         partition_id: Option<String>,
     ) -> Result<Self, MaterialsError> {
-        let keystore = keystore.into();
+        let keystore: SharedKeystore = keystore.into_shared();
         if ttl_seconds == 0 {
             return Err(MaterialsError::new(
                 "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",

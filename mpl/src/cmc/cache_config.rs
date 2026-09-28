@@ -246,7 +246,7 @@ pub fn create_cryptographic_materials_cache(
                 .map_err(|e| {
                     MaterialsError::new(format!("failed to initialize default LocalCmc: {e}"))
                 })?;
-            Ok(local.into())
+            Ok(SharedCmc::new(local))
         }
         CacheType::Shared(cache) => Ok(cache),
         CacheType::StormTracking(params) => {
@@ -263,7 +263,7 @@ pub fn create_cryptographic_materials_cache(
             .map_err(|e| {
                 MaterialsError::new(format!("failed to initialize StormTrackingCmc: {e}"))
             })?;
-            Ok(storm.into())
+            Ok(SharedCmc::new(storm))
         }
     }
 }
