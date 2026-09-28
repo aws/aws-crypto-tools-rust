@@ -68,9 +68,9 @@ fn test_bad_decrypt_input() {
     //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
     let err = result.expect_err("build must fail when no keyring or CMM is set");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
+        matches!(err.kind(), ErrorKind::ValidationError),
         "expected ValidationError, got {:?}",
-        err.kind
+        err.kind()
     );
 }
 
@@ -108,11 +108,11 @@ async fn test_encrypt_decrypt_short() {
             .await
             .expect_err("truncated ciphertext must fail decrypt");
         assert_eq!(
-            err.kind,
+            err.kind(),
             ErrorKind::SerializationError,
             "truncated ciphertext must produce a SerializationError under {style:?}, got: {:?} ({})",
-            err.kind,
-            err.message
+            err.kind(),
+            err.message()
         );
     }
 }
@@ -176,11 +176,11 @@ async fn test_encrypt_decrypt_bad_ec() {
         //# the encryption operation MUST fail.
         let err = encrypt_output.expect_err("encrypt must fail for aws-crypto- EC key");
         assert_eq!(
-            err.kind,
+            err.kind(),
             ErrorKind::ValidationError,
             "expected ValidationError for reserved 'aws-crypto-' prefix under {style:?}, got: {:?} ({})",
-            err.kind,
-            err.message
+            err.kind(),
+            err.message()
         );
     }
 }
@@ -199,9 +199,9 @@ fn test_bad_encrypt_input() {
     //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
     let err = result.expect_err("build must fail when no keyring or CMM is set");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
+        matches!(err.kind(), ErrorKind::ValidationError),
         "expected ValidationError, got {:?}",
-        err.kind
+        err.kind()
     );
 }
 

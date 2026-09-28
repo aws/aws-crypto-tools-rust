@@ -88,10 +88,10 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     // the value is different. The MPL's reproduced-EC validation produces a
     // pinned error message identifying the mechanism.
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::MplError,
         "expected MplError, got: {:?}",
-        err.kind
+        err.kind()
     );
     let inner = err.to_string();
     //= spec/client-apis/decrypt.md#get-the-decryption-materials

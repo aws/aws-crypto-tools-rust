@@ -81,7 +81,7 @@ async fn test_decrypt_halts_on_incomplete_message() {
     //# this operation MUST halt and indicate a failure to the caller.
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
     assert_eq!(
-        decrypt(&truncated_input).await.unwrap_err().kind,
+        decrypt(&truncated_input).await.unwrap_err().kind(),
         ErrorKind::SerializationError,
         "truncated ct must produce SerializationError"
     );
@@ -121,7 +121,7 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     //# this operation MUST fail.
     assert!(decrypt(&valid_input).await.is_ok(), "clean ct must decrypt");
     assert_eq!(
-        decrypt(&trailing_input).await.unwrap_err().kind,
+        decrypt(&trailing_input).await.unwrap_err().kind(),
         ErrorKind::Esdk,
         "ct with trailing bytes must produce Esdk error"
     );
@@ -156,7 +156,7 @@ async fn test_streaming_fails_for_multi_frame_signed() {
         decrypt_stream(&mut cursor, &mut output, &stream_input)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::Esdk,
         "multi-frame signed streaming must produce Esdk error"
     );
@@ -203,7 +203,7 @@ async fn test_signing_suite_must_perform_signature_step() {
     //# the Decrypt operation MUST perform this step.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::Esdk,
         "tampered signature must produce Esdk error"
     );

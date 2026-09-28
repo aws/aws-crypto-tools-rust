@@ -25,6 +25,7 @@ mod test_helpers;
 
 use aws_crypto_mpl::structures::{MaterialsError, MaterialsErrorKind};
 use aws_esdk::*;
+use std::error::Error as _;
 use test_helpers::*;
 
 /// Helper: independently construct a default CMM from a keyring via the MPL.
@@ -145,15 +146,14 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         "decrypt must fail when default CMM cannot obtain decryption materials with wrong keyring",
     );
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::MplError,
         "expected MplError, got: {:?}",
-        err.kind
+        err.kind()
     );
     // Assert the MPL's typed error kind, not its message.
     let cause = err
-        .cause
-        .as_ref()
+        .source()
         .expect("MplError must carry the MaterialsError cause")
         .downcast_ref::<MaterialsError>()
         .expect("MplError cause must be a MaterialsError");

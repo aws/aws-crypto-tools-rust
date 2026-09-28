@@ -200,9 +200,9 @@ async fn test_unrecognized_algorithm_suite_errors() {
         let err = decrypt(&dec_input).await.unwrap_err();
 
         assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
+            matches!(err.kind(), ErrorKind::ValidationError),
             "{label}: expected ValidationError, got {:?}",
-            err.kind
+            err.kind()
         );
 
         let err_msg = err.to_string();

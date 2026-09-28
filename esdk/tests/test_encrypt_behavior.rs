@@ -129,7 +129,7 @@ async fn test_input_suite_vs_commitment_policy_error() {
     // encrypt front-end and surfaces as a ValidationError (no cryptography
     // attempted), rather than an MPL error from the CMM.
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::ValidationError,
         "expected ValidationError, got: {err:?}"
     );
@@ -144,9 +144,9 @@ async fn test_input_suite_vs_commitment_policy_error() {
     //= reason=Test sets commitment_policy on input; policy-violation error proves it was passed
     //# - Commitment Policy: This MUST be the [commitment policy](client.md#commitment-policy) configured in the [client](client.md) exposing this encrypt function.
     assert!(
-        err.message.contains("commitment policy"),
+        err.message().contains("commitment policy"),
         "expected a commitment-policy violation message, got: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -378,14 +378,14 @@ async fn test_max_edk_exceeded_error() {
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
     //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md) encrypt MUST yield an error.
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::ValidationError,
         "expected ValidationError, got: {err:?}"
     );
     assert!(
-        err.message.contains("exceeds") && err.message.contains("maximum"),
+        err.message().contains("exceeds") && err.message().contains("maximum"),
         "error must indicate EDK count exceeds maximum, got: {}",
-        err.message
+        err.message()
     );
 
     // The same CMM under a maximum of 2 encrypts, so the failure above is the
@@ -606,14 +606,14 @@ async fn test_reserved_encryption_context_prefix_must_fail() {
     //# If the input encryption context contains any entries with a key beginning with `aws-crypto-`,
     //# the encryption operation MUST fail.
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::ValidationError,
         "expected ValidationError, got: {err:?}"
     );
     assert!(
-        err.message.contains("aws-crypto-"),
+        err.message().contains("aws-crypto-"),
         "error must identify the reserved prefix, got: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -796,7 +796,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
     // Native path: the failing step (suite-vs-commitment-policy validation) surfaces
     // as a ValidationError from the ESDK encrypt.
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::ValidationError,
         "expected ValidationError, got: {err:?}"
     );
@@ -804,9 +804,9 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
     //= type=test
     //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.
     assert!(
-        err.message.contains("commitment policy"),
+        err.message().contains("commitment policy"),
         "expected a commitment-policy violation message, got: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -945,7 +945,7 @@ async fn test_message_bodies_not_equal_must_fail() {
     // encrypt.rs (the body is written directly to the output, so inequality is impossible).
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::CryptographicError,
         "tampered body content must produce CryptographicError"
     );

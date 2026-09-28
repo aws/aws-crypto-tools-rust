@@ -137,9 +137,9 @@ async fn test_content_type_invalid_value_rejected() {
         //# The supported content types MUST be:
         let err = decrypt(&dec_input).await.unwrap_err();
         assert!(
-            matches!(err.kind, ErrorKind::SerializationError),
+            matches!(err.kind(), ErrorKind::SerializationError),
             "{version:?}: expected SerializationError, got {:?}",
-            err.kind
+            err.kind()
         );
         let msg = format!("{err}");
         assert!(
@@ -162,9 +162,9 @@ async fn test_base64_input_rejected() {
         .unwrap();
     let err = decrypt(&dec_input).await.unwrap_err();
     assert!(
-        matches!(err.kind, ErrorKind::SerializationError),
+        matches!(err.kind(), ErrorKind::SerializationError),
         "expected SerializationError, got {:?}",
-        err.kind
+        err.kind()
     );
     let msg = format!("{err}");
     //= spec/client-apis/decrypt.md#encrypted-message-format
@@ -195,9 +195,9 @@ async fn test_unsupported_type_rejected_v1() {
     //# The supported types MUST be:
     let err = decrypt(&dec_input).await.unwrap_err();
     assert!(
-        matches!(err.kind, ErrorKind::SerializationError),
+        matches!(err.kind(), ErrorKind::SerializationError),
         "expected SerializationError, got {:?}",
-        err.kind
+        err.kind()
     );
     let msg = format!("{err}");
     assert!(

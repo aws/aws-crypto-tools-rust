@@ -495,7 +495,7 @@ fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
 
 /// Map a core input builder's `build()` error through the shim's error translation.
 fn build_core_input<T>(built: Result<T, aws_esdk::Error>, operation: &str) -> Result<T, String> {
-    built.map_err(|e| shim_err(classify_core_error(&e.kind), operation, e))
+    built.map_err(|e| shim_err(classify_core_error(&e.kind()), operation, e))
 }
 
 /// Map an MPL materials error kind to its ffi error kind.
@@ -1001,7 +1001,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         .keyring(keyring.inner.clone());
     let core_input = build_core_input(apply_encrypt_options(builder, input)?.build(), "encrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
-    let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt", e))?;
+    let output = output.map_err(|e| shim_err(classify_core_error(&e.kind()), "encrypt", e))?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1036,7 +1036,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         .keyring(keyring.inner.clone());
     let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
-    let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt", e))?;
+    let output = output.map_err(|e| shim_err(classify_core_error(&e.kind()), "decrypt", e))?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1493,7 +1493,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                     &mut writer,
                     &core_input,
                 ))
-                .map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt_stream", e))?;
+                .map_err(|e| shim_err(classify_core_error(&e.kind()), "encrypt_stream", e))?;
             //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
             //# - A successful finish step MUST return the same non-payload outputs as
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
@@ -1549,7 +1549,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
                 //# and the shim MUST surface the core ESDK's refusal to stream a message whose
                 //# verification cannot complete until the end of the message.
-                .map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt_stream", e))?;
+                .map_err(|e| shim_err(classify_core_error(&e.kind()), "decrypt_stream", e))?;
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
                 encryption_context: encryption_context_core_to_target(output.encryption_context),

@@ -54,9 +54,9 @@ async fn encrypt_rejects_cmm_materials_without_encrypted_data_keys() {
     let err = encrypt(&input)
         .await
         .expect_err("materials without encrypted data keys must be rejected");
-    assert_eq!(err.kind, ErrorKind::ValidationError, "got: {err:?}");
+    assert_eq!(err.kind(), ErrorKind::ValidationError, "got: {err:?}");
     assert_eq!(
-        err.message,
+        err.message(),
         "Encrypted data key count must be greater than 0"
     );
 }

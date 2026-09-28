@@ -211,8 +211,8 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     .await
     .expect_err("decrypt under a different KEK must fail");
     assert!(
-        matches!(err.kind, ErrorKind::MplError),
+        matches!(err.kind(), ErrorKind::MplError),
         "expected the keyring's unwrap failure, got {:?}",
-        err.kind
+        err.kind()
     );
 }

@@ -5,7 +5,7 @@
 use std::backtrace::Backtrace;
 use std::sync::Arc;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[non_exhaustive]
 /// Individual error types for [`aws_esdk`](crate)
 pub enum ErrorKind {
@@ -29,14 +29,30 @@ pub enum ErrorKind {
 #[non_exhaustive]
 /// Base error type for [`aws_esdk`](crate)
 pub struct Error {
-    /// Error type
-    pub kind: ErrorKind,
-    /// message
-    pub message: String,
-    /// Backtrace captured when error was encountered.
-    pub backtrace: Arc<Backtrace>,
-    /// The Error causing the Error, if any.
-    pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
+    pub(crate) kind: ErrorKind,
+    pub(crate) message: String,
+    pub(crate) backtrace: Arc<Backtrace>,
+    pub(crate) cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
+}
+
+impl Error {
+    /// The category of this error.
+    #[must_use]
+    pub const fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    /// The error message, without the category prefix that `Display` adds.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// The backtrace captured when this error was created.
+    #[must_use]
+    pub fn backtrace(&self) -> &Backtrace {
+        &self.backtrace
+    }
 }
 
 impl PartialEq for Error {
