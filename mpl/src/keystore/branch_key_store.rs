@@ -50,12 +50,7 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 
 /// Concrete `Keystore` implementation backed by AWS KMS + Amazon DynamoDB.
 ///
-/// Construct with [`BranchKeyStore::builder`]. The KMS and DynamoDB clients
-/// are optional; when omitted, a default client is built from the Region
-/// parsed from the configured KMS ARN. The keystore validates the
-/// [`KmsConfiguration`] at construction time and resolves the optional
-/// caller-supplied `id` against a freshly-generated v4 UUID per
-/// `branch-key-store.md#keystore-id`.
+/// Construct with [`BranchKeyStore::builder`].
 #[derive(Clone)]
 pub struct BranchKeyStore {
     inner: Arc<BranchKeyStoreInner>,
@@ -66,12 +61,11 @@ struct BranchKeyStoreInner {
     logical_keystore_name: String,
     kms_configuration: KmsConfiguration,
     grant_tokens: Vec<String>,
-    /// Caller-supplied, or built from the KMS configuration's Region.
+    /// The client the caller passed in, or one built for the KMS configuration's Region.
     kms_client: KmsClient,
-    /// Caller-supplied, or built from the KMS configuration's Region.
+    /// The client the caller passed in, or one built for the KMS configuration's Region.
     ddb_client: DynamoDbClient,
-    /// Resolved keystore identifier: either the caller-supplied `id`, or a
-    /// freshly-generated v4 UUID when the caller set none.
+    /// The caller's `id`, or a v4 UUID generated at construction when unset.
     keystore_id: String,
 }
 
@@ -219,8 +213,8 @@ impl BranchKeyStoreBuilder {
         self
     }
 
-    /// Set or clear the keystore identifier, for forwarding an existing
-    /// `Option`. See [`id`](Self::id).
+    /// Set or clear the keystore identifier, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`id`](Self::id).
     #[must_use]
     pub fn set_id(mut self, id: Option<String>) -> Self {
         self.id = id;
@@ -234,8 +228,8 @@ impl BranchKeyStoreBuilder {
         self
     }
 
-    /// Set or clear the AWS KMS grant tokens, for forwarding an existing
-    /// `Option`. See [`grant_tokens`](Self::grant_tokens).
+    /// Set or clear the AWS KMS grant tokens, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`grant_tokens`](Self::grant_tokens).
     #[must_use]
     pub fn set_grant_tokens(mut self, tokens: Option<Vec<String>>) -> Self {
         self.grant_tokens = tokens;
@@ -251,8 +245,8 @@ impl BranchKeyStoreBuilder {
         self
     }
 
-    /// Set or clear the AWS KMS client, for forwarding an existing
-    /// `Option`. See [`kms_client`](Self::kms_client).
+    /// Set or clear the AWS KMS client, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`kms_client`](Self::kms_client).
     #[must_use]
     pub fn set_kms_client(mut self, client: Option<KmsClient>) -> Self {
         self.kms_client = client;
@@ -268,40 +262,37 @@ impl BranchKeyStoreBuilder {
         self
     }
 
-    /// Set or clear the Amazon DynamoDB client, for forwarding an existing
-    /// `Option`. See [`ddb_client`](Self::ddb_client).
+    /// Set or clear the Amazon DynamoDB client, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`ddb_client`](Self::ddb_client).
     #[must_use]
     pub fn set_ddb_client(mut self, client: Option<DynamoDbClient>) -> Self {
         self.ddb_client = client;
         self
     }
 
-    /// Validate the configuration, default any absent client, and resolve
-    /// the keystore id.
+    /// Validate the configuration, default any absent client, and resolve the keystore id.
     ///
-    /// Building a default client is the only reason this is `async`: with
-    /// both clients supplied it performs no IO and completes on first poll.
+    /// Building a default client is the only reason this is `async`.
+    /// With both clients supplied it does no IO and completes on the first poll.
     ///
     /// # Errors
     ///
-    /// Returns `KeystoreError::Configuration` if a required field is unset,
-    /// the table name is outside DynamoDB's 3-255 character bounds, or the
-    /// KMS configuration is invalid (malformed ARN, alias, non-`kms`
-    /// service).
+    /// Returns `KeystoreError::Configuration` if:
+    /// - a required field is unset,
+    /// - the table name is outside DynamoDB's 3-255 character bounds, or
+    /// - the KMS configuration is invalid (malformed ARN, alias, non-`kms` service).
     pub async fn build(self) -> Result<BranchKeyStore, KeystoreError> {
         let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
         let logical_keystore_name = required(self.logical_keystore_name, "logical_keystore_name")?;
         let kms_configuration = required(self.kms_configuration, "kms_configuration")?;
 
-        // Validate the KMS configuration's ARN at construction time so a
-        // malformed ARN fails before any operation is dispatched, and before
-        // its Region is used to build a default client.
+        // Validate the ARN before its Region is used to build a default client,
+        // so a malformed ARN fails here instead of on the first operation.
         kms_configuration.validate()?;
 
-        // DynamoDB documents a 3-255 character limit,
-        // and without this the failure is deferred to the first
-        // request.
-        // Not a keystore-spec requirement — it mirrors the service constraint.
+        // DynamoDB limits table names to 3-255 characters.
+        // Checking here fails at construction instead of on the first request.
+        // The keystore spec doesn't require this; it mirrors the service limit.
         let name_len = ddb_table_name.len();
         if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
             return Err(KeystoreError::new(

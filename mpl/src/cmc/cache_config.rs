@@ -76,6 +76,9 @@ pub const DEFAULT_STORM_GRACE_INTERVAL: Duration = Duration::from_secs(1);
 pub const DEFAULT_STORM_FAN_OUT: usize = 20;
 /// Default [`StormTrackingCache::inflight_ttl`], from Dafny's
 /// `StormTracker.DefaultStorm()`.
+///
+/// The spec lists 20, which exceeds the default grace period
+/// and so breaks the spec's own "Inflight TTL MUST be less than or equal to the Grace Period" rule.
 pub const DEFAULT_STORM_INFLIGHT_TTL: Duration = Duration::from_secs(10);
 /// Default [`StormTrackingCache::sleep`], from Dafny's
 /// `StormTracker.DefaultStorm()`.
@@ -84,9 +87,9 @@ pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
 /// Configuration for a CMP-local Storm-tracking Cryptographic Materials
 /// Cache. Carried by [`CacheType::StormTracking`].
 ///
-/// Construct with [`StormTrackingCache::builder`], which applies a default
-/// for every value left unset and rejects inconsistent settings, so every
-/// `StormTrackingCache` is valid.
+/// Construct with [`StormTrackingCache::builder`].
+/// The builder defaults every unset value and rejects inconsistent settings,
+/// so every `StormTrackingCache` is valid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StormTrackingCache {
     entry_capacity: usize,
@@ -111,8 +114,8 @@ impl StormTrackingCache {
         self.entry_capacity
     }
 
-    /// Number of least-recently-used entries scanned per get for TTL-aware
-    /// pruning.
+    /// Number of least-recently-used entries each get checks for expired
+    /// entries to evict.
     #[must_use]
     pub const fn entry_pruning_tail_size(&self) -> usize {
         self.entry_pruning_tail_size
@@ -150,9 +153,9 @@ impl StormTrackingCache {
     }
 }
 
-/// Builder for [`StormTrackingCache`]. Every setter is optional;
-/// [`StormTrackingCacheBuilder::build`] applies the default documented on
-/// each setter to any value left unset.
+/// Builder for [`StormTrackingCache`].
+/// Every setter is optional;
+/// [`build`](Self::build) applies the default documented on each setter to any value left unset.
 #[derive(Debug, Clone, Default)]
 pub struct StormTrackingCacheBuilder {
     entry_capacity: Option<usize>,
@@ -172,8 +175,8 @@ impl StormTrackingCacheBuilder {
         self
     }
 
-    /// Set the number of least-recently-used entries scanned per get for
-    /// TTL-aware pruning. Defaults to 1.
+    /// Set the number of least-recently-used entries each get checks for
+    /// expired entries to evict. Defaults to 1.
     #[must_use]
     pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
@@ -182,8 +185,8 @@ impl StormTrackingCacheBuilder {
 
     /// Set the grace period. Defaults to 10 seconds.
     ///
-    /// Must be at least 1 millisecond, a whole number of milliseconds, and
-    /// at least the grace interval and inflight TTL.
+    /// Must be a whole number of milliseconds, at least 1 ms,
+    /// and at least the grace interval and inflight TTL.
     #[must_use]
     pub const fn grace_period(mut self, d: Duration) -> Self {
         self.grace_period = Some(d);
@@ -192,8 +195,8 @@ impl StormTrackingCacheBuilder {
 
     /// Set the grace interval. Defaults to 1 second.
     ///
-    /// Must be at least 1 millisecond, a whole number of milliseconds, and
-    /// at most the inflight TTL and grace period.
+    /// Must be a whole number of milliseconds, at least 1 ms,
+    /// and at most the inflight TTL and grace period.
     #[must_use]
     pub const fn grace_interval(mut self, d: Duration) -> Self {
         self.grace_interval = Some(d);
@@ -209,8 +212,8 @@ impl StormTrackingCacheBuilder {
 
     /// Set the inflight TTL. Defaults to 10 seconds.
     ///
-    /// Must be at least 1 millisecond, a whole number of milliseconds, at
-    /// least the grace interval, and at most the grace period.
+    /// Must be a whole number of milliseconds, at least 1 ms,
+    /// at least the grace interval, and at most the grace period.
     #[must_use]
     pub const fn inflight_ttl(mut self, d: Duration) -> Self {
         self.inflight_ttl = Some(d);
@@ -220,70 +223,63 @@ impl StormTrackingCacheBuilder {
     /// Set how long a blocked request sleeps before reexamining the cache.
     /// Defaults to 20 milliseconds.
     ///
-    /// Must be at least 1 millisecond and a whole number of milliseconds.
+    /// Must be a whole number of milliseconds, at least 1 ms.
     #[must_use]
     pub const fn sleep(mut self, d: Duration) -> Self {
         self.sleep = Some(d);
         self
     }
 
-    /// Set or clear `entry_capacity`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`entry_capacity`](Self::entry_capacity).
+    /// Set or clear `entry_capacity`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`entry_capacity`](Self::entry_capacity).
     #[must_use]
     pub const fn set_entry_capacity(mut self, v: Option<usize>) -> Self {
         self.entry_capacity = v;
         self
     }
 
-    /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
+    /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
     #[must_use]
     pub const fn set_entry_pruning_tail_size(mut self, v: Option<usize>) -> Self {
         self.entry_pruning_tail_size = v;
         self
     }
 
-    /// Set or clear `grace_period`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`grace_period`](Self::grace_period).
+    /// Set or clear `grace_period`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`grace_period`](Self::grace_period).
     #[must_use]
     pub const fn set_grace_period(mut self, v: Option<Duration>) -> Self {
         self.grace_period = v;
         self
     }
 
-    /// Set or clear `grace_interval`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`grace_interval`](Self::grace_interval).
+    /// Set or clear `grace_interval`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`grace_interval`](Self::grace_interval).
     #[must_use]
     pub const fn set_grace_interval(mut self, v: Option<Duration>) -> Self {
         self.grace_interval = v;
         self
     }
 
-    /// Set or clear `fan_out`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`fan_out`](Self::fan_out).
+    /// Set or clear `fan_out`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`fan_out`](Self::fan_out).
     #[must_use]
     pub const fn set_fan_out(mut self, v: Option<usize>) -> Self {
         self.fan_out = v;
         self
     }
 
-    /// Set or clear `inflight_ttl`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`inflight_ttl`](Self::inflight_ttl).
+    /// Set or clear `inflight_ttl`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`inflight_ttl`](Self::inflight_ttl).
     #[must_use]
     pub const fn set_inflight_ttl(mut self, v: Option<Duration>) -> Self {
         self.inflight_ttl = v;
         self
     }
 
-    /// Set or clear `sleep`, for forwarding an existing `Option`. `None`
-    /// leaves it unset so [`build`](Self::build) applies the default.
-    /// See [`sleep`](Self::sleep).
+    /// Set or clear `sleep`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`sleep`](Self::sleep).
     #[must_use]
     pub const fn set_sleep(mut self, v: Option<Duration>) -> Self {
         self.sleep = v;
@@ -294,9 +290,10 @@ impl StormTrackingCacheBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation)
-    /// error if a duration is under 1 millisecond or has a sub-millisecond
-    /// part, if `fan_out` is 0, or if the settings are inconsistent.
+    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if:
+    /// - a duration is under 1 ms or has a sub-millisecond part,
+    /// - `fan_out` is 0, or
+    /// - the settings break one of the spec's consistency rules.
     pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
         let config = StormTrackingCache {
             entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
@@ -351,8 +348,8 @@ fn invalid(message: impl Into<String>) -> MaterialsError {
     MaterialsError::new(format!("StormTrackingCache: {}", message.into()))
 }
 
-/// Durations are specified as a number of seconds or, with the spec's
-/// `Milliseconds` time unit, a number of milliseconds, each at least 1.
+/// The spec counts these durations in seconds or, with its `Milliseconds` unit, milliseconds.
+/// Whole milliseconds, at least 1, covers every value the spec can express.
 fn check_whole_millis(field: &str, d: Duration) -> Result<(), MaterialsError> {
     if d < Duration::from_millis(1) {
         return Err(invalid(format!(

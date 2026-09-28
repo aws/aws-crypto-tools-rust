@@ -406,8 +406,7 @@ mod ffi {
     }
 }
 
-// `ffi::CacheType` holds only `Copy` fields. `Clone` is implemented here, not
-// derived in the bridge, so the bridge is unchanged.
+// Every field of `ffi::CacheType` is `Copy`, so `..*self` copies them all.
 impl Clone for ffi::CacheType {
     fn clone(&self) -> Self {
         Self { ..*self }
@@ -720,8 +719,8 @@ fn make_kms_config(
     }
 }
 
-/// The conversion from a storm-tracking time value to a `Duration`: `Unset`
-/// and `Seconds` read the value as seconds, `Milliseconds` as milliseconds.
+/// Converts a storm-tracking time value to a `Duration`.
+/// `Unset` and `Seconds` read it as seconds, `Milliseconds` as milliseconds.
 fn time_unit(units: ffi::TimeUnits, op: &str) -> Result<fn(u32) -> Duration, String> {
     match units {
         ffi::TimeUnits::Unset | ffi::TimeUnits::Seconds => {
@@ -1090,9 +1089,8 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         //# supplied client MUST be provided to the core ESDK, and an absent one MUST be
         //# left for the core ESDK to default.
         //
-        // A null handle means "not supplied": leaving it None makes the core build its
-        // own default client. SAFETY: a non-null handle is a valid client borrowed for
-        // this call.
+        // A null handle means "not supplied", so the core builds its own default client.
+        // SAFETY: a non-null handle is a valid client borrowed for this call.
         .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
         .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 

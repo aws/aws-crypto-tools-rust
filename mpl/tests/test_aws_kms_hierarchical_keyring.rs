@@ -90,7 +90,6 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// `HierarchicalKeyringBuilder::build` reads only the keystore's local configuration,
 /// and the keystore first reaches KMS or DynamoDB inside OnEncrypt / OnDecrypt.
 /// Tests that exercise those operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod ondecrypt` instead.
-/// Both SDK clients are supplied, so there is nothing to resolve and so nothing to await.
 fn keystore_never_consulted() -> BranchKeyStore {
     let (kms, ddb) = dummy_clients();
     build_without_io(
@@ -106,8 +105,8 @@ fn keystore_never_consulted() -> BranchKeyStore {
     )
 }
 
-/// Builds `builder` by polling its future once. With both clients supplied,
-/// `build` does no IO, so it is ready on the first poll.
+/// Builds `builder` by polling its future once.
+/// With both clients supplied, `build` does no IO, so it is ready on the first poll.
 fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
@@ -1415,7 +1414,7 @@ mod onencrypt {
         );
     }
 
-    /// Whether on_encrypt calls the keystore for a keyring with a 1.5 s TTL
+    /// Whether on_encrypt calls the keystore for a keyring with a 1 s TTL
     /// whose cache already holds its entry, created `age` ago.
     /// The entry's own expiry is an hour out, so only the keyring's TTL check can reject it.
     async fn on_encrypt_consults_keystore_for_entry_aged(age: Duration) -> bool {

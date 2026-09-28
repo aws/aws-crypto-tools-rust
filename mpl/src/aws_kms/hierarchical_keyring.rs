@@ -120,9 +120,9 @@ impl BranchKeySupplier for SharedBranchKeySupplier {
 
 /// AWS KMS Hierarchical Keyring.
 ///
-/// See [`HierarchicalKeyring::builder`] for construction. The [`Keyring`]
-/// impl wires the configured cache and keystore into the OnEncrypt /
-/// OnDecrypt algorithms.
+/// Construct with [`HierarchicalKeyring::builder`].
+/// The [`Keyring`] impl wires the configured cache and keystore into the
+/// OnEncrypt / OnDecrypt algorithms.
 #[derive(Clone)]
 pub struct HierarchicalKeyring {
     inner: Arc<HierarchicalKeyringInner>,
@@ -156,7 +156,7 @@ struct HierarchicalKeyringInner {
 }
 
 impl HierarchicalKeyring {
-    /// Start configuring a hierarchical keyring. See [`HierarchicalKeyringBuilder`].
+    /// Start a builder for `HierarchicalKeyring`.
     #[must_use]
     pub fn builder() -> HierarchicalKeyringBuilder {
         HierarchicalKeyringBuilder::default()
@@ -184,20 +184,18 @@ impl HierarchicalKeyring {
         &self.inner.keystore
     }
 
-    /// The 16-byte partition id of this keyring. Either the UTF-8 bytes of the
-    /// caller-provided string, or a freshly-generated v4 UUID.
+    /// The partition id: the UTF-8 bytes of the caller's string,
+    /// or the 16 bytes of a v4 UUID the keyring generated.
     ///
-    /// Hidden from the public API surface; intended for tests verifying the
-    /// v4-UUID variant/version bits and round-tripping of caller-provided
-    /// strings.
+    /// Not part of the public API; exposed for tests.
     #[doc(hidden)]
     pub fn partition_id_bytes(&self) -> &[u8] {
         &self.inner.partition_id_bytes
     }
 
-    /// The configured cache. Hidden from the public API surface;
-    /// intended for tests asserting that `CacheType::Shared(...)` round-
-    /// trips the supplied cache verbatim.
+    /// The configured cache.
+    ///
+    /// Not part of the public API; exposed for tests.
     #[doc(hidden)]
     pub fn cache(&self) -> &SharedCmc {
         &self.inner.cache
@@ -258,7 +256,7 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
-    /// The cache backing; see [`CacheType`].
+    /// The cache for branch key materials; see [`CacheType`].
     /// When unset, behaves as `CacheType::Default(DefaultCache::new(1000))`.
     #[must_use]
     pub fn cache(mut self, cache: CacheType) -> Self {

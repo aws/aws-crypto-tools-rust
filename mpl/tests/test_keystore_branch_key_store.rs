@@ -47,7 +47,7 @@ fn required_only() -> BranchKeyStoreBuilder {
         .logical_keystore_name("test-logical")
 }
 
-/// `required_only` plus a caller-supplied keystore-id and the dummy clients,
+/// `required_only` plus a keystore id and the dummy clients,
 /// so construction never builds a default client.
 fn fixture_config_with_id(id: &str) -> BranchKeyStoreBuilder {
     let (kms, ddb) = dummy_clients();
