@@ -35,39 +35,41 @@ Building from source needs:
 A one-shot encrypt/decrypt round trip with a raw AES keyring:
 
 ```rust
-use std::sync::Arc;
-
-use aws_crypto_mpl::{AesGcm, Keyring, RawAesKeyring};
+use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // For demonstration only: a real application must source its wrapping key
     // from a secure store and never hardcode it.
-    let keyring: Arc<dyn Keyring> = Arc::new(RawAesKeyring::new(
+    let keyring = RawAesKeyring::new(
         "my-key-namespace",
         "my-key-name",
         vec![0x01u8; 32],
         AesGcm::Aes256Gcm,
-    )?);
+    )?;
 
     // The encryption context is authenticated, not encrypted, and is bound to
     // the message.
     let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose".to_string(), "quickstart".to_string());
+    encryption_context.insert("purpose", "quickstart");
 
-    let encrypted = encrypt(&EncryptInput::with_keyring(
-        b"the quick brown fox",
-        encryption_context.clone(),
-        keyring.clone(),
-    ))
+    let encrypted = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"the quick brown fox")
+            .encryption_context(encryption_context.clone())
+            .keyring(keyring.clone())
+            .build()?,
+    )
     .await?;
 
-    let decrypted = decrypt(&DecryptInput::with_keyring(
-        &encrypted.ciphertext,
-        encryption_context,
-        keyring,
-    ))
+    let decrypted = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&encrypted.ciphertext)
+            .encryption_context(encryption_context)
+            .keyring(keyring)
+            .build()?,
+    )
     .await?;
 
     assert_eq!(decrypted.plaintext, b"the quick brown fox");

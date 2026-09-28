@@ -6,11 +6,11 @@
 //! Requires an existing key store with a provisioned branch key.
 //! Unlike the other examples this one needs AWS credentials, a KMS key, and a DynamoDB table, and does not run offline.
 
-use std::sync::Arc;
+use std::time::Duration;
 
-use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
-use aws_crypto_mpl::{HierarchicalKeyring, Keyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
+use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::{DecryptInput, EncryptInput, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,43 +21,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = BranchKeyStore::with_clients(KeyStoreConfig {
-        ddb_table_name: "KeyStoreDdbTable".to_string(),
-        logical_keystore_name: "KeyStoreDdbTable".to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(
+    let key_store = BranchKeyStore::builder()
+        .ddb_table_name("KeyStoreDdbTable")
+        .logical_keystore_name("KeyStoreDdbTable")
+        .kms_configuration(KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
                 .to_string(),
-        ),
-        id: None,
-        grant_tokens: None,
-        kms_client: Some(kms_client),
-        ddb_client: Some(ddb_client),
-    })?;
+        ))
+        .kms_client(kms_client)
+        .ddb_client(ddb_client)
+        .build()
+        .await?;
 
-    let keyring: Arc<dyn Keyring> = Arc::new(HierarchicalKeyring::new(
-        Arc::new(key_store),
-        // ttl_seconds: how long cached branch-key material may be reused.
-        600,
-        Some("3f43a9af-08c5-4317-b694-3d3e883dcaef".to_string()),
-        None, // branch_key_id_supplier
-        None, // cache_type
-        None, // partition_id
-    )?);
+    let keyring = HierarchicalKeyring::builder()
+        .key_store(key_store)
+        // How long cached branch-key material may be reused.
+        .ttl(Duration::from_secs(600))
+        .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
+        .build()?;
 
     let plaintext = b"Hello World";
 
-    let encrypted = encrypt(&EncryptInput::with_keyring(
-        plaintext,
-        EncryptionContext::new(),
-        keyring.clone(),
-    ))
+    let encrypted = encrypt(
+        &EncryptInput::builder()
+            .plaintext(plaintext)
+            .keyring(keyring.clone())
+            .build()?,
+    )
     .await?;
 
-    let decrypted = decrypt(&DecryptInput::with_keyring(
-        &encrypted.ciphertext,
-        EncryptionContext::new(),
-        keyring,
-    ))
+    let decrypted = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&encrypted.ciphertext)
+            .keyring(keyring)
+            .build()?,
+    )
     .await?;
 
     assert_eq!(

@@ -14,9 +14,8 @@
 
 use std::fs::{self, File};
 use std::io::Write;
-use std::sync::Arc;
 
-use aws_crypto_mpl::{AesGcm, Keyring, RawAesKeyring};
+use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::{
     DecryptStreamInput, EncryptStreamInput, EncryptionContext, EsdkAlgorithmSuiteId,
     decrypt_stream, encrypt_stream,
@@ -36,23 +35,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
     let wrapping_key = vec![0x01u8; 32];
-    let keyring: Arc<dyn Keyring> = Arc::new(RawAesKeyring::new(
+    let keyring = RawAesKeyring::new(
         "my-key-namespace",
         "my-key-name",
         wrapping_key,
         AesGcm::Aes256Gcm,
-    )?);
+    )?;
 
     // The encryption context is authenticated, not encrypted.
     // It is bound to the message and must be reproducible on decrypt.
     let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("purpose".to_string(), "streaming-example".to_string());
-    encryption_context.insert("is not".to_string(), "secret".to_string());
+    encryption_context.insert("purpose", "streaming-example");
+    encryption_context.insert("is not", "secret");
 
     // Encrypt the plaintext file straight into the ciphertext file.
-    let mut enc_input =
-        EncryptStreamInput::with_keyring(encryption_context.clone(), keyring.clone());
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    let enc_input = EncryptStreamInput::builder()
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .build()?;
     {
         let mut input = File::open(&plaintext_path)?;
         let mut output = File::create(&ciphertext_path)?;
@@ -70,7 +71,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Note: decrypt_stream writes plaintext to the sink before verification completes.
     // The function returns normally only if the whole message authenticates.
     // If the function returns an error, you MUST discard the decrypted file/output.
-    let dec_input = DecryptStreamInput::with_keyring(encryption_context, keyring);
+    let dec_input = DecryptStreamInput::builder()
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .build()?;
     {
         let mut input = File::open(&ciphertext_path)?;
         let mut output = File::create(&decrypted_path)?;

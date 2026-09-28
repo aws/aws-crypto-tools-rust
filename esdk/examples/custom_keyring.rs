@@ -9,13 +9,11 @@
 //! `LocalKekKeyring` wraps each data key with AES-256-GCM under a local
 //! key-encryption key (KEK); the rest of the example uses it like any other keyring.
 
-use std::sync::Arc;
-
 use aws_crypto_mpl::Keyring;
 use aws_crypto_mpl::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError, PlaintextDataKey,
 };
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{DecryptInput, EncryptInput, decrypt, encrypt};
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
 
 /// Identifies this keyring's encrypted data keys inside the message header.
@@ -25,7 +23,7 @@ const WRAP_TAG_LEN: usize = 16;
 
 /// A caller-implemented keyring. Wraps the data key with AES-256-GCM under a
 /// local KEK and stores `iv || ciphertext || tag` as the EDK ciphertext.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LocalKekKeyring {
     kek: [u8; 32],
 }
@@ -149,22 +147,24 @@ impl Keyring for LocalKekKeyring {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // For demonstration only: a real application must source its KEK from a secure store and never hardcode it.
-    let keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [0x2A; 32] });
+    let keyring = LocalKekKeyring { kek: [0x2A; 32] };
 
     let plaintext = b"Hello World";
 
-    let encrypted = encrypt(&EncryptInput::with_keyring(
-        plaintext,
-        EncryptionContext::new(),
-        keyring.clone(),
-    ))
+    let encrypted = encrypt(
+        &EncryptInput::builder()
+            .plaintext(plaintext)
+            .keyring(keyring.clone())
+            .build()?,
+    )
     .await?;
 
-    let decrypted = decrypt(&DecryptInput::with_keyring(
-        &encrypted.ciphertext,
-        EncryptionContext::new(),
-        keyring,
-    ))
+    let decrypted = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&encrypted.ciphertext)
+            .keyring(keyring)
+            .build()?,
+    )
     .await?;
 
     assert_eq!(
