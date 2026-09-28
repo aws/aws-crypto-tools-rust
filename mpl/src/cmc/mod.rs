@@ -127,8 +127,6 @@ impl std::error::Error for CmcError {
 }
 
 //
-/// The interface every cache implements.
-///
 /// To hold a cache whose concrete type is chosen at runtime, use [`SharedCmc`].
 #[async_trait]
 pub trait Cmc: Send + Sync {
@@ -152,12 +150,10 @@ pub trait Cmc: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A cache whose concrete type is not known at compile time.
+    /// A cache whose concrete type is chosen at runtime.
     ///
-    /// [`Cmc`] is the trait a cache implements.
-    /// `SharedCmc` holds any value that implements it, and implements it too.
-    /// APIs that accept a cache take `impl Cmc + 'static`,
-    /// so callers usually pass the concrete cache and never name this type.
+    /// It implements [`Cmc`], so it can be passed anywhere a cache is accepted.
+    /// Callers that know their cache's type pass it directly and never need this one.
     ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
     /// Give several keyrings clones of one handle through [`CacheType::Shared`]

@@ -29,8 +29,6 @@ pub use error::{KeystoreError, KeystoreErrorKind};
 
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 
-/// The interface every keystore implements.
-///
 /// To hold a keystore whose concrete type is chosen at runtime, use [`SharedKeystore`].
 #[async_trait]
 pub trait Keystore: Send + Sync {
@@ -77,12 +75,10 @@ pub trait Keystore: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A keystore whose concrete type is not known at compile time.
+    /// A keystore whose concrete type is chosen at runtime.
     ///
-    /// [`Keystore`] is the trait a keystore implements.
-    /// `SharedKeystore` holds any value that implements it, and implements it too.
-    /// APIs that accept a keystore take `impl Keystore + 'static`,
-    /// so callers usually pass the concrete keystore and never name this type.
+    /// It implements [`Keystore`], so it can be passed anywhere a keystore is accepted.
+    /// Callers that know their keystore's type pass it directly and never need this one.
     SharedKeystore,
     Keystore
 );

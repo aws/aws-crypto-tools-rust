@@ -4,7 +4,7 @@
 //! Shared handles for the pluggable-component traits.
 //!
 //! A trait is not a type, so an API cannot store "some keyring" by value.
-//! Each trait has a handle that can: [`SharedKeyring`](crate::SharedKeyring),
+//! Each trait has a handle that can be stored: [`SharedKeyring`](crate::SharedKeyring),
 //! [`SharedCmm`](crate::SharedCmm), [`SharedKeystore`](crate::SharedKeystore),
 //! [`SharedCmc`](crate::SharedCmc), and
 //! [`SharedBranchKeySupplier`](crate::SharedBranchKeySupplier).
@@ -42,9 +42,9 @@
 
 use std::any::{Any, TypeId};
 
-/// Conversion into a shared handle, implemented by every handle for every implementation of its trait.
+/// The conversion a handle implements for every implementation of its trait.
 ///
-/// Call [`IntoShared::into_shared`] instead.
+/// Callers use [`IntoShared::into_shared`], which calls this.
 pub trait FromUnshared<Unshared> {
     /// Create the handle from `value`.
     fn from_unshared(value: Unshared) -> Self;

@@ -50,8 +50,7 @@ impl BranchKeySupplier for Supplier {
     }
 }
 
-/// Asserts that converting an existing handle reuses it instead of nesting it,
-/// through both `new` and `into_shared`, where `impl Trait` is accepted.
+/// Asserts that `new` and `into_shared` reuse an existing handle instead of nesting it.
 macro_rules! assert_reuses_handle {
     ($handle:ident, $trait:ident, $make:expr) => {{
         fn into_handle(component: impl $trait + 'static) -> $handle {

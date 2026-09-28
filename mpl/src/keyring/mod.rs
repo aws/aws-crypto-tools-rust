@@ -17,8 +17,6 @@ use crate::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
 };
 
-/// The interface every keyring implements.
-///
 /// To hold a keyring whose concrete type is chosen at runtime, use [`SharedKeyring`].
 #[async_trait]
 pub trait Keyring: Send + Sync {
@@ -43,12 +41,10 @@ pub trait Keyring: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A keyring whose concrete type is not known at compile time.
+    /// A keyring whose concrete type is chosen at runtime.
     ///
-    /// [`Keyring`] is the trait a keyring implements.
-    /// `SharedKeyring` holds any value that implements it, and implements it too.
-    /// APIs that accept a keyring take `impl Keyring + 'static`,
-    /// so callers usually pass the concrete keyring and never name this type.
+    /// It implements [`Keyring`], so it can be passed anywhere a keyring is accepted.
+    /// Callers that know their keyring's type pass it directly and never need this one.
     SharedKeyring,
     Keyring
 );

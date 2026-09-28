@@ -101,12 +101,10 @@ pub trait BranchKeySupplier: Send + Sync {
 }
 
 crate::shared::shared_handle!(
-    /// A branch key supplier whose concrete type is not known at compile time.
+    /// A branch key supplier whose concrete type is chosen at runtime.
     ///
-    /// [`BranchKeySupplier`] is the trait a branch key supplier implements.
-    /// `SharedBranchKeySupplier` holds any value that implements it, and implements it too.
-    /// APIs that accept a branch key supplier take `impl BranchKeySupplier + 'static`,
-    /// so callers usually pass the concrete branch key supplier and never name this type.
+    /// It implements [`BranchKeySupplier`], so it can be passed anywhere a branch key supplier is accepted.
+    /// Callers that know their branch key supplier's type pass it directly and never need this one.
     SharedBranchKeySupplier,
     BranchKeySupplier
 );
