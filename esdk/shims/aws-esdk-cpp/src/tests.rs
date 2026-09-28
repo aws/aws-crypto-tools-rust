@@ -282,14 +282,14 @@ fn encryption_context_round_trips() {
     //# - The shim MUST translate the target's encryption context, given as a list of
     //# key-value pairs, to the core ESDK's key-value map, preserving every pair and
     //# the exact key and value of each.
-    assert_eq!(encryption_context_target_to_core(&list), m);
+    assert_eq!(encryption_context_target_to_core(&list).unwrap(), m);
 }
 
 #[test]
 fn encryption_context_empty() {
     let empty = aws_esdk::EncryptionContext::new();
     assert!(encryption_context_core_to_target(empty).is_empty());
-    assert!(encryption_context_target_to_core(&[]).is_empty());
+    assert!(encryption_context_target_to_core(&[]).unwrap().is_empty());
 }
 
 #[test]
