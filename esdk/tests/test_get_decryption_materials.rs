@@ -32,10 +32,8 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     // A different keyring (different namespace, different wrapping key) — its
     // default CMM cannot unwrap the EDK encrypted by `keyring`.
     let (ns, name) = namespace_and_name(1);
-    let wrong_keyring: Arc<dyn aws_crypto_mpl::keyring::Keyring> = Arc::new(
-        RawAesKeyring::new(ns, name, vec![1u8; 32], AesGcm::Aes256Gcm)
-            .expect("raw AES keyring construction must succeed for test key material"),
-    );
+    let wrong_keyring = RawAesKeyring::new(ns, name, vec![1u8; 32], AesGcm::Aes256Gcm)
+        .expect("raw AES keyring construction must succeed for test key material");
 
     let valid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
     let invalid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), wrong_keyring);
@@ -301,7 +299,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
 /// then delegates to an inner (real) default CMM so the returned materials are
 /// the genuine ones the ESDK uses to complete the round-trip.
 struct DecryptSpyCmm {
-    inner: Arc<dyn cmm::Cmm>,
+    inner: DefaultCmm,
     observed_edk_count: Arc<Mutex<Option<usize>>>,
     observed_ec_keys: Arc<Mutex<Option<Vec<String>>>>,
 }
@@ -341,14 +339,14 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let enc_input = EncryptInput::with_keyring(pt, ec, keyring.clone());
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
-    let inner_cmm: Arc<dyn cmm::Cmm> = Arc::new(DefaultCmm::new(keyring));
+    let inner_cmm = DefaultCmm::new(keyring);
     let observed_edk_count = Arc::new(Mutex::new(None));
     let observed_ec_keys = Arc::new(Mutex::new(None));
-    let spy_cmm: Arc<dyn cmm::Cmm> = Arc::new(DecryptSpyCmm {
+    let spy_cmm = DecryptSpyCmm {
         inner: inner_cmm,
         observed_edk_count: observed_edk_count.clone(),
         observed_ec_keys: observed_ec_keys.clone(),
-    });
+    };
 
     let dec_input = DecryptInput::with_cmm(&ct, EncryptionContext::new(), spy_cmm);
     let result = decrypt(&dec_input).await.unwrap();

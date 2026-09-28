@@ -128,14 +128,13 @@ use aws_config::{AppName, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
-    CacheType, Cmc, DefaultCache, StormTrackingCache, TimeUnits,
+    CacheType, DefaultCache, SharedCmc, StormTrackingCache, TimeUnits,
     create_cryptographic_materials_cache as create_cryptographic_materials_cache_core,
 };
-use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, Keystore, KmsConfiguration};
+use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
+use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration, SharedKeystore};
 use aws_crypto_mpl::structures::{AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
-use std::sync::Arc;
 use std::sync::LazyLock;
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
@@ -407,22 +406,22 @@ mod ffi {
 // Resources
 
 struct MplKmsClient {
-    client: aws_sdk_kms::Client,
+    inner: aws_sdk_kms::Client,
 }
 struct MplDdbClient {
-    client: aws_sdk_dynamodb::Client,
+    inner: aws_sdk_dynamodb::Client,
 }
 
 struct KeyStore {
-    client: Arc<dyn Keystore>,
+    inner: SharedKeystore,
 }
 
 struct Keyring {
-    client: aws_esdk::Keyring,
+    inner: SharedKeyring,
 }
 
 struct CryptographicMaterialsCache {
-    cache: Arc<dyn Cmc>,
+    inner: SharedCmc,
 }
 
 // ASCII Unit Seperator, used below
@@ -738,7 +737,7 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
         }
         ffi::CacheKind::Shared => {
             let shared = require_handle(cache.shared, "shared cache", op)?;
-            Ok(CacheType::Shared(Arc::clone(&shared.cache)))
+            Ok(CacheType::Shared(shared.inner.clone()))
         }
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //= type=exception
@@ -773,7 +772,7 @@ fn create_cryptographic_materials_cache(
             e,
         )
     })?;
-    Ok(Box::new(CryptographicMaterialsCache { cache: created }))
+    Ok(Box::new(CryptographicMaterialsCache { inner: created }))
 }
 
 /// C++ to Rust for AWS SDK call retry config
@@ -936,7 +935,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
     //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
     //# source (see [Resources](#resources)).
-    core_input.keyring = Some(keyring.client.clone());
+    core_input.keyring = Some(keyring.inner.clone());
     apply_encrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
     let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt", e))?;
@@ -969,7 +968,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     //# - MUST provide the target-supplied encryption context to the core ESDK,
     //# converted as defined in [Encryption context](#encryption-context).
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
-    core_input.keyring = Some(keyring.client.clone());
+    core_input.keyring = Some(keyring.inner.clone());
     apply_decrypt_options(&mut core_input, input)?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
     let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt", e))?;
@@ -996,8 +995,9 @@ fn create_kms_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplKmsClient
     //# - Creating a KMS client MUST apply the target-supplied client configuration, as
     //# defined in [Service client configuration](#service-client-configuration).
     let sdk_config = create_sdk_config(input)?;
-    let client = aws_sdk_kms::Client::new(&sdk_config);
-    Ok(Box::new(MplKmsClient { client }))
+    Ok(Box::new(MplKmsClient {
+        inner: aws_sdk_kms::Client::new(&sdk_config),
+    }))
 }
 
 //= spec/shim/esdk-shim.md#create-dynamodb-client
@@ -1008,8 +1008,9 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
     //# - Creating a DynamoDB client MUST apply the target-supplied client configuration,
     //# as defined in [Service client configuration](#service-client-configuration).
     let sdk_config = create_sdk_config(input)?;
-    let client = aws_sdk_dynamodb::Client::new(&sdk_config);
-    Ok(Box::new(MplDdbClient { client }))
+    Ok(Box::new(MplDdbClient {
+        inner: aws_sdk_dynamodb::Client::new(&sdk_config),
+    }))
 }
 
 //= spec/shim/esdk-shim.md#create-key-store
@@ -1032,8 +1033,8 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
     // A null handle means "not supplied": leaving it None makes the core build its
     // own default client. SAFETY: a non-null handle is a valid client borrowed for
     // this call.
-    let kms_client = unsafe { input.kms_client.as_ref() }.map(|c| c.client.clone());
-    let ddb_client = unsafe { input.ddb_client.as_ref() }.map(|c| c.client.clone());
+    let kms_client = unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone());
+    let ddb_client = unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone());
 
     let config = KeyStoreConfig {
         //= spec/shim/esdk-shim.md#create-key-store
@@ -1063,7 +1064,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .block_on(BranchKeyStore::new(config))
         .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
     Ok(Box::new(KeyStore {
-        client: Arc::new(store),
+        inner: SharedKeystore::new(store),
     }))
 }
 
@@ -1116,7 +1117,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
     .map_err(|e| shim_err(ffi::ShimErrorKind::MplError, "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
-        client: aws_esdk::Keyring::new(keyring),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1158,7 +1159,7 @@ fn create_hierarchical_keyring(
     };
 
     let keyring = HierarchicalKeyring::new(
-        Arc::clone(&key_store.client),
+        key_store.inner.clone(),
         //= spec/shim/esdk-shim.md#create-hierarchical-keyring
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
@@ -1177,7 +1178,7 @@ fn create_hierarchical_keyring(
     })?;
 
     Ok(Box::new(Keyring {
-        client: aws_esdk::Keyring::new(keyring),
+        inner: SharedKeyring::new(keyring),
     }))
 }
 
@@ -1390,7 +1391,7 @@ struct DecryptStream {
 fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
     let mut core_input = aws_esdk::EncryptStreamInput::new();
-    core_input.keyring = Some(keyring.client.clone());
+    core_input.keyring = Some(keyring.inner.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
     if input.algorithm_suite_id.set {
         core_input.algorithm_suite_id =
@@ -1439,7 +1440,7 @@ fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<ffi::StreamFinish
 fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
     let mut core_input = aws_esdk::DecryptStreamInput::new();
-    core_input.keyring = Some(keyring.client.clone());
+    core_input.keyring = Some(keyring.inner.clone());
     core_input.encryption_context = encryption_context_target_to_core(&input.encryption_context)?;
     if input.max_encrypted_data_keys.set {
         core_input.max_encrypted_data_keys =
@@ -1508,8 +1509,13 @@ fn decrypt_stream_finish(stream: &mut DecryptStream) -> Result<ffi::StreamFinish
 /// Converts an ESDK Rust keyring into a C++ shim keyring handle.
 /// Pass this to C++ via `Aws::Esdk::Keyring::adopt`.
 /// Ownership transfers to the returned pointer; consumers MUST NOT `adopt` this handle more than once.
-pub fn into_keyring_handle(keyring: aws_esdk::Keyring) -> *mut std::ffi::c_void {
-    Box::into_raw(Box::new(Keyring { client: keyring })).cast()
+pub fn into_keyring_handle(
+    keyring: impl aws_crypto_mpl::keyring::Keyring + 'static,
+) -> *mut std::ffi::c_void {
+    Box::into_raw(Box::new(Keyring {
+        inner: SharedKeyring::new(keyring),
+    }))
+    .cast()
 }
 
 #[cfg(test)]

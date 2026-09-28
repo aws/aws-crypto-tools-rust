@@ -21,9 +21,7 @@
 // variant builds a storm-tracking cache (StormTracker.DefaultStorm) rather
 // than the plain LocalCmc built here. Follow-up PR.
 
-use std::sync::Arc;
-
-use crate::cmc::{Cmc, LocalCmc, StormTrackingCmc, TimeUnits};
+use crate::cmc::{LocalCmc, SharedCmc, StormTrackingCmc, TimeUnits};
 use crate::structures::MaterialsError;
 
 /// Entry capacity a CMP uses when the caller configures no cache at all.
@@ -225,10 +223,9 @@ pub enum CacheType {
     /// to state. Omitting the cache entirely is what selects the CMP's own
     /// default capacity.
     Default(DefaultCache),
-    /// Use the caller-supplied [`Cmc`] impl directly. Common when one
-    /// cache is shared across multiple Hierarchical Keyrings (or other
-    /// CMPs).
-    Shared(Arc<dyn Cmc>),
+    /// Use the cache the caller passed in.
+    /// Common when one cache is shared across multiple Hierarchical Keyrings (or other CMPs).
+    Shared(SharedCmc),
     /// Build a CMP-local [`StormTrackingCmc`](super::StormTrackingCmc) with
     /// the carried [`StormTrackingCache`] parameters. The consuming CMP
     /// validates that `grace_period < cache limit TTL`.
@@ -242,14 +239,14 @@ pub enum CacheType {
 /// Returns an error if the underlying cache rejects the supplied parameters.
 pub fn create_cryptographic_materials_cache(
     cache_type: CacheType,
-) -> Result<Arc<dyn Cmc>, MaterialsError> {
+) -> Result<SharedCmc, MaterialsError> {
     match cache_type {
         CacheType::Default(default_cache) => {
             let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
                 .map_err(|e| {
                     MaterialsError::new(format!("failed to initialize default LocalCmc: {e}"))
                 })?;
-            Ok(Arc::new(local))
+            Ok(SharedCmc::new(local))
         }
         CacheType::Shared(cache) => Ok(cache),
         CacheType::StormTracking(params) => {
@@ -266,7 +263,7 @@ pub fn create_cryptographic_materials_cache(
             .map_err(|e| {
                 MaterialsError::new(format!("failed to initialize StormTrackingCmc: {e}"))
             })?;
-            Ok(Arc::new(storm))
+            Ok(SharedCmc::new(storm))
         }
     }
 }

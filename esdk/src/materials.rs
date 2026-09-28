@@ -3,7 +3,6 @@
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 use crate::error::{Error, val_err};
 use crate::message::header_types::HeaderBody;
@@ -12,14 +11,10 @@ use crate::message::serializable_types::{
 };
 use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
+use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };
-
-/// A cryptographic materials manager resolved from the caller's input: either
-/// the caller's own CMM, or a [`DefaultCmm`] wrapping the caller's keyring.
-pub(crate) struct ResolvedCmm(Arc<dyn Cmm>);
 
 /// Check that every encryption context entry is valid UTF-8.
 ///
@@ -73,14 +68,14 @@ pub(crate) struct ValidatedMaterials<M> {
     pub(crate) required_encryption_context_keys: Vec<String>,
 }
 
-/// Build the internal [`ResolvedCmm`] from the resolved material source. A
-/// supplied CMM is used directly; a supplied keyring is wrapped in a
-/// [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
+/// Resolve the CMM for an operation from the resolved material source.
+/// A supplied CMM is used directly.
+/// A supplied keyring is wrapped in a [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
 pub(crate) fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
-) -> Result<ResolvedCmm, Error> {
+) -> Result<SharedCmm, Error> {
     match input_source.ok_or_else(|| val_err("A Materials Source must be provided"))? {
-        MaterialSource::Cmm(cmm) => Ok(ResolvedCmm(cmm)),
+        MaterialSource::Cmm(cmm) => Ok(cmm),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials
             //# If instead the caller supplied a [keyring](../framework/keyring-interface.md),
@@ -90,13 +85,13 @@ pub(crate) fn create_cmm_from_input(
             //= spec/client-apis/decrypt.md#keyring
             //# If the Keyring is provided as the input, the client MUST construct a [default CMM](../framework/default-cmm.md) that uses this keyring,
             //# to obtain the [decryption materials](../framework/structures.md#decryption-materials) that is required for decryption.
-            Ok(ResolvedCmm(Arc::new(DefaultCmm::new(keyring))))
+            Ok(SharedCmm::new(DefaultCmm::new(keyring)))
         }
     }
 }
 
 pub(crate) async fn get_decryption_materials(
-    cmm: ResolvedCmm,
+    cmm: SharedCmm,
     algorithm_suite_id: AlgorithmSuiteId,
     header_body: &HeaderBody,
     reproduced_encryption_context: &EncryptionContext,
@@ -142,7 +137,7 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#keyring
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let materials = cmm.0.decrypt_materials(request).await?;
+    let materials = cmm.decrypt_materials(request).await?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
@@ -181,7 +176,7 @@ pub(crate) async fn get_decryption_materials(
 }
 
 pub(crate) async fn get_encryption_materials(
-    cmm: ResolvedCmm,
+    cmm: SharedCmm,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
     max_plaintext_length: Option<usize>,
@@ -224,7 +219,7 @@ pub(crate) async fn get_encryption_materials(
         request = request.with_max_plaintext_length(len as u64);
     }
 
-    let materials = cmm.0.get_encryption_materials(request).await?;
+    let materials = cmm.get_encryption_materials(request).await?;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)

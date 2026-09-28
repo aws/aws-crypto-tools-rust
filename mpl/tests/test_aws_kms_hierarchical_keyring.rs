@@ -31,7 +31,7 @@ use aws_crypto_mpl::aws_kms::__test_internals::{
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
+    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT, SharedBranchKeySupplier,
 };
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
@@ -42,7 +42,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc};
+use aws_crypto_mpl::{LocalCmc, SharedCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -92,9 +92,9 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// ondecrypt` instead. Both SDK clients are supplied, so this goes through the
 /// synchronous [`BranchKeyStore::with_clients`] — there is nothing to resolve
 /// and so nothing to await.
-fn keystore_never_consulted() -> Arc<dyn Keystore> {
+fn keystore_never_consulted() -> BranchKeyStore {
     let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::with_clients(KeyStoreConfig {
+    BranchKeyStore::with_clients(KeyStoreConfig {
         ddb_table_name: "test-table".to_string(),
         kms_configuration: KmsConfiguration::KmsKeyArn(
             "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
@@ -106,8 +106,7 @@ fn keystore_never_consulted() -> Arc<dyn Keystore> {
         ddb_client: Some(ddb),
         kms_client: Some(kms),
     })
-    .expect("BranchKeyStore construction with a valid config must succeed");
-    Arc::new(store)
+    .expect("BranchKeyStore construction with a valid config must succeed")
 }
 
 #[test]
@@ -147,7 +146,9 @@ fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
         keystore_never_consulted(),
         3600,
         Some("branch-key-id".to_string()),
-        Some(Arc::new(FixedBranchKeySupplier("unused")) as Arc<dyn BranchKeySupplier>),
+        Some(SharedBranchKeySupplier::new(FixedBranchKeySupplier(
+            "unused",
+        ))),
         None,
         None,
     ) {
@@ -352,8 +353,7 @@ fn new_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
-    let supplier: Arc<dyn BranchKeySupplier> =
-        Arc::new(FixedBranchKeySupplier("branch-id-from-supplier"));
+    let supplier = SharedBranchKeySupplier::new(FixedBranchKeySupplier("branch-id-from-supplier"));
     let keyring = HierarchicalKeyring::new(
         keystore_never_consulted(),
         3600,
@@ -378,7 +378,7 @@ fn new_with_branch_key_id_supplier_succeeds() {
 // assertion. Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to
 // the cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
 // and is deliberately not re-derived through the keyring. The one exception is
-// `CacheType::Shared`, where the keyring must store the caller's `Arc` verbatim
+// `CacheType::Shared`, where the keyring must store the caller's cache verbatim
 // rather than build its own; nothing but a keyring test can check that.
 
 #[test]
@@ -408,27 +408,26 @@ fn new_with_cache_type_none_succeeds() {
 }
 
 #[test]
-fn new_with_shared_cache_round_trips_provided_arc() {
-    let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
-    let supplied_for_compare = Arc::clone(&supplied);
+fn new_with_shared_cache_round_trips_provided_cache() {
+    let supplied = SharedCmc::new(LocalCmc::new(8, 4).unwrap());
 
     let keyring = HierarchicalKeyring::new(
         keystore_never_consulted(),
         3600,
         Some("bk".to_string()),
         None,
-        Some(CacheType::Shared(supplied)),
+        Some(CacheType::Shared(supplied.clone())),
         None,
     )
-    .expect("CacheType::Shared(Arc<dyn Cmc>) must succeed");
+    .expect("CacheType::Shared must succeed");
 
-    // The exact `Arc` supplied is what the keyring stores. Tested via
+    // The exact cache supplied is what the keyring stores. Tested via
     // pointer-identity rather than behaviour because the struct field is
     // not directly observable.
-    let stored: &Arc<dyn Cmc> = keyring.cache();
+    let stored: &SharedCmc = keyring.cache();
     assert!(
-        Arc::ptr_eq(stored, &supplied_for_compare),
-        "CacheType::Shared MUST round-trip the supplied Arc verbatim"
+        SharedCmc::ptr_eq(stored, &supplied),
+        "CacheType::Shared MUST round-trip the supplied cache verbatim"
     );
 }
 
@@ -1223,21 +1222,22 @@ const FAKE_LOGICAL_KEYSTORE_NAME: &str = "test-logical-name";
 /// counters are `Mutex<..>` rather than `Cell<..>` because `Keystore` requires
 /// `Send + Sync`; each lock is taken and released inside a single statement, so
 /// no guard is ever held across an `.await`.
+#[derive(Clone)]
 struct FakeKeystore {
     materials: BranchKeyMaterials,
-    get_active_calls: Mutex<u32>,
-    get_version_calls: Mutex<u32>,
-    last_version_arg: Mutex<Option<String>>,
+    get_active_calls: Arc<Mutex<u32>>,
+    get_version_calls: Arc<Mutex<u32>>,
+    last_version_arg: Arc<Mutex<Option<String>>>,
 }
 
 impl FakeKeystore {
-    fn new(materials: BranchKeyMaterials) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(materials: BranchKeyMaterials) -> Self {
+        Self {
             materials,
-            get_active_calls: Mutex::new(0),
-            get_version_calls: Mutex::new(0),
-            last_version_arg: Mutex::new(None),
-        })
+            get_active_calls: Arc::new(Mutex::new(0)),
+            get_version_calls: Arc::new(Mutex::new(0)),
+            last_version_arg: Arc::new(Mutex::new(None)),
+        }
     }
 
     fn get_active_calls(&self) -> u32 {
@@ -1347,7 +1347,7 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
 
 /// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
 /// keyring-local default cache.
-fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> HierarchicalKeyring {
+fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::new(
         keystore,
         3600,
@@ -1372,7 +1372,7 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_caches_branch_key_materials_after_keystore_call() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
 
         // First call: cache miss → keystore is called.
         keyring
@@ -1459,7 +1459,7 @@ mod onencrypt {
             }
         }
         let keyring = HierarchicalKeyring::new(
-            Arc::new(FailingKeystore) as Arc<dyn Keystore>,
+            FailingKeystore,
             3600,
             Some("bk".to_string()),
             None,
@@ -1505,17 +1505,17 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring =
-            HierarchicalKeyring::new(
-                Arc::clone(&keystore) as Arc<dyn Keystore>,
-                3600,
-                None,
-                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-                    as Arc<dyn BranchKeySupplier>),
-                Some(CacheType::Default(DefaultCache::new(1000))),
-                None,
-            )
-            .unwrap();
+        let keyring = HierarchicalKeyring::new(
+            keystore.clone(),
+            3600,
+            None,
+            Some(SharedBranchKeySupplier::new(FixedBranchKeySupplier(
+                FAKE_BRANCH_KEY_ID,
+            ))),
+            Some(CacheType::Default(DefaultCache::new(1000))),
+            None,
+        )
+        .unwrap();
 
         let materials_out = keyring
             .on_encrypt(empty_encryption_materials(non_signing_suite()))
@@ -1602,7 +1602,7 @@ mod ondecrypt {
         // MUST be the canonical UUID string parsed from the 16 raw bytes
         // at offset salt+iv inside the EDK ciphertext.
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (_, edks) = produce_edk(&keyring, suite_id).await;
@@ -1629,7 +1629,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_caches_branch_key_after_keystore_call() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (_, edks) = produce_edk(&keyring, suite_id).await;
@@ -1659,7 +1659,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_wrong_provider_id() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1685,7 +1685,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_non_utf8_provider_info() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1711,7 +1711,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_wrong_branch_key_id() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1958,7 +1958,7 @@ mod ondecrypt {
         let (_, edks) = produce_edk(&priming_keyring, suite_id).await;
 
         let keyring = HierarchicalKeyring::new(
-            Arc::new(FailingKeystore) as Arc<dyn Keystore>,
+            FailingKeystore,
             3600,
             Some(FAKE_BRANCH_KEY_ID.to_string()),
             None,
@@ -1999,17 +1999,17 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring =
-            HierarchicalKeyring::new(
-                Arc::clone(&keystore) as Arc<dyn Keystore>,
-                3600,
-                None,
-                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-                    as Arc<dyn BranchKeySupplier>),
-                Some(CacheType::Default(DefaultCache::new(1000))),
-                Some("partition-id".to_string()),
-            )
-            .unwrap();
+        let keyring = HierarchicalKeyring::new(
+            keystore.clone(),
+            3600,
+            None,
+            Some(SharedBranchKeySupplier::new(FixedBranchKeySupplier(
+                FAKE_BRANCH_KEY_ID,
+            ))),
+            Some(CacheType::Default(DefaultCache::new(1000))),
+            Some("partition-id".to_string()),
+        )
+        .unwrap();
         let suite_id = non_signing_suite();
 
         let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;

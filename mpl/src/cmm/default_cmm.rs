@@ -5,7 +5,6 @@
 //! that wraps a single keyring.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use aws_mpl_primitives::{
@@ -15,7 +14,8 @@ use base64::Engine;
 
 use super::Cmm;
 use super::request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
-use crate::keyring::Keyring;
+use crate::keyring::{Keyring, SharedKeyring};
+use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
     MaterialsError, SigningKey, VerificationKey,
@@ -50,14 +50,17 @@ const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
 ///   context contains the reserved `aws-crypto-public-key`.
 /// - Calls the wrapped keyring's `on_decrypt` to populate the plaintext data
 ///   key.
+#[derive(Clone)]
 pub struct DefaultCmm {
-    keyring: Arc<dyn Keyring>,
+    keyring: SharedKeyring,
 }
 
 impl DefaultCmm {
     /// Construct a `DefaultCmm` wrapping the given keyring.
-    pub fn new(keyring: Arc<dyn Keyring>) -> Self {
-        Self { keyring }
+    pub fn new(keyring: impl Keyring + 'static) -> Self {
+        Self {
+            keyring: keyring.into_shared(),
+        }
     }
 }
 

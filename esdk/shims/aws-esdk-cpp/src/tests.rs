@@ -547,6 +547,32 @@ fn create_cache_rejects_unknown_kind() {
 }
 
 #[test]
+fn shared_cache_type_references_the_supplied_cache() {
+    let base = ffi::CacheType {
+        kind: ffi::CacheKind::Default,
+        entry_capacity: 10,
+        entry_pruning_tail_size: 0,
+        grace_period: 0,
+        grace_interval: 0,
+        fan_out: 0,
+        inflight_ttl: 0,
+        sleep_milli: 0,
+        time_units: ffi::TimeUnits::Unset,
+        shared: std::ptr::null(),
+    };
+    let cache = create_cryptographic_materials_cache(&base).expect("default cache should build");
+    let shared = ffi::CacheType {
+        kind: ffi::CacheKind::Shared,
+        shared: &*cache as *const CryptographicMaterialsCache,
+        ..base
+    };
+    let Ok(CacheType::Shared(referenced)) = make_cache_type(&shared) else {
+        panic!("a Shared cache kind must yield CacheType::Shared");
+    };
+    assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
+}
+
+#[test]
 fn create_storm_tracking_cache_honors_time_units() {
     // time_units governs how grace_period/grace_interval/inflight_ttl are
     // interpreted; Unset (the core default of seconds), Seconds, and
@@ -752,7 +778,7 @@ fn into_keyring_handle_boxes_the_keyring() {
         wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
     })
     .expect("raw AES keyring should build");
-    let handle = into_keyring_handle(keyring.client.clone());
+    let handle = into_keyring_handle(keyring.inner.clone());
     assert!(!handle.is_null());
     unsafe { drop(Box::from_raw(handle.cast::<Keyring>())) };
 }

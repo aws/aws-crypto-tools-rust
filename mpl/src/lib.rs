@@ -17,16 +17,20 @@ pub mod cmm;
 pub mod error_chain;
 pub mod keyring;
 pub mod keystore;
+pub mod shared;
 pub mod structures;
 
 pub use client::*;
+pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
 // `RawAesKeyring::new`; without this a caller would have to depend on
 // `aws-mpl-primitives` directly just to name the wrapping algorithm.
 pub use aws_mpl_primitives::AesGcm;
 
 pub use aws_config;
-pub use aws_kms::hierarchical_keyring::HierarchicalKeyring;
+pub use aws_kms::hierarchical_keyring::{
+    BranchKeySupplier, HierarchicalKeyring, SharedBranchKeySupplier,
+};
 
 // Re-exported because both SDK clients appear in the public signature of
 // `KeyStoreConfig`, and because a `KeystoreError` carries these crates' SDK
@@ -37,12 +41,12 @@ pub use aws_sdk_kms;
 
 pub use cmc::{
     BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
-    LocalCmc, MessageUsage, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc,
-    TimeUnits, UsageMetadata,
+    LocalCmc, MessageUsage, SharedCmc, StormTrackingCache, StormTrackingCacheBuilder,
+    StormTrackingCmc, TimeUnits, UsageMetadata,
 };
-pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-pub use keyring::{Keyring, RawAesKeyring};
+pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
+pub use keyring::{Keyring, RawAesKeyring, SharedKeyring};
 pub use keystore::{
     BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
-    encryption_context, kms_config, record,
+    SharedKeystore, encryption_context, kms_config, record,
 };

@@ -22,7 +22,6 @@ use aws_crypto_mpl::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError, PlaintextDataKey,
 };
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
-use std::sync::Arc;
 
 const PROVIDER_ID: &str = "local-test-keyring";
 const WRAP_IV_LEN: usize = 12;
@@ -30,7 +29,7 @@ const WRAP_TAG_LEN: usize = 16;
 
 /// Caller-implemented keyring. Wraps the data key with AES-256-GCM under a
 /// local KEK and stores `iv || ciphertext || tag` as the EDK ciphertext.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LocalKekKeyring {
     kek: [u8; 32],
 }
@@ -152,7 +151,7 @@ impl Keyring for LocalKekKeyring {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_round_trips_via_public_api() {
-    let keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [7u8; 32] });
+    let keyring = LocalKekKeyring { kek: [7u8; 32] };
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.
@@ -185,7 +184,7 @@ async fn custom_keyring_round_trips_via_public_api() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_wrong_kek_fails_decrypt() {
-    let enc_keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [7u8; 32] });
+    let enc_keyring = LocalKekKeyring { kek: [7u8; 32] };
     let out = encrypt(&EncryptInput::with_keyring(
         b"wrong kek must fail",
         EncryptionContext::new(),
@@ -195,7 +194,7 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     .unwrap();
 
     // A keyring with a different KEK cannot unwrap the data key.
-    let wrong_keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [8u8; 32] });
+    let wrong_keyring = LocalKekKeyring { kek: [8u8; 32] };
     let err = decrypt(&DecryptInput::with_keyring(
         &out.ciphertext,
         EncryptionContext::new(),

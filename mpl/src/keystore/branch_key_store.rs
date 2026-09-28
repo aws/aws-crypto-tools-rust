@@ -10,6 +10,7 @@
 //! ARN, per `branch-key-store.md`.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
@@ -57,7 +58,12 @@ use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContex
 /// at construction time and resolves the optional caller-supplied
 /// `id` against a freshly-generated v4 UUID per
 /// `branch-key-store.md#keystore-id`.
+#[derive(Clone)]
 pub struct BranchKeyStore {
+    inner: Arc<BranchKeyStoreInner>,
+}
+
+struct BranchKeyStoreInner {
     /// Caller-supplied configuration, with the KMS and DynamoDB clients
     /// resolved to concrete instances at construction (any `None` client
     /// is replaced with a default built from the KMS ARN region).
@@ -168,14 +174,17 @@ impl BranchKeyStore {
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
         Ok(Self {
-            config,
-            keystore_id,
+            inner: Arc::new(BranchKeyStoreInner {
+                config,
+                keystore_id,
+            }),
         })
     }
 
     /// The resolved AWS KMS client. Guaranteed present after construction.
     fn kms_client(&self) -> &KmsClient {
-        self.config
+        self.inner
+            .config
             .kms_client
             .as_ref()
             .expect("kms_client is resolved during construction")
@@ -184,7 +193,8 @@ impl BranchKeyStore {
     /// The resolved Amazon DynamoDB client. Guaranteed present after
     /// construction.
     fn ddb_client(&self) -> &DynamoDbClient {
-        self.config
+        self.inner
+            .config
             .ddb_client
             .as_ref()
             .expect("ddb_client is resolved during construction")
@@ -194,7 +204,7 @@ impl BranchKeyStore {
     /// require a single-key configuration; `Discovery` / `MRDiscovery`
     /// have no single ARN to wrap under and are rejected.
     fn configured_kms_key_arn(&self) -> Result<&str, KeystoreError> {
-        match &self.config.kms_configuration {
+        match &self.inner.config.kms_configuration {
             KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn),
             KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => {
                 Err(KeystoreError::new(
@@ -209,12 +219,12 @@ impl BranchKeyStore {
     /// Returns the resolved keystore identifier — either caller-supplied
     /// or the v4 UUID generated at construction.
     pub fn keystore_id(&self) -> &str {
-        &self.keystore_id
+        &self.inner.keystore_id
     }
 
     /// Borrow the configured grant tokens (or an empty slice if `None`).
     fn grant_tokens(&self) -> &[String] {
-        self.config.grant_tokens.as_deref().unwrap_or(&[])
+        self.inner.config.grant_tokens.as_deref().unwrap_or(&[])
     }
 
     /// Build the authenticated encryption context for a fetched record.
@@ -225,7 +235,7 @@ impl BranchKeyStore {
         let mut ec = record.attributes.clone();
         ec.insert(
             "tablename".to_string(),
-            self.config.logical_keystore_name.clone(),
+            self.inner.config.logical_keystore_name.clone(),
         );
         ec
     }
@@ -248,7 +258,7 @@ impl BranchKeyStore {
         let response = self
             .ddb_client()
             .get_item()
-            .table_name(&self.config.ddb_table_name)
+            .table_name(&self.inner.config.ddb_table_name)
             .key(
                 ATTR_BRANCH_KEY_ID,
                 AttributeValue::S(branch_key_id.to_string()),
@@ -273,16 +283,16 @@ impl BranchKeyStore {
 impl Keystore for BranchKeyStore {
     fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
         Ok(KeyStoreInfo {
-            keystore_id: self.keystore_id.clone(),
-            keystore_name: self.config.ddb_table_name.clone(),
-            logical_keystore_name: self.config.logical_keystore_name.clone(),
-            grant_tokens: self.config.grant_tokens.clone().unwrap_or_default(),
-            kms_configuration: self.config.kms_configuration.clone(),
+            keystore_id: self.inner.keystore_id.clone(),
+            keystore_name: self.inner.config.ddb_table_name.clone(),
+            logical_keystore_name: self.inner.config.logical_keystore_name.clone(),
+            grant_tokens: self.inner.config.grant_tokens.clone().unwrap_or_default(),
+            kms_configuration: self.inner.config.kms_configuration.clone(),
         })
     }
 
     async fn create_key_store(&self) -> Result<String, KeystoreError> {
-        let table_name = &self.config.ddb_table_name;
+        let table_name = &self.inner.config.ddb_table_name;
 
         // Per branch-key-store.md#createkeystore: first DescribeTable.
         match self
@@ -367,7 +377,7 @@ impl Keystore for BranchKeyStore {
         let ec_input = EncryptionContextInput {
             branch_key_id: &branch_key_id,
             create_time: &timestamp,
-            logical_keystore_name: &self.config.logical_keystore_name,
+            logical_keystore_name: &self.inner.config.logical_keystore_name,
             kms_arn: &key_arn,
             hierarchy_version: 1,
             custom_ec: encryption_context.as_ref(),
@@ -406,7 +416,7 @@ impl Keystore for BranchKeyStore {
         let mut transact_items = Vec::with_capacity(items.len());
         for item in items {
             let put = Put::builder()
-                .table_name(&self.config.ddb_table_name)
+                .table_name(&self.inner.config.ddb_table_name)
                 .set_item(Some(item))
                 .condition_expression("attribute_not_exists(#branch_key_id)")
                 .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
@@ -448,7 +458,8 @@ impl Keystore for BranchKeyStore {
                 )
             })?
             .clone();
-        let resolved_arn = resolve_keystore_arn(&self.config.kms_configuration, &stored_kms_arn)?;
+        let resolved_arn =
+            resolve_keystore_arn(&self.inner.config.kms_configuration, &stored_kms_arn)?;
 
         // The encryption context reconstructed from the stored item (the
         // logical keystore name is bound as `tablename`).
@@ -517,7 +528,7 @@ impl Keystore for BranchKeyStore {
         // ACTIVE only if it is unchanged since the read (optimistic lock).
         let decrypt_only_item = item_from_ec_and_enc(&new_decrypt_only_ec, wrapped_decrypt_only);
         let decrypt_only_put = Put::builder()
-            .table_name(&self.config.ddb_table_name)
+            .table_name(&self.inner.config.ddb_table_name)
             .set_item(Some(decrypt_only_item))
             .condition_expression("attribute_not_exists(#branch_key_id)")
             .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
@@ -526,7 +537,7 @@ impl Keystore for BranchKeyStore {
 
         let active_item = item_from_ec_and_enc(&new_active_ec, wrapped_active);
         let active_put = Put::builder()
-            .table_name(&self.config.ddb_table_name)
+            .table_name(&self.inner.config.ddb_table_name)
             .set_item(Some(active_item))
             .condition_expression("attribute_exists(#branch_key_id) AND #enc = :encOld")
             .expression_attribute_names("#branch_key_id", ATTR_BRANCH_KEY_ID)
@@ -563,9 +574,9 @@ impl Keystore for BranchKeyStore {
 
         let plaintext = decrypt_branch_key(
             self.kms_client(),
-            &self.config.kms_configuration,
+            &self.inner.config.kms_configuration,
             &record,
-            &self.config.logical_keystore_name,
+            &self.inner.config.logical_keystore_name,
             self.grant_tokens(),
         )
         .await?;
@@ -585,9 +596,9 @@ impl Keystore for BranchKeyStore {
 
         let plaintext = decrypt_branch_key(
             self.kms_client(),
-            &self.config.kms_configuration,
+            &self.inner.config.kms_configuration,
             &record,
-            &self.config.logical_keystore_name,
+            &self.inner.config.logical_keystore_name,
             self.grant_tokens(),
         )
         .await?;
@@ -607,9 +618,9 @@ impl Keystore for BranchKeyStore {
 
         let plaintext = decrypt_branch_key(
             self.kms_client(),
-            &self.config.kms_configuration,
+            &self.inner.config.kms_configuration,
             &record,
-            &self.config.logical_keystore_name,
+            &self.inner.config.logical_keystore_name,
             self.grant_tokens(),
         )
         .await?;
