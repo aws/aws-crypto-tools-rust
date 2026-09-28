@@ -88,5 +88,7 @@ jobs:
       focus: rust-cpp
       checkout-languages: rust-cpp
       commons-ref: lucmcdon/test-server-fast-launch
+      # TEMPORARY: save from this PR to verify warm runs.
+      save-caches: true
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
