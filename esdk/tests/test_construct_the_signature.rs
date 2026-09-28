@@ -203,7 +203,7 @@ async fn test_signature_input_is_header_plus_body() {
         decrypt_ciphertext_result(&tampered_header)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::ValidationError,
         "tampered header body byte must produce ValidationError"
     );
@@ -223,7 +223,7 @@ async fn test_signature_input_is_header_plus_body() {
         decrypt_ciphertext_result(&tampered_body)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::CryptographicError,
         "tampered body must produce CryptographicError"
     );

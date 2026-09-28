@@ -65,7 +65,7 @@ async fn test_verify_header_fails_on_tampered_header() {
     //# [authentication tag field](../data-format/message-header.md#authentication-tag)
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::ValidationError,
         "tampered header byte must produce ValidationError"
     );
@@ -194,7 +194,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
         decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::Esdk,
         "tampered signature must produce Esdk error"
     );

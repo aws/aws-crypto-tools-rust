@@ -59,14 +59,14 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         .await
         .expect_err("tampered footer must fail");
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::Esdk,
         "tampered footer must produce Esdk error"
     );
     assert!(
-        err.message.contains("Signature verification failed"),
+        err.message().contains("Signature verification failed"),
         "error message must indicate signature verification failure, got: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -233,7 +233,7 @@ async fn test_footer_wait_truncated_message_fails() {
     //# to indicate an end to the encrypted message.
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
     assert_eq!(
-        decrypt(&truncated_input).await.unwrap_err().kind,
+        decrypt(&truncated_input).await.unwrap_err().kind(),
         ErrorKind::SerializationError,
         "truncated footer must produce SerializationError"
     );

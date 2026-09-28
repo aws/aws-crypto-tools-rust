@@ -65,10 +65,10 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     // Natively, the wrapped keyring's on_decrypt returns a MaterialsError that
     // the ESDK surfaces as ErrorKind::MplError
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::MplError,
         "expected MPL materials error from the wrong keyring's default CMM, got: {:?}",
-        err.kind
+        err.kind()
     );
 }
 
@@ -122,10 +122,10 @@ async fn test_pre_cmm_commitment_policy_check() {
     // The parsed-suite-vs-commitment-policy check runs pre-CMM in decrypt.rs and
     // yields a ValidationError.
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::ValidationError,
         "expected pre-CMM ValidationError, got: {:?}",
-        err.kind
+        err.kind()
     );
 }
 
@@ -227,7 +227,7 @@ async fn test_commit_key_derived_and_validated() {
         "valid commit key must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::ValidationError,
         "tampered commit key must produce ValidationError"
     );
@@ -332,7 +332,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
         "valid suite ID must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::ValidationError,
         "non-ESDK suite ID must produce ValidationError"
     );

@@ -45,7 +45,7 @@ async fn test_unsupported_version_rejected() {
         "supported version must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::SerializationError,
         "unsupported version byte must produce SerializationError"
     );
@@ -95,7 +95,7 @@ async fn test_unsupported_content_type_v1_rejected() {
         "supported content type must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::SerializationError,
         "unsupported V1 content type must produce SerializationError"
     );
@@ -145,7 +145,7 @@ async fn test_unsupported_content_type_v2_rejected() {
         "supported content type must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::SerializationError,
         "unsupported V2 content type must produce SerializationError"
     );
@@ -191,7 +191,7 @@ async fn test_unsupported_type_rejected() {
         "supported type must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::SerializationError,
         "unsupported V1 type byte must produce SerializationError"
     );
@@ -284,7 +284,7 @@ async fn test_no_header_info_released_before_verification() {
     //# release any parsed information from the header.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::ValidationError,
         "tampered header must produce ValidationError, no output"
     );
@@ -338,7 +338,7 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
         "valid V1 ct must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::CryptographicError,
         "tampered V1 auth tag must produce CryptographicError"
     );
@@ -386,7 +386,7 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
         "valid V1 ct must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::CryptographicError,
         "tampered V1 header auth IV must produce CryptographicError"
     );
@@ -697,7 +697,7 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
         "valid V2 ct must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::CryptographicError,
         "tampered V2 auth tag must produce CryptographicError"
     );

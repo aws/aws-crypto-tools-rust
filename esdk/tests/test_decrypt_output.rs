@@ -101,7 +101,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     //# This operation MUST NOT release any unauthenticated plaintext or unauthenticated associated data.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
+        decrypt(&tampered_input).await.unwrap_err().kind(),
         ErrorKind::CryptographicError,
         "tampered body auth tag must produce CryptographicError, no plaintext"
     );
@@ -151,7 +151,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
         decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::Esdk,
         "tampered signature must produce Esdk error"
     );

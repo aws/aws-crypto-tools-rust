@@ -83,7 +83,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         try_decrypt_with_keyring(&content_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::CryptographicError,
         "tampered frame content must fail AEAD authentication"
     );
@@ -97,7 +97,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         try_decrypt_with_keyring(&seq_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::SerializationError,
         "tampered frame sequence number must be rejected"
     );
@@ -115,7 +115,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         try_decrypt_with_keyring(&content_length_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
+            .kind(),
         ErrorKind::CryptographicError,
         "tampered final-frame content length must fail AEAD authentication"
     );

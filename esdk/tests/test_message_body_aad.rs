@@ -323,7 +323,7 @@ async fn test_body_aad_content_length_nonframed_rejects_tampered_length() {
         //= reason=Tampered content_length causes AES-GCM auth failure.
         //# - For [nonframed data](message-body.md#nonframed-data), this value MUST equal the length, in bytes, of the plaintext data provided to the algorithm for encryption.
         assert_eq!(
-            err.kind,
+            err.kind(),
             ErrorKind::CryptographicError,
             "{version:?}: expected ErrorKind::CryptographicError (AES-GCM tag mismatch), got {err:?}"
         );
@@ -413,7 +413,7 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
     //= reason=Tampered frame sequence number is rejected by the decryptor.
     //# For [framed data](message-body.md#framed-data), the value of this field MUST be the [frame sequence number](message-body.md#regular-frame-sequence-number).
     assert_eq!(
-        err.kind,
+        err.kind(),
         ErrorKind::SerializationError,
         "expected ErrorKind::SerializationError after tampering frame 1's seq from 1 to {tampered_seq}, got {err:?}"
     );
