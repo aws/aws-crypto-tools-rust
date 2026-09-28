@@ -28,15 +28,6 @@
 //! EncryptInput::with_keyring(pt, ec, shared);  // reuses the handle, no second Arc
 //! ```
 //!
-//! # Why `IntoShared` and not `From`
-//!
-//! A handle implements its trait, so `impl<T: Keyring> From<T> for SharedKeyring`
-//! would cover `From<SharedKeyring> for SharedKeyring`,
-//! which the standard library already provides.
-//! [`IntoShared`] sidesteps that overlap.
-//! It also checks at runtime whether the value is already the handle,
-//! and reuses it instead of nesting one handle inside another.
-//!
 //! This matches the AWS SDK for Rust (`SharedCredentialsProvider`, `SharedHttpClient`)
 //! and its `aws_smithy_runtime_api::shared` module.
 
