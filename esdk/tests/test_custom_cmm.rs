@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Caller-implemented CMM. Forwards materials requests to an inner default
 /// CMM and records that each trait method was invoked.
+#[derive(Clone)]
 struct RecordingCmm {
     inner: DefaultCmm,
     saw_get_encryption_materials: Arc<AtomicBool>,
@@ -57,11 +58,11 @@ async fn custom_cmm_round_trips_via_public_api() {
     let saw_decrypt_materials = Arc::new(AtomicBool::new(false));
 
     // Custom CMM over a default CMM backed by a local raw AES keyring.
-    let cmm = SharedCmm::new(RecordingCmm {
+    let cmm = RecordingCmm {
         inner: DefaultCmm::new(test_helpers::test_keyring().await),
         saw_get_encryption_materials: Arc::clone(&saw_get_encryption_materials),
         saw_decrypt_materials: Arc::clone(&saw_decrypt_materials),
-    });
+    };
     let plaintext = b"custom cmm round trip";
 
     // Encrypt and decrypt entirely through the custom CMM.
