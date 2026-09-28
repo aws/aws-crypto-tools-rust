@@ -84,7 +84,7 @@ jobs:
       # Cold builds (Java gradle/maven, Rust aws-lc-sys, .NET dafny transpile) exceed
       # the orchestrator's 180s default server-readiness window; widen it so the first
       # (cold-cache) run fits. Warm runs are fast via the build caches above.
-      ESDK_TESTSERVER_READY_TIMEOUT_SECONDS: "1800"
+      TESTSERVER_READY_TIMEOUT_SECONDS: "1800"
     steps:
       - uses: actions/checkout@v4
         with:
