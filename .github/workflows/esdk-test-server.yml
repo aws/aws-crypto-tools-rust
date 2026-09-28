@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   rust-language-server:
-    name: build + test (live aws-esdk)
+    name: Rust server: fmt, clippy, unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,7 +70,7 @@ jobs:
   # checkout supplies the rust server; every other server comes from its
   # configured branch. Only the pairs involving rust run; the full matrix runs in commons.
   test-server:
-    name: Cross-language TestServer run
+    name: TestServer
     permissions:
       contents: read
       actions: read

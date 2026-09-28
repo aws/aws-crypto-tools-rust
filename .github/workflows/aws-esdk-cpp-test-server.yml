@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   cpp-shim-language-server:
-    name: build + test (C++ facade)
+    name: C++ shim server: fmt, clippy, unit tests
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +78,7 @@ jobs:
   # checkout supplies the rust-cpp server; every other server comes from its
   # configured branch. Only the pairs involving rust-cpp run; the full matrix runs in commons.
   test-server:
-    name: Cross-language TestServer run
+    name: TestServer
     permissions:
       contents: read
       actions: read
