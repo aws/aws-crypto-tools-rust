@@ -3,8 +3,7 @@
 
 //! Encrypt rejects CMM materials that carry no encrypted data keys.
 //!
-//! Local because a caller's CMM impl is a native trait, unreachable from the
-//! cross-language interop vectors.
+//! Local because the cross-language vectors cannot supply a CMM the caller implements.
 
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
 use aws_crypto_mpl::structures::{
@@ -14,8 +13,8 @@ use aws_esdk::*;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-/// A non-committing, non-signing suite, so the fabricated materials need no
-/// signing key and pass under ForbidEncryptAllowDecrypt.
+/// Non-signing, so the materials need no signing key.
+/// Non-committing, so encrypt needs ForbidEncryptAllowDecrypt.
 const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
 
 /// A CMM that returns materials with a plaintext data key and no EDKs.

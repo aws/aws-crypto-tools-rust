@@ -452,29 +452,10 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
 // EncryptionContext: current behavior on empty keys
 // ============================================================================
 //
-// The current Rust implementation of `EncryptionContext` accepts empty byte
-// keys at every entry point to the type:
-//
-//   1. EncryptionContext::insert(...)   — accepts an empty key
-//   2. EncryptionContext::from(...)     — accepts a BTreeMap with an empty key
-//   3. EncryptionContext::deserialize() — accepts a wire form with key_len = 0
-//   4. EncryptionContext::serialize()   — by symmetry with (1)/(2), will emit
-//                                         key_len = 0 for any empty-keyed entry
-//
-// The structures.md spec's encryption-context section describes entries as
-// UTF-8 byte strings but does not itself require keys to be non-empty, so
-// this is NOT a spec-conformance gap — it is simply a permissive design
-// choice worth pinning with regression tests so any future tightening of the
-// contract produces a deliberate, reviewable test failure rather than
-// silently changing observable behavior.
-//
-// If the contract is ever tightened (e.g., an internal invariant added
-// alongside a broader EncryptionContext validation pass), these tests should
-// be flipped: each `assert! / assert_eq!` should become an assertion that
-// the entry point returns an `Err(MaterialsError { kind:
-// MaterialsErrorKind::Validation, .. })`, and `From<BTreeMap>` would
-// become `TryFrom` — a breaking API change deferred to a future
-// EncryptionContext-invariants pass.
+// EncryptionContext accepts an empty key at every entry point:
+// insert, From<BTreeMap>, deserialize (key_len = 0), and serialize.
+// structures.md does not require non-empty keys.
+// These tests pin the permissive behavior so tightening it fails a test instead of changing silently.
 // ============================================================================
 
 #[test]
@@ -491,10 +472,8 @@ fn test_insert_accepts_empty_key_currently_unenforced() {
 
 #[test]
 fn test_from_btreemap_accepts_empty_key_currently_unenforced() {
-    // CURRENT BEHAVIOR (permissive): From<BTreeMap> silently accepts a
-    // map whose keys include an empty string.
-    // If/when empty keys are rejected, this conversion must become TryFrom;
-    // this test would become an Err assertion.
+    // CURRENT BEHAVIOR (permissive): From<BTreeMap> accepts an empty key.
+    // If empty keys are ever rejected, this conversion becomes TryFrom and this test asserts Err.
     let mut map = BTreeMap::new();
     map.insert(String::new(), "value".to_string());
     let ec = EncryptionContext::from(map);
@@ -519,15 +498,10 @@ fn test_deserialize_accepts_empty_key_length_currently_unenforced() {
     assert_eq!(ec.get(""), Some("1"));
 }
 
-// ============================================================================
-// UTF-8: ordering and the fallible byte entry points
-// ============================================================================
-
 #[test]
 fn test_serialize_orders_by_utf8_bytes_not_utf16_code_units() {
-    // U+FF5E encodes as EF BD 9E and U+1F600 as F0 9F 98 80, so U+FF5E sorts
-    // first by UTF-8 bytes. In UTF-16, U+1F600 is the surrogate pair
-    // D83D DE00, which sorts before FF5E.
+    // U+FF5E (EF BD 9E) sorts before U+1F600 (F0 9F 98 80) by UTF-8 bytes.
+    // By UTF-16 code units it sorts after: U+1F600 is the surrogate pair D83D DE00.
     let ec = EncryptionContext::from([("\u{1F600}", "b"), ("\u{FF5E}", "a")]);
 
     let expected: &[u8] = &[

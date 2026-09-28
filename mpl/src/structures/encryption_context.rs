@@ -9,9 +9,8 @@ use super::error::MaterialsError;
 
 /// A key-value mapping of arbitrary, non-secret, UTF-8 encoded strings used as AAD.
 ///
-/// Keys and values are `String`s, so every entry is valid UTF-8. `str` orders
-/// by raw bytes, so iteration yields keys in ascending order of their UTF-8
-/// encoding, which is the order [`EncryptionContext::serialize`] writes.
+/// Iteration and [`serialize`](Self::serialize) visit keys in ascending UTF-8 byte order,
+/// the order the message format requires.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct EncryptionContext(BTreeMap<String, String>);
 
@@ -35,8 +34,8 @@ impl EncryptionContext {
     /// Insert a key-value pair given as raw bytes.
     ///
     /// # Errors
-    /// Returns a `Validation` error, leaving the context unchanged, if `key` or
-    /// `value` is not valid UTF-8.
+    /// Returns a `Validation` error if `key` or `value` is not valid UTF-8.
+    /// The context is left unchanged.
     pub fn try_insert_utf8(
         &mut self,
         key: &[u8],
@@ -131,8 +130,8 @@ impl EncryptionContext {
     /// Deserialize an encryption context from bytes.
     ///
     /// # Errors
-    /// Returns a `Validation` error if the bytes are malformed, contain a
-    /// duplicate key, or contain a key or value that is not valid UTF-8.
+    /// Returns a `Validation` error if the bytes are malformed,
+    /// repeat a key, or hold a key or value that is not valid UTF-8.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, MaterialsError> {
         if bytes.is_empty() {
             return Ok(Self::new());

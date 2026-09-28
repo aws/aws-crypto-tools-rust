@@ -30,7 +30,6 @@ pub enum SmallEncryptionContextVariation {
     CD,
 }
 
-/// Build an encryption context from string pairs.
 pub fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
     for &(k, v) in pairs {

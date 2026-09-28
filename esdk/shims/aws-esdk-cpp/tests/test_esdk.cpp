@@ -188,8 +188,8 @@ void test_raw_aes_non_ascii_encryption_context_round_trips() {
 }
 
 void test_non_utf8_encryption_context_throws_invalid_argument() {
-    // cxx's rust::String(const std::string&) rejects non-UTF-8 bytes by
-    // throwing std::invalid_argument before any call reaches Rust.
+    // cxx's rust::String constructor throws std::invalid_argument on non-UTF-8 bytes,
+    // before the call reaches Rust.
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);

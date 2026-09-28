@@ -116,8 +116,7 @@ impl Cmm for DefaultCmm {
             let scalar_bytes = keys.signing_key;
             let public_key_bytes = keys.verification_key;
 
-            // Encode the verification key as base64 (standard alphabet, with
-            // padding) and store the result in the EC.
+            // The EC carries the verification key as standard base64 with padding.
             let base64_public_key =
                 base64::engine::general_purpose::STANDARD.encode(&public_key_bytes);
 

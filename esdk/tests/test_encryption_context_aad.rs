@@ -250,14 +250,14 @@ async fn test_aad_empty_encryption_context_no_kvp_field() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_aad_non_ascii_keys_serialize_in_utf8_byte_order() {
-    // U+FF5E (EF BD 9E) sorts before U+1F600 (F0 9F 98 80) by UTF-8 bytes, but
-    // after it by UTF-16 code units (U+1F600 is the surrogate pair D83D DE00).
+    // U+FF5E (EF BD 9E) sorts before U+1F600 (F0 9F 98 80) by UTF-8 bytes.
+    // By UTF-16 code units it sorts after: U+1F600 is the surrogate pair D83D DE00.
     let ec = EncryptionContext::from([("\u{1F600}", "\u{1F980}"), ("\u{FF5E}", "caf\u{E9}")]);
     let expected_aad: &[u8] = &[
         0x00, 0x1A, // key value pairs length = 26
         0x00, 0x02, // count = 2
         0x00, 0x03, 0xEF, 0xBD, 0x9E, // key U+FF5E
-        0x00, 0x05, b'c', b'a', b'f', 0xC3, 0xA9, // value "cafe" with U+00E9
+        0x00, 0x05, b'c', b'a', b'f', 0xC3, 0xA9, // value "caf" U+00E9
         0x00, 0x04, 0xF0, 0x9F, 0x98, 0x80, // key U+1F600
         0x00, 0x04, 0xF0, 0x9F, 0xA6, 0x80, // value U+1F980
     ];
@@ -275,9 +275,10 @@ async fn test_aad_non_ascii_keys_serialize_in_utf8_byte_order() {
     }
 }
 
-/// Encrypt `{"keyA": "valA", "keyB": "valB"}`, replace the header's second
-/// key with `second_key`, and return the decrypt error. The pair entries are
-/// fixed-width, so the edit changes no length field.
+/// Encrypt `{"keyA": "valA", "keyB": "valB"}`,
+/// overwrite the header's second key with `second_key`,
+/// and return the decrypt error.
+/// Every key is 4 bytes, so the edit changes no length field.
 async fn decrypt_err_with_second_key(version: Version, second_key: &[u8; 4]) -> Error {
     let keyring = test_keyring().await;
     let ec = small_encryption_context(SmallEncryptionContextVariation::AB);

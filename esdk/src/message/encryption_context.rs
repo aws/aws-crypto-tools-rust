@@ -66,7 +66,6 @@ fn get_length(data: &EncryptionContext) -> usize {
     let mut length = 0;
     for (key, value) in data.iter() {
         // key_len(2) + key bytes + val_len(2) + val bytes.
-        // `.len()` on a str returns the number of UTF-8 bytes, which is what we serialize.
         length += 2 + key.len() + 2 + value.len();
     }
     length
