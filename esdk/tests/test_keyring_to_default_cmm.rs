@@ -15,8 +15,8 @@
 //! would diverge and the cross-decrypt would fail.
 //!
 //! This is the strongest property we can assert without a spy on the CMM
-//! construction in `materials.rs` — the MPL doesn't expose a way to ask an
-//! `SharedCmm` "are you the default CMM?" at runtime.
+//! construction in `materials.rs` — the MPL doesn't expose a way to ask a
+//! CMM "are you the default CMM?" at runtime.
 //!
 
 #[allow(clippy::duplicate_mod)]

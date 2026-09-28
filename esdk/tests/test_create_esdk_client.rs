@@ -4,8 +4,8 @@
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_esdk::{
-    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, IntoShared, SharedCmm,
-    decrypt, encrypt,
+    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, IntoShared, decrypt,
+    encrypt,
 };
 use aws_mpl_primitives::AesGcm;
 
@@ -253,7 +253,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_accepts_cmm() {
     let keyring = test_keyring().await;
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring));
+    let cmm = DefaultCmm::new(keyring);
     let plaintext = b"cmm round-trip plaintext";
 
     let mut encrypt_input = EncryptInput::new();
@@ -263,7 +263,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
     //= type=test
     //= reason=encrypt_input.cmm is Some(cmm); encrypt() succeeds
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    encrypt_input.cmm = Some(cmm.clone());
+    encrypt_input.cmm = Some(cmm.clone().into_shared());
 
     let encrypt_output = encrypt(&encrypt_input)
         .await
@@ -276,7 +276,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
     //= type=test
     //= reason=decrypt_input.cmm is Some(cmm); decrypt() succeeds
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
-    decrypt_input.cmm = Some(cmm);
+    decrypt_input.cmm = Some(cmm.into_shared());
 
     let decrypt_output = decrypt(&decrypt_input)
         .await
@@ -294,7 +294,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    let cmm = DefaultCmm::new(keyring.clone());
 
     //= spec/client-apis/encrypt.md#input
     //= type=test
@@ -317,7 +317,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
     let mut both = EncryptInput::new();
     both.plaintext = b"two sources";
     both.keyring = Some(keyring.into_shared());
-    both.cmm = Some(cmm);
+    both.cmm = Some(cmm.into_shared());
     let err = encrypt(&both)
         .await
         .expect_err("encrypt must fail when both keyring and cmm are set");
@@ -334,7 +334,7 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
-    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    let cmm = DefaultCmm::new(keyring.clone());
 
     //= spec/client-apis/decrypt.md#input
     //= type=test
@@ -354,7 +354,7 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
     );
 
     neither.keyring = Some(keyring.into_shared());
-    neither.cmm = Some(cmm);
+    neither.cmm = Some(cmm.into_shared());
     let err = decrypt(&neither)
         .await
         .expect_err("decrypt must fail when both keyring and cmm are set");

@@ -29,7 +29,7 @@ const WRAP_TAG_LEN: usize = 16;
 
 /// Caller-implemented keyring. Wraps the data key with AES-256-GCM under a
 /// local KEK and stores `iv || ciphertext || tag` as the EDK ciphertext.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LocalKekKeyring {
     kek: [u8; 32],
 }
@@ -151,7 +151,7 @@ impl Keyring for LocalKekKeyring {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_round_trips_via_public_api() {
-    let keyring = SharedKeyring::new(LocalKekKeyring { kek: [7u8; 32] });
+    let keyring = LocalKekKeyring { kek: [7u8; 32] };
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.
