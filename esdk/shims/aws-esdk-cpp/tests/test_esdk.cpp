@@ -228,7 +228,6 @@ void test_keystore_rejects_short_table_name() {
                                               .with_ddb_client(ddb)));
 }
 
-// Offline: building a hierarchical keyring does not contact the key store.
 void test_hierarchical_keyring_ttl() {
     using namespace std::chrono_literals;
     Aws::Esdk::KmsClient kms;
@@ -239,12 +238,24 @@ void test_hierarchical_keyring_ttl() {
         Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
 
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
-    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 2000ms);
-    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 500ms);
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
+
+    // The core requires the grace period to be less than the TTL,
+    // so these pin the exact TTL value that reaches it.
+    auto with_grace_ms = [](std::uint32_t grace_period) {
+        return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
+            Aws::Esdk::CacheType::StormTracking(
+                /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
+                /*grace_interval=*/100, /*fan_out=*/4, /*inflight_ttl=*/100,
+                /*sleep_milli=*/10, Aws::Esdk::TimeUnits::Milliseconds));
+    };
+    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1499));
+    CHECK_THROWS_TYPE(
+        Aws::Esdk::ValidationException,
+        Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1500)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
