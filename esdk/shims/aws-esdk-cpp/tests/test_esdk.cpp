@@ -168,6 +168,50 @@ void test_raw_aes_round_trip() {
     }
 }
 
+void test_raw_aes_non_ascii_encryption_context_round_trips() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> ec = {
+        {"\xEF\xBD\x9E", "caf\xC3\xA9"},              // U+FF5E -> "cafe" with U+00E9
+        {"\xF0\x9F\x98\x80", "\xF0\x9F\xA6\x80"},  // U+1F600 -> U+1F980
+    };
+    auto ciphertext =
+        sdk.encrypt(to_bytes("non-ascii ec"), keyring,
+                    Aws::Esdk::EncryptOptions().with_encryption_context(ec))
+            .ciphertext;
+    auto decrypted = sdk.decrypt(ciphertext, keyring,
+                                 Aws::Esdk::DecryptOptions().with_encryption_context(ec));
+    for (const auto& kv : ec) {
+        auto it = decrypted.encryption_context.find(kv.first);
+        ESDK_CHECK(it != decrypted.encryption_context.end() && it->second == kv.second);
+    }
+}
+
+void test_non_utf8_encryption_context_throws_invalid_argument() {
+    // cxx's rust::String constructor throws std::invalid_argument on non-UTF-8 bytes,
+    // before the call reaches Rust.
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> bad_key = {{"\xFF", "value"}};
+    const std::map<std::string, std::string> bad_value = {{"key", "\xC3"}};
+    auto plaintext = to_bytes("non-utf-8 ec");
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_key)));
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_value)));
+
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.decrypt(ciphertext, keyring,
+                                  Aws::Esdk::DecryptOptions().with_encryption_context(bad_key)));
+}
+
 void test_raw_aes_mismatched_key_length_throws() {
     std::vector<std::uint8_t> short_key(16, 0x01);
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
@@ -727,6 +771,8 @@ int main(int argc, char** argv) {
     // Always run offline tests
     try {
         test_raw_aes_round_trip();
+        test_raw_aes_non_ascii_encryption_context_round_trips();
+        test_non_utf8_encryption_context_throws_invalid_argument();
         test_raw_aes_wrong_keyring_fails();
         test_raw_aes_mismatched_key_length_throws();
         test_cache_kinds();

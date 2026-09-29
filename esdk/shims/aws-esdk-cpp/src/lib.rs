@@ -618,15 +618,8 @@ fn commitment_policy_target_to_core(
 //# the exact key and value of each.
 fn encryption_context_target_to_core(
     x: &[ffi::EncryptionContextItem],
-) -> Result<aws_esdk::EncryptionContext, String> {
-    let mut ec = aws_esdk::EncryptionContext::new();
-    for item in x {
-        ec.insert(
-            item.key.clone().into_bytes(),
-            item.value.clone().into_bytes(),
-        );
-    }
-    Ok(ec)
+) -> aws_esdk::EncryptionContext {
+    x.iter().map(|i| (i.key.clone(), i.value.clone())).collect()
 }
 
 // Rust to C++ for Encryption Context
@@ -636,26 +629,9 @@ fn encryption_context_target_to_core(
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
     x: aws_esdk::EncryptionContext,
-) -> Result<Vec<ffi::EncryptionContextItem>, String> {
-    // The core validates that the encryption context is UTF-8 before it reaches
-    // the header, so this decode does not fail in practice; report rather than
-    // panic if a future core path lets non-UTF-8 through.
-    x.iter()
-        .map(|(k, v)| {
-            let decode = |b: &Vec<u8>| {
-                String::from_utf8(b.clone()).map_err(|_| {
-                    shim_err(
-                        ffi::ShimErrorKind::SerializationError,
-                        "encryption context translation",
-                        "core returned an encryption context entry that is not valid UTF-8",
-                    )
-                })
-            };
-            Ok(ffi::EncryptionContextItem {
-                key: decode(k)?,
-                value: decode(v)?,
-            })
-        })
+) -> Vec<ffi::EncryptionContextItem> {
+    x.into_iter()
+        .map(|(key, value)| ffi::EncryptionContextItem { key, value })
         .collect()
 }
 
@@ -999,9 +975,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        )?)
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         //= spec/shim/esdk-shim.md#materials-source
         //= type=implication
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
@@ -1022,7 +996,7 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+        encryption_context: encryption_context_core_to_target(output.encryption_context),
     })
 }
 
@@ -1039,9 +1013,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        )?)
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .keyring(keyring.inner.clone());
     let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
@@ -1057,7 +1029,7 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+        encryption_context: encryption_context_core_to_target(output.encryption_context),
     })
 }
 
@@ -1458,9 +1430,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
     let core_input = aws_esdk::EncryptStreamInput::builder()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        )?)
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .set_algorithm_suite_id(
             input
                 .algorithm_suite_id
@@ -1504,7 +1474,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-                encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context),
                 trailing_output: Vec::new(),
             })
         }),
@@ -1523,9 +1493,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
     let core_input = aws_esdk::DecryptStreamInput::builder()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(
-            &input.encryption_context,
-        )?)
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .set_max_encrypted_data_keys(
             input
                 .max_encrypted_data_keys
@@ -1557,7 +1525,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 .map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt_stream", e))?;
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-                encryption_context: encryption_context_core_to_target(output.encryption_context)?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context),
                 trailing_output: Vec::new(),
             })
         }),

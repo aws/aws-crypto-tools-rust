@@ -162,7 +162,7 @@ async fn test_frame_length_default_is_4096() {
 async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     let keyring = test_keyring().await;
     let mut ec = EncryptionContext::new();
-    ec.insert(b"greet".to_vec(), b"hello".to_vec());
+    ec.insert("greet", "hello");
     let plaintext = b"round-trip plaintext";
 
     let encrypt_input = EncryptInput::builder()
@@ -251,11 +251,8 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         "round-trip plaintext must match"
     );
     assert_eq!(
-        decrypt_output
-            .encryption_context
-            .get(b"greet")
-            .map(|v| v.as_slice()),
-        Some(b"hello".as_slice()),
+        decrypt_output.encryption_context.get("greet"),
+        Some("hello"),
         "encrypt/decrypt must honor the encryption context input"
     );
 }

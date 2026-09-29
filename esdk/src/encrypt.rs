@@ -15,9 +15,7 @@ use crate::message::encryption_context::write_empty_ec_or_write_aad;
 use crate::message::header_types::{
     ContentType, HeaderAuth, HeaderBody, MessageId, MessageType, V1HeaderBody, V2HeaderBody,
 };
-use crate::message::serializable_types::{
-    ESDKCanonicalEncryptionContext, get_encrypt_key_length, get_iv_length, to_canonical_pairs,
-};
+use crate::message::serializable_types::{get_encrypt_key_length, get_iv_length};
 use crate::message::{DigestWriter, body, footer, header};
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
 use crate::types::{
@@ -29,6 +27,7 @@ use aws_crypto_mpl::structures::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::structures::EncryptionMaterials;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
+use std::collections::BTreeSet;
 
 /// AES-GCM IV length in bytes (used for body frames; header IV length varies by suite).
 const IV_LEN: usize = 12;
@@ -55,10 +54,6 @@ fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: NonZeroU32)
 /// Intermediate state produced by [`step_get_encryption_materials`] and consumed by subsequent steps.
 struct EncryptionMaterialsResult {
     materials: EncryptionMaterials,
-    /// UTF-8 validated view of `materials.encryption_context()`.
-    encryption_context: EncryptionContext,
-    /// UTF-8 validated view of `materials.required_encryption_context_keys()`.
-    required_encryption_context_keys: Vec<String>,
     derived_data_keys: key_derivation::ExpandedKeyMaterial,
     message_id: MessageId,
 }
@@ -219,8 +214,8 @@ async fn internal_encrypt(
     //# - The message MUST begin with [Message Header](message-header.md)
     let header = step_construct_header(
         &mat_result,
-        &mat_result.encryption_context,
-        &mat_result.required_encryption_context_keys,
+        mat_result.materials.encryption_context(),
+        mat_result.materials.required_encryption_context_keys(),
         mat_result.materials.encrypted_data_keys(),
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# The frame length used in the procedures described below MUST be the input [frame length](#frame-length),
@@ -337,7 +332,7 @@ async fn step_get_encryption_materials(
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The call to [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials)
     //# on that CMM MUST be constructed as follows:
-    let validated = materials::get_encryption_materials(
+    let materials = materials::get_encryption_materials(
         cmm,
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# - Algorithm Suite: If provided, this MUST be the [input algorithm suite](#algorithm-suite).
@@ -347,7 +342,6 @@ async fn step_get_encryption_materials(
         commitment_policy,
     )
     .await?;
-    let materials = validated.materials;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
@@ -400,8 +394,6 @@ async fn step_get_encryption_materials(
 
     Ok(EncryptionMaterialsResult {
         materials,
-        encryption_context: validated.encryption_context,
-        required_encryption_context_keys: validated.required_encryption_context_keys,
         derived_data_keys,
         message_id,
     })
@@ -411,7 +403,7 @@ async fn step_get_encryption_materials(
 fn step_construct_header(
     mat_result: &EncryptionMaterialsResult,
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &[String],
+    required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: NonZeroU32,
     ciphertext: &mut dyn SafeWrite,
@@ -554,7 +546,7 @@ const RESERVED_ENCRYPTION_CONTEXT: &str = "aws-crypto-";
 
 fn validate_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
     for (key, _) in ec.iter() {
-        if key.starts_with(RESERVED_ENCRYPTION_CONTEXT.as_bytes()) {
+        if key.starts_with(RESERVED_ENCRYPTION_CONTEXT) {
             return Err(val_err(
                 "Encryption context keys cannot contain reserved prefix 'aws-crypto-'",
             ));
@@ -567,7 +559,7 @@ fn build_header_for_encrypt(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &[String],
+    required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     derived_data_keys: &key_derivation::ExpandedKeyMaterial,
@@ -579,35 +571,29 @@ fn build_header_for_encrypt(
     //# the [encryption material's](../framework/structures.md#encryption-materials)
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
-    let required_keys: std::collections::BTreeSet<&[u8]> = required_encryption_context_keys
-        .iter()
-        .map(String::as_bytes)
-        .collect();
     let mut stored_encryption_context = EncryptionContext::new();
     let mut required_encryption_context_map = EncryptionContext::new();
     for (key, value) in encryption_context.iter() {
-        if required_keys.contains(key.as_slice()) {
-            required_encryption_context_map.insert(key.clone(), value.clone());
+        if required_encryption_context_keys.contains(key) {
+            required_encryption_context_map.insert(key, value);
         } else {
-            stored_encryption_context.insert(key.clone(), value.clone());
+            stored_encryption_context.insert(key, value);
         }
     }
-    let canonical_stored_encryption_context = to_canonical_pairs(&stored_encryption_context)?;
 
     let body: HeaderBody = build_header_body(
         message_id,
         suite,
-        &canonical_stored_encryption_context,
+        &stored_encryption_context,
         encrypted_data_keys,
         frame_length,
         derived_data_keys.commitment_key.as_deref().cloned(),
     )?;
 
-    let canonical_req_encryption_context = to_canonical_pairs(&required_encryption_context_map)?;
     let mut serialized_req_encryption_context = Vec::new();
     write_empty_ec_or_write_aad(
         &mut serialized_req_encryption_context,
-        &canonical_req_encryption_context,
+        &required_encryption_context_map,
     )?;
 
     let mut raw_header = Vec::new();
@@ -636,7 +622,7 @@ fn build_header_for_encrypt(
 fn build_header_body(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
-    encryption_context: &ESDKCanonicalEncryptionContext,
+    encryption_context: &EncryptionContext,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     suite_data: Option<Vec<u8>>,
@@ -673,7 +659,7 @@ fn build_header_body(
 fn build_v2_header_body(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
-    encryption_context: &ESDKCanonicalEncryptionContext,
+    encryption_context: &EncryptionContext,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     suite_data: Option<Vec<u8>>,
@@ -706,7 +692,7 @@ fn build_v2_header_body(
 fn build_v1_header_body(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
-    encryption_context: &ESDKCanonicalEncryptionContext,
+    encryption_context: &EncryptionContext,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
 ) -> Result<HeaderBody, Error> {

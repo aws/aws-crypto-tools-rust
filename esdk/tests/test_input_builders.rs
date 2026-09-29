@@ -23,7 +23,7 @@ fn cap() -> NonZeroUsize {
 
 fn ec() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), b"v".to_vec());
+    ec.insert("k", "v");
     ec
 }
 

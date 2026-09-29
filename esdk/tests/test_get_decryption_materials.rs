@@ -365,7 +365,7 @@ impl cmm::Cmm for DecryptSpyCmm {
         let keys: Vec<String> = request
             .encryption_context()
             .iter()
-            .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
+            .map(|(k, _)| k.to_owned())
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
@@ -377,7 +377,7 @@ impl cmm::Cmm for DecryptSpyCmm {
 async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let keyring = test_keyring().await;
     let mut ec = EncryptionContext::new();
-    ec.insert(b"spy-key".to_vec(), b"spy-val".to_vec());
+    ec.insert("spy-key", "spy-val");
     let pt = b"spy cmm decrypt test";
     let enc_input = EncryptInput::builder()
         .plaintext(pt)

@@ -830,7 +830,7 @@ fn compute_aad_appends_serialized_encryption_context() {
     let branch_key_id = "id-with-ec";
     let version = "01234567-0123-4123-8123-0123456789ab";
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), b"v".to_vec());
+    ec.insert("k", "v");
 
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
 
@@ -853,7 +853,7 @@ fn compute_aad_fails_when_encryption_context_value_too_large() {
     let version = "01234567-0123-4123-8123-0123456789ab";
     let mut ec = EncryptionContext::new();
     // value length > u16::MAX makes EncryptionContext::serialize() fail.
-    ec.insert(b"k".to_vec(), vec![0u8; 65_536]);
+    ec.insert("k", "\0".repeat(65_536));
 
     let result = compute_aad(branch_key_id, version, &ec);
     let err = result.expect_err("compute_aad must fail when EC serialization fails");
@@ -891,8 +891,8 @@ fn wrap_unwrap_round_trip_recovers_plaintext() {
 #[test]
 fn wrap_round_trip_with_nonempty_encryption_context() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"purpose".to_vec(), b"test".to_vec());
-    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    ec.insert("purpose", "test");
+    ec.insert("region", "us-west-2");
     let materials = fixture_materials_with_ec(ec);
 
     let plaintext = vec![0xAA_u8; 32];
@@ -1118,7 +1118,7 @@ fn wrap_then_unwrap_with_different_encryption_context_fails() {
     .expect("wrap must succeed");
 
     let mut other_ec = EncryptionContext::new();
-    other_ec.insert(b"region".to_vec(), b"us-east-1".to_vec());
+    other_ec.insert("region", "us-east-1");
     let materials_unwrap = fixture_materials_with_ec(other_ec);
 
     let result = branch_key_unwrap(
@@ -1230,7 +1230,7 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     // to do any of the above, OnEncrypt MUST fail" failure-propagation
     // contract at the wrap boundary.
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), vec![0u8; 65_536]);
+    ec.insert("k", "\0".repeat(65_536));
     let materials = fixture_materials_with_ec(ec);
 
     let result = branch_key_wrap(&materials, materials.encryption_context(), &[0u8; 32]);

@@ -49,7 +49,7 @@ fn namespace_and_name() -> (String, String) {
 /// Mirrors Dafny `TestUtils.SmallEncryptionContext(A)`.
 fn small_encryption_context_a() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"keyA".to_vec(), b"valA".to_vec());
+    ec.insert("keyA", "valA");
     ec
 }
 
@@ -58,7 +58,7 @@ fn small_encryption_context_a() -> EncryptionContext {
 /// Dafny `generateUnserializableEncryptionContext`.
 fn unserializable_encryption_context() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"keyA".to_vec(), vec![0u8; 0x1_0000]);
+    ec.insert("keyA", "\0".repeat(0x1_0000));
     ec
 }
 
@@ -491,7 +491,7 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
     // A different encryption context yields different AAD, so authentication
     // must fail. This is what proves the serialized context is used as the AAD.
     let mut tampered_ec = EncryptionContext::new();
-    tampered_ec.insert(b"keyA".to_vec(), b"valB".to_vec());
+    tampered_ec.insert("keyA", "valB");
 
     let result = keyring
         .on_decrypt(decryption_materials(tampered_ec, None), &[edk])

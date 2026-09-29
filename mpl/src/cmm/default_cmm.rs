@@ -23,7 +23,7 @@ use crate::structures::{
 
 /// Reserved encryption-context key under which the default CMM stores the
 /// base64-encoded ECDSA verification key for signing-suite messages.
-const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &[u8] = b"aws-crypto-public-key";
+const RESERVED_AWS_CRYPTO_PUBLIC_KEY: &str = "aws-crypto-public-key";
 
 /// Concrete CMM that uses a single keyring and resolves an algorithm suite
 /// from each request's commitment policy.
@@ -119,13 +119,11 @@ impl Cmm for DefaultCmm {
             let scalar_bytes = keys.signing_key;
             let public_key_bytes = keys.verification_key;
 
-            // Encode the verification key as base64 (standard alphabet, with
-            // padding) and store the resulting ASCII bytes in the EC.
-            let base64_public_key = base64::engine::general_purpose::STANDARD
-                .encode(&public_key_bytes)
-                .into_bytes();
+            // The EC carries the verification key as standard base64 with padding.
+            let base64_public_key =
+                base64::engine::general_purpose::STANDARD.encode(&public_key_bytes);
 
-            ec.insert(RESERVED_AWS_CRYPTO_PUBLIC_KEY.to_vec(), base64_public_key);
+            ec.insert(RESERVED_AWS_CRYPTO_PUBLIC_KEY, base64_public_key);
 
             Some(SigningKey::new(scalar_bytes))
         } else {
@@ -240,7 +238,7 @@ impl Cmm for DefaultCmm {
 fn merge_reproduced_encryption_context(
     message_ec: &EncryptionContext,
     reproduced_ec: Option<&EncryptionContext>,
-) -> Result<(EncryptionContext, BTreeSet<Vec<u8>>), MaterialsError> {
+) -> Result<(EncryptionContext, BTreeSet<String>), MaterialsError> {
     let mut ec = message_ec.clone();
     let mut required_keys = BTreeSet::new();
 
@@ -253,14 +251,13 @@ fn merge_reproduced_encryption_context(
             Some(message_value) => {
                 if message_value != value {
                     return Err(MaterialsError::encryption_context_value_mismatch(format!(
-                        "decrypt_materials: message encryption context does not match reproduced encryption context on key '{}'",
-                        String::from_utf8_lossy(key),
+                        "decrypt_materials: message encryption context does not match reproduced encryption context on key '{key}'",
                     )));
                 }
             }
             None => {
-                ec.insert(key.clone(), value.clone());
-                required_keys.insert(key.clone());
+                ec.insert(key, value);
+                required_keys.insert(key.to_owned());
             }
         }
     }

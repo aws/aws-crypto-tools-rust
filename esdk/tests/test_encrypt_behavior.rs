@@ -243,7 +243,7 @@ async fn test_cmm_request_encryption_context() {
     //= type=test
     //# - Encryption Context: If provided, this MUST be the [input encryption context](#encryption-context).
     assert!(
-        output.encryption_context.contains_key(b"mykey"),
+        output.encryption_context.contains_key("mykey"),
         "output encryption context must contain the input key"
     );
 }
@@ -265,7 +265,7 @@ async fn test_cmm_request_empty_encryption_context() {
         !output
             .encryption_context
             .iter()
-            .any(|(k, _)| !k.starts_with(b"aws-crypto-")),
+            .any(|(k, _)| !k.starts_with("aws-crypto-")),
         "output encryption context must not contain user-provided keys when input EC is empty"
     );
 }
@@ -560,7 +560,7 @@ async fn test_output_includes_encryption_context() {
     //= type=test
     //# - Encrypt operation output MUST include an [encryption context](#encryption-context) value.
     assert!(
-        output.encryption_context.contains_key(b"testkey"),
+        output.encryption_context.contains_key("testkey"),
         "output must include the encryption context"
     );
 }

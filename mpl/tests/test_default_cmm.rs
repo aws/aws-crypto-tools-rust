@@ -141,18 +141,18 @@ async fn test_get_encryption_materials_does_not_mutate_callers_ec() {
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut caller_ec = EncryptionContext::new();
-    caller_ec.insert(b"user-key".to_vec(), b"user-value".to_vec());
+    caller_ec.insert("user-key", "user-value");
     let request = EncryptionMaterialsRequest::new(caller_ec, allow_policy())
         .with_algorithm_suite_id(signing_suite());
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let returned_ec = materials.encryption_context();
     assert_eq!(
-        returned_ec.get(b"user-key").map(Vec::as_slice),
-        Some(b"user-value".as_slice()),
+        returned_ec.get("user-key"),
+        Some("user-value"),
         "caller's original EC entry must remain unchanged in the materials' EC"
     );
     assert!(
-        returned_ec.contains_key(b"aws-crypto-public-key"),
+        returned_ec.contains_key("aws-crypto-public-key"),
         "CMM must add the aws-crypto-public-key entry to the (copied) EC"
     );
 }
@@ -162,7 +162,7 @@ async fn test_get_encryption_materials_fails_when_ec_already_has_aws_crypto_publ
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring.clone());
     let mut ec = EncryptionContext::new();
-    ec.insert(b"aws-crypto-public-key".to_vec(), b"existing".to_vec());
+    ec.insert("aws-crypto-public-key", "existing");
     let request = EncryptionMaterialsRequest::new(ec, allow_policy());
     let err = cmm
         .get_encryption_materials(request)
@@ -224,10 +224,9 @@ async fn test_get_encryption_materials_signing_suite_attaches_generated_signing_
         .expect("signing key must be present");
     let vk_b64 = materials
         .encryption_context()
-        .get(b"aws-crypto-public-key")
-        .expect("must have aws-crypto-public-key")
-        .clone();
-    let vk = BASE64_STANDARD.decode(&vk_b64).unwrap();
+        .get("aws-crypto-public-key")
+        .expect("must have aws-crypto-public-key");
+    let vk = BASE64_STANDARD.decode(vk_b64).unwrap();
     assert_signing_key_composes(EcdsaSignatureAlgorithm::EcdsaP384, sk.as_bytes(), &vk);
 }
 
@@ -240,7 +239,7 @@ async fn test_get_encryption_materials_signing_suite_inserts_aws_crypto_public_k
     let materials = cmm.get_encryption_materials(request).await.unwrap();
     let ec = materials.encryption_context();
     let vk_b64 = ec
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .expect("must have aws-crypto-public-key");
     let vk_bytes = BASE64_STANDARD.decode(vk_b64).unwrap();
     assert_eq!(vk_bytes.len(), 49); // P-384 compressed point
@@ -295,7 +294,7 @@ async fn test_decrypt_materials_signing_suite_extracts_verification_key() {
     };
     let vk_b64 = BASE64_STANDARD.encode(&vk_raw);
     let mut ec = EncryptionContext::new();
-    ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
+    ec.insert("aws-crypto-public-key", vk_b64);
     let request = DecryptMaterialsRequest::new(signing_suite(), allow_policy(), vec![], ec);
     let materials = cmm.decrypt_materials(request).await.unwrap();
     let vk = materials
@@ -323,7 +322,7 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut ec = EncryptionContext::new();
-    ec.insert(b"aws-crypto-public-key".to_vec(), b"some-value".to_vec());
+    ec.insert("aws-crypto-public-key", "some-value");
     let request = DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], ec);
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
     assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyUnexpected);
@@ -386,7 +385,7 @@ async fn test_get_encryption_materials_p256_signing_suite_generates_signing_key(
         .expect("signing key must be present for P-256 suite");
     let ec = materials.encryption_context();
     let vk_b64 = ec
-        .get(b"aws-crypto-public-key")
+        .get("aws-crypto-public-key")
         .expect("must have aws-crypto-public-key");
     let vk_bytes = BASE64_STANDARD.decode(vk_b64).unwrap();
     assert_eq!(
@@ -402,10 +401,7 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut ec = EncryptionContext::new();
-    ec.insert(
-        b"aws-crypto-public-key".to_vec(),
-        b"not-valid-base64!!!".to_vec(),
-    );
+    ec.insert("aws-crypto-public-key", "not-valid-base64!!!");
     let request = DecryptMaterialsRequest::new(signing_suite(), allow_policy(), vec![], ec);
     let err = cmm
         .decrypt_materials(request)
@@ -423,7 +419,7 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
     let wrong_length_bytes = vec![0x04; 10];
     let vk_b64 = BASE64_STANDARD.encode(&wrong_length_bytes);
     let mut ec = EncryptionContext::new();
-    ec.insert(b"aws-crypto-public-key".to_vec(), vk_b64.into_bytes());
+    ec.insert("aws-crypto-public-key", vk_b64);
     let request = DecryptMaterialsRequest::new(signing_suite(), allow_policy(), vec![], ec);
     let err = cmm
         .decrypt_materials(request)
@@ -440,10 +436,10 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut message_ec = EncryptionContext::new();
-    message_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
-    message_ec.insert(b"message-only".to_vec(), b"m".to_vec());
+    message_ec.insert("shared", "same-value");
+    message_ec.insert("message-only", "m");
     let mut reproduced_ec = EncryptionContext::new();
-    reproduced_ec.insert(b"shared".to_vec(), b"same-value".to_vec());
+    reproduced_ec.insert("shared", "same-value");
     let request =
         DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
             .with_reproduced_encryption_context(reproduced_ec);
@@ -475,9 +471,9 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut message_ec = EncryptionContext::new();
-    message_ec.insert(b"shared".to_vec(), b"message-value".to_vec());
+    message_ec.insert("shared", "message-value");
     let mut reproduced_ec = EncryptionContext::new();
-    reproduced_ec.insert(b"shared".to_vec(), b"reproduced-value".to_vec());
+    reproduced_ec.insert("shared", "reproduced-value");
     let request =
         DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
             .with_reproduced_encryption_context(reproduced_ec);
@@ -503,7 +499,7 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
     let cmm = DefaultCmm::new(keyring);
     let message_ec = EncryptionContext::new();
     let mut reproduced_ec = EncryptionContext::new();
-    reproduced_ec.insert(b"only-in-reproduced".to_vec(), b"v".to_vec());
+    reproduced_ec.insert("only-in-reproduced", "v");
     let request =
         DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], message_ec)
             .with_reproduced_encryption_context(reproduced_ec);
@@ -538,20 +534,15 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
 
 fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
     let mut ec = EncryptionContext::new();
-    for (k, v) in pairs {
-        ec.insert(k.as_bytes().to_vec(), v.as_bytes().to_vec());
+    for &(k, v) in pairs {
+        ec.insert(k, v);
     }
     ec
 }
 
 fn ec_pairs(ec: &EncryptionContext) -> Vec<(String, String)> {
     ec.iter()
-        .map(|(k, v)| {
-            (
-                String::from_utf8(k.clone()).expect("test EC keys are UTF-8"),
-                String::from_utf8(v.clone()).expect("test EC values are UTF-8"),
-            )
-        })
+        .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
 }
 
@@ -559,7 +550,7 @@ fn reck_keys(materials: &DecryptionMaterials) -> Vec<String> {
     materials
         .required_encryption_context_keys()
         .iter()
-        .map(|k| String::from_utf8(k.clone()).expect("test RECK are UTF-8"))
+        .cloned()
         .collect()
 }
 
@@ -699,10 +690,7 @@ async fn test_decrypt_materials_signing_suite_public_key_from_reproduced_context
     let cmm = DefaultCmm::new(keyring);
     let vk = vec![0x02; 49];
     let mut reproduced = EncryptionContext::new();
-    reproduced.insert(
-        b"aws-crypto-public-key".to_vec(),
-        BASE64_STANDARD.encode(&vk).into_bytes(),
-    );
+    reproduced.insert("aws-crypto-public-key", BASE64_STANDARD.encode(&vk));
     let request = DecryptMaterialsRequest::new(
         signing_suite(),
         allow_policy(),
@@ -729,7 +717,7 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
     let keyring = MockKeyring::new();
     let cmm = DefaultCmm::new(keyring);
     let mut reproduced = EncryptionContext::new();
-    reproduced.insert(b"aws-crypto-public-key".to_vec(), b"some-value".to_vec());
+    reproduced.insert("aws-crypto-public-key", "some-value");
     let request = DecryptMaterialsRequest::new(
         non_signing_suite(),
         allow_policy(),

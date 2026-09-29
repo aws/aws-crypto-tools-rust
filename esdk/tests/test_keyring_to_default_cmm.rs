@@ -45,7 +45,7 @@ async fn test_keyring_constructs_default_cmm_for_decrypt() {
     let keyring = test_keyring().await;
     let pt = b"keyring constructs default cmm for decrypt";
     let mut ec = EncryptionContext::new();
-    ec.insert(b"purpose".to_vec(), b"keyring-cmm-test".to_vec());
+    ec.insert("purpose", "keyring-cmm-test");
 
     let default_cmm = default_cmm_from(keyring.clone());
     let enc_input = EncryptInput::builder()
