@@ -87,14 +87,7 @@ fn max_edks(config: &EsdkClientConfig) -> Result<Option<NonZeroUsize>, ServerErr
 fn encryption_context(
     map: Option<std::collections::BTreeMap<String, String>>,
 ) -> EncryptionContext {
-    map.map(|m| {
-        EncryptionContext::from_map(
-            m.into_iter()
-                .map(|(k, v)| (k.into_bytes(), v.into_bytes()))
-                .collect(),
-        )
-    })
-    .unwrap_or_default()
+    map.map(EncryptionContext::from).unwrap_or_default()
 }
 
 impl AppState {
