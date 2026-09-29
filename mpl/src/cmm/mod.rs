@@ -11,12 +11,13 @@
 pub mod default_cmm;
 pub mod request;
 
+use crate::Error;
 use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
 pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
 
-use crate::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
+use crate::structures::{DecryptionMaterials, EncryptionMaterials};
 
 /// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
@@ -27,7 +28,7 @@ pub trait Cmm: Send + Sync {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError>;
+    ) -> Result<EncryptionMaterials, Error>;
 
     /// Assemble decryption materials for a decrypt request. Mirrors the
     /// `Decrypt Materials` behavior of the
@@ -35,7 +36,7 @@ pub trait Cmm: Send + Sync {
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError>;
+    ) -> Result<DecryptionMaterials, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -52,14 +53,14 @@ impl Cmm for SharedCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, Error> {
         self.0.get_encryption_materials(request).await
     }
 
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, Error> {
         self.0.decrypt_materials(request).await
     }
 }

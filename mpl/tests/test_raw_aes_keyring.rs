@@ -18,6 +18,7 @@
 //! cover the on-wire shape of the encrypted data key, the two constructor
 //! validations, and the negative paths Dafny leaves to its proofs.
 
+use aws_crypto_mpl::{Error, ErrorKind};
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::{Keyring, RawAesKeyring};
@@ -25,8 +26,7 @@ use aws_mpl_primitives::AesGcm;
 
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
-    PlaintextDataKey,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, PlaintextDataKey,
 };
 
 /// Mirrors the Dafny tests' `ALG_AES_256_GCM_IV12_TAG16_NO_KDF`.
@@ -105,11 +105,13 @@ fn decryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> Decrypti
     .expect("constructing decryption materials")
 }
 
-fn assert_kind(err: &MaterialsError, expected: MaterialsErrorKind) {
+fn assert_kind(err: &Error, expected: ErrorKind) {
     assert_eq!(
-        err.kind, expected,
+        err.kind(),
+        expected,
         "expected {expected:?}, got {:?}: {}",
-        err.kind, err.message
+        err.kind(),
+        err.message()
     );
 }
 
@@ -219,15 +221,15 @@ async fn test_on_decrypt_key_name_mismatch() {
         .await;
 
     let err = result.expect_err("a key name mismatch must not decrypt");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, ErrorKind::NoMatchingDataKey);
     assert!(
-        err.is_collection(),
+        !err.collected().is_empty(),
         "the rejected EDK must still be reported, collected on the error: {err}",
     );
     assert!(
         err.to_string().contains("EncryptedDataKey 0 did not match"),
         "error must report the non-matching EDK by index: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -284,7 +286,7 @@ async fn test_on_decrypt_no_edks() {
         .await;
 
     let err = result.expect_err("an empty encrypted data key list must fail");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, ErrorKind::NoMatchingDataKey);
 }
 
 // Ported from Dafny `TestOnEncryptUnserializableEC`.
@@ -300,12 +302,12 @@ async fn test_on_encrypt_unserializable_encryption_context() {
         .await;
 
     let err = result.expect_err("an unserializable encryption context must fail on_encrypt");
-    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    assert_kind(&err, ErrorKind::Validation);
     assert!(
-        err.message
+        err.message()
             .contains("failed to serialize the encryption context"),
         "error must name the serialization failure: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -328,12 +330,12 @@ async fn test_on_decrypt_unserializable_encryption_context() {
         .await;
 
     let err = result.expect_err("an unserializable encryption context must fail on_decrypt");
-    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    assert_kind(&err, ErrorKind::Validation);
     assert!(
-        err.message
+        err.message()
             .contains("failed to serialize the encryption context"),
         "error must name the serialization failure: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -358,7 +360,7 @@ async fn test_on_decrypt_with_existing_plaintext_data_key_fails() {
         .await;
 
     let err = result.expect_err("materials that already carry a plaintext data key must fail");
-    assert_kind(&err, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
+    assert_kind(&err, ErrorKind::InvalidMaterials);
 }
 
 #[tokio::test]
@@ -380,12 +382,12 @@ async fn test_on_decrypt_unserializable_encryption_context_fails_before_edk_loop
         .await;
 
     let err = result.expect_err("serialization must be attempted before the EDK loop");
-    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    assert_kind(&err, ErrorKind::Validation);
     assert!(
-        err.message
+        err.message()
             .contains("failed to serialize the encryption context"),
         "the failure must be the serialization one, not a no-matching-EDK one: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -500,7 +502,7 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
         .await;
 
     let err = result.expect_err("a mismatched encryption context must fail authentication");
-    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    assert_kind(&err, ErrorKind::Cryptographic);
 }
 
 #[tokio::test]
@@ -530,7 +532,7 @@ async fn test_on_decrypt_rejects_tampered_iv() {
         .await;
 
     let err = result.expect_err("a tampered IV must fail authentication");
-    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    assert_kind(&err, ErrorKind::Cryptographic);
 }
 
 #[tokio::test]
@@ -555,7 +557,7 @@ async fn test_on_decrypt_skips_edk_with_wrong_key_provider_id() {
         .await;
 
     let err = result.expect_err("an EDK from another provider must not be decrypted");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, ErrorKind::NoMatchingDataKey);
 }
 
 #[tokio::test]
@@ -586,7 +588,7 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
         .await;
 
     let err = result.expect_err("a mismatched authentication tag length must not be decrypted");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, ErrorKind::NoMatchingDataKey);
 }
 
 #[tokio::test]
@@ -616,7 +618,7 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
         .await;
 
     let err = result.expect_err("a mismatched IV length must not be decrypted");
-    assert_kind(&err, MaterialsErrorKind::NoMatchingDataKey);
+    assert_kind(&err, ErrorKind::NoMatchingDataKey);
 }
 
 #[tokio::test]
@@ -643,11 +645,11 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
     let err = result.expect_err("a ciphertext shorter than the tag must fail");
     // The provider info matched, so this EDK was attempted and the failure is
     // a decryption failure rather than a no-match.
-    assert_kind(&err, MaterialsErrorKind::KeyringFailed);
+    assert_kind(&err, ErrorKind::Cryptographic);
     assert!(
         err.to_string().contains("insufficient data to decrypt"),
         "error must name the truncated ciphertext: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -657,12 +659,12 @@ fn test_new_rejects_wrapping_key_length_mismatch() {
     // 16 bytes supplied for an algorithm that specifies 32.
     let err = RawAesKeyring::new(namespace, name, vec![0u8; 16], AesGcm::Aes256Gcm)
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
-    assert_kind(&err, MaterialsErrorKind::Validation);
+    assert_kind(&err, ErrorKind::Validation);
     assert!(
-        err.message
+        err.message()
             .contains("does not match the length specified by"),
         "error must name the length mismatch: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -694,11 +696,12 @@ fn test_new_rejects_reserved_aws_kms_key_namespace() {
     let (_, name) = namespace_and_name();
     let err = RawAesKeyring::new("aws-kms", name, vec![0u8; 32], AesGcm::Aes256Gcm)
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
-    assert_kind(&err, MaterialsErrorKind::Validation);
+    assert_kind(&err, ErrorKind::Validation);
     assert!(
-        err.message.contains("must not be or start with `aws-kms`"),
+        err.message()
+            .contains("must not be or start with `aws-kms`"),
         "error must name the reserved namespace: {}",
-        err.message
+        err.message()
     );
 }
 
@@ -723,7 +726,7 @@ fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
         else {
             panic!("`{namespace}` must be rejected as reserved");
         };
-        assert_kind(&err, MaterialsErrorKind::Validation);
+        assert_kind(&err, ErrorKind::Validation);
     }
 }
 

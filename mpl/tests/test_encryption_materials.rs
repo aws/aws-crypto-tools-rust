@@ -71,7 +71,7 @@ fn test_required_ec_keys_must_be_subset() {
     assert!(
         result
             .unwrap_err()
-            .message
+            .message()
             .contains("not found in encryption context")
     );
 }
@@ -84,7 +84,7 @@ fn test_edks_must_be_empty_without_pdk() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![edk], ec, reck, None, None, None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message.contains("must be empty"));
+    assert!(result.unwrap_err().message().contains("must be empty"));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
     assert!(
         result
             .unwrap_err()
-            .message
+            .message()
             .contains("Signing key must not be present")
     );
 }
@@ -154,7 +154,7 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
     assert!(
         result
             .unwrap_err()
-            .message
+            .message()
             .contains("Symmetric signing keys must not be present")
     );
 }

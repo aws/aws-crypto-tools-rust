@@ -18,7 +18,7 @@
 use std::time::Duration;
 
 use crate::cmc::{LocalCmc, SharedCmc, StormTrackingCmc};
-use crate::structures::MaterialsError;
+use crate::{Error, ErrorKind};
 
 /// Entry capacity a CMP uses when the caller configures no cache at all.
 ///
@@ -275,10 +275,10 @@ impl StormTrackingCacheBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if:
+    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation) error if:
     /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
     /// - `grace_interval` exceeds `inflight_ttl`.
-    pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
+    pub fn build(self) -> Result<StormTrackingCache, Error> {
         let config = StormTrackingCache {
             entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
             entry_pruning_tail_size: self
@@ -311,8 +311,11 @@ impl StormTrackingCacheBuilder {
     }
 }
 
-fn invalid(message: impl Into<String>) -> MaterialsError {
-    MaterialsError::new(format!("StormTrackingCache: {}", message.into()))
+fn invalid(message: impl Into<String>) -> Error {
+    Error::new(
+        ErrorKind::Validation,
+        format!("StormTrackingCache: {}", message.into()),
+    )
 }
 
 /// Cache configuration for a Cryptographic Materials Provider.
@@ -342,21 +345,25 @@ pub enum CacheType {
 /// # Errors
 ///
 /// Returns an error if the underlying cache rejects the supplied parameters.
-pub fn create_cryptographic_materials_cache(
-    cache_type: CacheType,
-) -> Result<SharedCmc, MaterialsError> {
+pub fn create_cryptographic_materials_cache(cache_type: CacheType) -> Result<SharedCmc, Error> {
     match cache_type {
         CacheType::Default(default_cache) => {
             let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
                 .map_err(|e| {
-                    MaterialsError::new(format!("failed to initialize default LocalCmc: {e}"))
+                    Error::new(
+                        ErrorKind::Validation,
+                        format!("failed to initialize default LocalCmc: {e}"),
+                    )
                 })?;
             Ok(SharedCmc::new(local))
         }
         CacheType::Shared(cache) => Ok(cache),
         CacheType::StormTracking(params) => {
             let storm = StormTrackingCmc::new(&params).map_err(|e| {
-                MaterialsError::new(format!("failed to initialize StormTrackingCmc: {e}"))
+                Error::new(
+                    ErrorKind::Validation,
+                    format!("failed to initialize StormTrackingCmc: {e}"),
+                )
             })?;
             Ok(SharedCmc::new(storm))
         }

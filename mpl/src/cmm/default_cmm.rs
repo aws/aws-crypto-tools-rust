@@ -4,6 +4,7 @@
 //! Default CMM — concrete implementation of the [`Cmm`](super::Cmm) trait
 //! that wraps a single keyring.
 
+use crate::{Error, ErrorKind};
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
@@ -18,7 +19,7 @@ use crate::keyring::{Keyring, SharedKeyring};
 use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
-    MaterialsError, SigningKey, VerificationKey,
+    SigningKey, VerificationKey,
 };
 
 /// Reserved encryption-context key under which the default CMM stores the
@@ -69,7 +70,7 @@ impl Cmm for DefaultCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, Error> {
         let commitment_policy = request.commitment_policy();
 
         // Resolve the algorithm suite for this request: either from the
@@ -79,9 +80,12 @@ impl Cmm for DefaultCmm {
             None => commitment_policy.default_algorithm_suite_id(),
             Some(id) => {
                 if !commitment_policy.allows_for_encrypt(id) {
-                    return Err(MaterialsError::new(format!(
-                        "Algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
-                    )));
+                    return Err(Error::new(
+                        ErrorKind::Validation,
+                        format!(
+                            "Algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
+                        ),
+                    ));
                 }
                 id
             }
@@ -92,7 +96,8 @@ impl Cmm for DefaultCmm {
         let mut ec = request.encryption_context().clone();
 
         if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
-            return Err(MaterialsError::new(
+            return Err(Error::new(
+                ErrorKind::Validation,
                 "Encryption context already contains reserved key 'aws-crypto-public-key'; refusing to overwrite",
             ));
         }
@@ -151,14 +156,17 @@ impl Cmm for DefaultCmm {
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, Error> {
         let suite_id = request.algorithm_suite_id();
         let commitment_policy = request.commitment_policy();
 
         if !commitment_policy.allows_for_decrypt(suite_id) {
-            return Err(MaterialsError::new(format!(
-                "Algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
-            )));
+            return Err(Error::new(
+                ErrorKind::Validation,
+                format!(
+                    "Algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
+                ),
+            ));
         }
 
         // Merge the message's encryption context with the customer-supplied
@@ -176,21 +184,24 @@ impl Cmm for DefaultCmm {
         // the request if the EC unexpectedly carries that reserved key.
         let verification_key = if suite_id.has_asymmetric_signing() {
             let Some(b64_bytes) = ec.get(RESERVED_AWS_CRYPTO_PUBLIC_KEY) else {
-                return Err(MaterialsError::aws_crypto_public_key_missing(
+                return Err(Error::new(
+                    ErrorKind::InvalidMaterials,
                     "decrypt_materials: signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
                 ));
             };
             let decoded = base64::engine::general_purpose::STANDARD
                 .decode(b64_bytes)
                 .map_err(|e| {
-                    MaterialsError::new(format!(
-                        "Failed to base64-decode aws-crypto-public-key value: {e}"
-                    ))
+                    Error::new(
+                        ErrorKind::Validation,
+                        format!("Failed to base64-decode aws-crypto-public-key value: {e}"),
+                    )
                 })?;
             Some(VerificationKey::new(decoded))
         } else {
             if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
-                return Err(MaterialsError::aws_crypto_public_key_unexpected(
+                return Err(Error::new(
+                    ErrorKind::InvalidMaterials,
                     "decrypt_materials: non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
                 ));
             }
@@ -226,7 +237,7 @@ impl Cmm for DefaultCmm {
 /// Required Encryption Context Keys that accompany it:
 ///
 /// - For every key present in both contexts, the values MUST be equal or the
-///   operation fails with `MaterialsErrorKind::EncryptionContextValueMismatch`.
+///   operation fails with `ErrorKind::EncryptionContextMismatch`.
 /// - Every pair present in the reproduced context but absent from the message's
 ///   is appended to the returned context, and its key becomes a Required
 ///   Encryption Context Key.
@@ -238,7 +249,7 @@ impl Cmm for DefaultCmm {
 fn merge_reproduced_encryption_context(
     message_ec: &EncryptionContext,
     reproduced_ec: Option<&EncryptionContext>,
-) -> Result<(EncryptionContext, BTreeSet<String>), MaterialsError> {
+) -> Result<(EncryptionContext, BTreeSet<String>), Error> {
     let mut ec = message_ec.clone();
     let mut required_keys = BTreeSet::new();
 
@@ -250,9 +261,12 @@ fn merge_reproduced_encryption_context(
         match message_ec.get(key) {
             Some(message_value) => {
                 if message_value != value {
-                    return Err(MaterialsError::encryption_context_value_mismatch(format!(
-                        "decrypt_materials: message encryption context does not match reproduced encryption context on key '{key}'",
-                    )));
+                    return Err(Error::new(
+                        ErrorKind::EncryptionContextMismatch,
+                        format!(
+                            "decrypt_materials: message encryption context does not match reproduced encryption context on key '{key}'",
+                        ),
+                    ));
                 }
             }
             None => {

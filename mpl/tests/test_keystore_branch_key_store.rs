@@ -10,6 +10,7 @@
 //! SDK. Happy-path read coverage lives in the real-AWS integration tests in
 //! `tests/test_keystore_branch_key_store_integ.rs`.
 
+use aws_crypto_mpl::ErrorKind;
 use std::error::Error as _;
 
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -20,9 +21,7 @@ use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
-use aws_crypto_mpl::{
-    BranchKeyStore, BranchKeyStoreBuilder, Keystore, KmsConfiguration, keystore::KeystoreErrorKind,
-};
+use aws_crypto_mpl::{BranchKeyStore, BranchKeyStoreBuilder, Keystore, KmsConfiguration};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests
 /// that never invoke a remote operation. `BehaviorVersion::latest()` is
@@ -60,7 +59,7 @@ fn fixture_config_no_id() -> BranchKeyStoreBuilder {
     fixture_config_with_id("placeholder").set_id(None)
 }
 
-async fn build_err(builder: BranchKeyStoreBuilder) -> aws_crypto_mpl::KeystoreError {
+async fn build_err(builder: BranchKeyStoreBuilder) -> aws_crypto_mpl::Error {
     match builder.build().await {
         Ok(_) => panic!("build must fail"),
         Err(e) => e,
@@ -76,7 +75,7 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
     assert!(err.message().contains("ddb_table_name"), "got: {err}");
 }
 
@@ -89,7 +88,7 @@ async fn build_without_logical_keystore_name_returns_configuration_error() {
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
     assert!(
         err.message().contains("logical_keystore_name"),
         "got: {err}"
@@ -105,7 +104,7 @@ async fn build_without_kms_configuration_returns_configuration_error() {
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
     assert!(err.message().contains("kms_configuration"), "got: {err}");
 }
 
@@ -244,7 +243,7 @@ async fn new_with_malformed_kms_arn_returns_configuration_error() {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -256,7 +255,7 @@ async fn new_with_alias_kms_arn_returns_configuration_error() {
         Ok(_) => panic!("construction with alias ARN must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -322,8 +321,8 @@ async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
 // Without real AWS credentials and a real DynamoDB table, the read path
 // fails at the SDK call. These tests assert the methods dispatch into the
 // SDK (rather than returning an `Internal` stub) by observing a
-// `Dynamodb`-kind error. Happy-path coverage lands in the real-AWS
-// integration tests.
+// `RemoteTransport` error: with no credentials, the request is never sent.
+// Happy-path coverage lands in the real-AWS integration tests.
 
 #[tokio::test]
 async fn get_active_branch_key_dispatches_to_dynamodb() {
@@ -332,7 +331,7 @@ async fn get_active_branch_key_dispatches_to_dynamodb() {
         Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
 
     // The originating SDK error is attached as the cause, not merely formatted
     // into the message, so a caller can recover it by type and inspect the
@@ -356,7 +355,7 @@ async fn get_branch_key_version_dispatches_to_dynamodb() {
         Ok(_) => panic!("get_branch_key_version unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
@@ -376,7 +375,7 @@ async fn create_key_store_dispatches_to_dynamodb() {
         Ok(_) => panic!("create_key_store unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
 
     // A different call site than the read path above, so its cause is asserted
     // separately: the DescribeTable error is attached rather than discarded.
@@ -395,7 +394,7 @@ async fn create_key_with_branch_key_id_but_no_ec_fails() {
         Ok(_) => panic!("create_key with a branch key id and no EC must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -406,7 +405,7 @@ async fn create_key_with_discovery_config_fails() {
         Ok(_) => panic!("create_key under a Discovery configuration must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -419,7 +418,7 @@ async fn create_key_dispatches_to_kms() {
         Ok(_) => panic!("create_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
 }
 
 #[tokio::test]
@@ -430,7 +429,7 @@ async fn version_key_with_discovery_config_fails() {
         Ok(_) => panic!("version_key under a Discovery configuration must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -442,7 +441,7 @@ async fn version_key_dispatches_to_dynamodb() {
         Ok(_) => panic!("version_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
@@ -460,7 +459,7 @@ async fn get_beacon_key_dispatches_to_dynamodb() {
         Ok(_) => panic!("get_beacon_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
@@ -486,7 +485,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
     );
     assert_eq!(
         err.to_string(),
-        "KeystoreError(Dynamodb): DynamoDB GetItem failed",
+        "RemoteTransport: DynamoDB GetItem failed",
         "Display renders only this layer; a chain-walking printer renders the cause"
     );
 }
