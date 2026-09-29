@@ -8,11 +8,13 @@
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
 
+use std::time::Duration;
+
 use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
-use aws_crypto_mpl::keystore::{BranchKeyStore, KeyStoreConfig, KmsConfiguration};
+use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::SharedKeyring;
 
@@ -103,31 +105,24 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
 ) -> Result<SharedKeyring, ServerError> {
-    let key_store = BranchKeyStore::new(KeyStoreConfig {
-        ddb_table_name: config.key_store_table_name.clone(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()),
-        logical_keystore_name: config.logical_key_store_name.clone(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: None,
-        kms_client: None,
-    })
-    .await
-    .map_err(|e| ServerError::esdk(e.to_string()))?;
+    let key_store = BranchKeyStore::builder()
+        .ddb_table_name(config.key_store_table_name.clone())
+        .logical_keystore_name(config.logical_key_store_name.clone())
+        .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
+        .build()
+        .await
+        .map_err(|e| ServerError::esdk(e.to_string()))?;
     let ttl_seconds = u64::try_from(config.ttl_seconds).map_err(|_| {
         ServerError::generic(format!(
             "ttlSeconds must be non-negative, got {}",
             config.ttl_seconds
         ))
     })?;
-    let keyring = HierarchicalKeyring::new(
-        key_store,
-        ttl_seconds,
-        Some(config.branch_key_id.clone()),
-        None,
-        None,
-        None,
-    )
-    .map_err(|e| ServerError::esdk(e.to_string()))?;
+    let keyring = HierarchicalKeyring::builder()
+        .key_store(key_store)
+        .ttl(Duration::from_secs(ttl_seconds))
+        .branch_key_id(config.branch_key_id.clone())
+        .build()
+        .map_err(|e| ServerError::esdk(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }

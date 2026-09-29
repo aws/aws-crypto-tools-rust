@@ -21,7 +21,7 @@ pub use cache_config::{
 };
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use local::LocalCmc;
-pub use storm_tracking::{StormTrackingCmc, TimeUnits};
+pub use storm_tracking::StormTrackingCmc;
 
 use std::fmt;
 use std::sync::Arc;
