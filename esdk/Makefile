@@ -21,7 +21,7 @@ LOCAL_ONLY ?=
 # Examples cannot be declared elsewhere.
 EXAMPLES := $(basename $(notdir $(wildcard examples/*.rs))) \
             $(notdir $(patsubst %/main.rs,%,$(wildcard examples/*/main.rs)))
-CREDS_EXAMPLES := hierarchical_keyring
+CREDS_EXAMPLES := hierarchical_keyring shared_storm_tracking_cache
 ifeq ($(LOCAL_ONLY),)
 RUN_EXAMPLES := $(EXAMPLES)
 else
