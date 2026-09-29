@@ -405,8 +405,8 @@ fn classify_core_error_maps_each_kind() {
             ErrorKind::ValidationError,
             ffi::ShimErrorKind::ValidationError,
         ),
-        (ErrorKind::KeystoreError, ffi::ShimErrorKind::KeystoreError),
-        (ErrorKind::CacheError, ffi::ShimErrorKind::CacheError),
+        (ErrorKind::KeystoreError, ffi::ShimErrorKind::MplError),
+        (ErrorKind::CacheError, ffi::ShimErrorKind::MplError),
     ];
     for (kind, expected) in cases {
         assert_eq!(
@@ -417,29 +417,60 @@ fn classify_core_error_maps_each_kind() {
     }
 }
 
+/// The `{kind}{SEP}{mpl_kind}{SEP}` prefix the facade decodes.
+fn err_prefix(kind: ffi::ShimErrorKind, mpl_kind: Option<ffi::MplErrorKind>) -> String {
+    let mpl_kind = mpl_kind.map(|k| k.repr.to_string()).unwrap_or_default();
+    format!(
+        "{}{ERROR_KIND_SEPARATOR}{mpl_kind}{ERROR_KIND_SEPARATOR}",
+        kind.repr
+    )
+}
+
 #[test]
-fn classify_mpl_error_maps_validation_and_defaults_to_mpl_error() {
+fn core_err_encodes_the_kind_of_the_wrapped_mpl_error() {
+    use aws_crypto_mpl::keystore::KeystoreErrorKind;
     let cases = [
         (
-            MaterialsErrorKind::Validation,
-            ffi::ShimErrorKind::ValidationError,
+            aws_esdk::Error::from(MaterialsError::no_matching_data_key("x")),
+            ffi::MplErrorKind::NoMatchingDataKey,
         ),
         (
-            MaterialsErrorKind::KeyringFailed,
-            ffi::ShimErrorKind::MplError,
+            aws_esdk::Error::from(KeystoreError::new(KeystoreErrorKind::Dynamodb, "x")),
+            ffi::MplErrorKind::Dynamodb,
         ),
         (
-            MaterialsErrorKind::NoMatchingDataKey,
-            ffi::ShimErrorKind::MplError,
+            aws_esdk::Error::from(CmcError::storage_failed("x")),
+            ffi::MplErrorKind::StorageFailed,
         ),
     ];
-    for (kind, expected) in cases {
-        assert_eq!(
-            classify_mpl_error(&kind).repr,
-            expected.repr,
-            "for {kind:?}"
+    for (e, expected) in cases {
+        let err = core_err("op", &e);
+        assert!(
+            err.starts_with(&err_prefix(ffi::ShimErrorKind::MplError, Some(expected))),
+            "unexpected error: {err}"
         );
     }
+}
+
+#[test]
+fn materials_err_reports_validation_as_an_mpl_error() {
+    let err = materials_err("op", &MaterialsError::new("x"));
+    assert!(
+        err.starts_with(&err_prefix(
+            ffi::ShimErrorKind::MplError,
+            Some(ffi::MplErrorKind::Validation)
+        )),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn shim_err_leaves_the_mpl_kind_empty() {
+    let err = shim_err(ffi::ShimErrorKind::ValidationError, "op", "x");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::ValidationError, None)),
+        "unexpected error: {err}"
+    );
 }
 
 // Inputs the facade cannot express, so must be tested in Rust
@@ -831,7 +862,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
     assert_eq!(
         core.algorithm_suite_id(),
-        Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
     );
 }
 

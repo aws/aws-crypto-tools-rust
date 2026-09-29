@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -48,6 +49,26 @@
             ++::esdk_test::g_failures;                                                      \
             std::cerr << "FAIL: expected AwsEncryptionSdkException from " << #expr << "\n"; \
         }                                                                                   \
+    } while (0)
+
+// Test utility -- OK iff `expr` throws `MplException` with kind `expected`
+#define CHECK_THROWS_MPL(expected, expr)                                                     \
+    do {                                                                                     \
+        ++::esdk_test::g_checks;                                                             \
+        try {                                                                                \
+            expr;                                                                            \
+            ++::esdk_test::g_failures;                                                       \
+            std::cerr << "FAIL: " << #expr << " did not throw\n";                           \
+        } catch (const Aws::Esdk::MplException& e) {                                        \
+            if (e.kind() != std::optional(expected)) {                                       \
+                ++::esdk_test::g_failures;                                                   \
+                std::cerr << "FAIL: " << #expr << " threw the wrong MplErrorKind: "          \
+                          << e.what() << "\n";                                              \
+            }                                                                                \
+        } catch (const std::exception& e) {                                                  \
+            ++::esdk_test::g_failures;                                                       \
+            std::cerr << "FAIL: " << #expr << " threw wrong type: " << e.what() << "\n";    \
+        }                                                                                    \
     } while (0)
 
 namespace {
@@ -217,10 +238,10 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
     //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
     //# wrapping algorithm of the same meaning.
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::RawAesKeyring(
-                          "test-ns", "test-key", short_key,
-                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
+    CHECK_THROWS_MPL(Aws::Esdk::MplErrorKind::Validation,
+                     Aws::Esdk::RawAesKeyring(
+                         "test-ns", "test-key", short_key,
+                         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
 }
 
 void test_raw_aes_wrong_keyring_fails() {
@@ -263,13 +284,12 @@ void test_cache_kinds() {
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    // KeystoreError kind: no C++ class of its own, so exactly the base exception type.
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
-                      Aws::Esdk::KeyStore("ab", "ab",
-                                          "arn:aws:kms:us-west-2:000000000000:key/test",
-                                          Aws::Esdk::KeyStoreOptions()
-                                              .with_kms_client(kms)
-                                              .with_ddb_client(ddb)));
+    CHECK_THROWS_MPL(Aws::Esdk::MplErrorKind::Configuration,
+                     Aws::Esdk::KeyStore("ab", "ab",
+                                         "arn:aws:kms:us-west-2:000000000000:key/test",
+                                         Aws::Esdk::KeyStoreOptions()
+                                             .with_kms_client(kms)
+                                             .with_ddb_client(ddb)));
 }
 
 void test_hierarchical_keyring_ttl() {
@@ -282,8 +302,8 @@ void test_hierarchical_keyring_ttl() {
         Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
 
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
+    CHECK_THROWS_MPL(Aws::Esdk::MplErrorKind::Validation,
+                     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
 
@@ -297,8 +317,8 @@ void test_hierarchical_keyring_ttl() {
                 /*sleep_milli=*/10, Aws::Esdk::TimeUnits::Milliseconds));
     };
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1499));
-    CHECK_THROWS_TYPE(
-        Aws::Esdk::ValidationException,
+    CHECK_THROWS_MPL(
+        Aws::Esdk::MplErrorKind::Validation,
         Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1500)));
 }
 

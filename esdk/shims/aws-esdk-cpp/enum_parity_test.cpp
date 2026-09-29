@@ -39,8 +39,26 @@ static_assert(eq(::aws_esdk_ffi::ShimErrorKind::SerializationError, 1), "ShimErr
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CryptographicError, 2), "ShimErrorKind::CryptographicError");
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::MplError, 3), "ShimErrorKind::MplError");
 static_assert(eq(::aws_esdk_ffi::ShimErrorKind::ValidationError, 4), "ShimErrorKind::ValidationError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::KeystoreError, 5), "ShimErrorKind::KeystoreError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CacheError, 6), "ShimErrorKind::CacheError");
+
+static_assert(eq(Aws::Esdk::MplErrorKind::Validation, ::aws_esdk_ffi::MplErrorKind::Validation), "MplErrorKind::Validation");
+static_assert(eq(Aws::Esdk::MplErrorKind::NoBehaviorAttempted, ::aws_esdk_ffi::MplErrorKind::NoBehaviorAttempted), "MplErrorKind::NoBehaviorAttempted");
+static_assert(eq(Aws::Esdk::MplErrorKind::PlaintextDataKeyAlreadyPresent, ::aws_esdk_ffi::MplErrorKind::PlaintextDataKeyAlreadyPresent), "MplErrorKind::PlaintextDataKeyAlreadyPresent");
+static_assert(eq(Aws::Esdk::MplErrorKind::NoMatchingDataKey, ::aws_esdk_ffi::MplErrorKind::NoMatchingDataKey), "MplErrorKind::NoMatchingDataKey");
+static_assert(eq(Aws::Esdk::MplErrorKind::KeyringFailed, ::aws_esdk_ffi::MplErrorKind::KeyringFailed), "MplErrorKind::KeyringFailed");
+static_assert(eq(Aws::Esdk::MplErrorKind::RequiredEncryptionContextKeyMissing, ::aws_esdk_ffi::MplErrorKind::RequiredEncryptionContextKeyMissing), "MplErrorKind::RequiredEncryptionContextKeyMissing");
+static_assert(eq(Aws::Esdk::MplErrorKind::EncryptionContextValueMismatch, ::aws_esdk_ffi::MplErrorKind::EncryptionContextValueMismatch), "MplErrorKind::EncryptionContextValueMismatch");
+static_assert(eq(Aws::Esdk::MplErrorKind::AwsCryptoPublicKeyMissing, ::aws_esdk_ffi::MplErrorKind::AwsCryptoPublicKeyMissing), "MplErrorKind::AwsCryptoPublicKeyMissing");
+static_assert(eq(Aws::Esdk::MplErrorKind::AwsCryptoPublicKeyUnexpected, ::aws_esdk_ffi::MplErrorKind::AwsCryptoPublicKeyUnexpected), "MplErrorKind::AwsCryptoPublicKeyUnexpected");
+static_assert(eq(Aws::Esdk::MplErrorKind::Configuration, ::aws_esdk_ffi::MplErrorKind::Configuration), "MplErrorKind::Configuration");
+static_assert(eq(Aws::Esdk::MplErrorKind::Kms, ::aws_esdk_ffi::MplErrorKind::Kms), "MplErrorKind::Kms");
+static_assert(eq(Aws::Esdk::MplErrorKind::Dynamodb, ::aws_esdk_ffi::MplErrorKind::Dynamodb), "MplErrorKind::Dynamodb");
+static_assert(eq(Aws::Esdk::MplErrorKind::RecordNotFound, ::aws_esdk_ffi::MplErrorKind::RecordNotFound), "MplErrorKind::RecordNotFound");
+static_assert(eq(Aws::Esdk::MplErrorKind::RecordMalformed, ::aws_esdk_ffi::MplErrorKind::RecordMalformed), "MplErrorKind::RecordMalformed");
+static_assert(eq(Aws::Esdk::MplErrorKind::Authentication, ::aws_esdk_ffi::MplErrorKind::Authentication), "MplErrorKind::Authentication");
+static_assert(eq(Aws::Esdk::MplErrorKind::VersionConflict, ::aws_esdk_ffi::MplErrorKind::VersionConflict), "MplErrorKind::VersionConflict");
+static_assert(eq(Aws::Esdk::MplErrorKind::Internal, ::aws_esdk_ffi::MplErrorKind::Internal), "MplErrorKind::Internal");
+static_assert(eq(Aws::Esdk::MplErrorKind::StorageFailed, ::aws_esdk_ffi::MplErrorKind::StorageFailed), "MplErrorKind::StorageFailed");
+static_assert(eq(Aws::Esdk::MplErrorKind::InvalidEntry, ::aws_esdk_ffi::MplErrorKind::InvalidEntry), "MplErrorKind::InvalidEntry");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
