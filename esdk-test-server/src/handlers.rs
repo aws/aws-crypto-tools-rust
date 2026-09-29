@@ -124,25 +124,29 @@ impl AppState {
     pub async fn encrypt(&self, req: EncryptRequest) -> Result<EncryptResponse, ServerError> {
         let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
-        let mut input = EncryptInput::new();
-        input.plaintext = &req.plaintext;
-        input.encryption_context = ec;
-        input.keyring = Some(keyring);
-        input.commitment_policy = commitment_policy;
-        input.max_encrypted_data_keys = max;
-        if let Some(suite) = req.algorithm_suite_id {
-            input.algorithm_suite_id = Some(map_algorithm_suite(suite));
-        }
-        if let Some(frame) = req.frame_length {
-            input.frame_length = u32::try_from(frame)
-                .ok()
-                .and_then(|f| aws_esdk::FrameLength::new(f).ok())
-                .ok_or_else(|| {
-                    ServerError::generic(format!(
-                        "frameLength must be in 1..=u32::MAX, got {frame}"
-                    ))
-                })?;
-        }
+        let frame_length = req
+            .frame_length
+            .map(|frame| {
+                u32::try_from(frame)
+                    .ok()
+                    .and_then(std::num::NonZeroU32::new)
+                    .ok_or_else(|| {
+                        ServerError::generic(format!(
+                            "frameLength must be in 1..=u32::MAX, got {frame}"
+                        ))
+                    })
+            })
+            .transpose()?;
+        let input = EncryptInput::builder()
+            .plaintext(&req.plaintext)
+            .encryption_context(ec)
+            .set_keyring(Some(keyring))
+            .commitment_policy(commitment_policy)
+            .set_max_encrypted_data_keys(max)
+            .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
+            .set_frame_length(frame_length)
+            .build()
+            .map_err(|e| ServerError::Esdk(e.message))?;
         let output = aws_esdk::encrypt(&input)
             .await
             .map_err(|e| ServerError::Esdk(e.message))?;
@@ -154,12 +158,14 @@ impl AppState {
     pub async fn decrypt(&self, req: DecryptRequest) -> Result<DecryptResponse, ServerError> {
         let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
-        let mut input = DecryptInput::new();
-        input.ciphertext = &req.ciphertext;
-        input.encryption_context = ec;
-        input.keyring = Some(keyring);
-        input.commitment_policy = commitment_policy;
-        input.max_encrypted_data_keys = max;
+        let input = DecryptInput::builder()
+            .ciphertext(&req.ciphertext)
+            .encryption_context(ec)
+            .set_keyring(Some(keyring))
+            .commitment_policy(commitment_policy)
+            .set_max_encrypted_data_keys(max)
+            .build()
+            .map_err(|e| ServerError::Esdk(e.message))?;
         let output = aws_esdk::decrypt(&input)
             .await
             .map_err(|e| ServerError::Esdk(e.message))?;

@@ -88,9 +88,13 @@ impl Cmm for FabricatingCmm {
 /// Drive encrypt with a CMM returning the given context, and return the error.
 async fn encrypt_err(pairs: &[(&[u8], &[u8])], required: &[&[u8]]) -> aws_esdk::Error {
     let cmm = FabricatingCmm::new(pairs, required);
-    let mut input = EncryptInput::with_cmm(b"utf8 boundary test", EncryptionContext::new(), cmm);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-    input.algorithm_suite_id = Some(SUITE);
+    let input = EncryptInput::builder()
+        .plaintext(b"utf8 boundary test")
+        .cmm(cmm)
+        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(SUITE)
+        .build()
+        .unwrap();
     encrypt(&input)
         .await
         .expect_err("non-UTF-8 encryption context must be rejected")
@@ -104,8 +108,12 @@ async fn decrypt_err(
     required: &[&[u8]],
 ) -> aws_esdk::Error {
     let cmm = FabricatingCmm::new(pairs, required);
-    let mut input = DecryptInput::with_cmm(ciphertext, EncryptionContext::new(), cmm);
-    input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    let input = DecryptInput::builder()
+        .ciphertext(ciphertext)
+        .cmm(cmm)
+        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
     decrypt(&input)
         .await
         .expect_err("non-UTF-8 encryption context must be rejected")

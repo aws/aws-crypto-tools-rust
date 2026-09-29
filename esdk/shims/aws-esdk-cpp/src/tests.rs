@@ -67,6 +67,16 @@ fn unset_cache() -> ffi::OptCacheType {
     }
 }
 
+fn test_keyring() -> Box<Keyring> {
+    create_raw_aes_keyring(&ffi::RawAesKeyringInput {
+        key_namespace: "test-ns".to_string(),
+        key_name: "test-key".to_string(),
+        wrapping_key: &[0x2A; 32],
+        wrapping_alg: ffi::AesWrappingAlg::AlgAes256GcmIv12Tag16,
+    })
+    .expect("raw AES keyring should build")
+}
+
 fn unset_encrypt_input() -> ffi::EncryptInput<'static> {
     ffi::EncryptInput {
         algorithm_suite_id: unset_alg_id(),
@@ -794,27 +804,62 @@ fn apply_encrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(5),
         commitment_policy: set_policy(P::ForbidEncryptAllowDecrypt),
     };
-    let mut core = aws_esdk::EncryptInput::default();
-    apply_encrypt_options(&mut core, &input).expect("options apply");
+    let builder = aws_esdk::EncryptInput::builder()
+        .plaintext(&[])
+        .keyring(test_keyring().inner.clone());
+    let core = apply_encrypt_options(builder, &input)
+        .expect("options apply")
+        .build()
+        .expect("input builds");
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(5));
+    assert_eq!(
+        core.max_encrypted_data_keys(),
+        std::num::NonZeroUsize::new(5)
+    );
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    assert_eq!(core.frame_length.0.get(), 1024);
+    assert_eq!(core.frame_length().get(), 1024);
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, C::ForbidEncryptAllowDecrypt);
+    assert_eq!(core.commitment_policy(), C::ForbidEncryptAllowDecrypt);
+
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //= type=test
+    //# - MUST provide the target-supplied algorithm suite to the core ESDK,
+    //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
+    assert_eq!(
+        core.algorithm_suite_id(),
+        Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+    );
+}
+
+#[test]
+fn apply_encrypt_options_leaves_unset_inputs_defaulted() {
+    let builder = aws_esdk::EncryptInput::builder()
+        .plaintext(&[])
+        .keyring(test_keyring().inner.clone());
+    let core = apply_encrypt_options(builder, &unset_encrypt_input())
+        .expect("options apply")
+        .build()
+        .expect("input builds");
+    assert_eq!(core.max_encrypted_data_keys(), None);
+    assert_eq!(core.frame_length().get(), 4096);
+    assert_eq!(
+        core.commitment_policy(),
+        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
+    );
+    assert_eq!(core.algorithm_suite_id(), None);
 }
 
 #[test]
@@ -827,21 +872,59 @@ fn apply_decrypt_options_forwards_every_optional_input() {
         max_encrypted_data_keys: set_u32(7),
         commitment_policy: set_policy(P::RequireEncryptAllowDecrypt),
     };
-    let mut core = aws_esdk::DecryptInput::default();
-    apply_decrypt_options(&mut core, &input).expect("options apply");
+    let builder = aws_esdk::DecryptInput::builder()
+        .ciphertext(&[])
+        .keyring(test_keyring().inner.clone());
+    let core = apply_decrypt_options(builder, &input)
+        .expect("options apply")
+        .build()
+        .expect("input builds");
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
     //# the core ESDK, converted as defined in
     //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-    assert_eq!(core.max_encrypted_data_keys, std::num::NonZeroUsize::new(7));
+    assert_eq!(
+        core.max_encrypted_data_keys(),
+        std::num::NonZeroUsize::new(7)
+    );
 
     //= spec/shim/esdk-shim.md#decrypt-inputs
     //= type=test
     //# - MUST provide the target-supplied commitment policy to the core ESDK,
     //# converted as defined in [Commitment policy](#commitment-policy).
-    assert_eq!(core.commitment_policy, C::RequireEncryptAllowDecrypt);
+    assert_eq!(core.commitment_policy(), C::RequireEncryptAllowDecrypt);
+}
+
+#[test]
+fn opt_to_option_is_some_only_when_set() {
+    assert_eq!(set_u32(5).to_option(), Some(5));
+    assert_eq!(unset_u32().to_option(), None);
+
+    let region = ffi::OptString {
+        set: true,
+        value: "us-west-2".to_string(),
+    };
+    assert_eq!(region.to_option().as_deref(), Some("us-west-2"));
+    assert_eq!(unset_string().to_option(), None);
+
+    assert_eq!(
+        set_alg_id(F { repr: 0x0578 }).to_option().map(|v| v.repr),
+        Some(0x0578)
+    );
+    assert!(unset_alg_id().to_option().is_none());
+
+    assert!(
+        set_policy(P::ForbidEncryptAllowDecrypt).to_option() == Some(P::ForbidEncryptAllowDecrypt)
+    );
+    assert!(unset_policy().to_option().is_none());
+
+    let mut cache = unset_cache();
+    assert!(cache.to_option().is_none());
+    cache.set = true;
+    cache.value.entry_capacity = 9;
+    assert_eq!(cache.to_option().map(|c| c.entry_capacity), Some(9));
 }
 
 // AWS SDK client configuration

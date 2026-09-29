@@ -66,18 +66,22 @@ async fn custom_cmm_round_trips_via_public_api() {
     let plaintext = b"custom cmm round trip";
 
     // Encrypt and decrypt entirely through the custom CMM.
-    let out = encrypt(&EncryptInput::with_cmm(
-        plaintext,
-        EncryptionContext::new(),
-        cmm.clone(),
-    ))
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(plaintext)
+            .cmm(cmm.clone())
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
-    let dec = decrypt(&DecryptInput::with_cmm(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        cmm,
-    ))
+    let dec = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .cmm(cmm)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
     assert_eq!(dec.plaintext, plaintext);
