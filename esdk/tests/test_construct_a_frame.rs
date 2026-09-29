@@ -25,7 +25,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         .plaintext(&pt)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(50).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;

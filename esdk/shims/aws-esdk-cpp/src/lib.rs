@@ -133,9 +133,7 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
-use aws_crypto_mpl::structures::{
-    Esdk as EsdkCommitmentPolicy, EsdkAlgorithmSuiteId, MaterialsErrorKind,
-};
+use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, MaterialsErrorKind};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::num::NonZeroU32;
 use std::sync::LazyLock;

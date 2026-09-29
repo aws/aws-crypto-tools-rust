@@ -271,7 +271,7 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
         .plaintext(&pt)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(4096).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
