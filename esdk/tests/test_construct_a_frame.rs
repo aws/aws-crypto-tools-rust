@@ -8,6 +8,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -23,7 +24,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     let enc_input = EncryptInput::builder()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(50).unwrap())
+        .frame_length(NonZeroU32::new(50).unwrap())
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
@@ -236,7 +237,7 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
     let enc_input = EncryptInput::builder()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(50).unwrap())
+        .frame_length(NonZeroU32::new(50).unwrap())
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -356,7 +357,7 @@ async fn test_construct_frame_streaming_frame_released() {
     let keyring = test_keyring().await;
     let stream_input = EncryptStreamInput::builder()
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
+        .frame_length(NonZeroU32::new(10).unwrap())
         .build()
         .unwrap();
     let plaintext = vec![0xAAu8; 50];

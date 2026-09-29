@@ -8,6 +8,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -269,7 +270,7 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     let enc_input = EncryptInput::builder()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(4096).unwrap())
+        .frame_length(NonZeroU32::new(4096).unwrap())
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();

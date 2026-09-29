@@ -137,6 +137,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy, MaterialsErrorKind,
 };
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
+use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -672,14 +673,16 @@ fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
 //# - The shim MUST translate the target frame length using the core ESDK's frame
 //# length constructor, and MUST return an error when the core ESDK rejects the
 //# value.
-fn make_frame_length(frame_length: u32) -> Result<aws_esdk::FrameLength, String> {
-    aws_esdk::FrameLength::new(frame_length).map_err(|e| {
-        shim_err(
-            ffi::ShimErrorKind::ValidationError,
-            "frame length translation",
-            e,
-        )
-    })
+fn make_frame_length(frame_length: u32) -> Result<NonZeroU32, String> {
+    aws_esdk::FrameLength::new(frame_length)
+        .map(|f| f.0)
+        .map_err(|e| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                "frame length translation",
+                e,
+            )
+        })
 }
 
 // Create an ESDK Rust Key Store KmsConfiguration value from the given FFI KmsConfiguration value

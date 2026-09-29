@@ -8,6 +8,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -172,7 +173,7 @@ async fn test_construct_body_plaintext_length_bound_runtime_enforcement() {
     let stream_input = EncryptStreamInput::builder()
         .keyring(keyring)
         .data_size(10)
-        .frame_length(FrameLength::new(10).unwrap())
+        .frame_length(NonZeroU32::new(10).unwrap())
         .build()
         .unwrap();
     let plaintext = vec![0xBBu8; 50];

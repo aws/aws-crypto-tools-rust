@@ -10,6 +10,7 @@ use aws_esdk::{
     DecryptInput, DecryptStreamInput, EncryptInput, EncryptStreamInput, EncryptionContext,
     ErrorKind, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, FrameLength, SharedCmm, SharedKeyring,
 };
+use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
 use test_helpers::test_keyring;
 
@@ -26,8 +27,8 @@ fn ec() -> EncryptionContext {
     ec
 }
 
-fn frame_length() -> FrameLength {
-    FrameLength::new(1024).unwrap()
+fn frame_length() -> NonZeroU32 {
+    NonZeroU32::new(1024).unwrap()
 }
 
 fn same_keyring(a: Option<&SharedKeyring>, b: &SharedKeyring) -> bool {
@@ -112,7 +113,7 @@ async fn test_encrypt_input_setters_round_trip() {
         .build()
         .unwrap();
     assert_eq!(input.algorithm_suite_id(), None);
-    assert_eq!(input.frame_length(), FrameLength::default());
+    assert_eq!(input.frame_length(), FrameLength::default().0);
     assert_eq!(input.max_encrypted_data_keys(), None);
     assert_eq!(
         input.commitment_policy(),

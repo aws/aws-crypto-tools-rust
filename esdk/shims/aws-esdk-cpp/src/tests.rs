@@ -826,7 +826,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    assert_eq!(core.frame_length().0.get(), 1024);
+    assert_eq!(core.frame_length().get(), 1024);
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
@@ -854,7 +854,7 @@ fn apply_encrypt_options_leaves_unset_inputs_defaulted() {
         .build()
         .expect("input builds");
     assert_eq!(core.max_encrypted_data_keys(), None);
-    assert_eq!(core.frame_length(), aws_esdk::FrameLength::default());
+    assert_eq!(core.frame_length(), aws_esdk::FrameLength::default().0);
     assert_eq!(
         core.commitment_policy(),
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt

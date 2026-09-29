@@ -6,6 +6,7 @@ mod fixtures;
 
 use aws_esdk::*;
 use fixtures::*;
+use std::num::NonZeroU32;
 
 pub const IV_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
@@ -97,7 +98,7 @@ pub async fn encrypt_with_frame_length(plaintext: &[u8], frame_length: u32) -> V
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -112,7 +113,7 @@ pub async fn encrypt_framed_with_keyring(
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -127,7 +128,7 @@ pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -
         .keyring(keyring)
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
         .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -155,7 +156,7 @@ pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>
     let input = EncryptInput::builder()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
+        .frame_length(NonZeroU32::new(10).unwrap())
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
@@ -197,7 +198,7 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
         .plaintext(plaintext)
         .keyring(keyring)
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -212,7 +213,7 @@ pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u
     let input = EncryptInput::builder()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
+        .frame_length(NonZeroU32::new(10).unwrap())
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
@@ -471,7 +472,7 @@ pub async fn round_trip_framed(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
