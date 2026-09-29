@@ -37,12 +37,13 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 
 // Fixtures
 
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+const SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
 
 /// TTL offset for entries that should be TTL-expired against `FROZEN_NOW_OFFSET`.
 /// `creation + TTL_EXPIRED_OFFSET < creation + FROZEN_NOW_OFFSET` so any entry

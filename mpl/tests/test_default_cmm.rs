@@ -14,7 +14,8 @@ use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMa
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, Esdk, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, MaterialsError,
+    MaterialsErrorKind, PlaintextDataKey,
 };
 use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify, signature_len};
 
@@ -107,23 +108,23 @@ impl Keyring for MockKeyring {
 // ===== Helpers =====
 
 fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
 }
 
 fn signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
 }
 
 fn p256_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256)
 }
 
 fn forbid_policy() -> CommitmentPolicy {
-    CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt)
+    CommitmentPolicy::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
 }
 
 fn allow_policy() -> CommitmentPolicy {
-    CommitmentPolicy::Esdk(Esdk::RequireEncryptAllowDecrypt)
+    CommitmentPolicy::Esdk(EsdkCommitmentPolicy::RequireEncryptAllowDecrypt)
 }
 
 // ===== Tests =====
@@ -191,9 +192,11 @@ async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
     // ForbidEncryptAllowDecrypt only allows non-committing suites for encrypt
     let request = EncryptionMaterialsRequest::new(
         EncryptionContext::new(),
-        CommitmentPolicy::Esdk(Esdk::ForbidEncryptAllowDecrypt),
+        CommitmentPolicy::Esdk(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt),
     )
-    .with_algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
+    .with_algorithm_suite_id(AlgorithmSuiteId::Esdk(
+        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+    ));
     let err = cmm
         .get_encryption_materials(request)
         .await
@@ -334,8 +337,8 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
     let cmm = DefaultCmm::new(keyring);
     // RequireEncryptRequireDecrypt only allows committing suites
     let request = DecryptMaterialsRequest::new(
-        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-        CommitmentPolicy::Esdk(Esdk::RequireEncryptRequireDecrypt),
+        AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf),
+        CommitmentPolicy::Esdk(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt),
         vec![],
         EncryptionContext::new(),
     );

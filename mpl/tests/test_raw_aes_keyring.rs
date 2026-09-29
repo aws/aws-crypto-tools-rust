@@ -25,11 +25,13 @@ use aws_mpl_primitives::AesGcm;
 
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
+    PlaintextDataKey,
 };
 
 /// Mirrors the Dafny tests' `ALG_AES_256_GCM_IV12_TAG16_NO_KDF`.
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
+const SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
 
 /// Byte length of the serialized authentication-tag-length and IV-length
 /// fields of the key provider information.

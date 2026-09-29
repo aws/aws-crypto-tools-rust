@@ -41,7 +41,8 @@ use aws_crypto_mpl::keystore::{
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError,
+    MaterialsErrorKind,
 };
 use aws_crypto_mpl::{LocalCmc, SharedCmc};
 
@@ -1415,7 +1416,7 @@ fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKey
 /// Pick a non-signing suite so `signing_key` / `symmetric_signing_keys`
 /// invariants don't intrude on the test.
 fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
 }
 
 mod onencrypt {

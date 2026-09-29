@@ -75,7 +75,7 @@ use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
-    EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
 };
 use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
@@ -148,7 +148,7 @@ fn keyring_with_cache(
 
 /// Pick a non-signing suite so signing-key invariants don't intrude.
 fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
 }
 
 /// Build empty encryption materials with a small encryption context, in

@@ -133,9 +133,7 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
-use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, Esdk as EsdkCommitmentPolicy, MaterialsErrorKind,
-};
+use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, MaterialsErrorKind};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
@@ -518,8 +516,8 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a target algorithm suite identifier to the core ESDK
 //# algorithm suite that has the same two-byte ID.
-fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<AlgorithmSuiteId, String> {
-    use AlgorithmSuiteId as Core;
+fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<EsdkAlgorithmSuiteId, String> {
+    use EsdkAlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Target::AlgAes128GcmIv12Tag16NoKdf => Ok(Core::AlgAes128GcmIv12Tag16NoKdf),
@@ -556,8 +554,8 @@ fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<AlgorithmSuiteI
 //= spec/shim/esdk-shim.md#algorithm-suite-identifier
 //# - The shim MUST translate a core ESDK algorithm suite to the target algorithm
 //# suite identifier that has the same two-byte ID.
-fn alg_id_core_to_target(e: AlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
-    use AlgorithmSuiteId as Core;
+fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteId, String> {
+    use EsdkAlgorithmSuiteId as Core;
     use ffi::EsdkAlgorithmSuiteId as Target;
     match e {
         Core::AlgAes128GcmIv12Tag16NoKdf => Ok(Target::AlgAes128GcmIv12Tag16NoKdf),
@@ -579,12 +577,15 @@ fn alg_id_core_to_target(e: AlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSuiteI
         Core::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384 => {
             Ok(Target::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         }
+        //= spec/shim/esdk-shim.md#algorithm-suite-identifier
+        //# - The shim MUST return an error when the core ESDK produces an algorithm suite
+        //# the shim does not define.
+        _ => Err(shim_err(
+            ffi::ShimErrorKind::Esdk,
+            "algorithm suite translation",
+            "core returned an algorithm suite id unknown to the C++ bindings",
+        )),
     }
-    //= spec/shim/esdk-shim.md#algorithm-suite-identifier
-    //= type=implication
-    //= reason=AlgorithmSuiteId is a closed enum and every variant is mapped above, so a core algorithm suite the shim does not define is unrepresentable; no error arm can exist.
-    //# - The shim MUST return an error when the core ESDK produces an algorithm suite
-    //# the shim does not define.
 }
 
 // C++ to Rust for Commitment Policy

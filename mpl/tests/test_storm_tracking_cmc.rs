@@ -20,12 +20,14 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError,
+    MaterialsErrorKind,
 };
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
-const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+const SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
 
 /// "Now" anchor for frozen-clock tests.
 fn anchor_now() -> SystemTime {
@@ -961,6 +963,7 @@ async fn test_all_material_variants_round_trip() {
             CachedMaterials::Decryption(_) => "Decryption",
             CachedMaterials::BranchKey(_) => "BranchKey",
             CachedMaterials::BeaconKey(_) => "BeaconKey",
+            other => panic!("unexpected cached materials {other:?}"),
         };
         assert_eq!(
             got_variant, label,

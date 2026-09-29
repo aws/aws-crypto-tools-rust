@@ -11,8 +11,8 @@ use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
     EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
 };
-use aws_esdk::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
-use aws_esdk::EsdkCommitmentPolicy as MplCommitmentPolicy;
+use aws_esdk::AlgorithmSuiteId as MplAlgorithmSuiteId;
+use aws_esdk::CommitmentPolicy as MplCommitmentPolicy;
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, SharedKeyring};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;

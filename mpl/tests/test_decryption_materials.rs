@@ -4,14 +4,16 @@
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, DecryptionMaterials, EncryptionContext, PlaintextDataKey,
-    SymmetricSigningKey, VerificationKey,
+    AlgorithmSuiteId, DecryptionMaterials, EncryptionContext, EsdkAlgorithmSuiteId,
+    PlaintextDataKey, SymmetricSigningKey, VerificationKey,
 };
 
-const NO_SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
+const NO_SIGN_SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
 const P256_SIGN_SUITE: AlgorithmSuiteId =
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256;
-const SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384;
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256);
+const SIGN_SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
 
 fn make_ec_with_keys(keys: &[&str]) -> EncryptionContext {
     keys.iter().map(|&k| (k, "val")).collect()

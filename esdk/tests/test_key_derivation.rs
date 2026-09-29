@@ -426,6 +426,7 @@ impl KdfDigestExt for AlgorithmSuite {
             Kdf::HkdfSha384 => DigestAlg::Sha384,
             Kdf::HkdfSha512 => DigestAlg::Sha512,
             Kdf::IdentityKdf => panic!("expected HKDF-based suite, got IdentityKdf"),
+            other => panic!("expected HKDF-based suite, got {other:?}"),
         }
     }
 }

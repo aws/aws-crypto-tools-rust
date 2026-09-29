@@ -18,14 +18,14 @@ async fn test_post_cmm_commitment_policy_round_trip() {
     // Committing suite with RequireEncryptRequireDecrypt: post-CMM validation passes
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         &keyring,
     )
     .await;
     let result = decrypt_with(
         &ct,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         &keyring,
     )
     .await;
@@ -44,8 +44,8 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
     let enc_input = EncryptInput::builder()
         .plaintext(pt)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build()
         .unwrap();
     let result = encrypt(&enc_input).await;
@@ -76,8 +76,8 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     // Encrypt with non-committing suite using ForbidEncryptAllowDecrypt
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
@@ -85,7 +85,7 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     let dec_input = DecryptInput::builder()
         .ciphertext(&ct)
         .keyring(keyring)
-        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build()
         .unwrap();
     let result = decrypt(&dec_input).await;
@@ -116,17 +116,12 @@ async fn test_identity_kdf_decrypt() {
     // AlgAes256GcmIv12Tag16NoKdf uses identity KDF
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
-    let result = decrypt_with(
-        &ct,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
-        &keyring,
-    )
-    .await;
+    let result = decrypt_with(&ct, CommitmentPolicy::ForbidEncryptAllowDecrypt, &keyring).await;
     assert_eq!(
         result.plaintext, pt,
         "round-trip with identity KDF suite succeeds"

@@ -102,7 +102,12 @@ pub trait SafeRead: std::io::Read + Send + Sync + std::fmt::Debug {}
 impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
 
 /// Algorithm suite identifiers for the ESDK.
-pub use aws_crypto_mpl::structures::AlgorithmSuiteId as EsdkAlgorithmSuiteId;
+///
+/// This is the Material Providers Library's ESDK algorithm suite enum, re-exported.
+/// It is wrapped in the MPL
+/// [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) union at
+/// the materials boundary.
+pub use aws_crypto_mpl::structures::EsdkAlgorithmSuiteId as AlgorithmSuiteId;
 
 /// The Material Providers Library's shared keyring handle, re-exported.
 /// The `keyring` input of every operation holds one.
@@ -138,13 +143,13 @@ pub use aws_crypto_mpl::structures::EncryptionContext;
 /// re-exported. It is wrapped in the MPL
 /// [`CommitmentPolicy`](aws_crypto_mpl::structures::CommitmentPolicy) union at
 /// the materials boundary.
-pub use aws_crypto_mpl::structures::Esdk as EsdkCommitmentPolicy;
+pub use aws_crypto_mpl::structures::EsdkCommitmentPolicy as CommitmentPolicy;
 
 /// Commitment policy used when the caller provides none.
 //= spec/client-apis/client.md#initialization
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-pub(crate) const DEFAULT_COMMITMENT_POLICY: EsdkCommitmentPolicy =
-    EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
+pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
+    CommitmentPolicy::RequireEncryptRequireDecrypt;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
@@ -165,7 +170,7 @@ pub(crate) const DEFAULT_COMMITMENT_POLICY: EsdkCommitmentPolicy =
 //# This output MAY be satisfied by outputting a [parsed header](#parsed-header) containing this value.
 pub struct EncryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+    pub algorithm_suite_id: AlgorithmSuiteId,
     /// Encrypted message bytes (the serialized AWS Encryption SDK message).
     pub ciphertext: Vec<u8>,
     /// Encryption context associated with the encrypted message.
@@ -176,7 +181,7 @@ pub struct EncryptOutput {
 /// Output for [`encrypt_stream`](crate::encrypt_stream).
 pub struct EncryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+    pub algorithm_suite_id: AlgorithmSuiteId,
     /// Encryption context associated with the encrypted message.
     pub encryption_context: EncryptionContext,
 }
@@ -185,7 +190,7 @@ pub struct EncryptStreamOutput {
 /// Output for [decrypt](crate::decrypt).
 pub struct DecryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+    pub algorithm_suite_id: AlgorithmSuiteId,
     /// Encryption context recovered from the encrypted message.
     pub encryption_context: EncryptionContext,
     /// Decrypted plaintext data
@@ -200,7 +205,7 @@ pub struct DecryptOutput {
 /// Output for [`decrypt_stream`](crate::decrypt_stream).
 pub struct DecryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    pub algorithm_suite_id: EsdkAlgorithmSuiteId,
+    pub algorithm_suite_id: AlgorithmSuiteId,
     /// Encryption context recovered from the encrypted message.
     pub encryption_context: EncryptionContext,
 }
@@ -224,7 +229,7 @@ pub struct DecryptStreamOutput {
 pub struct EncryptInput<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [Algorithm Suite](#algorithm-suite) argument.
-    pub(crate) algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [Encryption Context](#encryption-context) argument.
     pub(crate) encryption_context: EncryptionContext,
@@ -256,7 +261,7 @@ pub struct EncryptInput<'a> {
     //# the default MUST result in no limit on the number of encrypted data keys (aside from the limit imposed by the [message format](../format/message-header.md)).
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
     //= spec/client-apis/client.md#commitment-policy
-    //= reason=EsdkCommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::Esdk
+    //= reason=CommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::EsdkCommitmentPolicy
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
     //
     //= spec/client-apis/client.md#initialization
@@ -271,7 +276,7 @@ pub struct EncryptInput<'a> {
     //= spec/client-apis/client.md#initialization
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
-    pub(crate) commitment_policy: EsdkCommitmentPolicy,
+    pub(crate) commitment_policy: CommitmentPolicy,
 }
 
 impl<'a> EncryptInput<'a> {
@@ -284,7 +289,7 @@ impl<'a> EncryptInput<'a> {
     /// The algorithm suite, if one was set.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> Option<EsdkAlgorithmSuiteId> {
+    pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
         self.algorithm_suite_id
     }
 
@@ -330,7 +335,7 @@ impl<'a> EncryptInput<'a> {
 
     /// The commitment policy.
     #[must_use]
-    pub const fn commitment_policy(&self) -> EsdkCommitmentPolicy {
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
         self.commitment_policy
     }
 }
@@ -338,21 +343,21 @@ impl<'a> EncryptInput<'a> {
 /// Fluent builder for [`EncryptInput`].
 #[derive(Debug, Clone, Default)]
 pub struct EncryptInputBuilder<'a> {
-    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
     frame_length: Option<NonZeroU32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     plaintext: Option<&'a [u8]>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
-    commitment_policy: Option<EsdkCommitmentPolicy>,
+    commitment_policy: Option<CommitmentPolicy>,
 }
 
 impl<'a> EncryptInputBuilder<'a> {
     /// Set the algorithm suite.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, id: EsdkAlgorithmSuiteId) -> Self {
+    pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
         self
     }
@@ -363,7 +368,7 @@ impl<'a> EncryptInputBuilder<'a> {
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
-        algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+        algorithm_suite_id: Option<AlgorithmSuiteId>,
     ) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
         self
@@ -477,11 +482,11 @@ impl<'a> EncryptInputBuilder<'a> {
     }
 
     /// Set the commitment policy.
-    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: EsdkCommitmentPolicy) -> Self {
+    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
         self
     }
@@ -492,7 +497,7 @@ impl<'a> EncryptInputBuilder<'a> {
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
-        commitment_policy: Option<EsdkCommitmentPolicy>,
+        commitment_policy: Option<CommitmentPolicy>,
     ) -> Self {
         self.commitment_policy = commitment_policy;
         self
@@ -532,7 +537,7 @@ impl<'a> EncryptInputBuilder<'a> {
 /// Input for [`encrypt_stream`](crate::encrypt_stream).
 /// Construct via [`EncryptStreamInput::builder`].
 pub struct EncryptStreamInput {
-    pub(crate) algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
     pub(crate) encryption_context: EncryptionContext,
     pub(crate) frame_length: NonZeroU32,
     /// The keyring to use for this operation.
@@ -545,7 +550,7 @@ pub struct EncryptStreamInput {
     //# [Plaintext Length Bound](#plaintext-length-bound).
     pub(crate) data_size: Option<usize>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
-    pub(crate) commitment_policy: EsdkCommitmentPolicy,
+    pub(crate) commitment_policy: CommitmentPolicy,
 }
 
 impl EncryptStreamInput {
@@ -558,7 +563,7 @@ impl EncryptStreamInput {
     /// The algorithm suite, if one was set.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
-    pub const fn algorithm_suite_id(&self) -> Option<EsdkAlgorithmSuiteId> {
+    pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
         self.algorithm_suite_id
     }
 
@@ -604,7 +609,7 @@ impl EncryptStreamInput {
 
     /// The commitment policy.
     #[must_use]
-    pub const fn commitment_policy(&self) -> EsdkCommitmentPolicy {
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
         self.commitment_policy
     }
 }
@@ -612,21 +617,21 @@ impl EncryptStreamInput {
 /// Fluent builder for [`EncryptStreamInput`].
 #[derive(Debug, Clone, Default)]
 pub struct EncryptStreamInputBuilder {
-    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
     frame_length: Option<NonZeroU32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     data_size: Option<usize>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
-    commitment_policy: Option<EsdkCommitmentPolicy>,
+    commitment_policy: Option<CommitmentPolicy>,
 }
 
 impl EncryptStreamInputBuilder {
     /// Set the algorithm suite.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, id: EsdkAlgorithmSuiteId) -> Self {
+    pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
         self
     }
@@ -637,7 +642,7 @@ impl EncryptStreamInputBuilder {
     #[must_use]
     pub const fn set_algorithm_suite_id(
         mut self,
-        algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+        algorithm_suite_id: Option<AlgorithmSuiteId>,
     ) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
         self
@@ -755,12 +760,12 @@ impl EncryptStreamInputBuilder {
     }
 
     /// Set the commitment policy.
-    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
     /// provides this.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: EsdkCommitmentPolicy) -> Self {
+    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
         self
     }
@@ -771,7 +776,7 @@ impl EncryptStreamInputBuilder {
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
-        commitment_policy: Option<EsdkCommitmentPolicy>,
+        commitment_policy: Option<CommitmentPolicy>,
     ) -> Self {
         self.commitment_policy = commitment_policy;
         self
@@ -817,7 +822,7 @@ pub struct DecryptInput<'a> {
     /// The cryptographic materials manager (CMM) to use for this operation.
     pub(crate) cmm: Option<SharedCmm>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
-    pub(crate) commitment_policy: EsdkCommitmentPolicy,
+    pub(crate) commitment_policy: CommitmentPolicy,
 }
 
 impl<'a> DecryptInput<'a> {
@@ -878,7 +883,7 @@ impl<'a> DecryptInput<'a> {
 
     /// The commitment policy.
     #[must_use]
-    pub const fn commitment_policy(&self) -> EsdkCommitmentPolicy {
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
         self.commitment_policy
     }
 }
@@ -891,7 +896,7 @@ pub struct DecryptInputBuilder<'a> {
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
-    commitment_policy: Option<EsdkCommitmentPolicy>,
+    commitment_policy: Option<CommitmentPolicy>,
 }
 
 impl<'a> DecryptInputBuilder<'a> {
@@ -983,11 +988,11 @@ impl<'a> DecryptInputBuilder<'a> {
     }
 
     /// Set the commitment policy.
-    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: EsdkCommitmentPolicy) -> Self {
+    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
         self
     }
@@ -998,7 +1003,7 @@ impl<'a> DecryptInputBuilder<'a> {
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
-        commitment_policy: Option<EsdkCommitmentPolicy>,
+        commitment_policy: Option<CommitmentPolicy>,
     ) -> Self {
         self.commitment_policy = commitment_policy;
         self
@@ -1042,7 +1047,7 @@ pub struct DecryptStreamInput {
     /// The cryptographic materials manager (CMM) to use for this operation.
     pub(crate) cmm: Option<SharedCmm>,
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
-    pub(crate) commitment_policy: EsdkCommitmentPolicy,
+    pub(crate) commitment_policy: CommitmentPolicy,
 }
 
 impl DecryptStreamInput {
@@ -1095,7 +1100,7 @@ impl DecryptStreamInput {
 
     /// The commitment policy.
     #[must_use]
-    pub const fn commitment_policy(&self) -> EsdkCommitmentPolicy {
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
         self.commitment_policy
     }
 }
@@ -1107,7 +1112,7 @@ pub struct DecryptStreamInputBuilder {
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
-    commitment_policy: Option<EsdkCommitmentPolicy>,
+    commitment_policy: Option<CommitmentPolicy>,
 }
 
 impl DecryptStreamInputBuilder {
@@ -1188,12 +1193,12 @@ impl DecryptStreamInputBuilder {
     }
 
     /// Set the commitment policy.
-    /// Default is `EsdkCommitmentPolicy::RequireEncryptRequireDecrypt`.
+    /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
     /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
     /// provides this.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: EsdkCommitmentPolicy) -> Self {
+    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
         self
     }
@@ -1204,7 +1209,7 @@ impl DecryptStreamInputBuilder {
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
-        commitment_policy: Option<EsdkCommitmentPolicy>,
+        commitment_policy: Option<CommitmentPolicy>,
     ) -> Self {
         self.commitment_policy = commitment_policy;
         self

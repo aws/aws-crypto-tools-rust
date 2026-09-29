@@ -7,15 +7,15 @@ mod test_helpers;
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_esdk::{
-    DecryptInput, DecryptStreamInput, EncryptInput, EncryptStreamInput, EncryptionContext,
-    ErrorKind, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, SharedCmm, SharedKeyring,
+    AlgorithmSuiteId, CommitmentPolicy, DecryptInput, DecryptStreamInput, EncryptInput,
+    EncryptStreamInput, EncryptionContext, ErrorKind, SharedCmm, SharedKeyring,
 };
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
 use test_helpers::test_keyring;
 
-const SUITE: EsdkAlgorithmSuiteId = EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
-const POLICY: EsdkCommitmentPolicy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
+const POLICY: CommitmentPolicy = CommitmentPolicy::ForbidEncryptAllowDecrypt;
 
 fn cap() -> NonZeroUsize {
     NonZeroUsize::new(3).unwrap()
@@ -117,7 +117,7 @@ async fn test_encrypt_input_setters_round_trip() {
     assert_eq!(input.max_encrypted_data_keys(), None);
     assert_eq!(
         input.commitment_policy(),
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
+        CommitmentPolicy::RequireEncryptRequireDecrypt
     );
     assert!(input.encryption_context().is_empty());
 

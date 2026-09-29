@@ -40,7 +40,7 @@ async fn test_decrypt_output_includes_encryption_context() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
-    let suite = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
     let enc_input = EncryptInput::builder()
         .plaintext(b"suite test")
         .keyring(keyring.clone())
@@ -75,7 +75,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     let enc_input = EncryptInput::builder()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .frame_length(NonZeroU32::new(10).unwrap())
         .build()
         .unwrap();
@@ -118,7 +118,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
         .plaintext(plaintext)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(4096).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;

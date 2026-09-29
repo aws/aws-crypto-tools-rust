@@ -4,18 +4,20 @@
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, EncryptedDataKey, EncryptionContext, EncryptionMaterials, PlaintextDataKey,
-    SigningKey, SymmetricSigningKey,
+    AlgorithmSuiteId, EncryptedDataKey, EncryptionContext, EncryptionMaterials,
+    EsdkAlgorithmSuiteId, PlaintextDataKey, SigningKey, SymmetricSigningKey,
 };
 
 // Standard ESDK suite IDs used throughout these tests:
 // - NO_KDF non-signing (00 78): non-signing baseline.
 // - HKDF-SHA256 + ECDSA-P256 (02 14): 32-byte signing key, 33-byte verify key.
 // - HKDF-SHA384 + ECDSA-P384 (03 78): 48-byte signing key, 49-byte verify key.
-const NO_SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf;
+const NO_SIGN_SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf);
 const P256_SIGN_SUITE: AlgorithmSuiteId =
-    AlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256;
-const SIGN_SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384;
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16HkdfSha256EcdsaP256);
+const SIGN_SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384);
 
 fn make_ec_with_keys(keys: &[&str]) -> EncryptionContext {
     keys.iter().map(|&k| (k, "val")).collect()

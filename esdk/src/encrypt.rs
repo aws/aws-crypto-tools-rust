@@ -17,13 +17,12 @@ use crate::message::header_types::{
 };
 use crate::message::serializable_types::{get_encrypt_key_length, get_iv_length};
 use crate::message::{DigestWriter, body, footer, header};
-use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
-    EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
-    EsdkCommitmentPolicy, MaterialSource, SafeRead, SafeWrite,
+    AlgorithmSuiteId, CommitmentPolicy, EncryptInput, EncryptOutput, EncryptStreamInput,
+    EncryptStreamOutput, EncryptionContext, MaterialSource, SafeRead, SafeWrite,
 };
 use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::structures::EncryptionMaterials;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
@@ -169,7 +168,7 @@ async fn internal_encrypt(
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     frame_length: NonZeroU32,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptStreamOutput, Error> {
     //= spec/client-apis/encrypt.md#behavior
     //= reason=Every step uses ?; any failure returns Err to the caller
@@ -299,7 +298,7 @@ async fn step_get_encryption_materials(
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptionMaterialsResult, Error> {
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The CMM used MUST be the input CMM, if supplied.
@@ -310,7 +309,7 @@ async fn step_get_encryption_materials(
     //
     //= spec/client-apis/encrypt.md#algorithm-suite
     //= type=implication
-    //= reason=EsdkAlgorithmSuiteId enum only contains ESDK-supported suites
+    //= reason=AlgorithmSuiteId enum only contains ESDK-supported suites
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     if let Some(id) = algorithm_suite_id {
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -318,7 +317,7 @@ async fn step_get_encryption_materials(
         //# that is not supported by the [commitment policy](client.md#commitment-policy)
         //# configured in the [client](client.md) encrypt MUST yield an error.
         let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-        if !policy.allows_for_encrypt(id) {
+        if !policy.allows_for_encrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(id)) {
             return Err(val_err(
                 "Input algorithm suite is not supported by the configured commitment policy for encryption",
             ));
@@ -361,12 +360,8 @@ async fn step_get_encryption_materials(
     //# Note that the algorithm suite in the retrieved encryption materials MAY be different
     //# from the [input algorithm suite](#algorithm-suite).
     //
-    //= spec/client-apis/encrypt.md#get-the-encryption-materials
-    //= type=implication
-    //= reason=AlgorithmSuiteId enumerates only ESDK suites, so the materials cannot carry another
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# encrypt MUST yield an error.
-    let algorithm_suite = materials.algorithm_suite();
+    let algorithm_suite =
+        get_esdk_algorithm_suite_id(materials.algorithm_suite_id())?.specification();
 
     let message_id = header::generate_message_id(&algorithm_suite)?;
 
