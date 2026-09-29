@@ -17,36 +17,71 @@ namespace Aws {
 namespace Esdk {
 namespace detail {
 
-// Rethrow Rust ESDK exceptions as corresponding C++ exceptions.
-// The Rust side encodes each error as `{kind}\x1f{mpl_kind}\x1f{message}`,
-// where mpl_kind is empty unless kind is MplError.
-// A message that doesn't match that layout is thrown as AwsEncryptionSdkException.
-[[noreturn]] void throw_shim_exception(const std::string& what) {
-    auto is_digits = [](std::string_view v) {
-        return !v.empty() && std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; });
-    };
+// An error from the Rust side, decoded from the message cxx carries across.
+// lib.rs's encode_err writes it as `{kind}\x1f{mpl_kind}\x1f{message}`.
+struct ShimError {
+    ::ffi::ShimErrorKind kind;
+    std::optional<MplErrorKind> mpl_kind;  // Empty unless the Rust side reported an MPL kind.
+    std::string message;
+};
+
+// Parses a small non-negative decimal number; nullopt if `v` is not one.
+std::optional<std::uint8_t> parse_repr(std::string_view v) {
+    if (v.empty() || v.size() > 3) {
+        return std::nullopt;
+    }
+    unsigned value = 0;
+    for (const char c : v) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        value = value * 10 + static_cast<unsigned>(c - '0');
+    }
+    if (value > 255) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint8_t>(value);
+}
+
+// nullopt when `what` does not have the encode_err layout.
+std::optional<ShimError> decode_shim_error(std::string_view what) {
     const auto first = what.find('\x1f');
-    const auto second = first == std::string::npos ? std::string::npos : what.find('\x1f', first + 1);
-    if (second == std::string::npos || !is_digits(std::string_view(what).substr(0, first))) {
+    if (first == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto second = what.find('\x1f', first + 1);
+    if (second == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto kind = parse_repr(what.substr(0, first));
+    if (!kind) {
+        return std::nullopt;
+    }
+    // The message is everything after the second separator, so a separator
+    // inside the message itself is left alone.
+    const auto mpl_kind = parse_repr(what.substr(first + 1, second - first - 1));
+    return ShimError{
+        static_cast<::ffi::ShimErrorKind>(*kind),
+        mpl_kind ? std::optional(static_cast<MplErrorKind>(*mpl_kind)) : std::nullopt,
+        std::string(what.substr(second + 1)),
+    };
+}
+
+// Rethrow a Rust error as the matching C++ exception.
+[[noreturn]] void throw_shim_exception(const std::string& what) {
+    const auto error = decode_shim_error(what);
+    if (!error) {
         throw AwsEncryptionSdkException(what);
     }
-    const auto kind = static_cast<::ffi::ShimErrorKind>(std::stoi(what.substr(0, first)));
-    const std::string mpl_kind = what.substr(first + 1, second - first - 1);
-    const std::string message = what.substr(second + 1);
-    switch (kind) {
-        case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(message);
-        case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(message);
-        case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(message);
-        case ::ffi::ShimErrorKind::MplError:
-            throw MplException(
-                is_digits(mpl_kind)
-                    ? std::optional(static_cast<MplErrorKind>(std::stoi(mpl_kind)))
-                    : std::nullopt,
-                message);
+    switch (error->kind) {
+        case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(error->message);
+        case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(error->message);
+        case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(error->message);
+        case ::ffi::ShimErrorKind::MplError: throw MplException(error->mpl_kind, error->message);
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.
-        default: throw AwsEncryptionSdkException(message);
+        default: throw AwsEncryptionSdkException(error->message);
     }
 }
 
