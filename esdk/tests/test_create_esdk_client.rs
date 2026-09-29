@@ -3,9 +3,7 @@
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::{
-    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, decrypt, encrypt,
-};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
 use std::num::NonZeroU32;
 
@@ -129,36 +127,32 @@ async fn test_default_max_encrypted_data_keys_is_none() {
     );
 }
 
-#[test]
-fn test_frame_length_rejects_zero() {
-    //= spec/client-apis/encrypt.md#frame-length
-    //= type=test
-    //= reason=FrameLength wraps NonZeroU32; this test proves the lower bound by rejecting 0, and the upper bound ("MUST NOT exceed 2^32 - 1") holds by construction because NonZeroU32's maximum value is u32::MAX = 2^32 - 1
-    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
-    let err = FrameLength::new(0).expect_err("FrameLength::new(0) must fail");
-    assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
-    );
-}
-
-#[test]
-fn test_frame_length_accepts_max_u32() {
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frame_length_accepts_max_u32() {
     //= spec/data-format/message-body.md#framed-data
     //= type=test
-    //= reason=FrameLength::new(u32::MAX) succeeds, proving the implementation accepts the maximum allowed value
+    //= reason=an EncryptInput builds with a frame length of u32::MAX, proving the implementation accepts the maximum allowed value
     //# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
-    let fl = FrameLength::new(u32::MAX).unwrap();
-    assert_eq!(fl.0.get(), u32::MAX);
+    let input = EncryptInput::builder()
+        .plaintext(b"pt")
+        .keyring(test_keyring().await)
+        .frame_length(NonZeroU32::MAX)
+        .build()
+        .unwrap();
+    assert_eq!(input.frame_length().get(), u32::MAX);
 }
 
-#[test]
-fn test_frame_length_default_is_4096() {
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frame_length_default_is_4096() {
     //= spec/client-apis/encrypt.md#frame-length
     //= type=test
     //# This value MUST default to 4096 bytes.
-    assert_eq!(FrameLength::default().0.get(), 4096);
+    let input = EncryptInput::builder()
+        .plaintext(b"pt")
+        .keyring(test_keyring().await)
+        .build()
+        .unwrap();
+    assert_eq!(input.frame_length().get(), 4096);
 }
 
 // Round-trip a fully-populated EncryptInput and DecryptInput through

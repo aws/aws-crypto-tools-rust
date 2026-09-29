@@ -8,7 +8,7 @@ mod test_helpers;
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_esdk::{
     DecryptInput, DecryptStreamInput, EncryptInput, EncryptStreamInput, EncryptionContext,
-    ErrorKind, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, FrameLength, SharedCmm, SharedKeyring,
+    ErrorKind, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, SharedCmm, SharedKeyring,
 };
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
@@ -113,7 +113,7 @@ async fn test_encrypt_input_setters_round_trip() {
         .build()
         .unwrap();
     assert_eq!(input.algorithm_suite_id(), None);
-    assert_eq!(input.frame_length(), FrameLength::default().0);
+    assert_eq!(input.frame_length().get(), 4096);
     assert_eq!(input.max_encrypted_data_keys(), None);
     assert_eq!(
         input.commitment_policy(),

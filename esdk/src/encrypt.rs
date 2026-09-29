@@ -5,6 +5,8 @@
 //! derives a data key, encrypts the plaintext (framed or nonframed),
 //! and serializes the result into an encrypted message.
 
+use std::num::NonZeroU32;
+
 use crate::error::Error;
 use crate::error::{esdk_err, ser_err, val_err};
 use crate::key_derivation;
@@ -18,7 +20,7 @@ use crate::message::{DigestWriter, body, footer, header};
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
 use crate::types::{
     EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
-    EsdkCommitmentPolicy, FrameLength, MaterialSource, SafeRead, SafeWrite,
+    EsdkCommitmentPolicy, MaterialSource, SafeRead, SafeWrite,
 };
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::AlgorithmSuiteId;
@@ -35,8 +37,8 @@ const AUTH_TAG_LEN: usize = 16;
 /// Best-effort capacity hint for the ciphertext buffer, to minimize
 /// reallocations. Total encrypted content equals `plaintext_len`, plus fixed
 /// per-frame and header overhead.
-fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: FrameLength) -> usize {
-    let frame_length_usize = usize::try_from(frame_length.0.get()).unwrap_or(usize::MAX);
+fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: NonZeroU32) -> usize {
+    let frame_length_usize = usize::try_from(frame_length.get()).unwrap_or(usize::MAX);
     let frames = plaintext_len.div_ceil(frame_length_usize).max(1);
     // Sequence number field + IV + authentication tag per frame.
     let per_frame_overhead = 4 + IV_LEN + AUTH_TAG_LEN;
@@ -165,7 +167,7 @@ async fn internal_encrypt(
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    frame_length: FrameLength,
+    frame_length: NonZeroU32,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: EsdkCommitmentPolicy,
 ) -> Result<EncryptStreamOutput, Error> {
@@ -403,7 +405,7 @@ fn step_construct_header(
     encryption_context: &EncryptionContext,
     required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
-    frame_length: FrameLength,
+    frame_length: NonZeroU32,
     ciphertext: &mut dyn SafeWrite,
     sig_digest: &mut DigestWriter,
 ) -> Result<header::HeaderInfo, Error> {
@@ -417,7 +419,7 @@ fn step_construct_header(
         encryption_context,
         required_encryption_context_keys,
         encrypted_data_keys,
-        frame_length.0.get(),
+        frame_length.get(),
         &mat_result.derived_data_keys,
     )?;
 
