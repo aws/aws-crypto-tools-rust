@@ -33,7 +33,7 @@ impl AlgorithmSuiteId {
 
     /// Returns the 2-byte algorithm suite identifier.
     ///
-    /// Identifiers are unique within a format, not across formats.
+    /// The identifier is unique across the suites of every format.
     pub const fn id_bytes(self) -> [u8; 2] {
         self.specification().id
     }
@@ -302,8 +302,8 @@ impl EsdkAlgorithmSuiteId {
 
     /// Returns the on-wire 2-byte algorithm suite identifier.
     ///
-    /// The byte pair is unique across the ESDK suites. Reserved
-    /// value `00 00` is never produced.
+    /// The identifier is unique across the suites of every format.
+    /// The reserved value `00 00` is never produced.
     //
     pub const fn id_bytes(self) -> [u8; 2] {
         self.specification().id
