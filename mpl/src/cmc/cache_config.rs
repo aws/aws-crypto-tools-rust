@@ -12,12 +12,8 @@
 //! These types are deliberately independent of any one CMP so that a keyring
 //! and a caching CMM configure a cache the same way.
 
-// TODO: finish conforming this module to the Smithy `CacheType` union, which
-// has six variants: Default, No, SingleThreaded, MultiThreaded, StormTracking
-// and Shared. `No`, `SingleThreaded` and `MultiThreaded` are not modelled here
-// yet. Also unaddressed: the model's `Default` variant builds a
-// storm-tracking cache (StormTracker.DefaultStorm) rather than the plain
-// LocalCmc built here. Follow-up PR.
+// TODO: add the Smithy `CacheType` variants not modelled here yet: `No`,
+// `SingleThreaded`, and `MultiThreaded`.
 
 use std::time::Duration;
 
