@@ -334,17 +334,6 @@ Keyring Keyring::adopt(void* raw_handle) {
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
 
-namespace detail {
-::ffi::Duration to_ffi(std::chrono::nanoseconds d) {
-    if (d.count() < 0) {
-        throw ValidationException("HierarchicalKeyring TTL must not be negative");
-    }
-    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(d);
-    return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
-                           static_cast<std::uint32_t>((d - secs).count())};
-}
-}  // namespace detail
-
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::chrono::nanoseconds ttl,
