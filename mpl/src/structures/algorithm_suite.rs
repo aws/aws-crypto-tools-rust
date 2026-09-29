@@ -9,10 +9,9 @@ use std::fmt;
 // Algorithm suite ID enum
 // ============================================================================
 
-/// Union Algorithm Suite ENUM across all supported formats.
+/// Union Algorithm Suite enum across all supported formats.
 ///
-/// Each variant tags a format and carries that format's Algorithm Suite ENUM,
-/// matching the spec's `Format.FormatENUM` notation.
+/// Each variant tags a format and carries that format's Algorithm Suite ENUM.
 /// For example, `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` becomes
 /// `AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)`.
 /// Only the ESDK format is implemented.

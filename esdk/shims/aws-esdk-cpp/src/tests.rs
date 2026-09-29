@@ -204,8 +204,8 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
-// Catches a suite the core adds without a C++ mapping:
-// the new id falls through to the error arm of `alg_id_core_to_target`.
+// Catches if ESDK Rust adds a suite but C++ doesn't.
+// The new id falls through to the error arm of `alg_id_core_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
     for &core in super::EsdkAlgorithmSuiteId::ALL {
