@@ -8,14 +8,14 @@
 use crate::error::ServerError;
 use crate::handlers;
 use crate::model::*;
+use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::Path;
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use axum::routing::post;
-use axum::Router;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
 pub fn app() -> Router {
@@ -84,7 +84,10 @@ where
     Resp: Serialize,
 {
     let req = decode::<Req>(body)?;
-    let resp = handler(req)?;
+    // A panicking handler would otherwise drop the connection; report it as a
+    // modeled GenericServerError so the client sees a harness failure.
+    let resp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(req)))
+        .map_err(|_| ServerError::generic("unexpected server error: handler panicked"))??;
     encode(&resp)
 }
 
@@ -111,4 +114,24 @@ fn build(status: StatusCode, body: Vec<u8>) -> Response {
         .header(header::CONTENT_TYPE, "application/cbor")
         .body(Body::from(body))
         .expect("response builder")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handler_panic_becomes_generic_server_error() {
+        let body = encode(&DigestRequest {
+            algorithm: DigestAlgorithm::Sha256,
+            data: Vec::new(),
+        })
+        .unwrap();
+        let err = dispatch_op::<DigestRequest, DigestResponse>(&body, |_| {
+            panic!("injected handler panic")
+        })
+        .unwrap_err();
+        assert!(matches!(err, ServerError::Generic(_)), "got {err:?}");
+        assert_eq!(err.message(), "unexpected server error: handler panicked");
+    }
 }
