@@ -10,8 +10,19 @@ BIN      := target/release/primitives-test-server
 PID_FILE := .server.pid
 LOG_FILE := .server.log
 
+# Bootstrap-then-delegate coordinates for `make test-server`. The commons
+# repository coordinates live in server-config.json next to this
+# Makefile; COMMONS_BRANCH overrides the configured branch at invocation time.
+MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+REPO_ROOT    := $(abspath $(MAKEFILE_DIR)/..)
+COMMONS_CONFIGURATION := $(MAKEFILE_DIR)/server-config.json
+COMMONS_BRANCH ?=
+CLONE_DIR      ?= $(MAKEFILE_DIR)/.commons-clone
+CLONE_ORCH_DIR := $(CLONE_DIR)/test-server-common/orchestrator
+CLONE_PRIM_DIR := $(CLONE_DIR)/primitives/test-server
+
 .PHONY: help build-server run-server start-server wait-for-server stop-server \
-        test fmt clippy check clean
+        test test-server check-java fmt clippy check clean
 
 help: ## Show this help
 	@echo "Primitives TestServer (Rust) — make targets"
@@ -46,6 +57,42 @@ stop-server: ## Stop the background server and free PORT
 test: ## Run the server's tests
 	cargo test
 
+check-java: ## Verify JAVA_HOME points at a JDK 21+ (the commons orchestrator needs it)
+	@if [ -z "$$JAVA_HOME" ] || [ ! -x "$$JAVA_HOME/bin/java" ]; then \
+		echo "ERROR: JAVA_HOME must point at a JDK 21+ for the commons orchestrator." >&2; exit 1; \
+	fi; \
+	v=$$("$$JAVA_HOME/bin/java" -version 2>&1 | grep -i version | head -1 | sed -E 's/.*version .?([0-9]+).*/\1/'); \
+	if [ -z "$$v" ] || [ "$$v" -lt 21 ] 2>/dev/null; then \
+		echo "ERROR: JDK 21+ required, JAVA_HOME has major version '$$v'." >&2; exit 1; \
+	fi
+
+# Bootstrap-then-delegate (the single orchestrated entry point): parse the
+# commons coordinates, clone commons at the branch head, and run the shared
+# orchestrator against the clone's primitives/test-server tree with this
+# working tree as the live Rust library + server source. The orchestrator
+# builds and launches every configured Language_Server, runs the commons
+# Tests over the full pairwise matrix, and tears down; its exit code
+# propagates. Needs a JDK 21+ plus each configured server's toolchain.
+test-server: check-java ## Run the commons cross-language TestServer suite against this server; COMMONS_BRANCH=<b> overrides
+	@set -eo pipefail; \
+	if ! coords=$$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["commonsRepository"]; print(c["url"]); print(c["branch"])' "$(COMMONS_CONFIGURATION)" 2>/dev/null); then \
+		echo "ERROR: missing or unparseable $(COMMONS_CONFIGURATION); halting before any clone." >&2; exit 1; \
+	fi; \
+	{ read -r url; read -r branch; } <<< "$$coords"; \
+	if [ -n "$(strip $(COMMONS_BRANCH))" ]; then branch="$(strip $(COMMONS_BRANCH))"; reason="invocation-override"; else reason="configuration-entry"; fi; \
+	echo "==> Cloning commons at '$$branch' ($$reason) into $(CLONE_DIR)"; \
+	rm -rf "$(CLONE_DIR)"; \
+	if ! git clone --depth 1 --single-branch --branch "$$branch" "$$url" "$(CLONE_DIR)"; then \
+		echo "ERROR: failed to clone $$url at branch $$branch; no Tests will run." >&2; exit 1; \
+	fi; \
+	if [ ! -d "$(CLONE_ORCH_DIR)" ] || [ ! -d "$(CLONE_PRIM_DIR)" ]; then \
+		echo "ERROR: branch $$branch of $$url has no test-server-common/orchestrator or primitives/test-server." >&2; exit 1; \
+	fi; \
+	echo "==> Delegating: context=language:rust languageRepoRoot=$(REPO_ROOT)"; \
+	cd "$(CLONE_ORCH_DIR)" && ./gradlew --console=plain run \
+		-Dtestserver.root="$(CLONE_PRIM_DIR)" \
+		--args="context=language:rust languageRepoRoot=$(REPO_ROOT) commonsOrigin.url=$$url commonsOrigin.branch=$$branch commonsOrigin.reason=$$reason"
+
 fmt: ## Check formatting
 	cargo fmt --all -- --check
 
@@ -54,5 +101,5 @@ clippy: ## Lint with warnings denied
 
 check: fmt clippy build-server test ## fmt + clippy + build + test (the CI gate)
 
-clean: ## Remove build output and server scratch files
-	cargo clean; rm -f "$(PID_FILE)" "$(LOG_FILE)"
+clean: ## Remove build output, server scratch files, and the commons clone
+	cargo clean; rm -f "$(PID_FILE)" "$(LOG_FILE)"; rm -rf "$(CLONE_DIR)"
