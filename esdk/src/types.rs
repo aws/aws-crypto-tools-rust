@@ -47,36 +47,9 @@ fn validate_material_source(
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-/// The length of one frame, must be non-zero, defaults to 4096.
-//= spec/data-format/message-body.md#framed-data
-//= reason=NonZeroU32 max value is u32::MAX = 2^32 - 1
-//# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
-#[expect(clippy::exhaustive_structs)]
-pub struct FrameLength(pub NonZeroU32);
-
-impl Default for FrameLength {
-    fn default() -> Self {
-        //= spec/client-apis/encrypt.md#frame-length
-        //# This value MUST default to 4096 bytes.
-        // Safety: 4096 is a non-zero literal
-        Self(NonZeroU32::new(4096).expect("4096 is non-zero"))
-    }
-}
-
-impl FrameLength {
-    /// Returns a new `FrameLength`, validated to be non-zero.
-    ///
-    /// # Errors
-    /// Returns an error if `val` is zero.
-    pub fn new(val: u32) -> Result<Self, Error> {
-        //= spec/client-apis/encrypt.md#frame-length
-        //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
-        Ok(Self(
-            NonZeroU32::new(val).ok_or_else(|| val_err("Frame length must be non-zero"))?,
-        ))
-    }
-}
+//= spec/client-apis/encrypt.md#frame-length
+//# This value MUST default to 4096 bytes.
+const DEFAULT_FRAME_LENGTH: NonZeroU32 = NonZeroU32::new(4096).expect("4096 is non-zero");
 
 /// Output bytes sink for streaming encrypt/decrypt operations.
 ///
@@ -257,7 +230,11 @@ pub struct EncryptInput<'a> {
     pub(crate) encryption_context: EncryptionContext,
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [Frame Length](#frame-length) argument.
-    pub(crate) frame_length: FrameLength,
+    //
+    //= spec/data-format/message-body.md#framed-data
+    //= reason=NonZeroU32 max value is u32::MAX = 2^32 - 1
+    //# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
+    pub(crate) frame_length: NonZeroU32,
     /// The keyring to use for this operation.
     pub(crate) keyring: Option<SharedKeyring>,
     /// The cryptographic materials manager (CMM) to use for this operation.
@@ -320,7 +297,7 @@ impl<'a> EncryptInput<'a> {
     /// Bytes of plaintext data per frame.
     #[must_use]
     pub const fn frame_length(&self) -> NonZeroU32 {
-        self.frame_length.0
+        self.frame_length
     }
 
     /// The keyring, if this input was built with one.
@@ -363,7 +340,7 @@ impl<'a> EncryptInput<'a> {
 pub struct EncryptInputBuilder<'a> {
     algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    frame_length: Option<FrameLength>,
+    frame_length: Option<NonZeroU32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     plaintext: Option<&'a [u8]>,
@@ -411,9 +388,14 @@ impl<'a> EncryptInputBuilder<'a> {
 
     /// Set the bytes of plaintext data per frame.
     /// Default is 4096.
+    //
+    //= spec/client-apis/encrypt.md#frame-length
+    //= type=implication
+    //= reason=NonZeroU32 is greater than 0 and at most u32::MAX = 2^32 - 1
+    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
     #[must_use]
     pub const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
-        self.frame_length = Some(FrameLength(frame_length));
+        self.frame_length = Some(frame_length);
         self
     }
 
@@ -421,8 +403,8 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
-        self.frame_length = frame_length.map(FrameLength);
+    pub const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+        self.frame_length = frame_length;
         self
     }
 
@@ -535,7 +517,7 @@ impl<'a> EncryptInputBuilder<'a> {
         Ok(EncryptInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            frame_length: self.frame_length.unwrap_or_default(),
+            frame_length: self.frame_length.unwrap_or(DEFAULT_FRAME_LENGTH),
             keyring: self.keyring,
             cmm: self.cmm,
             plaintext,
@@ -552,7 +534,7 @@ impl<'a> EncryptInputBuilder<'a> {
 pub struct EncryptStreamInput {
     pub(crate) algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     pub(crate) encryption_context: EncryptionContext,
-    pub(crate) frame_length: FrameLength,
+    pub(crate) frame_length: NonZeroU32,
     /// The keyring to use for this operation.
     pub(crate) keyring: Option<SharedKeyring>,
     /// The cryptographic materials manager (CMM) to use for this operation.
@@ -589,7 +571,7 @@ impl EncryptStreamInput {
     /// Bytes of plaintext data per frame.
     #[must_use]
     pub const fn frame_length(&self) -> NonZeroU32 {
-        self.frame_length.0
+        self.frame_length
     }
 
     /// The keyring, if this input was built with one.
@@ -632,7 +614,7 @@ impl EncryptStreamInput {
 pub struct EncryptStreamInputBuilder {
     algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
-    frame_length: Option<FrameLength>,
+    frame_length: Option<NonZeroU32>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
     data_size: Option<usize>,
@@ -682,7 +664,7 @@ impl EncryptStreamInputBuilder {
     /// Default is 4096.
     #[must_use]
     pub const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
-        self.frame_length = Some(FrameLength(frame_length));
+        self.frame_length = Some(frame_length);
         self
     }
 
@@ -690,8 +672,8 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
-        self.frame_length = frame_length.map(FrameLength);
+    pub const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+        self.frame_length = frame_length;
         self
     }
 
@@ -805,7 +787,7 @@ impl EncryptStreamInputBuilder {
         Ok(EncryptStreamInput {
             algorithm_suite_id: self.algorithm_suite_id,
             encryption_context: self.encryption_context.unwrap_or_default(),
-            frame_length: self.frame_length.unwrap_or_default(),
+            frame_length: self.frame_length.unwrap_or(DEFAULT_FRAME_LENGTH),
             keyring: self.keyring,
             cmm: self.cmm,
             data_size: self.data_size,

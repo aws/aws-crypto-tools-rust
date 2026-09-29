@@ -649,19 +649,18 @@ fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
 
 // C++ to Rust for Frame Length
 //= spec/shim/esdk-shim.md#frame-length
+//= reason=NonZeroU32 is the core ESDK's frame length type; NonZeroU32::new rejects 0
 //# - The shim MUST translate the target frame length using the core ESDK's frame
 //# length constructor, and MUST return an error when the core ESDK rejects the
 //# value.
 fn make_frame_length(frame_length: u32) -> Result<NonZeroU32, String> {
-    aws_esdk::FrameLength::new(frame_length)
-        .map(|f| f.0)
-        .map_err(|e| {
-            shim_err(
-                ffi::ShimErrorKind::ValidationError,
-                "frame length translation",
-                e,
-            )
-        })
+    NonZeroU32::new(frame_length).ok_or_else(|| {
+        shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            "frame length translation",
+            "Frame length must be non-zero",
+        )
+    })
 }
 
 // Create an ESDK Rust Key Store KmsConfiguration value from the given FFI KmsConfiguration value

@@ -840,7 +840,7 @@ fn apply_encrypt_options_leaves_unset_inputs_defaulted() {
         .build()
         .expect("input builds");
     assert_eq!(core.max_encrypted_data_keys(), None);
-    assert_eq!(core.frame_length(), aws_esdk::FrameLength::default().0);
+    assert_eq!(core.frame_length().get(), 4096);
     assert_eq!(
         core.commitment_policy(),
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt
