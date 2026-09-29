@@ -33,8 +33,8 @@ fn keystore() -> BranchKeyStore {
     )
 }
 
-/// Builds `builder` by polling its future once. With both clients supplied,
-/// `build` does no IO, so it is ready on the first poll.
+/// Builds `builder` by polling its future once.
+/// With both clients supplied, `build` does no IO, so it is ready on the first poll.
 fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};

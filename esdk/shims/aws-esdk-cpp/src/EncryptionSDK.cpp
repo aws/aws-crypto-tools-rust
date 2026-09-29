@@ -46,6 +46,15 @@ auto guard(F&& f) -> decltype(f()) {
 
 // Conversions from public type to FFI type
 
+::ffi::Duration to_ffi(std::chrono::nanoseconds d, const char* field) {
+    if (d.count() < 0) {
+        throw ValidationException(std::string(field) + " must not be negative");
+    }
+    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(d);
+    return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
+                           static_cast<std::uint32_t>((d - secs).count())};
+}
+
 ::ffi::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::ffi::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
 }
@@ -252,12 +261,12 @@ CacheType CacheType::Default(std::uint32_t entry_capacity) {
 CacheType CacheType::StormTracking(
     std::uint32_t entry_capacity,
     std::uint32_t entry_pruning_tail_size,
-    std::uint32_t grace_period,
-    std::uint32_t grace_interval,
+    std::chrono::nanoseconds grace_period,
+    std::chrono::nanoseconds grace_interval,
     std::uint32_t fan_out,
-    std::uint32_t inflight_ttl,
-    std::uint32_t sleep_milli,
-    std::optional<TimeUnits> time_units) {
+    std::chrono::nanoseconds inflight_ttl,
+    std::chrono::nanoseconds sleep,
+    Tag) {
     CacheType c(Kind::StormTracking);
     c.entry_capacity_ = entry_capacity;
     c.entry_pruning_tail_size_ = entry_pruning_tail_size;
@@ -265,8 +274,7 @@ CacheType CacheType::StormTracking(
     c.grace_interval_ = grace_interval;
     c.fan_out_ = fan_out;
     c.inflight_ttl_ = inflight_ttl;
-    c.sleep_milli_ = sleep_milli;
-    c.time_units_ = time_units;
+    c.sleep_ = sleep;
     return c;
 }
 
@@ -291,15 +299,11 @@ struct CacheTypeLowerer {
                 out.kind = ::ffi::CacheKind::StormTracking;
                 out.entry_capacity = c.entry_capacity_;
                 out.entry_pruning_tail_size = c.entry_pruning_tail_size_;
-                out.grace_period = c.grace_period_;
-                out.grace_interval = c.grace_interval_;
+                out.grace_period = to_ffi(c.grace_period_, "grace_period");
+                out.grace_interval = to_ffi(c.grace_interval_, "grace_interval");
                 out.fan_out = c.fan_out_;
-                out.inflight_ttl = c.inflight_ttl_;
-                out.sleep_milli = c.sleep_milli_;
-                out.time_units = c.time_units_
-                    ? (*c.time_units_ == TimeUnits::Milliseconds ? ::ffi::TimeUnits::Milliseconds
-                                                                 : ::ffi::TimeUnits::Seconds)
-                    : ::ffi::TimeUnits::Unset;
+                out.inflight_ttl = to_ffi(c.inflight_ttl_, "inflight_ttl");
+                out.sleep = to_ffi(c.sleep_, "sleep");
                 break;
             case CacheType::Kind::Shared:
                 out.kind = ::ffi::CacheKind::Shared;
@@ -354,7 +358,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
               ::ffi::HierarchicalKeyringInput in{};
               in.branch_key_id = ::rust::String(branch_key_id);
               in.key_store = &*key_store.impl_->handle;
-              in.ttl = detail::to_ffi(ttl);
+              in.ttl = detail::to_ffi(ttl, "ttl");
               in.partition_id = detail::to_opt(options.partition_id_);
               in.cache = options.cache_
                              ? ::ffi::OptCacheType{true,
