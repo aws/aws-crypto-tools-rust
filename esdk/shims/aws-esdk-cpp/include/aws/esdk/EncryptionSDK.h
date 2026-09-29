@@ -120,6 +120,45 @@ public:
     explicit ValidationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
 };
 
+/// The kind of an MplException, under the MPL's own names.
+enum class MplErrorKind : std::uint8_t {
+    // Materials (keyring and CMM) errors
+    Validation = 0,
+    NoBehaviorAttempted = 1,
+    PlaintextDataKeyAlreadyPresent = 2,
+    NoMatchingDataKey = 3,
+    KeyringFailed = 4,
+    RequiredEncryptionContextKeyMissing = 5,
+    EncryptionContextValueMismatch = 6,
+    AwsCryptoPublicKeyMissing = 7,
+    AwsCryptoPublicKeyUnexpected = 8,
+    // Key store errors
+    Configuration = 9,
+    Kms = 10,
+    Dynamodb = 11,
+    RecordNotFound = 12,
+    RecordMalformed = 13,
+    Authentication = 14,
+    VersionConflict = 15,
+    Internal = 16,
+    // Cache errors
+    StorageFailed = 17,
+    InvalidEntry = 18,
+};
+
+/// A failure in the material providers library: a keyring, CMM, key store, or cache.
+class MplException : public AwsEncryptionSdkException {
+public:
+    MplException(std::optional<MplErrorKind> kind, const std::string& msg)
+        : AwsEncryptionSdkException(msg), kind_(kind) {}
+    /// The MPL's kind for this error.
+    /// Empty when the ESDK Rust reports a kind this library does not know yet.
+    std::optional<MplErrorKind> kind() const noexcept { return kind_; }
+
+private:
+    std::optional<MplErrorKind> kind_;
+};
+
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
 /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
 enum class AlgorithmSuiteId : std::uint16_t {

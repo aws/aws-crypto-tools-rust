@@ -2,6 +2,10 @@
 
 #include "aws/esdk/EncryptionSDK.h"
 
+#include <algorithm>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "rust/cxx.h"                 // rust::Error, rust::Box, rust::Vec, rust::Slice
@@ -14,18 +18,31 @@ namespace Esdk {
 namespace detail {
 
 // Rethrow Rust ESDK exceptions as corresponding C++ exceptions.
-// If a Rust exception isn't explicitly listed, default to throwing the C++ AwsEncryptionSdkException.
+// The Rust side encodes each error as `{kind}\x1f{mpl_kind}\x1f{message}`,
+// where mpl_kind is empty unless kind is MplError.
+// A message that doesn't match that layout is thrown as AwsEncryptionSdkException.
 [[noreturn]] void throw_shim_exception(const std::string& what) {
-    ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Esdk;
-    std::string message = what;
-    if (what.size() >= 2 && what[1] == '\x1f' && what[0] >= '0' && what[0] <= '9') {
-        kind = static_cast<::ffi::ShimErrorKind>(what[0] - '0');
-        message = what.substr(2);
+    auto is_digits = [](std::string_view v) {
+        return !v.empty() && std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; });
+    };
+    const auto first = what.find('\x1f');
+    const auto second = first == std::string::npos ? std::string::npos : what.find('\x1f', first + 1);
+    if (second == std::string::npos || !is_digits(std::string_view(what).substr(0, first))) {
+        throw AwsEncryptionSdkException(what);
     }
+    const auto kind = static_cast<::ffi::ShimErrorKind>(std::stoi(what.substr(0, first)));
+    const std::string mpl_kind = what.substr(first + 1, second - first - 1);
+    const std::string message = what.substr(second + 1);
     switch (kind) {
         case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(message);
         case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(message);
         case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(message);
+        case ::ffi::ShimErrorKind::MplError:
+            throw MplException(
+                is_digits(mpl_kind)
+                    ? std::optional(static_cast<MplErrorKind>(std::stoi(mpl_kind)))
+                    : std::nullopt,
+                message);
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.
