@@ -164,6 +164,15 @@ struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
 struct CacheTypeLowerer;
 struct BytesFactory;
+
+// Every duration parameter accepts any integer std::chrono::duration.
+template <class Rep, class Period>
+std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
+    static_assert(
+        std::is_convertible_v<std::chrono::duration<Rep, Period>, std::chrono::nanoseconds>,
+        "durations must be an integer std::chrono::duration, such as std::chrono::seconds");
+    return d;
+}
 }  // namespace detail
 
 /// AWS service-client configuration for AWS SDK clients.
@@ -293,10 +302,6 @@ public:
     explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
-/// inflight_ttl. Left unset, they are seconds.
-enum class TimeUnits { Seconds, Milliseconds };
-
 // TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
@@ -309,38 +314,55 @@ public:
     /// For a cache with sensible defaults, use Default instead.
     /// \param entry_capacity Maximum number of entries cached.
     /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    /// \param grace_period Time before expiration to begin refreshing, in time_units.
-    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param grace_period Time before expiration to begin refreshing.
+    /// \param grace_interval Time between refresh attempts.
     /// \param fan_out Maximum number of simultaneous refresh attempts.
-    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
-    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
-    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten.
+    /// \param sleep Time a thread sleeps when fan_out is exceeded.
+    template <class GraceRep, class GracePeriod, class IntervalRep, class IntervalPeriod,
+              class InflightRep, class InflightPeriod, class SleepRep, class SleepPeriod>
     static CacheType StormTracking(
         std::uint32_t entry_capacity,
         std::uint32_t entry_pruning_tail_size,
-        std::uint32_t grace_period,
-        std::uint32_t grace_interval,
+        std::chrono::duration<GraceRep, GracePeriod> grace_period,
+        std::chrono::duration<IntervalRep, IntervalPeriod> grace_interval,
         std::uint32_t fan_out,
-        std::uint32_t inflight_ttl,
-        std::uint32_t sleep_milli,
-        std::optional<TimeUnits> time_units = std::nullopt);
+        std::chrono::duration<InflightRep, InflightPeriod> inflight_ttl,
+        std::chrono::duration<SleepRep, SleepPeriod> sleep) {
+        return StormTracking(entry_capacity, entry_pruning_tail_size,
+                             detail::to_nanoseconds(grace_period),
+                             detail::to_nanoseconds(grace_interval), fan_out,
+                             detail::to_nanoseconds(inflight_ttl), detail::to_nanoseconds(sleep),
+                             Tag{});
+    }
     /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
     /// the user should provide an already constructed CryptographicMaterialsCache
     /// to the Hierarchical Keyring at initialization.
     static CacheType Shared(const CryptographicMaterialsCache& cache);
 
 private:
+    // Keeps the private overload out of overload resolution for callers,
+    // so std::chrono::nanoseconds arguments still select the public template.
+    struct Tag {};
+    static CacheType StormTracking(std::uint32_t entry_capacity,
+                                   std::uint32_t entry_pruning_tail_size,
+                                   std::chrono::nanoseconds grace_period,
+                                   std::chrono::nanoseconds grace_interval,
+                                   std::uint32_t fan_out,
+                                   std::chrono::nanoseconds inflight_ttl,
+                                   std::chrono::nanoseconds sleep,
+                                   Tag);
+
     enum class Kind { Default, StormTracking, Shared };
     explicit CacheType(Kind kind) : kind_(kind) {}
     Kind kind_;
     std::uint32_t entry_capacity_ = 0;
     std::uint32_t entry_pruning_tail_size_ = 0;
-    std::uint32_t grace_period_ = 0;
-    std::uint32_t grace_interval_ = 0;
+    std::chrono::nanoseconds grace_period_{};
+    std::chrono::nanoseconds grace_interval_{};
     std::uint32_t fan_out_ = 0;
-    std::uint32_t inflight_ttl_ = 0;
-    std::uint32_t sleep_milli_ = 0;
-    std::optional<TimeUnits> time_units_;
+    std::chrono::nanoseconds inflight_ttl_{};
+    std::chrono::nanoseconds sleep_{};
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
     friend class CryptographicMaterialsCache;
     friend class HierarchicalKeyring;
@@ -393,21 +415,13 @@ public:
                         const std::string& branch_key_id,
                         std::chrono::duration<Rep, Period> ttl,
                         const HierarchicalKeyringOptions& options = {})
-        : HierarchicalKeyring(std::move(key_store), branch_key_id, to_nanoseconds(ttl), options,
-                              Tag{}) {}
+        : HierarchicalKeyring(std::move(key_store), branch_key_id, detail::to_nanoseconds(ttl),
+                              options, Tag{}) {}
 
 private:
     // Keeps the private constructor out of overload resolution for callers,
     // so a std::chrono::nanoseconds argument still selects the public template.
     struct Tag {};
-
-    template <class Rep, class Period>
-    static std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> ttl) {
-        static_assert(
-            std::is_convertible_v<std::chrono::duration<Rep, Period>, std::chrono::nanoseconds>,
-            "ttl must be an integer std::chrono::duration, such as std::chrono::seconds");
-        return ttl;
-    }
 
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
