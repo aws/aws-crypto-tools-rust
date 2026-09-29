@@ -279,7 +279,9 @@ impl StormTrackingCacheBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if `fan_out` is 0.
+    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if:
+    /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
+    /// - `grace_interval` exceeds `inflight_ttl`.
     pub fn build(self) -> Result<StormTrackingCache, MaterialsError> {
         let config = StormTrackingCache {
             entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
@@ -295,6 +297,18 @@ impl StormTrackingCacheBuilder {
 
         if config.fan_out == 0 {
             return Err(invalid("fan_out must be at least 1"));
+        }
+        if config.inflight_ttl.is_zero() {
+            return Err(invalid("inflight_ttl must be greater than zero"));
+        }
+        if config.sleep.is_zero() {
+            return Err(invalid("sleep must be greater than zero"));
+        }
+        if config.grace_interval > config.inflight_ttl {
+            return Err(invalid(format!(
+                "grace_interval ({:?}) must be less than or equal to inflight_ttl ({:?})",
+                config.grace_interval, config.inflight_ttl
+            )));
         }
 
         Ok(config)

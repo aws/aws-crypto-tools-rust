@@ -376,27 +376,44 @@ fn test_builder_set_none_applies_the_default() {
 }
 
 #[test]
-fn test_zero_fan_out_is_rejected() {
+fn test_invalid_settings_are_rejected() {
     assert_rejected(
         StormTrackingCache::builder().fan_out(0).build(),
         "fan_out = 0",
+    );
+    assert_rejected(
+        StormTrackingCache::builder()
+            .grace_interval(Duration::ZERO)
+            .inflight_ttl(Duration::ZERO)
+            .build(),
+        "inflight_ttl = 0",
+    );
+    assert_rejected(
+        StormTrackingCache::builder().sleep(Duration::ZERO).build(),
+        "sleep = 0",
+    );
+    assert_rejected(
+        StormTrackingCache::builder()
+            .grace_interval(Duration::from_secs(2))
+            .inflight_ttl(Duration::from_secs(1))
+            .build(),
+        "grace_interval > inflight_ttl",
     );
 }
 
 #[test]
 fn test_durations_are_stored_exactly() {
-    // Zero, sub-millisecond, and out-of-order values are all accepted.
     let grace_period = Duration::ZERO;
     let grace_interval = Duration::from_nanos(1_500);
     let inflight_ttl = Duration::from_secs(30);
-    let sleep = Duration::ZERO;
+    let sleep = Duration::from_nanos(1);
     let config = StormTrackingCache::builder()
         .grace_period(grace_period)
         .grace_interval(grace_interval)
         .inflight_ttl(inflight_ttl)
         .sleep(sleep)
         .build()
-        .expect("any durations are accepted");
+        .expect("valid durations are accepted");
     assert_eq!(config.grace_period(), grace_period);
     assert_eq!(config.grace_interval(), grace_interval);
     assert_eq!(config.inflight_ttl(), inflight_ttl);
