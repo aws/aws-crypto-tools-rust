@@ -16,6 +16,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, DecryptionMaterials, EncryptionMaterials, MaterialsError,
 };
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use test_helpers::*;
 
@@ -423,7 +424,7 @@ async fn test_frame_length_input_used() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"custom frame length")
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(512).unwrap())
+        .frame_length(NonZeroU32::new(512).unwrap())
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;

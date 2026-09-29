@@ -9,6 +9,7 @@ mod test_helpers;
 
 use aws_esdk::EsdkAlgorithmSuiteId;
 use aws_esdk::*;
+use std::num::NonZeroU32;
 // TODO(native-mpl): re-enable with test_verify_header_encryption_context_to_only_authenticate
 // (the only consumer of fixtures::* here); disabled pending a native required-EC CMM.
 // use fixtures::*;
@@ -159,7 +160,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
         .keyring(keyring.clone())
         // frame_length 4096 exceeds the 30-byte plaintext, keeping this a
         // single-frame message so decrypt_stream exercises signature verification.
-        .frame_length(FrameLength::new(4096).unwrap())
+        .frame_length(NonZeroU32::new(4096).unwrap())
         .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();

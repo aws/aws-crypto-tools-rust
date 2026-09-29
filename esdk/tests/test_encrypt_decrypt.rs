@@ -5,7 +5,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind};
+use std::num::NonZeroU32;
 use test_helpers::{CallStyle, run_decrypt, run_encrypt, test_keyring};
 
 // Round-trips plaintext via encrypt/decrypt. Iterates over CallStyle so both
@@ -223,7 +224,7 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
                 .encryption_context(ec.clone())
                 .keyring(keyring.clone())
                 .frame_length(
-                    FrameLength::new(u32::try_from(i).expect("frame length fits u32")).unwrap(),
+                    NonZeroU32::new(u32::try_from(i).expect("frame length fits u32")).unwrap(),
                 )
                 .build()
                 .unwrap();

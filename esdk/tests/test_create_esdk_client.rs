@@ -7,6 +7,7 @@ use aws_esdk::{
     DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, decrypt, encrypt,
 };
 use aws_mpl_primitives::AesGcm;
+use std::num::NonZeroU32;
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -191,7 +192,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= type=test
         //= reason=the frame length is set to a non-default 1024; encrypt() succeeds
         //# - Encrypt operation input MUST accept an optional [Frame Length](#frame-length) argument.
-        .frame_length(FrameLength::new(1024).unwrap())
+        .frame_length(NonZeroU32::new(1024).unwrap())
         //= spec/client-apis/client.md#initialization
         //= type=test
         //= reason=the EDK cap is set to 5; encrypt() succeeds
