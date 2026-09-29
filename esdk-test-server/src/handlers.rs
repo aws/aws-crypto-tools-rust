@@ -136,7 +136,7 @@ impl AppState {
         if let Some(frame) = req.frame_length {
             input.frame_length = u32::try_from(frame)
                 .ok()
-                .and_then(|f| aws_esdk::FrameLength::new(f).ok())
+                .and_then(std::num::NonZeroU32::new)
                 .ok_or_else(|| {
                     ServerError::generic(format!(
                         "frameLength must be in 1..=u32::MAX, got {frame}"
