@@ -826,7 +826,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
     assert_eq!(
         core.algorithm_suite_id(),
-        Some(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
     );
 }
 

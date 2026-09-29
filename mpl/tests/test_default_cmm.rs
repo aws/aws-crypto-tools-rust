@@ -324,7 +324,8 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
     let cmm = DefaultCmm::new(keyring);
     let mut ec = EncryptionContext::new();
     ec.insert("aws-crypto-public-key", "some-value");
-    let request = DecryptMaterialsRequest::new(non_signing_suite().into(), allow_policy(), vec![], ec);
+    let request =
+        DecryptMaterialsRequest::new(non_signing_suite().into(), allow_policy(), vec![], ec);
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
     assert_eq!(err.kind, MaterialsErrorKind::AwsCryptoPublicKeyUnexpected);
 }
@@ -441,9 +442,13 @@ async fn test_decrypt_materials_reproduced_ec_matching_values_succeeds() {
     message_ec.insert("message-only", "m");
     let mut reproduced_ec = EncryptionContext::new();
     reproduced_ec.insert("shared", "same-value");
-    let request =
-        DecryptMaterialsRequest::new(non_signing_suite().into(), allow_policy(), vec![], message_ec)
-            .with_reproduced_encryption_context(reproduced_ec);
+    let request = DecryptMaterialsRequest::new(
+        non_signing_suite().into(),
+        allow_policy(),
+        vec![],
+        message_ec,
+    )
+    .with_reproduced_encryption_context(reproduced_ec);
     let materials = cmm
         .decrypt_materials(request)
         .await
@@ -475,9 +480,13 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
     message_ec.insert("shared", "message-value");
     let mut reproduced_ec = EncryptionContext::new();
     reproduced_ec.insert("shared", "reproduced-value");
-    let request =
-        DecryptMaterialsRequest::new(non_signing_suite().into(), allow_policy(), vec![], message_ec)
-            .with_reproduced_encryption_context(reproduced_ec);
+    let request = DecryptMaterialsRequest::new(
+        non_signing_suite().into(),
+        allow_policy(),
+        vec![],
+        message_ec,
+    )
+    .with_reproduced_encryption_context(reproduced_ec);
     let err = cmm
         .decrypt_materials(request)
         .await
@@ -501,9 +510,13 @@ async fn test_decrypt_materials_reproduced_ec_key_only_in_reproduced_is_appended
     let message_ec = EncryptionContext::new();
     let mut reproduced_ec = EncryptionContext::new();
     reproduced_ec.insert("only-in-reproduced", "v");
-    let request =
-        DecryptMaterialsRequest::new(non_signing_suite().into(), allow_policy(), vec![], message_ec)
-            .with_reproduced_encryption_context(reproduced_ec);
+    let request = DecryptMaterialsRequest::new(
+        non_signing_suite().into(),
+        allow_policy(),
+        vec![],
+        message_ec,
+    )
+    .with_reproduced_encryption_context(reproduced_ec);
     let materials = cmm
         .decrypt_materials(request)
         .await
