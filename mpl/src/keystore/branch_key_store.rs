@@ -6,7 +6,7 @@
 //!
 //! Construct with [`BranchKeyStore::builder`]. The KMS and DynamoDB clients
 //! are optional; when omitted, a default client is built using the Region
-//! parsed from the configured KMS ARN, per `branch-key-store.md`.
+//! parsed from the configured KMS ARN.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
