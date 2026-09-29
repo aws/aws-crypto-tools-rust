@@ -8,14 +8,14 @@
 use crate::error::ServerError;
 use crate::handlers;
 use crate::model::*;
-use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::Path;
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::post;
-use serde::Serialize;
+use axum::Router;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
 pub fn app() -> Router {
