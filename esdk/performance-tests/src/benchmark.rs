@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
-use aws_esdk::{Esdk, EsdkCommitmentPolicy};
+use aws_esdk::{CommitmentPolicy, Esdk};
 use aws_mpl_legacy::dafny::aws_cryptography_keyStore::client::Client as KeystoreClient;
 use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::KmsConfiguration;
 use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::key_store_config::KeyStoreConfig;
@@ -62,7 +62,7 @@ impl EsdkBenchmark {
 
     async fn setup_esdk() -> Result<(Esdk, KeyringRef)> {
         let esdk_client = Esdk::builder()
-            .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+            .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
             .build();
 
         let mpl = aws_esdk::mpl();

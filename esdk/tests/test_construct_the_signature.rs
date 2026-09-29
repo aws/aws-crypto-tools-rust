@@ -48,9 +48,7 @@ async fn test_signature_uses_signing_algorithm() {
         .plaintext(b"algorithm choice test")
         .encryption_context(aws_esdk::EncryptionContext::new())
         .keyring(keyring)
-        .algorithm_suite_id(
-            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-        )
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
@@ -115,9 +113,7 @@ async fn test_signature_key_is_signing_key() {
         .plaintext(b"signing key direct test")
         .encryption_context(aws_esdk::EncryptionContext::new())
         .keyring(keyring)
-        .algorithm_suite_id(
-            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-        )
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
@@ -307,9 +303,7 @@ async fn test_footer_equals_calculated() {
         .plaintext(b"footer equals calculated test")
         .encryption_context(aws_esdk::EncryptionContext::new())
         .keyring(keyring.clone())
-        .algorithm_suite_id(
-            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-        )
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
@@ -380,9 +374,7 @@ async fn test_footer_serialized_releases_all_bytes() {
         .plaintext(b"release all bytes test")
         .encryption_context(aws_esdk::EncryptionContext::new())
         .keyring(keyring.clone())
-        .algorithm_suite_id(
-            aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
-        )
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let ct = aws_esdk::encrypt(&enc_input).await.unwrap().ciphertext;

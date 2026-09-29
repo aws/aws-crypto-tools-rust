@@ -136,9 +136,10 @@ use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeystoreError, KeystoreErrorKind, KmsConfiguration, SharedKeystore,
 };
 use aws_crypto_mpl::structures::{
-    Esdk as EsdkCommitmentPolicy, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
+    EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, MaterialsError, MaterialsErrorKind,
 };
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
+use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -349,31 +350,20 @@ mod ffi {
         kind: CacheKind,
         /// Read by `Default` and `StormTracking`.
         entry_capacity: u32,
-        /// Storm-tracking parameters, read by `StormTracking`. `grace_period`,
-        /// `grace_interval`, and `inflight_ttl` are in `time_units` (default
-        /// seconds); `sleep_milli` is always in milliseconds.
+        /// Storm-tracking parameters, read by `StormTracking`.
         entry_pruning_tail_size: u32,
-        grace_period: u32,
-        grace_interval: u32,
+        grace_period: Duration,
+        grace_interval: Duration,
         fan_out: u32,
-        inflight_ttl: u32,
-        sleep_milli: u32,
-        /// Read by `StormTracking`; `Unset` defers to the core default (seconds).
-        time_units: TimeUnits,
+        inflight_ttl: Duration,
+        sleep: Duration,
         /// Read by `Shared`.
         shared: *const CryptographicMaterialsCache,
     }
 
-    /// Time unit for a storm-tracking cache's grace_period, grace_interval, and
-    /// inflight_ttl. `Unset` defers to the core default (seconds).
-    enum TimeUnits {
-        Unset,
-        Seconds,
-        Milliseconds,
-    }
-
     // cxx has no mapping for std::chrono or std::time::Duration.
     // These are Duration's own fields, so the bridge picks no unit and covers Duration's full range.
+    #[derive(Clone, Copy)]
     struct Duration {
         secs: u64,
         nanos: u32,
@@ -440,8 +430,7 @@ mod ffi {
     }
 }
 
-// `ffi::CacheType` holds only `Copy` fields. `Clone` is implemented here, not
-// derived in the bridge, so the bridge is unchanged.
+// Every field of `ffi::CacheType` is `Copy`, so `..*self` copies them all.
 impl Clone for ffi::CacheType {
     fn clone(&self) -> Self {
         Self { ..*self }
@@ -771,15 +760,16 @@ fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
 
 // C++ to Rust for Frame Length
 //= spec/shim/esdk-shim.md#frame-length
+//= reason=NonZeroU32 is the core ESDK's frame length type; NonZeroU32::new rejects 0
 //# - The shim MUST translate the target frame length using the core ESDK's frame
 //# length constructor, and MUST return an error when the core ESDK rejects the
 //# value.
-fn make_frame_length(frame_length: u32) -> Result<aws_esdk::FrameLength, String> {
-    aws_esdk::FrameLength::new(frame_length).map_err(|e| {
+fn make_frame_length(frame_length: u32) -> Result<NonZeroU32, String> {
+    NonZeroU32::new(frame_length).ok_or_else(|| {
         shim_err(
             ffi::ShimErrorKind::ValidationError,
             "frame length translation",
-            e,
+            "Frame length must be non-zero",
         )
     })
 }
@@ -822,20 +812,17 @@ fn make_kms_config(
     }
 }
 
-/// The conversion from a storm-tracking time value to a `Duration`: `Unset`
-/// and `Seconds` read the value as seconds, `Milliseconds` as milliseconds.
-fn time_unit(units: ffi::TimeUnits, op: &str) -> Result<fn(u32) -> Duration, String> {
-    match units {
-        ffi::TimeUnits::Unset | ffi::TimeUnits::Seconds => {
-            Ok(|v| Duration::from_secs(u64::from(v)))
-        }
-        ffi::TimeUnits::Milliseconds => Ok(|v| Duration::from_millis(u64::from(v))),
-        _ => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
-            op,
-            "unrecognized time_units",
-        )),
-    }
+/// Converts a bridge duration to a `Duration`.
+fn from_ffi_duration(d: ffi::Duration, field: &str, op: &str) -> Result<Duration, String> {
+    Duration::from_secs(d.secs)
+        .checked_add(Duration::from_nanos(u64::from(d.nanos)))
+        .ok_or_else(|| {
+            shim_err(
+                ffi::ShimErrorKind::ValidationError,
+                op,
+                format!("{field} is out of range"),
+            )
+        })
 }
 
 // Create an ESDK Rust CacheType from the given FFI CacheType
@@ -866,29 +853,30 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
         )?))),
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a storm tracking cache.
-        ffi::CacheKind::StormTracking => {
-            let duration = time_unit(cache.time_units, op)?;
-            StormTrackingCache::builder()
-                .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
-                .entry_pruning_tail_size(capacity(
-                    "entry_pruning_tail_size",
-                    cache.entry_pruning_tail_size,
-                )?)
-                .grace_period(duration(cache.grace_period))
-                .grace_interval(duration(cache.grace_interval))
-                .fan_out(capacity("fan_out", cache.fan_out)?)
-                .inflight_ttl(duration(cache.inflight_ttl))
-                .sleep(Duration::from_millis(u64::from(cache.sleep_milli)))
-                .build()
-                .map(CacheType::StormTracking)
-                .map_err(|e| {
-                    shim_err(
-                        ffi::ShimErrorKind::ValidationError,
-                        op,
-                        format!("failed to build StormTrackingCache: {e}"),
-                    )
-                })
-        }
+        ffi::CacheKind::StormTracking => StormTrackingCache::builder()
+            .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
+            .entry_pruning_tail_size(capacity(
+                "entry_pruning_tail_size",
+                cache.entry_pruning_tail_size,
+            )?)
+            .grace_period(from_ffi_duration(cache.grace_period, "grace_period", op)?)
+            .grace_interval(from_ffi_duration(
+                cache.grace_interval,
+                "grace_interval",
+                op,
+            )?)
+            .fan_out(capacity("fan_out", cache.fan_out)?)
+            .inflight_ttl(from_ffi_duration(cache.inflight_ttl, "inflight_ttl", op)?)
+            .sleep(from_ffi_duration(cache.sleep, "sleep", op)?)
+            .build()
+            .map(CacheType::StormTracking)
+            .map_err(|e| {
+                shim_err(
+                    ffi::ShimErrorKind::ValidationError,
+                    op,
+                    format!("failed to build StormTrackingCache: {e}"),
+                )
+            }),
         ffi::CacheKind::Shared => {
             let shared = require_handle(cache.shared, "shared cache", op)?;
             Ok(CacheType::Shared(shared.inner.clone()))
@@ -1313,15 +1301,7 @@ fn create_hierarchical_keyring(
     //# the core ESDK when present; an unset value is omitted.
     let partition_id = input.partition_id.to_option();
 
-    let ttl = Duration::from_secs(input.ttl.secs)
-        .checked_add(Duration::from_nanos(u64::from(input.ttl.nanos)))
-        .ok_or_else(|| {
-            shim_err(
-                ffi::ShimErrorKind::ValidationError,
-                "create_hierarchical_keyring",
-                "ttl is out of range",
-            )
-        })?;
+    let ttl = from_ffi_duration(input.ttl, "ttl", "create_hierarchical_keyring")?;
 
     let mut builder = HierarchicalKeyring::builder()
         .key_store(key_store.inner.clone())

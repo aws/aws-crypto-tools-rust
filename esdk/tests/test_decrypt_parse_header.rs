@@ -59,8 +59,8 @@ async fn test_unsupported_content_type_v1_rejected() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -77,12 +77,12 @@ async fn test_unsupported_content_type_v1_rejected() {
 
     let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&valid_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&tampered_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
 
@@ -159,8 +159,8 @@ async fn test_unsupported_type_rejected() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -173,12 +173,12 @@ async fn test_unsupported_type_rejected() {
 
     let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&valid_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&tampered_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
 
@@ -299,8 +299,8 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -314,12 +314,12 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
 
     let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&valid_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&tampered_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
 
@@ -353,8 +353,8 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -368,12 +368,12 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
 
     let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&valid_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
         .ciphertext(&tampered_ct)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
 
@@ -403,8 +403,8 @@ async fn test_v1_header_body_fields_parsed_from_wire() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;

@@ -12,10 +12,9 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError,
-};
+use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use test_helpers::*;
 
@@ -47,7 +46,7 @@ async fn test_step_4_construct_signature() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"test step 4")
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -119,8 +118,8 @@ async fn test_input_suite_vs_commitment_policy_error() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"commitment check")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build()
         .unwrap();
     let result = encrypt(&enc_input).await;
@@ -175,7 +174,7 @@ async fn test_obtain_materials_from_cmm() {
     //# from a set of valid [encryption materials](../framework/structures.md#encryption-materials).
     assert_eq!(
         output.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384,
         "output suite must come from encryption materials returned by the CMM"
     );
 }
@@ -276,7 +275,7 @@ async fn test_cmm_request_algorithm_suite_provided() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"suite test")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
@@ -285,7 +284,7 @@ async fn test_cmm_request_algorithm_suite_provided() {
     //# - Algorithm Suite: If provided, this MUST be the [input algorithm suite](#algorithm-suite).
     assert_eq!(
         output.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
         "output algorithm suite must match the input algorithm suite"
     );
 }
@@ -297,7 +296,7 @@ async fn test_suite_from_materials_used() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"suite from materials")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
@@ -308,7 +307,7 @@ async fn test_suite_from_materials_used() {
     //# returned from the [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials) call.
     assert_eq!(
         output.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 }
 
@@ -423,7 +422,7 @@ async fn test_frame_length_input_used() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"custom frame length")
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(512).unwrap())
+        .frame_length(NonZeroU32::new(512).unwrap())
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -496,7 +495,7 @@ async fn test_message_format_version_matches_suite() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"version test")
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -512,8 +511,8 @@ async fn test_message_format_version_matches_suite() {
     let enc_input_v1 = EncryptInput::builder()
         .plaintext(b"version test v1")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let ct_v1 = encrypt(&enc_input_v1).await.unwrap().ciphertext;
@@ -570,7 +569,7 @@ async fn test_output_includes_algorithm_suite() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"output suite test")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
@@ -583,7 +582,7 @@ async fn test_output_includes_algorithm_suite() {
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     assert_eq!(
         output.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
         "output must include the algorithm suite"
     );
 }
@@ -643,7 +642,7 @@ async fn test_algorithm_suite_used_for_encryption() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"suite used test")
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
@@ -652,7 +651,7 @@ async fn test_algorithm_suite_used_for_encryption() {
     //# The [algorithm suite](../framework/algorithm-suites.md) that MUST be used for encryption.
     assert_eq!(
         output.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
         "the specified algorithm suite must be used for encryption"
     );
     // Verify round-trip to prove the suite was actually used for encryption
@@ -787,8 +786,8 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"halt test")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build()
         .unwrap();
     let result = encrypt(&enc_input).await;

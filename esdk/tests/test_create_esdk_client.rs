@@ -3,10 +3,9 @@
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::{
-    DecryptInput, EncryptInput, EncryptionContext, ErrorKind, FrameLength, decrypt, encrypt,
-};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
+use std::num::NonZeroU32;
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -76,7 +75,7 @@ async fn test_default_commitment_policy() {
     //= type=test
     //= reason=EncryptInput and DecryptInput built without a commitment policy both return RequireEncryptRequireDecrypt
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    let expected = EsdkCommitmentPolicy::RequireEncryptRequireDecrypt;
+    let expected = CommitmentPolicy::RequireEncryptRequireDecrypt;
     assert_eq!(
         EncryptInput::builder()
             .plaintext(b"")
@@ -128,36 +127,32 @@ async fn test_default_max_encrypted_data_keys_is_none() {
     );
 }
 
-#[test]
-fn test_frame_length_rejects_zero() {
-    //= spec/client-apis/encrypt.md#frame-length
-    //= type=test
-    //= reason=FrameLength wraps NonZeroU32; this test proves the lower bound by rejecting 0, and the upper bound ("MUST NOT exceed 2^32 - 1") holds by construction because NonZeroU32's maximum value is u32::MAX = 2^32 - 1
-    //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
-    let err = FrameLength::new(0).expect_err("FrameLength::new(0) must fail");
-    assert!(
-        matches!(err.kind(), ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind()
-    );
-}
-
-#[test]
-fn test_frame_length_accepts_max_u32() {
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frame_length_accepts_max_u32() {
     //= spec/data-format/message-body.md#framed-data
     //= type=test
-    //= reason=FrameLength::new(u32::MAX) succeeds, proving the implementation accepts the maximum allowed value
+    //= reason=an EncryptInput builds with a frame length of u32::MAX, proving the implementation accepts the maximum allowed value
     //# - The total bytes allowed in a single frame MUST be less than or equal to `2^32 - 1`.
-    let fl = FrameLength::new(u32::MAX).unwrap();
-    assert_eq!(fl.0.get(), u32::MAX);
+    let input = EncryptInput::builder()
+        .plaintext(b"pt")
+        .keyring(test_keyring().await)
+        .frame_length(NonZeroU32::MAX)
+        .build()
+        .unwrap();
+    assert_eq!(input.frame_length().get(), u32::MAX);
 }
 
-#[test]
-fn test_frame_length_default_is_4096() {
+#[tokio::test(flavor = "multi_thread")]
+async fn test_frame_length_default_is_4096() {
     //= spec/client-apis/encrypt.md#frame-length
     //= type=test
     //# This value MUST default to 4096 bytes.
-    assert_eq!(FrameLength::default().0.get(), 4096);
+    let input = EncryptInput::builder()
+        .plaintext(b"pt")
+        .keyring(test_keyring().await)
+        .build()
+        .unwrap();
+    assert_eq!(input.frame_length().get(), 4096);
 }
 
 // Round-trip a fully-populated EncryptInput and DecryptInput through
@@ -175,7 +170,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= type=test
         //= reason=the algorithm suite is set to a non-default V1 suite; encrypt() succeeds
         //# - Encrypt operation input MUST accept an optional [Algorithm Suite](#algorithm-suite) argument.
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
         //= spec/client-apis/client.md#initialization
         //= type=test
         //= reason=the commitment policy is set non-default; encrypt() honors it
@@ -184,14 +179,14 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //
         //= spec/client-apis/client.md#commitment-policy
         //= type=test
-        //= reason=commitment_policy is an EsdkCommitmentPolicy from aws_esdk; encrypt() honors it
+        //= reason=commitment_policy is an CommitmentPolicy from aws_esdk; encrypt() honors it
         //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         //= spec/client-apis/encrypt.md#input
         //= type=test
         //= reason=the frame length is set to a non-default 1024; encrypt() succeeds
         //# - Encrypt operation input MUST accept an optional [Frame Length](#frame-length) argument.
-        .frame_length(FrameLength::new(1024).unwrap())
+        .frame_length(NonZeroU32::new(1024).unwrap())
         //= spec/client-apis/client.md#initialization
         //= type=test
         //= reason=the EDK cap is set to 5; encrypt() succeeds
@@ -242,7 +237,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= reason=a keyring is set; decrypt() succeeds
         //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
         .keyring(keyring)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(5).unwrap())
         .build()
         .unwrap();
@@ -379,8 +374,8 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
 
 // Esdk client tests
 
-use aws_esdk::EsdkAlgorithmSuiteId;
-use aws_esdk::EsdkCommitmentPolicy;
+use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::CommitmentPolicy;
 use aws_esdk::{Esdk, EsdkConfig};
 
 #[test]
@@ -392,7 +387,7 @@ fn test_esdk_default_uses_default_config() {
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
     assert_eq!(
         esdk.config().commitment_policy,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         "Esdk::default() must use the default commitment policy"
     );
     //= spec/client-apis/client.md#initialization
@@ -412,11 +407,11 @@ fn test_esdk_builder_sets_commitment_policy() {
     //# - On client initialization,
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     let esdk = Esdk::builder()
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
     assert_eq!(
         esdk.config().commitment_policy,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         "builder().commitment_policy(...) must set it on the resulting Esdk's config"
     );
 }
@@ -440,12 +435,12 @@ fn test_esdk_builder_sets_max_encrypted_data_keys() {
 fn test_esdk_new_takes_explicit_config() {
     // Direct construction from a built EsdkConfig is also supported.
     let mut config = EsdkConfig::default();
-    config.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    config.commitment_policy = CommitmentPolicy::ForbidEncryptAllowDecrypt;
     config.max_encrypted_data_keys = std::num::NonZeroUsize::new(7);
     let esdk = Esdk::new(config);
     assert_eq!(
         esdk.config().commitment_policy,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt
+        CommitmentPolicy::ForbidEncryptAllowDecrypt
     );
     assert_eq!(
         esdk.config().max_encrypted_data_keys,
@@ -463,7 +458,7 @@ async fn test_esdk_encrypt_rejects_input_with_non_default_commitment_policy() {
     let input = EncryptInput::builder()
         .plaintext(b"")
         .keyring(test_keyring().await)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
 
@@ -505,7 +500,7 @@ async fn test_esdk_decrypt_rejects_input_with_non_default_commitment_policy() {
     let input = DecryptInput::builder()
         .ciphertext(b"")
         .keyring(test_keyring().await)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
 
@@ -550,7 +545,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
     let keyring = test_keyring().await;
 
     let esdk = Esdk::builder()
-        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build();
 
     let ec = EncryptionContext::new();
@@ -601,7 +596,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
 async fn test_esdk_commitment_policy_actually_gates_encrypt() {
     let keyring = test_keyring().await;
     let esdk = Esdk::builder()
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
 
     let enc_input = EncryptInput::builder()
@@ -609,7 +604,7 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         .keyring(keyring)
         // Explicitly request a V2 committing suite. ForbidEncryptAllowDecrypt
         // forbids committing on encrypt → must fail.
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let err = esdk
@@ -658,15 +653,15 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     // which is why we use the free function here for setup.)
     let ct = encrypt_with_suite(
         plaintext,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
 
     // Configure the Esdk with ForbidEncryptAllowDecrypt and try to decrypt.
     let esdk = Esdk::builder()
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
     let dec_input = DecryptInput::builder()
         .ciphertext(&ct)

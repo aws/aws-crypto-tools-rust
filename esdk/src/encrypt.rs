@@ -5,6 +5,8 @@
 //! derives a data key, encrypts the plaintext (framed or nonframed),
 //! and serializes the result into an encrypted message.
 
+use std::num::NonZeroU32;
+
 use crate::error::Error;
 use crate::error::{esdk_err, ser_err, val_err};
 use crate::key_derivation;
@@ -17,13 +19,12 @@ use crate::message::serializable_types::{get_encrypt_key_length, get_iv_length};
 use crate::message::{DigestWriter, body, footer, header};
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
-    EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
-    EsdkCommitmentPolicy, FrameLength, MaterialSource, SafeRead, SafeWrite,
+    AlgorithmSuiteId, CommitmentPolicy, EncryptInput, EncryptOutput, EncryptStreamInput,
+    EncryptStreamOutput, EncryptionContext, MaterialSource, SafeRead, SafeWrite,
 };
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::structures::EncryptionMaterials;
-use aws_crypto_mpl::structures::EsdkAlgorithmSuiteId;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
 use std::collections::BTreeSet;
 
@@ -35,8 +36,8 @@ const AUTH_TAG_LEN: usize = 16;
 /// Best-effort capacity hint for the ciphertext buffer, to minimize
 /// reallocations. Total encrypted content equals `plaintext_len`, plus fixed
 /// per-frame and header overhead.
-fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: FrameLength) -> usize {
-    let frame_length_usize = usize::try_from(frame_length.0.get()).unwrap_or(usize::MAX);
+fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: NonZeroU32) -> usize {
+    let frame_length_usize = usize::try_from(frame_length.get()).unwrap_or(usize::MAX);
     let frames = plaintext_len.div_ceil(frame_length_usize).max(1);
     // Sequence number field + IV + authentication tag per frame.
     let per_frame_overhead = 4 + IV_LEN + AUTH_TAG_LEN;
@@ -164,10 +165,10 @@ async fn internal_encrypt(
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
-    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
-    frame_length: FrameLength,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    frame_length: NonZeroU32,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptStreamOutput, Error> {
     //= spec/client-apis/encrypt.md#behavior
     //= reason=Every step uses ?; any failure returns Err to the caller
@@ -295,9 +296,9 @@ async fn step_get_encryption_materials(
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
-    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptionMaterialsResult, Error> {
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The CMM used MUST be the input CMM, if supplied.
@@ -308,7 +309,7 @@ async fn step_get_encryption_materials(
     //
     //= spec/client-apis/encrypt.md#algorithm-suite
     //= type=implication
-    //= reason=EsdkAlgorithmSuiteId enum only contains ESDK-supported suites
+    //= reason=AlgorithmSuiteId enum only contains ESDK-supported suites
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     if let Some(id) = algorithm_suite_id {
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -316,7 +317,7 @@ async fn step_get_encryption_materials(
         //# that is not supported by the [commitment policy](client.md#commitment-policy)
         //# configured in the [client](client.md) encrypt MUST yield an error.
         let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-        if !policy.allows_for_encrypt(id.into()) {
+        if !policy.allows_for_encrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(id)) {
             return Err(val_err(
                 "Input algorithm suite is not supported by the configured commitment policy for encryption",
             ));
@@ -399,7 +400,7 @@ fn step_construct_header(
     encryption_context: &EncryptionContext,
     required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
-    frame_length: FrameLength,
+    frame_length: NonZeroU32,
     ciphertext: &mut dyn SafeWrite,
     sig_digest: &mut DigestWriter,
 ) -> Result<header::HeaderInfo, Error> {
@@ -413,7 +414,7 @@ fn step_construct_header(
         encryption_context,
         required_encryption_context_keys,
         encrypted_data_keys,
-        frame_length.0.get(),
+        frame_length.get(),
         &mat_result.derived_data_keys,
     )?;
 

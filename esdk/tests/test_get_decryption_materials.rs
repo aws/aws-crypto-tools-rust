@@ -79,8 +79,8 @@ async fn test_pre_cmm_commitment_policy_check() {
     // Encrypt with a non-committing suite (allowed by ForbidEncryptAllowDecrypt).
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
@@ -91,13 +91,13 @@ async fn test_pre_cmm_commitment_policy_check() {
     let valid_input = DecryptInput::builder()
         .ciphertext(&ct)
         .keyring(keyring.clone())
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let invalid_input = DecryptInput::builder()
         .ciphertext(&ct)
         .keyring(keyring)
-        .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
         .build()
         .unwrap();
 
@@ -140,8 +140,8 @@ async fn test_algorithm_suite_from_decryption_materials() {
     let pt = b"test algorithm suite from materials";
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
@@ -156,7 +156,7 @@ async fn test_algorithm_suite_from_decryption_materials() {
     let dec_input = DecryptInput::builder()
         .ciphertext(&ct)
         .keyring(keyring)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     let result = decrypt(&dec_input).await.unwrap();
@@ -180,8 +180,8 @@ async fn test_commit_key_derived_and_validated() {
     // Use committing suite
     let valid_ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         &keyring,
     )
     .await;
@@ -243,8 +243,8 @@ async fn test_kdf_algorithm_from_materials_suite() {
     let pt = b"test kdf algorithm from materials";
     let ct = encrypt_with_suite(
         pt,
-        EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256,
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         &keyring,
     )
     .await;
@@ -269,7 +269,7 @@ async fn test_kdf_algorithm_from_materials_suite() {
     let dec_input = DecryptInput::builder()
         .ciphertext(&ct)
         .keyring(keyring)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     //= spec/client-apis/decrypt.md#get-the-decryption-materials

@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::EsdkAlgorithmSuiteId;
+use aws_esdk::AlgorithmSuiteId;
 use aws_esdk::*;
 use test_helpers::*;
 
@@ -21,7 +21,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -86,7 +86,7 @@ async fn test_verify_signature_inputs_directly_verified() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"verify inputs direct test")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
@@ -204,7 +204,7 @@ async fn test_footer_wait_truncated_message_fails() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;

@@ -7,8 +7,9 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::EsdkAlgorithmSuiteId;
+use aws_esdk::AlgorithmSuiteId;
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -22,7 +23,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
         .plaintext(plaintext)
         .encryption_context(ec)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let ct = encrypt(&encrypt_input).await.unwrap().ciphertext;
@@ -138,8 +139,8 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let enc_input = EncryptInput::builder()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .frame_length(NonZeroU32::new(10).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -175,7 +176,7 @@ async fn test_signing_suite_must_perform_signature_step() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;

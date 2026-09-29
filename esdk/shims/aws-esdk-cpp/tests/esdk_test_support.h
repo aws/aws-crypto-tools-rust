@@ -132,11 +132,11 @@ inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const TestConfig
             Aws::Esdk::CacheType::StormTracking(
                 /*entry_capacity=*/ 100,
                 /*entry_pruning_tail_size=*/ 1,
-                /*grace_period=*/ 10,
-                /*grace_interval=*/ 1,
+                /*grace_period=*/ std::chrono::seconds{10},
+                /*grace_interval=*/ std::chrono::seconds{1},
                 /*fan_out=*/ 20,
-                /*inflight_ttl=*/ 10,
-                /*sleep_milli=*/ 20)));
+                /*inflight_ttl=*/ std::chrono::seconds{10},
+                /*sleep=*/ std::chrono::milliseconds{20})));
 }
 
 inline std::vector<std::uint8_t> to_bytes(const std::string& s) {

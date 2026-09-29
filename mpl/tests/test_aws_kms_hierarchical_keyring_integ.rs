@@ -74,8 +74,8 @@ use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
 use aws_crypto_mpl::structures::{
-    BranchKeyMaterials, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
-    EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
+    AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
+    EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
 };
 use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
@@ -147,8 +147,8 @@ fn keyring_with_cache(
 }
 
 /// Pick a non-signing suite so signing-key invariants don't intrude.
-fn non_signing_suite() -> EsdkAlgorithmSuiteId {
-    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+fn non_signing_suite() -> AlgorithmSuiteId {
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
 }
 
 /// Build empty encryption materials with a small encryption context, in
@@ -158,7 +158,7 @@ fn fresh_materials() -> EncryptionMaterials {
     let mut ec = EncryptionContext::new();
     ec.insert("region", "us-west-2");
     EncryptionMaterials::new(
-        non_signing_suite().into(),
+        non_signing_suite(),
         Vec::new(),
         ec,
         Default::default(),
@@ -238,7 +238,7 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     // Build empty decryption materials with the same EC the encrypt side
     // used; the AAD bound into the EDK ciphertext is computed over this EC.
     let dm_in = DecryptionMaterials::new(
-        non_signing_suite().into(),
+        non_signing_suite(),
         ec,
         Default::default(),
         None,
@@ -416,7 +416,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     let mut ec = EncryptionContext::new();
     ec.insert("region", "us-west-2");
     let materials_in = EncryptionMaterials::new(
-        suite.into(),
+        suite,
         Vec::new(),
         ec,
         Default::default(),

@@ -5,12 +5,12 @@
 use crate::error::{Error, val_err};
 use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
-use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
+use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
 use aws_crypto_mpl::structures::{
-    CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
-    EsdkAlgorithmSuiteId,
+    AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
+    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };
 
 /// Resolve the CMM for an operation from the resolved material source.
@@ -37,12 +37,12 @@ pub(crate) fn create_cmm_from_input(
 
 pub(crate) async fn get_decryption_materials(
     cmm: SharedCmm,
-    algorithm_suite_id: EsdkAlgorithmSuiteId,
+    algorithm_suite_id: AlgorithmSuiteId,
     header_body: &HeaderBody,
     reproduced_encryption_context: &EncryptionContext,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<DecryptionMaterials, Error> {
-    let policy = CommitmentPolicy::Esdk(commitment_policy);
+    let policy = MplCommitmentPolicy::Esdk(commitment_policy);
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Encryption Context: This MUST be the parsed [encryption context](../data-format/message-header.md#aad)
     //# from the message header.
@@ -64,8 +64,12 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
-    let mut request =
-        DecryptMaterialsRequest::new(algorithm_suite_id.into(), policy, edks, encryption_context);
+    let mut request = DecryptMaterialsRequest::new(
+        MplAlgorithmSuiteId::Esdk(algorithm_suite_id),
+        policy,
+        edks,
+        encryption_context,
+    );
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
@@ -109,12 +113,12 @@ pub(crate) async fn get_decryption_materials(
 
 pub(crate) async fn get_encryption_materials(
     cmm: SharedCmm,
-    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
     max_plaintext_length: Option<usize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptionMaterials, Error> {
-    let policy = CommitmentPolicy::Esdk(commitment_policy);
+    let policy = MplCommitmentPolicy::Esdk(commitment_policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# - Commitment Policy: This MUST be the [commitment policy](client.md#commitment-policy)
@@ -132,7 +136,7 @@ pub(crate) async fn get_encryption_materials(
     //= reason=algorithm_suite_id is Option; None means the field is not set on the request
     //# If no Algorithm Suite is provided, this field MUST NOT be included.
     if let Some(id) = algorithm_suite_id {
-        request = request.with_algorithm_suite_id(id.into());
+        request = request.with_algorithm_suite_id(MplAlgorithmSuiteId::Esdk(id));
     }
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials

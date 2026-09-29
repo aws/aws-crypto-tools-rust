@@ -14,6 +14,8 @@
 
 #include "esdk_test_support.h"
 
+using namespace std::chrono_literals;
+
 // Test utility -- OK iff `expr` throws `ExType`
 #define CHECK_THROWS_TYPE(ExType, expr)                                                  \
     do {                                                                                 \
@@ -266,8 +268,8 @@ void test_cache_kinds() {
     //= type=test
     //# - The shim MUST support creating a storm tracking cache.
     auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
-        /*grace_interval=*/1, /*fan_out=*/20, /*inflight_ttl=*/10, /*sleep_milli=*/20));
+        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
+        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
 
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
@@ -293,7 +295,6 @@ void test_keystore_rejects_short_table_name() {
 }
 
 void test_hierarchical_keyring_ttl() {
-    using namespace std::chrono_literals;
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
     auto keystore = Aws::Esdk::KeyStore(
@@ -309,17 +310,20 @@ void test_hierarchical_keyring_ttl() {
 
     // The core requires the grace period to be less than the TTL,
     // so these pin the exact TTL value that reaches it.
-    auto with_grace_ms = [](std::uint32_t grace_period) {
+    auto with_grace = [](std::chrono::milliseconds grace_period) {
         return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
             Aws::Esdk::CacheType::StormTracking(
                 /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
-                /*grace_interval=*/100, /*fan_out=*/4, /*inflight_ttl=*/100,
-                /*sleep_milli=*/10, Aws::Esdk::TimeUnits::Milliseconds));
+                /*grace_interval=*/100ms, /*fan_out=*/4, /*inflight_ttl=*/100ms,
+                /*sleep=*/10ms));
     };
-    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1499));
+    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1499ms));
     CHECK_THROWS_MPL(
         Aws::Esdk::MplErrorKind::Validation,
-        Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace_ms(1500)));
+        Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1500ms)));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
+                          16, 4, 10s, 1s, 4, 10s, /*sleep=*/-1ms)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
@@ -607,8 +611,8 @@ void test_full_resource_chain(const TestConfig& cfg) {
             .with_grant_tokens({"grant-token-example"}));
 
     Aws::Esdk::CryptographicMaterialsCache cache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
-        /*grace_interval=*/1, /*fan_out=*/20, /*inflight_ttl=*/10, /*sleep_milli=*/20));
+        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
+        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
