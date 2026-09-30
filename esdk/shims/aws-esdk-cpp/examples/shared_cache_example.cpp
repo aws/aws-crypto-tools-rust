@@ -28,9 +28,8 @@ int main() {
             // The ESDK will build defaults from the standard AWS config chain (region and credentials).
         );
 
-        // Construct one cache. entry_capacity is required.
-        Aws::Esdk::CryptographicMaterialsCache cache(
-            Aws::Esdk::CacheType::Default(1000));
+        // Construct one cache with the default options.
+        Aws::Esdk::StormTrackingCmc cache;
 
         // Pass the same cache to both keyrings, with the same partition id, so
         // they reuse each other's cached branch key material.
@@ -39,7 +38,7 @@ int main() {
             return Aws::Esdk::HierarchicalKeyring(
                 keystore, branch_key_id, 4242s,
                 Aws::Esdk::HierarchicalKeyringOptions()
-                    .with_cache(Aws::Esdk::CacheType::Shared(cache))
+                    .with_cache(cache)
                     .with_partition_id("shared-partition"));
         };
         auto keyring_a = make_keyring();

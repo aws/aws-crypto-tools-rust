@@ -127,7 +127,7 @@
 use aws_config::{AppName, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::cmc::{SharedCmc, StormTrackingCmc};
+use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder};
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
@@ -167,9 +167,9 @@ mod ffi {
         set: bool,
         value: EsdkCommitmentPolicy,
     }
-    struct OptCacheType {
+    struct OptDuration {
         set: bool,
-        value: CacheType,
+        value: Duration,
     }
 
     enum EsdkAlgorithmSuiteId {
@@ -310,27 +310,15 @@ mod ffi {
         kms_client: *const MplKmsClient,
     }
 
-    enum CacheKind {
-        Default = 1,
-        StormTracking = 2,
-        Shared = 3,
-    }
-
-    // cxx does not support passing options on each enum value across the FFI boundary.
-    // As a workaround, union options for each cache on the CacheType enum.
-    struct CacheType {
-        kind: CacheKind,
-        /// Read by `Default` and `StormTracking`.
-        entry_capacity: u32,
-        /// Storm-tracking parameters, read by `StormTracking`.
-        entry_pruning_tail_size: u32,
-        grace_period: Duration,
-        grace_interval: Duration,
-        fan_out: u32,
-        inflight_ttl: Duration,
-        sleep: Duration,
-        /// Read by `Shared`.
-        shared: *const CryptographicMaterialsCache,
+    /// Storm-tracking cache settings. An unset field keeps the core ESDK's default.
+    struct StormTrackingCmcOptions {
+        entry_capacity: OptU32,
+        entry_pruning_tail_size: OptU32,
+        grace_period: OptDuration,
+        grace_interval: OptDuration,
+        fan_out: OptU32,
+        inflight_ttl: OptDuration,
+        sleep: OptDuration,
     }
 
     // cxx has no mapping for std::chrono or std::time::Duration.
@@ -345,7 +333,8 @@ mod ffi {
         branch_key_id: String,
         key_store: *const KeyStore,
         ttl: Duration,
-        cache: OptCacheType,
+        /// Null defers to the core ESDK's default cache.
+        cache: *const CryptographicMaterialsCache,
         partition_id: OptString,
     }
 
@@ -376,9 +365,10 @@ mod ffi {
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
 
         type CryptographicMaterialsCache;
-        fn create_cryptographic_materials_cache(
-            cache: &CacheType,
+        fn create_storm_tracking_cmc(
+            options: &StormTrackingCmcOptions,
         ) -> Result<Box<CryptographicMaterialsCache>>;
+        fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
 
         type Keyring;
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
@@ -402,13 +392,6 @@ mod ffi {
     }
 }
 
-// Every field of `ffi::CacheType` is `Copy`, so `..*self` copies them all.
-impl Clone for ffi::CacheType {
-    fn clone(&self) -> Self {
-        Self { ..*self }
-    }
-}
-
 macro_rules! opt_to_option {
     ($($opt:ident => $t:ty),* $(,)?) => {$(
         impl ffi::$opt {
@@ -425,7 +408,7 @@ opt_to_option!(
     OptString => String,
     OptAlgId => ffi::EsdkAlgorithmSuiteId,
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
-    OptCacheType => ffi::CacheType,
+    OptDuration => ffi::Duration,
 );
 
 // Resources
@@ -730,100 +713,95 @@ fn from_ffi_duration(d: ffi::Duration, field: &str, op: &str) -> Result<Duration
         })
 }
 
-const CACHE_OP: &str = "create_cryptographic_materials_cache";
-
-fn cache_count(field: &str, v: u32) -> Result<usize, String> {
+fn cache_count(field: &str, v: u32, op: &str) -> Result<usize, String> {
     let bounded = i32::try_from(v).map_err(|_| {
         shim_err(
             ffi::ShimErrorKind::Validation,
-            CACHE_OP,
+            op,
             format!("{field} {v} exceeds the bridge's supported maximum"),
         )
     })?;
     usize::try_from(bounded).map_err(|_| {
         shim_err(
             ffi::ShimErrorKind::Validation,
-            CACHE_OP,
+            op,
             format!("{field} {v} does not fit in usize"),
         )
     })
 }
 
-fn storm_tracking_err(e: aws_crypto_mpl::Error) -> String {
-    shim_err(
-        ffi::ShimErrorKind::Validation,
-        CACHE_OP,
-        format!("failed to build StormTrackingCmc: {e}"),
-    )
-}
-
-// Create an ESDK Rust StormTrackingCmc from a StormTracking FFI CacheType
-fn make_storm_tracking(cache: &ffi::CacheType) -> Result<StormTrackingCmc, String> {
-    let op = CACHE_OP;
-    StormTrackingCmc::builder()
-        .entry_capacity(cache_count("entry_capacity", cache.entry_capacity)?)
-        .entry_pruning_tail_size(cache_count(
+/// Apply each set option to `builder`.
+fn apply_storm_tracking_options(
+    builder: StormTrackingCmcBuilder,
+    options: &ffi::StormTrackingCmcOptions,
+) -> Result<StormTrackingCmcBuilder, String> {
+    let op = "create_storm_tracking_cmc";
+    let count = |field: &str, v: Option<u32>| -> Result<Option<usize>, String> {
+        v.map(|v| cache_count(field, v, op)).transpose()
+    };
+    let duration = |field: &str, d: Option<ffi::Duration>| -> Result<Option<Duration>, String> {
+        d.map(|d| from_ffi_duration(d, field, op)).transpose()
+    };
+    Ok(builder
+        .set_entry_capacity(count("entry_capacity", options.entry_capacity.to_option())?)
+        .set_entry_pruning_tail_size(count(
             "entry_pruning_tail_size",
-            cache.entry_pruning_tail_size,
+            options.entry_pruning_tail_size.to_option(),
         )?)
-        .grace_period(from_ffi_duration(cache.grace_period, "grace_period", op)?)
-        .grace_interval(from_ffi_duration(
-            cache.grace_interval,
+        .set_grace_period(duration("grace_period", options.grace_period.to_option())?)
+        .set_grace_interval(duration(
             "grace_interval",
-            op,
+            options.grace_interval.to_option(),
         )?)
-        .fan_out(cache_count("fan_out", cache.fan_out)?)
-        .inflight_ttl(from_ffi_duration(cache.inflight_ttl, "inflight_ttl", op)?)
-        .sleep(from_ffi_duration(cache.sleep, "sleep", op)?)
-        .build()
-        .map_err(storm_tracking_err)
-}
-
-// Create an ESDK Rust cache from the given FFI CacheType
-fn make_cache(cache: &ffi::CacheType) -> Result<SharedCmc, String> {
-    let op = CACHE_OP;
-    match cache.kind {
-        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-        //# - The shim MUST support creating a default cache.
-        ffi::CacheKind::Default => StormTrackingCmc::builder()
-            .entry_capacity(cache_count("entry_capacity", cache.entry_capacity)?)
-            .build()
-            .map(SharedCmc::new)
-            .map_err(storm_tracking_err),
-        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-        //# - The shim MUST support creating a storm tracking cache.
-        ffi::CacheKind::StormTracking => make_storm_tracking(cache).map(SharedCmc::new),
-        ffi::CacheKind::Shared => {
-            let shared = require_handle(cache.shared, "shared cache", op)?;
-            Ok(shared.inner.clone())
-        }
-        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-        //= type=exception
-        //= reason=Will be added in the future
-        //# - The shim MUST support creating a cache that performs no caching.
-        //
-        //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-        //# - The shim MUST return an error when the target cache kind is not a supported
-        //# value.
-        _ => Err(shim_err(
-            ffi::ShimErrorKind::Validation,
-            op,
-            "unrecognized or unset cache kind",
-        )),
-    }
+        .set_fan_out(count("fan_out", options.fan_out.to_option())?)
+        .set_inflight_ttl(duration("inflight_ttl", options.inflight_ttl.to_option())?)
+        .set_sleep(duration("sleep", options.sleep.to_option())?))
 }
 
 //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//= reason=Each cache kind has its own create_* function, so the target selects a kind by calling that kind's function.
 //# - The shim MUST provide an operation that creates a cryptographic materials
 //# cache of a target-selected kind, backed by the core ESDK.
-fn create_cryptographic_materials_cache(
-    cache: &ffi::CacheType,
+//
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//= type=implication
+//= reason=The cache kinds are the create_* functions the bridge exports, so a kind the bridge does not export cannot be requested.
+//# - The shim MUST return an error when the target cache kind is not a supported
+//# value.
+//
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//= reason=With every option unset, the builder applies the core ESDK's defaults, which is the default cache.
+//# - The shim MUST support creating a default cache.
+//
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//# - The shim MUST support creating a storm tracking cache.
+fn create_storm_tracking_cmc(
+    options: &ffi::StormTrackingCmcOptions,
 ) -> Result<Box<CryptographicMaterialsCache>, String> {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //# - Creating a cryptographic materials cache MUST provide the target-supplied
     //# cache type, with its values, to the core ESDK.
-    let created = make_cache(cache)?;
-    Ok(Box::new(CryptographicMaterialsCache { inner: created }))
+    let cache = apply_storm_tracking_options(StormTrackingCmc::builder(), options)?
+        .build()
+        .map_err(|e| core_err("create_storm_tracking_cmc", e))?;
+    Ok(Box::new(CryptographicMaterialsCache {
+        inner: SharedCmc::new(cache),
+    }))
+}
+
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//= type=exception
+//= reason=Will be added in the future
+//# - The shim MUST support creating a cache that performs no caching.
+fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>, String> {
+    let op = "create_local_cmc";
+    let cache = LocalCmc::builder()
+        .entry_capacity(cache_count("entry_capacity", entry_capacity, op)?)
+        .build()
+        .map_err(|e| core_err(op, e))?;
+    Ok(Box::new(CryptographicMaterialsCache {
+        inner: SharedCmc::new(cache),
+    }))
 }
 
 /// C++ to Rust for AWS SDK call retry config
@@ -1201,14 +1179,13 @@ fn create_hierarchical_keyring(
     //# core ESDK's default cache.
     //
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=A Shared CacheType carries an existing cache handle, which make_cache returns as that exact SharedCmc.
+    //= reason=The cache handle's SharedCmc is passed to the builder, so the keyring refers to that exact cache.
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
-    let cache = input
-        .cache
-        .to_option()
-        .map(|cache| make_cache(&cache))
-        .transpose()?;
+    //
+    // A null handle means "not supplied", so the core builds its own default cache.
+    // SAFETY: a non-null handle is a valid cache borrowed for this call.
+    let cache = unsafe { input.cache.as_ref() }.map(|c| c.inner.clone());
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to

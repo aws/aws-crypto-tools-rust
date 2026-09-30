@@ -252,19 +252,25 @@ void test_cache_kinds() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
     //# - The shim MUST support creating a storm tracking cache.
-    auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
-        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
+    auto storm_cache = Aws::Esdk::StormTrackingCmc(Aws::Esdk::StormTrackingCmcOptions()
+                                                       .with_entry_capacity(100)
+                                                       .with_entry_pruning_tail_size(1)
+                                                       .with_grace_period(10s)
+                                                       .with_grace_interval(1s)
+                                                       .with_fan_out(20)
+                                                       .with_inflight_ttl(10s)
+                                                       .with_sleep(20ms));
 
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
     //# - The shim MUST support creating a default cache.
-    auto default_cache =
-        Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::Default(100));
+    auto default_cache = Aws::Esdk::StormTrackingCmc();
     // entry_capacity above ESDK Rust's i32 limit is rejected.
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::CryptographicMaterialsCache(
-                          Aws::Esdk::CacheType::Default(0x80000000u)));
+                      Aws::Esdk::StormTrackingCmc(
+                          Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(0x80000000u)));
+    auto local_cache = Aws::Esdk::LocalCmc(100);
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, Aws::Esdk::LocalCmc(0x80000000u));
 }
 
 // This test is offline -- short table name rejection happens before any network calls
@@ -295,18 +301,18 @@ void test_hierarchical_keyring_ttl() {
     // so these pin the exact TTL value that reaches it.
     auto with_grace = [](std::chrono::milliseconds grace_period) {
         return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CacheType::StormTracking(
-                /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
-                /*grace_interval=*/100ms, /*fan_out=*/4, /*inflight_ttl=*/100ms,
-                /*sleep=*/10ms));
+            Aws::Esdk::StormTrackingCmc(Aws::Esdk::StormTrackingCmcOptions()
+                                            .with_grace_period(grace_period)
+                                            .with_grace_interval(100ms)
+                                            .with_inflight_ttl(100ms)));
     };
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1499ms));
     CHECK_THROWS_TYPE(
         Aws::Esdk::ValidationException,
         Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1500ms)));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
-                          16, 4, 10s, 1s, 4, 10s, /*sleep=*/-1ms)));
+                      Aws::Esdk::StormTrackingCmc(
+                          Aws::Esdk::StormTrackingCmcOptions().with_sleep(-1ms)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
@@ -593,9 +599,8 @@ void test_full_resource_chain(const TestConfig& cfg) {
             .with_id("shim-integration-test")
             .with_grant_tokens({"grant-token-example"}));
 
-    Aws::Esdk::CryptographicMaterialsCache cache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
-        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
+    Aws::Esdk::StormTrackingCmc cache(
+        Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(100));
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
@@ -616,7 +621,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
             //# [cryptographic materials cache](#create-cryptographic-materials-cache),
             //# checked as defined in
             //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes).
-            .with_cache(Aws::Esdk::CacheType::Shared(cache))
+            .with_cache(cache)
             //= spec/shim/esdk-shim.md#create-hierarchical-keyring
             //= type=test
             //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to
