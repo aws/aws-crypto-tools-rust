@@ -13,7 +13,11 @@ aws_mpl_primitives::define_error! {
     /// The kinds a keyring, CMM, key store, or cache reports are
     /// [`aws_crypto_mpl::ErrorKind`]'s, under the same names.
     ErrorKind;
-    /// The message bytes are malformed and could not be read or written.
+    /// The bytes are not a well-formed encrypted message, for example
+    /// truncated input, an unsupported message version, or data after the
+    /// message footer.
+    ///
+    /// Treat the message as corrupt; retrying cannot succeed.
     Serialization,
 }
 

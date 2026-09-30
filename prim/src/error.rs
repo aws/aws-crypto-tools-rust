@@ -3,7 +3,7 @@
 
 //! The error shape every AWS Crypto Tools library shares.
 //!
-//! A library defines its own error type with [`define_error!`]. It gets the
+//! A library defines its own error type with [`define_error!`](crate::define_error). It gets the
 //! shared error kinds plus any it adds, and every method, without writing
 //! them. Each library's `Error` and `ErrorKind` are their own types.
 
@@ -11,7 +11,7 @@ use std::backtrace::Backtrace;
 use std::fmt;
 use std::sync::Arc;
 
-/// The error kinds every library defines. [`define_error!`] copies these into
+/// The error kinds every library defines. [`define_error!`](crate::define_error) copies these into
 /// each library's `ErrorKind` under the same names, where they are documented.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,36 +125,97 @@ macro_rules! define_error {
         $( $(#[$extra_meta:meta])* $extra:ident, )*
     ) => {
         $(#[$kind_meta])*
+        ///
+        /// Match on the kind to decide what to do, and check
+        /// [`is_retryable`](Error::is_retryable) first: a retryable error
+        /// might succeed if the same call is made again later. The message and
+        /// the [`source`](std::error::Error::source) chain say which component
+        /// or service failed, for logs.
+        ///
+        /// This enum is `#[non_exhaustive]`: later releases can add kinds, so
+        /// a `match` on it needs a catch-all arm.
+        ///
+        /// ```ignore
+        /// if err.is_retryable() {
+        ///     // back off and retry
+        /// }
+        /// match err.kind() {
+        ///     ErrorKind::Validation => { /* fix the input */ }
+        ///     ErrorKind::RemoteAccessDenied | ErrorKind::RemoteResourceNotFound => {
+        ///         /* fix the permissions or configuration */
+        ///     }
+        ///     ErrorKind::Cryptographic | ErrorKind::NoMatchingDataKey => {
+        ///         /* reject the message */
+        ///     }
+        ///     _ => { /* log and fail */ }
+        /// }
+        /// ```
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[non_exhaustive]
         pub enum $kind {
-            /// An input or configuration value is invalid.
+            /// An input or configuration value is invalid, for example an
+            /// input with no keyring or CMM, a zero TTL, or a wrapping key of
+            /// the wrong length.
+            ///
+            /// Fix the input; the same call cannot succeed.
             Validation,
-            /// The materials, or the request for them, are inconsistent with
-            /// each other or with the algorithm suite.
+            /// A keyring or CMM returned materials that are inconsistent with
+            /// each other or with the algorithm suite, for example no plaintext
+            /// data key after encryption, or a signing key for a suite that does
+            /// not sign.
+            ///
+            /// Usually a bug in a custom keyring or CMM.
             InvalidMaterials,
-            /// A required encryption context key is missing, or a
-            /// caller-supplied encryption context value differs from the one
-            /// being checked.
+            /// An encryption context does not match, for example a required
+            /// encryption context key is missing, or a value supplied on
+            /// decrypt differs from the one in the message.
+            ///
+            /// Check the encryption context passed to the call.
             EncryptionContextMismatch,
-            /// No configured key wrapped any of the encrypted data keys.
+            /// None of the configured keys wrapped any of the message's
+            /// encrypted data keys, for example decrypting with a keyring that
+            /// was not used to encrypt.
+            ///
+            /// Decrypt with a keyring that has one of the message's keys.
             NoMatchingDataKey,
-            /// A cryptographic check failed, such as an AES-GCM tag or a
-            /// signature.
+            /// A cryptographic check failed, for example an AES-GCM
+            /// authentication tag or a message signature did not verify.
+            ///
+            /// Treat the message as corrupt or modified; retrying cannot
+            /// succeed.
             Cryptographic,
-            /// A remote service denied access to a resource.
+            /// A remote service, such as AWS KMS or `DynamoDB`, denied access,
+            /// for example missing IAM permissions or expired credentials.
+            ///
+            /// Fix the permissions or credentials.
             RemoteAccessDenied,
-            /// A remote resource, such as a KMS key, `DynamoDB` table, or
-            /// branch key, does not exist.
+            /// A remote resource does not exist, for example a KMS key,
+            /// `DynamoDB` table, or branch key.
+            ///
+            /// Fix the configuration that names the resource.
             RemoteResourceNotFound,
-            /// A remote service throttled the request.
+            /// A remote service throttled the request, for example a KMS or
+            /// `DynamoDB` rate limit.
+            ///
+            /// Retryable by default: back off and try again.
             RemoteThrottled,
-            /// A request to a remote service could not be sent, or its
-            /// response did not arrive.
+            /// A request to a remote service could not be sent, or its response
+            /// did not arrive, for example a network error, a timeout, or
+            /// missing credentials or region.
+            ///
+            /// Retryable when the cause is a network error or timeout; check
+            /// [`is_retryable`](Error::is_retryable).
             RemoteTransport,
-            /// Any other failure reported by, or read from, a remote service.
+            /// Any other failure reported by, or read from, a remote service,
+            /// for example a KMS `IncorrectKeyException`, a service-side error,
+            /// or a malformed key store record.
+            ///
+            /// The [`source`](std::error::Error::source) is the service error;
+            /// a service-side error is retryable.
             Remote,
-            /// An internal invariant was violated.
+            /// An internal invariant was violated, for example a poisoned lock.
+            ///
+            /// A bug; report it.
             Internal,
             $( $(#[$extra_meta])* $extra, )*
         }
