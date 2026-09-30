@@ -99,8 +99,7 @@ inline Aws::Esdk::HierarchicalKeyring make_keyring(const KeyStoreEnv& env) {
                                      .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
         std::move(keystore), env.branch_key_id, std::chrono::seconds{600000},
-        Aws::Esdk::HierarchicalKeyringOptions().with_cache(Aws::Esdk::StormTrackingCmc(
-            Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(100))));
+        Aws::Esdk::HierarchicalKeyringOptions().with_cache(Aws::Esdk::DefaultCmc(100)));
 }
 
 // Resident set size in bytes from /proc/self/statm, or 0 when it cannot be read

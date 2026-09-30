@@ -27,8 +27,7 @@ int main() {
             4242s,  // ttl: how long cached branch key material may be reused
             // Unset options keep the library defaults.
             Aws::Esdk::HierarchicalKeyringOptions()
-                .with_cache(Aws::Esdk::StormTrackingCmc(
-                    Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(42)))
+                .with_cache(Aws::Esdk::DefaultCmc(42))
         );
 
         Aws::Esdk::EncryptionSDK esdk;

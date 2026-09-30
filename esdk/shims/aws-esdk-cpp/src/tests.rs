@@ -614,9 +614,20 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
 }
 
 #[test]
-fn default_storm_tracking_options_build_the_default_cache() {
+fn create_default_cmc_builds_a_default_storm_tracking_cache() {
+    let cache = create_default_cmc(10).expect("default cache should build");
+    assert_eq!(cache.inner.grace_period(), Some(Duration::from_secs(10)));
+    let err = expect_err(create_default_cmc(0x8000_0000));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn unset_storm_tracking_options_keep_the_core_defaults() {
     let cache = create_storm_tracking_cmc(&unset_storm_tracking_options())
-        .expect("default cache should build");
+        .expect("storm-tracking cache should build");
     assert_eq!(cache.inner.grace_period(), Some(Duration::from_secs(10)));
 }
 

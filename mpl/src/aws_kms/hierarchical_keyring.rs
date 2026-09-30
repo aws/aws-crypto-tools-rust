@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc, StormTrackingCmc, UsageMetadata};
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc, UsageMetadata};
 use crate::keystore::{Keystore, SharedKeystore};
 use crate::shared::IntoShared;
 use crate::structures::{
@@ -142,7 +142,7 @@ struct HierarchicalKeyringInner {
     logical_keystore_name: String,
 
     /// Cryptographic-materials cache for branch-key materials: the caller's
-    /// cache, or a keyring-local `StormTrackingCmc` built when none is set.
+    /// cache, or a keyring-local `DefaultCmc` built when none is set.
     cache: SharedCmc,
 }
 
@@ -192,6 +192,9 @@ impl HierarchicalKeyring {
         &self.inner.cache
     }
 }
+
+/// Entry capacity of the [`DefaultCmc`] a keyring builds when no cache is set.
+const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 
 /// Builder for [`HierarchicalKeyring`], returned by
 /// [`HierarchicalKeyring::builder`].
@@ -249,8 +252,7 @@ impl HierarchicalKeyringBuilder {
 
     /// The cache for branch key materials.
     /// Pass clones of one cache to several keyrings to share it.
-    /// When unset, the keyring builds its own [`StormTrackingCmc`] with the builder's defaults,
-    /// including an entry capacity of 1000.
+    /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
     ///
     /// When the cache has a [grace period](Cmc::grace_period),
     /// it must be less than the [TTL](Self::ttl).
@@ -309,7 +311,8 @@ impl HierarchicalKeyringBuilder {
         let cache = match cache {
             Some(cache) => cache,
             None => SharedCmc::new(
-                StormTrackingCmc::builder()
+                DefaultCmc::builder()
+                    .entry_capacity(DEFAULT_CACHE_ENTRY_CAPACITY)
                     .build()
                     .map_err(|e| Error::wrap("could not create the default materials cache", e))?,
             ),

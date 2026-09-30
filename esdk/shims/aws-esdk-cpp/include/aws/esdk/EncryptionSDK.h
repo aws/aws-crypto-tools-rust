@@ -480,8 +480,18 @@ public:
     }
 };
 
+/// The best choice for most situations: a StormTrackingCmc with default options
+/// and the given entry capacity.
+class DefaultCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates the default cache.
+    /// \param entry_capacity Maximum number of entries cached.
+    explicit DefaultCmc(std::uint32_t entry_capacity);
+};
+
 /// A cache safe for multi-threaded use that also limits redundant and
-/// overly parallel backend calls. The best choice for most situations.
+/// overly parallel backend calls.
+/// For a cache with sensible defaults, use DefaultCmc instead.
 class StormTrackingCmc : public CryptographicMaterialsCache {
 public:
     /// Creates a storm tracking cache.
@@ -508,7 +518,7 @@ public:
     /// The cache for this Hierarchical Keyring.
     /// Give several Hierarchical Keyrings (or other Cryptographic Material Providers) copies of
     /// one cache to share it; pass a cache to only this keyring to keep it private.
-    /// If not set, a StormTrackingCmc with default options is created for only this keyring.
+    /// If not set, a DefaultCmc with entry_capacity = 1000 is created for only this keyring.
     HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
         cache_ = cache;
         return *this;

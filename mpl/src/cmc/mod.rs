@@ -8,6 +8,7 @@
 //! caching CMM can hold an arbitrary, runtime-configured cache.
 //! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
 
+pub mod default;
 pub mod entry;
 pub mod local;
 pub mod storm_tracking;
@@ -17,6 +18,7 @@ use std::sync::Arc;
 use crate::Error;
 use async_trait::async_trait;
 
+pub use default::{DefaultCmc, DefaultCmcBuilder};
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
 pub use local::{LocalCmc, LocalCmcBuilder};
 pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};

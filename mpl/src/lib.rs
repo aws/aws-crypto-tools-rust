@@ -43,8 +43,9 @@ pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 
 pub use cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, LocalCmcBuilder, MessageUsage,
-    SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder, UsageMetadata,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, DefaultCmc, DefaultCmcBuilder, LocalCmc,
+    LocalCmcBuilder, MessageUsage, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
+    UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
 pub use keyring::{Keyring, RawAesKeyring, SharedKeyring};

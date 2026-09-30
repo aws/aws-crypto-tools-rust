@@ -429,7 +429,7 @@ fn build_with_branch_key_id_supplier_succeeds() {
 // only which cache the keyring stores and the grace-period bound it enforces.
 
 #[test]
-fn build_without_cache_uses_default_storm_tracking_cmc() {
+fn build_without_cache_uses_default_cmc() {
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
@@ -439,7 +439,7 @@ fn build_without_cache_uses_default_storm_tracking_cmc() {
     assert_eq!(
         keyring.cache().grace_period(),
         Some(Duration::from_secs(10)),
-        "the default cache is a storm-tracking cache with the default grace period"
+        "the default cache has the storm-tracking default grace period"
     );
 
     let err = build_err(
@@ -449,11 +449,7 @@ fn build_without_cache_uses_default_storm_tracking_cmc() {
             .branch_key_id("bk"),
         "TTL equal to the default grace period",
     );
-    assert!(
-        err.message().contains("grace period"),
-        "got: {}",
-        err.message()
-    );
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[test]
@@ -500,11 +496,7 @@ fn build_with_shared_storm_tracking_grace_period_equal_to_ttl_fails() {
             .cache(cache),
         "shared storm-tracking cache with grace_period == TTL",
     );
-    assert!(
-        err.message().contains("grace period"),
-        "got: {}",
-        err.message()
-    );
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[test]

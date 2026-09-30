@@ -127,7 +127,9 @@
 use aws_config::{AppName, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::cmc::{LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder};
+use aws_crypto_mpl::cmc::{
+    DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
+};
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
@@ -368,6 +370,7 @@ mod ffi {
         fn create_storm_tracking_cmc(
             options: &StormTrackingCmcOptions,
         ) -> Result<Box<CryptographicMaterialsCache>>;
+        fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
         fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>>;
 
         type Keyring;
@@ -770,10 +773,6 @@ fn apply_storm_tracking_options(
 //# value.
 //
 //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//= reason=With every option unset, the builder applies the core ESDK's defaults, which is the default cache.
-//# - The shim MUST support creating a default cache.
-//
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
 //# - The shim MUST support creating a storm tracking cache.
 fn create_storm_tracking_cmc(
     options: &ffi::StormTrackingCmcOptions,
@@ -784,6 +783,19 @@ fn create_storm_tracking_cmc(
     let cache = apply_storm_tracking_options(StormTrackingCmc::builder(), options)?
         .build()
         .map_err(|e| core_err("create_storm_tracking_cmc", e))?;
+    Ok(Box::new(CryptographicMaterialsCache {
+        inner: SharedCmc::new(cache),
+    }))
+}
+
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//# - The shim MUST support creating a default cache.
+fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>, String> {
+    let op = "create_default_cmc";
+    let cache = DefaultCmc::builder()
+        .entry_capacity(cache_count("entry_capacity", entry_capacity, op)?)
+        .build()
+        .map_err(|e| core_err(op, e))?;
     Ok(Box::new(CryptographicMaterialsCache {
         inner: SharedCmc::new(cache),
     }))

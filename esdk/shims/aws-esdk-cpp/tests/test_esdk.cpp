@@ -264,8 +264,9 @@ void test_cache_kinds() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
     //# - The shim MUST support creating a default cache.
-    auto default_cache = Aws::Esdk::StormTrackingCmc();
+    auto default_cache = Aws::Esdk::DefaultCmc(100);
     // entry_capacity above ESDK Rust's i32 limit is rejected.
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, Aws::Esdk::DefaultCmc(0x80000000u));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::StormTrackingCmc(
                           Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(0x80000000u)));

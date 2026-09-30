@@ -329,6 +329,11 @@ StormTrackingCmc::StormTrackingCmc(const StormTrackingCmcOptions& options)
               return ::ffi::create_storm_tracking_cmc(o);
           }))) {}
 
+DefaultCmc::DefaultCmc(std::uint32_t entry_capacity)
+    : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+          detail::Retained{},
+          detail::guard([&] { return ::ffi::create_default_cmc(entry_capacity); }))) {}
+
 LocalCmc::LocalCmc(std::uint32_t entry_capacity)
     : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
           detail::Retained{},
