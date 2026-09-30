@@ -6,7 +6,7 @@
 use std::error::Error as _;
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{DecryptInput, EncryptInput, ErrorKind, decrypt, encrypt};
+use aws_esdk::{DecryptInput, DisplayErrorContext, EncryptInput, ErrorKind, decrypt, encrypt};
 
 fn raw_aes_keyring(key_byte: u8) -> Result<RawAesKeyring, aws_crypto_mpl::Error> {
     // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
@@ -58,12 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     assert_eq!(err.kind(), ErrorKind::Cryptographic);
 
-    // Each error in the chain describes one layer.
-    let mut cause = err.source();
-    while let Some(c) = cause {
-        println!("  caused by: {c}");
-        cause = c.source();
-    }
+    // Each error in the chain describes one layer; DisplayErrorContext prints them all.
+    println!("{}", DisplayErrorContext(&err));
 
     // The keyring's own error is reachable by type.
     let keyring_error = err
