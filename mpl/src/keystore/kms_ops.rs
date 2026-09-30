@@ -93,7 +93,7 @@ pub(crate) fn resolve_keystore_arn(
                 return Err(Error::new(
                     ErrorKind::Cryptographic,
                     format!(
-                        "Record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
+                        "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
                     ),
                 ));
             }
@@ -113,16 +113,12 @@ pub(crate) fn resolve_keystore_arn(
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery
 /// and MRDiscovery before passing the record's `kms-arn` to KMS.
 fn reject_alias_arn(arn: &str) -> Result<(), Error> {
-    let parts = parse_arn(arn).map_err(|e| {
-        Error::new(
-            ErrorKind::Remote,
-            format!("Record kms-arn is malformed: {}", e.message()),
-        )
-    })?;
+    let parts = parse_arn(arn)
+        .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
     if parts.resource_type == "alias" {
         return Err(Error::new(
             ErrorKind::Cryptographic,
-            format!("Record kms-arn must not be an alias: {arn}"),
+            format!("record kms-arn must not be an alias: {arn}"),
         ));
     }
     Ok(())
@@ -132,12 +128,8 @@ fn reject_alias_arn(arn: &str) -> Result<(), Error> {
 /// resource-type / resource portion (which may itself contain `/`) is
 /// preserved verbatim.
 fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, Error> {
-    let parts = parse_arn(arn).map_err(|e| {
-        Error::new(
-            ErrorKind::Remote,
-            format!("Record kms-arn is malformed: {}", e.message()),
-        )
-    })?;
+    let parts = parse_arn(arn)
+        .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
     Ok(format!(
         "arn:{}:{}:{}:{}:{}/{}",
         parts.partition,
@@ -164,7 +156,7 @@ pub(crate) async fn decrypt_branch_key(
     let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
         Error::new(
             ErrorKind::Remote,
-            format!("Record is missing the '{ATTR_KMS_ARN}' attribute"),
+            format!("record is missing the '{ATTR_KMS_ARN}' attribute"),
         )
     })?;
 

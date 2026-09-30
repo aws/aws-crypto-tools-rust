@@ -485,7 +485,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
     );
     assert_eq!(
         err.to_string(),
-        "RemoteTransport: DynamoDB GetItem failed",
+        "DynamoDB GetItem failed",
         "Display renders only this layer; a chain-walking printer renders the cause"
     );
 }

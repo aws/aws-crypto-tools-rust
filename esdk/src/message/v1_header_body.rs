@@ -171,7 +171,7 @@ pub(crate) fn read_v1_reserved_bytes(
     if result == RESERVED_BYTES {
         Ok(())
     } else {
-        ser_err("Incorrect reserved bytes")
+        ser_err("incorrect reserved bytes")
     }
 }
 
@@ -188,7 +188,7 @@ pub(crate) fn read_v1_header_iv_length(
     if usize::from(iv_len) == get_iv_length(suite) {
         Ok(iv_len)
     } else {
-        ser_err("Header IV length does not match algorithm suite")
+        ser_err("header IV length does not match algorithm suite")
     }
 }
 

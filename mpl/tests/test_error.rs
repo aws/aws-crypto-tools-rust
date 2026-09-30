@@ -71,7 +71,7 @@ fn collection_keeps_every_error_and_nominates_a_cause_only_when_unambiguous() {
         "no EDK decrypted",
         vec![a.clone()],
     );
-    assert_eq!(one.collected(), vec![a.clone()]);
+    assert_eq!(one.collected(), std::slice::from_ref(&a));
     assert!(
         one.source().is_some(),
         "a single collected error is the source"
@@ -100,10 +100,10 @@ fn collection_is_retryable_only_if_every_collected_error_is() {
 }
 
 #[test]
-fn display_renders_kind_message_and_collected_errors() {
+fn display_renders_only_the_message() {
     assert_eq!(
         Error::new(ErrorKind::Validation, "bad input").to_string(),
-        "Validation: bad input"
+        "bad input"
     );
     let err = Error::collection(
         ErrorKind::Cryptographic,
@@ -113,10 +113,7 @@ fn display_renders_kind_message_and_collected_errors() {
             Error::new(ErrorKind::Cryptographic, "EDK 1"),
         ],
     );
-    assert_eq!(
-        err.to_string(),
-        "Cryptographic: no EDK decrypted (collected errors: [Cryptographic: EDK 0; Cryptographic: EDK 1])"
-    );
+    assert_eq!(err.to_string(), "no EDK decrypted");
 }
 
 #[test]

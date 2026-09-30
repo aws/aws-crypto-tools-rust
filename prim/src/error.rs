@@ -64,7 +64,6 @@ pub struct ErrorCore<K> {
     pub message: String,
     pub retryable: bool,
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
-    pub collected: Vec<Self>,
     pub backtrace: Arc<Backtrace>,
 }
 
@@ -81,7 +80,6 @@ impl<K: ErrorKindLike> ErrorCore<K> {
             message,
             retryable,
             cause,
-            collected: Vec::new(),
             backtrace: Arc::new(Backtrace::capture()),
         }
     }
@@ -98,21 +96,6 @@ impl<K: ErrorKindLike> PartialEq for ErrorCore<K> {
         self.kind == other.kind
             && self.message == other.message
             && self.retryable == other.retryable
-            && self.collected == other.collected
-    }
-}
-
-impl<K: ErrorKindLike> fmt::Display for ErrorCore<K> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: {}", self.kind, self.message)?;
-        if let [first, rest @ ..] = self.collected.as_slice() {
-            write!(f, " (collected errors: [{first}")?;
-            for err in rest {
-                write!(f, "; {err}")?;
-            }
-            f.write_str("])")?;
-        }
-        Ok(())
     }
 }
 
@@ -216,14 +199,17 @@ macro_rules! define_error {
 
         $(#[$err_meta])*
         #[derive(Clone, PartialEq)]
-        pub struct $error($crate::error::ErrorCore<$kind>);
+        pub struct $error {
+            core: $crate::error::ErrorCore<$kind>,
+            collected: Vec<$error>,
+        }
 
         impl $error {
             /// Construct an error of `kind`.
             #[track_caller]
             pub fn new(kind: $kind, message: impl Into<String>) -> Self {
                 use $crate::error::ErrorKindLike as _;
-                Self($crate::error::ErrorCore::build(
+                Self::from_core($crate::error::ErrorCore::build(
                     kind,
                     message.into(),
                     kind.retryable_by_default(),
@@ -240,7 +226,7 @@ macro_rules! define_error {
                 cause: impl std::error::Error + Send + Sync + 'static,
             ) -> Self {
                 use $crate::error::ErrorKindLike as _;
-                Self($crate::error::ErrorCore::build(
+                Self::from_core($crate::error::ErrorCore::build(
                     kind,
                     message.into(),
                     kind.retryable_by_default(),
@@ -252,10 +238,10 @@ macro_rules! define_error {
             /// `inner` becomes the [`std::error::Error::source`].
             #[track_caller]
             pub fn wrap(message: impl Into<String>, inner: Self) -> Self {
-                Self($crate::error::ErrorCore::build(
-                    inner.0.kind,
+                Self::from_core($crate::error::ErrorCore::build(
+                    inner.core.kind,
                     message.into(),
-                    inner.0.retryable,
+                    inner.core.retryable,
                     Some(std::sync::Arc::new(inner)),
                 ))
             }
@@ -264,9 +250,9 @@ macro_rules! define_error {
             /// collected while attempting an operation that ultimately
             /// failed, such as a keyring trying each encrypted data key.
             ///
-            /// `message` describes the overall failure; `Display` renders the
-            /// collected errors after it. A single collected failure is also
-            /// the [`std::error::Error::source`].
+            /// `message` describes the overall failure; [`Self::collected`]
+            /// returns each one. A single collected failure is also the
+            /// [`std::error::Error::source`].
             #[track_caller]
             pub fn collection(
                 kind: $kind,
@@ -284,104 +270,115 @@ macro_rules! define_error {
                         _ => None,
                     };
                 let retryable =
-                    !collected.is_empty() && collected.iter().all(|e| e.0.retryable);
-                let mut core = $crate::error::ErrorCore::build(kind, message.into(), retryable, cause);
-                core.collected = collected.into_iter().map(|e| e.0).collect();
-                Self(core)
+                    !collected.is_empty() && collected.iter().all(|e| e.core.retryable);
+                Self {
+                    core: $crate::error::ErrorCore::build(kind, message.into(), retryable, cause),
+                    collected,
+                }
             }
 
-            /// Convert another library's error into this library's error.
+            /// Convert another library's error into this library's error, with
+            /// `message` saying what this library was doing.
             /// The kind is the one with the same name here, or `Internal` when
             /// there is none; `inner` becomes the [`std::error::Error::source`].
             #[track_caller]
-            pub fn from_inner(inner: impl $crate::error::LibraryError) -> Self {
+            pub fn from_inner(
+                message: impl Into<String>,
+                inner: impl $crate::error::LibraryError,
+            ) -> Self {
                 use $crate::error::ErrorKindLike as _;
                 let kind = inner
                     .base_kind()
                     .map_or($kind::Internal, $kind::from_base);
-                let message = $crate::error::LibraryError::error_message(&inner).to_owned();
                 let retryable = $crate::error::LibraryError::retryable(&inner);
-                Self($crate::error::ErrorCore::build(
+                Self::from_core($crate::error::ErrorCore::build(
                     kind,
-                    message,
+                    message.into(),
                     retryable,
                     Some(std::sync::Arc::new(inner)),
                 ))
             }
 
+            const fn from_core(core: $crate::error::ErrorCore<$kind>) -> Self {
+                Self {
+                    core,
+                    collected: Vec::new(),
+                }
+            }
+
             /// What went wrong.
             #[must_use]
             pub const fn kind(&self) -> $kind {
-                self.0.kind
+                self.core.kind
             }
 
             /// The error message, without the kind prefix that `Display` adds.
             #[must_use]
             pub fn message(&self) -> &str {
-                &self.0.message
+                &self.core.message
             }
 
             /// Whether the same call might succeed if retried.
             #[must_use]
             pub const fn is_retryable(&self) -> bool {
-                self.0.retryable
+                self.core.retryable
             }
 
             /// The failures collected by an operation that tried several
             /// things, such as a keyring trying each encrypted data key.
             /// Empty otherwise.
             #[must_use]
-            pub fn collected(&self) -> Vec<Self> {
-                self.0.collected.iter().cloned().map(Self).collect()
+            pub fn collected(&self) -> &[Self] {
+                &self.collected
             }
 
             /// The backtrace captured when this error was created.
             pub fn backtrace(&self) -> &std::backtrace::Backtrace {
-                &self.0.backtrace
+                &self.core.backtrace
             }
 
             /// Override whether this error is retryable.
             #[doc(hidden)]
             pub const fn set_retryable(&mut self, retryable: bool) {
-                self.0.retryable = retryable;
+                self.core.retryable = retryable;
             }
         }
 
         impl $crate::error::LibraryError for $error {
             fn base_kind(&self) -> Option<$crate::error::BaseErrorKind> {
-                $crate::error::ErrorKindLike::base(self.0.kind)
+                $crate::error::ErrorKindLike::base(self.core.kind)
             }
 
             fn retryable(&self) -> bool {
-                self.0.retryable
+                self.core.retryable
             }
 
             fn error_message(&self) -> &str {
-                &self.0.message
+                &self.core.message
             }
         }
 
         impl std::fmt::Debug for $error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct(stringify!($error))
-                    .field("kind", &self.0.kind)
-                    .field("message", &self.0.message)
-                    .field("retryable", &self.0.retryable)
-                    .field("source", &self.0.cause)
-                    .field("collected", &self.0.collected)
+                    .field("kind", &self.core.kind)
+                    .field("message", &self.core.message)
+                    .field("retryable", &self.core.retryable)
+                    .field("source", &self.core.cause)
+                    .field("collected", &self.collected)
                     .finish()
             }
         }
 
         impl std::fmt::Display for $error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                std::fmt::Display::fmt(&self.0, f)
+                f.write_str(&self.core.message)
             }
         }
 
         impl std::error::Error for $error {
             fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                self.0.source()
+                self.core.source()
             }
         }
     };

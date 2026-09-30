@@ -42,7 +42,7 @@ impl EncryptionMaterials {
                 return Err(Error::new(
                     ErrorKind::Validation,
                     format!(
-                        "Required encryption context key {:?} not found in encryption context",
+                        "required encryption context key {:?} not found in encryption context",
                         key
                     ),
                 ));
@@ -53,7 +53,7 @@ impl EncryptionMaterials {
         if plaintext_data_key.is_none() && !encrypted_data_keys.is_empty() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Encrypted data keys must be empty when plaintext data key is not present",
+                "encrypted data keys must be empty when plaintext data key is not present",
             ));
         }
 
@@ -61,7 +61,7 @@ impl EncryptionMaterials {
         if !algorithm_suite_id.has_asymmetric_signing() && signing_key.is_some() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Signing key must not be present when algorithm suite has no asymmetric signing",
+                "signing key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
 
@@ -81,7 +81,7 @@ impl EncryptionMaterials {
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_keys.is_some() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Symmetric signing keys must not be present when algorithm suite has no symmetric signing",
+                "symmetric signing keys must not be present when algorithm suite has no symmetric signing",
             ));
         }
 
@@ -136,13 +136,13 @@ impl EncryptionMaterials {
         if self.signing_key.is_some() && !has_key {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Encryption context MUST include 'aws-crypto-public-key' when signing key is present",
+                "encryption context MUST include 'aws-crypto-public-key' when signing key is present",
             ));
         }
         if self.signing_key.is_none() && has_key {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Encryption context MUST NOT include 'aws-crypto-public-key' when signing key is absent",
+                "encryption context MUST NOT include 'aws-crypto-public-key' when signing key is absent",
             ));
         }
         Ok(())

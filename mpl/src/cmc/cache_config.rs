@@ -312,10 +312,7 @@ impl StormTrackingCacheBuilder {
 }
 
 fn invalid(message: impl Into<String>) -> Error {
-    Error::new(
-        ErrorKind::Validation,
-        format!("StormTrackingCache: {}", message.into()),
-    )
+    Error::new(ErrorKind::Validation, message)
 }
 
 /// Cache configuration for a Cryptographic Materials Provider.
@@ -350,9 +347,10 @@ pub fn create_cryptographic_materials_cache(cache_type: CacheType) -> Result<Sha
         CacheType::Default(default_cache) => {
             let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
                 .map_err(|e| {
-                    Error::new(
+                    Error::with_cause(
                         ErrorKind::Validation,
-                        format!("failed to initialize default LocalCmc: {e}"),
+                        "failed to initialize the default cache",
+                        e,
                     )
                 })?;
             Ok(SharedCmc::new(local))
@@ -360,9 +358,10 @@ pub fn create_cryptographic_materials_cache(cache_type: CacheType) -> Result<Sha
         CacheType::Shared(cache) => Ok(cache),
         CacheType::StormTracking(params) => {
             let storm = StormTrackingCmc::new(&params).map_err(|e| {
-                Error::new(
+                Error::with_cause(
                     ErrorKind::Validation,
-                    format!("failed to initialize StormTrackingCmc: {e}"),
+                    "failed to initialize the storm-tracking cache",
+                    e,
                 )
             })?;
             Ok(SharedCmc::new(storm))

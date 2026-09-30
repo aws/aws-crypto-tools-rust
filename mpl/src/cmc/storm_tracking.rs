@@ -221,12 +221,11 @@ impl StormTrackingCmc {
         now: SystemTime,
         skip_key: &[u8],
     ) -> Result<MutexGuard<'_, StormTrackingState>, Error> {
-        let mut guard = self.inner.state.lock().map_err(|e| {
-            Error::new(
-                ErrorKind::Internal,
-                format!("StormTrackingCmc lock poisoned: {e}"),
-            )
-        })?;
+        let mut guard = self
+            .inner
+            .state
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let ttl = self.inner.inflight_ttl;
         guard.inflight.retain(|k, t| {
             k.as_slice() == skip_key
@@ -301,7 +300,7 @@ impl StormTrackingCmc {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
                         if elapsed > self.inner.inflight_ttl {
-                            return Err(Error::new(ErrorKind::Internal, "InFlightTTL exceeded"));
+                            return Err(Error::new(ErrorKind::Internal, "in-flight TTL exceeded"));
                         }
 
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
@@ -359,7 +358,7 @@ impl StormTrackingCmc {
             if let Some(deadline) = deadline
                 && now >= deadline
             {
-                return Err(Error::new(ErrorKind::Internal, "InFlightTTL exceeded"));
+                return Err(Error::new(ErrorKind::Internal, "in-flight TTL exceeded"));
             }
 
             // Re-classify per Dafny `CheckNewEntry`: become leader when

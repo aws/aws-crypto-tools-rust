@@ -227,9 +227,10 @@ async fn test_on_decrypt_key_name_mismatch() {
         "the rejected EDK must still be reported, collected on the error: {err}",
     );
     assert!(
-        err.to_string().contains("EncryptedDataKey 0 did not match"),
-        "error must report the non-matching EDK by index: {}",
-        err.message()
+        err.collected()
+            .iter()
+            .any(|e| e.message().contains("encrypted data key 0 did not match")),
+        "error must report the non-matching EDK by index: {err:?}",
     );
 }
 
@@ -647,9 +648,10 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
     // a decryption failure rather than a no-match.
     assert_kind(&err, ErrorKind::Cryptographic);
     assert!(
-        err.to_string().contains("insufficient data to decrypt"),
-        "error must name the truncated ciphertext: {}",
-        err.message()
+        err.collected()
+            .iter()
+            .any(|e| e.message().contains("insufficient data to decrypt")),
+        "error must name the truncated ciphertext: {err:?}",
     );
 }
 

@@ -93,7 +93,9 @@ async fn test_mismatched_encryption_context_on_decrypt() {
         "expected EncryptionContextMismatch, got: {:?}",
         err.kind()
     );
-    let inner = err.to_string();
+    let inner = std::error::Error::source(&err)
+        .map(ToString::to_string)
+        .unwrap_or_default();
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=Mismatched reproduced EC value triggers MPL "does not match reproduced encryption context" error, proving the reproduced EC was used

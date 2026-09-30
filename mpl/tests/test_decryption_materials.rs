@@ -82,7 +82,7 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
         result
             .unwrap_err()
             .message()
-            .contains("Symmetric signing key must not be present")
+            .contains("symmetric signing key must not be present")
     );
 }
 
@@ -108,7 +108,7 @@ fn test_verification_key_length_must_match_algorithm_suite() {
             "{suite_id:?} with {bad_len}-byte verification key must fail"
         ));
         assert!(
-            err.message().contains("Verification key length"),
+            err.message().contains("verification key length"),
             "{suite_id:?} @ {bad_len}: unexpected error message: {}",
             err.message()
         );
@@ -150,7 +150,7 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
     assert!(
         err.message()
-            .contains("Verification key must not be present")
+            .contains("verification key must not be present")
     );
 }
 
