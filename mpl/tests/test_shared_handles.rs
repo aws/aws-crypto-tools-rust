@@ -29,8 +29,9 @@ fn keystore() -> BranchKeyStore {
     build_without_io(
         BranchKeyStore::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::kms_key_arn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            .kms_configuration(KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                    .to_string(),
             ))
             .logical_keystore_name("test-logical")
             .ddb_client(aws_sdk_dynamodb::Client::new(&cfg))

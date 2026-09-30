@@ -28,32 +28,90 @@ pub enum KmsConfiguration {
     /// MRK ARN compatibility. ARN may be MRK or non-MRK.
     KmsMrKeyArn(String),
     /// Discovery configuration; KMS Key ARN is read from each DDB record.
-    Discovery,
-    /// MRDiscovery configuration with required region argument.
-    MrDiscovery {
-        /// The region to use for MRK ARN rewrites.
-        region: String,
-    },
+    Discovery(Discovery),
+    /// MRDiscovery configuration; KMS Key ARN is read from each DDB record,
+    /// with an MRK ARN's region replaced by the configured region.
+    MrDiscovery(MrDiscovery),
 }
 
-impl KmsConfiguration {
-    /// A [`KmsConfiguration::KmsKeyArn`] for `arn`.
+/// Settings for [`KmsConfiguration::Discovery`].
+///
+/// Construct with [`Discovery::builder`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Discovery {}
+
+impl Discovery {
+    /// Start a builder for `Discovery`.
     #[must_use]
-    pub fn kms_key_arn(arn: impl Into<String>) -> Self {
-        Self::KmsKeyArn(arn.into())
+    pub fn builder() -> DiscoveryBuilder {
+        DiscoveryBuilder::default()
+    }
+}
+
+/// Builder for [`Discovery`].
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct DiscoveryBuilder {}
+
+impl DiscoveryBuilder {
+    /// Build the `Discovery`.
+    #[must_use]
+    pub fn build(self) -> Discovery {
+        Discovery {}
+    }
+}
+
+/// Settings for [`KmsConfiguration::MrDiscovery`].
+///
+/// Construct with [`MrDiscovery::builder`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MrDiscovery {
+    region: String,
+}
+
+impl MrDiscovery {
+    /// Start a builder for `MrDiscovery`.
+    #[must_use]
+    pub fn builder() -> MrDiscoveryBuilder {
+        MrDiscoveryBuilder::default()
     }
 
-    /// A [`KmsConfiguration::KmsMrKeyArn`] for `arn`.
+    /// The region any discovered MRK ARN is rewritten to.
     #[must_use]
-    pub fn kms_mr_key_arn(arn: impl Into<String>) -> Self {
-        Self::KmsMrKeyArn(arn.into())
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+}
+
+/// Builder for [`MrDiscovery`].
+#[derive(Debug, Clone, Default)]
+pub struct MrDiscoveryBuilder {
+    region: Option<String>,
+}
+
+impl MrDiscoveryBuilder {
+    /// Set the region any discovered MRK ARN is rewritten to. Required.
+    #[must_use]
+    pub fn region(mut self, region: impl Into<String>) -> Self {
+        self.region = Some(region.into());
+        self
     }
 
-    /// A [`KmsConfiguration::MrDiscovery`] for `region`.
-    #[must_use]
-    pub fn mr_discovery(region: impl Into<String>) -> Self {
-        Self::MrDiscovery {
-            region: region.into(),
-        }
+    /// Build the `MrDiscovery`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`KeystoreErrorKind::Configuration`](super::KeystoreErrorKind::Configuration)
+    /// error if no region was set.
+    pub fn build(self) -> Result<MrDiscovery, super::KeystoreError> {
+        let Some(region) = self.region else {
+            return Err(super::KeystoreError::new(
+                super::KeystoreErrorKind::Configuration,
+                "MrDiscovery: a region is required",
+            ));
+        };
+        Ok(MrDiscovery { region })
     }
 }

@@ -72,7 +72,7 @@ use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
+use aws_crypto_mpl::keystore::{BranchKeyStore, Discovery, Keystore, KeystoreError, MrDiscovery};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
@@ -99,7 +99,7 @@ async fn build_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -277,7 +277,7 @@ async fn build_keystore_with_kms_and_logical_name(
 ) -> BranchKeyStore {
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
         .logical_keystore_name(logical_keystore_name)
         .ddb_client(ddb_client_us_west_2().await)
         .kms_client(kms)
@@ -291,7 +291,7 @@ async fn build_keystore_with_kms_and_logical_name(
 ///
 /// What this checks is narrower than why these tests expect a failure. Every
 /// `hk2` here is built by `build_keystore_with_kms_and_logical_name`, which pins
-/// `KmsConfiguration::kms_key_arn(KEY_ARN)` — a us-west-2 ARN — while handing the
+/// `KmsConfiguration::KmsKeyArn(KEY_ARN.to_string())` — a us-west-2 ARN — while handing the
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
@@ -653,7 +653,7 @@ async fn build_discovery_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::Discovery)
+        .kms_configuration(KmsConfiguration::Discovery(Discovery::builder().build()))
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -780,7 +780,7 @@ async fn integ_discovery_keystore_on_decrypt_round_trips() {
 
 // ─── MrDiscovery keystore — mirrors Dafny TestGetKeysForMrk ────────────────
 //
-// `MyEastBranch2`'s record names a us-east-1 MRK. `MrDiscovery { region }`
+// `MyEastBranch2`'s record names a us-east-1 MRK. `MrDiscovery`
 // rewrites the record's ARN into that region before calling KMS, so a
 // us-west-2 client reaches the MRK replica; plain `Discovery` passes the
 // us-east-1 ARN through unchanged and the us-west-2 endpoint rejects it.
@@ -802,7 +802,9 @@ async fn build_mr_discovery_keystore(region: &str) -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::mr_discovery(region))
+        .kms_configuration(KmsConfiguration::MrDiscovery(
+            MrDiscovery::builder().region(region).build().unwrap(),
+        ))
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)

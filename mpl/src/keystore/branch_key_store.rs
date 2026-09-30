@@ -94,7 +94,7 @@ impl BranchKeyStore {
     fn configured_kms_key_arn(&self) -> Result<&str, KeystoreError> {
         match &self.inner.kms_configuration {
             KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn),
-            KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => {
+            KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => {
                 Err(KeystoreError::new(
                     KeystoreErrorKind::Configuration,
                     "operation requires a single-key KMS configuration (KmsKeyArn or \
@@ -846,8 +846,8 @@ fn region_from_kms_config(config: &KmsConfiguration) -> Option<String> {
         KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => {
             parse_arn(arn).ok().map(|parts| parts.region)
         }
-        KmsConfiguration::MrDiscovery { region } => Some(region.clone()),
-        KmsConfiguration::Discovery => None,
+        KmsConfiguration::MrDiscovery(mr_discovery) => Some(mr_discovery.region().to_string()),
+        KmsConfiguration::Discovery(_) => None,
     }
 }
 

@@ -132,7 +132,9 @@ use aws_crypto_mpl::cmc::{
     create_cryptographic_materials_cache as create_cryptographic_materials_cache_core,
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
+use aws_crypto_mpl::keystore::{
+    BranchKeyStore, Discovery, KmsConfiguration, MrDiscovery, SharedKeystore,
+};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, MaterialsErrorKind};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use std::num::NonZeroU32;
@@ -674,16 +676,24 @@ fn make_kms_config(
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
-        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::kms_key_arn(value)),
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.to_string())),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
-        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::kms_mr_key_arn(value)),
+        ffi::KmsConfigurationType::KmsMrKeyArn => {
+            Ok(KmsConfiguration::KmsMrKeyArn(value.to_string()))
+        }
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
-        ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery),
+        ffi::KmsConfigurationType::Discovery => {
+            Ok(KmsConfiguration::Discovery(Discovery::builder().build()))
+        }
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a multi-Region-key discovery configuration.
-        ffi::KmsConfigurationType::MrDiscovery => Ok(KmsConfiguration::mr_discovery(value)),
+        ffi::KmsConfigurationType::MrDiscovery => MrDiscovery::builder()
+            .region(value)
+            .build()
+            .map(KmsConfiguration::MrDiscovery)
+            .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, "create_keystore", e)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST return an error when the target KMS configuration type is not a
         //# supported value.

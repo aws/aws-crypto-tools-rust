@@ -353,7 +353,7 @@ fn make_kms_config_accepts_discovery() {
     //# - The shim MUST translate a discovery configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::Discovery, "").unwrap(),
-        KmsConfiguration::Discovery
+        KmsConfiguration::Discovery(_)
     ));
 }
 
@@ -365,7 +365,7 @@ fn make_kms_config_accepts_mr_discovery() {
     //# - The shim MUST translate a multi-Region-key discovery configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::MrDiscovery, "us-west-2").unwrap(),
-        KmsConfiguration::MrDiscovery { region } if region == "us-west-2"
+        KmsConfiguration::MrDiscovery(m) if m.region() == "us-west-2"
     ));
 }
 

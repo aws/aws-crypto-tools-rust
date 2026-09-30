@@ -37,7 +37,8 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+    BranchKeyStore, BranchKeyStoreBuilder, Discovery, KeyStoreInfo, Keystore, KeystoreError,
+    KmsConfiguration,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
@@ -96,8 +97,9 @@ fn keystore_never_consulted() -> BranchKeyStore {
     build_without_io(
         BranchKeyStore::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::kms_key_arn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            .kms_configuration(KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                    .to_string(),
             ))
             .logical_keystore_name("test-logical")
             .kms_client(kms)
@@ -1315,7 +1317,7 @@ impl Keystore for FakeKeystore {
             keystore_name: "test-table".to_string(),
             logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
             grant_tokens: Vec::new(),
-            kms_configuration: KmsConfiguration::Discovery,
+            kms_configuration: KmsConfiguration::Discovery(Discovery::builder().build()),
         })
     }
 
@@ -1518,7 +1520,7 @@ mod onencrypt {
                     keystore_name: "table".to_string(),
                     logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
-                    kms_configuration: KmsConfiguration::Discovery,
+                    kms_configuration: KmsConfiguration::Discovery(Discovery::builder().build()),
                 })
             }
             async fn create_key_store(&self) -> Result<String, KeystoreError> {
@@ -2001,7 +2003,7 @@ mod ondecrypt {
                     keystore_name: "table".to_string(),
                     logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
-                    kms_configuration: KmsConfiguration::Discovery,
+                    kms_configuration: KmsConfiguration::Discovery(Discovery::builder().build()),
                 })
             }
             async fn create_key_store(&self) -> Result<String, KeystoreError> {

@@ -108,7 +108,7 @@ async fn build_hierarchical(
     let key_store = BranchKeyStore::builder()
         .ddb_table_name(config.key_store_table_name.clone())
         .logical_keystore_name(config.logical_key_store_name.clone())
-        .kms_configuration(KmsConfiguration::kms_key_arn(config.kms_key_arn.clone()))
+        .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
         .build()
         .await
         .map_err(|e| ServerError::esdk(e.to_string()))?;

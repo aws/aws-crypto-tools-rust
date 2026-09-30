@@ -88,7 +88,7 @@ pub fn is_arn_compatible(config: &KmsConfiguration, stored_arn: &str) -> bool {
         KmsConfiguration::KmsMrKeyArn(configured) => {
             aws_kms_mrk_match_for_decrypt(configured, stored_arn)
         }
-        KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => true,
+        KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => true,
     }
 }
 
@@ -99,7 +99,7 @@ impl KmsConfiguration {
             KmsConfiguration::KmsKeyArn(a) | KmsConfiguration::KmsMrKeyArn(a) => {
                 validate_kms_key_arn(a).map(|_| ())
             }
-            KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => Ok(()),
+            KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => Ok(()),
         }
     }
 
