@@ -16,10 +16,9 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::cmc::create_cryptographic_materials_cache;
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{
-    CacheType, HierarchicalKeyring, StormTrackingCache, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
+    HierarchicalKeyring, StormTrackingCmc, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
 };
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
@@ -43,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     // Every parameter is optional; each value set here is its default.
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         // Maximum number of entries the cache holds.
         .entry_capacity(1000)
         // Least-recently-used entries checked for expiry on each lookup.
@@ -60,7 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // How long a waiting request sleeps before checking the cache again.
         .sleep(Duration::from_millis(20))
         .build()?;
-    let cache = create_cryptographic_materials_cache(CacheType::StormTracking(params))?;
 
     // Give both keyrings the same cache and partition id,
     // so they reuse each other's cached branch key material.
@@ -69,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .key_store(key_store.clone())
             .ttl(Duration::from_secs(600))
             .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
-            .cache(CacheType::Shared(cache.clone()))
+            .cache(cache.clone())
             .partition_id("shared-partition")
             .build()
     };

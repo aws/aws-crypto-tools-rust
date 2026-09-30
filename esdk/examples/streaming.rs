@@ -35,12 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
     let wrapping_key = vec![0x01u8; 32];
-    let keyring = RawAesKeyring::new(
-        "my-key-namespace",
-        "my-key-name",
-        wrapping_key,
-        AesGcm::Aes256Gcm,
-    )?;
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("my-key-namespace")
+        .key_name("my-key-name")
+        .wrapping_key(wrapping_key)
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()?;
 
     // The encryption context is authenticated, not encrypted.
     // It is bound to the message and must be reproducible on decrypt.

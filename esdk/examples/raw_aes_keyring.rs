@@ -13,12 +13,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The namespace and name identify this wrapping key.
     // Decrypt must use a keyring with the same namespace, name, key, and algorithm.
-    let keyring = RawAesKeyring::new(
-        "my-key-namespace",
-        "my-key-name",
-        wrapping_key,
-        AesGcm::Aes256Gcm,
-    )?;
+    let keyring = RawAesKeyring::builder()
+        .key_namespace("my-key-namespace")
+        .key_name("my-key-name")
+        .wrapping_key(wrapping_key)
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()?;
 
     let plaintext = b"Hello World";
 
