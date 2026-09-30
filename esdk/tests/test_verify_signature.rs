@@ -64,7 +64,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         "tampered footer must produce a Cryptographic error"
     );
     assert!(
-        err.message().contains("Signature verification failed"),
+        err.message().contains("signature verification failed"),
         "error message must indicate signature verification failure, got: {}",
         err.message()
     );

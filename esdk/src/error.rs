@@ -52,22 +52,21 @@ pub(crate) fn ser_err<T>(msg: &str) -> Result<T, Error> {
 impl From<aws_crypto_mpl::Error> for Error {
     #[track_caller]
     fn from(item: aws_crypto_mpl::Error) -> Self {
-        Self::from_inner(item)
+        Self::from_inner("the material providers library failed", item)
     }
 }
 
 impl From<aws_mpl_primitives::Error> for Error {
     #[track_caller]
     fn from(item: aws_mpl_primitives::Error) -> Self {
-        Self::from_inner(item)
+        Self::from_inner("a cryptographic operation failed", item)
     }
 }
 
 impl From<aws_smithy_types::error::operation::BuildError> for Error {
     #[track_caller]
     fn from(item: aws_smithy_types::error::operation::BuildError) -> Self {
-        let message = format!("{item:?}");
-        Self::with_cause(ErrorKind::Validation, message, item)
+        Self::with_cause(ErrorKind::Validation, "could not build the request", item)
     }
 }
 

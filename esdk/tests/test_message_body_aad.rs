@@ -329,8 +329,8 @@ async fn test_body_aad_content_length_nonframed_rejects_tampered_length() {
         );
         let err_str = err.to_string();
         assert!(
-            err_str.contains("Cryptographic"),
-            "{version:?}: expected display message to contain \"Cryptographic\", got: {err_str}"
+            err_str.contains("cryptographic operation failed"),
+            "{version:?}: expected a cryptographic failure, got: {err_str}"
         );
     }
 }
@@ -419,8 +419,8 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
     );
     let err_str = err.to_string();
     assert!(
-        err_str.contains("Sequence number out of order"),
-        "expected display message to contain \"Sequence number out of order\" after tampering frame 1's seq from 1 to {tampered_seq}, got: {err_str}"
+        err_str.contains("sequence number out of order"),
+        "expected display message to contain \"sequence number out of order\" after tampering frame 1's seq from 1 to {tampered_seq}, got: {err_str}"
     );
 }
 

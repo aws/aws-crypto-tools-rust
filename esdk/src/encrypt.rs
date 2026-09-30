@@ -319,7 +319,7 @@ async fn step_get_encryption_materials(
         let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
         if !policy.allows_for_encrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(id)) {
             return Err(val_err(
-                "Input algorithm suite is not supported by the configured commitment policy for encryption",
+                "input algorithm suite is not supported by the configured commitment policy for encryption",
             ));
         }
     }
@@ -385,7 +385,7 @@ async fn step_get_encryption_materials(
             .ok_or_else(|| {
                 err(
                     ErrorKind::InvalidMaterials,
-                    "Encryption materials must contain a plaintext data key",
+                    "encryption materials must contain a plaintext data key",
                 )
             })?
             .as_bytes(),
@@ -496,7 +496,7 @@ fn step_construct_signature(
                 .ok_or_else(|| {
                     err(
                         ErrorKind::InvalidMaterials,
-                        "Encryption materials must contain a signing key for signature algorithm",
+                        "encryption materials must contain a signing key for signature algorithm",
                     )
                 })?
                 .as_bytes(),
@@ -505,7 +505,7 @@ fn step_construct_signature(
             sig_digest.context.ok_or_else(|| {
                 err(
                     ErrorKind::Internal,
-                    "Signature digest context must be present for signing",
+                    "signature digest context must be present for signing",
                 )
             })?,
             &mut signature_bytes,
@@ -552,7 +552,7 @@ fn validate_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
     for (key, _) in ec.iter() {
         if key.starts_with(RESERVED_ENCRYPTION_CONTEXT) {
             return Err(val_err(
-                "Encryption context keys cannot contain reserved prefix 'aws-crypto-'",
+                "encryption context keys cannot contain reserved prefix 'aws-crypto-'",
             ));
         }
     }
@@ -654,7 +654,7 @@ fn build_header_body(
             frame_length,
         ),
         v => ser_err(&format!(
-            "Algorithm suite declares unsupported message format version {v}"
+            "algorithm suite declares unsupported message format version {v}"
         )),
     }
 }
@@ -669,12 +669,12 @@ fn build_v2_header_body(
     suite_data: Option<Vec<u8>>,
 ) -> Result<HeaderBody, Error> {
     let Some(sd) = suite_data else {
-        return ser_err("Suite data must be present for a committing algorithm suite");
+        return ser_err("suite data must be present for a committing algorithm suite");
     };
     let expected_len = suite.algorithm_suite_data_length();
     if sd.len() != expected_len {
         return ser_err(
-            "Suite data length must match the commitment key output length for a committing suite",
+            "suite data length must match the commitment key output length for a committing suite",
         );
     }
     //= spec/client-apis/encrypt.md#v2-header
@@ -727,7 +727,7 @@ fn build_header_auth_tag(
     let key_length = get_encrypt_key_length(suite);
     if data_key.len() != key_length {
         return ser_err(&format!(
-            "Incorrect data key length: got {}, expected {}",
+            "incorrect data key length: got {}, expected {}",
             data_key.len(),
             key_length
         ));

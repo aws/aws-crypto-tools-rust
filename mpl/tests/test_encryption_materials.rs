@@ -99,7 +99,7 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
         result
             .unwrap_err()
             .message()
-            .contains("Signing key must not be present")
+            .contains("signing key must not be present")
     );
 }
 
@@ -155,7 +155,7 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
         result
             .unwrap_err()
             .message()
-            .contains("Symmetric signing keys must not be present")
+            .contains("symmetric signing keys must not be present")
     );
 }
 

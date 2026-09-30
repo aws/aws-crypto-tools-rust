@@ -43,7 +43,7 @@ fn validate_material_source(
 ) -> Result<(), Error> {
     match (keyring.is_some(), cmm.is_some()) {
         (true, false) | (false, true) => Ok(()),
-        _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
+        _ => Err(val_err("exactly one of a keyring or CMM must be provided")),
     }
 }
 
@@ -512,7 +512,7 @@ impl<'a> EncryptInputBuilder<'a> {
     pub fn build(self) -> Result<EncryptInput<'a>, Error> {
         let plaintext = self
             .plaintext
-            .ok_or_else(|| val_err("A plaintext must be provided"))?;
+            .ok_or_else(|| val_err("a plaintext must be provided"))?;
         //= spec/client-apis/encrypt.md#input
         //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
         //
@@ -1018,7 +1018,7 @@ impl<'a> DecryptInputBuilder<'a> {
     pub fn build(self) -> Result<DecryptInput<'a>, Error> {
         let ciphertext = self
             .ciphertext
-            .ok_or_else(|| val_err("A ciphertext must be provided"))?;
+            .ok_or_else(|| val_err("a ciphertext must be provided"))?;
         //= spec/client-apis/decrypt.md#input
         //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
         //

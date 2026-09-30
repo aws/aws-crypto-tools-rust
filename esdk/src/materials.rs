@@ -19,7 +19,7 @@ use aws_crypto_mpl::structures::{
 pub(crate) fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
 ) -> Result<SharedCmm, Error> {
-    match input_source.ok_or_else(|| val_err("A Materials Source must be provided"))? {
+    match input_source.ok_or_else(|| val_err("a materials source must be provided"))? {
         MaterialSource::Cmm(cmm) => Ok(cmm),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -86,20 +86,23 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#keyring
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let materials = cmm.decrypt_materials(request).await?;
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .map_err(|e| Error::from_inner("the CMM could not provide decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
     if !policy.allows_for_decrypt(materials.algorithm_suite_id()) {
         return Err(val_err(
-            "Algorithm suite is not supported by the configured commitment policy for decryption",
+            "algorithm suite is not supported by the configured commitment policy for decryption",
         ));
     }
 
     if materials.plaintext_data_key().is_none() {
         return Err(val_err(
-            "Decryption materials are missing a plaintext data key",
+            "decryption materials are missing a plaintext data key",
         ));
     }
 
@@ -155,20 +158,23 @@ pub(crate) async fn get_encryption_materials(
         request = request.with_max_plaintext_length(len as u64);
     }
 
-    let materials = cmm.get_encryption_materials(request).await?;
+    let materials = cmm
+        .get_encryption_materials(request)
+        .await
+        .map_err(|e| Error::from_inner("the CMM could not provide encryption materials", e))?;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) encrypt MUST yield an error.
     if !policy.allows_for_encrypt(materials.algorithm_suite_id()) {
         return Err(val_err(
-            "Algorithm suite is not supported by the configured commitment policy for encryption",
+            "algorithm suite is not supported by the configured commitment policy for encryption",
         ));
     }
 
     if materials.plaintext_data_key().is_none() {
         return Err(val_err(
-            "Encryption materials are missing a plaintext data key",
+            "encryption materials are missing a plaintext data key",
         ));
     }
 

@@ -158,7 +158,7 @@ impl BranchKeyStore {
         let item = response.item.ok_or_else(|| {
             Error::new(
                 ErrorKind::RemoteResourceNotFound,
-                format!("No keystore record for branch-key-id={branch_key_id}, type={sort_key}",),
+                format!("no keystore record for branch-key-id={branch_key_id}, type={sort_key}",),
             )
         })?;
 
@@ -332,12 +332,7 @@ impl BranchKeyStoreBuilder {
 }
 
 fn required<T>(value: Option<T>, field: &str) -> Result<T, Error> {
-    value.ok_or_else(|| {
-        Error::new(
-            ErrorKind::Validation,
-            format!("BranchKeyStore: {field} is required"),
-        )
-    })
+    value.ok_or_else(|| Error::new(ErrorKind::Validation, format!("{field} is required")))
 }
 
 #[async_trait]
@@ -376,7 +371,7 @@ impl Keystore for BranchKeyStore {
                     return Err(Error::new(
                         ErrorKind::Validation,
                         format!(
-                            "Table '{table_name}' does not conform to the expected Key Store KeySchema"
+                            "table '{table_name}' does not conform to the expected Key Store KeySchema"
                         ),
                     ));
                 }
@@ -760,18 +755,14 @@ fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, Error
     table.table_arn().map(String::from).ok_or_else(|| {
         Error::new(
             ErrorKind::Remote,
-            format!("Table '{table_name}' description is missing a TableArn"),
+            format!("table '{table_name}' description is missing a TableArn"),
         )
     })
 }
 
 /// Map a DynamoDB request-builder `BuildError` into an `Internal` error.
 fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> Error {
-    Error::with_cause(
-        ErrorKind::Internal,
-        format!("failed to build a DynamoDB request: {e}"),
-        e,
-    )
+    Error::with_cause(ErrorKind::Internal, "failed to build a DynamoDB request", e)
 }
 
 /// Classify a failed DynamoDB SDK call. The SDK error is the
@@ -790,9 +781,10 @@ fn now_iso8601_micros() -> Result<String, Error> {
     const FORMAT: &[time::format_description::FormatItem<'_>] =
         format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:6]Z");
     OffsetDateTime::now_utc().format(FORMAT).map_err(|e| {
-        Error::new(
+        Error::with_cause(
             ErrorKind::Internal,
-            format!("failed to format a keystore timestamp: {e}"),
+            "failed to format a keystore timestamp",
+            e,
         )
     })
 }
@@ -859,7 +851,7 @@ fn record_from_ddb_item(
     let enc_attr = item.remove(ATTR_ENC).ok_or_else(|| {
         Error::new(
             ErrorKind::Remote,
-            format!("Record is missing the '{ATTR_ENC}' attribute"),
+            format!("record is missing the '{ATTR_ENC}' attribute"),
         )
     })?;
 
@@ -868,7 +860,7 @@ fn record_from_ddb_item(
         other => {
             return Err(Error::new(
                 ErrorKind::Remote,
-                format!("Record '{ATTR_ENC}' attribute must be Binary, got {other:?}",),
+                format!("record '{ATTR_ENC}' attribute must be Binary, got {other:?}",),
             ));
         }
     };
@@ -893,7 +885,7 @@ fn record_from_ddb_item(
             other => {
                 return Err(Error::new(
                     ErrorKind::Remote,
-                    format!("Record attribute '{k}' must be String or Number, got {other:?}",),
+                    format!("record attribute '{k}' must be String or Number, got {other:?}",),
                 ));
             }
         }

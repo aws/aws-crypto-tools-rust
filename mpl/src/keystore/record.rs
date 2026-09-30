@@ -94,7 +94,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     let type_attr = authenticated_ec.get(ATTR_TYPE).ok_or_else(|| {
         Error::new(
             ErrorKind::Remote,
-            "Missing 'type' attribute in authenticated encryption context",
+            "missing 'type' attribute in authenticated encryption context",
         )
     })?;
 
@@ -102,7 +102,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         return Err(Error::new(
             ErrorKind::Remote,
             format!(
-                "Invalid type attribute: '{}'. Must be '{}' or start with '{}'",
+                "invalid type attribute: '{}', must be '{}' or start with '{}'",
                 type_attr, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX
             ),
         ));
@@ -134,7 +134,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
             Error::new(
                 ErrorKind::Remote,
                 format!(
-                    "Version string '{version_string}' MUST be '{TYPE_BRANCH_VERSION_PREFIX}' \
+                    "version string '{version_string}' MUST be '{TYPE_BRANCH_VERSION_PREFIX}' \
                      followed by a non-empty version"
                 ),
             )
@@ -146,7 +146,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         .ok_or_else(|| {
             Error::new(
                 ErrorKind::Remote,
-                "Missing 'branch-key-id' attribute in authenticated encryption context",
+                "missing 'branch-key-id' attribute in authenticated encryption context",
             )
         })?
         .clone();
@@ -157,7 +157,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     let branch_key: [u8; 32] = plaintext_branch_key.try_into().map_err(|v: Vec<u8>| {
         Error::new(
             ErrorKind::Remote,
-            format!("Branch key must be 32 bytes, got {}", v.len()),
+            format!("branch key must be 32 bytes, got {}", v.len()),
         )
     })?;
 
@@ -168,9 +168,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         encryption_context,
     )
     .map_err(|e| {
-        Error::new(
+        Error::with_cause(
             ErrorKind::Remote,
-            format!("Failed to construct BranchKeyMaterials: {}", e),
+            "failed to construct branch key materials",
+            e,
         )
     })
 }

@@ -765,8 +765,8 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         "expected Internal, got {err:?}"
     );
     assert!(
-        err.message().contains("InFlightTTL"),
-        "error message must contain 'InFlightTTL', got: {}",
+        err.message().contains("in-flight TTL"),
+        "error message must contain 'in-flight TTL', got: {}",
         err.message()
     );
 }
@@ -912,8 +912,8 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         "expected Internal, got {err:?}"
     );
     assert!(
-        err.message().contains("InFlightTTL"),
-        "error message must contain 'InFlightTTL', got: {}",
+        err.message().contains("in-flight TTL"),
+        "error message must contain 'in-flight TTL', got: {}",
         err.message()
     );
 }

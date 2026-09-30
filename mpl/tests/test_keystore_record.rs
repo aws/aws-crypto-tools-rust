@@ -116,7 +116,7 @@ fn materials_reconstruction_rejects_invalid_type_value() {
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid type");
     assert_eq!(err.kind(), ErrorKind::Remote);
-    assert!(err.message().contains("Invalid type attribute"));
+    assert!(err.message().contains("invalid type attribute"));
 }
 
 #[test]

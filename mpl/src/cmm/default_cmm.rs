@@ -83,7 +83,7 @@ impl Cmm for DefaultCmm {
                     return Err(Error::new(
                         ErrorKind::Validation,
                         format!(
-                            "Algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
+                            "algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
                         ),
                     ));
                 }
@@ -98,7 +98,7 @@ impl Cmm for DefaultCmm {
         if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Encryption context already contains reserved key 'aws-crypto-public-key'; refusing to overwrite",
+                "encryption context already contains reserved key 'aws-crypto-public-key'; refusing to overwrite",
             ));
         }
 
@@ -164,7 +164,7 @@ impl Cmm for DefaultCmm {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "Algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
+                    "algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
                 ),
             ));
         }
@@ -186,15 +186,16 @@ impl Cmm for DefaultCmm {
             let Some(b64_bytes) = ec.get(RESERVED_AWS_CRYPTO_PUBLIC_KEY) else {
                 return Err(Error::new(
                     ErrorKind::InvalidMaterials,
-                    "decrypt_materials: signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
+                    "signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
                 ));
             };
             let decoded = base64::engine::general_purpose::STANDARD
                 .decode(b64_bytes)
                 .map_err(|e| {
-                    Error::new(
+                    Error::with_cause(
                         ErrorKind::Validation,
-                        format!("Failed to base64-decode aws-crypto-public-key value: {e}"),
+                        "failed to base64-decode the aws-crypto-public-key value",
+                        e,
                     )
                 })?;
             Some(VerificationKey::new(decoded))
@@ -202,7 +203,7 @@ impl Cmm for DefaultCmm {
             if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
                 return Err(Error::new(
                     ErrorKind::InvalidMaterials,
-                    "decrypt_materials: non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
+                    "non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
                 ));
             }
             None
@@ -264,7 +265,7 @@ fn merge_reproduced_encryption_context(
                     return Err(Error::new(
                         ErrorKind::EncryptionContextMismatch,
                         format!(
-                            "decrypt_materials: message encryption context does not match reproduced encryption context on key '{key}'",
+                            "message encryption context does not match reproduced encryption context on key '{key}'",
                         ),
                     ));
                 }

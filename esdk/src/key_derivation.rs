@@ -30,7 +30,7 @@ pub struct ExpandedKeyMaterial {
 fn hkdf_key_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
     match suite.encryption_kdf() {
         KeyDerivationAlgorithm::IdentityKdf => Err(val_err(
-            "Algorithm suite KDF must be HKDF to derive a key length, got IdentityKdf",
+            "algorithm suite KDF must be HKDF to derive a key length, got IdentityKdf",
         )),
         _ => Ok(suite.encryption_key_length()),
     }
@@ -43,7 +43,7 @@ fn digest_length(alg: aws_mpl_primitives::DigestAlg) -> Result<usize, Error> {
         aws_mpl_primitives::DigestAlg::Sha256 => Ok(32),
         aws_mpl_primitives::DigestAlg::Sha384 => Ok(48),
         aws_mpl_primitives::DigestAlg::Sha512 => Ok(64),
-        other => Err(val_err(format!("Unknown DigestAlg {other:?}"))),
+        other => Err(val_err(format!("unknown DigestAlg {other:?}"))),
     }
 }
 
@@ -76,7 +76,7 @@ pub(crate) fn derive_key_v1(
             let encrypt_key_len = get_encrypt_key_length(suite);
             if plaintext_data_key.len() != encrypt_key_len {
                 return Err(val_err(format!(
-                    "Identity KDF plaintext data key length {} does not match the suite encryption key length {encrypt_key_len}",
+                    "identity KDF plaintext data key length {} does not match the suite encryption key length {encrypt_key_len}",
                     plaintext_data_key.len()
                 )));
             }
@@ -171,7 +171,7 @@ pub fn derive_key_v2(
     //# specified by the algorithm suite commit key derivation setting.
     if plaintext_data_key.len() != kdf_key_len {
         return Err(val_err(format!(
-            "Plaintext data key length {} does not match KDF input key length {kdf_key_len}",
+            "plaintext data key length {} does not match KDF input key length {kdf_key_len}",
             plaintext_data_key.len()
         )));
     }
@@ -187,7 +187,7 @@ pub fn derive_key_v2(
     let (alg, commit_len) = match suite.commit_kdf() {
         Some(commit_kdf) => (kdf_digest(commit_kdf)?, suite.algorithm_suite_data_length()),
         None => {
-            return Err(val_err("Algorithm suite has no commitment KDF"));
+            return Err(val_err("algorithm suite has no commitment KDF"));
         }
     };
 
@@ -271,7 +271,7 @@ pub fn derive_keys(
         1 => derive_key_v1(message_id, plaintext_data_key, suite),
         2 => derive_key_v2(message_id, plaintext_data_key, suite),
         _ => Err(val_err(format!(
-            "Unknown Message Version {}",
+            "unknown message version {}",
             suite.message_format_version()
         ))),
     }

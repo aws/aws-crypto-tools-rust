@@ -122,14 +122,14 @@ pub fn read_header_body(
     match result.content_type() {
         ContentType::Framed => {
             if result.frame_length() == 0 {
-                return ser_err("Frame length must be positive if content is framed");
+                return ser_err("frame length must be positive if content is framed");
             }
         }
         ContentType::NonFramed => {
             if result.frame_length() != 0 {
                 //= spec/data-format/message-header.md#frame-length
                 //# When the [content type](#content-type) is nonframed, the value of this field MUST be 0.
-                return ser_err("Frame length must be zero if content is nonframed");
+                return ser_err("frame length must be zero if content is nonframed");
             }
         }
     }
@@ -155,14 +155,14 @@ pub(crate) fn validate_max_encrypted_data_keys(
     if edks.is_empty() {
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //# This value MUST be greater than 0.
-        return Err(val_err("Encrypted data key count must be greater than 0"));
+        return Err(val_err("encrypted data key count must be greater than 0"));
     }
 
     if let Some(max) = max_encrypted_data_keys
         && edks.len() > max.get()
     {
         return Err(val_err(format!(
-            "Encrypted data key count {} exceeds configured maximum {}",
+            "encrypted data key count {} exceeds configured maximum {}",
             edks.len(),
             max.get(),
         )));
@@ -187,7 +187,7 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
         2 => MESSAGE_ID_LEN_V2,
         v => {
             return ser_err(&format!(
-                "Cannot generate message ID for unsupported message format version: {v}"
+                "cannot generate message ID for unsupported message format version: {v}"
             ));
         }
     };
@@ -215,7 +215,7 @@ pub(crate) fn validate_suite_data(
         .is_err()
     {
         return Err(val_err(
-            "Algorithm suite data does not match expected value",
+            "algorithm suite data does not match expected value",
         ));
     }
 
@@ -224,7 +224,7 @@ pub(crate) fn validate_suite_data(
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
     if commit_key_length(suite) != expected_suite_data.len() {
         return Err(val_err(
-            "Algorithm suite data length does not match the algorithm suite's declared suite-data length",
+            "algorithm suite data length does not match the algorithm suite's declared suite-data length",
         ));
     }
     Ok(())

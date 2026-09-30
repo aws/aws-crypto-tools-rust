@@ -147,7 +147,7 @@ fn test_ecdsa_sign_rejects_wrong_length_buffer() -> Result<(), Error> {
     // for the wrong curve.
     let mut sig = [0u8; 103];
     let err = ecdsa_sign(alg, &keys.signing_key, b"m", &mut sig).unwrap_err();
-    assert!(err.message().contains("signature buffer length of 103"));
+    assert!(err.message().contains("signature buffer of 103 bytes"));
     Ok(())
 }
 
@@ -159,7 +159,7 @@ fn test_ecdsa_sign_digest_rejects_wrong_length_buffer() -> Result<(), Error> {
     ctx.update(b"m");
     let mut sig = [0u8; 70];
     let err = ecdsa_sign_digest(alg, &keys.signing_key, ctx, &mut sig).unwrap_err();
-    assert!(err.message().contains("signature buffer length of 70"));
+    assert!(err.message().contains("signature buffer of 70 bytes"));
     Ok(())
 }
 

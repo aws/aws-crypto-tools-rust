@@ -31,7 +31,7 @@ fn parse_arn_extracts_all_six_segments() {
 fn parse_arn_rejects_too_few_segments() {
     let err = parse_arn("arn:aws:kms:us-east-1:111122223333").unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Validation);
-    assert!(err.message().contains("Malformed ARN"));
+    assert!(err.message().contains("malformed ARN"));
 }
 
 #[test]
