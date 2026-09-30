@@ -17,8 +17,8 @@ use std::io::Write;
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::{
-    DecryptStreamInput, EncryptStreamInput, EncryptionContext, EsdkAlgorithmSuiteId,
-    decrypt_stream, encrypt_stream,
+    AlgorithmSuiteId, DecryptStreamInput, EncryptStreamInput, EncryptionContext, decrypt_stream,
+    encrypt_stream,
 };
 
 #[tokio::main]
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let enc_input = EncryptStreamInput::builder()
         .encryption_context(encryption_context.clone())
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()?;
     {
         let mut input = File::open(&plaintext_path)?;
