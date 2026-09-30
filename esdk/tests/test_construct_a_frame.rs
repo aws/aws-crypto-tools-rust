@@ -80,12 +80,11 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     //= reason=The body AAD content string is bound into the AEAD tag; tampering content → Cryptographic error
     //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be the structure defined in
     //# [Message Body AAD](../data-format/message-body-aad.md).
-    assert_eq!(
+    assert!(
         try_decrypt_with_keyring(&content_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Cryptographic,
+            .is_cryptographic(),
         "tampered frame content must fail AEAD authentication"
     );
 
@@ -94,12 +93,11 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     //= reason=Changing frame 1's on-wire sequence number from 1 → Serialization error, so the serialized value is the frame's sequence number
     //# - The [sequence number](../data-format/message-body-aad.md#sequence-number) MUST be the sequence
     //# number of the frame being encrypted.
-    assert_eq!(
+    assert!(
         try_decrypt_with_keyring(&seq_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Serialization,
+            .is_serialization(),
         "tampered frame sequence number must be rejected"
     );
 
@@ -112,12 +110,11 @@ async fn test_construct_frame_aead_inputs_authenticated() {
         final_frame.content_length, 1,
         "final frame's declared content length must equal the 1 remaining plaintext byte"
     );
-    assert_eq!(
+    assert!(
         try_decrypt_with_keyring(&content_length_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Cryptographic,
+            .is_cryptographic(),
         "tampered final-frame content length must fail AEAD authentication"
     );
 }

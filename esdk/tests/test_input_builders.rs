@@ -8,7 +8,7 @@ mod test_helpers;
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_esdk::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptInput, DecryptStreamInput, EncryptInput,
-    EncryptStreamInput, EncryptionContext, ErrorKind, SharedCmm, SharedKeyring,
+    EncryptStreamInput, EncryptionContext, SharedCmm, SharedKeyring,
 };
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
@@ -46,13 +46,13 @@ async fn test_build_requires_plaintext_and_ciphertext() {
         .keyring(keyring.clone())
         .build()
         .expect_err("EncryptInput build must fail without a plaintext");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 
     let err = DecryptInput::builder()
         .keyring(keyring)
         .build()
         .expect_err("DecryptInput build must fail without a ciphertext");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test(flavor = "multi_thread")]

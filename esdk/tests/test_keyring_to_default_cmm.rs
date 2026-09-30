@@ -23,7 +23,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_crypto_mpl::{Error as MplError, ErrorKind as MplErrorKind};
+use aws_crypto_mpl::Error as MplError;
 use aws_esdk::*;
 use std::error::Error as _;
 use test_helpers::*;
@@ -145,11 +145,10 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     let err = result.expect_err(
         "decrypt must fail when default CMM cannot obtain decryption materials with wrong keyring",
     );
-    assert_eq!(
-        err.kind(),
-        ErrorKind::NoMatchingDataKey,
+    assert!(
+        err.is_no_matching_data_key(),
         "expected NoMatchingDataKey, got: {:?}",
-        err.kind()
+        err
     );
     // Assert the MPL's typed error kind, not its message.
     let cause = err
@@ -157,9 +156,8 @@ async fn test_decrypt_fails_with_wrong_keyring() {
         .expect("the MPL error is the source")
         .downcast_ref::<MplError>()
         .expect("the source is an aws_crypto_mpl::Error");
-    assert_eq!(
-        cause.kind(),
-        MplErrorKind::NoMatchingDataKey,
+    assert!(
+        cause.is_no_matching_data_key(),
         "wrong keyring must fail with NoMatchingDataKey, got: {cause:?}"
     );
 }

@@ -371,7 +371,7 @@ macro_rules! define_error {
             $( $variant, )*
         }
 
-        #[allow(dead_code)]
+        #[allow(dead_code, clippy::same_name_method)]
         impl $error {
             #[track_caller]
             fn from_core(kind: Kind, core: $crate::error::ErrorCore<$error>) -> Self {
@@ -686,6 +686,8 @@ macro_rules! define_error {
     };
 
     (@sdk $error:ident, $smithy:ident, $request_id:path) => {
+        // Inherent `code` and `request_id` resolve the call when several of the traits below are in scope.
+        #[allow(clippy::same_name_method)]
         impl $error {
             /// The AWS service's error code, such as `"AccessDeniedException"`.
             /// `None` unless an AWS service answered.
@@ -702,6 +704,7 @@ macro_rules! define_error {
             }
         }
 
+        #[allow(clippy::same_name_method)]
         impl $smithy::error::metadata::ProvideErrorMetadata for $error {
             /// The AWS service's own error metadata; empty unless an AWS service answered.
             fn meta(&self) -> &$smithy::error::metadata::ErrorMetadata {
@@ -715,6 +718,7 @@ macro_rules! define_error {
             }
         }
 
+        #[allow(clippy::same_name_method)]
         impl $smithy::retry::ProvideErrorKind for $error {
             fn retryable_error_kind(&self) -> Option<$smithy::retry::ErrorKind> {
                 use $crate::error::RetryKind as R;
@@ -732,6 +736,7 @@ macro_rules! define_error {
             }
         }
 
+        #[allow(clippy::same_name_method)]
         impl $request_id for $error {
             fn request_id(&self) -> Option<&str> {
                 Self::request_id(self)

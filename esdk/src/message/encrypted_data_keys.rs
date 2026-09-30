@@ -5,7 +5,7 @@
 
 use super::serialize_functions::{read_seq_u16, read_str_u16, read_u16, write_bytes, write_u16};
 use super::{Error, ser_err};
-use crate::error::{ErrorKind, err};
+use crate::error::{Kind, err};
 use crate::types::{SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::EncryptedDataKey;
 
@@ -21,7 +21,7 @@ pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Re
     //# This value MUST be greater than 0.
     if edks.is_empty() {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "cannot serialize empty encrypted data keys list",
         ));
     }
@@ -32,10 +32,7 @@ pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Re
     //= spec/data-format/message-header.md#encrypted-data-key-count
     //# The encrypted data key count MUST be interpreted as a UInt16.
     let Ok(edk_count) = u16::try_from(edks.len()) else {
-        return Err(err(
-            ErrorKind::InvalidMaterials,
-            "count too large for UInt16",
-        ));
+        return Err(err(Kind::InvalidMaterials, "count too large for UInt16"));
     };
     write_u16(w, edk_count)?;
 
@@ -65,7 +62,7 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //# The key provider ID length MUST be interpreted as a UInt16.
     let Ok(kp_id_len) = u16::try_from(kp_id_bytes.len()) else {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "key provider ID length too long for 16 bits",
         ));
     };
@@ -90,7 +87,7 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //# The key provider information length MUST be interpreted as a UInt16.
     let Ok(kp_info_len) = u16::try_from(edk.key_provider_info.len()) else {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "key provider info length too long for 16 bits",
         ));
     };
@@ -115,7 +112,7 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //# The encrypted data key length MUST be interpreted as a UInt16.
     let Ok(edk_len) = u16::try_from(edk.ciphertext.len()) else {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "encrypted data key length too long for 16 bits",
         ));
     };
@@ -174,7 +171,7 @@ pub(crate) fn read_edks(
         //# then as soon as that can be determined during deserializing
         //# decrypt MUST process no more bytes and yield an error.
         return Err(err(
-            ErrorKind::Validation,
+            Kind::Validation,
             "ciphertext encrypted data keys exceed maximum encrypted data keys limit",
         ));
     }

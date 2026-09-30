@@ -33,7 +33,7 @@ aws_mpl_primitives::define_error! {
         Dispatch(DispatchError, is_dispatch, remote),
         Internal(InternalError, is_internal),
     }
-    sdk(aws_smithy_types, aws_sdk_kms::operation::RequestId);
+    sdk(aws_smithy_types, RequestId);
 }
 
 impl Error {

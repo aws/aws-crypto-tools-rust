@@ -159,11 +159,7 @@ async fn test_plaintext_length_bound_must_not_encrypt_longer() {
     //# If this input is provided, this operation MUST NOT encrypt a plaintext with length
     //# greater than this value.
     let err = result.expect_err("must reject");
-    assert!(
-        matches!(err.kind(), ErrorKind::Validation),
-        "got {:?}",
-        err.kind()
-    );
+    assert!(err.is_validation(), "got {:?}", err);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -188,9 +184,5 @@ async fn test_construct_body_plaintext_length_bound_runtime_enforcement() {
     //# has a length greater than this value,
     //# this operation MUST immediately fail.
     let err = result.expect_err("must fail mid-stream");
-    assert!(
-        matches!(err.kind(), ErrorKind::Validation),
-        "got {:?}",
-        err.kind()
-    );
+    assert!(err.is_validation(), "got {:?}", err);
 }
