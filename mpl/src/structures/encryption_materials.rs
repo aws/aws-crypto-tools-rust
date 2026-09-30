@@ -3,7 +3,8 @@
 
 //! Encryption materials structure.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
@@ -40,7 +41,7 @@ impl EncryptionMaterials {
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
                 return Err(Error::new(
-                    ErrorKind::EncryptionContextMismatch,
+                    Kind::EncryptionContextMismatch,
                     format!(
                         "required encryption context key {:?} not found in encryption context",
                         key
@@ -52,7 +53,7 @@ impl EncryptionMaterials {
         // If no plaintext data key, encrypted data keys must be empty
         if plaintext_data_key.is_none() && !encrypted_data_keys.is_empty() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encrypted data keys must be empty when plaintext data key is not present",
             ));
         }
@@ -60,7 +61,7 @@ impl EncryptionMaterials {
         // If no asymmetric signing, signing key must not be present
         if !algorithm_suite_id.has_asymmetric_signing() && signing_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "signing key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
@@ -80,7 +81,7 @@ impl EncryptionMaterials {
         // If no symmetric signing, symmetric signing keys must not be included
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_keys.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "symmetric signing keys must not be present when algorithm suite has no symmetric signing",
             ));
         }
@@ -135,13 +136,13 @@ impl EncryptionMaterials {
             .contains_key("aws-crypto-public-key");
         if self.signing_key.is_some() && !has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST include 'aws-crypto-public-key' when signing key is present",
             ));
         }
         if self.signing_key.is_none() && has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST NOT include 'aws-crypto-public-key' when signing key is absent",
             ));
         }

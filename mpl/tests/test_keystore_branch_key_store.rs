@@ -10,7 +10,6 @@
 //! SDK. Happy-path read coverage lives in the real-AWS integration tests in
 //! `tests/test_keystore_branch_key_store_integ.rs`.
 
-use aws_crypto_mpl::ErrorKind;
 use std::error::Error as _;
 
 use aws_config::{BehaviorVersion, SdkConfig};
@@ -75,8 +74,8 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -88,7 +87,7 @@ async fn build_without_logical_keystore_name_returns_configuration_error() {
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -100,7 +99,7 @@ async fn build_without_kms_configuration_returns_configuration_error() {
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -238,7 +237,7 @@ async fn new_with_malformed_kms_arn_returns_configuration_error() {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -250,7 +249,7 @@ async fn new_with_alias_kms_arn_returns_configuration_error() {
         Ok(_) => panic!("construction with alias ARN must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -324,7 +323,7 @@ async fn get_active_branch_key_dispatches_to_dynamodb() {
         Ok(_) => panic!("get_active_branch_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
+    assert!(err.is_dispatch(), "{:?}", err);
 
     // The originating SDK error is attached as the cause, not merely formatted
     // into the message, so a caller can recover it by type and inspect the
@@ -348,7 +347,7 @@ async fn get_branch_key_version_dispatches_to_dynamodb() {
         Ok(_) => panic!("get_branch_key_version unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
+    assert!(err.is_dispatch(), "{:?}", err);
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
@@ -368,7 +367,7 @@ async fn create_key_store_dispatches_to_dynamodb() {
         Ok(_) => panic!("create_key_store unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
+    assert!(err.is_dispatch(), "{:?}", err);
 
     // A different call site than the read path above, so its cause is asserted
     // separately: the DescribeTable error is attached rather than discarded.
@@ -387,7 +386,7 @@ async fn create_key_with_branch_key_id_but_no_ec_fails() {
         Ok(_) => panic!("create_key with a branch key id and no EC must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -398,7 +397,7 @@ async fn create_key_with_discovery_config_fails() {
         Ok(_) => panic!("create_key under a Discovery configuration must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -411,7 +410,7 @@ async fn create_key_dispatches_to_kms() {
         Ok(_) => panic!("create_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
+    assert!(err.is_dispatch(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -422,7 +421,7 @@ async fn version_key_with_discovery_config_fails() {
         Ok(_) => panic!("version_key under a Discovery configuration must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -434,7 +433,7 @@ async fn version_key_dispatches_to_dynamodb() {
         Ok(_) => panic!("version_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
+    assert!(err.is_dispatch(), "{:?}", err);
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
@@ -452,7 +451,7 @@ async fn get_beacon_key_dispatches_to_dynamodb() {
         Ok(_) => panic!("get_beacon_key unexpectedly succeeded with no AWS configured"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteTransport);
+    assert!(err.is_dispatch(), "{:?}", err);
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<GetItemError>>())
@@ -478,7 +477,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
     );
     assert_eq!(
         err.to_string(),
-        "DynamoDB GetItem failed",
+        "Dispatch: DynamoDB GetItem failed",
         "Display renders only this layer; a chain-walking printer renders the cause"
     );
 }

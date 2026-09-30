@@ -3,7 +3,8 @@
 
 //! Record format parsing and materials reconstruction for the branch key store.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::{Kind, Service};
 use std::collections::BTreeMap;
 
 use crate::keystore::attributes::{
@@ -93,19 +94,21 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
 ) -> Result<BranchKeyMaterials, Error> {
     let type_attr = authenticated_ec.get(ATTR_TYPE).ok_or_else(|| {
         Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             "missing 'type' attribute in authenticated encryption context",
         )
+        .about(Service::DynamoDb, None)
     })?;
 
     if type_attr != TYPE_BRANCH_ACTIVE && !type_attr.starts_with(TYPE_BRANCH_VERSION_PREFIX) {
         return Err(Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!(
                 "invalid type attribute: '{}', must be '{}' or start with '{}'",
                 type_attr, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX
             ),
-        ));
+        )
+        .about(Service::DynamoDb, None));
     }
 
     // Resolve version string based on type attribute value.
@@ -114,9 +117,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
             .get(ATTR_VERSION)
             .ok_or_else(|| {
                 Error::new(
-                    ErrorKind::Remote,
+                    Kind::Service,
                     "type is 'branch:ACTIVE' but 'version' attribute is missing",
                 )
+                .about(Service::DynamoDb, None)
             })?
             .clone()
     } else {
@@ -132,12 +136,13 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         .filter(|v| !v.is_empty())
         .ok_or_else(|| {
             Error::new(
-                ErrorKind::Remote,
+                Kind::Service,
                 format!(
                     "version string '{version_string}' MUST be '{TYPE_BRANCH_VERSION_PREFIX}' \
                      followed by a non-empty version"
                 ),
             )
+            .about(Service::DynamoDb, None)
         })?
         .to_string();
 
@@ -145,9 +150,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         .get(ATTR_BRANCH_KEY_ID)
         .ok_or_else(|| {
             Error::new(
-                ErrorKind::Remote,
+                Kind::Service,
                 "missing 'branch-key-id' attribute in authenticated encryption context",
             )
+            .about(Service::DynamoDb, None)
         })?
         .clone();
 
@@ -156,9 +162,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
 
     let branch_key: [u8; 32] = plaintext_branch_key.try_into().map_err(|v: Vec<u8>| {
         Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("branch key must be 32 bytes, got {}", v.len()),
         )
+        .about(Service::DynamoDb, None)
     })?;
 
     BranchKeyMaterials::new(
@@ -168,10 +175,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         encryption_context,
     )
     .map_err(|e| {
-        Error::with_cause(
-            ErrorKind::Remote,
-            "failed to construct branch key materials",
-            e,
-        )
+        Error::with_cause(Kind::Service, "failed to construct branch key materials", e)
+            .about(Service::DynamoDb, None)
     })
 }

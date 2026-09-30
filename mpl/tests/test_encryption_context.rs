@@ -1,7 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::ErrorKind;
 use std::collections::{BTreeMap, HashMap};
 
 use aws_crypto_mpl::structures::EncryptionContext;
@@ -62,7 +61,7 @@ fn test_duplicate_key_rejected_on_deserialize() {
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -73,8 +72,8 @@ fn test_out_of_order_keys_rejected_on_deserialize() {
         0x00, 0x01, b'a', 0x00, 0x01, b'1', // a -> 1
     ];
     let err = EncryptionContext::deserialize(bytes).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -97,7 +96,7 @@ fn test_key_value_pair_count_must_be_greater_than_zero() {
 
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -163,7 +162,7 @@ fn test_debug_format() {
 fn test_deserialize_insufficient_bytes_for_count() {
     let result = EncryptionContext::deserialize(&[0xAB]);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -172,7 +171,7 @@ fn test_deserialize_insufficient_bytes_for_key_length() {
     let bytes = 1u16.to_be_bytes();
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -185,7 +184,7 @@ fn test_deserialize_insufficient_bytes_for_key() {
 
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -198,7 +197,7 @@ fn test_deserialize_insufficient_bytes_for_value_length() {
 
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -213,7 +212,7 @@ fn test_deserialize_insufficient_bytes_for_value() {
 
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -224,7 +223,7 @@ fn test_serialize_rejects_oversize_key() {
     let result = ec.serialize();
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -235,8 +234,8 @@ fn test_serialize_rejects_oversize_value() {
     let result = ec.serialize();
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -255,8 +254,8 @@ fn test_serialize_rejects_too_many_entries() {
     let result = ec.serialize();
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -417,7 +416,7 @@ fn test_deserialize_rejects_trailing_bytes() {
 
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 #[test]
@@ -432,7 +431,7 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
     ];
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::Validation);
+    assert!(result.unwrap_err().is_validation());
 }
 
 // ============================================================================
@@ -506,14 +505,14 @@ fn test_serialize_orders_by_utf8_bytes_not_utf16_code_units() {
 fn test_deserialize_rejects_invalid_utf8_key() {
     let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, 0xFF, 0x00, 0x01, b'1'];
     let err = EncryptionContext::deserialize(bytes).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn test_deserialize_rejects_invalid_utf8_value() {
     let bytes: &[u8] = &[0x00, 0x01, 0x00, 0x01, b'a', 0x00, 0x01, 0xFF];
     let err = EncryptionContext::deserialize(bytes).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -526,11 +525,11 @@ fn test_try_from_byte_map_rejects_invalid_utf8() {
 
     let bad_key = BTreeMap::from([(vec![0xC3], b"v".to_vec())]);
     let err = EncryptionContext::try_from(bad_key).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 
     let bad_value = BTreeMap::from([(b"k".to_vec(), vec![0xC3])]);
     let err = EncryptionContext::try_from(bad_value).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -539,9 +538,9 @@ fn test_try_insert_utf8_rejects_invalid_utf8_and_leaves_context_unchanged() {
     assert_eq!(ec.try_insert_utf8(b"k", b"v").unwrap(), None);
 
     let err = ec.try_insert_utf8(&[0xFF], b"v").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
     let err = ec.try_insert_utf8(b"k", &[0xFF]).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 
     assert_eq!(ec, EncryptionContext::from([("k", "v")]));
 }

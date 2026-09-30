@@ -10,7 +10,7 @@
 
 #![cfg(feature = "test-utils")]
 
-use aws_crypto_mpl::{Error, ErrorKind};
+use aws_crypto_mpl::Error;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -303,7 +303,7 @@ async fn test_sub_second_grace_period_is_honored() {
 
 fn assert_rejected(result: Result<StormTrackingCache, Error>, what: &str) {
     let err = result.expect_err(what);
-    assert_eq!(err.kind(), ErrorKind::Validation, "{what}: {err:?}");
+    assert!(err.is_validation(), "{what}: {err:?}");
 }
 
 #[test]
@@ -759,11 +759,7 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         "inflight TTL exceeded MUST return an error"
     );
     let err = result.expect_err("error");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Internal,
-        "expected Internal, got {err:?}"
-    );
+    assert!(err.is_internal(), "expected Internal, got {err:?}");
     assert!(err.is_retryable());
 }
 
@@ -902,11 +898,7 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         .expect("getter must complete after per-waiter deadline elapses")
         .expect("task joins");
     let err = result.expect_err("must be an error once the deadline fires");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Internal,
-        "expected Internal, got {err:?}"
-    );
+    assert!(err.is_internal(), "expected Internal, got {err:?}");
     assert!(err.is_retryable());
 }
 

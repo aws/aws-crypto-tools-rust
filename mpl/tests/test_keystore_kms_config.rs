@@ -3,7 +3,6 @@
 
 //! Tests for KMS configuration ARN parsing, validation, and compatibility.
 
-use aws_crypto_mpl::ErrorKind;
 use aws_crypto_mpl::keystore::KmsConfiguration;
 use aws_crypto_mpl::keystore::kms_config::{is_arn_compatible, parse_arn, validate_kms_key_arn};
 
@@ -30,27 +29,27 @@ fn parse_arn_extracts_all_six_segments() {
 #[test]
 fn parse_arn_rejects_too_few_segments() {
     let err = parse_arn("arn:aws:kms:us-east-1:111122223333").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn parse_arn_rejects_missing_resource_slash() {
     let err = parse_arn("arn:aws:kms:us-east-1:111122223333:key-no-slash").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn parse_arn_rejects_empty_string() {
     let err = parse_arn("").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn parse_arn_rejects_non_arn_prefix() {
     let err = parse_arn("not:an:arn:at:all:key/foo").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -69,19 +68,19 @@ fn validate_kms_key_arn_accepts_mrk_arn() {
 #[test]
 fn validate_kms_key_arn_rejects_alias() {
     let err = validate_kms_key_arn(ALIAS_ARN).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn validate_kms_key_arn_rejects_non_kms_service() {
     let err = validate_kms_key_arn(NON_KMS_ARN).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn validate_kms_key_arn_rejects_malformed_string() {
     let err = validate_kms_key_arn("not-an-arn").unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -144,7 +143,7 @@ fn kms_key_arn_validate_accepts_valid_arn() {
 fn kms_key_arn_validate_rejects_alias() {
     let config = KmsConfiguration::KmsKeyArn(ALIAS_ARN.to_string());
     let err = config.validate().unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]

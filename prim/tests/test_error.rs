@@ -1,9 +1,12 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! `Error` trait-implementation coverage
+//! Tests for the error shape `define_error!` generates.
 
-use aws_mpl_primitives::{AesGcm, DigestAlg, Error, ErrorKind, aes_encrypt, hkdf};
+use std::error::Error as _;
+
+use aws_mpl_primitives::error::{DisplayErrorContext, Resource, RetryKind, Service};
+use aws_mpl_primitives::{CryptographicError, DigestAlg, Error, hkdf};
 
 fn make_error() -> Error {
     // A known-bad HKDF request, which fails the same way every time.
@@ -12,88 +15,111 @@ fn make_error() -> Error {
 }
 
 #[test]
-fn test_error_is_cryptographic_and_display_is_the_message() {
+fn a_primitive_failure_is_a_non_retryable_cryptographic_error() {
     let err = make_error();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic());
     assert!(!err.is_retryable());
-    assert_eq!(err.to_string(), err.message());
+    assert!(matches!(err, Error::Cryptographic(_)));
 }
 
 #[test]
-fn test_error_partial_eq_matches_on_message_only() {
-    // `Error::eq` ignores the backtrace, so two errors from the same call path are equal.
-    let err1 = make_error();
-    let err2 = make_error();
-    assert_eq!(err1, err2);
-}
-
-#[test]
-fn test_error_partial_eq_differs_when_messages_differ() {
-    let err_hkdf = make_error();
-    // Trigger a different error path with a different message.
-    let mut ct = Vec::new();
-    let err_aes = aes_encrypt(
-        AesGcm::Aes256Gcm,
-        &[2u8; 11],
-        &[1u8; 32],
-        b"m",
-        b"",
-        &mut ct,
-    )
-    .unwrap_err();
-    assert_ne!(err_hkdf, err_aes);
-}
-
-#[test]
-fn test_error_clone_preserves_message() {
+fn display_is_the_variant_then_the_message() {
     let err = make_error();
-    let cloned = err.clone();
-    assert_eq!(err, cloned);
-    assert_eq!(err.message(), cloned.message());
+    assert_eq!(err.to_string(), format!("Cryptographic: {}", err.message()));
 }
 
 #[test]
-fn test_error_implements_std_error_trait() {
-    // Exercises the `impl std::error::Error for Error` path.
-    let err = make_error();
-    let dyn_err: &dyn std::error::Error = &err;
-    assert!(!dyn_err.to_string().is_empty());
+fn a_struct_converts_into_its_variant() {
+    let err: Error = CryptographicError::new("tag mismatch").into();
+    assert!(err.is_cryptographic());
+    assert_eq!(err.message(), "tag mismatch");
+    assert!(err.source().is_none());
+}
+
+#[test]
+fn the_builder_sets_the_message_source_and_retry_kind() {
+    let built = CryptographicError::builder()
+        .message("m")
+        .source(std::io::Error::other("cause"))
+        .retry_kind(RetryKind::Transient)
+        .build();
+    assert_eq!(built.message(), "m");
+    assert!(built.is_retryable());
+    assert_eq!(built.source().unwrap().to_string(), "cause");
 }
 
 mod other_library {
     aws_mpl_primitives::define_error! {
         /// An error from another library.
-        Error,
-        /// Its kinds.
-        ErrorKind;
-        /// A kind only this library has.
-        Extra,
+        pub enum Error {
+            Cryptographic(CryptographicError, is_cryptographic),
+            AccessDenied(AccessDeniedError, is_access_denied, remote),
+            /// A kind only this library has.
+            Extra(ExtraError, is_extra),
+            Internal(InternalError, is_internal),
+        }
+    }
+
+    pub fn from_prim(message: &str, inner: aws_mpl_primitives::Error) -> Error {
+        Error::from_inner(message, inner)
+    }
+
+    pub fn denied() -> Error {
+        AccessDeniedError::builder()
+            .message("denied")
+            .service(super::Service::Kms)
+            .resource(super::Resource::KmsKey("arn".into()))
+            .build()
+            .into()
+    }
+
+    pub fn wrapped(message: &str, inner: Error) -> Error {
+        Error::wrap(message, inner)
+    }
+
+    pub fn extra() -> Error {
+        ExtraError::new("only here").into()
     }
 }
 
 #[test]
-fn from_inner_keeps_the_kind_by_name_with_its_own_message() {
-    let inner = Error::new(ErrorKind::Cryptographic, "tag mismatch");
-    let outer = other_library::Error::from_inner("could not decrypt", inner);
-    assert_eq!(outer.kind(), other_library::ErrorKind::Cryptographic);
-    assert_eq!(outer.to_string(), "could not decrypt");
-    let source = std::error::Error::source(&outer).expect("the inner error is the source");
-    assert_eq!(source.to_string(), "tag mismatch");
-}
-
-#[test]
-fn from_inner_maps_a_kind_with_no_shared_name_to_internal() {
-    let inner = other_library::Error::new(other_library::ErrorKind::Extra, "only here");
-    assert_eq!(Error::from_inner("m", inner).kind(), ErrorKind::Internal);
-}
-
-#[test]
-fn display_error_context_prints_every_layer_once() {
-    use aws_mpl_primitives::error::DisplayErrorContext;
-    let inner = Error::new(ErrorKind::Cryptographic, "authentication tag did not match");
-    let outer = other_library::Error::from_inner("could not decrypt", inner);
+fn from_inner_keeps_the_variant_by_name_with_its_own_message() {
+    let inner: Error = CryptographicError::new("tag mismatch").into();
+    let outer = other_library::from_prim("could not decrypt", inner);
+    assert!(outer.is_cryptographic());
+    assert_eq!(outer.message(), "could not decrypt");
     assert_eq!(
         DisplayErrorContext(&outer).to_string(),
-        "could not decrypt: authentication tag did not match"
+        "Cryptographic: could not decrypt: Cryptographic: tag mismatch"
     );
+}
+
+#[test]
+fn a_remote_error_names_its_service_and_resource_through_wrapping() {
+    let outer = other_library::wrapped("could not get the key", other_library::denied());
+    let other_library::Error::AccessDenied(e) = &outer else {
+        panic!("expected AccessDenied, got {outer:?}");
+    };
+    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey("arn".into())));
+    assert_eq!(e.code(), None);
+}
+
+mod third_library {
+    aws_mpl_primitives::define_error! {
+        /// A library without `Extra`.
+        pub enum Error {
+            Cryptographic(CryptographicError, is_cryptographic),
+            Internal(InternalError, is_internal),
+        }
+    }
+
+    pub fn from_other(inner: super::other_library::Error) -> Error {
+        Error::from_inner("m", inner)
+    }
+}
+
+#[test]
+fn from_inner_maps_a_variant_with_no_shared_name_to_internal() {
+    assert!(third_library::from_other(other_library::extra()).is_internal());
 }

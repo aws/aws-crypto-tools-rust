@@ -3,9 +3,10 @@
 
 //! ARN parsing, validation, and MRK-aware compatibility for KMS configurations.
 
+use crate::Error;
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
+use crate::error::Kind;
 use crate::keystore::config::KmsConfiguration;
-use crate::{Error, ErrorKind};
 
 /// The parsed parts of an AWS ARN.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +32,7 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, Error> {
     let segments: Vec<&str> = arn.splitn(6, ':').collect();
     if segments.len() != 6 || segments[0] != "arn" {
         return Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             format!(
                 "malformed ARN: expected 6 colon-separated segments starting with 'arn', got: {arn}"
             ),
@@ -39,7 +40,7 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, Error> {
     }
     let (resource_type, resource) = segments[5].split_once('/').ok_or_else(|| {
         Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             format!(
                 "malformed ARN: resource segment must contain '/', got: {}",
                 segments[5]
@@ -62,14 +63,14 @@ pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, Error> {
 
     if parts.service != "kms" {
         return Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             format!("ARN service must be 'kms', got: {}", parts.service),
         ));
     }
 
     if parts.resource_type == "alias" {
         return Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             format!("KMS Key ARN must not be an alias: {arn}"),
         ));
     }

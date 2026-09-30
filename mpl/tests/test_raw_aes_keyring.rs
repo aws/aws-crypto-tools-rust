@@ -18,7 +18,6 @@
 //! cover the on-wire shape of the encrypted data key, the two constructor
 //! validations, and the negative paths Dafny leaves to its proofs.
 
-use aws_crypto_mpl::{Error, ErrorKind};
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::{Keyring, RawAesKeyring};
@@ -103,16 +102,6 @@ fn decryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> Decrypti
         None,
     )
     .expect("constructing decryption materials")
-}
-
-fn assert_kind(err: &Error, expected: ErrorKind) {
-    assert_eq!(
-        err.kind(),
-        expected,
-        "expected {expected:?}, got {:?}: {}",
-        err.kind(),
-        err.message()
-    );
 }
 
 // Ported from Dafny `TestOnEncryptOnDecryptGenerateDataKey`.
@@ -221,16 +210,12 @@ async fn test_on_decrypt_key_name_mismatch() {
         .await;
 
     let err = result.expect_err("a key name mismatch must not decrypt");
-    assert_kind(&err, ErrorKind::NoMatchingDataKey);
+    assert!(err.is_no_matching_data_key(), "{:?}", err);
     assert!(
         !err.collected().is_empty(),
         "the rejected EDK must still be reported, collected on the error: {err}",
     );
-    assert!(
-        err.collected()
-            .iter()
-            .any(|e| e.kind() == ErrorKind::NoMatchingDataKey)
-    );
+    assert!(err.collected().iter().any(|e| e.is_no_matching_data_key()));
 }
 
 // Ported from Dafny `TestOnDecryptBadAndGoodEdkSucceeds`.
@@ -286,7 +271,7 @@ async fn test_on_decrypt_no_edks() {
         .await;
 
     let err = result.expect_err("an empty encrypted data key list must fail");
-    assert_kind(&err, ErrorKind::NoMatchingDataKey);
+    assert!(err.is_no_matching_data_key(), "{:?}", err);
 }
 
 // Ported from Dafny `TestOnEncryptUnserializableEC`.
@@ -302,7 +287,7 @@ async fn test_on_encrypt_unserializable_encryption_context() {
         .await;
 
     let err = result.expect_err("an unserializable encryption context must fail on_encrypt");
-    assert_kind(&err, ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 // Ported from Dafny `TestOnDecryptUnserializableEC`.
@@ -324,7 +309,7 @@ async fn test_on_decrypt_unserializable_encryption_context() {
         .await;
 
     let err = result.expect_err("an unserializable encryption context must fail on_decrypt");
-    assert_kind(&err, ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +333,7 @@ async fn test_on_decrypt_with_existing_plaintext_data_key_fails() {
         .await;
 
     let err = result.expect_err("materials that already carry a plaintext data key must fail");
-    assert_kind(&err, ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -370,7 +355,7 @@ async fn test_on_decrypt_unserializable_encryption_context_fails_before_edk_loop
         .await;
 
     let err = result.expect_err("serialization must be attempted before the EDK loop");
-    assert_kind(&err, ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -484,7 +469,7 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
         .await;
 
     let err = result.expect_err("a mismatched encryption context must fail authentication");
-    assert_kind(&err, ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -514,7 +499,7 @@ async fn test_on_decrypt_rejects_tampered_iv() {
         .await;
 
     let err = result.expect_err("a tampered IV must fail authentication");
-    assert_kind(&err, ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -539,7 +524,7 @@ async fn test_on_decrypt_skips_edk_with_wrong_key_provider_id() {
         .await;
 
     let err = result.expect_err("an EDK from another provider must not be decrypted");
-    assert_kind(&err, ErrorKind::NoMatchingDataKey);
+    assert!(err.is_no_matching_data_key(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -570,7 +555,7 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
         .await;
 
     let err = result.expect_err("a mismatched authentication tag length must not be decrypted");
-    assert_kind(&err, ErrorKind::NoMatchingDataKey);
+    assert!(err.is_no_matching_data_key(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -600,7 +585,7 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
         .await;
 
     let err = result.expect_err("a mismatched IV length must not be decrypted");
-    assert_kind(&err, ErrorKind::NoMatchingDataKey);
+    assert!(err.is_no_matching_data_key(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -627,12 +612,8 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
     let err = result.expect_err("a ciphertext shorter than the tag must fail");
     // The provider info matched, so this EDK was attempted and the failure is
     // a decryption failure rather than a no-match.
-    assert_kind(&err, ErrorKind::Cryptographic);
-    assert!(
-        err.collected()
-            .iter()
-            .any(|e| e.kind() == ErrorKind::Cryptographic)
-    );
+    assert!(err.is_cryptographic(), "{:?}", err);
+    assert!(err.collected().iter().any(|e| e.is_cryptographic()));
 }
 
 #[test]
@@ -641,8 +622,8 @@ fn test_new_rejects_wrapping_key_length_mismatch() {
     // 16 bytes supplied for an algorithm that specifies 32.
     let err = RawAesKeyring::new(namespace, name, vec![0u8; 16], AesGcm::Aes256Gcm)
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
-    assert_kind(&err, ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -673,7 +654,7 @@ fn test_new_rejects_reserved_aws_kms_key_namespace() {
     let (_, name) = namespace_and_name();
     let err = RawAesKeyring::new("aws-kms", name, vec![0u8; 32], AesGcm::Aes256Gcm)
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
-    assert_kind(&err, ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -697,7 +678,7 @@ fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
         else {
             panic!("`{namespace}` must be rejected as reserved");
         };
-        assert_kind(&err, ErrorKind::Validation);
+        assert!(err.is_validation(), "{:?}", err);
     }
 }
 

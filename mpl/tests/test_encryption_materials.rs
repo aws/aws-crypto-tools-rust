@@ -1,7 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::ErrorKind;
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::structures::{
@@ -69,10 +68,7 @@ fn test_required_ec_keys_must_be_subset() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None);
     assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::EncryptionContextMismatch
-    );
+    assert!(result.unwrap_err().is_encryption_context_mismatch());
 }
 
 #[test]
@@ -83,7 +79,7 @@ fn test_edks_must_be_empty_without_pdk() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![edk], ec, reck, None, None, None);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -94,7 +90,7 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, Some(sk), None);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -145,7 +141,7 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
         Some(ssk),
     );
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -167,9 +163,10 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
     let reck = BTreeSet::new();
 
     let mat = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None).unwrap();
-    assert_eq!(
-        mat.validate_aws_crypto_public_key().unwrap_err().kind(),
-        ErrorKind::InvalidMaterials
+    assert!(
+        mat.validate_aws_crypto_public_key()
+            .unwrap_err()
+            .is_invalid_materials()
     );
 }
 
@@ -281,7 +278,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]

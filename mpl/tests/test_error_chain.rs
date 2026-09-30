@@ -10,15 +10,19 @@
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
-use aws_crypto_mpl::{Error, ErrorKind};
 
 /// A three-link chain `Error -> Error -> io::Error`,
 /// the shape a keyring produces when the keystore fails beneath it.
 fn nested_chain() -> Error {
     let root = IoError::new(IoErrorKind::ConnectionReset, "connection reset by peer");
-    let middle = Error::with_cause(ErrorKind::RemoteTransport, "DynamoDB failed", root);
-    Error::wrap("keyring could not reach its keystore", middle)
+    let middle =
+        Error::from(aws_crypto_mpl::error::DispatchError::new("DynamoDB failed").with_source(root));
+    Error::from(
+        aws_crypto_mpl::error::DispatchError::new("keyring could not reach its keystore")
+            .with_source(middle),
+    )
 }
 
 #[test]
@@ -43,7 +47,9 @@ fn find_in_error_chain_returns_none_for_a_type_absent_from_the_chain() {
 
 #[test]
 fn find_in_error_chain_returns_none_for_a_single_link_chain() {
-    let err = Error::new(ErrorKind::Internal, "no underlying cause");
+    let err = Error::from(aws_crypto_mpl::error::InternalError::new(
+        "no underlying cause",
+    ));
     assert!(
         err.source().is_none(),
         "precondition: the chain has one link"

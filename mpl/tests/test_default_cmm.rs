@@ -3,7 +3,7 @@
 
 //! Integration tests for the Default CMM.
 
-use aws_crypto_mpl::{Error, ErrorKind};
+use aws_crypto_mpl::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -169,7 +169,7 @@ async fn test_get_encryption_materials_fails_when_ec_already_has_aws_crypto_publ
         .get_encryption_materials(request)
         .await
         .expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
     assert_eq!(keyring.encrypt_calls.load(Ordering::SeqCst), 0);
 }
 
@@ -201,7 +201,7 @@ async fn test_get_encryption_materials_unsupported_suite_for_policy_fails() {
         .get_encryption_materials(request)
         .await
         .expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -317,7 +317,7 @@ async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
         EncryptionContext::new(),
     );
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -328,7 +328,7 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
     ec.insert("aws-crypto-public-key", "some-value");
     let request = DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], ec);
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -343,7 +343,7 @@ async fn test_decrypt_materials_unsupported_suite_for_policy_fails() {
         EncryptionContext::new(),
     );
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -410,7 +410,7 @@ async fn test_decrypt_materials_malformed_base64_public_key_fails() {
         .decrypt_materials(request)
         .await
         .expect_err("must fail on malformed base64");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -428,7 +428,7 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
         .decrypt_materials(request)
         .await
         .expect_err("must fail on wrong VK length");
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -484,7 +484,7 @@ async fn test_decrypt_materials_reproduced_ec_mismatched_values_fails() {
         .decrypt_materials(request)
         .await
         .expect_err("mismatched reproduced-EC value must fail");
-    assert_eq!(err.kind(), ErrorKind::EncryptionContextMismatch);
+    assert!(err.is_encryption_context_mismatch(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -655,7 +655,7 @@ async fn test_decrypt_materials_conflicting_reproduced_value_does_not_call_the_k
         .await
         .expect_err("must fail before doing any crypto");
 
-    assert_eq!(err.kind(), ErrorKind::EncryptionContextMismatch);
+    assert!(err.is_encryption_context_mismatch(), "{:?}", err);
     assert_eq!(
         keyring.decrypt_calls.load(Ordering::SeqCst),
         0,
@@ -734,5 +734,5 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
         .await
         .expect_err("must reject the reserved key regardless of which context carried it");
 
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }

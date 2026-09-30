@@ -17,8 +17,9 @@
 
 use std::time::Duration;
 
+use crate::Error;
 use crate::cmc::{LocalCmc, SharedCmc, StormTrackingCmc};
-use crate::{Error, ErrorKind};
+use crate::error::Kind;
 
 /// Entry capacity a CMP uses when the caller configures no cache at all.
 ///
@@ -275,7 +276,7 @@ impl StormTrackingCacheBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation) error if:
+    /// Returns a [`Validation`](crate::Error::Validation) error if:
     /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
     /// - `grace_interval` exceeds `inflight_ttl`.
     pub fn build(self) -> Result<StormTrackingCache, Error> {
@@ -312,7 +313,7 @@ impl StormTrackingCacheBuilder {
 }
 
 fn invalid(message: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Validation, message)
+    Error::new(Kind::Validation, message)
 }
 
 /// Cache configuration for a Cryptographic Materials Provider.
@@ -348,7 +349,7 @@ pub fn create_cryptographic_materials_cache(cache_type: CacheType) -> Result<Sha
             let local = LocalCmc::new(default_cache.entry_capacity, CACHE_PRUNING_TAIL_SIZE)
                 .map_err(|e| {
                     Error::with_cause(
-                        ErrorKind::Validation,
+                        Kind::Validation,
                         "failed to initialize the default cache",
                         e,
                     )
@@ -359,7 +360,7 @@ pub fn create_cryptographic_materials_cache(cache_type: CacheType) -> Result<Sha
         CacheType::StormTracking(params) => {
             let storm = StormTrackingCmc::new(&params).map_err(|e| {
                 Error::with_cause(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     "failed to initialize the storm-tracking cache",
                     e,
                 )

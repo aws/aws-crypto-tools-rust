@@ -1,7 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::ErrorKind;
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::structures::{
@@ -63,10 +62,7 @@ fn test_required_ec_keys_must_be_subset() {
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None);
     assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::EncryptionContextMismatch
-    );
+    assert!(result.unwrap_err().is_encryption_context_mismatch());
 }
 
 #[test]
@@ -77,7 +73,7 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, Some(ssk));
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -101,7 +97,7 @@ fn test_verification_key_length_must_match_algorithm_suite() {
         let err = result.expect_err(&format!(
             "{suite_id:?} with {bad_len}-byte verification key must fail"
         ));
-        assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+        assert!(err.is_invalid_materials(), "{:?}", err);
     }
 }
 
@@ -138,7 +134,7 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, Some(vk), None);
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]
@@ -157,9 +153,10 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
     let reck = BTreeSet::new();
 
     let mat = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, None, None).unwrap();
-    assert_eq!(
-        mat.validate_aws_crypto_public_key().unwrap_err().kind(),
-        ErrorKind::InvalidMaterials
+    assert!(
+        mat.validate_aws_crypto_public_key()
+            .unwrap_err()
+            .is_invalid_materials()
     );
 }
 
@@ -256,7 +253,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
 
     let mat = DecryptionMaterials::new(SIGN_SUITE, ec, reck, None, Some(vk), None).unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]

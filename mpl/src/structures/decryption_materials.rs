@@ -3,7 +3,8 @@
 
 //! Decryption materials structure.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
@@ -39,7 +40,7 @@ impl DecryptionMaterials {
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
                 return Err(Error::new(
-                    ErrorKind::EncryptionContextMismatch,
+                    Kind::EncryptionContextMismatch,
                     format!(
                         "required encryption context key {:?} not found in encryption context",
                         key
@@ -51,7 +52,7 @@ impl DecryptionMaterials {
         // If no asymmetric signing, verification key must not be present.
         if !algorithm_suite_id.has_asymmetric_signing() && verification_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "verification key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
@@ -63,7 +64,7 @@ impl DecryptionMaterials {
             && vk.len() != expected_len
         {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 format!(
                     "verification key length ({}) does not match expected length ({}) for algorithm suite",
                     vk.len(),
@@ -75,7 +76,7 @@ impl DecryptionMaterials {
         // If no symmetric signing, symmetric signing key must not be included
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "symmetric signing key must not be present when algorithm suite has no symmetric signing",
             ));
         }
@@ -125,13 +126,13 @@ impl DecryptionMaterials {
             .contains_key("aws-crypto-public-key");
         if self.verification_key.is_some() && !has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST include 'aws-crypto-public-key' when verification key is present",
             ));
         }
         if self.verification_key.is_none() && has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
             ));
         }
