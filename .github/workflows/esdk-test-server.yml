@@ -70,10 +70,9 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/test-server-fast-launch
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
     with:
       focus: rust
       checkout-languages: rust
-      commons-ref: lucmcdon/test-server-fast-launch
     secrets:
       repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
