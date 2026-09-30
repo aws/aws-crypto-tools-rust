@@ -21,6 +21,7 @@ pub mod keystore;
 pub mod shared;
 pub mod structures;
 
+pub use aws_mpl_primitives::error::DisplayErrorContext;
 pub use client::*;
 pub use error::{Error, ErrorKind};
 pub use shared::IntoShared;

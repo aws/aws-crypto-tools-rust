@@ -93,3 +93,14 @@ fn from_inner_maps_a_kind_with_no_shared_name_to_internal() {
     let inner = other_library::Error::new(other_library::ErrorKind::Extra, "only here");
     assert_eq!(Error::from_inner("m", inner).kind(), ErrorKind::Internal);
 }
+
+#[test]
+fn display_error_context_prints_every_layer_once() {
+    use aws_mpl_primitives::error::DisplayErrorContext;
+    let inner = Error::new(ErrorKind::Cryptographic, "authentication tag did not match");
+    let outer = other_library::Error::from_inner("could not decrypt", inner);
+    assert_eq!(
+        DisplayErrorContext(&outer).to_string(),
+        "could not decrypt: authentication tag did not match"
+    );
+}
