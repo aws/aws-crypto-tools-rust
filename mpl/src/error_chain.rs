@@ -3,10 +3,8 @@
 
 //! Helpers for inspecting the `source()` chain of an MPL error.
 //!
-//! An error that wraps a lower-level failure keeps it as a cause, so an AWS
-//! SDK error raised inside the keystore is still reachable from the
-//! [`Error`](crate::Error) a keyring hands
-//! back.
+//! An AWS SDK error from inside the key store stays in the chain,
+//! so it is reachable from the [`Error`](crate::Error) a keyring returns.
 
 use std::error::Error;
 
@@ -49,18 +47,14 @@ where
     None
 }
 
-/// The AWS service error code (`"AccessDeniedException"`,
-/// `"ThrottlingException"`, …) for the SDK failure underlying `err`, if any.
+/// The AWS service error code, such as `"AccessDeniedException"`, of the SDK failure behind `err`.
 ///
-/// Walks the `source()` chain, so this works on any error this crate
-/// returns, without the caller knowing which AWS operation was in flight.
+/// Searches the `source()` chain, so it works on any error this crate returns
+/// without knowing which AWS operation failed.
 ///
-/// Returns `None` when the chain holds no SDK error, and also when the SDK
-/// error is not a *service* error: per
-/// `aws_smithy_runtime_api::client::result`, construction, timeout,
-/// dispatch, and response-parsing failures carry no service metadata, so a
-/// missing-credentials or connection failure has no code. Its
-/// [`Error::kind`](crate::Error::kind) is `RemoteTransport`.
+/// `None` when the chain holds no SDK service error.
+/// A missing-credentials or connection failure has no code;
+/// its [`Error::kind`](crate::Error::kind) is `RemoteTransport`.
 pub fn aws_service_error_code<'a>(err: &'a (dyn Error + 'static)) -> Option<&'a str> {
     // A new arm is required for every AWS operation this crate invokes: the
     // lookup is a downcast, which matches one concrete type.

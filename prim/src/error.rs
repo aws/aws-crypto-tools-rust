@@ -3,16 +3,15 @@
 
 //! The error shape every AWS Crypto Tools library shares.
 //!
-//! A library defines its own error type with [`define_error!`]. It gets the
-//! shared error kinds plus any it adds, and every method, without writing
-//! them. Each library's `Error` and `ErrorKind` are their own types.
+//! A library defines its own `Error` and `ErrorKind` with [`define_error!`](crate::define_error).
+//! Every library gets the shared kinds and the same methods, and can add kinds of its own.
 
 use std::backtrace::Backtrace;
 use std::fmt;
 use std::sync::Arc;
 
-/// The error kinds every library defines. [`define_error!`] copies these into
-/// each library's `ErrorKind` under the same names, where they are documented.
+/// The kinds [`define_error!`](crate::define_error) puts in every library's `ErrorKind`, under the same names.
+/// Their docs live in the macro.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -37,8 +36,7 @@ pub trait ErrorKindLike: Copy + fmt::Debug + PartialEq + Send + Sync + 'static {
     fn base(self) -> Option<BaseErrorKind>;
     /// This library's kind with `base`'s name.
     fn from_base(base: BaseErrorKind) -> Self;
-    /// Whether an error of this kind is retryable unless a constructor says
-    /// otherwise.
+    /// The retryability `new` and `with_cause` give an error of this kind.
     fn retryable_by_default(self) -> bool {
         matches!(
             self.base(),
@@ -64,7 +62,6 @@ pub struct ErrorCore<K> {
     pub message: String,
     pub retryable: bool,
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
-    pub collected: Vec<Self>,
     pub backtrace: Arc<Backtrace>,
 }
 
@@ -81,7 +78,6 @@ impl<K: ErrorKindLike> ErrorCore<K> {
             message,
             retryable,
             cause,
-            collected: Vec::new(),
             backtrace: Arc::new(Backtrace::capture()),
         }
     }
@@ -94,35 +90,17 @@ impl<K: ErrorKindLike> ErrorCore<K> {
 
 impl<K: ErrorKindLike> PartialEq for ErrorCore<K> {
     fn eq(&self, other: &Self) -> bool {
-        // `cause` is excluded because `dyn Error` does not implement `Eq`.
+        // `cause` and `backtrace` have no `PartialEq`.
         self.kind == other.kind
             && self.message == other.message
             && self.retryable == other.retryable
-            && self.collected == other.collected
-    }
-}
-
-impl<K: ErrorKindLike> fmt::Display for ErrorCore<K> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: {}", self.kind, self.message)?;
-        if let [first, rest @ ..] = self.collected.as_slice() {
-            write!(f, " (collected errors: [{first}")?;
-            for err in rest {
-                write!(f, "; {err}")?;
-            }
-            f.write_str("])")?;
-        }
-        Ok(())
     }
 }
 
 /// Define a library's `Error` and `ErrorKind`.
 ///
-/// `ErrorKind` has the shared kinds plus the extra ones listed after the `;`.
-/// `Error` has `new`, `with_cause`, `wrap`, `collection`, `kind`, `message`,
-/// `is_retryable`, `collected`, `backtrace`, `source`, `Display`, `Debug`,
-/// `Clone`, and `PartialEq`, and `Error::from_inner` converts another
-/// library's error into this one, keeping its kind by name.
+/// `ErrorKind` has the shared kinds, then the kinds listed after the `;`.
+/// `Error::from_inner` converts another library's error into this one and keeps its kind by name.
 ///
 /// ```ignore
 /// aws_mpl_primitives::define_error! {
@@ -142,36 +120,88 @@ macro_rules! define_error {
         $( $(#[$extra_meta:meta])* $extra:ident, )*
     ) => {
         $(#[$kind_meta])*
+        ///
+        /// Check [`is_retryable`](Error::is_retryable) first:
+        /// a retryable error might succeed if the same call is made again later.
+        /// Then match on the kind to decide what to do.
+        /// The message and the [`source`](std::error::Error::source) chain say which component or service failed, for logs.
+        ///
+        /// Later releases can add kinds, so a `match` needs a catch-all arm.
+        ///
+        /// Messages are for people, not code.
+        /// Their text can change in any release, including a minor or patch release.
+        /// Decide from the kind, [`is_retryable`](Error::is_retryable), and the types in the source chain, never from the message.
+        ///
+        /// ```ignore
+        /// if err.is_retryable() {
+        ///     // back off and retry
+        /// }
+        /// match err.kind() {
+        ///     ErrorKind::Validation => { /* fix the input */ }
+        ///     ErrorKind::RemoteAccessDenied | ErrorKind::RemoteResourceNotFound => {
+        ///         /* fix the permissions or configuration */
+        ///     }
+        ///     ErrorKind::Cryptographic | ErrorKind::NoMatchingDataKey => {
+        ///         /* reject the message */
+        ///     }
+        ///     _ => { /* log and fail */ }
+        /// }
+        /// ```
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[non_exhaustive]
         pub enum $kind {
-            /// An input or configuration value is invalid.
+            /// An input or configuration value is invalid,
+            /// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
+            ///
+            /// Fix the input; the same call cannot succeed.
             Validation,
-            /// The materials, or the request for them, are inconsistent with
-            /// each other or with the algorithm suite.
+            /// A keyring or CMM returned materials inconsistent with each other or with the algorithm suite,
+            /// for example no plaintext data key after encryption, or a signing key for a suite that does not sign.
+            ///
+            /// Usually a bug in a custom keyring or CMM.
             InvalidMaterials,
-            /// A required encryption context key is missing, or a
-            /// caller-supplied encryption context value differs from the one
-            /// being checked.
+            /// An encryption context does not match,
+            /// for example a required key is missing, or a value passed to decrypt differs from the message's.
+            ///
+            /// Check the encryption context passed to the call.
             EncryptionContextMismatch,
-            /// No configured key wrapped any of the encrypted data keys.
+            /// None of the configured keys wrapped any of the message's encrypted data keys,
+            /// for example when decrypting with a keyring that did not encrypt the message.
+            ///
+            /// Decrypt with a keyring that has one of the message's keys.
             NoMatchingDataKey,
-            /// A cryptographic check failed, such as an AES-GCM tag or a
-            /// signature.
+            /// A cryptographic check failed,
+            /// for example an AES-GCM authentication tag or a message signature did not verify.
+            ///
+            /// Treat the message as corrupt or modified; retrying cannot succeed.
             Cryptographic,
-            /// A remote service denied access to a resource.
+            /// AWS KMS or `DynamoDB` denied access,
+            /// for example because of missing IAM permissions or expired credentials.
+            ///
+            /// Fix the permissions or credentials.
             RemoteAccessDenied,
-            /// A remote resource, such as a KMS key, `DynamoDB` table, or
-            /// branch key, does not exist.
+            /// A KMS key, `DynamoDB` table, or branch key does not exist.
+            ///
+            /// Fix the configuration that names the resource.
             RemoteResourceNotFound,
-            /// A remote service throttled the request.
+            /// AWS KMS or `DynamoDB` throttled the request.
+            ///
+            /// Retryable: back off and try again.
             RemoteThrottled,
-            /// A request to a remote service could not be sent, or its
-            /// response did not arrive.
+            /// A request to a remote service was not sent, or its response did not arrive,
+            /// for example because of a network error, a timeout, or missing credentials or region.
+            ///
+            /// Retryable for a network error or timeout; check [`is_retryable`](Error::is_retryable).
             RemoteTransport,
-            /// Any other failure reported by, or read from, a remote service.
+            /// Any other failure from a remote service,
+            /// for example a KMS `IncorrectKeyException`, a KMS internal error, or a malformed key store record.
+            ///
+            /// When a service reported the failure, the [`source`](std::error::Error::source) is its SDK error.
+            /// A server-side failure is retryable.
             Remote,
-            /// An internal invariant was violated.
+            /// An internal invariant was violated, for example a poisoned lock.
+            ///
+            /// A bug; report it.
             Internal,
             $( $(#[$extra_meta])* $extra, )*
         }
@@ -216,14 +246,18 @@ macro_rules! define_error {
 
         $(#[$err_meta])*
         #[derive(Clone, PartialEq)]
-        pub struct $error($crate::error::ErrorCore<$kind>);
+        pub struct $error {
+            core: $crate::error::ErrorCore<$kind>,
+            collected: Vec<$error>,
+        }
 
         impl $error {
             /// Construct an error of `kind`.
+            /// It is retryable only if `kind` is `RemoteThrottled` or `RemoteTransport`.
             #[track_caller]
             pub fn new(kind: $kind, message: impl Into<String>) -> Self {
                 use $crate::error::ErrorKindLike as _;
-                Self($crate::error::ErrorCore::build(
+                Self::from_core($crate::error::ErrorCore::build(
                     kind,
                     message.into(),
                     kind.retryable_by_default(),
@@ -231,8 +265,7 @@ macro_rules! define_error {
                 ))
             }
 
-            /// Construct an error of `kind` caused by `cause`, which
-            /// [`std::error::Error::source`] returns.
+            /// Like [`new`](Self::new), with `cause` as the [`source`](std::error::Error::source).
             #[track_caller]
             pub fn with_cause(
                 kind: $kind,
@@ -240,7 +273,7 @@ macro_rules! define_error {
                 cause: impl std::error::Error + Send + Sync + 'static,
             ) -> Self {
                 use $crate::error::ErrorKindLike as _;
-                Self($crate::error::ErrorCore::build(
+                Self::from_core($crate::error::ErrorCore::build(
                     kind,
                     message.into(),
                     kind.retryable_by_default(),
@@ -249,24 +282,23 @@ macro_rules! define_error {
             }
 
             /// Add context to `inner`, keeping its kind and retryability.
-            /// `inner` becomes the [`std::error::Error::source`].
+            /// `inner` becomes the [`source`](std::error::Error::source).
             #[track_caller]
             pub fn wrap(message: impl Into<String>, inner: Self) -> Self {
-                Self($crate::error::ErrorCore::build(
-                    inner.0.kind,
+                Self::from_core($crate::error::ErrorCore::build(
+                    inner.core.kind,
                     message.into(),
-                    inner.0.retryable,
+                    inner.core.retryable,
                     Some(std::sync::Arc::new(inner)),
                 ))
             }
 
-            /// Construct an error of `kind` that carries every failure
-            /// collected while attempting an operation that ultimately
-            /// failed, such as a keyring trying each encrypted data key.
+            /// Construct an error of `kind` that carries the failures behind it,
+            /// such as a keyring's failure for each encrypted data key it tried.
             ///
-            /// `message` describes the overall failure; `Display` renders the
-            /// collected errors after it. A single collected failure is also
-            /// the [`std::error::Error::source`].
+            /// [`collected`](Self::collected) returns the failures.
+            /// With exactly one, it is also the [`source`](std::error::Error::source).
+            /// The error is retryable only if every collected failure is.
             #[track_caller]
             pub fn collection(
                 kind: $kind,
@@ -284,105 +316,139 @@ macro_rules! define_error {
                         _ => None,
                     };
                 let retryable =
-                    !collected.is_empty() && collected.iter().all(|e| e.0.retryable);
-                let mut core = $crate::error::ErrorCore::build(kind, message.into(), retryable, cause);
-                core.collected = collected.into_iter().map(|e| e.0).collect();
-                Self(core)
+                    !collected.is_empty() && collected.iter().all(|e| e.core.retryable);
+                Self {
+                    core: $crate::error::ErrorCore::build(kind, message.into(), retryable, cause),
+                    collected,
+                }
             }
 
             /// Convert another library's error into this library's error.
-            /// The kind is the one with the same name here, or `Internal` when
-            /// there is none; `inner` becomes the [`std::error::Error::source`].
+            /// `message` says what this library was doing.
+            /// The kind is the one with the same name, or `Internal` if this library has none.
+            /// The error keeps `inner`'s retryability, and `inner` becomes the [`source`](std::error::Error::source).
             #[track_caller]
-            pub fn from_inner(inner: impl $crate::error::LibraryError) -> Self {
+            pub fn from_inner(
+                message: impl Into<String>,
+                inner: impl $crate::error::LibraryError,
+            ) -> Self {
                 use $crate::error::ErrorKindLike as _;
                 let kind = inner
                     .base_kind()
                     .map_or($kind::Internal, $kind::from_base);
-                let message = $crate::error::LibraryError::error_message(&inner).to_owned();
                 let retryable = $crate::error::LibraryError::retryable(&inner);
-                Self($crate::error::ErrorCore::build(
+                Self::from_core($crate::error::ErrorCore::build(
                     kind,
-                    message,
+                    message.into(),
                     retryable,
                     Some(std::sync::Arc::new(inner)),
                 ))
             }
 
+            const fn from_core(core: $crate::error::ErrorCore<$kind>) -> Self {
+                Self {
+                    core,
+                    collected: Vec::new(),
+                }
+            }
+
             /// What went wrong.
             #[must_use]
             pub const fn kind(&self) -> $kind {
-                self.0.kind
+                self.core.kind
             }
 
-            /// The error message, without the kind prefix that `Display` adds.
+            /// This error's message, without its sources.
             #[must_use]
             pub fn message(&self) -> &str {
-                &self.0.message
+                &self.core.message
             }
 
             /// Whether the same call might succeed if retried.
             #[must_use]
             pub const fn is_retryable(&self) -> bool {
-                self.0.retryable
+                self.core.retryable
             }
 
-            /// The failures collected by an operation that tried several
-            /// things, such as a keyring trying each encrypted data key.
-            /// Empty otherwise.
+            /// The failures behind an error from [`collection`](Self::collection).
+            /// Empty for any other error.
             #[must_use]
-            pub fn collected(&self) -> Vec<Self> {
-                self.0.collected.iter().cloned().map(Self).collect()
+            pub fn collected(&self) -> &[Self] {
+                &self.collected
             }
 
             /// The backtrace captured when this error was created.
+            /// Disabled unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
             pub fn backtrace(&self) -> &std::backtrace::Backtrace {
-                &self.0.backtrace
+                &self.core.backtrace
             }
 
             /// Override whether this error is retryable.
             #[doc(hidden)]
             pub const fn set_retryable(&mut self, retryable: bool) {
-                self.0.retryable = retryable;
+                self.core.retryable = retryable;
             }
         }
 
         impl $crate::error::LibraryError for $error {
             fn base_kind(&self) -> Option<$crate::error::BaseErrorKind> {
-                $crate::error::ErrorKindLike::base(self.0.kind)
+                $crate::error::ErrorKindLike::base(self.core.kind)
             }
 
             fn retryable(&self) -> bool {
-                self.0.retryable
+                self.core.retryable
             }
 
             fn error_message(&self) -> &str {
-                &self.0.message
+                &self.core.message
             }
         }
 
         impl std::fmt::Debug for $error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct(stringify!($error))
-                    .field("kind", &self.0.kind)
-                    .field("message", &self.0.message)
-                    .field("retryable", &self.0.retryable)
-                    .field("source", &self.0.cause)
-                    .field("collected", &self.0.collected)
+                    .field("kind", &self.core.kind)
+                    .field("message", &self.core.message)
+                    .field("retryable", &self.core.retryable)
+                    .field("source", &self.core.cause)
+                    .field("collected", &self.collected)
                     .finish()
             }
         }
 
         impl std::fmt::Display for $error {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                std::fmt::Display::fmt(&self.0, f)
+                f.write_str(&self.core.message)
             }
         }
 
         impl std::error::Error for $error {
             fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                self.0.source()
+                self.core.source()
             }
         }
     };
+}
+
+/// Displays an error, then each error in its [`source`](std::error::Error::source) chain, separated by `": "`.
+///
+/// ```
+/// # use aws_mpl_primitives::error::DisplayErrorContext;
+/// # let err = std::io::Error::other("example");
+/// eprintln!("error: {}", DisplayErrorContext(&err));
+/// ```
+#[derive(Debug)]
+#[expect(clippy::exhaustive_structs)]
+pub struct DisplayErrorContext<E>(pub E);
+
+impl<E: std::error::Error> fmt::Display for DisplayErrorContext<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)?;
+        let mut cause = self.0.source();
+        while let Some(c) = cause {
+            write!(f, ": {c}")?;
+            cause = c.source();
+        }
+        Ok(())
+    }
 }

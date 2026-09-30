@@ -7,7 +7,7 @@ use aws_mpl_primitives::{AesGcm, DigestAlg, Error, ErrorKind, aes_encrypt, hkdf}
 
 fn make_error() -> Error {
     // Trigger an error via a known-bad HKDF request. Its message is
-    // deterministic ("Invalid key length ...").
+    // deterministic ("invalid key length ...").
     let mut okm = [0u8; 20];
     hkdf(DigestAlg::Sha256, &[], &[0u8; 16], &[&[]], &mut okm).unwrap_err()
 }
@@ -18,18 +18,12 @@ fn test_error_is_cryptographic_and_display_starts_with_the_kind() {
     assert_eq!(err.kind(), ErrorKind::Cryptographic);
     assert!(!err.is_retryable());
     let display = format!("{err}");
-    assert!(display.starts_with("Cryptographic: "));
-    assert!(display.contains("Invalid key length"));
+    assert!(display.contains("invalid key length"));
 }
 
 #[test]
 fn test_error_partial_eq_matches_on_message_only() {
-    // `Error::eq` compares kind and message, so two errors from the same call
-    // path compare equal. The backtrace never participates, and it is usually
-    // not even distinct: `Error` captures with `Backtrace::capture()`, which
-    // honours `RUST_BACKTRACE` and yields `<disabled>` when it is unset, so
-    // in a default run these two backtraces are byte-identical. They differ
-    // only under `RUST_BACKTRACE=1`, and `eq` ignores them either way.
+    // `Error::eq` ignores the backtrace, so two errors from the same call path are equal.
     let err1 = make_error();
     let err2 = make_error();
     assert_eq!(err1, err2);
@@ -80,17 +74,28 @@ mod other_library {
 }
 
 #[test]
-fn from_inner_keeps_the_kind_by_name_and_does_not_repeat_it_in_the_message() {
+fn from_inner_keeps_the_kind_by_name_with_its_own_message() {
     let inner = Error::new(ErrorKind::Cryptographic, "tag mismatch");
-    let outer = other_library::Error::from_inner(inner);
+    let outer = other_library::Error::from_inner("could not decrypt", inner);
     assert_eq!(outer.kind(), other_library::ErrorKind::Cryptographic);
-    assert_eq!(outer.message(), "tag mismatch");
-    assert_eq!(outer.to_string(), "Cryptographic: tag mismatch");
-    assert!(std::error::Error::source(&outer).is_some());
+    assert_eq!(outer.to_string(), "could not decrypt");
+    let source = std::error::Error::source(&outer).expect("the inner error is the source");
+    assert_eq!(source.to_string(), "tag mismatch");
 }
 
 #[test]
 fn from_inner_maps_a_kind_with_no_shared_name_to_internal() {
     let inner = other_library::Error::new(other_library::ErrorKind::Extra, "only here");
-    assert_eq!(Error::from_inner(inner).kind(), ErrorKind::Internal);
+    assert_eq!(Error::from_inner("m", inner).kind(), ErrorKind::Internal);
+}
+
+#[test]
+fn display_error_context_prints_every_layer_once() {
+    use aws_mpl_primitives::error::DisplayErrorContext;
+    let inner = Error::new(ErrorKind::Cryptographic, "authentication tag did not match");
+    let outer = other_library::Error::from_inner("could not decrypt", inner);
+    assert_eq!(
+        DisplayErrorContext(&outer).to_string(),
+        "could not decrypt: authentication tag did not match"
+    );
 }

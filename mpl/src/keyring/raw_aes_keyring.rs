@@ -88,7 +88,7 @@ impl RawAesKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when `wrapping_key`'s length does not match
+    /// Returns a `Validation` error when `wrapping_key`'s length does not match
     /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
     /// to or starts with the reserved value `aws-kms`.
     pub fn new(
@@ -106,7 +106,7 @@ impl RawAesKeyring {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "RawAesKeyring: key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
+                    "key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
                 ),
             ));
         }
@@ -116,7 +116,7 @@ impl RawAesKeyring {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "RawAesKeyring: wrapping key length ({}) does not match the length specified by {:?} ({expected_key_len})",
+                    "wrapping key length ({}) does not match the length specified by {:?} ({expected_key_len})",
                     wrapping_key.len(),
                     wrapping_alg,
                 ),
@@ -213,12 +213,10 @@ impl Keyring for RawAesKeyring {
     ) -> Result<EncryptionMaterials, Error> {
         // Serialized before any encryption is attempted, so an unserializable
         // encryption context fails the operation rather than producing an EDK.
-        let aad = materials.encryption_context().serialize().map_err(|e| {
-            Error::wrap(
-                "RawAesKeyring::on_encrypt: failed to serialize the encryption context",
-                e,
-            )
-        })?;
+        let aad = materials
+            .encryption_context()
+            .serialize()
+            .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
         let plaintext_dk = match materials.plaintext_data_key() {
             Some(pdk) => pdk.clone(),
@@ -229,7 +227,7 @@ impl Keyring for RawAesKeyring {
         generate_random_bytes(&mut iv).map_err(|e| {
             Error::with_cause(
                 ErrorKind::Cryptographic,
-                "RawAesKeyring::on_encrypt: failed to obtain entropy for the AES-GCM IV",
+                "failed to obtain entropy for the AES-GCM IV",
                 e,
             )
         })?;
@@ -248,7 +246,7 @@ impl Keyring for RawAesKeyring {
         .map_err(|e| {
             Error::with_cause(
                 ErrorKind::Cryptographic,
-                "RawAesKeyring::on_encrypt: AES-GCM encryption of the plaintext data key failed",
+                "AES-GCM encryption of the plaintext data key failed",
                 e,
             )
         })?;
@@ -283,18 +281,16 @@ impl Keyring for RawAesKeyring {
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
                 ErrorKind::InvalidMaterials,
-                "RawAesKeyring::on_decrypt: decryption materials already contain a plaintext data key",
+                "decryption materials already contain a plaintext data key",
             ));
         }
 
         // Serialized before the EDK loop, so an unserializable encryption
         // context fails the operation even when no EDK matches this keyring.
-        let aad = materials.encryption_context().serialize().map_err(|e| {
-            Error::wrap(
-                "RawAesKeyring::on_decrypt: failed to serialize the encryption context",
-                e,
-            )
-        })?;
+        let aad = materials
+            .encryption_context()
+            .serialize()
+            .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
         let expected_dk_len = materials.algorithm_suite().encryption_key_length();
 
@@ -306,7 +302,7 @@ impl Keyring for RawAesKeyring {
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
                 collected_errors.push(Error::new(ErrorKind::NoMatchingDataKey, format!(
-                    "EncryptedDataKey {index} did not match AESKeyring. Expected: keyProviderId: {}.",
+                    "encrypted data key {index} did not match the AES keyring, expected key provider id {}",
                     self.inner.key_namespace,
                 )));
                 continue;
@@ -315,7 +311,7 @@ impl Keyring for RawAesKeyring {
 
             if edk.ciphertext.len() < TAG_LENGTH {
                 collected_errors.push(Error::new(ErrorKind::Cryptographic, format!(
-                    "EncryptedDataKey {index}: insufficient data to decrypt: ciphertext is {} bytes, need at least the {TAG_LENGTH}-byte authentication tag",
+                    "encrypted data key {index}: insufficient data to decrypt: ciphertext is {} bytes, need at least the {TAG_LENGTH}-byte authentication tag",
                     edk.ciphertext.len(),
                 )));
                 continue;
@@ -335,7 +331,7 @@ impl Keyring for RawAesKeyring {
             ) {
                 collected_errors.push(Error::with_cause(
                     ErrorKind::Cryptographic,
-                    format!("EncryptedDataKey {index}: AES-GCM decryption failed: {e}"),
+                    format!("encrypted data key {index}: AES-GCM decryption failed"),
                     e,
                 ));
                 continue;
@@ -343,7 +339,7 @@ impl Keyring for RawAesKeyring {
 
             if plaintext_dk.len() != expected_dk_len {
                 collected_errors.push(Error::new(ErrorKind::Cryptographic, format!(
-                    "EncryptedDataKey {index}: decrypted data key is {} bytes, expected {expected_dk_len} for the algorithm suite",
+                    "encrypted data key {index}: decrypted data key is {} bytes, expected {expected_dk_len} for the algorithm suite",
                     plaintext_dk.len(),
                 )));
                 continue;
@@ -370,12 +366,12 @@ impl Keyring for RawAesKeyring {
             return Err(if collected_errors.is_empty() {
                 Error::new(
                     ErrorKind::NoMatchingDataKey,
-                    "RawAesKeyring::on_decrypt: no encrypted data key was supplied",
+                    "no encrypted data key was supplied",
                 )
             } else {
                 Error::collection(
                     ErrorKind::NoMatchingDataKey,
-                    "RawAesKeyring::on_decrypt: no encrypted data key matched this keyring",
+                    "no encrypted data key matched this keyring",
                     collected_errors,
                 )
             });
@@ -391,7 +387,7 @@ impl Keyring for RawAesKeyring {
         let kind = Error::common_kind(&collected_errors).unwrap_or(ErrorKind::Cryptographic);
         Err(Error::collection(
             kind,
-            "RawAesKeyring::on_decrypt: unable to decrypt any encrypted data key",
+            "unable to decrypt any encrypted data key",
             collected_errors,
         ))
     }
@@ -404,7 +400,7 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, E
     generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
             ErrorKind::Cryptographic,
-            "RawAesKeyring::on_encrypt: failed to obtain entropy for the plaintext data key",
+            "failed to obtain entropy for the plaintext data key",
             e,
         )
     })?;

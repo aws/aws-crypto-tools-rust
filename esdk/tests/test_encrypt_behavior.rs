@@ -3,9 +3,6 @@
 
 //! Tests for encrypt.md#behavior, encrypt.md#get-the-encryption-materials,
 //! encrypt.md#construct-the-header, and encrypt.md#output.
-// The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait,
-// whose methods return `MplError` by value.
-#![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -125,9 +122,8 @@ async fn test_input_suite_vs_commitment_policy_error() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must fail when input suite violates commitment policy");
-    // Native path: the input-suite-vs-commitment-policy check runs in the ESDK
-    // encrypt front-end and surfaces as a Validation error (no cryptography
-    // attempted), rather than an MPL error from the CMM.
+    // The input-suite-vs-commitment-policy check runs in the ESDK encrypt front-end,
+    // before any cryptography, and returns a Validation error.
     assert_eq!(
         err.kind(),
         ErrorKind::Validation,
@@ -794,8 +790,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must halt and indicate failure when a step fails");
-    // Native path: the failing step (suite-vs-commitment-policy validation) surfaces
-    // as a Validation error from the ESDK encrypt.
+    // The failing step, suite-vs-commitment-policy validation, returns a Validation error.
     assert_eq!(
         err.kind(),
         ErrorKind::Validation,

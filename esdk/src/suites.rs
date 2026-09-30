@@ -36,7 +36,7 @@ pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuiteId,
         err(
             ErrorKind::Serialization,
             format!(
-                "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                "unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
                 bytes[0], bytes[1]
             ),
         )
@@ -59,7 +59,7 @@ pub fn get_esdk_algorithm_suite_id(id: MplAlgorithmSuiteId) -> Result<AlgorithmS
         //# decrypt MUST yield an error.
         other => Err(err(
             ErrorKind::InvalidMaterials,
-            format!("Unsupported algorithm suite: {other:?}"),
+            format!("unsupported algorithm suite: {other:?}"),
         )),
     }
 }
@@ -82,9 +82,9 @@ pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error
         KeyDerivationAlgorithm::HkdfSha256 => Ok(DigestAlg::Sha256),
         KeyDerivationAlgorithm::HkdfSha384 => Ok(DigestAlg::Sha384),
         KeyDerivationAlgorithm::HkdfSha512 => Ok(DigestAlg::Sha512),
-        KeyDerivationAlgorithm::IdentityKdf => Err(val_err("Identity KDF has no hash function")),
+        KeyDerivationAlgorithm::IdentityKdf => Err(val_err("identity KDF has no hash function")),
         other => Err(val_err(format!(
-            "Unsupported key derivation algorithm: {other:?}"
+            "unsupported key derivation algorithm: {other:?}"
         ))),
     }
 }
@@ -98,9 +98,9 @@ pub fn get_ecdsa_alg(suite: &AlgorithmSuite) -> Result<EcdsaSignatureAlgorithm, 
     match suite.asymmetric_signature_algorithm() {
         Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Ok(EcdsaSignatureAlgorithm::EcdsaP256),
         Some(AsymmetricSignatureAlgorithm::EcdsaP384) => Ok(EcdsaSignatureAlgorithm::EcdsaP384),
-        None => Err(val_err("Algorithm suite has no ECDSA signature algorithm")),
+        None => Err(val_err("algorithm suite has no ECDSA signature algorithm")),
         Some(other) => Err(val_err(format!(
-            "Unsupported asymmetric signature algorithm: {other:?}"
+            "unsupported asymmetric signature algorithm: {other:?}"
         ))),
     }
 }

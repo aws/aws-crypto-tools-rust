@@ -41,7 +41,7 @@ impl DecryptionMaterials {
                 return Err(Error::new(
                     ErrorKind::Validation,
                     format!(
-                        "Required encryption context key {:?} not found in encryption context",
+                        "required encryption context key {:?} not found in encryption context",
                         key
                     ),
                 ));
@@ -52,7 +52,7 @@ impl DecryptionMaterials {
         if !algorithm_suite_id.has_asymmetric_signing() && verification_key.is_some() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Verification key must not be present when algorithm suite has no asymmetric signing",
+                "verification key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
 
@@ -65,7 +65,7 @@ impl DecryptionMaterials {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "Verification key length ({}) does not match expected length ({}) for algorithm suite",
+                    "verification key length ({}) does not match expected length ({}) for algorithm suite",
                     vk.len(),
                     expected_len
                 ),
@@ -76,7 +76,7 @@ impl DecryptionMaterials {
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_key.is_some() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Symmetric signing key must not be present when algorithm suite has no symmetric signing",
+                "symmetric signing key must not be present when algorithm suite has no symmetric signing",
             ));
         }
 
@@ -126,13 +126,13 @@ impl DecryptionMaterials {
         if self.verification_key.is_some() && !has_key {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Encryption context MUST include 'aws-crypto-public-key' when verification key is present",
+                "encryption context MUST include 'aws-crypto-public-key' when verification key is present",
             ));
         }
         if self.verification_key.is_none() && has_key {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
+                "encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
             ));
         }
         Ok(())

@@ -301,9 +301,11 @@ async fn test_decrypt_rejects_duplicate_encryption_context_key() {
     for version in VERSIONS {
         let err = decrypt_err_with_second_key(version, b"keyA").await;
         assert_eq!(err.kind(), ErrorKind::Serialization, "{version:?}: {err:?}");
+        let source = std::error::Error::source(&err)
+            .map(ToString::to_string)
+            .unwrap_or_default();
         assert!(
-            err.message()
-                .contains("Duplicate key in encryption context"),
+            source.contains("duplicate key in encryption context"),
             "{version:?}: {err:?}"
         );
     }
@@ -314,9 +316,11 @@ async fn test_decrypt_rejects_out_of_order_encryption_context_keys() {
     for version in VERSIONS {
         let err = decrypt_err_with_second_key(version, b"key0").await;
         assert_eq!(err.kind(), ErrorKind::Serialization, "{version:?}: {err:?}");
+        let source = std::error::Error::source(&err)
+            .map(ToString::to_string)
+            .unwrap_or_default();
         assert!(
-            err.message()
-                .contains("Encryption context keys are not in ascending order"),
+            source.contains("encryption context keys are not in ascending order"),
             "{version:?}: {err:?}"
         );
     }

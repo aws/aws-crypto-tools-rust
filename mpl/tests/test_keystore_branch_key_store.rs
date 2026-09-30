@@ -318,11 +318,9 @@ async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
 
 // ─── Read-path APIs ─────────────────────────────────────────────────────────
 //
-// Without real AWS credentials and a real DynamoDB table, the read path
-// fails at the SDK call. These tests assert the methods dispatch into the
-// SDK (rather than returning an `Internal` stub) by observing a
-// `RemoteTransport` error: with no credentials, the request is never sent.
-// Happy-path coverage lands in the real-AWS integration tests.
+// Without AWS credentials the read path fails at the SDK call.
+// A `RemoteTransport` error shows the method reached the SDK: with no credentials, the request is never sent.
+// The real-AWS integration tests cover the happy path.
 
 #[tokio::test]
 async fn get_active_branch_key_dispatches_to_dynamodb() {
@@ -485,7 +483,7 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
     );
     assert_eq!(
         err.to_string(),
-        "RemoteTransport: DynamoDB GetItem failed",
+        "DynamoDB GetItem failed",
         "Display renders only this layer; a chain-walking printer renders the cause"
     );
 }

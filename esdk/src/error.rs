@@ -3,17 +3,20 @@
 //! Error types for the AWS Encryption SDK.
 
 aws_mpl_primitives::define_error! {
-    /// Base error type for [`aws_esdk`](crate).
+    /// An error from the AWS Encryption SDK.
     ///
-    /// Which component failed, and the underlying library or service error,
-    /// are in [`Error::message`] and [`std::error::Error::source`].
+    /// The message says what failed.
+    /// The [`source`](std::error::Error::source) chain holds the underlying library or service error.
     Error,
     /// What went wrong, as a caller would act on it.
     ///
-    /// The kinds a keyring, CMM, key store, or cache reports are
-    /// [`aws_crypto_mpl::ErrorKind`]'s, under the same names.
+    /// An error from a keyring, CMM, key store, or cache keeps its kind:
+    /// each [`aws_crypto_mpl::ErrorKind`] has a kind here with the same name.
     ErrorKind;
-    /// The message bytes are malformed and could not be read or written.
+    /// The bytes are not a well-formed encrypted message,
+    /// for example truncated input, an unsupported message version, or data after the footer.
+    ///
+    /// Treat the message as corrupt; retrying cannot succeed.
     Serialization,
 }
 
@@ -52,22 +55,21 @@ pub(crate) fn ser_err<T>(msg: &str) -> Result<T, Error> {
 impl From<aws_crypto_mpl::Error> for Error {
     #[track_caller]
     fn from(item: aws_crypto_mpl::Error) -> Self {
-        Self::from_inner(item)
+        Self::from_inner("the material providers library failed", item)
     }
 }
 
 impl From<aws_mpl_primitives::Error> for Error {
     #[track_caller]
     fn from(item: aws_mpl_primitives::Error) -> Self {
-        Self::from_inner(item)
+        Self::from_inner("a cryptographic operation failed", item)
     }
 }
 
 impl From<aws_smithy_types::error::operation::BuildError> for Error {
     #[track_caller]
     fn from(item: aws_smithy_types::error::operation::BuildError) -> Self {
-        let message = format!("{item:?}");
-        Self::with_cause(ErrorKind::Validation, message, item)
+        Self::with_cause(ErrorKind::Validation, "could not build the request", item)
     }
 }
 

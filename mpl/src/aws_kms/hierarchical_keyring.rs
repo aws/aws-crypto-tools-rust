@@ -280,35 +280,29 @@ impl HierarchicalKeyringBuilder {
         } = self;
 
         let Some(keystore) = key_store else {
-            return Err(Error::new(
-                ErrorKind::Validation,
-                "HierarchicalKeyring: a key store is required",
-            ));
+            return Err(Error::new(ErrorKind::Validation, "a key store is required"));
         };
 
         let Some(ttl) = ttl else {
-            return Err(Error::new(
-                ErrorKind::Validation,
-                "HierarchicalKeyring: a TTL is required",
-            ));
+            return Err(Error::new(ErrorKind::Validation, "a TTL is required"));
         };
         if ttl.is_zero() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "HierarchicalKeyring TTL must be greater than zero",
+                "TTL must be greater than zero",
             ));
         }
 
         if branch_key_id.is_some() && branch_key_id_supplier.is_some() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Cannot initialize keyring with both a branch_key_id and a branch_key_id_supplier",
+                "cannot initialize keyring with both a branch_key_id and a branch_key_id_supplier",
             ));
         }
         if branch_key_id.is_none() && branch_key_id_supplier.is_none() {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Must initialize keyring with either a branch_key_id or a branch_key_id_supplier",
+                "must initialize keyring with either a branch_key_id or a branch_key_id_supplier",
             ));
         }
 
@@ -317,7 +311,7 @@ impl HierarchicalKeyringBuilder {
             None => SharedCmc::new(
                 StormTrackingCmc::builder()
                     .build()
-                    .map_err(|e| Error::wrap("HierarchicalKeyring", e))?,
+                    .map_err(|e| Error::wrap("could not create the default materials cache", e))?,
             ),
         };
 
@@ -327,7 +321,7 @@ impl HierarchicalKeyringBuilder {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "HierarchicalKeyring: storm-tracking grace period ({grace_period:?}) must be less than the cache limit TTL ({ttl:?})",
+                    "storm-tracking grace period ({grace_period:?}) must be less than the cache limit TTL ({ttl:?})",
                 ),
             ));
         }
@@ -342,9 +336,10 @@ impl HierarchicalKeyringBuilder {
         let logical_keystore_name = keystore
             .get_key_store_info()
             .map_err(|e| {
-                Error::new(
+                Error::with_cause(
                     ErrorKind::Validation,
-                    format!("HierarchicalKeyring: get_key_store_info failed: {e}",),
+                    "could not read the key store info",
+                    e,
                 )
             })?
             .logical_keystore_name;
@@ -373,7 +368,7 @@ fn generate_partition_id() -> Result<Vec<u8>, Error> {
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
             ErrorKind::Validation,
-            "HierarchicalKeyring: failed to obtain entropy for partition-id v4 UUID",
+            "failed to obtain entropy for partition-id v4 UUID",
             e,
         )
     })?;
@@ -419,7 +414,7 @@ impl Keyring for HierarchicalKeyring {
             .cache
             .get_cache_entry(&cache_id)
             .await
-            .map_err(|e| Error::wrap("HierarchicalKeyring: cache get_cache_entry failed", e))?;
+            .map_err(|e| Error::wrap("could not get the cache entry", e))?;
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -432,9 +427,7 @@ impl Keyring for HierarchicalKeyring {
                     .keystore
                     .get_active_branch_key(branch_key_id.clone())
                     .await
-                    .map_err(|e| {
-                        Error::wrap("HierarchicalKeyring: get_active_branch_key failed", e)
-                    })?;
+                    .map_err(|e| Error::wrap("could not get the active branch key", e))?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -447,9 +440,7 @@ impl Keyring for HierarchicalKeyring {
                     .cache
                     .put_cache_entry(&cache_id, entry)
                     .await
-                    .map_err(|e| {
-                        Error::wrap("HierarchicalKeyring: cache put_cache_entry failed", e)
-                    })?;
+                    .map_err(|e| Error::wrap("could not put the cache entry", e))?;
 
                 branch_key_wrap::wrap(
                     &bkm,
@@ -491,7 +482,7 @@ impl Keyring for HierarchicalKeyring {
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
                 ErrorKind::InvalidMaterials,
-                "HierarchicalKeyring::on_decrypt: decryption materials already contain a plaintext data key",
+                "decryption materials already contain a plaintext data key",
             ));
         }
 
@@ -537,7 +528,7 @@ impl Keyring for HierarchicalKeyring {
         if collected_errors.is_empty() {
             return Err(Error::new(
                 ErrorKind::NoMatchingDataKey,
-                "HierarchicalKeyring::on_decrypt: no encrypted data key matched.",
+                "no encrypted data key matched",
             ));
         }
 
@@ -553,7 +544,7 @@ impl Keyring for HierarchicalKeyring {
         let kind = Error::common_kind(&collected_errors).unwrap_or(ErrorKind::Cryptographic);
         Err(Error::collection(
             kind,
-            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key",
+            "failed to decrypt any encrypted data key",
             collected_errors,
         ))
     }
@@ -606,7 +597,7 @@ impl HierarchicalKeyring {
         let Some(supplier) = &self.inner.branch_key_id_supplier else {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "HierarchicalKeyring: neither a branch_key_id nor a branch_key_id_supplier is configured",
+                "neither a branch_key_id nor a branch_key_id_supplier is configured",
             ));
         };
 
@@ -640,7 +631,7 @@ impl HierarchicalKeyring {
             return Err(Error::new(
                 ErrorKind::Cryptographic,
                 format!(
-                    "HierarchicalKeyring::on_decrypt: EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",
+                    "EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",
                     ciphertext.len(),
                     CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN,
                 ),
@@ -666,7 +657,7 @@ impl HierarchicalKeyring {
             .cache
             .get_cache_entry(&cache_id)
             .await
-            .map_err(|e| Error::wrap("HierarchicalKeyring: cache get_cache_entry failed", e))?;
+            .map_err(|e| Error::wrap("could not get the cache entry", e))?;
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -678,9 +669,7 @@ impl HierarchicalKeyring {
                     .keystore
                     .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
                     .await
-                    .map_err(|e| {
-                        Error::wrap("HierarchicalKeyring: get_branch_key_version failed", e)
-                    })?;
+                    .map_err(|e| Error::wrap("could not get the branch key version", e))?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -693,9 +682,7 @@ impl HierarchicalKeyring {
                     .cache
                     .put_cache_entry(&cache_id, entry)
                     .await
-                    .map_err(|e| {
-                        Error::wrap("HierarchicalKeyring: cache put_cache_entry failed", e)
-                    })?;
+                    .map_err(|e| Error::wrap("could not put the cache entry", e))?;
                 bkm
             }
         };
@@ -711,7 +698,7 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, E
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
             ErrorKind::Cryptographic,
-            "HierarchicalKeyring: failed to obtain entropy for random plaintext data key",
+            "failed to obtain entropy for random plaintext data key",
             e,
         )
     })?;
@@ -736,7 +723,7 @@ fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Er
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
         _ => Err(Error::new(
             ErrorKind::Internal,
-            "HierarchicalKeyring: cache entry has wrong materials kind (expected BranchKey)",
+            "cache entry has wrong materials kind (expected BranchKey)",
         )),
     }
 }

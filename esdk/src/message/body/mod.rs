@@ -20,7 +20,7 @@ pub(crate) fn get_alg_suite(info: &AlgorithmSuite) -> Result<AesGcm, Error> {
         24 => Ok(AesGcm::Aes192Gcm),
         32 => Ok(AesGcm::Aes256Gcm),
         other => Err(val_err(format!(
-            "Unsupported AES-GCM key length {other} in algorithm suite"
+            "unsupported AES-GCM key length {other} in algorithm suite"
         ))),
     }
 }

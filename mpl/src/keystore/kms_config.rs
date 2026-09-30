@@ -33,7 +33,7 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, Error> {
         return Err(Error::new(
             ErrorKind::Validation,
             format!(
-                "Malformed ARN: expected 6 colon-separated segments starting with 'arn', got: {arn}"
+                "malformed ARN: expected 6 colon-separated segments starting with 'arn', got: {arn}"
             ),
         ));
     }
@@ -41,7 +41,7 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, Error> {
         Error::new(
             ErrorKind::Validation,
             format!(
-                "Malformed ARN: resource segment must contain '/', got: {}",
+                "malformed ARN: resource segment must contain '/', got: {}",
                 segments[5]
             ),
         )

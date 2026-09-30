@@ -96,7 +96,7 @@ impl EncryptionContext {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "Encryption context entry count {} exceeds u16::MAX",
+                    "encryption context entry count {} exceeds u16::MAX",
                     self.0.len()
                 ),
             ));
@@ -108,7 +108,7 @@ impl EncryptionContext {
                 return Err(Error::new(
                     ErrorKind::Validation,
                     format!(
-                        "Encryption context key length {} exceeds u16::MAX",
+                        "encryption context key length {} exceeds u16::MAX",
                         key.len()
                     ),
                 ));
@@ -120,7 +120,7 @@ impl EncryptionContext {
                 return Err(Error::new(
                     ErrorKind::Validation,
                     format!(
-                        "Encryption context value length {} exceeds u16::MAX",
+                        "encryption context value length {} exceeds u16::MAX",
                         value.len()
                     ),
                 ));
@@ -145,7 +145,7 @@ impl EncryptionContext {
         if bytes.len() < 2 {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Insufficient bytes for count",
+                "insufficient bytes for count",
             ));
         }
 
@@ -153,7 +153,7 @@ impl EncryptionContext {
         if count == 0 {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "Key-value pair count must be greater than 0",
+                "key-value pair count must be greater than 0",
             ));
         }
 
@@ -164,7 +164,7 @@ impl EncryptionContext {
             if offset + 2 > bytes.len() {
                 return Err(Error::new(
                     ErrorKind::Validation,
-                    "Insufficient bytes for key length",
+                    "insufficient bytes for key length",
                 ));
             }
             let key_len = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
@@ -174,7 +174,7 @@ impl EncryptionContext {
             if key_end > bytes.len() {
                 return Err(Error::new(
                     ErrorKind::Validation,
-                    "Insufficient bytes for key",
+                    "insufficient bytes for key",
                 ));
             }
             let key = utf8(&bytes[offset..key_end], "key")?;
@@ -183,7 +183,7 @@ impl EncryptionContext {
             if offset + 2 > bytes.len() {
                 return Err(Error::new(
                     ErrorKind::Validation,
-                    "Insufficient bytes for value length",
+                    "insufficient bytes for value length",
                 ));
             }
             let val_len = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
@@ -193,7 +193,7 @@ impl EncryptionContext {
             if val_end > bytes.len() {
                 return Err(Error::new(
                     ErrorKind::Validation,
-                    "Insufficient bytes for value",
+                    "insufficient bytes for value",
                 ));
             }
             let value = utf8(&bytes[offset..val_end], "value")?;
@@ -203,13 +203,13 @@ impl EncryptionContext {
                 if key == *previous {
                     return Err(Error::new(
                         ErrorKind::Validation,
-                        format!("Duplicate key in encryption context: {key:?}"),
+                        format!("duplicate key in encryption context: {key:?}"),
                     ));
                 }
                 if key < *previous {
                     return Err(Error::new(
                         ErrorKind::Validation,
-                        "Encryption context keys are not in ascending order",
+                        "encryption context keys are not in ascending order",
                     ));
                 }
             }
@@ -220,7 +220,7 @@ impl EncryptionContext {
             return Err(Error::new(
                 ErrorKind::Validation,
                 format!(
-                    "Trailing bytes after deserialization: {} byte(s) left over",
+                    "trailing bytes after deserialization: {} byte(s) left over",
                     bytes.len() - offset
                 ),
             ));
@@ -236,7 +236,7 @@ fn utf8(bytes: &[u8], field: &str) -> Result<String, Error> {
         Ok(s) => Ok(s.to_owned()),
         Err(e) => Err(Error::with_cause(
             ErrorKind::Validation,
-            format!("Encryption context {field} is not valid UTF-8"),
+            format!("encryption context {field} is not valid UTF-8"),
             e,
         )),
     }

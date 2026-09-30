@@ -62,7 +62,7 @@ fn test_duplicate_key_rejected_on_deserialize() {
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message().contains("Duplicate key"));
+    assert!(result.unwrap_err().message().contains("duplicate key"));
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn test_deserialize_insufficient_bytes_for_count() {
         result
             .unwrap_err()
             .message()
-            .contains("Insufficient bytes for count")
+            .contains("insufficient bytes for count")
     );
 }
 
@@ -181,7 +181,7 @@ fn test_deserialize_insufficient_bytes_for_key_length() {
         result
             .unwrap_err()
             .message()
-            .contains("Insufficient bytes for key length")
+            .contains("insufficient bytes for key length")
     );
 }
 
@@ -199,7 +199,7 @@ fn test_deserialize_insufficient_bytes_for_key() {
         result
             .unwrap_err()
             .message()
-            .contains("Insufficient bytes for key")
+            .contains("insufficient bytes for key")
     );
 }
 
@@ -217,7 +217,7 @@ fn test_deserialize_insufficient_bytes_for_value_length() {
         result
             .unwrap_err()
             .message()
-            .contains("Insufficient bytes for value length")
+            .contains("insufficient bytes for value length")
     );
 }
 
@@ -237,7 +237,7 @@ fn test_deserialize_insufficient_bytes_for_value() {
         result
             .unwrap_err()
             .message()
-            .contains("Insufficient bytes for value")
+            .contains("insufficient bytes for value")
     );
 }
 
@@ -443,7 +443,7 @@ fn test_deserialize_rejects_trailing_bytes() {
 
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message().contains("Trailing bytes"));
+    assert!(result.unwrap_err().message().contains("trailing bytes"));
 }
 
 #[test]
@@ -458,7 +458,7 @@ fn test_deserialize_rejects_trailing_bytes_after_multi_entry() {
     ];
     let result = EncryptionContext::deserialize(&bytes);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message().contains("Trailing bytes"));
+    assert!(result.unwrap_err().message().contains("trailing bytes"));
 }
 
 // ============================================================================

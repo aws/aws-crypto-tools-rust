@@ -50,7 +50,7 @@ pub(crate) fn read_msg_format_version(
         //# and [types](../data-format/message-header.md#type)
         //# and fail with a more specific error message.
         0x41 => ser_err(
-            "Input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
+            "input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
         ),
         _ => ser_err(&format!(
             "unsupported message format version: {version:#04x}"
@@ -266,7 +266,7 @@ pub(crate) fn read_esdk_suite_id(
     let suite = algorithm_suite_from_bytes(esdk_suite_id_bytes).map_err(|e| {
         val_err_with_cause(
             format!(
-                "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                "unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
                 esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]
             ),
             e,

@@ -190,7 +190,7 @@ async fn test_signature_input_is_header_plus_body() {
         "header tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered header → Validation error (header auth tag mismatch).
+    // Valid ct decrypts; a tampered header fails the header auth tag with a Validation error.
     assert!(
         decrypt_ciphertext_result(&valid_ct).await.is_ok(),
         "valid ct must decrypt"
@@ -214,7 +214,7 @@ async fn test_signature_input_is_header_plus_body() {
         "body tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered body → Cryptographic error (AES-GCM auth failure).
+    // Valid ct decrypts; a tampered body fails AES-GCM authentication with a Cryptographic error.
     assert_eq!(
         decrypt_ciphertext_result(&tampered_body)
             .await

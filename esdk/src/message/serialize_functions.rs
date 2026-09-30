@@ -14,9 +14,9 @@ use crate::types::{SafeRead, SafeWrite};
 fn ser_io(e: std::io::Error) -> Error {
     match e.kind() {
         std::io::ErrorKind::UnexpectedEof => {
-            err_with_cause(ErrorKind::Serialization, "Unexpected end of data", e)
+            err_with_cause(ErrorKind::Serialization, "unexpected end of data", e)
         }
-        _ => err_with_cause(ErrorKind::Serialization, "IO Error", e),
+        _ => err_with_cause(ErrorKind::Serialization, "IO error", e),
     }
 }
 
@@ -59,7 +59,7 @@ pub(crate) fn read_up_to_peek(
 
 #[track_caller]
 fn ser_utf8(item: std::string::FromUtf8Error) -> Error {
-    err_with_cause(ErrorKind::Serialization, "UTF8 Decode Error", item)
+    err_with_cause(ErrorKind::Serialization, "UTF-8 decode error", item)
 }
 
 pub(crate) fn write_bytes(w: &mut dyn SafeWrite, data: &[u8]) -> Result<(), Error> {

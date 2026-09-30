@@ -1200,8 +1200,8 @@ fn wrap_two_calls_produce_distinct_ciphertexts() {
 
 #[test]
 fn unwrap_too_short_ciphertext_returns_error() {
-    // A ciphertext shorter than the fixed 60-byte overhead cannot possibly
-    // hold the salt+iv+version+tag layout. Unwrap must fail with Cryptographic.
+    // A ciphertext shorter than the fixed 60-byte overhead cannot hold the salt+iv+version+tag layout,
+    // so unwrap fails with Cryptographic.
     let materials = fixture_materials_empty_ec();
     let too_short = vec![0u8; 32];
 
@@ -1628,9 +1628,7 @@ mod onencrypt {
         };
         assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
 
-        // The keystore failure is attached as the cause, not merely formatted
-        // into the message, so a caller can recover the originating
-        // `Error` by type instead of parsing text.
+        // A caller can recover the keystore's `Error` by type from the source.
         let cause = err
             .source()
             .expect("the keystore failure must be attached as the cause");
@@ -1948,8 +1946,10 @@ mod ondecrypt {
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind(), ErrorKind::Cryptographic);
         assert!(
-            err.to_string().contains("ciphertext too short"),
-            "the rendered error must surface the collected per-EDK error; got: {err}",
+            err.collected()
+                .iter()
+                .any(|e| e.message().contains("ciphertext too short")),
+            "the collected per-EDK error must surface the failure; got: {err:?}",
         );
 
         // Exactly one candidate EDK failed, so that failure is attached as the
@@ -2003,10 +2003,15 @@ mod ondecrypt {
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert_eq!(err.kind(), ErrorKind::Cryptographic);
 
-        let rendered = err.to_string();
         assert!(
-            rendered.contains("4 bytes") && rendered.contains("8 bytes"),
-            "the aggregate must surface every per-EDK error; got: {rendered}",
+            err.collected()
+                .iter()
+                .any(|e| e.message().contains("4 bytes"))
+                && err
+                    .collected()
+                    .iter()
+                    .any(|e| e.message().contains("8 bytes")),
+            "the aggregate must surface every per-EDK error; got: {err:?}",
         );
 
         // The collected failures stay typed, not merely formatted into the
@@ -2019,7 +2024,7 @@ mod ondecrypt {
             2,
             "both candidate EDK failures must be collected; got: {collected:?}",
         );
-        for per_edk in &collected {
+        for per_edk in collected {
             assert_eq!(per_edk.kind(), ErrorKind::Cryptographic);
             assert!(
                 per_edk.message().contains("ciphertext too short"),
@@ -2118,11 +2123,12 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
         assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
-        // The per-attempt text is rendered by Display from `collected`, not
-        // baked into `message`, so the assertion reads the rendered form.
+        // Each attempt's failure is in `collected()`, not in the message.
         assert!(
-            err.to_string().contains("get_branch_key_version failed"),
-            "the rendered error must surface the keystore failure; got: {err}",
+            err.collected()
+                .iter()
+                .any(|e| e.message().contains("could not get the branch key version")),
+            "the collected per-EDK failure must surface the keystore failure; got: {err:?}",
         );
 
         // One candidate EDK, so on_decrypt attaches that per-EDK failure as

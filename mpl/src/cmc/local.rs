@@ -112,10 +112,11 @@ impl LocalCmc {
     /// Number of currently stored entries. Useful for tests asserting
     /// capacity invariants.
     pub fn len(&self) -> Result<usize, Error> {
-        let inner =
-            self.inner.store.lock().map_err(|e| {
-                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
-            })?;
+        let inner = self
+            .inner
+            .store
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         Ok(inner.as_ref().map_or(0, LruCache::len))
     }
 
@@ -209,7 +210,7 @@ impl LocalCmcBuilder {
         let Some(entry_capacity) = self.entry_capacity else {
             return Err(Error::new(
                 ErrorKind::Validation,
-                "LocalCmc: an entry capacity is required",
+                "an entry capacity is required",
             ));
         };
         Ok(LocalCmc::with_clock(
@@ -224,10 +225,11 @@ impl LocalCmcBuilder {
 #[async_trait]
 impl Cmc for LocalCmc {
     async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
-        let mut inner =
-            self.inner.store.lock().map_err(|e| {
-                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
-            })?;
+        let mut inner = self
+            .inner
+            .store
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             // Zero-capacity cache: never store. Silently drop the entry so
             // the post-condition `len == 0 <= entry_capacity` holds.
@@ -241,10 +243,11 @@ impl Cmc for LocalCmc {
     }
 
     async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
-        let mut inner =
-            self.inner.store.lock().map_err(|e| {
-                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
-            })?;
+        let mut inner = self
+            .inner
+            .store
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             return Ok(None);
         };
@@ -270,10 +273,11 @@ impl Cmc for LocalCmc {
     }
 
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
-        let mut inner =
-            self.inner.store.lock().map_err(|e| {
-                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
-            })?;
+        let mut inner = self
+            .inner
+            .store
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             return Ok(());
         };

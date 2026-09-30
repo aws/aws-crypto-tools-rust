@@ -80,10 +80,8 @@ pub fn compute_aad(
 /// Parse a UUID in canonical hyphenated form (8-4-4-4-12) into its 16 raw
 /// bytes.
 ///
-/// This parse is the validation gate on the branch-key-version string.
-/// Returns `Error` rather than panicking so a caller that hands us a
-/// malformed string (e.g. a corrupted keystore record or a fuzzer) gets a
-/// clean error instead of a process abort.
+/// This parse is the validation gate on the branch-key-version string,
+/// so a malformed string, such as one from a corrupted keystore record, returns an error.
 ///
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also
 /// accepts the 32-character simple form as well as braced and URN forms,
@@ -92,13 +90,14 @@ fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], Error> {
     if s.len() != 36 {
         return Err(Error::new(
             ErrorKind::Validation,
-            format!("Branch key version is not a valid 36-char UUID: {s}",),
+            format!("branch key version is not a valid 36-char UUID: {s}",),
         ));
     }
     let uuid = Uuid::parse_str(s).map_err(|e| {
-        Error::new(
+        Error::with_cause(
             ErrorKind::Validation,
-            format!("Branch key version is not a valid UUID: {s}: {e}"),
+            format!("branch key version is not a valid UUID: {s}"),
+            e,
         )
     })?;
     Ok(*uuid.as_bytes())
@@ -130,7 +129,7 @@ fn derive_branch_key(
     kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|e| {
         Error::with_cause(
             ErrorKind::Cryptographic,
-            "Branch key wrap: KDF in Counter Mode with HMAC SHA256 derivation failed",
+            "KDF in Counter Mode with HMAC SHA256 derivation failed",
             e,
         )
     })?;
@@ -158,7 +157,7 @@ pub fn wrap(
     generate_random_bytes(&mut salt).map_err(|e| {
         Error::with_cause(
             ErrorKind::Cryptographic,
-            "Branch key wrap: failed to obtain entropy for salt",
+            "failed to obtain entropy for salt",
             e,
         )
     })?;
@@ -168,7 +167,7 @@ pub fn wrap(
     generate_random_bytes(&mut iv).map_err(|e| {
         Error::with_cause(
             ErrorKind::Cryptographic,
-            "Branch key wrap: failed to obtain entropy for IV",
+            "failed to obtain entropy for IV",
             e,
         )
     })?;
@@ -205,13 +204,7 @@ pub fn wrap(
         &aad_bytes,
         &mut output,
     )
-    .map_err(|e| {
-        Error::with_cause(
-            ErrorKind::Cryptographic,
-            "Branch key wrap: AES-256-GCM encrypt failed",
-            e,
-        )
-    })?;
+    .map_err(|e| Error::with_cause(ErrorKind::Cryptographic, "AES-256-GCM encrypt failed", e))?;
 
     debug_assert_eq!(
         output.len() - pre_encrypt_len,
@@ -244,7 +237,7 @@ pub fn unwrap(
         return Err(Error::new(
             ErrorKind::Cryptographic,
             format!(
-                "Branch key unwrap: ciphertext too short: {} < {FIXED_OVERHEAD_LEN}",
+                "ciphertext too short: {} < {FIXED_OVERHEAD_LEN}",
                 ciphertext.len(),
             ),
         ));
@@ -289,13 +282,7 @@ pub fn unwrap(
         &aad_bytes,
         &mut plaintext,
     )
-    .map_err(|e| {
-        Error::with_cause(
-            ErrorKind::Cryptographic,
-            "Branch key unwrap: AES-256-GCM decrypt failed",
-            e,
-        )
-    })?;
+    .map_err(|e| Error::with_cause(ErrorKind::Cryptographic, "AES-256-GCM decrypt failed", e))?;
 
     // Each fallible step (deserialization, KDF, AAD construction, AES decrypt)
     // uses `?` to propagate; reaching this Ok requires every step to have

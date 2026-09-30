@@ -94,7 +94,7 @@ async fn test_encrypt_decrypt_short() {
         let cipher_len: usize = esdk_ciphertext.len();
         // Truncate the last byte of the ciphertext. For the default signing suite this
         // chops off the final byte of the footer signature, so footer deserialization
-        // fails with UnexpectedEof inside read_footer (mapped to Serialization error by ser_io).
+        // fails with UnexpectedEof inside read_footer, which ser_io maps to a Serialization error.
         let decrypt_input = DecryptInput::builder_from_encrypt(&encrypt_input)
             .ciphertext(&esdk_ciphertext[..cipher_len - 1])
             .build()

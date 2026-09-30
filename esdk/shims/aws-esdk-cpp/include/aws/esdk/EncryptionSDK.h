@@ -87,6 +87,18 @@ namespace Esdk {
 //
 /// What went wrong, as a caller would act on it.
 /// The same kinds, under the same names, as ESDK Rust's `ErrorKind`.
+/// Each kind's exception class says when it occurs and what to do.
+///
+/// Check retryable() first:
+/// a retryable error might succeed if the same call is made again later.
+/// Then decide from the kind.
+/// what() says which call failed, for logs.
+///
+/// Later releases can add kinds, so code that switches on the kind needs a default case.
+///
+/// Messages are for people, not code.
+/// Their text can change in any release, including a minor or patch release.
+/// Decide from the exception type, kind(), and retryable(), never from what().
 enum class ErrorKind : std::uint8_t {
     Validation = 0,
     Serialization = 1,
@@ -129,89 +141,117 @@ private:
 //# error type, so a target that handles only the base type is unaffected when a
 //# kind is added.
 
-/// An input or configuration value is invalid.
-/// No cryptography was attempted.
+/// An input or configuration value is invalid,
+/// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
+///
+/// Fix the input; the same call cannot succeed.
 class ValidationException : public AwsEncryptionSdkException {
 public:
     explicit ValidationException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::Validation, retryable, msg) {}
 };
 
-/// The message bytes are malformed and could not be read or written.
+/// The bytes are not a well-formed encrypted message,
+/// for example truncated input, an unsupported message version, or data after the footer.
+///
+/// Treat the message as corrupt; retrying cannot succeed.
 class SerializationException : public AwsEncryptionSdkException {
 public:
     explicit SerializationException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::Serialization, retryable, msg) {}
 };
 
-/// A cryptographic check failed, such as an authentication tag or a signature.
+/// A cryptographic check failed,
+/// for example an AES-GCM authentication tag or a message signature did not verify.
+///
+/// Treat the message as corrupt or modified; retrying cannot succeed.
 class CryptographicException : public AwsEncryptionSdkException {
 public:
     explicit CryptographicException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::Cryptographic, retryable, msg) {}
 };
 
-/// The materials a keyring or CMM returned are inconsistent with each other
-/// or with the algorithm suite.
+/// A keyring or CMM returned materials inconsistent with each other or with the algorithm suite,
+/// for example no plaintext data key after encryption, or a signing key for a suite that does not sign.
+///
+/// Usually a bug in a custom keyring or CMM.
 class InvalidMaterialsException : public AwsEncryptionSdkException {
 public:
     explicit InvalidMaterialsException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::InvalidMaterials, retryable, msg) {}
 };
 
-/// A required encryption context key is missing, or a caller-supplied
-/// encryption context value differs from the message's.
+/// An encryption context does not match,
+/// for example a required key is missing, or a value passed to decrypt differs from the message's.
+///
+/// Check the encryption context passed to the call.
 class EncryptionContextMismatchException : public AwsEncryptionSdkException {
 public:
     explicit EncryptionContextMismatchException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::EncryptionContextMismatch, retryable, msg) {}
 };
 
-/// No configured key wrapped any of the message's encrypted data keys.
+/// None of the configured keys wrapped any of the message's encrypted data keys,
+/// for example when decrypting with a keyring that did not encrypt the message.
+///
+/// Decrypt with a keyring that has one of the message's keys.
 class NoMatchingDataKeyException : public AwsEncryptionSdkException {
 public:
     explicit NoMatchingDataKeyException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, retryable, msg) {}
 };
 
-/// A remote service denied access to a resource.
+/// AWS KMS or DynamoDB denied access,
+/// for example because of missing IAM permissions or expired credentials.
+///
+/// Fix the permissions or credentials.
 class RemoteAccessDeniedException : public AwsEncryptionSdkException {
 public:
     explicit RemoteAccessDeniedException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::RemoteAccessDenied, retryable, msg) {}
 };
 
-/// A remote resource, such as a KMS key, DynamoDB table, or branch key,
-/// does not exist.
+/// A KMS key, DynamoDB table, or branch key does not exist.
+///
+/// Fix the configuration that names the resource.
 class RemoteResourceNotFoundException : public AwsEncryptionSdkException {
 public:
     explicit RemoteResourceNotFoundException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::RemoteResourceNotFound, retryable, msg) {}
 };
 
-/// A remote service throttled the request.
+/// AWS KMS or DynamoDB throttled the request.
+///
+/// Retryable: back off and try again.
 class RemoteThrottledException : public AwsEncryptionSdkException {
 public:
     explicit RemoteThrottledException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::RemoteThrottled, retryable, msg) {}
 };
 
-/// A request to a remote service could not be sent, or its response did not
-/// arrive.
+/// A request to a remote service was not sent, or its response did not arrive,
+/// for example because of a network error, a timeout, or missing credentials or region.
+///
+/// Retryable for a network error or timeout; check retryable().
 class RemoteTransportException : public AwsEncryptionSdkException {
 public:
     explicit RemoteTransportException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::RemoteTransport, retryable, msg) {}
 };
 
-/// Any other failure reported by, or read from, a remote service.
+/// Any other failure from a remote service,
+/// for example a KMS IncorrectKeyException, a KMS internal error, or a malformed key store record.
+///
+/// A server-side failure is retryable.
 class RemoteException : public AwsEncryptionSdkException {
 public:
     explicit RemoteException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::Remote, retryable, msg) {}
 };
 
-/// An internal invariant was violated.
+/// An internal invariant was violated, for example a poisoned lock.
+///
+/// A bug; report it.
 class InternalException : public AwsEncryptionSdkException {
 public:
     explicit InternalException(const std::string& msg, bool retryable = false)
