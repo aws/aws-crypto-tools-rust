@@ -36,13 +36,14 @@ use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, MessageUsage, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
-    BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId,
+    AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 
 // Fixtures
 
-const SUITE: EsdkAlgorithmSuiteId = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+const SUITE: AlgorithmSuiteId =
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey);
 
 /// TTL offset for entries that should be TTL-expired against `FROZEN_NOW_OFFSET`.
 /// `creation + TTL_EXPIRED_OFFSET < creation + FROZEN_NOW_OFFSET` so any entry
@@ -65,7 +66,7 @@ const STANDARD_TTL: Duration = Duration::from_secs(3600);
 
 fn make_encryption_materials() -> EncryptionMaterials {
     EncryptionMaterials::new(
-        SUITE.into(),
+        SUITE,
         vec![],
         EncryptionContext::new(),
         BTreeSet::new(),
@@ -78,7 +79,7 @@ fn make_encryption_materials() -> EncryptionMaterials {
 
 fn make_decryption_materials() -> DecryptionMaterials {
     DecryptionMaterials::new(
-        SUITE.into(),
+        SUITE,
         EncryptionContext::new(),
         BTreeSet::new(),
         None,

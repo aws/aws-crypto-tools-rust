@@ -89,8 +89,8 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     // pinned error message identifying the mechanism.
     assert_eq!(
         err.kind(),
-        ErrorKind::MplError,
-        "expected MplError, got: {:?}",
+        ErrorKind::EncryptionContextMismatch,
+        "expected EncryptionContextMismatch, got: {:?}",
         err.kind()
     );
     let inner = err.to_string();

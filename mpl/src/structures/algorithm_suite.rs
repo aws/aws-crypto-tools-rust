@@ -9,10 +9,9 @@ use std::fmt;
 // Algorithm suite ID enum
 // ============================================================================
 
-/// Union Algorithm Suite ENUM across all supported formats.
+/// Union Algorithm Suite enum across all supported formats.
 ///
-/// Each variant tags a format and carries that format's Algorithm Suite ENUM,
-/// matching the spec's `Format.FormatENUM` notation.
+/// Each variant tags a format and carries that format's Algorithm Suite ENUM.
 /// For example, `ESDK.ALG_AES_256_GCM_IV12_TAG16_NO_KDF` becomes
 /// `AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)`.
 /// Only the ESDK format is implemented.
@@ -33,7 +32,7 @@ impl AlgorithmSuiteId {
 
     /// Returns the 2-byte algorithm suite identifier.
     ///
-    /// Identifiers are unique within a format, not across formats.
+    /// The identifier is unique across the suites of every format.
     pub const fn id_bytes(self) -> [u8; 2] {
         self.specification().id
     }
@@ -302,8 +301,8 @@ impl EsdkAlgorithmSuiteId {
 
     /// Returns the on-wire 2-byte algorithm suite identifier.
     ///
-    /// The byte pair is unique across the ESDK suites. Reserved
-    /// value `00 00` is never produced.
+    /// The identifier is unique across the suites of every format.
+    /// The reserved value `00 00` is never produced.
     //
     pub const fn id_bytes(self) -> [u8; 2] {
         self.specification().id

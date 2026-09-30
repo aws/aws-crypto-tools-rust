@@ -9,6 +9,7 @@ mod test_helpers;
 
 use aws_esdk::*;
 use fixtures::*;
+use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -39,7 +40,7 @@ async fn test_decrypt_output_includes_encryption_context() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
-    let suite = EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
+    let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
     let enc_input = EncryptInput::builder()
         .plaintext(b"suite test")
         .keyring(keyring.clone())
@@ -74,8 +75,8 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     let enc_input = EncryptInput::builder()
         .plaintext(&pt)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .frame_length(FrameLength::new(10).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .frame_length(NonZeroU32::new(10).unwrap())
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -97,13 +98,13 @@ async fn test_decrypt_no_unauthenticated_data_released() {
 
     //= spec/client-apis/decrypt.md#authenticated-data
     //= type=test
-    //= reason=Untampered ct decrypts; tampered body auth tag → CryptographicError with no DecryptOutput, so unauthenticated plaintext is never released
+    //= reason=Untampered ct decrypts; tampered body auth tag → Cryptographic error with no DecryptOutput, so unauthenticated plaintext is never released
     //# This operation MUST NOT release any unauthenticated plaintext or unauthenticated associated data.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::CryptographicError,
-        "tampered body auth tag must produce CryptographicError, no plaintext"
+        ErrorKind::Cryptographic,
+        "tampered body auth tag must produce Cryptographic error, no plaintext"
     );
 }
 
@@ -116,8 +117,8 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(4096).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .frame_length(NonZeroU32::new(4096).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -152,7 +153,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
             .await
             .unwrap_err()
             .kind(),
-        ErrorKind::Esdk,
-        "tampered signature must produce Esdk error"
+        ErrorKind::Cryptographic,
+        "tampered signature must produce a Cryptographic error"
     );
 }

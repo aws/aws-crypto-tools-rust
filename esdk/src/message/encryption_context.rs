@@ -3,12 +3,9 @@
 
 //! Encryption context serialization for message header and AAD.
 
-use std::backtrace::Backtrace;
-use std::sync::Arc;
-
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
 use super::{Error, ser_err};
-use crate::error::ErrorKind;
+use crate::error::{ErrorKind, err_with_cause};
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 
 /// Read the header's AAD encryption context sub-section.
@@ -18,11 +15,9 @@ pub(crate) fn read_encryption_context(
 ) -> Result<EncryptionContext, Error> {
     let len = usize::from(read_u16(r, raw)?);
     let bytes = read_vec(r, len, raw)?;
-    EncryptionContext::deserialize(&bytes).map_err(|e| Error {
-        kind: ErrorKind::SerializationError,
-        message: format!("Invalid encryption context: {}", e.message),
-        backtrace: Arc::new(Backtrace::capture()),
-        cause: Some(Arc::new(e)),
+    EncryptionContext::deserialize(&bytes).map_err(|e| {
+        let message = format!("Invalid encryption context: {}", e.message());
+        err_with_cause(ErrorKind::Serialization, message, e)
     })
 }
 

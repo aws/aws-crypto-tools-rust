@@ -5,7 +5,7 @@
 
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
 use crate::keystore::config::KmsConfiguration;
-use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
+use crate::{Error, ErrorKind};
 
 /// The parsed parts of an AWS ARN.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,19 +27,19 @@ pub struct ArnParts {
 /// Parses an ARN string into its component parts.
 ///
 /// Expected format: `arn:<partition>:<service>:<region>:<account>:<resourceType>/<resource>`
-pub fn parse_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
+pub fn parse_arn(arn: &str) -> Result<ArnParts, Error> {
     let segments: Vec<&str> = arn.splitn(6, ':').collect();
     if segments.len() != 6 || segments[0] != "arn" {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        return Err(Error::new(
+            ErrorKind::Validation,
             format!(
                 "Malformed ARN: expected 6 colon-separated segments starting with 'arn', got: {arn}"
             ),
         ));
     }
     let (resource_type, resource) = segments[5].split_once('/').ok_or_else(|| {
-        KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        Error::new(
+            ErrorKind::Validation,
             format!(
                 "Malformed ARN: resource segment must contain '/', got: {}",
                 segments[5]
@@ -57,19 +57,19 @@ pub fn parse_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
 }
 
 /// Validates that an ARN is a usable AWS KMS Key ARN per the spec.
-pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, KeystoreError> {
+pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, Error> {
     let parts = parse_arn(arn)?;
 
     if parts.service != "kms" {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        return Err(Error::new(
+            ErrorKind::Validation,
             format!("ARN service must be 'kms', got: {}", parts.service),
         ));
     }
 
     if parts.resource_type == "alias" {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        return Err(Error::new(
+            ErrorKind::Validation,
             format!("KMS Key ARN must not be an alias: {arn}"),
         ));
     }
@@ -94,7 +94,7 @@ pub fn is_arn_compatible(config: &KmsConfiguration, stored_arn: &str) -> bool {
 
 impl KmsConfiguration {
     /// Validates the configuration's ARN (if any) per the branch-key-store spec.
-    pub fn validate(&self) -> Result<(), KeystoreError> {
+    pub fn validate(&self) -> Result<(), Error> {
         match self {
             KmsConfiguration::KmsKeyArn(a) | KmsConfiguration::KmsMrKeyArn(a) => {
                 validate_kms_key_arn(a).map(|_| ())

@@ -48,6 +48,8 @@ fn unset_policy() -> ffi::OptCommitmentPolicy {
 fn set_policy(value: P) -> ffi::OptCommitmentPolicy {
     ffi::OptCommitmentPolicy { set: true, value }
 }
+const ZERO_DURATION: ffi::Duration = ffi::Duration { secs: 0, nanos: 0 };
+
 fn unset_cache() -> ffi::OptCacheType {
     ffi::OptCacheType {
         set: false,
@@ -55,12 +57,11 @@ fn unset_cache() -> ffi::OptCacheType {
             kind: ffi::CacheKind { repr: 0 },
             entry_capacity: 0,
             entry_pruning_tail_size: 0,
-            grace_period: 0,
-            grace_interval: 0,
+            grace_period: ZERO_DURATION,
+            grace_interval: ZERO_DURATION,
             fan_out: 0,
-            inflight_ttl: 0,
-            sleep_milli: 0,
-            time_units: ffi::TimeUnits::Unset,
+            inflight_ttl: ZERO_DURATION,
+            sleep: ZERO_DURATION,
             shared: std::ptr::null(),
         },
     }
@@ -203,8 +204,8 @@ fn alg_id_target_to_core_rejects_unknown() {
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
-// Catches a suite the core adds without a C++ mapping:
-// the new id falls through to the error arm of `alg_id_core_to_target`.
+// Catches if ESDK Rust adds a suite but C++ doesn't.
+// The new id falls through to the error arm of `alg_id_core_to_target`.
 #[test]
 fn alg_id_core_to_target_maps_every_core_variant() {
     for &core in super::EsdkAlgorithmSuiteId::ALL {
@@ -387,88 +388,75 @@ fn make_kms_config_rejects_unknown_type() {
 }
 
 #[test]
-fn classify_core_error_maps_each_kind() {
-    use aws_esdk::ErrorKind;
-    // ErrorKind::Esdk has no explicit arm; it maps through the wildcard.
+fn classify_core_error_maps_each_kind_to_the_same_name() {
+    use aws_esdk::ErrorKind as E;
+    use ffi::ShimErrorKind as S;
     let cases = [
-        (ErrorKind::Esdk, ffi::ShimErrorKind::Esdk),
-        (
-            ErrorKind::SerializationError,
-            ffi::ShimErrorKind::SerializationError,
-        ),
-        (
-            ErrorKind::CryptographicError,
-            ffi::ShimErrorKind::CryptographicError,
-        ),
-        (ErrorKind::MplError, ffi::ShimErrorKind::MplError),
-        (
-            ErrorKind::ValidationError,
-            ffi::ShimErrorKind::ValidationError,
-        ),
-        (ErrorKind::KeystoreError, ffi::ShimErrorKind::MplError),
-        (ErrorKind::CacheError, ffi::ShimErrorKind::MplError),
+        (E::Validation, S::Validation),
+        (E::Serialization, S::Serialization),
+        (E::Cryptographic, S::Cryptographic),
+        (E::InvalidMaterials, S::InvalidMaterials),
+        (E::EncryptionContextMismatch, S::EncryptionContextMismatch),
+        (E::NoMatchingDataKey, S::NoMatchingDataKey),
+        (E::RemoteAccessDenied, S::RemoteAccessDenied),
+        (E::RemoteResourceNotFound, S::RemoteResourceNotFound),
+        (E::RemoteThrottled, S::RemoteThrottled),
+        (E::RemoteTransport, S::RemoteTransport),
+        (E::Remote, S::Remote),
+        (E::Internal, S::Internal),
     ];
     for (kind, expected) in cases {
         assert_eq!(
-            classify_core_error(&kind).repr,
+            classify_core_error(kind).repr,
             expected.repr,
             "for {kind:?}"
         );
     }
 }
 
-/// The `{kind}{SEP}{mpl_kind}{SEP}` prefix the facade decodes.
-fn err_prefix(kind: ffi::ShimErrorKind, mpl_kind: Option<ffi::MplErrorKind>) -> String {
-    let mpl_kind = mpl_kind.map(|k| k.repr.to_string()).unwrap_or_default();
+/// The `{kind}{SEP}{retryable}{SEP}` prefix the facade decodes.
+fn err_prefix(kind: ffi::ShimErrorKind, retryable: bool) -> String {
     format!(
-        "{}{ERROR_KIND_SEPARATOR}{mpl_kind}{ERROR_KIND_SEPARATOR}",
-        kind.repr
+        "{}{ERROR_KIND_SEPARATOR}{}{ERROR_KIND_SEPARATOR}",
+        kind.repr,
+        u8::from(retryable)
     )
 }
 
 #[test]
-fn core_err_encodes_the_kind_of_the_wrapped_mpl_error() {
-    use aws_crypto_mpl::keystore::KeystoreErrorKind;
+fn core_err_encodes_an_mpl_errors_kind_and_retryability() {
+    use aws_crypto_mpl::{Error as MplError, ErrorKind as MplErrorKind};
     let cases = [
         (
-            aws_esdk::Error::from(MaterialsError::no_matching_data_key("x")),
-            ffi::MplErrorKind::NoMatchingDataKey,
+            MplError::new(MplErrorKind::NoMatchingDataKey, "x"),
+            ffi::ShimErrorKind::NoMatchingDataKey,
+            false,
         ),
         (
-            aws_esdk::Error::from(KeystoreError::new(KeystoreErrorKind::Dynamodb, "x")),
-            ffi::MplErrorKind::Dynamodb,
+            MplError::new(MplErrorKind::RemoteThrottled, "x"),
+            ffi::ShimErrorKind::RemoteThrottled,
+            true,
         ),
         (
-            aws_esdk::Error::from(CmcError::storage_failed("x")),
-            ffi::MplErrorKind::StorageFailed,
+            MplError::new(MplErrorKind::Validation, "x"),
+            ffi::ShimErrorKind::Validation,
+            false,
         ),
     ];
-    for (e, expected) in cases {
-        let err = core_err("op", &e);
+    for (e, kind, retryable) in cases {
+        let err = core_err("op", e);
         assert!(
-            err.starts_with(&err_prefix(ffi::ShimErrorKind::MplError, Some(expected))),
+            err.starts_with(&err_prefix(kind, retryable)),
             "unexpected error: {err}"
         );
     }
 }
 
 #[test]
-fn materials_err_reports_validation_as_an_mpl_error() {
-    let err = materials_err("op", &MaterialsError::new("x"));
+fn shim_err_is_not_retryable() {
+    let err = shim_err(ffi::ShimErrorKind::Validation, "op", "x");
     assert!(
-        err.starts_with(&err_prefix(
-            ffi::ShimErrorKind::MplError,
-            Some(ffi::MplErrorKind::Validation)
-        )),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn shim_err_leaves_the_mpl_kind_empty() {
-    let err = shim_err(ffi::ShimErrorKind::ValidationError, "op", "x");
-    assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::ValidationError, None)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }
@@ -557,12 +545,11 @@ fn create_hierarchical_keyring_reports_bad_cache() {
             kind: ffi::CacheKind { repr: 99 },
             entry_capacity: 0,
             entry_pruning_tail_size: 0,
-            grace_period: 0,
-            grace_interval: 0,
+            grace_period: ZERO_DURATION,
+            grace_interval: ZERO_DURATION,
             fan_out: 0,
-            inflight_ttl: 0,
-            sleep_milli: 0,
-            time_units: ffi::TimeUnits::Unset,
+            inflight_ttl: ZERO_DURATION,
+            sleep: ZERO_DURATION,
             shared: std::ptr::null(),
         },
     };
@@ -625,12 +612,11 @@ fn create_cache_rejects_unknown_kind() {
             kind: ffi::CacheKind { repr },
             entry_capacity: 0,
             entry_pruning_tail_size: 0,
-            grace_period: 0,
-            grace_interval: 0,
+            grace_period: ZERO_DURATION,
+            grace_interval: ZERO_DURATION,
             fan_out: 0,
-            inflight_ttl: 0,
-            sleep_milli: 0,
-            time_units: ffi::TimeUnits::Unset,
+            inflight_ttl: ZERO_DURATION,
+            sleep: ZERO_DURATION,
             shared: std::ptr::null(),
         }));
         assert!(
@@ -646,12 +632,11 @@ fn shared_cache_type_references_the_supplied_cache() {
         kind: ffi::CacheKind::Default,
         entry_capacity: 10,
         entry_pruning_tail_size: 0,
-        grace_period: 0,
-        grace_interval: 0,
+        grace_period: ZERO_DURATION,
+        grace_interval: ZERO_DURATION,
         fan_out: 0,
-        inflight_ttl: 0,
-        sleep_milli: 0,
-        time_units: ffi::TimeUnits::Unset,
+        inflight_ttl: ZERO_DURATION,
+        sleep: ZERO_DURATION,
         shared: std::ptr::null(),
     };
     let cache = create_cryptographic_materials_cache(&base).expect("default cache should build");
@@ -666,68 +651,65 @@ fn shared_cache_type_references_the_supplied_cache() {
     assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
 }
 
-fn storm_tracking_cache_input(time_units: ffi::TimeUnits) -> ffi::CacheType {
+fn storm_tracking_cache_input() -> ffi::CacheType {
     ffi::CacheType {
         kind: ffi::CacheKind::StormTracking,
         entry_capacity: 10,
         entry_pruning_tail_size: 1,
-        grace_period: 10,
-        grace_interval: 1,
+        grace_period: ffi::Duration { secs: 10, nanos: 0 },
+        grace_interval: ffi::Duration {
+            secs: 0,
+            nanos: 500_000_000,
+        },
         fan_out: 20,
-        inflight_ttl: 10,
-        sleep_milli: 20,
-        time_units,
+        inflight_ttl: ffi::Duration {
+            secs: 2,
+            nanos: 250_000_000,
+        },
+        sleep: ffi::Duration {
+            secs: 0,
+            nanos: 20_000_000,
+        },
         shared: std::ptr::null(),
     }
 }
 
 #[test]
-fn create_storm_tracking_cache_honors_time_units() {
-    use std::time::Duration;
-    // Unset and Seconds read the values as seconds, Milliseconds as
-    // milliseconds; sleep_milli is always milliseconds.
-    for (time_units, unit) in [
-        (ffi::TimeUnits::Unset, Duration::from_secs(1)),
-        (ffi::TimeUnits::Seconds, Duration::from_secs(1)),
-        (ffi::TimeUnits::Milliseconds, Duration::from_millis(1)),
-    ] {
-        let input = storm_tracking_cache_input(time_units);
-        let Ok(CacheType::StormTracking(params)) = make_cache_type(&input) else {
-            panic!("storm-tracking cache input must convert to a storm-tracking cache");
-        };
-        assert_eq!(params.entry_capacity(), 10);
-        assert_eq!(params.entry_pruning_tail_size(), 1);
-        assert_eq!(params.grace_period(), unit * 10);
-        assert_eq!(params.grace_interval(), unit);
-        assert_eq!(params.fan_out(), 20);
-        assert_eq!(params.inflight_ttl(), unit * 10);
-        assert_eq!(params.sleep(), Duration::from_millis(20));
-        create_cryptographic_materials_cache(&input).expect("storm-tracking cache should build");
-    }
+fn create_storm_tracking_cache_passes_each_duration_to_the_core() {
+    let input = storm_tracking_cache_input();
+    let Ok(CacheType::StormTracking(params)) = make_cache_type(&input) else {
+        panic!("storm-tracking cache input must convert to a storm-tracking cache");
+    };
+    assert_eq!(params.entry_capacity(), 10);
+    assert_eq!(params.entry_pruning_tail_size(), 1);
+    assert_eq!(params.grace_period(), Duration::from_secs(10));
+    assert_eq!(params.grace_interval(), Duration::from_millis(500));
+    assert_eq!(params.fan_out(), 20);
+    assert_eq!(params.inflight_ttl(), Duration::from_millis(2250));
+    assert_eq!(params.sleep(), Duration::from_millis(20));
+    create_cryptographic_materials_cache(&input).expect("storm-tracking cache should build");
 }
 
 #[test]
-fn create_storm_tracking_cache_rejects_unrecognized_time_units() {
-    let err = expect_err(make_cache_type(&storm_tracking_cache_input(
-        ffi::TimeUnits { repr: 99 },
-    )));
-    let validation = ffi::ShimErrorKind::ValidationError.repr;
-    assert!(
-        err.starts_with(&format!("{validation}{ERROR_KIND_SEPARATOR}")),
-        "unexpected error: {err}"
-    );
-    assert!(
-        err.contains("unrecognized time_units"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn create_storm_tracking_cache_rejects_zero_values() {
-    let mut input = storm_tracking_cache_input(ffi::TimeUnits::Unset);
-    input.sleep_milli = 0;
+fn create_storm_tracking_cache_rejects_zero_sleep() {
+    let mut input = storm_tracking_cache_input();
+    input.sleep = ZERO_DURATION;
     let err = expect_err(make_cache_type(&input));
     assert!(err.contains("sleep"), "unexpected error: {err}");
+}
+
+#[test]
+fn create_storm_tracking_cache_rejects_out_of_range_durations() {
+    let mut input = storm_tracking_cache_input();
+    input.grace_period = ffi::Duration {
+        secs: u64::MAX,
+        nanos: 1_000_000_000,
+    };
+    let err = expect_err(make_cache_type(&input));
+    assert!(
+        err.contains("grace_period is out of range"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -848,7 +830,7 @@ fn apply_encrypt_options_forwards_every_optional_input() {
     //= type=test
     //# - MUST provide the target-supplied frame length to the core ESDK,
     //# converted as defined in [Frame length](#frame-length).
-    assert_eq!(core.frame_length().0.get(), 1024);
+    assert_eq!(core.frame_length().get(), 1024);
 
     //= spec/shim/esdk-shim.md#encrypt-inputs
     //= type=test
@@ -876,7 +858,7 @@ fn apply_encrypt_options_leaves_unset_inputs_defaulted() {
         .build()
         .expect("input builds");
     assert_eq!(core.max_encrypted_data_keys(), None);
-    assert_eq!(core.frame_length(), aws_esdk::FrameLength::default());
+    assert_eq!(core.frame_length().get(), 4096);
     assert_eq!(
         core.commitment_policy(),
         EsdkCommitmentPolicy::RequireEncryptRequireDecrypt

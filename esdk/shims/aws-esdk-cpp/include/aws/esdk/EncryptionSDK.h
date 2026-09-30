@@ -85,11 +85,41 @@ namespace Esdk {
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
 //
+/// What went wrong, as a caller would act on it.
+/// The same kinds, under the same names, as ESDK Rust's `ErrorKind`.
+enum class ErrorKind : std::uint8_t {
+    Validation = 0,
+    Serialization = 1,
+    Cryptographic = 2,
+    InvalidMaterials = 3,
+    EncryptionContextMismatch = 4,
+    NoMatchingDataKey = 5,
+    RemoteAccessDenied = 6,
+    RemoteResourceNotFound = 7,
+    RemoteThrottled = 8,
+    RemoteTransport = 9,
+    Remote = 10,
+    Internal = 11,
+};
+
 /// Base exception for every failure this library reports.
 /// Catching this type catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
+    /// What went wrong.
+    /// Empty when ESDK Rust reports a kind this library does not know yet.
+    std::optional<ErrorKind> kind() const noexcept { return kind_; }
+    /// Whether the same call might succeed if retried.
+    bool retryable() const noexcept { return retryable_; }
+
+protected:
+    AwsEncryptionSdkException(ErrorKind kind, bool retryable, const std::string& msg)
+        : std::runtime_error(msg), kind_(kind), retryable_(retryable) {}
+
+private:
+    std::optional<ErrorKind> kind_;
+    bool retryable_ = false;
 };
 
 //= spec/shim/shim.md#error-classification
@@ -98,65 +128,94 @@ public:
 //# - Every exposed error kind MUST also be identifiable as the shim's own base
 //# error type, so a target that handles only the base type is unaffected when a
 //# kind is added.
-//
-/// The message bytes are malformed and could not be read or written.
+
+/// An input or configuration value is invalid.
 /// No cryptography was attempted.
-class SerializationException : public AwsEncryptionSdkException {
-public:
-    explicit SerializationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
-};
-
-/// A cryptographic operation failed (ex. auth tag did not verify).
-/// Retrying the same input cannot succeed.
-class CryptographicException : public AwsEncryptionSdkException {
-public:
-    explicit CryptographicException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
-};
-
-/// An input is invalid (malformed/unrecognized value, or a missing required input type.)
-/// Fix the input; retrying the same input cannot succeed.
 class ValidationException : public AwsEncryptionSdkException {
 public:
-    explicit ValidationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+    explicit ValidationException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Validation, retryable, msg) {}
 };
 
-/// The kind of an MplException, under the MPL's own names.
-enum class MplErrorKind : std::uint8_t {
-    // Materials (keyring and CMM) errors
-    Validation = 0,
-    NoBehaviorAttempted = 1,
-    PlaintextDataKeyAlreadyPresent = 2,
-    NoMatchingDataKey = 3,
-    KeyringFailed = 4,
-    RequiredEncryptionContextKeyMissing = 5,
-    EncryptionContextValueMismatch = 6,
-    AwsCryptoPublicKeyMissing = 7,
-    AwsCryptoPublicKeyUnexpected = 8,
-    // Key store errors
-    Configuration = 9,
-    Kms = 10,
-    Dynamodb = 11,
-    RecordNotFound = 12,
-    RecordMalformed = 13,
-    Authentication = 14,
-    VersionConflict = 15,
-    Internal = 16,
-    // Cache errors
-    StorageFailed = 17,
-    InvalidEntry = 18,
-};
-
-/// A failure in the material providers library: a keyring, CMM, key store, or cache.
-class MplException : public AwsEncryptionSdkException {
+/// The message bytes are malformed and could not be read or written.
+class SerializationException : public AwsEncryptionSdkException {
 public:
-    MplException(std::optional<MplErrorKind> kind, const std::string& msg)
-        : AwsEncryptionSdkException(msg), kind_(kind) {}
-    /// The MPL's kind for this error.
-    /// Empty when the ESDK Rust reports a kind this library does not know yet.
-    std::optional<MplErrorKind> kind() const noexcept { return kind_; }
+    explicit SerializationException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Serialization, retryable, msg) {}
+};
 
-private:
-    std::optional<MplErrorKind> kind_;
+/// A cryptographic check failed, such as an authentication tag or a signature.
+class CryptographicException : public AwsEncryptionSdkException {
+public:
+    explicit CryptographicException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Cryptographic, retryable, msg) {}
+};
+
+/// The materials a keyring or CMM returned are inconsistent with each other
+/// or with the algorithm suite.
+class InvalidMaterialsException : public AwsEncryptionSdkException {
+public:
+    explicit InvalidMaterialsException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::InvalidMaterials, retryable, msg) {}
+};
+
+/// A required encryption context key is missing, or a caller-supplied
+/// encryption context value differs from the message's.
+class EncryptionContextMismatchException : public AwsEncryptionSdkException {
+public:
+    explicit EncryptionContextMismatchException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::EncryptionContextMismatch, retryable, msg) {}
+};
+
+/// No configured key wrapped any of the message's encrypted data keys.
+class NoMatchingDataKeyException : public AwsEncryptionSdkException {
+public:
+    explicit NoMatchingDataKeyException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, retryable, msg) {}
+};
+
+/// A remote service denied access to a resource.
+class RemoteAccessDeniedException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteAccessDeniedException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteAccessDenied, retryable, msg) {}
+};
+
+/// A remote resource, such as a KMS key, DynamoDB table, or branch key,
+/// does not exist.
+class RemoteResourceNotFoundException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteResourceNotFoundException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteResourceNotFound, retryable, msg) {}
+};
+
+/// A remote service throttled the request.
+class RemoteThrottledException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteThrottledException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteThrottled, retryable, msg) {}
+};
+
+/// A request to a remote service could not be sent, or its response did not
+/// arrive.
+class RemoteTransportException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteTransportException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteTransport, retryable, msg) {}
+};
+
+/// Any other failure reported by, or read from, a remote service.
+class RemoteException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Remote, retryable, msg) {}
+};
+
+/// An internal invariant was violated.
+class InternalException : public AwsEncryptionSdkException {
+public:
+    explicit InternalException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Internal, retryable, msg) {}
 };
 
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
@@ -203,6 +262,15 @@ struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
 struct CacheTypeLowerer;
 struct BytesFactory;
+
+// Every duration parameter accepts any integer std::chrono::duration.
+template <class Rep, class Period>
+std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
+    static_assert(
+        std::is_convertible_v<std::chrono::duration<Rep, Period>, std::chrono::nanoseconds>,
+        "durations must be an integer std::chrono::duration, such as std::chrono::seconds");
+    return d;
+}
 }  // namespace detail
 
 /// AWS service-client configuration for AWS SDK clients.
@@ -332,10 +400,6 @@ public:
     explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
-/// inflight_ttl. Left unset, they are seconds.
-enum class TimeUnits { Seconds, Milliseconds };
-
 // TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
@@ -348,38 +412,55 @@ public:
     /// For a cache with sensible defaults, use Default instead.
     /// \param entry_capacity Maximum number of entries cached.
     /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    /// \param grace_period Time before expiration to begin refreshing, in time_units.
-    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param grace_period Time before expiration to begin refreshing.
+    /// \param grace_interval Time between refresh attempts.
     /// \param fan_out Maximum number of simultaneous refresh attempts.
-    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
-    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
-    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten.
+    /// \param sleep Time a thread sleeps when fan_out is exceeded.
+    template <class GraceRep, class GracePeriod, class IntervalRep, class IntervalPeriod,
+              class InflightRep, class InflightPeriod, class SleepRep, class SleepPeriod>
     static CacheType StormTracking(
         std::uint32_t entry_capacity,
         std::uint32_t entry_pruning_tail_size,
-        std::uint32_t grace_period,
-        std::uint32_t grace_interval,
+        std::chrono::duration<GraceRep, GracePeriod> grace_period,
+        std::chrono::duration<IntervalRep, IntervalPeriod> grace_interval,
         std::uint32_t fan_out,
-        std::uint32_t inflight_ttl,
-        std::uint32_t sleep_milli,
-        std::optional<TimeUnits> time_units = std::nullopt);
+        std::chrono::duration<InflightRep, InflightPeriod> inflight_ttl,
+        std::chrono::duration<SleepRep, SleepPeriod> sleep) {
+        return StormTracking(entry_capacity, entry_pruning_tail_size,
+                             detail::to_nanoseconds(grace_period),
+                             detail::to_nanoseconds(grace_interval), fan_out,
+                             detail::to_nanoseconds(inflight_ttl), detail::to_nanoseconds(sleep),
+                             Tag{});
+    }
     /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
     /// the user should provide an already constructed CryptographicMaterialsCache
     /// to the Hierarchical Keyring at initialization.
     static CacheType Shared(const CryptographicMaterialsCache& cache);
 
 private:
+    // Keeps the private overload out of overload resolution for callers,
+    // so std::chrono::nanoseconds arguments still select the public template.
+    struct Tag {};
+    static CacheType StormTracking(std::uint32_t entry_capacity,
+                                   std::uint32_t entry_pruning_tail_size,
+                                   std::chrono::nanoseconds grace_period,
+                                   std::chrono::nanoseconds grace_interval,
+                                   std::uint32_t fan_out,
+                                   std::chrono::nanoseconds inflight_ttl,
+                                   std::chrono::nanoseconds sleep,
+                                   Tag);
+
     enum class Kind { Default, StormTracking, Shared };
     explicit CacheType(Kind kind) : kind_(kind) {}
     Kind kind_;
     std::uint32_t entry_capacity_ = 0;
     std::uint32_t entry_pruning_tail_size_ = 0;
-    std::uint32_t grace_period_ = 0;
-    std::uint32_t grace_interval_ = 0;
+    std::chrono::nanoseconds grace_period_{};
+    std::chrono::nanoseconds grace_interval_{};
     std::uint32_t fan_out_ = 0;
-    std::uint32_t inflight_ttl_ = 0;
-    std::uint32_t sleep_milli_ = 0;
-    std::optional<TimeUnits> time_units_;
+    std::chrono::nanoseconds inflight_ttl_{};
+    std::chrono::nanoseconds sleep_{};
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
     friend class CryptographicMaterialsCache;
     friend class HierarchicalKeyring;
@@ -432,21 +513,13 @@ public:
                         const std::string& branch_key_id,
                         std::chrono::duration<Rep, Period> ttl,
                         const HierarchicalKeyringOptions& options = {})
-        : HierarchicalKeyring(std::move(key_store), branch_key_id, to_nanoseconds(ttl), options,
-                              Tag{}) {}
+        : HierarchicalKeyring(std::move(key_store), branch_key_id, detail::to_nanoseconds(ttl),
+                              options, Tag{}) {}
 
 private:
     // Keeps the private constructor out of overload resolution for callers,
     // so a std::chrono::nanoseconds argument still selects the public template.
     struct Tag {};
-
-    template <class Rep, class Period>
-    static std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> ttl) {
-        static_assert(
-            std::is_convertible_v<std::chrono::duration<Rep, Period>, std::chrono::nanoseconds>,
-            "ttl must be an integer std::chrono::duration, such as std::chrono::seconds");
-        return ttl;
-    }
 
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,

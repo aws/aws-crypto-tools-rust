@@ -7,7 +7,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::EsdkAlgorithmSuiteId;
+use aws_esdk::AlgorithmSuiteId;
 use aws_esdk::*;
 use test_helpers::*;
 
@@ -21,7 +21,7 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -60,8 +60,8 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         .expect_err("tampered footer must fail");
     assert_eq!(
         err.kind(),
-        ErrorKind::Esdk,
-        "tampered footer must produce Esdk error"
+        ErrorKind::Cryptographic,
+        "tampered footer must produce a Cryptographic error"
     );
     assert!(
         err.message().contains("Signature verification failed"),
@@ -86,7 +86,7 @@ async fn test_verify_signature_inputs_directly_verified() {
     let enc_input = EncryptInput::builder()
         .plaintext(b"verify inputs direct test")
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let output = encrypt(&enc_input).await.unwrap();
@@ -204,7 +204,7 @@ async fn test_footer_wait_truncated_message_fails() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -226,7 +226,7 @@ async fn test_footer_wait_truncated_message_fails() {
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test
-    //= reason=Full ct → Ok; ct truncated mid-footer → SerializationError, EOF on the blocking read signals end-of-message
+    //= reason=Full ct → Ok; ct truncated mid-footer → Serialization error, EOF on the blocking read signals end-of-message
     //# If there are not enough consumable bytes to deserialize the message footer and
     //# the caller has not yet indicated an end to the encrypted message,
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
@@ -234,7 +234,7 @@ async fn test_footer_wait_truncated_message_fails() {
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
     assert_eq!(
         decrypt(&truncated_input).await.unwrap_err().kind(),
-        ErrorKind::SerializationError,
-        "truncated footer must produce SerializationError"
+        ErrorKind::Serialization,
+        "truncated footer must produce Serialization error"
     );
 }

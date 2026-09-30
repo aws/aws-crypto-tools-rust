@@ -4,8 +4,8 @@
 //! Converting an existing `Shared*` handle reuses it instead of nesting it.
 
 use aws_config::{BehaviorVersion, SdkConfig};
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
-use aws_crypto_mpl::structures::MaterialsError;
 use aws_crypto_mpl::{
     AesGcm, BranchKeyStore, BranchKeyStoreBuilder, BranchKeySupplier, Cmc, Cmm, DefaultCmm,
     IntoShared, Keyring, Keystore, KmsConfiguration, LocalCmc, RawAesKeyring,
@@ -33,8 +33,8 @@ fn keystore() -> BranchKeyStore {
     )
 }
 
-/// Builds `builder` by polling its future once. With both clients supplied,
-/// `build` does no IO, so it is ready on the first poll.
+/// Builds `builder` by polling its future once.
+/// With both clients supplied, `build` does no IO, so it is ready on the first poll.
 fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
@@ -55,7 +55,7 @@ impl BranchKeySupplier for Supplier {
     fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+    ) -> Result<GetBranchKeyIdOutput, Error> {
         Ok(GetBranchKeyIdOutput::new("branch-key-id".to_string()))
     }
 }

@@ -17,36 +17,78 @@ namespace Aws {
 namespace Esdk {
 namespace detail {
 
-// Rethrow Rust ESDK exceptions as corresponding C++ exceptions.
-// The Rust side encodes each error as `{kind}\x1f{mpl_kind}\x1f{message}`,
-// where mpl_kind is empty unless kind is MplError.
-// A message that doesn't match that layout is thrown as AwsEncryptionSdkException.
-[[noreturn]] void throw_shim_exception(const std::string& what) {
-    auto is_digits = [](std::string_view v) {
-        return !v.empty() && std::all_of(v.begin(), v.end(), [](char c) { return c >= '0' && c <= '9'; });
-    };
+// An error from the Rust side, decoded from the message cxx carries across.
+// lib.rs's encode_err writes it as `{kind}\x1f{retryable}\x1f{message}`.
+struct ShimError {
+    ::ffi::ShimErrorKind kind;
+    bool retryable;
+    std::string message;
+};
+
+// Parses a small non-negative decimal number; nullopt if `v` is not one.
+std::optional<std::uint8_t> parse_repr(std::string_view v) {
+    if (v.empty() || v.size() > 3) {
+        return std::nullopt;
+    }
+    unsigned value = 0;
+    for (const char c : v) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        value = value * 10 + static_cast<unsigned>(c - '0');
+    }
+    if (value > 255) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint8_t>(value);
+}
+
+// nullopt when `what` does not have the encode_err layout.
+std::optional<ShimError> decode_shim_error(std::string_view what) {
     const auto first = what.find('\x1f');
-    const auto second = first == std::string::npos ? std::string::npos : what.find('\x1f', first + 1);
-    if (second == std::string::npos || !is_digits(std::string_view(what).substr(0, first))) {
+    if (first == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto second = what.find('\x1f', first + 1);
+    if (second == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto kind = parse_repr(what.substr(0, first));
+    if (!kind) {
+        return std::nullopt;
+    }
+    // The message is everything after the second separator, so a separator
+    // inside the message itself is left alone.
+    return ShimError{
+        static_cast<::ffi::ShimErrorKind>(*kind),
+        what.substr(first + 1, second - first - 1) == "1",
+        std::string(what.substr(second + 1)),
+    };
+}
+
+// Rethrow a Rust error as the matching C++ exception.
+[[noreturn]] void throw_shim_exception(const std::string& what) {
+    const auto error = decode_shim_error(what);
+    if (!error) {
         throw AwsEncryptionSdkException(what);
     }
-    const auto kind = static_cast<::ffi::ShimErrorKind>(std::stoi(what.substr(0, first)));
-    const std::string mpl_kind = what.substr(first + 1, second - first - 1);
-    const std::string message = what.substr(second + 1);
-    switch (kind) {
-        case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(message);
-        case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(message);
-        case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(message);
-        case ::ffi::ShimErrorKind::MplError:
-            throw MplException(
-                is_digits(mpl_kind)
-                    ? std::optional(static_cast<MplErrorKind>(std::stoi(mpl_kind)))
-                    : std::nullopt,
-                message);
+    switch (error->kind) {
+        case ::ffi::ShimErrorKind::Validation: throw ValidationException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Serialization: throw SerializationException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Cryptographic: throw CryptographicException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::InvalidMaterials: throw InvalidMaterialsException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::EncryptionContextMismatch: throw EncryptionContextMismatchException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::NoMatchingDataKey: throw NoMatchingDataKeyException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteAccessDenied: throw RemoteAccessDeniedException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteResourceNotFound: throw RemoteResourceNotFoundException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteThrottled: throw RemoteThrottledException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteTransport: throw RemoteTransportException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Remote: throw RemoteException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Internal: throw InternalException(error->message, error->retryable);
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.
-        default: throw AwsEncryptionSdkException(message);
+        default: throw AwsEncryptionSdkException(error->message);
     }
 }
 
@@ -62,6 +104,15 @@ auto guard(F&& f) -> decltype(f()) {
 }
 
 // Conversions from public type to FFI type
+
+::ffi::Duration to_ffi(std::chrono::nanoseconds d, const char* field) {
+    if (d.count() < 0) {
+        throw ValidationException(std::string(field) + " must not be negative");
+    }
+    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(d);
+    return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
+                           static_cast<std::uint32_t>((d - secs).count())};
+}
 
 ::ffi::EsdkAlgorithmSuiteId to_ffi(AlgorithmSuiteId a) {
     return static_cast<::ffi::EsdkAlgorithmSuiteId>(static_cast<std::uint16_t>(a));
@@ -269,12 +320,12 @@ CacheType CacheType::Default(std::uint32_t entry_capacity) {
 CacheType CacheType::StormTracking(
     std::uint32_t entry_capacity,
     std::uint32_t entry_pruning_tail_size,
-    std::uint32_t grace_period,
-    std::uint32_t grace_interval,
+    std::chrono::nanoseconds grace_period,
+    std::chrono::nanoseconds grace_interval,
     std::uint32_t fan_out,
-    std::uint32_t inflight_ttl,
-    std::uint32_t sleep_milli,
-    std::optional<TimeUnits> time_units) {
+    std::chrono::nanoseconds inflight_ttl,
+    std::chrono::nanoseconds sleep,
+    Tag) {
     CacheType c(Kind::StormTracking);
     c.entry_capacity_ = entry_capacity;
     c.entry_pruning_tail_size_ = entry_pruning_tail_size;
@@ -282,8 +333,7 @@ CacheType CacheType::StormTracking(
     c.grace_interval_ = grace_interval;
     c.fan_out_ = fan_out;
     c.inflight_ttl_ = inflight_ttl;
-    c.sleep_milli_ = sleep_milli;
-    c.time_units_ = time_units;
+    c.sleep_ = sleep;
     return c;
 }
 
@@ -308,15 +358,11 @@ struct CacheTypeLowerer {
                 out.kind = ::ffi::CacheKind::StormTracking;
                 out.entry_capacity = c.entry_capacity_;
                 out.entry_pruning_tail_size = c.entry_pruning_tail_size_;
-                out.grace_period = c.grace_period_;
-                out.grace_interval = c.grace_interval_;
+                out.grace_period = to_ffi(c.grace_period_, "grace_period");
+                out.grace_interval = to_ffi(c.grace_interval_, "grace_interval");
                 out.fan_out = c.fan_out_;
-                out.inflight_ttl = c.inflight_ttl_;
-                out.sleep_milli = c.sleep_milli_;
-                out.time_units = c.time_units_
-                    ? (*c.time_units_ == TimeUnits::Milliseconds ? ::ffi::TimeUnits::Milliseconds
-                                                                 : ::ffi::TimeUnits::Seconds)
-                    : ::ffi::TimeUnits::Unset;
+                out.inflight_ttl = to_ffi(c.inflight_ttl_, "inflight_ttl");
+                out.sleep = to_ffi(c.sleep_, "sleep");
                 break;
             case CacheType::Kind::Shared:
                 out.kind = ::ffi::CacheKind::Shared;
@@ -347,17 +393,6 @@ Keyring Keyring::adopt(void* raw_handle) {
         ::rust::Box<::ffi::Keyring>::from_raw(static_cast<::ffi::Keyring*>(raw_handle))));
 }
 
-namespace detail {
-::ffi::Duration to_ffi(std::chrono::nanoseconds d) {
-    if (d.count() < 0) {
-        throw ValidationException("HierarchicalKeyring TTL must not be negative");
-    }
-    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(d);
-    return ::ffi::Duration{static_cast<std::uint64_t>(secs.count()),
-                           static_cast<std::uint32_t>((d - secs).count())};
-}
-}  // namespace detail
-
 HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const std::string& branch_key_id,
                                          std::chrono::nanoseconds ttl,
@@ -371,7 +406,7 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
               ::ffi::HierarchicalKeyringInput in{};
               in.branch_key_id = ::rust::String(branch_key_id);
               in.key_store = &*key_store.impl_->handle;
-              in.ttl = detail::to_ffi(ttl);
+              in.ttl = detail::to_ffi(ttl, "ttl");
               in.partition_id = detail::to_opt(options.partition_id_);
               in.cache = options.cache_
                              ? ::ffi::OptCacheType{true,

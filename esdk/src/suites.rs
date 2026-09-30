@@ -3,36 +3,43 @@
 
 //! Algorithm-suite helpers shared by the encrypt, decrypt, and message layers.
 //!
-//! The Material Providers Library (`aws_crypto_mpl`) exposes an
-//! [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) enum and an
-//! opaque [`AlgorithmSuite`](aws_crypto_mpl::structures::AlgorithmSuite)
-//! specification (fields private, read via accessor methods).
+//! The Material Providers Library (`aws_crypto_mpl`) exposes the ESDK suites as
+//! [`EsdkAlgorithmSuiteId`](aws_crypto_mpl::structures::EsdkAlgorithmSuiteId),
+//! which the ESDK re-exports as [`AlgorithmSuiteId`].
+//! Materials carry the MPL's format-generic
+//! [`AlgorithmSuiteId`](aws_crypto_mpl::structures::AlgorithmSuiteId) union instead.
+//! Each suite's parameters come from an opaque
+//! [`AlgorithmSuite`](aws_crypto_mpl::structures::AlgorithmSuite) specification.
 //! This module wraps the MPL's `bytes -> id` lookup in the ESDK error type.
 //! Its other helpers map MPL suite fields to the types the ESDK needs.
 
-use crate::error::{Error, esdk_err, val_err};
+use crate::error::{Error, ErrorKind, err, val_err};
+use crate::types::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::{
-    AlgorithmSuite, AlgorithmSuiteId, AsymmetricSignatureAlgorithm, EsdkAlgorithmSuiteId,
+    AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
     KeyDerivationAlgorithm,
 };
 use aws_mpl_primitives::{DigestAlg, EcdsaSignatureAlgorithm};
 
-/// Resolve a 2-byte on-wire algorithm suite id to its [`EsdkAlgorithmSuiteId`].
+/// Resolve a 2-byte on-wire algorithm suite id to its [`AlgorithmSuiteId`].
 ///
 /// # Errors
 /// Returns an error if `bytes` is not a supported ESDK algorithm suite id.
-pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<EsdkAlgorithmSuiteId, Error> {
+pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuiteId, Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The value (hex) of this field MUST be a value that exists in the
     //# [Supported Algorithm Suites](../framework/algorithm-suites.md#supported-algorithm-suites) table.
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    EsdkAlgorithmSuiteId::from_id_bytes(bytes).ok_or_else(|| {
-        esdk_err(format!(
-            "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
-            bytes[0], bytes[1]
-        ))
+    AlgorithmSuiteId::from_id_bytes(bytes).ok_or_else(|| {
+        err(
+            ErrorKind::Serialization,
+            format!(
+                "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                bytes[0], bytes[1]
+            ),
+        )
     })
 }
 
@@ -40,9 +47,9 @@ pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<EsdkAlgorithmSuit
 ///
 /// # Errors
 /// Returns an error if `id` is not an ESDK algorithm suite.
-pub fn get_esdk_algorithm_suite_id(id: AlgorithmSuiteId) -> Result<EsdkAlgorithmSuiteId, Error> {
+pub fn get_esdk_algorithm_suite_id(id: MplAlgorithmSuiteId) -> Result<AlgorithmSuiteId, Error> {
     match id {
-        AlgorithmSuiteId::Esdk(id) => Ok(id),
+        MplAlgorithmSuiteId::Esdk(id) => Ok(id),
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
         //# encrypt MUST yield an error.
@@ -50,7 +57,10 @@ pub fn get_esdk_algorithm_suite_id(id: AlgorithmSuiteId) -> Result<EsdkAlgorithm
         //= spec/client-apis/decrypt.md#get-the-decryption-materials
         //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
         //# decrypt MUST yield an error.
-        other => Err(esdk_err(format!("Unsupported algorithm suite: {other:?}"))),
+        other => Err(err(
+            ErrorKind::InvalidMaterials,
+            format!("Unsupported algorithm suite: {other:?}"),
+        )),
     }
 }
 

@@ -15,6 +15,7 @@
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
 //! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
+use aws_crypto_mpl::ErrorKind;
 use std::error::Error as _;
 
 use aws_config::{BehaviorVersion, Region};
@@ -26,7 +27,7 @@ use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
 use aws_crypto_mpl::error_chain::aws_service_error_code;
-use aws_crypto_mpl::{BranchKeyStore, Keystore, KmsConfiguration, keystore::KeystoreErrorKind};
+use aws_crypto_mpl::{BranchKeyStore, Keystore, KmsConfiguration};
 
 // ─── Fixtures (mirror Fixtures.dfy) ─────────────────────────────────────────
 
@@ -269,7 +270,7 @@ async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(west) + EastBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Authentication);
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }
 
 #[tokio::test]
@@ -288,7 +289,7 @@ async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(east) + WestBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Authentication);
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }
 
 // ─── TestGetActiveMrkKey: AP MRK config (key absent in region) ──────────────
@@ -315,7 +316,7 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
     // key in a possibly-unenabled region comes back as a modeled exception or
     // as a dispatch failure is an account-configuration detail, so only the
     // nesting itself is asserted.
-    assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+    assert!(err.message().starts_with("AWS KMS "), "got: {err}");
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
@@ -345,7 +346,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
         Ok(_) => panic!("Configured KEY_ARN + DISCOVERY_BRANCH_KEY_ID MUST fail (ARN mismatch)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Authentication);
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }
 
 // ─── TestGetActiveKeyWrongLogicalKeyStoreName ──────────────────────────────
@@ -354,7 +355,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
 async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     // A wrong logical name binds a different `tablename` value into the
     // EC, so KMS Decrypt fails to authenticate and returns
-    // InvalidCiphertextException — mapped to KeystoreErrorKind::Kms.
+    // InvalidCiphertextException — mapped to ErrorKind::Remote.
     let store = build_store(
         KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
         INCORRECT_LOGICAL_NAME,
@@ -366,7 +367,7 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
         Ok(_) => panic!("Wrong logical name MUST fail at KMS"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Kms);
+    assert_eq!(err.kind(), ErrorKind::Remote);
 
     // The originating SDK error is nested as the cause, so the specific KMS
     // exception is recoverable by type. This ports the assertion Dafny makes
@@ -433,7 +434,7 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
         Ok(_) => panic!("GetItem against an unreachable table MUST fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::Dynamodb);
+    assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
 
     let sdk_err = err
         .source()
@@ -459,10 +460,10 @@ async fn integ_get_active_key_does_not_exist() {
     )
     .await;
     let err = match store.get_active_branch_key("Robbie".to_string()).await {
-        Ok(_) => panic!("nonexistent branch key MUST fail with RecordNotFound"),
+        Ok(_) => panic!("nonexistent branch key MUST fail with RemoteResourceNotFound"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), &KeystoreErrorKind::RecordNotFound);
+    assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
 }
 
 // ─── Write path: CreateKeyStore / CreateKey / VersionKey round trips ─────────

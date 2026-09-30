@@ -147,7 +147,7 @@ fn test_aes_decrypt_output_buffer_too_small() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.contains("aes_decrypt"));
+    assert!(err.message().contains("aes_decrypt"));
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn test_aes_encrypt_bad_key_length() {
         &mut cipher_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.message().starts_with("new"));
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_aes_encrypt_bad_iv_length() {
         &mut cipher_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.message().starts_with("new"));
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn test_aes_decrypt_bad_key_length() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.message().starts_with("new"));
 }
 
 #[test]
@@ -213,7 +213,7 @@ fn test_aes_decrypt_bad_iv_length() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("new"));
+    assert!(err.message().starts_with("new"));
 }
 
 #[test]
@@ -231,5 +231,5 @@ fn test_aes_decrypt_tampered_auth_tag() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert!(err.message.starts_with("gather"));
+    assert!(err.message().starts_with("gather"));
 }

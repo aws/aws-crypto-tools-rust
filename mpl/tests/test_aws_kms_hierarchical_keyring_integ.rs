@@ -71,12 +71,12 @@ use aws_sdk_kms::operation::decrypt::DecryptError;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
-use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
+use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
-    BranchKeyMaterials, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
-    EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
+    AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
+    EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
+use aws_crypto_mpl::{Error, ErrorKind};
 use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
@@ -147,8 +147,8 @@ fn keyring_with_cache(
 }
 
 /// Pick a non-signing suite so signing-key invariants don't intrude.
-fn non_signing_suite() -> EsdkAlgorithmSuiteId {
-    EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+fn non_signing_suite() -> AlgorithmSuiteId {
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
 }
 
 /// Build empty encryption materials with a small encryption context, in
@@ -158,7 +158,7 @@ fn fresh_materials() -> EncryptionMaterials {
     let mut ec = EncryptionContext::new();
     ec.insert("region", "us-west-2");
     EncryptionMaterials::new(
-        non_signing_suite().into(),
+        non_signing_suite(),
         Vec::new(),
         ec,
         Default::default(),
@@ -238,7 +238,7 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
     // Build empty decryption materials with the same EC the encrypt side
     // used; the AAD bound into the EDK ciphertext is computed over this EC.
     let dm_in = DecryptionMaterials::new(
-        non_signing_suite().into(),
+        non_signing_suite(),
         ec,
         Default::default(),
         None,
@@ -307,8 +307,8 @@ async fn build_keystore_with_kms_and_logical_name(
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
-/// Asserts the whole chain by type: `MaterialsError` ->
-/// `KeystoreError(Kms)` -> `SdkError<DecryptError>`. Reaching the SDK error
+/// Asserts the whole chain by type: `Error` ->
+/// `Error(Kms)` -> `SdkError<DecryptError>`. Reaching the SDK error
 /// proves the call actually got to KMS, which is the property these tests need:
 /// it means the DDB record was read, so `hk2` went to the keystore instead of
 /// being served from the shared cache, and a cache miss is what is under test.
@@ -321,25 +321,28 @@ async fn build_keystore_with_kms_and_logical_name(
 /// `integ_discovery_keystore_cannot_reach_an_out_of_region_mrk` there is no
 /// Dafny assertion naming the expected exception for this path. Where Dafny
 /// does name one, that test pins it.
-fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, context: &str) {
+fn assert_failed_at_kms(result: Result<EncryptionMaterials, Error>, context: &str) {
     let err = match result {
         Err(e) => e,
         Ok(_) => panic!("{context}: expected on_encrypt to fail"),
     };
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
 
     let keystore_err = err
         .source()
         .unwrap_or_else(|| {
             panic!("{context}: the keystore failure must be attached as the cause, got: {err}")
         })
-        .downcast_ref::<KeystoreError>()
+        .downcast_ref::<Error>()
         .unwrap_or_else(|| {
-            panic!("{context}: the cause must be the originating KeystoreError, got: {err}")
+            panic!("{context}: the cause must be the originating Error, got: {err}")
         });
     assert_eq!(
+        err.kind(),
         keystore_err.kind(),
-        &KeystoreErrorKind::Kms,
+        "{context}: the keyring keeps the keystore's kind"
+    );
+    assert!(
+        keystore_err.message().starts_with("AWS KMS "),
         "{context}: expected the failure to come from the KMS call, got: {err}",
     );
 
@@ -348,7 +351,7 @@ fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, con
             .source()
             .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
             .is_some(),
-        "{context}: the KMS SDK error must be nested inside the KeystoreError, got: {err}",
+        "{context}: the KMS SDK error must be nested inside the Error, got: {err}",
     );
 }
 
@@ -416,7 +419,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     let mut ec = EncryptionContext::new();
     ec.insert("region", "us-west-2");
     let materials_in = EncryptionMaterials::new(
-        suite.into(),
+        suite,
         Vec::new(),
         ec,
         Default::default(),
@@ -734,18 +737,9 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
-
-    // The kind alone is too coarse to be a real assertion here: the keyring
-    // flattens every keystore failure to KeyringFailed, so a missing record
-    // or an unreachable table would satisfy it just as well as the ARN
-    // disagreement this test is about. The keystore kind survives in the
-    // message (`KeystoreError(Authentication)`), so match on that to pin the
-    // failure to the kms-arn-compat check in resolve_keystore_arn.
-    assert!(
-        err.to_string().contains("KeystoreError(Authentication)"),
-        "expected the ARN-disagreement path (Authentication), got: {err}",
-    );
+    // A missing record or an unreachable table would be a remote kind; the
+    // kms-arn-compat check in resolve_keystore_arn is the Cryptographic one.
+    assert_eq!(err.kind(), ErrorKind::Cryptographic, "got: {err}");
 }
 
 #[tokio::test]
@@ -867,7 +861,7 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("plain Discovery MUST NOT reach a us-east-1 MRK from a us-west-2 client");
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
+    assert_eq!(err.kind(), ErrorKind::Remote);
 
     // Dafny asserts the specific KMS `IncorrectKeyException` here
     // (AwsCryptographyKeyStore/test/TestDiscoveryGetKeys.dfy):
@@ -877,17 +871,17 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
     //         expect nestedError.IncorrectKeyException?;
     //
     // The keystore nests the originating SDK error as the cause.
-    // The chain is MaterialsError -> KeystoreError -> SdkError.
+    // The chain is Error -> Error -> SdkError.
     let keystore_err = err
         .source()
         .expect("the keystore failure must be attached as the cause")
-        .downcast_ref::<KeystoreError>()
-        .expect("the cause must be the originating KeystoreError");
-    assert_eq!(keystore_err.kind(), &KeystoreErrorKind::Kms);
+        .downcast_ref::<Error>()
+        .expect("the cause must be the originating Error");
+    assert_eq!(keystore_err.kind(), ErrorKind::Remote);
 
     let sdk_err = keystore_err
         .source()
-        .expect("the KMS SDK error must be nested inside the KeystoreError")
+        .expect("the KMS SDK error must be nested inside the Error")
         .downcast_ref::<SdkError<DecryptError>>()
         .expect("the nested cause must be the originating Decrypt SdkError");
     let service_err = sdk_err

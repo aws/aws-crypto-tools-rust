@@ -7,8 +7,9 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::EsdkAlgorithmSuiteId;
+use aws_esdk::AlgorithmSuiteId;
 use aws_esdk::*;
+use std::num::NonZeroU32;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -22,7 +23,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
         .plaintext(plaintext)
         .encryption_context(ec)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let ct = encrypt(&encrypt_input).await.unwrap().ciphertext;
@@ -75,15 +76,15 @@ async fn test_decrypt_halts_on_incomplete_message() {
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
-    //= reason=Full ct → Ok; ~60% truncated ct → SerializationError, halting on incomplete input
+    //= reason=Full ct → Ok; ~60% truncated ct → Serialization error, halting on incomplete input
     //# - If all bytes have been provided and this operation
     //# is unable to complete the above steps with the consumable encrypted message bytes,
     //# this operation MUST halt and indicate a failure to the caller.
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
     assert_eq!(
         decrypt(&truncated_input).await.unwrap_err().kind(),
-        ErrorKind::SerializationError,
-        "truncated ct must produce SerializationError"
+        ErrorKind::Serialization,
+        "truncated ct must produce Serialization error"
     );
 }
 
@@ -115,15 +116,15 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
-    //= reason=Clean ct → Ok; same ct + 4 trailing bytes → Esdk error, proving extra bytes are rejected
+    //= reason=Clean ct → Ok; same ct + 4 trailing bytes → Serialization error, proving extra bytes are rejected
     //# - If this operation successfully completes the above steps
     //# but there are consumable bytes which are intended to be decrypted,
     //# this operation MUST fail.
     assert!(decrypt(&valid_input).await.is_ok(), "clean ct must decrypt");
     assert_eq!(
         decrypt(&trailing_input).await.unwrap_err().kind(),
-        ErrorKind::Esdk,
-        "ct with trailing bytes must produce Esdk error"
+        ErrorKind::Serialization,
+        "ct with trailing bytes must produce a Serialization error"
     );
 }
 
@@ -138,8 +139,8 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let enc_input = EncryptInput::builder()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .frame_length(NonZeroU32::new(10).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -157,8 +158,8 @@ async fn test_streaming_fails_for_multi_frame_signed() {
             .await
             .unwrap_err()
             .kind(),
-        ErrorKind::Esdk,
-        "multi-frame signed streaming must produce Esdk error"
+        ErrorKind::Validation,
+        "multi-frame signed streaming must produce a Validation error"
     );
     assert!(
         output.is_empty(),
@@ -175,7 +176,7 @@ async fn test_signing_suite_must_perform_signature_step() {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -197,14 +198,14 @@ async fn test_signing_suite_must_perform_signature_step() {
 
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
-    //= reason=Untampered ct decrypts; tampered footer → Esdk error, proving signature step runs for signing suites
+    //= reason=Untampered ct decrypts; tampered footer → Cryptographic error, proving signature step runs for signing suites
     //# - If the message header contains an algorithm suite including a
     //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# the Decrypt operation MUST perform this step.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Esdk,
-        "tampered signature must produce Esdk error"
+        ErrorKind::Cryptographic,
+        "tampered signature must produce a Cryptographic error"
     );
 }

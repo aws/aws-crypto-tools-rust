@@ -6,6 +6,7 @@ mod fixtures;
 
 use aws_esdk::*;
 use fixtures::*;
+use std::num::NonZeroU32;
 
 pub const IV_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
@@ -20,8 +21,8 @@ pub enum Version {
 pub const VERSIONS: [Version; 2] = [Version::V1, Version::V2];
 
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::EsdkAlgorithmSuiteId;
-use aws_esdk::EsdkCommitmentPolicy;
+use aws_esdk::AlgorithmSuiteId;
+use aws_esdk::CommitmentPolicy;
 use aws_mpl_primitives::AesGcm;
 
 /// Build a native raw-AES keyring.
@@ -59,8 +60,8 @@ pub async fn encrypt_v1(plaintext: &[u8]) -> Vec<u8> {
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -73,8 +74,8 @@ pub async fn encrypt_v1_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Vec<
         .plaintext(plaintext)
         .encryption_context(ec)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -97,7 +98,7 @@ pub async fn encrypt_with_frame_length(plaintext: &[u8], frame_length: u32) -> V
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -112,7 +113,7 @@ pub async fn encrypt_framed_with_keyring(
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -125,9 +126,9 @@ pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -139,7 +140,7 @@ pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -155,8 +156,8 @@ pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>
     let input = EncryptInput::builder()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .frame_length(NonZeroU32::new(10).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let ct = encrypt(&input).await.unwrap().ciphertext;
@@ -169,8 +170,8 @@ pub async fn encrypt_with_v1_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha384EcdsaP384)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -182,7 +183,7 @@ pub async fn encrypt_without_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -196,8 +197,8 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
     let input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring)
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext
@@ -212,8 +213,8 @@ pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u
     let input = EncryptInput::builder()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(10).unwrap())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .frame_length(NonZeroU32::new(10).unwrap())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()
         .unwrap();
     let ct = encrypt(&input).await.unwrap().ciphertext;
@@ -223,8 +224,8 @@ pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u
 /// Encrypt with a specific suite, policy, and keyring, return ciphertext bytes.
 pub async fn encrypt_with_suite(
     plaintext: &[u8],
-    suite: EsdkAlgorithmSuiteId,
-    policy: EsdkCommitmentPolicy,
+    suite: AlgorithmSuiteId,
+    policy: CommitmentPolicy,
     keyring: &RawAesKeyring,
 ) -> Vec<u8> {
     let enc_input = EncryptInput::builder()
@@ -239,10 +240,10 @@ pub async fn encrypt_with_suite(
 
 /// The commitment policy that decrypts messages of `version`: V1 messages
 /// use non-committing suites.
-pub fn commitment_policy_for(version: Version) -> EsdkCommitmentPolicy {
+pub fn commitment_policy_for(version: Version) -> CommitmentPolicy {
     match version {
-        Version::V1 => EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
-        Version::V2 => EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        Version::V1 => CommitmentPolicy::ForbidEncryptAllowDecrypt,
+        Version::V2 => CommitmentPolicy::RequireEncryptRequireDecrypt,
     }
 }
 
@@ -257,8 +258,8 @@ pub async fn encrypt_with_version(
         .keyring(keyring);
     if let Version::V1 = version {
         builder = builder
-            .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-            .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+            .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+            .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt);
     }
     encrypt(&builder.build().unwrap()).await.unwrap().ciphertext
 }
@@ -281,10 +282,10 @@ pub async fn encrypt_no_sign_with_ec(
         .keyring(keyring);
     let input = match version {
         Version::V1 => builder
-            .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-            .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt),
+            .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+            .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt),
         Version::V2 => {
-            builder.algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            builder.algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         }
     }
     .build()
@@ -305,10 +306,10 @@ pub async fn encrypt_no_sign_ec_keyring(
         .keyring(keyring.clone());
     let input = match version {
         Version::V1 => builder
-            .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-            .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt),
+            .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+            .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt),
         Version::V2 => {
-            builder.algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            builder.algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         }
     }
     .build()
@@ -331,7 +332,7 @@ pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring)
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
         .keyring(keyring.clone())
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     decrypt(&dec_input).await.unwrap().plaintext
@@ -362,7 +363,7 @@ pub async fn decrypt_v1_with_keyring_ec(
         .ciphertext(ciphertext)
         .encryption_context(ec)
         .keyring(keyring.clone())
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     decrypt(&dec_input).await.unwrap().plaintext
@@ -389,7 +390,7 @@ pub async fn try_decrypt_v1_with_keyring(
     let dec_input = DecryptInput::builder()
         .ciphertext(ciphertext)
         .keyring(keyring.clone())
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     decrypt(&dec_input).await
@@ -421,7 +422,7 @@ pub async fn decrypt_ciphertext_result(ciphertext: &[u8]) -> Result<DecryptOutpu
 /// Decrypt with a specific policy and keyring, return full DecryptOutput.
 pub async fn decrypt_with(
     ciphertext: &[u8],
-    policy: EsdkCommitmentPolicy,
+    policy: CommitmentPolicy,
     keyring: &RawAesKeyring,
 ) -> DecryptOutput {
     let dec_input = DecryptInput::builder()
@@ -443,7 +444,7 @@ pub async fn decrypt_with_version(ciphertext: &[u8], version: Version) -> Decryp
         .ciphertext(ciphertext)
         .keyring(keyring);
     if let Version::V1 = version {
-        builder = builder.commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+        builder = builder.commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt);
     }
     decrypt(&builder.build().unwrap()).await.unwrap()
 }
@@ -471,7 +472,7 @@ pub async fn round_trip_framed(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .frame_length(FrameLength::new(frame_length).unwrap())
+        .frame_length(NonZeroU32::new(frame_length).unwrap())
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -490,7 +491,7 @@ pub async fn round_trip_v1(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let dec_input = DecryptInput::builder()
         .ciphertext(&ct)
         .keyring(keyring)
-        .commitment_policy(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build()
         .unwrap();
     decrypt(&dec_input).await.unwrap().plaintext
@@ -520,7 +521,7 @@ pub async fn round_trip_signing(plaintext: &[u8]) -> Vec<u8> {
     let enc_input = EncryptInput::builder()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .algorithm_suite_id(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
         .build()
         .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
@@ -1400,8 +1401,8 @@ pub async fn try_decrypt_external_nonframed(
 
     // V1 suite 0x0178 is non-committing; V2 suite 0x0478 is committing.
     let commitment_policy = match version {
-        Version::V1 => EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
-        Version::V2 => EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        Version::V1 => CommitmentPolicy::ForbidEncryptAllowDecrypt,
+        Version::V2 => CommitmentPolicy::RequireEncryptRequireDecrypt,
     };
     let dec_input = DecryptInput::builder()
         .ciphertext(msg)
