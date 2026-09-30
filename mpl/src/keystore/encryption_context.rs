@@ -3,7 +3,8 @@
 
 //! Encryption context construction for branch key store operations.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeMap;
 
 use super::attributes::{
@@ -42,14 +43,14 @@ fn build_base(
 ) -> Result<BTreeMap<String, String>, Error> {
     if input.branch_key_id.is_empty() {
         return Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             "branch-key-id MUST not be an empty string",
         ));
     }
 
     if type_value.is_empty() {
         return Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             "type field MUST not be an empty string",
         ));
     }
@@ -92,7 +93,7 @@ fn build_base(
                 .is_some()
             {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     format!(
                         "custom encryption context key '{key_str}' collides with an existing \
                          encryption context entry after prefixing with '{CUSTOM_EC_PREFIX}'"
@@ -139,7 +140,7 @@ pub fn decrypt_only_encryption_context(
 ) -> Result<BTreeMap<String, String>, Error> {
     if version.is_empty() {
         return Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             "branch key version MUST not be an empty string",
         ));
     }

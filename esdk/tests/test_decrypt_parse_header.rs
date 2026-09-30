@@ -44,9 +44,11 @@ async fn test_unsupported_version_rejected() {
         decrypt(&valid_input).await.is_ok(),
         "supported version must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "unsupported version byte must produce Serialization error"
     );
 }
@@ -94,9 +96,11 @@ async fn test_unsupported_content_type_v1_rejected() {
         decrypt(&valid_input).await.is_ok(),
         "supported content type must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "unsupported V1 content type must produce Serialization error"
     );
 }
@@ -144,9 +148,11 @@ async fn test_unsupported_content_type_v2_rejected() {
         decrypt(&valid_input).await.is_ok(),
         "supported content type must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "unsupported V2 content type must produce Serialization error"
     );
 }
@@ -190,9 +196,11 @@ async fn test_unsupported_type_rejected() {
         decrypt(&valid_input).await.is_ok(),
         "supported type must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "unsupported V1 type byte must produce Serialization error"
     );
 }
@@ -283,9 +291,11 @@ async fn test_no_header_info_released_before_verification() {
     //# Until the [header is verified](#verify-the-header), this operation MUST NOT
     //# release any parsed information from the header.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered header must produce Cryptographic error, no output"
     );
 }
@@ -337,9 +347,11 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
         decrypt(&valid_input).await.is_ok(),
         "valid V1 ct must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered V1 auth tag must produce Cryptographic error"
     );
 }
@@ -385,9 +397,11 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
         decrypt(&valid_input).await.is_ok(),
         "valid V1 ct must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered V1 header auth IV must produce Cryptographic error"
     );
 }
@@ -694,9 +708,11 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
         decrypt(&valid_input).await.is_ok(),
         "valid V2 ct must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered V2 auth tag must produce Cryptographic error"
     );
 }

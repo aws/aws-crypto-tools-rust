@@ -68,6 +68,7 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::keystore::{BranchKeyStore, Discovery, Keystore, MrDiscovery};
@@ -76,7 +77,6 @@ use aws_crypto_mpl::structures::{
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 use aws_crypto_mpl::{Cmc, Keyring, KmsConfiguration, LocalCmc, SharedCmc};
-use aws_crypto_mpl::{Error, ErrorKind};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -323,8 +323,8 @@ fn assert_failed_at_kms(result: Result<EncryptionMaterials, Error>, context: &st
             panic!("{context}: the cause must be the originating Error, got: {err}")
         });
     assert_eq!(
-        err.kind(),
-        keystore_err.kind(),
+        std::mem::discriminant(&err),
+        std::mem::discriminant(keystore_err),
         "{context}: the keyring keeps the keystore's kind"
     );
 
@@ -700,7 +700,7 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
         .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
     // Only the kms-arn-compat check in resolve_keystore_arn returns Validation;
     // a missing record or an unreachable table returns a remote kind.
-    assert_eq!(err.kind(), ErrorKind::Validation, "got: {err}");
+    assert!(err.is_validation(), "got: {err}");
 }
 
 #[tokio::test]
@@ -815,7 +815,7 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("plain Discovery MUST NOT reach a us-east-1 MRK from a us-west-2 client");
-    assert_eq!(err.kind(), ErrorKind::Remote);
+    assert!(err.is_service(), "{:?}", err);
 
     // Dafny asserts the specific KMS `IncorrectKeyException` here
     // (AwsCryptographyKeyStore/test/TestDiscoveryGetKeys.dfy):
@@ -831,7 +831,7 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
         .expect("the keystore failure must be attached as the cause")
         .downcast_ref::<Error>()
         .expect("the cause must be the originating Error");
-    assert_eq!(keystore_err.kind(), ErrorKind::Remote);
+    assert!(keystore_err.is_service(), "{:?}", keystore_err);
 
     let sdk_err = keystore_err
         .source()

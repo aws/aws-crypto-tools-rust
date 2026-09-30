@@ -3,7 +3,8 @@
 
 //! Raw AES keyring.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -131,7 +132,7 @@ impl RawAesKeyring {
         let mut iv = vec![0u8; IV_LENGTH];
         generate_random_bytes(&mut iv).map_err(|e| {
             Error::with_cause(
-                ErrorKind::Cryptographic,
+                Kind::Cryptographic,
                 "failed to obtain entropy for the AES-GCM IV",
                 e,
             )
@@ -150,7 +151,7 @@ impl RawAesKeyring {
         )
         .map_err(|e| {
             Error::with_cause(
-                ErrorKind::Cryptographic,
+                Kind::Cryptographic,
                 "AES-GCM encryption of the plaintext data key failed",
                 e,
             )
@@ -264,23 +265,17 @@ impl RawAesKeyringBuilder {
     /// reserved value `aws-kms`.
     pub fn build(self) -> Result<RawAesKeyring, Error> {
         let Some(key_namespace) = self.key_namespace else {
-            return Err(Error::new(
-                ErrorKind::Validation,
-                "a key namespace is required",
-            ));
+            return Err(Error::new(Kind::Validation, "a key namespace is required"));
         };
         let Some(key_name) = self.key_name else {
-            return Err(Error::new(ErrorKind::Validation, "a key name is required"));
+            return Err(Error::new(Kind::Validation, "a key name is required"));
         };
         let Some(wrapping_key) = self.wrapping_key else {
-            return Err(Error::new(
-                ErrorKind::Validation,
-                "a wrapping key is required",
-            ));
+            return Err(Error::new(Kind::Validation, "a wrapping key is required"));
         };
         let Some(wrapping_alg) = self.wrapping_alg else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "a wrapping algorithm is required",
             ));
         };
@@ -291,7 +286,7 @@ impl RawAesKeyringBuilder {
         // encrypted data keys that impersonate them.
         if key_namespace.starts_with(RESERVED_KEY_NAMESPACE_PREFIX) {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
                 ),
@@ -301,7 +296,7 @@ impl RawAesKeyringBuilder {
         let expected_key_len = usize::from(wrapping_alg.key_len());
         if wrapping_key.len() != expected_key_len {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "wrapping key length ({}) does not match the length specified by {:?} ({expected_key_len})",
                     wrapping_key.len(),
@@ -354,7 +349,7 @@ impl Keyring for RawAesKeyring {
     ) -> Result<DecryptionMaterials, Error> {
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "decryption materials already contain a plaintext data key",
             ));
         }
@@ -375,7 +370,7 @@ impl Keyring for RawAesKeyring {
         let mut attempted_decryption = false;
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
-                collected_errors.push(Error::new(ErrorKind::NoMatchingDataKey, format!(
+                collected_errors.push(Error::new(Kind::NoMatchingDataKey, format!(
                     "encrypted data key {index} did not match the AES keyring, expected key provider id {}",
                     self.inner.key_namespace,
                 )));
@@ -384,7 +379,7 @@ impl Keyring for RawAesKeyring {
             attempted_decryption = true;
 
             if edk.ciphertext().len() < TAG_LENGTH {
-                collected_errors.push(Error::new(ErrorKind::Cryptographic, format!(
+                collected_errors.push(Error::new(Kind::Cryptographic, format!(
                     "encrypted data key {index}: insufficient data to decrypt: ciphertext is {} bytes, need at least the {TAG_LENGTH}-byte authentication tag",
                     edk.ciphertext().len(),
                 )));
@@ -405,7 +400,7 @@ impl Keyring for RawAesKeyring {
                 &mut plaintext_dk,
             ) {
                 collected_errors.push(Error::with_cause(
-                    ErrorKind::Cryptographic,
+                    Kind::Cryptographic,
                     format!("encrypted data key {index}: AES-GCM decryption failed"),
                     e,
                 ));
@@ -413,7 +408,7 @@ impl Keyring for RawAesKeyring {
             }
 
             if plaintext_dk.len() != expected_dk_len {
-                collected_errors.push(Error::new(ErrorKind::Cryptographic, format!(
+                collected_errors.push(Error::new(Kind::Cryptographic, format!(
                     "encrypted data key {index}: decrypted data key is {} bytes, expected {expected_dk_len} for the algorithm suite",
                     plaintext_dk.len(),
                 )));
@@ -433,12 +428,12 @@ impl Keyring for RawAesKeyring {
         if !attempted_decryption {
             return Err(if collected_errors.is_empty() {
                 Error::new(
-                    ErrorKind::NoMatchingDataKey,
+                    Kind::NoMatchingDataKey,
                     "no encrypted data key was supplied",
                 )
             } else {
                 Error::collection(
-                    ErrorKind::NoMatchingDataKey,
+                    Kind::NoMatchingDataKey,
                     "no encrypted data key matched this keyring",
                     collected_errors,
                 )
@@ -452,7 +447,7 @@ impl Keyring for RawAesKeyring {
         //   "If no decryption succeeds, the keyring MUST fail"
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
-        let kind = Error::aggregate_kind(&collected_errors, ErrorKind::Cryptographic);
+        let kind = Error::aggregate_kind(&collected_errors, Kind::Cryptographic);
         Err(Error::collection(
             kind,
             "unable to decrypt any encrypted data key",
@@ -467,7 +462,7 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, E
     let mut bytes = vec![0u8; suite.encryption_key_length()];
     generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Cryptographic,
+            Kind::Cryptographic,
             "failed to obtain entropy for the plaintext data key",
             e,
         )

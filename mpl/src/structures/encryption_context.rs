@@ -3,7 +3,8 @@
 
 //! Encryption context key-value mapping.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::{BTreeMap, HashMap};
 
 /// A key-value mapping of arbitrary, non-secret, UTF-8 encoded strings used as AAD.
@@ -94,7 +95,7 @@ impl EncryptionContext {
         // return errors rather than silently producing invalid output.
         let Ok(count) = u16::try_from(self.0.len()) else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "encryption context entry count {} exceeds u16::MAX",
                     self.0.len()
@@ -106,7 +107,7 @@ impl EncryptionContext {
         for (key, value) in &self.0 {
             let Ok(key_len) = u16::try_from(key.len()) else {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     format!(
                         "encryption context key length {} exceeds u16::MAX",
                         key.len()
@@ -118,7 +119,7 @@ impl EncryptionContext {
 
             let Ok(val_len) = u16::try_from(value.len()) else {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     format!(
                         "encryption context value length {} exceeds u16::MAX",
                         value.len()
@@ -143,16 +144,13 @@ impl EncryptionContext {
         }
 
         if bytes.len() < 2 {
-            return Err(Error::new(
-                ErrorKind::Validation,
-                "insufficient bytes for count",
-            ));
+            return Err(Error::new(Kind::Validation, "insufficient bytes for count"));
         }
 
         let count = u16::from_be_bytes([bytes[0], bytes[1]]);
         if count == 0 {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "key-value pair count must be greater than 0",
             ));
         }
@@ -163,7 +161,7 @@ impl EncryptionContext {
         for _ in 0..count {
             if offset + 2 > bytes.len() {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     "insufficient bytes for key length",
                 ));
             }
@@ -172,17 +170,14 @@ impl EncryptionContext {
 
             let key_end = offset + usize::from(key_len);
             if key_end > bytes.len() {
-                return Err(Error::new(
-                    ErrorKind::Validation,
-                    "insufficient bytes for key",
-                ));
+                return Err(Error::new(Kind::Validation, "insufficient bytes for key"));
             }
             let key = utf8(&bytes[offset..key_end], "key")?;
             offset = key_end;
 
             if offset + 2 > bytes.len() {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     "insufficient bytes for value length",
                 ));
             }
@@ -191,10 +186,7 @@ impl EncryptionContext {
 
             let val_end = offset + usize::from(val_len);
             if val_end > bytes.len() {
-                return Err(Error::new(
-                    ErrorKind::Validation,
-                    "insufficient bytes for value",
-                ));
+                return Err(Error::new(Kind::Validation, "insufficient bytes for value"));
             }
             let value = utf8(&bytes[offset..val_end], "value")?;
             offset = val_end;
@@ -202,13 +194,13 @@ impl EncryptionContext {
             if let Some((previous, _)) = map.last_key_value() {
                 if key == *previous {
                     return Err(Error::new(
-                        ErrorKind::Validation,
+                        Kind::Validation,
                         format!("duplicate key in encryption context: {key:?}"),
                     ));
                 }
                 if key < *previous {
                     return Err(Error::new(
-                        ErrorKind::Validation,
+                        Kind::Validation,
                         "encryption context keys are not in ascending order",
                     ));
                 }
@@ -218,7 +210,7 @@ impl EncryptionContext {
 
         if offset != bytes.len() {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "trailing bytes after deserialization: {} byte(s) left over",
                     bytes.len() - offset
@@ -235,7 +227,7 @@ fn utf8(bytes: &[u8], field: &str) -> Result<String, Error> {
     match std::str::from_utf8(bytes) {
         Ok(s) => Ok(s.to_owned()),
         Err(e) => Err(Error::with_cause(
-            ErrorKind::Validation,
+            Kind::Validation,
             format!("encryption context {field} is not valid UTF-8"),
             e,
         )),

@@ -3,7 +3,8 @@
 
 //! Decryption materials structure.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
@@ -36,20 +37,20 @@ impl DecryptionMaterials {
     ///
     /// # Errors
     ///
-    /// Returns an [`ErrorKind::InvalidMaterials`](crate::ErrorKind::InvalidMaterials)
+    /// Returns an [`InvalidMaterials`](crate::Error::InvalidMaterials)
     /// error if these materials already have a plaintext data key, or if
     /// `plaintext_data_key` is not the algorithm suite's encryption key length.
     pub fn add_data_key(mut self, plaintext_data_key: PlaintextDataKey) -> Result<Self, Error> {
         if self.plaintext_data_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "the materials already have a plaintext data key",
             ));
         }
         let expected_len = self.algorithm_suite().encryption_key_length();
         if plaintext_data_key.len() != expected_len {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 format!(
                     "plaintext data key is {} bytes, expected {expected_len} for the algorithm suite",
                     plaintext_data_key.len(),
@@ -95,13 +96,13 @@ impl DecryptionMaterials {
             .contains_key("aws-crypto-public-key");
         if self.verification_key.is_some() && !has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST include 'aws-crypto-public-key' when verification key is present",
             ));
         }
         if self.verification_key.is_none() && has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
             ));
         }
@@ -197,16 +198,16 @@ impl DecryptionMaterialsBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation) error if no
+    /// Returns a [`Validation`](crate::Error::Validation) error if no
     /// algorithm suite was set, an
-    /// [`ErrorKind::EncryptionContextMismatch`](crate::ErrorKind::EncryptionContextMismatch)
+    /// [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch)
     /// error if a required encryption context key is missing, or an
-    /// [`ErrorKind::InvalidMaterials`](crate::ErrorKind::InvalidMaterials) error if the fields
+    /// [`InvalidMaterials`](crate::Error::InvalidMaterials) error if the fields
     /// violate another spec invariant.
     pub fn build(self) -> Result<DecryptionMaterials, Error> {
         let Some(algorithm_suite_id) = self.algorithm_suite_id else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "an algorithm suite is required",
             ));
         };
@@ -216,7 +217,7 @@ impl DecryptionMaterialsBuilder {
         for key in &self.required_encryption_context_keys {
             if !self.encryption_context.contains_key(key) {
                 return Err(Error::new(
-                    ErrorKind::EncryptionContextMismatch,
+                    Kind::EncryptionContextMismatch,
                     format!(
                         "required encryption context key {key:?} not found in encryption context"
                     ),
@@ -227,7 +228,7 @@ impl DecryptionMaterialsBuilder {
         // If no asymmetric signing, verification key must not be present.
         if !algorithm_suite_id.has_asymmetric_signing() && self.verification_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "verification key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
@@ -239,7 +240,7 @@ impl DecryptionMaterialsBuilder {
             && vk.len() != expected_len
         {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 format!(
                     "verification key length ({}) does not match expected length ({expected_len}) for algorithm suite",
                     vk.len(),
@@ -250,7 +251,7 @@ impl DecryptionMaterialsBuilder {
         // If no symmetric signing, symmetric signing key must not be included
         if !algorithm_suite_id.has_symmetric_signing() && self.symmetric_signing_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "symmetric signing key must not be present when algorithm suite has no symmetric signing",
             ));
         }

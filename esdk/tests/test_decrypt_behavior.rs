@@ -81,9 +81,11 @@ async fn test_decrypt_halts_on_incomplete_message() {
     //# is unable to complete the above steps with the consumable encrypted message bytes,
     //# this operation MUST halt and indicate a failure to the caller.
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
-    assert_eq!(
-        decrypt(&truncated_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&truncated_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "truncated ct must produce Serialization error"
     );
 }
@@ -121,9 +123,11 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     //# but there are consumable bytes which are intended to be decrypted,
     //# this operation MUST fail.
     assert!(decrypt(&valid_input).await.is_ok(), "clean ct must decrypt");
-    assert_eq!(
-        decrypt(&trailing_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&trailing_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "ct with trailing bytes must produce a Serialization error"
     );
 }
@@ -153,12 +157,11 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
 
-    assert_eq!(
+    assert!(
         decrypt_stream(&mut cursor, &mut output, &stream_input)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Validation,
+            .is_validation(),
         "multi-frame signed streaming must produce a Validation error"
     );
     assert!(
@@ -203,9 +206,11 @@ async fn test_signing_suite_must_perform_signature_step() {
     //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# the Decrypt operation MUST perform this step.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered signature must produce a Cryptographic error"
     );
 }

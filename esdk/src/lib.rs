@@ -109,9 +109,8 @@
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
-mod error;
-pub use aws_mpl_primitives::error::DisplayErrorContext;
-pub use error::*;
+pub mod error;
+pub use error::Error;
 mod encrypt;
 pub use encrypt::*;
 mod decrypt;

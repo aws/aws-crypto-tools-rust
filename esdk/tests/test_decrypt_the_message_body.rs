@@ -60,9 +60,11 @@ async fn test_decrypt_final_frame_content_length_validation() {
     //= reason=Untampered ct decrypts; content_length tampered to 11 (> frame_length=10) → Serialization error
     //# If this is a final frame, this MUST be determined by using the [final frame encrypted content length](../data-format/message-body.md#final-frame-encrypted-content-length).
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "content_length > frame_length must produce Serialization error"
     );
 }
@@ -112,9 +114,11 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
     //= reason=Untampered ct decrypts; tampered auth tag byte → Cryptographic error
     //# If this decryption fails, this operation MUST immediately halt and fail.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered auth tag must produce Cryptographic error"
     );
 }
@@ -209,12 +213,11 @@ async fn test_frame_fields_deserialized_from_wire() {
         pt,
         "valid ct must decrypt"
     );
-    assert_eq!(
+    assert!(
         decrypt_ciphertext_result(&content_tampered)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Cryptographic,
+            .is_cryptographic(),
         "tampering frame content must fail AEAD authentication"
     );
 }
@@ -253,9 +256,11 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
     //= reason=Untampered body decrypts (Ok includes plaintext); tampered body returns Err with no DecryptOutput, so no plaintext released
     //# This operation MUST NOT release any unauthenticated plaintext.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered body must produce Cryptographic error, no plaintext"
     );
 }
@@ -299,9 +304,11 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     //# a final frame in a streamed Decrypt operation MUST NOT be released until [signature verification](#verify-the-signature)
     //# successfully completes.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered signature must produce a Cryptographic error, no plaintext"
     );
 }
@@ -338,12 +345,11 @@ async fn test_unframed_decrypt_fails_on_tampered_auth_tag() {
     //= type=test
     //= reason=tampered auth tag → Cryptographic error, so decryption halts on failure
     //# If this decryption fails, this operation MUST immediately halt and fail.
-    assert_eq!(
+    assert!(
         try_decrypt_external_nonframed(Version::V2, &tampered_ct)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Cryptographic,
+            .is_cryptographic(),
         "tampered nonframed auth tag must produce Cryptographic error"
     );
 }

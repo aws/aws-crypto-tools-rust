@@ -3,7 +3,8 @@
 
 //! Encryption materials structure.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
@@ -39,7 +40,7 @@ impl EncryptionMaterials {
     ///
     /// # Errors
     ///
-    /// Returns an [`ErrorKind::InvalidMaterials`](crate::ErrorKind::InvalidMaterials)
+    /// Returns an [`InvalidMaterials`](crate::Error::InvalidMaterials)
     /// error if these materials already have a plaintext data key, or if
     /// `plaintext_data_key` is not the algorithm suite's encryption key length.
     pub fn add_data_key(
@@ -49,14 +50,14 @@ impl EncryptionMaterials {
     ) -> Result<Self, Error> {
         if self.plaintext_data_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "the materials already have a plaintext data key",
             ));
         }
         let expected_len = self.algorithm_suite().encryption_key_length();
         if plaintext_data_key.len() != expected_len {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 format!(
                     "plaintext data key is {} bytes, expected {expected_len} for the algorithm suite",
                     plaintext_data_key.len(),
@@ -72,7 +73,7 @@ impl EncryptionMaterials {
     ///
     /// # Errors
     ///
-    /// Returns an [`ErrorKind::InvalidMaterials`](crate::ErrorKind::InvalidMaterials)
+    /// Returns an [`InvalidMaterials`](crate::Error::InvalidMaterials)
     /// error if these materials have no plaintext data key.
     pub fn add_encrypted_data_key(
         mut self,
@@ -80,7 +81,7 @@ impl EncryptionMaterials {
     ) -> Result<Self, Error> {
         if self.plaintext_data_key.is_none() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "the materials have no plaintext data key",
             ));
         }
@@ -127,13 +128,13 @@ impl EncryptionMaterials {
             .contains_key("aws-crypto-public-key");
         if self.signing_key.is_some() && !has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST include 'aws-crypto-public-key' when signing key is present",
             ));
         }
         if self.signing_key.is_none() && has_key {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encryption context MUST NOT include 'aws-crypto-public-key' when signing key is absent",
             ));
         }
@@ -240,16 +241,16 @@ impl EncryptionMaterialsBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation) error if no
+    /// Returns a [`Validation`](crate::Error::Validation) error if no
     /// algorithm suite was set, an
-    /// [`ErrorKind::EncryptionContextMismatch`](crate::ErrorKind::EncryptionContextMismatch)
+    /// [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch)
     /// error if a required encryption context key is missing, or an
-    /// [`ErrorKind::InvalidMaterials`](crate::ErrorKind::InvalidMaterials) error if the fields
+    /// [`InvalidMaterials`](crate::Error::InvalidMaterials) error if the fields
     /// violate another spec invariant.
     pub fn build(self) -> Result<EncryptionMaterials, Error> {
         let Some(algorithm_suite_id) = self.algorithm_suite_id else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "an algorithm suite is required",
             ));
         };
@@ -258,7 +259,7 @@ impl EncryptionMaterialsBuilder {
         for key in &self.required_encryption_context_keys {
             if !self.encryption_context.contains_key(key) {
                 return Err(Error::new(
-                    ErrorKind::EncryptionContextMismatch,
+                    Kind::EncryptionContextMismatch,
                     format!(
                         "required encryption context key {key:?} not found in encryption context"
                     ),
@@ -269,7 +270,7 @@ impl EncryptionMaterialsBuilder {
         // If no plaintext data key, encrypted data keys must be empty
         if self.plaintext_data_key.is_none() && !self.encrypted_data_keys.is_empty() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "encrypted data keys must be empty when plaintext data key is not present",
             ));
         }
@@ -277,7 +278,7 @@ impl EncryptionMaterialsBuilder {
         // If no asymmetric signing, signing key must not be present
         if !algorithm_suite_id.has_asymmetric_signing() && self.signing_key.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "signing key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
@@ -297,7 +298,7 @@ impl EncryptionMaterialsBuilder {
         // If no symmetric signing, symmetric signing keys must not be included
         if !algorithm_suite_id.has_symmetric_signing() && self.symmetric_signing_keys.is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "symmetric signing keys must not be present when algorithm suite has no symmetric signing",
             ));
         }

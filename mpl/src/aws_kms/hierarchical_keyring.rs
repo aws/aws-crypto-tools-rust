@@ -9,7 +9,8 @@
 //! [`super::branch_key_wrap`] and the cache identifier formulas in
 //! [`super::cache_entry_identifier`].
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -282,28 +283,28 @@ impl HierarchicalKeyringBuilder {
         } = self;
 
         let Some(keystore) = key_store else {
-            return Err(Error::new(ErrorKind::Validation, "a key store is required"));
+            return Err(Error::new(Kind::Validation, "a key store is required"));
         };
 
         let Some(ttl) = ttl else {
-            return Err(Error::new(ErrorKind::Validation, "a TTL is required"));
+            return Err(Error::new(Kind::Validation, "a TTL is required"));
         };
         if ttl.is_zero() {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "TTL must be greater than zero",
             ));
         }
 
         if branch_key_id.is_some() && branch_key_id_supplier.is_some() {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "cannot initialize keyring with both a branch_key_id and a branch_key_id_supplier",
             ));
         }
         if branch_key_id.is_none() && branch_key_id_supplier.is_none() {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "must initialize keyring with either a branch_key_id or a branch_key_id_supplier",
             ));
         }
@@ -322,7 +323,7 @@ impl HierarchicalKeyringBuilder {
             && grace_period >= ttl
         {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "storm-tracking grace period ({grace_period:?}) must be less than the cache limit TTL ({ttl:?})",
                 ),
@@ -364,7 +365,7 @@ fn generate_partition_id() -> Result<Vec<u8>, Error> {
     let mut bytes = [0u8; 16];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Cryptographic,
+            Kind::Cryptographic,
             "failed to obtain entropy for partition-id v4 UUID",
             e,
         )
@@ -467,7 +468,7 @@ impl Keyring for HierarchicalKeyring {
     ) -> Result<DecryptionMaterials, Error> {
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
-                ErrorKind::InvalidMaterials,
+                Kind::InvalidMaterials,
                 "decryption materials already contain a plaintext data key",
             ));
         }
@@ -506,7 +507,7 @@ impl Keyring for HierarchicalKeyring {
         // but a distinct one — no encrypted data key matched this keyring.
         if collected_errors.is_empty() {
             return Err(Error::new(
-                ErrorKind::NoMatchingDataKey,
+                Kind::NoMatchingDataKey,
                 "no encrypted data key matched",
             ));
         }
@@ -520,7 +521,7 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        let kind = Error::aggregate_kind(&collected_errors, ErrorKind::Cryptographic);
+        let kind = Error::aggregate_kind(&collected_errors, Kind::Cryptographic);
         Err(Error::collection(
             kind,
             "failed to decrypt any encrypted data key",
@@ -575,7 +576,7 @@ impl HierarchicalKeyring {
         // here means the supplier is present.
         let Some(supplier) = &self.inner.branch_key_id_supplier else {
             return Err(Error::new(
-                ErrorKind::Internal,
+                Kind::Internal,
                 "neither a branch_key_id nor a branch_key_id_supplier is configured",
             ));
         };
@@ -608,7 +609,7 @@ impl HierarchicalKeyring {
         let ciphertext = edk.ciphertext();
         if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
             return Err(Error::new(
-                ErrorKind::Cryptographic,
+                Kind::Cryptographic,
                 format!(
                     "EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",
                     ciphertext.len(),
@@ -676,7 +677,7 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, E
     let mut bytes = vec![0u8; suite.encryption_key_length()];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Cryptographic,
+            Kind::Cryptographic,
             "failed to obtain entropy for random plaintext data key",
             e,
         )
@@ -701,7 +702,7 @@ fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Er
     match &entry.materials {
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
         _ => Err(Error::new(
-            ErrorKind::Validation,
+            Kind::Validation,
             "cache entry has wrong materials kind (expected BranchKey)",
         )),
     }

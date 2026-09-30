@@ -5,7 +5,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind};
+use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext};
 use test_helpers::{
     CallStyle, multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, run_decrypt_stream,
     run_encrypt_stream, test_keyring,
@@ -127,9 +127,9 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
             .await
             .expect_err("multi-frame signed message must fail in streaming mode");
         assert!(
-            matches!(err.kind(), ErrorKind::Validation),
-            "expected ErrorKind::Validation under {style:?}, got {:?}",
-            err.kind()
+            err.is_validation(),
+            "expected Validation under {style:?}, got {:?}",
+            err
         );
 
         assert!(
@@ -185,9 +185,9 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     for (case, result) in [("neither", neither), ("both", both)] {
         let err = result.expect_err("EncryptStreamInput build must fail");
         assert!(
-            matches!(err.kind(), ErrorKind::Validation),
+            err.is_validation(),
             "expected Validation error for {case}, got {:?}",
-            err.kind()
+            err
         );
     }
 
@@ -206,9 +206,9 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     for (case, result) in [("neither", neither), ("both", both)] {
         let err = result.expect_err("DecryptStreamInput build must fail");
         assert!(
-            matches!(err.kind(), ErrorKind::Validation),
+            err.is_validation(),
             "expected Validation error for {case}, got {:?}",
-            err.kind()
+            err
         );
     }
 }

@@ -15,7 +15,6 @@
 //! `AwsCryptographicMaterialProviders/dafny/AwsCryptographyKeyStore/test/`
 //! (`Fixtures.dfy` and `TestGetKeys.dfy`).
 
-use aws_crypto_mpl::ErrorKind;
 use std::error::Error as _;
 
 use aws_config::{BehaviorVersion, Region};
@@ -270,7 +269,7 @@ async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(west) + EastBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -289,7 +288,7 @@ async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(east) + WestBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 // ─── TestGetActiveMrkKey: AP MRK config (key absent in region) ──────────────
@@ -345,7 +344,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
         Ok(_) => panic!("Configured KEY_ARN + DISCOVERY_BRANCH_KEY_ID MUST fail (ARN mismatch)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 // ─── TestGetActiveKeyWrongLogicalKeyStoreName ──────────────────────────────
@@ -366,7 +365,7 @@ async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
         Ok(_) => panic!("Wrong logical name MUST fail at KMS"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Remote);
+    assert!(err.is_service(), "{:?}", err);
 
     // The originating SDK error is nested as the cause, so the specific KMS
     // exception is recoverable by type. This ports the assertion Dafny makes
@@ -435,12 +434,8 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
     };
     // Which of the two depends on the caller's IAM policy, as above.
     assert!(
-        matches!(
-            err.kind(),
-            ErrorKind::RemoteAccessDenied | ErrorKind::RemoteResourceNotFound
-        ),
-        "expected an access-denied or not-found kind, got: {:?}",
-        err.kind()
+        (err.is_access_denied() || err.is_resource_not_found()),
+        "expected an access-denied or not-found kind, got: {err:?}"
     );
 
     let sdk_err = err
@@ -470,7 +465,7 @@ async fn integ_get_active_key_does_not_exist() {
         Ok(_) => panic!("nonexistent branch key MUST fail with RemoteResourceNotFound"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
+    assert!(err.is_resource_not_found(), "{:?}", err);
 }
 
 // ─── Write path: CreateKeyStore / CreateKey / VersionKey round trips ─────────

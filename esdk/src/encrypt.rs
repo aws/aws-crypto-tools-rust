@@ -8,7 +8,7 @@
 use std::num::NonZeroU32;
 
 use crate::error::Error;
-use crate::error::{ErrorKind, err, val_err};
+use crate::error::{Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::encryption_context::write_empty_ec_or_write_aad;
@@ -384,7 +384,7 @@ async fn step_get_encryption_materials(
             .plaintext_data_key()
             .ok_or_else(|| {
                 err(
-                    ErrorKind::InvalidMaterials,
+                    Kind::InvalidMaterials,
                     "encryption materials must contain a plaintext data key",
                 )
             })?
@@ -495,7 +495,7 @@ fn step_construct_signature(
                 .signing_key()
                 .ok_or_else(|| {
                     err(
-                        ErrorKind::InvalidMaterials,
+                        Kind::InvalidMaterials,
                         "encryption materials must contain a signing key for signature algorithm",
                     )
                 })?
@@ -504,7 +504,7 @@ fn step_construct_signature(
             //# - the input to sign MUST be the concatenation of the serialization of the [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md)
             sig_digest.context.ok_or_else(|| {
                 err(
-                    ErrorKind::Internal,
+                    Kind::Internal,
                     "signature digest context must be present for signing",
                 )
             })?,
@@ -654,7 +654,7 @@ fn build_header_body(
             frame_length,
         ),
         v => Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!("algorithm suite declares unsupported message format version {v}"),
         )),
     }
@@ -671,14 +671,14 @@ fn build_v2_header_body(
 ) -> Result<HeaderBody, Error> {
     let Some(sd) = suite_data else {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             "suite data must be present for a committing algorithm suite",
         ));
     };
     let expected_len = suite.algorithm_suite_data_length();
     if sd.len() != expected_len {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             "suite data length must match the commitment key output length for a committing suite",
         ));
     }
@@ -708,7 +708,7 @@ fn build_v1_header_body(
     let header_iv_length_usize = get_iv_length(suite);
     let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!("IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"),
         ));
     };
@@ -733,7 +733,7 @@ fn build_header_auth_tag(
     let key_length = get_encrypt_key_length(suite);
     if data_key.len() != key_length {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!(
                 "incorrect data key length: got {}, expected {}",
                 data_key.len(),

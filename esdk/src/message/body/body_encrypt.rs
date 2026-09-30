@@ -3,7 +3,7 @@
 //! Frame encryption and body serialization.
 
 use super::{BodyAADContent, body_aad, get_alg_suite, iv_seq};
-use crate::error::{ErrorKind, err, val_err};
+use crate::error::{Kind, err, val_err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{read_opt_u8, read_up_to_peek, write_bytes, write_u32};
@@ -52,7 +52,7 @@ pub(crate) fn construct_frame(
     //# of the plaintext being encrypted in this frame.
     let Ok(plaintext_len_u64) = u64::try_from(input.plaintext.len()) else {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!(
                 "plaintext length {} exceeds u64::MAX",
                 input.plaintext.len()
@@ -191,7 +191,7 @@ pub(crate) fn construct_frame(
         // of the plaintext (the auth tag is a separate field), so plaintext.len()
         // *is* the encrypted content length and lets us skip that buffering.
         let Ok(enc_content_len) = u32::try_from(input.plaintext.len()) else {
-            return Err(err(ErrorKind::Validation, "plaintext length exceeds u32"));
+            return Err(err(Kind::Validation, "plaintext length exceeds u32"));
         };
 
         //= spec/data-format/message-body.md#final-frame-encrypted-content-length
