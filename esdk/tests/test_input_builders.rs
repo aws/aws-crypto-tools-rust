@@ -46,13 +46,13 @@ async fn test_build_requires_plaintext_and_ciphertext() {
         .keyring(keyring.clone())
         .build()
         .expect_err("EncryptInput build must fail without a plaintext");
-    assert_eq!(err.kind(), ErrorKind::ValidationError);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 
     let err = DecryptInput::builder()
         .keyring(keyring)
         .build()
         .expect_err("DecryptInput build must fail without a ciphertext");
-    assert_eq!(err.kind(), ErrorKind::ValidationError);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test(flavor = "multi_thread")]

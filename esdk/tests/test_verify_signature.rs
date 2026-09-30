@@ -60,8 +60,8 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         .expect_err("tampered footer must fail");
     assert_eq!(
         err.kind(),
-        ErrorKind::Esdk,
-        "tampered footer must produce Esdk error"
+        ErrorKind::Cryptographic,
+        "tampered footer must produce a Cryptographic error"
     );
     assert!(
         err.message().contains("Signature verification failed"),
@@ -226,7 +226,7 @@ async fn test_footer_wait_truncated_message_fails() {
 
     //= spec/client-apis/decrypt.md#verify-the-signature
     //= type=test
-    //= reason=Full ct → Ok; ct truncated mid-footer → SerializationError, EOF on the blocking read signals end-of-message
+    //= reason=Full ct → Ok; ct truncated mid-footer → Serialization error, EOF on the blocking read signals end-of-message
     //# If there are not enough consumable bytes to deserialize the message footer and
     //# the caller has not yet indicated an end to the encrypted message,
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
@@ -234,7 +234,7 @@ async fn test_footer_wait_truncated_message_fails() {
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
     assert_eq!(
         decrypt(&truncated_input).await.unwrap_err().kind(),
-        ErrorKind::SerializationError,
-        "truncated footer must produce SerializationError"
+        ErrorKind::Serialization,
+        "truncated footer must produce Serialization error"
     );
 }

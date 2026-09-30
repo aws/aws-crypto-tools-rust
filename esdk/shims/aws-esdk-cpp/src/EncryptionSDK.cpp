@@ -18,10 +18,10 @@ namespace Esdk {
 namespace detail {
 
 // An error from the Rust side, decoded from the message cxx carries across.
-// lib.rs's encode_err writes it as `{kind}\x1f{mpl_kind}\x1f{message}`.
+// lib.rs's encode_err writes it as `{kind}\x1f{retryable}\x1f{message}`.
 struct ShimError {
     ::ffi::ShimErrorKind kind;
-    std::optional<MplErrorKind> mpl_kind;  // Empty unless the Rust side reported an MPL kind.
+    bool retryable;
     std::string message;
 };
 
@@ -59,10 +59,9 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
     }
     // The message is everything after the second separator, so a separator
     // inside the message itself is left alone.
-    const auto mpl_kind = parse_repr(what.substr(first + 1, second - first - 1));
     return ShimError{
         static_cast<::ffi::ShimErrorKind>(*kind),
-        mpl_kind ? std::optional(static_cast<MplErrorKind>(*mpl_kind)) : std::nullopt,
+        what.substr(first + 1, second - first - 1) == "1",
         std::string(what.substr(second + 1)),
     };
 }
@@ -74,10 +73,18 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         throw AwsEncryptionSdkException(what);
     }
     switch (error->kind) {
-        case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(error->message);
-        case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(error->message);
-        case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(error->message);
-        case ::ffi::ShimErrorKind::MplError: throw MplException(error->mpl_kind, error->message);
+        case ::ffi::ShimErrorKind::Validation: throw ValidationException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Serialization: throw SerializationException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Cryptographic: throw CryptographicException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::InvalidMaterials: throw InvalidMaterialsException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::EncryptionContextMismatch: throw EncryptionContextMismatchException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::NoMatchingDataKey: throw NoMatchingDataKeyException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteAccessDenied: throw RemoteAccessDeniedException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteResourceNotFound: throw RemoteResourceNotFoundException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteThrottled: throw RemoteThrottledException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::RemoteTransport: throw RemoteTransportException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Remote: throw RemoteException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Internal: throw InternalException(error->message, error->retryable);
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.

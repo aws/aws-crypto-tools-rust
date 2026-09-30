@@ -13,7 +13,7 @@
 //! This module wraps the MPL's `bytes -> id` lookup in the ESDK error type.
 //! Its other helpers map MPL suite fields to the types the ESDK needs.
 
-use crate::error::{Error, esdk_err, val_err};
+use crate::error::{Error, ErrorKind, err, val_err};
 use crate::types::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::{
     AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
@@ -33,10 +33,13 @@ pub fn algorithm_suite_id_from_bytes(bytes: [u8; 2]) -> Result<AlgorithmSuiteId,
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     AlgorithmSuiteId::from_id_bytes(bytes).ok_or_else(|| {
-        esdk_err(format!(
-            "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
-            bytes[0], bytes[1]
-        ))
+        err(
+            ErrorKind::Serialization,
+            format!(
+                "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                bytes[0], bytes[1]
+            ),
+        )
     })
 }
 
@@ -54,7 +57,10 @@ pub fn get_esdk_algorithm_suite_id(id: MplAlgorithmSuiteId) -> Result<AlgorithmS
         //= spec/client-apis/decrypt.md#get-the-decryption-materials
         //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
         //# decrypt MUST yield an error.
-        other => Err(esdk_err(format!("Unsupported algorithm suite: {other:?}"))),
+        other => Err(err(
+            ErrorKind::InvalidMaterials,
+            format!("Unsupported algorithm suite: {other:?}"),
+        )),
     }
 }
 

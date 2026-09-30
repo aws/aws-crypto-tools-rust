@@ -128,7 +128,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set (config provided in two places).
     /// Otherwise, returns whatever [`encrypt`](crate::encrypt) returns.
     //= spec/client-apis/client.md#encrypt
@@ -142,7 +142,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set.
     /// Otherwise, returns whatever [`decrypt`](crate::decrypt) returns.
     //= spec/client-apis/client.md#decrypt
@@ -156,7 +156,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set.
     /// Otherwise, returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
     pub async fn encrypt_stream(
@@ -173,7 +173,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set.
     /// Otherwise, returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
     pub async fn decrypt_stream(

@@ -65,7 +65,7 @@ fn test_required_ec_keys_must_be_subset() {
     assert!(
         result
             .unwrap_err()
-            .message
+            .message()
             .contains("not found in encryption context")
     );
 }
@@ -81,7 +81,7 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
     assert!(
         result
             .unwrap_err()
-            .message
+            .message()
             .contains("Symmetric signing key must not be present")
     );
 }
@@ -108,9 +108,9 @@ fn test_verification_key_length_must_match_algorithm_suite() {
             "{suite_id:?} with {bad_len}-byte verification key must fail"
         ));
         assert!(
-            err.message.contains("Verification key length"),
+            err.message().contains("Verification key length"),
             "{suite_id:?} @ {bad_len}: unexpected error message: {}",
-            err.message
+            err.message()
         );
     }
 }
@@ -148,7 +148,10 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
 
     let result = DecryptionMaterials::new(NO_SIGN_SUITE, ec, reck, None, Some(vk), None);
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
-    assert!(err.message.contains("Verification key must not be present"));
+    assert!(
+        err.message()
+            .contains("Verification key must not be present")
+    );
 }
 
 #[test]

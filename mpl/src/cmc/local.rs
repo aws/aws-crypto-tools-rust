@@ -7,6 +7,7 @@
 //! See [`LocalCmc`] for the public API. Behavioral requirements are
 //! specified in `../spec/framework/local-cryptographic-materials-cache.md`.
 
+use crate::{Error, ErrorKind};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -14,8 +15,7 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use lru::LruCache;
 
-use super::{CacheEntry, Cmc, CmcError};
-use crate::structures::MaterialsError;
+use super::{CacheEntry, Cmc};
 
 /// Internal storage type — the `lru` crate's `LruCache` keyed by cache id
 /// with `Arc<CacheEntry>` values so `get` can hand out a reference-counted
@@ -111,17 +111,16 @@ impl LocalCmc {
 
     /// Number of currently stored entries. Useful for tests asserting
     /// capacity invariants.
-    pub fn len(&self) -> Result<usize, CmcError> {
-        let inner = self
-            .inner
-            .store
-            .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+    pub fn len(&self) -> Result<usize, Error> {
+        let inner =
+            self.inner.store.lock().map_err(|e| {
+                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
+            })?;
         Ok(inner.as_ref().map_or(0, LruCache::len))
     }
 
     /// Whether the cache currently holds zero entries.
-    pub fn is_empty(&self) -> Result<bool, CmcError> {
+    pub fn is_empty(&self) -> Result<bool, Error> {
         Ok(self.len()? == 0)
     }
 
@@ -204,11 +203,12 @@ impl LocalCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation)
+    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation)
     /// error if `entry_capacity` is unset.
-    pub fn build(self) -> Result<LocalCmc, MaterialsError> {
+    pub fn build(self) -> Result<LocalCmc, Error> {
         let Some(entry_capacity) = self.entry_capacity else {
-            return Err(MaterialsError::new(
+            return Err(Error::new(
+                ErrorKind::Validation,
                 "LocalCmc: an entry capacity is required",
             ));
         };
@@ -223,12 +223,11 @@ impl LocalCmcBuilder {
 
 #[async_trait]
 impl Cmc for LocalCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
-        let mut inner = self
-            .inner
-            .store
-            .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
+        let mut inner =
+            self.inner.store.lock().map_err(|e| {
+                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
+            })?;
         let Some(cache) = inner.as_mut() else {
             // Zero-capacity cache: never store. Silently drop the entry so
             // the post-condition `len == 0 <= entry_capacity` holds.
@@ -241,12 +240,11 @@ impl Cmc for LocalCmc {
         Ok(())
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
-        let mut inner = self
-            .inner
-            .store
-            .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+        let mut inner =
+            self.inner.store.lock().map_err(|e| {
+                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
+            })?;
         let Some(cache) = inner.as_mut() else {
             return Ok(None);
         };
@@ -271,12 +269,11 @@ impl Cmc for LocalCmc {
         }
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
-        let mut inner = self
-            .inner
-            .store
-            .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
+        let mut inner =
+            self.inner.store.lock().map_err(|e| {
+                Error::new(ErrorKind::Internal, format!("LocalCmc lock poisoned: {e}"))
+            })?;
         let Some(cache) = inner.as_mut() else {
             return Ok(());
         };

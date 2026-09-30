@@ -3,6 +3,7 @@
 
 //! Tests for keystore encryption context construction.
 
+use aws_crypto_mpl::ErrorKind;
 use aws_crypto_mpl::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
@@ -12,7 +13,6 @@ use aws_crypto_mpl::keystore::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
 };
-use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::structures::EncryptionContext;
 
 fn sample_input() -> EncryptionContextInput<'static> {
@@ -179,7 +179,7 @@ fn empty_branch_key_id_is_rejected() {
     let err =
         active_encryption_context(&input, "v1").expect_err("should reject empty branch-key-id");
 
-    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn empty_version_is_rejected_for_decrypt_only() {
     let input = sample_input();
     let err = decrypt_only_encryption_context(&input, "")
         .expect_err("empty branch key version must be rejected");
-    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn empty_version_is_rejected_for_active() {
     let input = sample_input();
     let err = active_encryption_context(&input, "")
         .expect_err("empty branch key version must be rejected");
-    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 // The ACTIVE context MUST be the DECRYPT_ONLY context with `type` set to

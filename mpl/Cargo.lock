@@ -93,6 +93,8 @@ dependencies = [
  "aws-mpl-primitives",
  "aws-sdk-dynamodb",
  "aws-sdk-kms",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
  "base64",
  "lru",
  "time",

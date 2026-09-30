@@ -389,88 +389,75 @@ fn make_kms_config_rejects_unknown_type() {
 }
 
 #[test]
-fn classify_core_error_maps_each_kind() {
-    use aws_esdk::ErrorKind;
-    // ErrorKind::Esdk has no explicit arm; it maps through the wildcard.
+fn classify_core_error_maps_each_kind_to_the_same_name() {
+    use aws_esdk::ErrorKind as E;
+    use ffi::ShimErrorKind as S;
     let cases = [
-        (ErrorKind::Esdk, ffi::ShimErrorKind::Esdk),
-        (
-            ErrorKind::SerializationError,
-            ffi::ShimErrorKind::SerializationError,
-        ),
-        (
-            ErrorKind::CryptographicError,
-            ffi::ShimErrorKind::CryptographicError,
-        ),
-        (ErrorKind::MplError, ffi::ShimErrorKind::MplError),
-        (
-            ErrorKind::ValidationError,
-            ffi::ShimErrorKind::ValidationError,
-        ),
-        (ErrorKind::KeystoreError, ffi::ShimErrorKind::MplError),
-        (ErrorKind::CacheError, ffi::ShimErrorKind::MplError),
+        (E::Validation, S::Validation),
+        (E::Serialization, S::Serialization),
+        (E::Cryptographic, S::Cryptographic),
+        (E::InvalidMaterials, S::InvalidMaterials),
+        (E::EncryptionContextMismatch, S::EncryptionContextMismatch),
+        (E::NoMatchingDataKey, S::NoMatchingDataKey),
+        (E::RemoteAccessDenied, S::RemoteAccessDenied),
+        (E::RemoteResourceNotFound, S::RemoteResourceNotFound),
+        (E::RemoteThrottled, S::RemoteThrottled),
+        (E::RemoteTransport, S::RemoteTransport),
+        (E::Remote, S::Remote),
+        (E::Internal, S::Internal),
     ];
     for (kind, expected) in cases {
         assert_eq!(
-            classify_core_error(&kind).repr,
+            classify_core_error(kind).repr,
             expected.repr,
             "for {kind:?}"
         );
     }
 }
 
-/// The `{kind}{SEP}{mpl_kind}{SEP}` prefix the facade decodes.
-fn err_prefix(kind: ffi::ShimErrorKind, mpl_kind: Option<ffi::MplErrorKind>) -> String {
-    let mpl_kind = mpl_kind.map(|k| k.repr.to_string()).unwrap_or_default();
+/// The `{kind}{SEP}{retryable}{SEP}` prefix the facade decodes.
+fn err_prefix(kind: ffi::ShimErrorKind, retryable: bool) -> String {
     format!(
-        "{}{ERROR_KIND_SEPARATOR}{mpl_kind}{ERROR_KIND_SEPARATOR}",
-        kind.repr
+        "{}{ERROR_KIND_SEPARATOR}{}{ERROR_KIND_SEPARATOR}",
+        kind.repr,
+        u8::from(retryable)
     )
 }
 
 #[test]
-fn core_err_encodes_the_kind_of_the_wrapped_mpl_error() {
-    use aws_crypto_mpl::keystore::KeystoreErrorKind;
+fn core_err_encodes_an_mpl_errors_kind_and_retryability() {
+    use aws_crypto_mpl::{Error as MplError, ErrorKind as MplErrorKind};
     let cases = [
         (
-            aws_esdk::Error::from(MaterialsError::no_matching_data_key("x")),
-            ffi::MplErrorKind::NoMatchingDataKey,
+            MplError::new(MplErrorKind::NoMatchingDataKey, "x"),
+            ffi::ShimErrorKind::NoMatchingDataKey,
+            false,
         ),
         (
-            aws_esdk::Error::from(KeystoreError::new(KeystoreErrorKind::Dynamodb, "x")),
-            ffi::MplErrorKind::Dynamodb,
+            MplError::new(MplErrorKind::RemoteThrottled, "x"),
+            ffi::ShimErrorKind::RemoteThrottled,
+            true,
         ),
         (
-            aws_esdk::Error::from(CmcError::storage_failed("x")),
-            ffi::MplErrorKind::StorageFailed,
+            MplError::new(MplErrorKind::Validation, "x"),
+            ffi::ShimErrorKind::Validation,
+            false,
         ),
     ];
-    for (e, expected) in cases {
-        let err = core_err("op", &e);
+    for (e, kind, retryable) in cases {
+        let err = core_err("op", e);
         assert!(
-            err.starts_with(&err_prefix(ffi::ShimErrorKind::MplError, Some(expected))),
+            err.starts_with(&err_prefix(kind, retryable)),
             "unexpected error: {err}"
         );
     }
 }
 
 #[test]
-fn materials_err_reports_validation_as_an_mpl_error() {
-    let err = materials_err("op", &MaterialsError::new("x"));
+fn shim_err_is_not_retryable() {
+    let err = shim_err(ffi::ShimErrorKind::Validation, "op", "x");
     assert!(
-        err.starts_with(&err_prefix(
-            ffi::ShimErrorKind::MplError,
-            Some(ffi::MplErrorKind::Validation)
-        )),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn shim_err_leaves_the_mpl_kind_empty() {
-    let err = shim_err(ffi::ShimErrorKind::ValidationError, "op", "x");
-    assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::ValidationError, None)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }

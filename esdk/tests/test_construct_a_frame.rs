@@ -62,7 +62,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Flipping one encrypted-content byte → CryptographicError, so each frame carries the AEAD ciphertext+tag
+    //= reason=Flipping one encrypted-content byte → Cryptographic error, so each frame carries the AEAD ciphertext+tag
     //# To construct a regular or final frame that represents the next frame in the encrypted message's body,
     //# the Encrypt operation MUST calculate the encrypted content and an authentication tag using the
     //# [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
@@ -71,13 +71,13 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Tampering the encrypted content breaks the body-AAD-bound AEAD tag → CryptographicError
+    //= reason=Tampering the encrypted content breaks the body-AAD-bound AEAD tag → Cryptographic error
     //# - The AAD MUST be the serialized [message body AAD](../data-format/message-body-aad.md),
     //# constructed according to the [Message Body AAD](../data-format/message-body-aad.md) specification, as follows:
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=The body AAD content string is bound into the AEAD tag; tampering content → CryptographicError
+    //= reason=The body AAD content string is bound into the AEAD tag; tampering content → Cryptographic error
     //# - The [Body AAD Content](../data-format/message-body-aad.md#body-aad-content) MUST be the structure defined in
     //# [Message Body AAD](../data-format/message-body-aad.md).
     assert_eq!(
@@ -85,13 +85,13 @@ async fn test_construct_frame_aead_inputs_authenticated() {
             .await
             .unwrap_err()
             .kind(),
-        ErrorKind::CryptographicError,
+        ErrorKind::Cryptographic,
         "tampered frame content must fail AEAD authentication"
     );
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=Changing frame 1's on-wire sequence number from 1 → SerializationError, so the serialized value is the frame's sequence number
+    //= reason=Changing frame 1's on-wire sequence number from 1 → Serialization error, so the serialized value is the frame's sequence number
     //# - The [sequence number](../data-format/message-body-aad.md#sequence-number) MUST be the sequence
     //# number of the frame being encrypted.
     assert_eq!(
@@ -99,13 +99,13 @@ async fn test_construct_frame_aead_inputs_authenticated() {
             .await
             .unwrap_err()
             .kind(),
-        ErrorKind::SerializationError,
+        ErrorKind::Serialization,
         "tampered frame sequence number must be rejected"
     );
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
-    //= reason=On-wire declared length equals the 1 remaining plaintext byte; in-bounds tamper (1→0) breaks the AAD-bound AEAD tag → CryptographicError
+    //= reason=On-wire declared length equals the 1 remaining plaintext byte; in-bounds tamper (1→0) breaks the AAD-bound AEAD tag → Cryptographic error
     //# - The [content length](../data-format/message-body-aad.md#content-length) MUST have a value
     //# equal to the length of the plaintext being encrypted.
     assert_eq!(
@@ -117,7 +117,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
             .await
             .unwrap_err()
             .kind(),
-        ErrorKind::CryptographicError,
+        ErrorKind::Cryptographic,
         "tampered final-frame content length must fail AEAD authentication"
     );
 }

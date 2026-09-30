@@ -31,6 +31,7 @@
 //! (e.g. `async-std`, `smol`) will hit a runtime panic when a get triggers
 //! the blocking path.
 
+use crate::{Error, ErrorKind};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
@@ -38,8 +39,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 
 use super::local::{CACHE_PRUNING_TAIL_SIZE, Clock};
-use super::{CacheEntry, Cmc, CmcError, LocalCmc};
-use crate::structures::MaterialsError;
+use super::{CacheEntry, Cmc, LocalCmc};
 
 /// Per-key inflight tracking state, held under a `Mutex`.
 struct StormTrackingState {
@@ -221,14 +221,17 @@ impl StormTrackingCmc {
     /// All non-observability state-touching paths use this helper so
     /// pruning stays uniform across the classifier, the wait loop, and
     /// `put_cache_entry`. Poisoned-mutex errors are surfaced as
-    /// `CmcError::storage_failed` instead of panics.
+    /// `Error::storage_failed` instead of panics.
     fn state_locked(
         &self,
         now: SystemTime,
         skip_key: &[u8],
-    ) -> Result<MutexGuard<'_, StormTrackingState>, CmcError> {
+    ) -> Result<MutexGuard<'_, StormTrackingState>, Error> {
         let mut guard = self.inner.state.lock().map_err(|e| {
-            CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
+            Error::new(
+                ErrorKind::Internal,
+                format!("StormTrackingCmc lock poisoned: {e}"),
+            )
         })?;
         let ttl = self.inner.inflight_ttl;
         guard.inflight.retain(|k, t| {
@@ -251,7 +254,7 @@ impl StormTrackingCmc {
         cache_id: &[u8],
         cached: &Option<Arc<CacheEntry>>,
         now: SystemTime,
-    ) -> Result<GetDecision, CmcError> {
+    ) -> Result<GetDecision, Error> {
         match cached {
             Some(entry) => {
                 // Cache hit.
@@ -304,7 +307,7 @@ impl StormTrackingCmc {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
                         if elapsed > self.inner.inflight_ttl {
-                            return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                            return Err(Error::new(ErrorKind::Internal, "InFlightTTL exceeded"));
                         }
 
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
@@ -345,7 +348,7 @@ impl StormTrackingCmc {
         &self,
         cache_id: &[u8],
         deadline: Option<SystemTime>,
-    ) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+    ) -> Result<Option<Arc<CacheEntry>>, Error> {
         loop {
             tokio::time::sleep(self.inner.sleep).await;
 
@@ -362,7 +365,7 @@ impl StormTrackingCmc {
             if let Some(deadline) = deadline
                 && now >= deadline
             {
-                return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                return Err(Error::new(ErrorKind::Internal, "InFlightTTL exceeded"));
             }
 
             // Re-classify per Dafny `CheckNewEntry`: become leader when
@@ -539,10 +542,10 @@ impl StormTrackingCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if:
+    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation) error if:
     /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
     /// - `grace_interval` exceeds `inflight_ttl`.
-    pub fn build(self) -> Result<StormTrackingCmc, MaterialsError> {
+    pub fn build(self) -> Result<StormTrackingCmc, Error> {
         let fan_out = self.fan_out.unwrap_or(DEFAULT_STORM_FAN_OUT);
         let grace_period = self.grace_period.unwrap_or(DEFAULT_STORM_GRACE_PERIOD);
         let grace_interval = self.grace_interval.unwrap_or(DEFAULT_STORM_GRACE_INTERVAL);
@@ -589,8 +592,11 @@ impl StormTrackingCmcBuilder {
     }
 }
 
-fn invalid(message: impl Into<String>) -> MaterialsError {
-    MaterialsError::new(format!("StormTrackingCmc: {}", message.into()))
+fn invalid(message: impl Into<String>) -> Error {
+    Error::new(
+        ErrorKind::Validation,
+        format!("StormTrackingCmc: {}", message.into()),
+    )
 }
 
 /// Returns `true` if `now` is within the grace period for an entry expiring
@@ -617,7 +623,7 @@ pub fn within_grace_interval(
 
 #[async_trait]
 impl Cmc for StormTrackingCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
         // Write to the inner cache FIRST, then clear inflight. Reversing
         // this order opens a race window where a blocked getter can
         // observe `cache miss + not inflight` between the two operations
@@ -632,7 +638,7 @@ impl Cmc for StormTrackingCmc {
         Ok(())
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
         let cached = self.inner.local.get_cache_entry(cache_id).await?;
         let now = (self.inner.now)();
 
@@ -648,7 +654,7 @@ impl Cmc for StormTrackingCmc {
         }
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
         self.inner.local.delete_cache_entry(cache_id).await
     }
 
