@@ -31,7 +31,8 @@
 //! (e.g. `async-std`, `smol`) will hit a runtime panic when a get triggers
 //! the blocking path.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
@@ -123,8 +124,8 @@ pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
 /// Another caller held the in-flight slot for this key past `inflight_ttl`.
 /// Contention, not a fault: the next attempt usually finds the entry filled.
 fn inflight_ttl_exceeded() -> Error {
-    let mut err = Error::new(ErrorKind::Internal, "in-flight TTL exceeded");
-    err.set_retryable(true);
+    let mut err = Error::new(Kind::Internal, "in-flight TTL exceeded");
+    err.set_retry(Some(crate::error::RetryKind::Transient));
     err
 }
 
@@ -239,7 +240,7 @@ impl StormTrackingCmc {
             .inner
             .state
             .lock()
-            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
         let ttl = self.inner.inflight_ttl;
         guard.inflight.retain(|k, t| {
             k.as_slice() == skip_key
@@ -549,7 +550,7 @@ impl StormTrackingCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation) error if:
+    /// Returns a [`Validation`](crate::Error::Validation) error if:
     /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
     /// - `grace_interval` exceeds `inflight_ttl`.
     pub fn build(self) -> Result<StormTrackingCmc, Error> {
@@ -600,7 +601,7 @@ impl StormTrackingCmcBuilder {
 }
 
 fn invalid(message: impl Into<String>) -> Error {
-    Error::new(ErrorKind::Validation, message)
+    Error::new(Kind::Validation, message)
 }
 
 /// Returns `true` if `now` is within the grace period for an entry expiring

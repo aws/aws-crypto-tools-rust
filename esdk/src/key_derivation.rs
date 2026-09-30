@@ -3,7 +3,7 @@
 //! Key derivation for the ESDK message encryption key.
 
 use super::Error;
-use crate::error::{ErrorKind, err};
+use crate::error::{Kind, err};
 use crate::message::header_types::MESSAGE_ID_LEN_V2;
 use crate::message::serializable_types::get_encrypt_key_length;
 use crate::suites::kdf_digest;
@@ -31,7 +31,7 @@ pub struct ExpandedKeyMaterial {
 fn hkdf_key_len(suite: &AlgorithmSuite) -> Result<usize, Error> {
     match suite.encryption_kdf() {
         KeyDerivationAlgorithm::IdentityKdf => Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             "algorithm suite KDF must be HKDF to derive a key length, got IdentityKdf",
         )),
         _ => Ok(suite.encryption_key_length()),
@@ -45,10 +45,7 @@ fn digest_length(alg: aws_mpl_primitives::DigestAlg) -> Result<usize, Error> {
         aws_mpl_primitives::DigestAlg::Sha256 => Ok(32),
         aws_mpl_primitives::DigestAlg::Sha384 => Ok(48),
         aws_mpl_primitives::DigestAlg::Sha512 => Ok(64),
-        other => Err(err(
-            ErrorKind::Internal,
-            format!("unknown DigestAlg {other:?}"),
-        )),
+        other => Err(err(Kind::Internal, format!("unknown DigestAlg {other:?}"))),
     }
 }
 
@@ -81,7 +78,7 @@ pub(crate) fn derive_key_v1(
             let encrypt_key_len = get_encrypt_key_length(suite);
             if plaintext_data_key.len() != encrypt_key_len {
                 return Err(err(
-                    ErrorKind::InvalidMaterials,
+                    Kind::InvalidMaterials,
                     format!(
                         "identity KDF plaintext data key length {} does not match the suite encryption key length {encrypt_key_len}",
                         plaintext_data_key.len()
@@ -166,7 +163,7 @@ pub fn derive_key_v2(
     let kdf_key_len = hkdf_key_len(suite)?;
     if message_id.len() != MESSAGE_ID_LEN_V2 {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!(
                 "V2 message ID (HKDF salt) must be {MESSAGE_ID_LEN_V2} bytes, got {}",
                 message_id.len()
@@ -182,7 +179,7 @@ pub fn derive_key_v2(
     //# specified by the algorithm suite commit key derivation setting.
     if plaintext_data_key.len() != kdf_key_len {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             format!(
                 "plaintext data key length {} does not match KDF input key length {kdf_key_len}",
                 plaintext_data_key.len()
@@ -201,10 +198,7 @@ pub fn derive_key_v2(
     let (alg, commit_len) = match suite.commit_kdf() {
         Some(commit_kdf) => (kdf_digest(commit_kdf)?, suite.algorithm_suite_data_length()),
         None => {
-            return Err(err(
-                ErrorKind::Internal,
-                "algorithm suite has no commitment KDF",
-            ));
+            return Err(err(Kind::Internal, "algorithm suite has no commitment KDF"));
         }
     };
 
@@ -288,7 +282,7 @@ pub fn derive_keys(
         1 => derive_key_v1(message_id, plaintext_data_key, suite),
         2 => derive_key_v2(message_id, plaintext_data_key, suite),
         _ => Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!("unknown message version {}", suite.message_format_version()),
         )),
     }

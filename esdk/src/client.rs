@@ -19,12 +19,13 @@
 //! defined later without breaking callers); committing to a precedence rule
 //! today is not.
 
+use crate::Error;
+use crate::error::val_err;
 use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptInput,
     EncryptOutput, EncryptStreamInput, EncryptStreamOutput, SafeRead, SafeWrite,
 };
-use crate::{Error, val_err};
 use std::num::NonZeroUsize;
 
 /// Cross-call configuration for the optional [`Esdk`] client.

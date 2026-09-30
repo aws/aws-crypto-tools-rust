@@ -7,7 +7,8 @@
 //! See [`LocalCmc`] for the public API. Behavioral requirements are
 //! specified in `../spec/framework/local-cryptographic-materials-cache.md`.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -116,7 +117,7 @@ impl LocalCmc {
             .inner
             .store
             .lock()
-            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
         Ok(inner.as_ref().map_or(0, LruCache::len))
     }
 
@@ -204,12 +205,12 @@ impl LocalCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation)
+    /// Returns a [`Validation`](crate::Error::Validation)
     /// error if `entry_capacity` is unset.
     pub fn build(self) -> Result<LocalCmc, Error> {
         let Some(entry_capacity) = self.entry_capacity else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "an entry capacity is required",
             ));
         };
@@ -229,7 +230,7 @@ impl Cmc for LocalCmc {
             .inner
             .store
             .lock()
-            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             // Zero-capacity cache: never store. Silently drop the entry so
             // the post-condition `len == 0 <= entry_capacity` holds.
@@ -247,7 +248,7 @@ impl Cmc for LocalCmc {
             .inner
             .store
             .lock()
-            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             return Ok(None);
         };
@@ -277,7 +278,7 @@ impl Cmc for LocalCmc {
             .inner
             .store
             .lock()
-            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             return Ok(());
         };

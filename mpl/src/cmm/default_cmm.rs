@@ -4,7 +4,8 @@
 //! Default CMM — concrete implementation of the [`Cmm`](super::Cmm) trait
 //! that wraps a single keyring.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
@@ -81,7 +82,7 @@ impl Cmm for DefaultCmm {
             Some(id) => {
                 if !commitment_policy.allows_for_encrypt(id) {
                     return Err(Error::new(
-                        ErrorKind::Validation,
+                        Kind::Validation,
                         format!(
                             "algorithm suite {id:?} is not supported by commitment policy {commitment_policy:?} for encryption"
                         ),
@@ -97,7 +98,7 @@ impl Cmm for DefaultCmm {
 
         if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "encryption context already contains reserved key 'aws-crypto-public-key'; refusing to overwrite",
             ));
         }
@@ -166,7 +167,7 @@ impl Cmm for DefaultCmm {
 
         if !commitment_policy.allows_for_decrypt(suite_id) {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "algorithm suite {suite_id:?} is not supported by commitment policy {commitment_policy:?} for decryption"
                 ),
@@ -189,7 +190,7 @@ impl Cmm for DefaultCmm {
         let verification_key = if suite_id.has_asymmetric_signing() {
             let Some(b64_bytes) = ec.get(RESERVED_AWS_CRYPTO_PUBLIC_KEY) else {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     "signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
                 ));
             };
@@ -197,7 +198,7 @@ impl Cmm for DefaultCmm {
                 .decode(b64_bytes)
                 .map_err(|e| {
                     Error::with_cause(
-                        ErrorKind::Validation,
+                        Kind::Validation,
                         "failed to base64-decode the aws-crypto-public-key value",
                         e,
                     )
@@ -206,7 +207,7 @@ impl Cmm for DefaultCmm {
         } else {
             if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     "non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
                 ));
             }
@@ -240,7 +241,7 @@ impl Cmm for DefaultCmm {
 /// Required Encryption Context Keys that accompany it:
 ///
 /// - For every key present in both contexts, the values MUST be equal or the
-///   operation fails with `ErrorKind::EncryptionContextMismatch`.
+///   operation fails with `Kind::EncryptionContextMismatch`.
 /// - Every pair present in the reproduced context but absent from the message's
 ///   is appended to the returned context, and its key becomes a Required
 ///   Encryption Context Key.
@@ -265,7 +266,7 @@ fn merge_reproduced_encryption_context(
             Some(message_value) => {
                 if message_value != value {
                     return Err(Error::new(
-                        ErrorKind::EncryptionContextMismatch,
+                        Kind::EncryptionContextMismatch,
                         format!(
                             "message encryption context does not match reproduced encryption context on key '{key}'",
                         ),

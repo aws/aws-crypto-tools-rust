@@ -4,7 +4,7 @@
 //! Frame decryption and body deserialization.
 
 use super::{BodyAADContent, body_aad, get_alg_suite};
-use crate::error::{ErrorKind, err};
+use crate::error::{Kind, err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
@@ -22,7 +22,7 @@ fn release_previous_frame(
 ) -> Result<(), Error> {
     if fail_if_multi_frame {
         return Err(err(
-            ErrorKind::Validation,
+            Kind::Validation,
             "streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages",
         ));
     }

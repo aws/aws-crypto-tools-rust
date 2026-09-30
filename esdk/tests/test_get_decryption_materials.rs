@@ -64,11 +64,10 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     let err = decrypt(&invalid_input)
         .await
         .expect_err("wrong keyring must fail to obtain materials");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::NoMatchingDataKey,
+    assert!(
+        err.is_no_matching_data_key(),
         "expected the wrong keyring's default CMM to find no matching data key, got: {:?}",
-        err.kind()
+        err
     );
 }
 
@@ -121,11 +120,10 @@ async fn test_pre_cmm_commitment_policy_check() {
         .expect_err("policy that requires committing must reject non-committing suite");
     // The parsed-suite-vs-commitment-policy check runs pre-CMM in decrypt.rs and
     // yields a Validation error.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
+    assert!(
+        err.is_validation(),
         "expected pre-CMM Validation error, got: {:?}",
-        err.kind()
+        err
     );
 }
 
@@ -226,9 +224,11 @@ async fn test_commit_key_derived_and_validated() {
         decrypt(&valid_input).await.is_ok(),
         "valid commit key must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered commit key must produce Cryptographic error"
     );
 }
@@ -331,9 +331,11 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
         decrypt(&valid_input).await.is_ok(),
         "valid suite ID must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "non-ESDK suite ID must produce Serialization error"
     );
 }

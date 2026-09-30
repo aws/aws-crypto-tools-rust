@@ -140,12 +140,11 @@ async fn test_nonframed_encrypted_content_length_max_value() {
     let err = try_decrypt_external_nonframed(Version::V2, &tampered)
         .await
         .expect_err("decrypt must reject content length > 2^36 - 32");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Serialization,
+    assert!(
+        err.is_serialization(),
         "expected Serialization error for over-bound content length, got: {} ({:?})",
         err.message(),
-        err.kind()
+        err
     );
 }
 
@@ -890,9 +889,8 @@ async fn test_final_frame_content_length_matches_serialized_content() {
         //= reason=Untampered ct decrypts; content truncated below the declared Encrypted Content Length → Serialization error
         //# The length of the serialized encrypted content field MUST be equal to the value of the [Encrypted Content Length](#final-frame-encrypted-content-length) field.
         assert!(valid.is_ok(), "{version:?}: valid ct must decrypt");
-        assert_eq!(
-            tampered_result.unwrap_err().kind(),
-            ErrorKind::Serialization,
+        assert!(
+            tampered_result.unwrap_err().is_serialization(),
             "{version:?}: content shorter than the declared Encrypted Content Length must be rejected"
         );
     }
@@ -940,10 +938,10 @@ async fn test_final_frame_auth_tag_authenticates_final_frame() {
         .await
         .expect_err("tampered final frame auth tag must cause decryption failure");
     assert!(
-        matches!(err.kind(), ErrorKind::Cryptographic),
+        err.is_cryptographic(),
         "expected Cryptographic error, got: {} ({:?})",
         err.message(),
-        err.kind()
+        err
     );
 }
 
@@ -976,10 +974,10 @@ async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
     //= reason=tampering a regular frame's auth tag → AEAD failure, proving the deserialized tag authenticates the frame
     //# - The tag MUST be the authentication tag deserialized from the frame or body.
     assert!(
-        matches!(err.kind(), ErrorKind::Cryptographic),
+        err.is_cryptographic(),
         "expected Cryptographic error, got: {} ({:?})",
         err.message(),
-        err.kind()
+        err
     );
 }
 
@@ -1024,12 +1022,11 @@ async fn test_regular_frame_seq_num_out_of_order_rejected() {
     let err = decrypt(&dec_input)
         .await
         .expect_err("out-of-order seq num must be rejected");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Serialization,
+    assert!(
+        err.is_serialization(),
         "expected Serialization error for out-of-order seq num, got: {} ({:?})",
         err.message(),
-        err.kind()
+        err
     );
 }
 

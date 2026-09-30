@@ -27,6 +27,7 @@ use aws_config::{BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::{
     build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
@@ -42,7 +43,6 @@ use aws_crypto_mpl::structures::{
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, StormTrackingCmc};
-use aws_crypto_mpl::{Error, ErrorKind};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -129,12 +129,11 @@ fn build_with_zero_ttl_returns_validation_error() {
         Err(e) => e,
         Ok(_) => panic!("expected zero TTL to return a validation error"),
     };
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
-        "expected Validation error for a zero TTL; got {err:?}",
+    assert!(
+        err.is_validation(),
+        "expected Validation error for a zero TTL; got {err:?}"
     );
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -153,8 +152,8 @@ fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
         Ok(_) => panic!("supplying both a branch_key_id and a supplier MUST be rejected"),
     };
 
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -168,7 +167,7 @@ fn build_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
         Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
     };
 
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 /// The error from `build()`; panics with `label` if the build succeeds.
@@ -187,7 +186,7 @@ fn build_without_key_store_returns_validation_error() {
             .branch_key_id("branch-key-id"),
         "no key store",
     );
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -198,8 +197,8 @@ fn build_without_ttl_returns_validation_error() {
             .branch_key_id("branch-key-id"),
         "no TTL",
     );
-    assert_eq!(err.kind(), ErrorKind::Validation);
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -245,7 +244,7 @@ fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
         Ok(_) => panic!("1500 ms grace period == 1500 ms TTL must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -449,7 +448,7 @@ fn build_without_cache_uses_default_cmc() {
             .branch_key_id("bk"),
         "TTL equal to the default grace period",
     );
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -496,7 +495,7 @@ fn build_with_shared_storm_tracking_grace_period_equal_to_ttl_fails() {
             .cache(cache),
         "shared storm-tracking cache with grace_period == TTL",
     );
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -542,7 +541,7 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         Ok(_) => panic!("StormTracking with grace_period == TTL must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -567,7 +566,7 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         Ok(_) => panic!("StormTracking with grace_period > TTL must fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -857,10 +856,9 @@ fn compute_aad_fails_when_encryption_context_value_too_large() {
     let result = compute_aad(branch_key_id, version, &ec);
     let err = result.expect_err("compute_aad must fail when EC serialization fails");
 
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
-        "expected Validation error from EC serialize; got {err:?}",
+    assert!(
+        err.is_validation(),
+        "expected Validation error from EC serialize; got {err:?}"
     );
 }
 
@@ -951,10 +949,9 @@ fn wrap_then_unwrap_with_tampered_encrypted_key_fails() {
     // Tampering a byte in the encrypted-key region invalidates the AES-GCM
     // authentication tag, so unwrap must fail; this proves the encrypted-key
     // bytes were the AES-GCM ciphertext input.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic for AEAD verification failure; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for AEAD verification failure; got {err:?}"
     );
 }
 
@@ -984,10 +981,9 @@ fn wrap_then_unwrap_with_tampered_tag_fails() {
     // Tampering a byte in the tag region invalidates the AES-GCM authentication,
     // so unwrap must fail; this proves the tag bytes were used as the AES-GCM
     // input authentication tag.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic for tag verification failure; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for tag verification failure; got {err:?}"
     );
 }
 
@@ -1014,10 +1010,9 @@ fn wrap_then_unwrap_with_tampered_iv_fails() {
     // Tampering the IV causes AES-GCM authentication to fail because the tag
     // was computed under the original IV; this proves the IV from
     // deserialization was used as the AES-GCM input IV.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic for IV-tampered AEAD; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for IV-tampered AEAD; got {err:?}"
     );
 }
 
@@ -1054,10 +1049,9 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     // Different branch_key bytes derive a different AES-256-GCM cipher key
     // on each side, so AES-GCM authentication fails on unwrap; this proves
     // the cipher key on both wrap and unwrap was the derivedBranchKey.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic when branch_key differs; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic when branch_key differs; got {err:?}"
     );
 }
 
@@ -1096,10 +1090,9 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     // was the AES-GCM AAD on the wrap side, and that the keyring
     // included branch_key_id as part of the AAD for both Encrypt and
     // Decrypt calls.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic when AAD differs; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic when AAD differs; got {err:?}"
     );
 }
 
@@ -1130,10 +1123,9 @@ fn wrap_then_unwrap_with_different_encryption_context_fails() {
     // The serialized encryption context is part of the AES-GCM AAD on both
     // sides; if the unwrap-side EC differs from the wrap-side EC, the AAD
     // differs and AES-GCM authentication fails.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic when EC differs; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic when EC differs; got {err:?}"
     );
 }
 
@@ -1169,10 +1161,9 @@ fn unwrap_too_short_ciphertext_returns_error() {
     // The unwrap call cannot complete deserialization (a required step)
     // when the input is shorter than the fixed overhead, so it must
     // return an error rather than silently succeed.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
-        "expected Cryptographic for ciphertext shorter than fixed overhead; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for ciphertext shorter than fixed overhead; got {err:?}"
     );
 }
 
@@ -1235,10 +1226,9 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     let result = branch_key_wrap(&materials, materials.encryption_context(), &[0u8; 32]);
     let err = result.expect_err("wrap must fail when EC serialization fails");
 
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
-        "expected Validation error from EC serialize via wrap; got {err:?}",
+    assert!(
+        err.is_validation(),
+        "expected Validation error from EC serialize via wrap; got {err:?}"
     );
 }
 
@@ -1538,10 +1528,9 @@ mod onencrypt {
                 &self,
                 _branch_key_id: String,
             ) -> Result<BranchKeyMaterials, Error> {
-                Err(Error::with_cause(
-                    ErrorKind::RemoteResourceNotFound,
-                    "no such branch key",
-                    IoError::new(IoErrorKind::NotFound, "ddb: item not found"),
+                Err(Error::from(
+                    aws_crypto_mpl::error::ResourceNotFoundError::new("no such branch key")
+                        .with_source(IoError::new(IoErrorKind::NotFound, "ddb: item not found")),
                 ))
             }
             async fn get_branch_key_version(
@@ -1573,7 +1562,7 @@ mod onencrypt {
             Ok(_) => panic!("on_encrypt must fail when keystore.get_active_branch_key fails"),
             Err(e) => e,
         };
-        assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
+        assert!(err.is_resource_not_found(), "{:?}", err);
 
         // A caller can recover the keystore's `Error` by type from the source.
         let cause = err
@@ -1582,7 +1571,7 @@ mod onencrypt {
         let keystore_err = cause
             .downcast_ref::<Error>()
             .expect("the cause must be the originating Error");
-        assert_eq!(keystore_err.kind(), ErrorKind::RemoteResourceNotFound);
+        assert!(keystore_err.is_resource_not_found(), "{:?}", keystore_err);
 
         // The chain is walkable past the keystore boundary too: whatever the
         // keystore itself wrapped stays reachable. In production this level is
@@ -1675,7 +1664,7 @@ mod ondecrypt {
             .on_decrypt(dm, &edks)
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
-        assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+        assert!(err.is_invalid_materials(), "{:?}", err);
     }
 
     #[tokio::test]
@@ -1833,7 +1822,7 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
 
-        assert_eq!(err.kind(), ErrorKind::NoMatchingDataKey);
+        assert!(err.is_no_matching_data_key(), "{:?}", err);
         assert!(
             err.collected().is_empty(),
             "with nothing attempted there is nothing to collect; got: {err}",
@@ -1861,7 +1850,7 @@ mod ondecrypt {
             .await
             .expect_err("an EDK from another provider MUST NOT be decrypted");
 
-        assert_eq!(err.kind(), ErrorKind::NoMatchingDataKey);
+        assert!(err.is_no_matching_data_key(), "{:?}", err);
         assert!(
             err.collected().is_empty(),
             "a filtered-out EDK is not an attempt, so there is nothing to collect; got: {err}",
@@ -1889,12 +1878,8 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
-        assert_eq!(err.kind(), ErrorKind::Cryptographic);
-        assert!(
-            err.collected()
-                .iter()
-                .any(|e| e.kind() == ErrorKind::Cryptographic)
-        );
+        assert!(err.is_cryptographic(), "{:?}", err);
+        assert!(err.collected().iter().any(|e| e.is_cryptographic()));
 
         // Exactly one candidate EDK failed, so that failure is attached as the
         // cause rather than only being formatted into the message.
@@ -1903,14 +1888,13 @@ mod ondecrypt {
             .expect("the single per-EDK failure must be attached as the cause")
             .downcast_ref::<Error>()
             .expect("the cause must be the per-EDK Error");
-        assert_eq!(per_edk.kind(), ErrorKind::Cryptographic);
+        assert!(per_edk.is_cryptographic(), "{:?}", per_edk);
 
         // It is also present on `collected`, so a caller has one uniform place
         // to read the collected failures without branching on how many there
         // were.
-        assert_eq!(
-            err.collected(),
-            std::slice::from_ref(per_edk),
+        assert!(
+            std::ptr::eq(&err.collected()[0], per_edk),
             "the single failure must also be collected",
         );
     }
@@ -1943,7 +1927,7 @@ mod ondecrypt {
             )
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
-        assert_eq!(err.kind(), ErrorKind::Cryptographic);
+        assert!(err.is_cryptographic(), "{:?}", err);
 
         assert!(
             err.collected()
@@ -1967,7 +1951,7 @@ mod ondecrypt {
             "both candidate EDK failures must be collected; got: {collected:?}",
         );
         for per_edk in collected {
-            assert_eq!(per_edk.kind(), ErrorKind::Cryptographic);
+            assert!(per_edk.is_cryptographic(), "{:?}", per_edk);
         }
         // Collected in attempt order, so a caller can tell which EDK is which.
         // Both failures have the same kind, so only the message tells them apart.
@@ -2024,9 +2008,8 @@ mod ondecrypt {
                 _branch_key_id: String,
                 _branch_key_version: String,
             ) -> Result<BranchKeyMaterials, Error> {
-                Err(Error::new(
-                    ErrorKind::RemoteResourceNotFound,
-                    "no such branch key version",
+                Err(Error::from(
+                    aws_crypto_mpl::error::ResourceNotFoundError::new("no such branch key version"),
                 ))
             }
             async fn get_beacon_key(
@@ -2060,10 +2043,14 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
-        assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
+        assert!(err.is_resource_not_found(), "{:?}", err);
         // Each attempt's failure is in `collected()`, not in the message.
         assert_eq!(err.collected().len(), 1);
-        assert_eq!(err.collected()[0].kind(), ErrorKind::RemoteResourceNotFound);
+        assert!(
+            err.collected()[0].is_resource_not_found(),
+            "{:?}",
+            err.collected()[0]
+        );
 
         // One candidate EDK, so on_decrypt attaches that per-EDK failure as
         // the cause and the chain stays walkable all the way to the keystore.
@@ -2072,14 +2059,14 @@ mod ondecrypt {
             .expect("a single failing EDK must be attached as the cause")
             .downcast_ref::<Error>()
             .expect("the cause must be the per-EDK Error");
-        assert_eq!(per_edk.kind(), ErrorKind::RemoteResourceNotFound);
+        assert!(per_edk.is_resource_not_found(), "{:?}", per_edk);
 
         let keystore_err = per_edk
             .source()
             .expect("the per-EDK failure must itself carry the keystore cause")
             .downcast_ref::<Error>()
             .expect("the root cause must be the originating Error");
-        assert_eq!(keystore_err.kind(), ErrorKind::RemoteResourceNotFound);
+        assert!(keystore_err.is_resource_not_found(), "{:?}", keystore_err);
     }
 
     #[tokio::test]

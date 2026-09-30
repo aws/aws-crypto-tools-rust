@@ -3,7 +3,6 @@
 
 //! Tests for keystore encryption context construction.
 
-use aws_crypto_mpl::ErrorKind;
 use aws_crypto_mpl::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
@@ -179,7 +178,7 @@ fn empty_branch_key_id_is_rejected() {
     let err =
         active_encryption_context(&input, "v1").expect_err("should reject empty branch-key-id");
 
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -195,7 +194,7 @@ fn empty_version_is_rejected_for_decrypt_only() {
     let input = sample_input();
     let err = decrypt_only_encryption_context(&input, "")
         .expect_err("empty branch key version must be rejected");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -203,7 +202,7 @@ fn empty_version_is_rejected_for_active() {
     let input = sample_input();
     let err = active_encryption_context(&input, "")
         .expect_err("empty branch key version must be rejected");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 // The ACTIVE context MUST be the DECRYPT_ONLY context with `type` set to

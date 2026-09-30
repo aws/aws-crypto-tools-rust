@@ -10,7 +10,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use super::{CacheEntry, Cmc, StormTrackingCmc};
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::Kind;
 
 /// The default Cryptographic Materials Cache.
 ///
@@ -55,12 +56,12 @@ impl DefaultCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation)
+    /// Returns a [`Validation`](crate::Error::Validation)
     /// error if `entry_capacity` is unset.
     pub fn build(self) -> Result<DefaultCmc, Error> {
         let Some(entry_capacity) = self.entry_capacity else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "an entry capacity is required",
             ));
         };

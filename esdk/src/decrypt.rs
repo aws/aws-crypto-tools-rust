@@ -5,7 +5,7 @@
 //! obtains decryption materials from a keyring/CMM, derives the data key,
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
-use crate::error::{Error, ErrorKind, err, val_err};
+use crate::error::{Error, Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::header_types::ContentType;
@@ -144,17 +144,14 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     .await?;
 
     let Ok(ciphertext_len) = u64::try_from(input.ciphertext.len()) else {
-        return Err(err(
-            ErrorKind::Internal,
-            "ciphertext length does not fit in u64",
-        ));
+        return Err(err(Kind::Internal, "ciphertext length does not fit in u64"));
     };
     if cursor.position() != ciphertext_len {
         //= spec/client-apis/decrypt.md#behavior
         //# - If this operation successfully completes the above steps
         //# but there are consumable bytes which are intended to be decrypted,
         //# this operation MUST fail.
-        return Err(err(ErrorKind::Serialization, "data after message footer"));
+        return Err(err(Kind::Serialization, "data after message footer"));
     }
 
     // Return excess capacity when the upper-bound reservation greatly exceeds
@@ -260,7 +257,7 @@ async fn internal_decrypt(
         .is_some();
     if suite_has_signature != state.dec_mat.verification_key().is_some() {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "decryption materials verification_key presence must match algorithm suite signature algorithm",
         ));
     }
@@ -406,7 +403,7 @@ async fn step_get_decryption_materials(
 
     if &suite != header_body.algorithm_suite() {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "stored header algorithm suite does not match decryption algorithm suite",
         ));
     }
@@ -445,7 +442,7 @@ async fn step_get_decryption_materials(
             .plaintext_data_key()
             .ok_or_else(|| {
                 err(
-                    ErrorKind::InvalidMaterials,
+                    Kind::InvalidMaterials,
                     "decryption materials must contain a plaintext data key",
                 )
             })?
@@ -455,7 +452,7 @@ async fn step_get_decryption_materials(
 
     if !header::header_version_supports_commitment(&suite, header_body) {
         return Err(err(
-            ErrorKind::Serialization,
+            Kind::Serialization,
             "invalid commitment values found in header body",
         ));
     }
@@ -472,7 +469,7 @@ async fn step_get_decryption_materials(
             header_body,
             derived_data_keys.commitment_key.as_ref().ok_or_else(|| {
                 err(
-                    ErrorKind::Internal,
+                    Kind::Internal,
                     "derived key material must contain a commitment key for HKDF commitment",
                 )
             })?,
@@ -651,7 +648,7 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
             //# [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md).
             state.sig_digest.context.clone().ok_or_else(|| {
                 err(
-                    ErrorKind::Internal,
+                    Kind::Internal,
                     "signature digest context must be present for signature verification",
                 )
             })?,
@@ -701,7 +698,7 @@ fn verify_signature(
     let valid = ecdsa_verify_context(
         ecdsa_params,
         dec_mat.verification_key()
-            .ok_or_else(|| err(ErrorKind::InvalidMaterials, "decryption materials must contain a verification key for signature verification"))?
+            .ok_or_else(|| err(Kind::InvalidMaterials, "decryption materials must contain a verification key for signature verification"))?
             .as_bytes(),
         context,
         &signature,
@@ -710,10 +707,7 @@ fn verify_signature(
     if !valid {
         //= spec/client-apis/decrypt.md#verify-the-signature
         //# If this verification is not successful, this operation MUST immediately halt and fail.
-        return Err(err(
-            ErrorKind::Cryptographic,
-            "signature verification failed",
-        ));
+        return Err(err(Kind::Cryptographic, "signature verification failed"));
     }
     Ok(())
 }

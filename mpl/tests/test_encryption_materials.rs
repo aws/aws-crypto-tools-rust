@@ -1,7 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use aws_crypto_mpl::ErrorKind;
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::structures::{
@@ -88,10 +87,7 @@ fn test_required_ec_keys_must_be_subset() {
         .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err().kind(),
-        ErrorKind::EncryptionContextMismatch
-    );
+    assert!(result.unwrap_err().is_encryption_context_mismatch());
 }
 
 #[test]
@@ -107,7 +103,7 @@ fn test_edks_must_be_empty_without_pdk() {
         .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -123,7 +119,7 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
         .signing_key(sk)
         .build();
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -179,7 +175,7 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
         .symmetric_signing_keys(ssk)
         .build();
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -213,9 +209,10 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
         .required_encryption_context_keys(reck)
         .build()
         .unwrap();
-    assert_eq!(
-        mat.validate_aws_crypto_public_key().unwrap_err().kind(),
-        ErrorKind::InvalidMaterials
+    assert!(
+        mat.validate_aws_crypto_public_key()
+            .unwrap_err()
+            .is_invalid_materials()
     );
 }
 
@@ -350,7 +347,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
         .build()
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]
@@ -389,7 +386,7 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
 #[test]
 fn test_builder_requires_algorithm_suite() {
     let err = EncryptionMaterials::builder().build().unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -414,7 +411,7 @@ fn test_add_data_key_rejects_existing_key() {
     let err = mat
         .add_data_key(PlaintextDataKey::new(vec![8; 32]), make_edk())
         .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]
@@ -426,7 +423,7 @@ fn test_add_data_key_rejects_wrong_length() {
     let err = mat
         .add_data_key(PlaintextDataKey::new(vec![7; 16]), make_edk())
         .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]
@@ -449,5 +446,5 @@ fn test_add_encrypted_data_key_requires_plaintext_data_key() {
         .build()
         .unwrap();
     let err = mat.add_encrypted_data_key(make_edk()).unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }

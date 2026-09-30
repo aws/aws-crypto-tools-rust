@@ -11,7 +11,6 @@
 //!
 //! [`TestAES.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAES.dfy
 
-use aws_mpl_primitives::ErrorKind;
 use aws_mpl_primitives::{AesGcm, Error, aes_decrypt, aes_encrypt};
 
 const KEY_256: [u8; 32] = [1; 32];
@@ -148,7 +147,7 @@ fn test_aes_decrypt_output_buffer_too_small() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -164,7 +163,7 @@ fn test_aes_encrypt_bad_key_length() {
         &mut cipher_text,
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -180,7 +179,7 @@ fn test_aes_encrypt_bad_iv_length() {
         &mut cipher_text,
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -197,7 +196,7 @@ fn test_aes_decrypt_bad_key_length() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -214,7 +213,7 @@ fn test_aes_decrypt_bad_iv_length() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }
 
 #[test]
@@ -232,5 +231,5 @@ fn test_aes_decrypt_tampered_auth_tag() {
         &mut plain_text,
     )
     .unwrap_err();
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(err.is_cryptographic(), "{:?}", err);
 }

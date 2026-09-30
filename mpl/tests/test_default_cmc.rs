@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::{Cmc, DefaultCmc, ErrorKind};
+use aws_crypto_mpl::{Cmc, DefaultCmc};
 
 #[test]
 fn default_cmc_is_a_default_storm_tracking_cache_with_the_given_capacity() {
@@ -22,5 +22,5 @@ fn default_cmc_requires_an_entry_capacity() {
     let err = DefaultCmc::builder()
         .build()
         .expect_err("an unset entry capacity is rejected");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert!(err.is_validation(), "{:?}", err);
 }

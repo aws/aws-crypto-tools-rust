@@ -3,7 +3,7 @@
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
 use crate::error::{Error, val_err};
-use crate::error::{ErrorKind, err};
+use crate::error::{Kind, err};
 use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
 use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
@@ -55,7 +55,7 @@ pub(crate) async fn get_decryption_materials(
     let has_public_key = encryption_context.contains_key("aws-crypto-public-key");
     if has_public_key != algorithm_suite_id.has_asymmetric_signing() {
         return Err(err(
-            ErrorKind::Serialization,
+            Kind::Serialization,
             "the header encryption context must contain 'aws-crypto-public-key' exactly when the algorithm suite signs",
         ));
     }
@@ -108,21 +108,21 @@ pub(crate) async fn get_decryption_materials(
     //# configured in the [client](client.md) decrypt MUST yield an error.
     if !policy.allows_for_decrypt(materials.algorithm_suite_id()) {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "algorithm suite is not supported by the configured commitment policy for decryption",
         ));
     }
 
     if materials.plaintext_data_key().is_none() {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "decryption materials are missing a plaintext data key",
         ));
     }
 
     if !is_esdk_encryption_context(materials.encryption_context()) {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "CMM failed to return serializable decryption materials",
         ));
     }
@@ -183,27 +183,27 @@ pub(crate) async fn get_encryption_materials(
     //# configured in the [client](client.md) encrypt MUST yield an error.
     if !policy.allows_for_encrypt(materials.algorithm_suite_id()) {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "algorithm suite is not supported by the configured commitment policy for encryption",
         ));
     }
 
     if materials.plaintext_data_key().is_none() {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "encryption materials are missing a plaintext data key",
         ));
     }
 
     if !is_esdk_encryption_context(materials.encryption_context()) {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "CMM failed to return serializable encryption materials",
         ));
     }
     if !is_esdk_encrypted_data_keys(materials.encrypted_data_keys()) {
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "CMM failed to return serializable encrypted data keys",
         ));
     }
