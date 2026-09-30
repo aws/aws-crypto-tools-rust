@@ -26,14 +26,6 @@ pub(crate) fn val_err(msg: impl Into<String>) -> Error {
 }
 
 #[track_caller]
-pub(crate) fn val_err_with_cause(
-    msg: impl Into<String>,
-    cause: impl std::error::Error + Send + Sync + 'static,
-) -> Error {
-    Error::with_cause(ErrorKind::Validation, msg, cause)
-}
-
-#[track_caller]
 pub(crate) fn err(kind: ErrorKind, msg: impl Into<String>) -> Error {
     Error::new(kind, msg)
 }

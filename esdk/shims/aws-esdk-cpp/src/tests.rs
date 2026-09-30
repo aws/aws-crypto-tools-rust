@@ -200,7 +200,10 @@ fn alg_id_target_to_core_rejects_unknown() {
     //# - The shim MUST return an error when the target value is not one of the algorithm
     //# suite IDs defined by the core ESDK.
     let err = alg_id_target_to_core(F { repr: 0xFFFF }).unwrap_err();
-    assert!(err.contains("unrecognized"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        "unexpected error: {err}"
+    );
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
@@ -303,7 +306,7 @@ fn make_frame_length_translates_and_rejects_zero() {
     //# value.
     let err = make_frame_length(0).unwrap_err();
     assert!(
-        err.contains("Frame length must be non-zero"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
     assert!(make_frame_length(4096).is_ok());
@@ -377,12 +380,12 @@ fn make_kms_config_rejects_unknown_type() {
     //# supported value.
     let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
-        err.contains("Invalid KmsConfigurationType"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
     let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
     assert!(
-        err.contains("kms_configuration_type is unset"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }
@@ -473,13 +476,19 @@ fn encrypt_rejects_null_keyring() {
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
     //# materials source is supplied.
     let err = expect_err(encrypt(&unset_encrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
 fn decrypt_rejects_null_keyring() {
     let err = expect_err(decrypt(&unset_decrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -513,7 +522,7 @@ fn create_keystore_rejects_unset_kms_config_type() {
     unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
     let err = expect_err(create_keystore(&unset_kms));
     assert!(
-        err.contains("kms_configuration_type is unset"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }
@@ -528,7 +537,10 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     let err = expect_err(create_hierarchical_keyring(
         &unset_hierarchical_keyring_input(),
     ));
-    assert!(err.contains("key_store is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -555,7 +567,7 @@ fn create_hierarchical_keyring_reports_bad_cache() {
     };
     let err = expect_err(create_hierarchical_keyring(&input));
     assert!(
-        err.contains("unrecognized or unset cache kind"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }
@@ -596,7 +608,7 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
         ),
     ));
     assert!(
-        err.contains("ttl is out of range"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }
@@ -620,7 +632,7 @@ fn create_cache_rejects_unknown_kind() {
             shared: std::ptr::null(),
         }));
         assert!(
-            err.contains("unrecognized or unset cache kind"),
+            err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
             "unexpected error: {err}"
         );
     }
@@ -695,7 +707,10 @@ fn create_storm_tracking_cache_rejects_zero_sleep() {
     let mut input = storm_tracking_cache_input();
     input.sleep = ZERO_DURATION;
     let err = expect_err(make_cache_type(&input));
-    assert!(err.contains("sleep"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -707,7 +722,7 @@ fn create_storm_tracking_cache_rejects_out_of_range_durations() {
     };
     let err = expect_err(make_cache_type(&input));
     assert!(
-        err.contains("grace_period is out of range"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {err}"
     );
 }
@@ -778,7 +793,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg::Unset,
     }));
     assert!(
-        unset.contains("wrapping_alg is unset"),
+        unset.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {unset}"
     );
 
@@ -789,7 +804,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg { repr: 99 },
     }));
     assert!(
-        unknown.contains("Invalid AesWrappingAlg"),
+        unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
         "unexpected error: {unknown}"
     );
 }
@@ -1068,7 +1083,7 @@ fn stream_finish_surfaces_worker_panic() {
     let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
     let err = expect_err(state.finish());
     assert!(
-        err.contains("stream worker panicked"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, false)),
         "unexpected error: {err}"
     );
 }

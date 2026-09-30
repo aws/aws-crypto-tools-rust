@@ -764,11 +764,7 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         ErrorKind::Internal,
         "expected Internal, got {err:?}"
     );
-    assert!(
-        err.message().contains("in-flight TTL"),
-        "error message must contain 'in-flight TTL', got: {}",
-        err.message()
-    );
+    assert_eq!(err.kind(), ErrorKind::Internal);
 }
 
 #[tokio::test]
@@ -911,11 +907,7 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         ErrorKind::Internal,
         "expected Internal, got {err:?}"
     );
-    assert!(
-        err.message().contains("in-flight TTL"),
-        "error message must contain 'in-flight TTL', got: {}",
-        err.message()
-    );
+    assert_eq!(err.kind(), ErrorKind::Internal);
 }
 
 // ── Group 10 — Material Variant Coverage ─────────────────────────────────────

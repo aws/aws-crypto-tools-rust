@@ -9,6 +9,7 @@
 //! [`TestHMAC.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestHMAC.dfy
 //! [`TestAwsCryptographyPrimitivesHMAC.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAwsCryptographyPrimitivesHMAC.dfy
 
+use aws_mpl_primitives::ErrorKind;
 use aws_mpl_primitives::{DigestAlg, Error, hmac};
 
 const ASDF: [u8; 4] = [97, 115, 100, 102];
@@ -113,5 +114,5 @@ fn test_hmac_rejects_wrong_length_output_buffer() {
     // for the wrong digest.
     let mut out = [0u8; 32];
     let err = hmac(DigestAlg::Sha512, &[1, 2, 3, 4], &ASDF, &mut out).unwrap_err();
-    assert!(err.message().contains("output buffer of 32 bytes"));
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }

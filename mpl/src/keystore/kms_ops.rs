@@ -117,7 +117,7 @@ fn reject_alias_arn(arn: &str) -> Result<(), Error> {
         .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
     if parts.resource_type == "alias" {
         return Err(Error::new(
-            ErrorKind::Cryptographic,
+            ErrorKind::Remote,
             format!("record kms-arn must not be an alias: {arn}"),
         ));
     }

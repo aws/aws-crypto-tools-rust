@@ -13,7 +13,7 @@
 //! This module wraps the MPL's `bytes -> id` lookup in the ESDK error type.
 //! Its other helpers map MPL suite fields to the types the ESDK needs.
 
-use crate::error::{Error, ErrorKind, err, val_err};
+use crate::error::{Error, ErrorKind, err};
 use crate::types::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::{
     AlgorithmSuite, AlgorithmSuiteId as MplAlgorithmSuiteId, AsymmetricSignatureAlgorithm,
@@ -82,10 +82,14 @@ pub(crate) fn kdf_digest(kdf: KeyDerivationAlgorithm) -> Result<DigestAlg, Error
         KeyDerivationAlgorithm::HkdfSha256 => Ok(DigestAlg::Sha256),
         KeyDerivationAlgorithm::HkdfSha384 => Ok(DigestAlg::Sha384),
         KeyDerivationAlgorithm::HkdfSha512 => Ok(DigestAlg::Sha512),
-        KeyDerivationAlgorithm::IdentityKdf => Err(val_err("identity KDF has no hash function")),
-        other => Err(val_err(format!(
-            "unsupported key derivation algorithm: {other:?}"
-        ))),
+        KeyDerivationAlgorithm::IdentityKdf => Err(err(
+            ErrorKind::Internal,
+            "identity KDF has no hash function",
+        )),
+        other => Err(err(
+            ErrorKind::Internal,
+            format!("unsupported key derivation algorithm: {other:?}"),
+        )),
     }
 }
 
@@ -98,9 +102,13 @@ pub fn get_ecdsa_alg(suite: &AlgorithmSuite) -> Result<EcdsaSignatureAlgorithm, 
     match suite.asymmetric_signature_algorithm() {
         Some(AsymmetricSignatureAlgorithm::EcdsaP256) => Ok(EcdsaSignatureAlgorithm::EcdsaP256),
         Some(AsymmetricSignatureAlgorithm::EcdsaP384) => Ok(EcdsaSignatureAlgorithm::EcdsaP384),
-        None => Err(val_err("algorithm suite has no ECDSA signature algorithm")),
-        Some(other) => Err(val_err(format!(
-            "unsupported asymmetric signature algorithm: {other:?}"
-        ))),
+        None => Err(err(
+            ErrorKind::Internal,
+            "algorithm suite has no ECDSA signature algorithm",
+        )),
+        Some(other) => Err(err(
+            ErrorKind::Internal,
+            format!("unsupported asymmetric signature algorithm: {other:?}"),
+        )),
     }
 }

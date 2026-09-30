@@ -190,7 +190,7 @@ async fn test_signature_input_is_header_plus_body() {
         "header tamper must change the byte"
     );
 
-    // Valid ct decrypts; a tampered header fails the header auth tag with a Validation error.
+    // Valid ct decrypts; a tampered header fails decrypt with a Cryptographic error.
     assert!(
         decrypt_ciphertext_result(&valid_ct).await.is_ok(),
         "valid ct must decrypt"
@@ -200,8 +200,8 @@ async fn test_signature_input_is_header_plus_body() {
             .await
             .unwrap_err()
             .kind(),
-        ErrorKind::Validation,
-        "tampered header body byte must produce Validation error"
+        ErrorKind::Cryptographic,
+        "tampered header body byte must produce Cryptographic error"
     );
 
     // Tamper body (first byte of the first frame's encrypted content).

@@ -377,7 +377,7 @@ fn generate_partition_id() -> Result<Vec<u8>, Error> {
     let mut bytes = [0u8; 16];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Validation,
+            ErrorKind::Cryptographic,
             "failed to obtain entropy for partition-id v4 UUID",
             e,
         )
@@ -606,7 +606,7 @@ impl HierarchicalKeyring {
         // here means the supplier is present.
         let Some(supplier) = &self.inner.branch_key_id_supplier else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                ErrorKind::Internal,
                 "neither a branch_key_id nor a branch_key_id_supplier is configured",
             ));
         };

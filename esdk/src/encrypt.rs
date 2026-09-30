@@ -669,13 +669,17 @@ fn build_v2_header_body(
     suite_data: Option<Vec<u8>>,
 ) -> Result<HeaderBody, Error> {
     let Some(sd) = suite_data else {
-        return ser_err("suite data must be present for a committing algorithm suite");
+        return Err(err(
+            ErrorKind::Internal,
+            "suite data must be present for a committing algorithm suite",
+        ));
     };
     let expected_len = suite.algorithm_suite_data_length();
     if sd.len() != expected_len {
-        return ser_err(
+        return Err(err(
+            ErrorKind::Internal,
             "suite data length must match the commitment key output length for a committing suite",
-        );
+        ));
     }
     //= spec/client-apis/encrypt.md#v2-header
     //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.

@@ -6,19 +6,17 @@
 use aws_mpl_primitives::{AesGcm, DigestAlg, Error, ErrorKind, aes_encrypt, hkdf};
 
 fn make_error() -> Error {
-    // Trigger an error via a known-bad HKDF request. Its message is
-    // deterministic ("invalid key length ...").
+    // A known-bad HKDF request, which fails the same way every time.
     let mut okm = [0u8; 20];
     hkdf(DigestAlg::Sha256, &[], &[0u8; 16], &[&[]], &mut okm).unwrap_err()
 }
 
 #[test]
-fn test_error_is_cryptographic_and_display_starts_with_the_kind() {
+fn test_error_is_cryptographic_and_display_is_the_message() {
     let err = make_error();
     assert_eq!(err.kind(), ErrorKind::Cryptographic);
     assert!(!err.is_retryable());
-    let display = format!("{err}");
-    assert!(display.contains("invalid key length"));
+    assert_eq!(err.to_string(), err.message());
 }
 
 #[test]

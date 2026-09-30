@@ -428,7 +428,7 @@ async fn test_decrypt_materials_wrong_verification_key_length_fails() {
         .decrypt_materials(request)
         .await
         .expect_err("must fail on wrong VK length");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
 }
 
 #[tokio::test]
