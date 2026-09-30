@@ -8,7 +8,7 @@
 //! caching CMM can hold an arbitrary, runtime-configured cache.
 //! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
 
-pub mod cache_config;
+pub mod default;
 pub mod entry;
 pub mod local;
 pub mod storm_tracking;
@@ -18,13 +18,12 @@ use std::sync::Arc;
 use crate::Error;
 use async_trait::async_trait;
 
-pub use cache_config::{
-    CacheType, DefaultCache, StormTrackingCache, StormTrackingCacheBuilder,
-    create_cryptographic_materials_cache,
-};
+pub use default::{DefaultCmc, DefaultCmcBuilder};
 pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
-pub use local::LocalCmc;
-pub use storm_tracking::StormTrackingCmc;
+pub use local::{LocalCmc, LocalCmcBuilder};
+pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};
+
+use std::time::Duration;
 
 //
 /// To hold a cache whose concrete type is chosen at runtime, use [`SharedCmc`].
@@ -47,6 +46,12 @@ pub trait Cmc: Send + Sync {
     /// `Delete Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#delete-cache-entry).
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error>;
+
+    /// The storm-tracking grace period, for a cache that refreshes entries
+    /// this long before they expire. `None` for a cache without one.
+    fn grace_period(&self) -> Option<Duration> {
+        None
+    }
 }
 
 crate::shared::shared_handle!(
@@ -56,7 +61,7 @@ crate::shared::shared_handle!(
     /// Callers that know their cache's type pass it directly and never need this one.
     ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
-    /// Give several keyrings clones of one handle through [`CacheType::Shared`]
+    /// Give several keyrings clones of one handle
     /// and they read and write the same entries.
     SharedCmc,
     Cmc
@@ -74,5 +79,9 @@ impl Cmc for SharedCmc {
 
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
         self.0.delete_cache_entry(cache_id).await
+    }
+
+    fn grace_period(&self) -> Option<Duration> {
+        self.0.grace_period()
     }
 }

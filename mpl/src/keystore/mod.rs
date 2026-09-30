@@ -24,7 +24,7 @@ use crate::Error;
 use async_trait::async_trait;
 
 pub use branch_key_store::{BranchKeyStore, BranchKeyStoreBuilder};
-pub use config::{KeyStoreInfo, KmsConfiguration};
+pub use config::{Discovery, KeyStoreInfo, KmsConfiguration, MrDiscovery};
 
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};
 

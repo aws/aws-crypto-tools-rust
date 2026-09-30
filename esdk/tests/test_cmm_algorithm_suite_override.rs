@@ -61,7 +61,12 @@ impl Cmm for SuiteOverrideCmm {
 async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     // CMM overrides caller's suite; output reflects CMM's choice, not caller's.
     let (ns, name) = namespace_and_name(0);
-    let keyring = RawAesKeyring::new(ns, name, vec![0u8; 32], AesGcm::Aes256Gcm)
+    let keyring = RawAesKeyring::builder()
+        .key_namespace(ns)
+        .key_name(name)
+        .wrapping_key(vec![0u8; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect("raw AES keyring construction must succeed for test key material");
 
     // The CMM always resolves to a committing-only suite, ignoring the

@@ -70,20 +70,20 @@ impl Keyring for MockKeyring {
         self.encrypt_calls.fetch_add(1, Ordering::SeqCst);
         let suite = materials.algorithm_suite();
         let pdk_bytes = vec![self.pdk_byte; suite.encryption_key_length()];
-        let edk = EncryptedDataKey::new(
-            self.edk_provider_id.clone(),
-            b"mock-info".to_vec(),
-            pdk_bytes.clone(),
-        );
-        EncryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            vec![edk],
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            Some(PlaintextDataKey::new(pdk_bytes)),
-            materials.signing_key().cloned(),
-            None,
-        )
+        let edk = EncryptedDataKey::builder()
+            .key_provider_id(self.edk_provider_id.clone())
+            .key_provider_info(b"mock-info")
+            .ciphertext(pdk_bytes.clone())
+            .build()
+            .unwrap();
+        EncryptionMaterials::builder()
+            .algorithm_suite_id(materials.algorithm_suite_id())
+            .encrypted_data_keys(vec![edk])
+            .encryption_context(materials.encryption_context().clone())
+            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
+            .plaintext_data_key(PlaintextDataKey::new(pdk_bytes))
+            .set_signing_key(materials.signing_key().cloned())
+            .build()
     }
 
     async fn on_decrypt(
@@ -94,14 +94,13 @@ impl Keyring for MockKeyring {
         self.decrypt_calls.fetch_add(1, Ordering::SeqCst);
         let suite = materials.algorithm_suite();
         let pdk_bytes = vec![self.pdk_byte; suite.encryption_key_length()];
-        DecryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            Some(PlaintextDataKey::new(pdk_bytes)),
-            materials.verification_key().cloned(),
-            None,
-        )
+        DecryptionMaterials::builder()
+            .algorithm_suite_id(materials.algorithm_suite_id())
+            .encryption_context(materials.encryption_context().clone())
+            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
+            .plaintext_data_key(PlaintextDataKey::new(pdk_bytes))
+            .set_verification_key(materials.verification_key().cloned())
+            .build()
     }
 }
 
@@ -280,7 +279,7 @@ async fn test_get_encryption_materials_returns_edks_set_by_keyring() {
     // Mock keyring injects EDK with known provider ID; assertion proves CMM passed it through unchanged.
     assert_eq!(materials.encrypted_data_keys().len(), 1);
     assert_eq!(
-        materials.encrypted_data_keys()[0].key_provider_id,
+        materials.encrypted_data_keys()[0].key_provider_id(),
         "mock-keyring"
     );
 }

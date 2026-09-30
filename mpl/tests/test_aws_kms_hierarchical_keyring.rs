@@ -34,16 +34,15 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     HierarchicalKeyringBuilder, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
-use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
+    BranchKeyStore, BranchKeyStoreBuilder, Discovery, KeyStoreInfo, Keystore, KmsConfiguration,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
+use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, StormTrackingCmc};
 use aws_crypto_mpl::{Error, ErrorKind};
-use aws_crypto_mpl::{LocalCmc, SharedCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -214,6 +213,7 @@ fn build_with_sub_second_ttl_keeps_it_exactly() {
             .key_store(keystore_never_consulted())
             .ttl(ttl)
             .branch_key_id("branch-key-id")
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .build()
             .unwrap_or_else(|e| panic!("{ttl:?} must be accepted: {e}"));
         assert_eq!(keyring.ttl(), ttl);
@@ -223,7 +223,7 @@ fn build_with_sub_second_ttl_keeps_it_exactly() {
 #[test]
 fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
     let with_grace_ms = |grace_period_ms| {
-        let params = StormTrackingCache::builder()
+        let cache = StormTrackingCmc::builder()
             .entry_capacity(16)
             .entry_pruning_tail_size(4)
             .grace_period(Duration::from_millis(grace_period_ms))
@@ -232,12 +232,12 @@ fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
             .inflight_ttl(Duration::from_millis(100))
             .sleep(Duration::from_millis(10))
             .build()
-            .expect("valid StormTrackingCache");
+            .expect("valid StormTrackingCmc");
         HierarchicalKeyring::builder()
             .key_store(keystore_never_consulted())
             .ttl(Duration::from_millis(1500))
             .branch_key_id("bk")
-            .cache(CacheType::StormTracking(params))
+            .cache(cache)
             .build()
     };
     with_grace_ms(1_499).expect("1499 ms grace period < 1500 ms TTL must succeed");
@@ -255,7 +255,7 @@ fn build_with_positive_ttl_succeeds() {
         .key_store(keystore)
         .ttl(Duration::from_secs(1))
         .branch_key_id("branch-key-id")
-        .cache(CacheType::Default(DefaultCache::new(1000)))
+        .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
         .build();
 
     let keyring = result.expect("a 1-second TTL must be accepted");
@@ -421,48 +421,54 @@ fn build_with_branch_key_id_supplier_succeeds() {
     assert!(keyring.branch_key_id_supplier().is_some());
 }
 
-// ─── Cache wiring tests: which Cmc a given CacheType produces ───────────────
+// ─── Cache wiring tests: which Cmc the keyring stores ───────────────────────
 //
-// The keyring's only responsibility here is turning a `CacheType` into a
-// `Cmc`, so for the variants it builds itself, successful construction IS the
-// assertion. Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to
-// the cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
-// and is deliberately not re-derived through the keyring. The one exception is
-// `CacheType::Shared`, where the keyring must store the caller's cache verbatim
-// rather than build its own; nothing but a keyring test can check that.
+// Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to the
+// cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
+// and is deliberately not re-derived through the keyring. These tests check
+// only which cache the keyring stores and the grace-period bound it enforces.
 
 #[test]
-fn build_with_default_cache_succeeds() {
-    HierarchicalKeyring::builder()
-        .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
-        .branch_key_id("bk")
-        .cache(CacheType::Default(DefaultCache::new(1)))
-        .build()
-        .expect("CacheType::Default must build a keyring-local cache");
-}
-
-#[test]
-fn build_with_cache_type_none_succeeds() {
-    HierarchicalKeyring::builder()
+fn build_without_cache_uses_default_cmc() {
+    let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("bk")
         .build()
-        .expect("None cache_type must default to a built-in cache");
+        .expect("an unset cache must default to a built-in cache");
+    assert_eq!(
+        keyring.cache().grace_period(),
+        Some(Duration::from_secs(10)),
+        "the default cache has the storm-tracking default grace period"
+    );
+
+    let err = build_err(
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_secs(10))
+            .branch_key_id("bk"),
+        "TTL equal to the default grace period",
+    );
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[test]
 fn build_with_shared_cache_round_trips_provided_cache() {
-    let supplied = SharedCmc::new(LocalCmc::new(8, 4).unwrap());
+    let supplied = SharedCmc::new(
+        LocalCmc::builder()
+            .entry_capacity(8)
+            .entry_pruning_tail_size(4)
+            .build()
+            .unwrap(),
+    );
 
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("bk")
-        .cache(CacheType::Shared(supplied.clone()))
+        .cache(supplied.clone())
         .build()
-        .expect("CacheType::Shared must succeed");
+        .expect("a SharedCmc must be accepted");
 
     // The exact cache supplied is what the keyring stores. Tested via
     // pointer-identity rather than behaviour because the struct field is
@@ -470,13 +476,32 @@ fn build_with_shared_cache_round_trips_provided_cache() {
     let stored: &SharedCmc = keyring.cache();
     assert!(
         SharedCmc::ptr_eq(stored, &supplied),
-        "CacheType::Shared MUST round-trip the supplied cache verbatim"
+        "the keyring MUST store the supplied SharedCmc itself"
     );
 }
 
 #[test]
+fn build_with_shared_storm_tracking_grace_period_equal_to_ttl_fails() {
+    let cache = SharedCmc::new(
+        StormTrackingCmc::builder()
+            .grace_period(Duration::from_secs(60))
+            .build()
+            .expect("valid StormTrackingCmc"),
+    );
+    let err = build_err(
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_secs(60))
+            .branch_key_id("bk")
+            .cache(cache),
+        "shared storm-tracking cache with grace_period == TTL",
+    );
+    assert_eq!(err.kind(), ErrorKind::Validation);
+}
+
+#[test]
 fn build_with_storm_tracking_cache_succeeds() {
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_secs(60))
@@ -485,19 +510,19 @@ fn build_with_storm_tracking_cache_succeeds() {
         .inflight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600)) // strictly greater than grace_period (60).
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
-        .expect("CacheType::StormTracking with grace_period < ttl must succeed");
+        .expect("a StormTrackingCmc with grace_period < ttl must succeed");
 }
 
 #[test]
 fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_secs(60))
@@ -506,12 +531,12 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         .inflight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(60)) // equal to grace_period (60).
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
     {
         Ok(_) => panic!("StormTracking with grace_period == TTL must fail"),
@@ -522,7 +547,7 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
 
 #[test]
 fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_secs(120))
@@ -531,12 +556,12 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         .inflight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(60))
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
     {
         Ok(_) => panic!("StormTracking with grace_period > TTL must fail"),
@@ -549,7 +574,7 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     // grace_period = 5_000 ms = 5 s, less than the 60 s TTL.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_millis(5_000))
@@ -558,12 +583,12 @@ fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
         .inflight_ttl(Duration::from_millis(1_000))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(60))
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
         .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
 }
@@ -1289,7 +1314,7 @@ impl Keystore for FakeKeystore {
             keystore_name: "test-table".to_string(),
             logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
             grant_tokens: Vec::new(),
-            kms_configuration: KmsConfiguration::Discovery,
+            kms_configuration: Discovery::default().into(),
         })
     }
 
@@ -1344,40 +1369,29 @@ fn fake_branch_key_materials() -> BranchKeyMaterials {
 /// Empty encryption materials for `suite_id`. Suite choice is arbitrary unless
 /// a test depends on `encryption_key_length`.
 fn empty_encryption_materials(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
-    EncryptionMaterials::new(
-        suite_id,
-        Vec::new(),
-        EncryptionContext::new(),
-        Default::default(),
-        None,
-        None,
-        None,
-    )
-    .unwrap()
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(suite_id)
+        .build()
+        .unwrap()
 }
 
 /// Empty decryption materials for `suite_id`. Used only by the OnDecrypt
 /// suite; there is no OnEncrypt counterpart.
 fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials {
-    DecryptionMaterials::new(
-        suite_id,
-        EncryptionContext::new(),
-        Default::default(),
-        None,
-        None,
-        None,
-    )
-    .unwrap()
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(suite_id)
+        .build()
+        .unwrap()
 }
 
 /// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
-/// keyring-local default cache.
+/// keyring-local `LocalCmc`.
 fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(keystore)
         .ttl(Duration::from_secs(3600))
         .branch_key_id(branch_key_id)
-        .cache(CacheType::Default(DefaultCache::new(1000)))
+        .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
         .partition_id("partition-id")
         .build()
         .unwrap()
@@ -1439,7 +1453,11 @@ mod onencrypt {
         use std::time::SystemTime;
 
         const PARTITION: &str = "partition-id";
-        let cache = LocalCmc::new(8, 4).unwrap();
+        let cache = LocalCmc::builder()
+            .entry_capacity(8)
+            .entry_pruning_tail_size(4)
+            .build()
+            .unwrap();
         let now = SystemTime::now();
         cache
             .put_cache_entry(
@@ -1465,7 +1483,7 @@ mod onencrypt {
             .key_store(keystore.clone())
             .ttl(Duration::from_millis(1500))
             .branch_key_id(FAKE_BRANCH_KEY_ID)
-            .cache(CacheType::Shared(SharedCmc::new(cache)))
+            .cache(SharedCmc::new(cache))
             .partition_id(PARTITION)
             .build()
             .unwrap();
@@ -1500,7 +1518,7 @@ mod onencrypt {
                     keystore_name: "table".to_string(),
                     logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
-                    kms_configuration: KmsConfiguration::Discovery,
+                    kms_configuration: Discovery::default().into(),
                 })
             }
             async fn create_key_store(&self) -> Result<String, Error> {
@@ -1544,7 +1562,7 @@ mod onencrypt {
             .key_store(FailingKeystore)
             .ttl(Duration::from_secs(3600))
             .branch_key_id("bk")
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .build()
             .unwrap();
 
@@ -1587,7 +1605,7 @@ mod onencrypt {
             .key_store(keystore.clone())
             .ttl(Duration::from_secs(3600))
             .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .build()
             .unwrap();
 
@@ -1597,10 +1615,7 @@ mod onencrypt {
             .unwrap();
 
         let edk = &materials_out.encrypted_data_keys()[0];
-        assert_eq!(
-            edk.key_provider_info.as_slice(),
-            FAKE_BRANCH_KEY_ID.as_bytes()
-        );
+        assert_eq!(edk.key_provider_info(), FAKE_BRANCH_KEY_ID.as_bytes());
         assert_eq!(keystore.get_active_calls(), 1);
     }
 }
@@ -1650,15 +1665,11 @@ mod ondecrypt {
         let (pdk, edks) = produce_edk(&keyring, suite_id).await;
 
         // Build DM that ALREADY carries a plaintext data key.
-        let dm = DecryptionMaterials::new(
-            suite_id,
-            EncryptionContext::new(),
-            Default::default(),
-            Some(pdk),
-            None,
-            None,
-        )
-        .unwrap();
+        let dm = DecryptionMaterials::builder()
+            .algorithm_suite_id(suite_id)
+            .plaintext_data_key(pdk)
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(dm, &edks)
@@ -1685,7 +1696,7 @@ mod ondecrypt {
         // ciphertext layout (salt(16) || iv(12) || version(16) || ...)
         // independently of the on_decrypt parsing logic.
         const VERSION_OFFSET: usize = 16 + 12;
-        let on_wire_version = &edks[0].ciphertext[VERSION_OFFSET..VERSION_OFFSET + 16];
+        let on_wire_version = &edks[0].ciphertext()[VERSION_OFFSET..VERSION_OFFSET + 16];
         assert_eq!(on_wire_version, &FAKE_BRANCH_KEY_VERSION_BYTES);
 
         let _ = keyring
@@ -1739,11 +1750,12 @@ mod ondecrypt {
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
         // Prepend an EDK with the wrong provider id; the keyring MUST
         // skip it and continue to the next (matching) EDK.
-        let bogus = EncryptedDataKey::new(
-            "some-other-provider".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0xAA; 64],
-        );
+        let bogus = EncryptedDataKey::builder()
+            .key_provider_id("some-other-provider")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0xAA; 64])
+            .build()
+            .unwrap();
         edks.insert(0, bogus);
 
         let dm_out = keyring
@@ -1765,11 +1777,12 @@ mod ondecrypt {
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
         // 0x80 is a continuation byte with no leading byte → invalid
         // UTF-8; the keyring MUST skip the EDK rather than fail on it.
-        let bogus = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            vec![0x80, 0x80, 0x80],
-            vec![0xAA; 64],
-        );
+        let bogus = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(vec![0x80, 0x80, 0x80])
+            .ciphertext(vec![0xAA; 64])
+            .build()
+            .unwrap();
         edks.insert(0, bogus);
 
         let dm_out = keyring
@@ -1789,11 +1802,12 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
-        let bogus = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            b"some-other-branch-key-id".to_vec(),
-            vec![0xAA; 64],
-        );
+        let bogus = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(b"some-other-branch-key-id")
+            .ciphertext(vec![0xAA; 64])
+            .build()
+            .unwrap();
         edks.insert(0, bogus);
 
         let dm_out = keyring
@@ -1835,11 +1849,12 @@ mod ondecrypt {
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
-        let foreign = EncryptedDataKey::new(
-            "some-other-provider".to_string(),
-            b"some-other-info".to_vec(),
-            vec![0u8; 64],
-        );
+        let foreign = EncryptedDataKey::builder()
+            .key_provider_id("some-other-provider")
+            .key_provider_info(b"some-other-info")
+            .ciphertext(vec![0u8; 64])
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(empty_decryption_materials(suite_id), &[foreign])
@@ -1863,11 +1878,12 @@ mod ondecrypt {
         // but whose ciphertext is shorter than the spec's salt+iv+version
         // overhead (28 bytes). The keyring MUST surface the per-EDK error
         // in the final error message.
-        let truncated = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0u8; 4],
-        );
+        let truncated = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0u8; 4])
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
@@ -1907,16 +1923,18 @@ mod ondecrypt {
 
         // Two candidate EDKs, both too short but by different amounts so each
         // produces a distinguishable message in the aggregate.
-        let truncated_4 = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0u8; 4],
-        );
-        let truncated_8 = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0u8; 8],
-        );
+        let truncated_4 = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0u8; 4])
+            .build()
+            .unwrap();
+        let truncated_8 = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0u8; 8])
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(
@@ -1979,7 +1997,7 @@ mod ondecrypt {
                     keystore_name: "table".to_string(),
                     logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
-                    kms_configuration: KmsConfiguration::Discovery,
+                    kms_configuration: Discovery::default().into(),
                 })
             }
             async fn create_key_store(&self) -> Result<String, Error> {
@@ -2033,7 +2051,7 @@ mod ondecrypt {
             .key_store(FailingKeystore)
             .ttl(Duration::from_secs(3600))
             .branch_key_id(FAKE_BRANCH_KEY_ID)
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .partition_id("partition-id")
             .build()
             .unwrap();
@@ -2071,7 +2089,7 @@ mod ondecrypt {
             .key_store(keystore.clone())
             .ttl(Duration::from_secs(3600))
             .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .partition_id("partition-id")
             .build()
             .unwrap();

@@ -144,8 +144,12 @@ impl Cmm for DefaultCmm {
         // Build empty materials carrying the resolved suite, the (possibly
         // signing-key-augmented) EC, the request's RECK, and the freshly
         // generated signing key. The keyring populates the PDK and EDK list.
-        let empty_materials =
-            EncryptionMaterials::new(suite_id, vec![], ec, reck, None, signing_key, None)?;
+        let empty_materials = EncryptionMaterials::builder()
+            .algorithm_suite_id(suite_id)
+            .encryption_context(ec)
+            .required_encryption_context_keys(reck)
+            .set_signing_key(signing_key)
+            .build()?;
 
         let materials = self.keyring.on_encrypt(empty_materials).await?;
 
@@ -211,14 +215,12 @@ impl Cmm for DefaultCmm {
 
         // Build empty decryption materials. The keyring populates the PDK by
         // recovering it from one of the request's encrypted data keys.
-        let empty_materials = DecryptionMaterials::new(
-            suite_id,
-            ec,
-            required_encryption_context_keys,
-            None,
-            verification_key,
-            None,
-        )?;
+        let empty_materials = DecryptionMaterials::builder()
+            .algorithm_suite_id(suite_id)
+            .encryption_context(ec)
+            .required_encryption_context_keys(required_encryption_context_keys)
+            .set_verification_key(verification_key)
+            .build()?;
 
         let materials = self
             .keyring

@@ -310,76 +310,35 @@ KeyStore::KeyStore(const std::string& table_name,
 
 // Cryptographic materials caches
 
-CacheType CacheType::Default(std::uint32_t entry_capacity) {
-    CacheType c(Kind::Default);
-    c.entry_capacity_ = entry_capacity;
-    return c;
-}
-
-CacheType CacheType::StormTracking(
-    std::uint32_t entry_capacity,
-    std::uint32_t entry_pruning_tail_size,
-    std::chrono::nanoseconds grace_period,
-    std::chrono::nanoseconds grace_interval,
-    std::uint32_t fan_out,
-    std::chrono::nanoseconds inflight_ttl,
-    std::chrono::nanoseconds sleep,
-    Tag) {
-    CacheType c(Kind::StormTracking);
-    c.entry_capacity_ = entry_capacity;
-    c.entry_pruning_tail_size_ = entry_pruning_tail_size;
-    c.grace_period_ = grace_period;
-    c.grace_interval_ = grace_interval;
-    c.fan_out_ = fan_out;
-    c.inflight_ttl_ = inflight_ttl;
-    c.sleep_ = sleep;
-    return c;
-}
-
-CacheType CacheType::Shared(const CryptographicMaterialsCache& cache) {
-    CacheType c(Kind::Shared);
-    c.shared_ = cache.impl_;
-    return c;
-}
-
 namespace detail {
-// Lowers the public CacheType to the bridge struct. The result borrows a
-// Shared descriptor's handle; the caller retains that cache's impl.
-struct CacheTypeLowerer {
-    static ::ffi::CacheType lower(const CacheType& c) {
-        ::ffi::CacheType out{};
-        switch (c.kind_) {
-            case CacheType::Kind::Default:
-                out.kind = ::ffi::CacheKind::Default;
-                out.entry_capacity = c.entry_capacity_;
-                break;
-            case CacheType::Kind::StormTracking:
-                out.kind = ::ffi::CacheKind::StormTracking;
-                out.entry_capacity = c.entry_capacity_;
-                out.entry_pruning_tail_size = c.entry_pruning_tail_size_;
-                out.grace_period = to_ffi(c.grace_period_, "grace_period");
-                out.grace_interval = to_ffi(c.grace_interval_, "grace_interval");
-                out.fan_out = c.fan_out_;
-                out.inflight_ttl = to_ffi(c.inflight_ttl_, "inflight_ttl");
-                out.sleep = to_ffi(c.sleep_, "sleep");
-                break;
-            case CacheType::Kind::Shared:
-                out.kind = ::ffi::CacheKind::Shared;
-                out.shared = c.shared_ ? &*c.shared_->handle : nullptr;
-                break;
-        }
-        return out;
-    }
-};
+::ffi::OptDuration to_opt(const std::optional<std::chrono::nanoseconds>& o, const char* field) {
+    return o ? ::ffi::OptDuration{true, to_ffi(*o, field)} : ::ffi::OptDuration{false, {}};
+}
 }  // namespace detail
 
-CryptographicMaterialsCache::CryptographicMaterialsCache(const CacheType& cache)
-    : impl_(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
-          cache.shared_ ? detail::Retained{cache.shared_} : detail::Retained{},
-          detail::guard([&] {
-              ::ffi::CacheType ffi_cache = detail::CacheTypeLowerer::lower(cache);
-              return ::ffi::create_cryptographic_materials_cache(ffi_cache);
+StormTrackingCmc::StormTrackingCmc(const StormTrackingCmcOptions& options)
+    : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+          detail::Retained{}, detail::guard([&] {
+              ::ffi::StormTrackingCmcOptions o{};
+              o.entry_capacity = detail::to_opt(options.entry_capacity_);
+              o.entry_pruning_tail_size = detail::to_opt(options.entry_pruning_tail_size_);
+              o.grace_period = detail::to_opt(options.grace_period_, "grace_period");
+              o.grace_interval = detail::to_opt(options.grace_interval_, "grace_interval");
+              o.fan_out = detail::to_opt(options.fan_out_);
+              o.inflight_ttl = detail::to_opt(options.inflight_ttl_, "inflight_ttl");
+              o.sleep = detail::to_opt(options.sleep_, "sleep");
+              return ::ffi::create_storm_tracking_cmc(o);
           }))) {}
+
+DefaultCmc::DefaultCmc(std::uint32_t entry_capacity)
+    : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+          detail::Retained{},
+          detail::guard([&] { return ::ffi::create_default_cmc(entry_capacity); }))) {}
+
+LocalCmc::LocalCmc(std::uint32_t entry_capacity)
+    : CryptographicMaterialsCache(std::make_shared<detail::CryptographicMaterialsCacheImpl>(
+          detail::Retained{},
+          detail::guard([&] { return ::ffi::create_local_cmc(entry_capacity); }))) {}
 
 // Keyrings
 
@@ -398,19 +357,16 @@ HierarchicalKeyring::HierarchicalKeyring(KeyStore key_store,
                                          const HierarchicalKeyringOptions& options,
                                          Tag)
     : Keyring(std::make_shared<detail::KeyringImpl>(
-          (options.cache_ && options.cache_->shared_)
-              ? detail::Retained{key_store.impl_, options.cache_->shared_}
-              : detail::Retained{key_store.impl_},
+          options.cache_ ? detail::Retained{key_store.impl_, options.cache_->impl_}
+                         : detail::Retained{key_store.impl_},
           detail::guard([&] {
               ::ffi::HierarchicalKeyringInput in{};
               in.branch_key_id = ::rust::String(branch_key_id);
               in.key_store = &*key_store.impl_->handle;
               in.ttl = detail::to_ffi(ttl, "ttl");
               in.partition_id = detail::to_opt(options.partition_id_);
-              in.cache = options.cache_
-                             ? ::ffi::OptCacheType{true,
-                                                   detail::CacheTypeLowerer::lower(*options.cache_)}
-                             : ::ffi::OptCacheType{false, ::ffi::CacheType{}};
+              // A null handle tells the shim to defer to the core ESDK's default cache.
+              if (options.cache_) in.cache = &*options.cache_->impl_->handle;
               return ::ffi::create_hierarchical_keyring(in);
           }))) {}
 

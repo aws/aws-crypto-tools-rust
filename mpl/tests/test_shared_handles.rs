@@ -13,7 +13,13 @@ use aws_crypto_mpl::{
 };
 
 fn keyring() -> RawAesKeyring {
-    RawAesKeyring::new("namespace", "name", vec![0; 32], AesGcm::Aes256Gcm).unwrap()
+    RawAesKeyring::builder()
+        .key_namespace("namespace")
+        .key_name("name")
+        .wrapping_key(vec![0; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
+        .unwrap()
 }
 
 fn keystore() -> BranchKeyStore {
@@ -46,7 +52,11 @@ fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
 }
 
 fn cache() -> LocalCmc {
-    LocalCmc::new(1, 1).unwrap()
+    LocalCmc::builder()
+        .entry_capacity(1)
+        .entry_pruning_tail_size(1)
+        .build()
+        .unwrap()
 }
 
 struct Supplier;

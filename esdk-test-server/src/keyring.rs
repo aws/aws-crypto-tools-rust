@@ -86,13 +86,13 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
         crate::model::AesWrappingAlg::Alg192 => AesGcm::Aes192Gcm,
         crate::model::AesWrappingAlg::Alg256 => AesGcm::Aes256Gcm,
     };
-    let keyring = RawAesKeyring::new(
-        config.key_namespace.clone(),
-        config.key_name.clone(),
-        config.wrapping_key.clone(),
-        wrapping_alg,
-    )
-    .map_err(|e| ServerError::esdk(e.to_string()))?;
+    let keyring = RawAesKeyring::builder()
+        .key_namespace(config.key_namespace.clone())
+        .key_name(config.key_name.clone())
+        .wrapping_key(config.wrapping_key.clone())
+        .wrapping_alg(wrapping_alg)
+        .build()
+        .map_err(|e| ServerError::esdk(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
 

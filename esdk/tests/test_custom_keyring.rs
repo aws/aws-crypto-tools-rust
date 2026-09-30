@@ -81,23 +81,27 @@ impl Keyring for LocalKekKeyring {
         // Append the wrapped key to the materials as this keyring's EDK.
         let mut edk_ciphertext = iv;
         edk_ciphertext.extend_from_slice(&wrapped);
-        let edk =
-            EncryptedDataKey::new(PROVIDER_ID.to_string(), b"kek-v1".to_vec(), edk_ciphertext);
+        let edk = EncryptedDataKey::builder()
+            .key_provider_id(PROVIDER_ID.to_string())
+            .key_provider_info(b"kek-v1")
+            .ciphertext(edk_ciphertext)
+            .build()
+            .unwrap();
 
         let mut new_edks = materials.encrypted_data_keys().to_vec();
         new_edks.push(edk);
 
         // Rebuild the materials with the data key set and our EDK appended,
         // cloning the remaining fields through the accessors.
-        EncryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            new_edks,
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            Some(PlaintextDataKey::new(data_key)),
-            materials.signing_key().cloned(),
-            materials.symmetric_signing_keys().map(<[_]>::to_vec),
-        )
+        EncryptionMaterials::builder()
+            .algorithm_suite_id(materials.algorithm_suite_id())
+            .encrypted_data_keys(new_edks)
+            .encryption_context(materials.encryption_context().clone())
+            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
+            .plaintext_data_key(PlaintextDataKey::new(data_key))
+            .set_signing_key(materials.signing_key().cloned())
+            .set_symmetric_signing_keys(materials.symmetric_signing_keys().map(<[_]>::to_vec))
+            .build()
     }
 
     async fn on_decrypt(
@@ -117,10 +121,10 @@ impl Keyring for LocalKekKeyring {
 
         // Unwrap the data key from the EDK this keyring produced.
         for edk in encrypted_data_keys {
-            if edk.key_provider_id != PROVIDER_ID {
+            if edk.key_provider_id() != PROVIDER_ID {
                 continue;
             }
-            let bytes = &edk.ciphertext;
+            let bytes = &edk.ciphertext();
             if bytes.len() != WRAP_IV_LEN + key_len + WRAP_TAG_LEN {
                 return Err(MplError::new(
                     MplErrorKind::Cryptographic,
@@ -142,14 +146,16 @@ impl Keyring for LocalKekKeyring {
             .map_err(|e| {
                 MplError::with_cause(MplErrorKind::Cryptographic, "failed to unwrap data key", e)
             })?;
-            return DecryptionMaterials::new(
-                materials.algorithm_suite_id(),
-                materials.encryption_context().clone(),
-                materials.required_encryption_context_keys().clone(),
-                Some(PlaintextDataKey::new(data_key)),
-                materials.verification_key().cloned(),
-                materials.symmetric_signing_key().cloned(),
-            );
+            return DecryptionMaterials::builder()
+                .algorithm_suite_id(materials.algorithm_suite_id())
+                .encryption_context(materials.encryption_context().clone())
+                .required_encryption_context_keys(
+                    materials.required_encryption_context_keys().clone(),
+                )
+                .plaintext_data_key(PlaintextDataKey::new(data_key))
+                .set_verification_key(materials.verification_key().cloned())
+                .set_symmetric_signing_key(materials.symmetric_signing_key().cloned())
+                .build();
         }
 
         Err(MplError::new(

@@ -4,8 +4,8 @@
 //! Tests for KMS configuration ARN parsing, validation, and compatibility.
 
 use aws_crypto_mpl::ErrorKind;
-use aws_crypto_mpl::keystore::KmsConfiguration;
 use aws_crypto_mpl::keystore::kms_config::{is_arn_compatible, parse_arn, validate_kms_key_arn};
+use aws_crypto_mpl::keystore::{Discovery, KmsConfiguration, MrDiscovery};
 
 const VALID_KMS_ARN: &str =
     "arn:aws:kms:us-east-1:111122223333:key/abcd1234-1234-abcd-1234-1234567890ab";
@@ -119,7 +119,7 @@ fn kms_mr_key_arn_incompatible_with_different_account() {
 
 #[test]
 fn discovery_compatible_with_any_arn() {
-    let config = KmsConfiguration::Discovery;
+    let config: KmsConfiguration = Discovery::default().into();
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
     assert!(is_arn_compatible(&config, ALIAS_ARN));
@@ -127,9 +127,7 @@ fn discovery_compatible_with_any_arn() {
 
 #[test]
 fn mrdiscovery_compatible_with_any_arn() {
-    let config = KmsConfiguration::MrDiscovery {
-        region: "us-west-2".to_string(),
-    };
+    let config: KmsConfiguration = MrDiscovery::new("us-west-2").into();
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
 }
@@ -149,14 +147,24 @@ fn kms_key_arn_validate_rejects_alias() {
 
 #[test]
 fn discovery_validate_is_always_ok() {
-    let config = KmsConfiguration::Discovery;
+    let config: KmsConfiguration = Discovery::default().into();
     assert!(config.validate().is_ok());
 }
 
 #[test]
 fn mrdiscovery_validate_is_always_ok() {
-    let config = KmsConfiguration::MrDiscovery {
-        region: "eu-west-1".to_string(),
-    };
+    let config: KmsConfiguration = MrDiscovery::new("eu-west-1").into();
     assert!(config.validate().is_ok());
+}
+
+#[test]
+fn discovery_structs_convert_into_matching_variants() {
+    assert!(matches!(
+        KmsConfiguration::from(Discovery::default()),
+        KmsConfiguration::Discovery(_)
+    ));
+    assert!(matches!(
+        KmsConfiguration::from(MrDiscovery::new("us-west-2")),
+        KmsConfiguration::MrDiscovery(m) if m.region() == "us-west-2"
+    ));
 }

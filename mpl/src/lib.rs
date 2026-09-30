@@ -26,7 +26,7 @@ pub use client::*;
 pub use error::{Error, ErrorKind};
 pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
-// `RawAesKeyring::new`; without this a caller would have to depend on
+// `RawAesKeyringBuilder::wrapping_alg`; without this a caller would have to depend on
 // `aws-mpl-primitives` directly just to name the wrapping algorithm.
 pub use aws_mpl_primitives::AesGcm;
 
@@ -43,11 +43,12 @@ pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 
 pub use cmc::{
-    BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, DefaultCache, LocalCmc, MessageUsage,
-    SharedCmc, StormTrackingCache, StormTrackingCacheBuilder, StormTrackingCmc, UsageMetadata,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, DefaultCmc, DefaultCmcBuilder, LocalCmc,
+    LocalCmcBuilder, MessageUsage, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
+    UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
-pub use keyring::{Keyring, RawAesKeyring, SharedKeyring};
+pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};
 pub use keystore::{
     BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
     SharedKeystore, encryption_context, kms_config, record,

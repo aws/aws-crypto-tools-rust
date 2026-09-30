@@ -33,7 +33,12 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     // A different keyring (different namespace, different wrapping key) — its
     // default CMM cannot unwrap the EDK encrypted by `keyring`.
     let (ns, name) = namespace_and_name(1);
-    let wrong_keyring = RawAesKeyring::new(ns, name, vec![1u8; 32], AesGcm::Aes256Gcm)
+    let wrong_keyring = RawAesKeyring::builder()
+        .key_namespace(ns)
+        .key_name(name)
+        .wrapping_key(vec![1u8; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect("raw AES keyring construction must succeed for test key material");
 
     let valid_input = DecryptInput::builder()

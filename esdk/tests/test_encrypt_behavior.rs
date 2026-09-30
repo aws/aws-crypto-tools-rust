@@ -330,15 +330,15 @@ impl Cmm for DuplicateEdkCmm {
             ));
         };
         edks.push(first);
-        EncryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            edks,
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            materials.plaintext_data_key().cloned(),
-            materials.signing_key().cloned(),
-            materials.symmetric_signing_keys().map(<[_]>::to_vec),
-        )
+        EncryptionMaterials::builder()
+            .algorithm_suite_id(materials.algorithm_suite_id())
+            .encrypted_data_keys(edks)
+            .encryption_context(materials.encryption_context().clone())
+            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
+            .set_plaintext_data_key(materials.plaintext_data_key().cloned())
+            .set_signing_key(materials.signing_key().cloned())
+            .set_symmetric_signing_keys(materials.symmetric_signing_keys().map(<[_]>::to_vec))
+            .build()
     }
 
     async fn decrypt_materials(

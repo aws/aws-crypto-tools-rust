@@ -99,13 +99,13 @@ pub(crate) fn resolve_keystore_arn(
             }
             Ok(configured.clone())
         }
-        KmsConfiguration::Discovery => {
+        KmsConfiguration::Discovery(_) => {
             reject_alias_arn(record_kms_arn)?;
             Ok(record_kms_arn.to_string())
         }
-        KmsConfiguration::MrDiscovery { region } => {
+        KmsConfiguration::MrDiscovery(mr_discovery) => {
             reject_alias_arn(record_kms_arn)?;
-            rewrite_arn_region(record_kms_arn, region)
+            rewrite_arn_region(record_kms_arn, mr_discovery.region())
         }
     }
 }

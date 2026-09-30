@@ -4,7 +4,7 @@
 //! Integration tests for [`aws_crypto_mpl::cmc::LocalCmc`].
 //!
 //! Gated behind the `test-utils` feature because these tests rely on
-//! `LocalCmc::with_clock`, which is only compiled in when `test-utils`
+//! the `LocalCmcBuilder::clock` setter, which is only compiled in when `test-utils`
 //! is enabled.
 //!
 //! These tests exercise the local CMC's public `Cmc` trait surface and the
@@ -15,7 +15,7 @@
 //! include all usage metadata", and the "updating usage metadata SHOULD be
 //! atomic" SHOULD).
 //!
-//! The cache's clock is injected via [`LocalCmc::with_clock`] so TTL and
+//! The cache's clock is injected via `LocalCmcBuilder::clock` so TTL and
 //! pruning tests advance time deterministically without sleeping.
 //!
 //! ## Deterministic clock pattern
@@ -29,7 +29,7 @@
 
 #![cfg(feature = "test-utils")]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
@@ -65,28 +65,17 @@ const TTL_FRESH_OFFSET: Duration = Duration::from_secs(7200);
 const STANDARD_TTL: Duration = Duration::from_secs(3600);
 
 fn make_encryption_materials() -> EncryptionMaterials {
-    EncryptionMaterials::new(
-        SUITE,
-        vec![],
-        EncryptionContext::new(),
-        BTreeSet::new(),
-        None,
-        None,
-        None,
-    )
-    .expect("constructing empty encryption materials")
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .build()
+        .expect("constructing empty encryption materials")
 }
 
 fn make_decryption_materials() -> DecryptionMaterials {
-    DecryptionMaterials::new(
-        SUITE,
-        EncryptionContext::new(),
-        BTreeSet::new(),
-        None,
-        None,
-        None,
-    )
-    .expect("constructing empty decryption materials")
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .build()
+        .expect("constructing empty decryption materials")
 }
 
 fn make_branch_key_materials() -> BranchKeyMaterials {
@@ -145,7 +134,11 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
     // nothing": any put must leave `len() == 0` once the post-eviction
     // sweep has run.
     //
-    let zero_cap = LocalCmc::new(0, 1).expect("zero capacity is accepted");
+    let zero_cap = LocalCmc::builder()
+        .entry_capacity(0)
+        .entry_pruning_tail_size(1)
+        .build()
+        .expect("zero capacity is accepted");
     assert_eq!(zero_cap.entry_capacity(), 0);
 
     // Sanity: a put on a zero-capacity cache returns Ok and the
@@ -184,7 +177,11 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
     // this bound exercises the config layer's lack of an artificial cap
     // without asking the allocator for an impossible amount of memory.
     const LARGE_CAP: usize = 1_000_000;
-    let large_cap = LocalCmc::new(LARGE_CAP, 1).expect("large capacity is accepted");
+    let large_cap = LocalCmc::builder()
+        .entry_capacity(LARGE_CAP)
+        .entry_pruning_tail_size(1)
+        .build()
+        .expect("large capacity is accepted");
     assert_eq!(large_cap.entry_capacity(), LARGE_CAP);
 }
 
@@ -193,7 +190,12 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
 #[tokio::test]
 async fn test_put_within_capacity_does_not_evict() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(4, 2, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(2)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
@@ -224,7 +226,12 @@ async fn test_put_within_capacity_does_not_evict() {
 #[tokio::test]
 async fn test_put_over_capacity_evicts_lru() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(2, 1, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(2)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
@@ -246,7 +253,12 @@ async fn test_put_over_capacity_evicts_lru() {
 async fn test_capacity_invariant_holds_after_put_returns() {
     let now = anchor_now();
     let capacity = 2_usize;
-    let cmc = LocalCmc::with_clock(capacity, 1, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(capacity)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
@@ -270,7 +282,12 @@ async fn test_get_drops_ttl_expired_entry() {
     let creation = anchor_now();
     let expiry = creation + TTL_EXPIRED_OFFSET;
     let frozen_now = expiry + Duration::from_secs(1);
-    let cmc = LocalCmc::with_clock(8, 8, move || frozen_now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(8)
+        .entry_pruning_tail_size(8)
+        .clock(move || frozen_now)
+        .build()
+        .expect("LocalCmc constructs");
 
     cmc.put_cache_entry(b"expiring", make_entry_at(creation, expiry))
         .await
@@ -294,7 +311,12 @@ async fn test_get_at_exact_expiry_returns_none() {
     let creation = anchor_now();
     let expiry = creation + TTL_EXPIRED_OFFSET;
     let frozen_now = expiry; // exact boundary — no offset
-    let cmc = LocalCmc::with_clock(8, 8, move || frozen_now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(8)
+        .entry_pruning_tail_size(8)
+        .clock(move || frozen_now)
+        .build()
+        .expect("LocalCmc constructs");
 
     cmc.put_cache_entry(b"at-expiry", make_entry_at(creation, expiry))
         .await
@@ -332,7 +354,12 @@ async fn test_get_prunes_tail_window() {
     let expired = creation + TTL_EXPIRED_OFFSET;
     let fresh = creation + TTL_FRESH_OFFSET;
     let frozen_now = creation + FROZEN_NOW_OFFSET; // past `expired`, before `fresh`
-    let cmc = LocalCmc::with_clock(10, 3, move || frozen_now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(10)
+        .entry_pruning_tail_size(3)
+        .clock(move || frozen_now)
+        .build()
+        .expect("LocalCmc constructs");
 
     // Insert 3 expired (will be the LRU tail) followed by 2 fresh.
     for i in 0..3u8 {
@@ -370,7 +397,12 @@ async fn test_pruning_evicts_all_ttl_expired_in_tail() {
     let expired = creation + TTL_EXPIRED_OFFSET;
     let fresh = creation + TTL_FRESH_OFFSET;
     let frozen_now = creation + FROZEN_NOW_OFFSET;
-    let cmc = LocalCmc::with_clock(10, 4, move || frozen_now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(10)
+        .entry_pruning_tail_size(4)
+        .clock(move || frozen_now)
+        .build()
+        .expect("LocalCmc constructs");
 
     for i in 0..4u8 {
         cmc.put_cache_entry(&[b'e', i], make_entry_at(creation, expired))
@@ -405,7 +437,12 @@ async fn test_pruning_does_not_evict_outside_tail() {
     let fresh = creation + TTL_FRESH_OFFSET;
     let frozen_now = creation + FROZEN_NOW_OFFSET;
 
-    let cmc = LocalCmc::with_clock(10, 1, move || frozen_now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(10)
+        .entry_pruning_tail_size(1)
+        .clock(move || frozen_now)
+        .build()
+        .expect("LocalCmc constructs");
     assert_eq!(cmc.entry_pruning_tail_size(), 1);
 
     // Put a fresh entry first — this becomes the LRU tail.
@@ -437,7 +474,12 @@ async fn test_pruning_does_not_evict_outside_tail() {
 #[tokio::test]
 async fn test_put_then_get_returns_inserted_entry() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
@@ -485,7 +527,12 @@ async fn test_usage_metadata_round_trips_through_put_get() {
             CachedMaterials::BeaconKey(make_beacon_key_materials()),
         ),
     ] {
-        let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+        let cmc = LocalCmc::builder()
+            .entry_capacity(4)
+            .entry_pruning_tail_size(1)
+            .clock(move || now)
+            .build()
+            .expect("LocalCmc constructs");
         let entry = CacheEntry::new(materials, creation, expiry, usage);
         cmc.put_cache_entry(b"id-usage", entry)
             .await
@@ -515,7 +562,12 @@ async fn test_usage_metadata_round_trips_through_put_get() {
 #[tokio::test]
 async fn test_concurrent_put_atomic_visibility() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
@@ -571,7 +623,12 @@ async fn test_concurrent_put_atomic_visibility() {
 #[tokio::test]
 async fn test_delete_existing_entry_then_get_returns_none() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
@@ -591,7 +648,11 @@ async fn test_delete_existing_entry_then_get_returns_none() {
 
 #[tokio::test]
 async fn test_delete_missing_entry_returns_ok() {
-    let cmc = LocalCmc::new(4, 1).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(1)
+        .build()
+        .expect("LocalCmc constructs");
     cmc.delete_cache_entry(b"never-inserted")
         .await
         .expect("delete on missing id MUST succeed");
@@ -600,7 +661,12 @@ async fn test_delete_missing_entry_returns_ok() {
 #[tokio::test]
 async fn test_is_empty_reflects_stored_count() {
     let now = anchor_now();
-    let cmc = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
 
     // Fresh cache is empty.
     assert!(cmc.is_empty().expect("is_empty succeeds"));
@@ -636,7 +702,12 @@ async fn test_get_evicts_expired_entry_outside_tail_window() {
     let fresh = creation + TTL_FRESH_OFFSET;
     let frozen_now = creation + FROZEN_NOW_OFFSET;
 
-    let cmc = LocalCmc::with_clock(10, 1, move || frozen_now).expect("LocalCmc constructs");
+    let cmc = LocalCmc::builder()
+        .entry_capacity(10)
+        .entry_pruning_tail_size(1)
+        .clock(move || frozen_now)
+        .build()
+        .expect("LocalCmc constructs");
 
     // Put a fresh entry first — this becomes the LRU tail entry.
     cmc.put_cache_entry(b"fresh-tail", make_entry_at(creation, fresh))
@@ -678,7 +749,12 @@ async fn test_get_evicts_expired_entry_outside_tail_window() {
 #[tokio::test]
 async fn test_clone_shares_entries_with_original() {
     let now = anchor_now();
-    let original = LocalCmc::with_clock(4, 1, move || now).expect("LocalCmc constructs");
+    let original = LocalCmc::builder()
+        .entry_capacity(4)
+        .entry_pruning_tail_size(1)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs");
     let clone = original.clone();
 
     original

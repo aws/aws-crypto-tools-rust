@@ -28,10 +28,48 @@ pub enum KmsConfiguration {
     /// MRK ARN compatibility. ARN may be MRK or non-MRK.
     KmsMrKeyArn(String),
     /// Discovery configuration; KMS Key ARN is read from each DDB record.
-    Discovery,
-    /// MRDiscovery configuration with required region argument.
-    MrDiscovery {
-        /// The region to use for MRK ARN rewrites.
-        region: String,
-    },
+    Discovery(Discovery),
+    /// MRDiscovery configuration; KMS Key ARN is read from each DDB record,
+    /// with an MRK ARN's region replaced by the configured region.
+    MrDiscovery(MrDiscovery),
+}
+
+/// Settings for [`KmsConfiguration::Discovery`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Discovery {}
+
+/// Settings for [`KmsConfiguration::MrDiscovery`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MrDiscovery {
+    region: String,
+}
+
+impl MrDiscovery {
+    /// Rewrite any discovered MRK ARN to `region`.
+    #[must_use]
+    pub fn new(region: impl Into<String>) -> Self {
+        Self {
+            region: region.into(),
+        }
+    }
+
+    /// The region any discovered MRK ARN is rewritten to.
+    #[must_use]
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+}
+
+impl From<Discovery> for KmsConfiguration {
+    fn from(discovery: Discovery) -> Self {
+        Self::Discovery(discovery)
+    }
+}
+
+impl From<MrDiscovery> for KmsConfiguration {
+    fn from(mr_discovery: MrDiscovery) -> Self {
+        Self::MrDiscovery(mr_discovery)
+    }
 }
