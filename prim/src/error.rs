@@ -52,6 +52,7 @@ pub trait ErrorKindLike: Copy + fmt::Debug + PartialEq + Send + Sync + 'static {
 pub trait LibraryError: std::error::Error + Send + Sync + 'static {
     fn base_kind(&self) -> Option<BaseErrorKind>;
     fn retryable(&self) -> bool;
+    fn error_message(&self) -> &str;
 }
 
 /// The fields behind every library's `Error`.
@@ -298,7 +299,7 @@ macro_rules! define_error {
                 let kind = inner
                     .base_kind()
                     .map_or($kind::Internal, $kind::from_base);
-                let message = inner.to_string();
+                let message = $crate::error::LibraryError::error_message(&inner).to_owned();
                 let retryable = $crate::error::LibraryError::retryable(&inner);
                 Self($crate::error::ErrorCore::build(
                     kind,
@@ -341,7 +342,7 @@ macro_rules! define_error {
 
             /// Override whether this error is retryable.
             #[doc(hidden)]
-            pub fn set_retryable(&mut self, retryable: bool) {
+            pub const fn set_retryable(&mut self, retryable: bool) {
                 self.0.retryable = retryable;
             }
         }
@@ -353,6 +354,10 @@ macro_rules! define_error {
 
             fn retryable(&self) -> bool {
                 self.0.retryable
+            }
+
+            fn error_message(&self) -> &str {
+                &self.0.message
             }
         }
 
