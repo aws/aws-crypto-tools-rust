@@ -67,3 +67,30 @@ fn test_error_implements_std_error_trait() {
     let dyn_err: &dyn std::error::Error = &err;
     assert!(!dyn_err.to_string().is_empty());
 }
+
+mod other_library {
+    aws_mpl_primitives::define_error! {
+        /// An error from another library.
+        Error,
+        /// Its kinds.
+        ErrorKind;
+        /// A kind only this library has.
+        Extra,
+    }
+}
+
+#[test]
+fn from_inner_keeps_the_kind_by_name_and_does_not_repeat_it_in_the_message() {
+    let inner = Error::new(ErrorKind::Cryptographic, "tag mismatch");
+    let outer = other_library::Error::from_inner(inner);
+    assert_eq!(outer.kind(), other_library::ErrorKind::Cryptographic);
+    assert_eq!(outer.message(), "tag mismatch");
+    assert_eq!(outer.to_string(), "Cryptographic: tag mismatch");
+    assert!(std::error::Error::source(&outer).is_some());
+}
+
+#[test]
+fn from_inner_maps_a_kind_with_no_shared_name_to_internal() {
+    let inner = other_library::Error::new(other_library::ErrorKind::Extra, "only here");
+    assert_eq!(Error::from_inner(inner).kind(), ErrorKind::Internal);
+}
