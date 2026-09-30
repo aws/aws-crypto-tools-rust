@@ -56,7 +56,7 @@
     clippy::tests_outside_test_module,
 )]
 
-use std::sync::Arc;
+pub mod error;
 
 mod ecdsa;
 pub use ecdsa::*;
@@ -65,7 +65,6 @@ pub use hkdf::*;
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey};
 use aws_lc_rs::rand;
-use std::backtrace::Backtrace;
 
 /// Digest Algorithm. Default is Sha512
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -103,37 +102,16 @@ const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
     }
 }
 
-/// Error type for this crate
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct Error {
-    /// Text associated with the error
-    pub message: String,
-    /// Backtrace at time of creation
-    pub backtrace: Arc<Backtrace>,
+define_error! {
+    /// Error type for this crate.
+    Error,
+    /// What went wrong, as a caller would act on it.
+    ErrorKind;
 }
-
-impl PartialEq for Error {
-    fn eq(&self, other: &Self) -> bool {
-        self.message == other.message
-    }
-}
-impl Eq for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Crypto Error {}", self.message)
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[track_caller]
 fn serr(s: String) -> Error {
-    Error {
-        message: s,
-        backtrace: Arc::new(Backtrace::capture()),
-    }
+    Error::new(ErrorKind::Cryptographic, s)
 }
 
 #[track_caller]

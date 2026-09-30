@@ -3,7 +3,7 @@
 
 //! `Error` trait-implementation coverage
 
-use aws_mpl_primitives::{AesGcm, DigestAlg, Error, aes_encrypt, hkdf};
+use aws_mpl_primitives::{AesGcm, DigestAlg, Error, ErrorKind, aes_encrypt, hkdf};
 
 fn make_error() -> Error {
     // Trigger an error via a known-bad HKDF request. Its message is
@@ -13,16 +13,18 @@ fn make_error() -> Error {
 }
 
 #[test]
-fn test_error_display_starts_with_crypto_error_prefix() {
+fn test_error_is_cryptographic_and_display_starts_with_the_kind() {
     let err = make_error();
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert!(!err.is_retryable());
     let display = format!("{err}");
-    assert!(display.starts_with("Crypto Error "));
+    assert!(display.starts_with("Cryptographic: "));
     assert!(display.contains("Invalid key length"));
 }
 
 #[test]
 fn test_error_partial_eq_matches_on_message_only() {
-    // `Error::eq` compares `.message` only, so two errors from the same call
+    // `Error::eq` compares kind and message, so two errors from the same call
     // path compare equal. The backtrace never participates, and it is usually
     // not even distinct: `Error` captures with `Backtrace::capture()`, which
     // honours `RUST_BACKTRACE` and yields `<disabled>` when it is unset, so
@@ -55,7 +57,7 @@ fn test_error_clone_preserves_message() {
     let err = make_error();
     let cloned = err.clone();
     assert_eq!(err, cloned);
-    assert_eq!(err.message, cloned.message);
+    assert_eq!(err.message(), cloned.message());
 }
 
 #[test]
