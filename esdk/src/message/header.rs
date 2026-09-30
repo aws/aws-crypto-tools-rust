@@ -12,8 +12,7 @@ use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
-use crate::error::val_err;
-use crate::error::{ErrorKind, err};
+use crate::error::{ErrorKind, err, val_err};
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_lc_rs::constant_time;
@@ -190,8 +189,9 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
         1 => MESSAGE_ID_LEN_V1,
         2 => MESSAGE_ID_LEN_V2,
         v => {
-            return ser_err(&format!(
-                "cannot generate message ID for unsupported message format version: {v}"
+            return Err(err(
+                ErrorKind::Internal,
+                format!("cannot generate message ID for unsupported message format version: {v}"),
             ));
         }
     };

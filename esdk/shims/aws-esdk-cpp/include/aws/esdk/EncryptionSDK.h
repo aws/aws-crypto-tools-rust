@@ -112,6 +112,7 @@ enum class ErrorKind : std::uint8_t {
     RemoteTransport = 9,
     Remote = 10,
     Internal = 11,
+    Io = 12,
 };
 
 /// Base exception for every failure this library reports.
@@ -164,7 +165,8 @@ public:
 /// A cryptographic check failed,
 /// for example an AES-GCM authentication tag or a message signature did not verify.
 ///
-/// Treat the message as corrupt or modified; retrying cannot succeed.
+/// The message is corrupt or modified, or is being decrypted with the wrong key;
+/// retrying cannot succeed.
 class CryptographicException : public AwsEncryptionSdkException {
 public:
     explicit CryptographicException(const std::string& msg, bool retryable = false)
@@ -256,6 +258,14 @@ class InternalException : public AwsEncryptionSdkException {
 public:
     explicit InternalException(const std::string& msg, bool retryable = false)
         : AwsEncryptionSdkException(ErrorKind::Internal, retryable, msg) {}
+};
+
+/// A caller-supplied stream failed while streaming,
+/// for example a closed connection or a full disk.
+class IoException : public AwsEncryptionSdkException {
+public:
+    explicit IoException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Io, retryable, msg) {}
 };
 
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 

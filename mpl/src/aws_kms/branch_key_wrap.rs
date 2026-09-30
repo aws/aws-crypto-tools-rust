@@ -89,13 +89,13 @@ pub fn compute_aad(
 fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], Error> {
     if s.len() != 36 {
         return Err(Error::new(
-            ErrorKind::Validation,
+            ErrorKind::Remote,
             format!("branch key version is not a valid 36-char UUID: {s}",),
         ));
     }
     let uuid = Uuid::parse_str(s).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Validation,
+            ErrorKind::Remote,
             format!("branch key version is not a valid UUID: {s}"),
             e,
         )

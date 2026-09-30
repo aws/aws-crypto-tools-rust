@@ -173,7 +173,10 @@ pub(crate) fn read_edks(
         //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md),
         //# then as soon as that can be determined during deserializing
         //# decrypt MUST process no more bytes and yield an error.
-        return ser_err("ciphertext encrypted data keys exceed maximum encrypted data keys limit");
+        return Err(err(
+            ErrorKind::Validation,
+            "ciphertext encrypted data keys exceed maximum encrypted data keys limit",
+        ));
     }
 
     // Encrypted Data Key Entries

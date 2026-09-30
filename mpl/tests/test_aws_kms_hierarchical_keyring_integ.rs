@@ -732,9 +732,9 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
-    // Only the kms-arn-compat check in resolve_keystore_arn returns Cryptographic;
+    // Only the kms-arn-compat check in resolve_keystore_arn returns Validation;
     // a missing record or an unreachable table returns a remote kind.
-    assert_eq!(err.kind(), ErrorKind::Cryptographic, "got: {err}");
+    assert_eq!(err.kind(), ErrorKind::Validation, "got: {err}");
 }
 
 #[tokio::test]

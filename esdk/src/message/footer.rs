@@ -3,8 +3,9 @@
 
 //! Message footer serialization/deserialization.
 
+use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
-use super::{Error, ser_err};
+use crate::error::{ErrorKind, err};
 use crate::types::{SafeRead, SafeWrite};
 
 /// Write a message footer (signature length + signature bytes).
@@ -25,9 +26,9 @@ pub(crate) fn write_footer(w: &mut dyn SafeWrite, signature: &[u8]) -> Result<()
     //= spec/client-apis/encrypt.md#construct-the-signature
     //# The value MUST be the length of the output of the signature calculation above.
     let Ok(len) = u16::try_from(signature.len()) else {
-        return ser_err(&format!(
-            "signature length {} exceeds u16::MAX",
-            signature.len()
+        return Err(err(
+            ErrorKind::Internal,
+            format!("signature length {} exceeds u16::MAX", signature.len()),
         ));
     };
 

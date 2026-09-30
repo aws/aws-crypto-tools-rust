@@ -220,6 +220,7 @@ mod ffi {
         RemoteTransport,
         Remote,
         Internal,
+        Io,
     }
 
     struct EncryptionContextItem {
@@ -505,6 +506,7 @@ fn classify_core_error(kind: aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
         E::RemoteThrottled => S::RemoteThrottled,
         E::RemoteTransport => S::RemoteTransport,
         E::Remote => S::Remote,
+        E::Io => S::Io,
         _ => S::Internal,
     }
 }

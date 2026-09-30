@@ -764,7 +764,7 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         ErrorKind::Internal,
         "expected Internal, got {err:?}"
     );
-    assert_eq!(err.kind(), ErrorKind::Internal);
+    assert!(err.is_retryable());
 }
 
 #[tokio::test]
@@ -907,7 +907,7 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         ErrorKind::Internal,
         "expected Internal, got {err:?}"
     );
-    assert_eq!(err.kind(), ErrorKind::Internal);
+    assert!(err.is_retryable());
 }
 
 // ── Group 10 — Material Variant Coverage ─────────────────────────────────────

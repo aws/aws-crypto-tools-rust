@@ -16,7 +16,7 @@ fn ser_io(e: std::io::Error) -> Error {
         std::io::ErrorKind::UnexpectedEof => {
             err_with_cause(ErrorKind::Serialization, "unexpected end of data", e)
         }
-        _ => err_with_cause(ErrorKind::Serialization, "IO error", e),
+        _ => err_with_cause(ErrorKind::Io, "a reader or writer failed", e),
     }
 }
 
