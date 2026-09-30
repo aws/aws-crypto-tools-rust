@@ -7,7 +7,8 @@
 //! `aws-mpl-primitives`, with no cache or KMS dependency. Used by the
 //! `Keyring` impl in [`super::hierarchical_keyring`].
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::{Kind, Service};
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
@@ -89,16 +90,18 @@ pub fn compute_aad(
 fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], Error> {
     if s.len() != 36 {
         return Err(Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("branch key version is not a valid 36-char UUID: {s}",),
-        ));
+        )
+        .about(Service::DynamoDb, None));
     }
     let uuid = Uuid::parse_str(s).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("branch key version is not a valid UUID: {s}"),
             e,
         )
+        .about(Service::DynamoDb, None)
     })?;
     Ok(*uuid.as_bytes())
 }
@@ -128,7 +131,7 @@ fn derive_branch_key(
     let mut derived = [0u8; DERIVED_KEY_LEN];
     kbkdf_ctr_hmac(DigestAlg::Sha256, branch_key, &info, &mut derived).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Cryptographic,
+            Kind::Cryptographic,
             "KDF in Counter Mode with HMAC SHA256 derivation failed",
             e,
         )
@@ -155,21 +158,13 @@ pub fn wrap(
     // 1. Generate a 16-byte random salt.
     let mut salt = [0u8; SALT_LEN];
     generate_random_bytes(&mut salt).map_err(|e| {
-        Error::with_cause(
-            ErrorKind::Cryptographic,
-            "failed to obtain entropy for salt",
-            e,
-        )
+        Error::with_cause(Kind::Cryptographic, "failed to obtain entropy for salt", e)
     })?;
 
     // 2. Generate a 12-byte random IV.
     let mut iv = [0u8; IV_LEN];
     generate_random_bytes(&mut iv).map_err(|e| {
-        Error::with_cause(
-            ErrorKind::Cryptographic,
-            "failed to obtain entropy for IV",
-            e,
-        )
+        Error::with_cause(Kind::Cryptographic, "failed to obtain entropy for IV", e)
     })?;
 
     // 3. Derive the AES-256-GCM cipher key.
@@ -204,7 +199,7 @@ pub fn wrap(
         &aad_bytes,
         &mut output,
     )
-    .map_err(|e| Error::with_cause(ErrorKind::Cryptographic, "AES-256-GCM encrypt failed", e))?;
+    .map_err(|e| Error::with_cause(Kind::Cryptographic, "AES-256-GCM encrypt failed", e))?;
 
     debug_assert_eq!(
         output.len() - pre_encrypt_len,
@@ -235,7 +230,7 @@ pub fn unwrap(
     // Validate ciphertext is at least the fixed overhead so the slicing below is in-bounds.
     if ciphertext.len() < FIXED_OVERHEAD_LEN {
         return Err(Error::new(
-            ErrorKind::Cryptographic,
+            Kind::Cryptographic,
             format!(
                 "ciphertext too short: {} < {FIXED_OVERHEAD_LEN}",
                 ciphertext.len(),
@@ -282,7 +277,7 @@ pub fn unwrap(
         &aad_bytes,
         &mut plaintext,
     )
-    .map_err(|e| Error::with_cause(ErrorKind::Cryptographic, "AES-256-GCM decrypt failed", e))?;
+    .map_err(|e| Error::with_cause(Kind::Cryptographic, "AES-256-GCM decrypt failed", e))?;
 
     // Each fallible step (deserialization, KDF, AAD construction, AES decrypt)
     // uses `?` to propagate; reaching this Ok requires every step to have

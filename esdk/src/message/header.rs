@@ -12,7 +12,7 @@ use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
-use crate::error::{ErrorKind, err, val_err};
+use crate::error::{Kind, err, val_err};
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_lc_rs::constant_time;
@@ -156,7 +156,7 @@ pub(crate) fn validate_max_encrypted_data_keys(
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //# This value MUST be greater than 0.
         return Err(err(
-            ErrorKind::InvalidMaterials,
+            Kind::InvalidMaterials,
             "encrypted data key count must be greater than 0",
         ));
     }
@@ -190,7 +190,7 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
         2 => MESSAGE_ID_LEN_V2,
         v => {
             return Err(err(
-                ErrorKind::Internal,
+                Kind::Internal,
                 format!("cannot generate message ID for unsupported message format version: {v}"),
             ));
         }
@@ -219,7 +219,7 @@ pub(crate) fn validate_suite_data(
         .is_err()
     {
         return Err(err(
-            ErrorKind::Cryptographic,
+            Kind::Cryptographic,
             "algorithm suite data does not match expected value",
         ));
     }
@@ -229,7 +229,7 @@ pub(crate) fn validate_suite_data(
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
     if commit_key_length(suite) != expected_suite_data.len() {
         return Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             "algorithm suite data length does not match the algorithm suite's declared suite-data length",
         ));
     }

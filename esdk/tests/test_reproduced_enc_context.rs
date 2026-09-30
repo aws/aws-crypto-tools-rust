@@ -85,19 +85,15 @@ async fn test_mismatched_encryption_context_on_decrypt() {
         .expect_err("decrypt must fail when reproduced encryption context has mismatched values");
 
     // The same key is present on the ec, but the value is different.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::EncryptionContextMismatch,
+    assert!(
+        err.is_encryption_context_mismatch(),
         "expected EncryptionContextMismatch, got: {:?}",
-        err.kind()
+        err
     );
     let source = std::error::Error::source(&err)
         .and_then(|e| e.downcast_ref::<aws_crypto_mpl::Error>())
         .expect("the MPL error is the source");
-    assert_eq!(
-        source.kind(),
-        aws_crypto_mpl::ErrorKind::EncryptionContextMismatch
-    );
+    assert!(source.is_encryption_context_mismatch(), "{:?}", source);
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //= reason=Mismatched reproduced EC value fails the MPL reproduced-EC check with EncryptionContextMismatch, proving the reproduced EC was used

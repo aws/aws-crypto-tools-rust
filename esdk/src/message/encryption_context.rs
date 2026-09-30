@@ -6,7 +6,7 @@
 use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
 use crate::error::err;
-use crate::error::{ErrorKind, err_with_cause};
+use crate::error::{Kind, err_with_cause};
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 
 /// Read the header's AAD encryption context sub-section.
@@ -17,7 +17,7 @@ pub(crate) fn read_encryption_context(
     let len = usize::from(read_u16(r, raw)?);
     let bytes = read_vec(r, len, raw)?;
     EncryptionContext::deserialize(&bytes)
-        .map_err(|e| err_with_cause(ErrorKind::Serialization, "invalid encryption context", e))
+        .map_err(|e| err_with_cause(Kind::Serialization, "invalid encryption context", e))
 }
 
 /// Write canonical EC bytes for signing/AES-GCM AAD; empty EC writes nothing.
@@ -75,7 +75,7 @@ pub(crate) fn write_aad_section(
     //# The key value pairs length MUST be interpreted as a UInt16.
     let Ok(bytes_u16) = u16::try_from(bytes) else {
         return Err(err(
-            ErrorKind::Validation,
+            Kind::Validation,
             "encryption context key value pair length value is too large for u16",
         ));
     };
@@ -91,7 +91,7 @@ pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Resu
     // Count.
     let Ok(data_len) = u16::try_from(data.len()) else {
         return Err(err(
-            ErrorKind::Validation,
+            Kind::Validation,
             "encryption context key value pair count is too large for u16",
         ));
     };
@@ -104,7 +104,7 @@ pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Resu
         // Key: length + UTF-8 bytes.
         let Ok(key_len) = u16::try_from(key.len()) else {
             return Err(err(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "encryption context key length is too large for u16",
             ));
         };
@@ -114,7 +114,7 @@ pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Resu
         // Value: length + UTF-8 bytes.
         let Ok(val_len) = u16::try_from(value.len()) else {
             return Err(err(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "encryption context value length is too large for u16",
             ));
         };

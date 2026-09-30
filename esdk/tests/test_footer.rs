@@ -204,9 +204,9 @@ async fn test_unrecognized_algorithm_suite_errors() {
         //= reason=All valid algorithm suite IDs map to known signature algorithms; an unrecognized suite ID is rejected at header parsing before the signature algorithm is ever inspected
         //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
         assert!(
-            matches!(err.kind(), ErrorKind::Serialization),
+            err.is_serialization(),
             "{label}: expected Serialization error, got {:?}",
-            err.kind()
+            err
         );
     }
 }

@@ -58,9 +58,8 @@ async fn test_verify_signature_fails_on_tampered_footer() {
     let err = decrypt(&tampered_input)
         .await
         .expect_err("tampered footer must fail");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        err.is_cryptographic(),
         "tampered footer must produce a Cryptographic error"
     );
 }
@@ -227,9 +226,11 @@ async fn test_footer_wait_truncated_message_fails() {
     //# the Decrypt operation MUST wait for enough bytes to become consumable or for the caller
     //# to indicate an end to the encrypted message.
     assert!(decrypt(&valid_input).await.is_ok(), "full ct must decrypt");
-    assert_eq!(
-        decrypt(&truncated_input).await.unwrap_err().kind(),
-        ErrorKind::Serialization,
+    assert!(
+        decrypt(&truncated_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
         "truncated footer must produce Serialization error"
     );
 }

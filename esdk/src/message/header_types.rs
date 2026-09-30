@@ -5,7 +5,7 @@
 
 use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, write_u8};
 use super::{Error, ser_err};
-use crate::error::{ErrorKind, err_with_cause};
+use crate::error::{Kind, err_with_cause};
 use crate::suites::algorithm_suite_from_bytes;
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
@@ -265,7 +265,7 @@ pub(crate) fn read_esdk_suite_id(
     //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
     let suite = algorithm_suite_from_bytes(esdk_suite_id_bytes).map_err(|e| {
         err_with_cause(
-            ErrorKind::Serialization,
+            Kind::Serialization,
             format!(
                 "unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
                 esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]

@@ -101,9 +101,11 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     //= reason=Untampered ct decrypts; tampered body auth tag → Cryptographic error with no DecryptOutput, so unauthenticated plaintext is never released
     //# This operation MUST NOT release any unauthenticated plaintext or unauthenticated associated data.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Cryptographic,
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
         "tampered body auth tag must produce Cryptographic error, no plaintext"
     );
 }
@@ -148,12 +150,11 @@ async fn test_streaming_callers_must_discard_on_failure() {
             .is_ok(),
         "valid ct must stream to Ok"
     );
-    assert_eq!(
+    assert!(
         decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
             .await
             .unwrap_err()
-            .kind(),
-        ErrorKind::Cryptographic,
+            .is_cryptographic(),
         "tampered signature must produce a Cryptographic error"
     );
 }

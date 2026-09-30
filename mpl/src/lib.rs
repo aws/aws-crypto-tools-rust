@@ -21,9 +21,8 @@ pub mod keystore;
 pub mod shared;
 pub mod structures;
 
-pub use aws_mpl_primitives::error::DisplayErrorContext;
 pub use client::*;
-pub use error::{Error, ErrorKind};
+pub use error::Error;
 pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
 // `RawAesKeyring::new`; without this a caller would have to depend on

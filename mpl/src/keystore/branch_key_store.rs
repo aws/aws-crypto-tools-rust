@@ -8,7 +8,8 @@
 //! are optional; when omitted, a default client is built using the Region
 //! parsed from the configured KMS ARN.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::{Kind, Resource, Service};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -97,7 +98,7 @@ impl BranchKeyStore {
         match &self.inner.kms_configuration {
             KmsConfiguration::KmsKeyArn(arn) | KmsConfiguration::KmsMrKeyArn(arn) => Ok(arn),
             KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "operation requires a single-key KMS configuration (KmsKeyArn or \
                      KmsMrKeyArn); Discovery and MRDiscovery are not supported",
             )),
@@ -153,12 +154,16 @@ impl BranchKeyStore {
             .key(ATTR_TYPE, AttributeValue::S(sort_key.to_string()))
             .send()
             .await
-            .map_err(|e| map_ddb_error("GetItem", e))?;
+            .map_err(|e| map_ddb_error("GetItem", &self.inner.ddb_table_name, e))?;
 
         let item = response.item.ok_or_else(|| {
             Error::new(
-                ErrorKind::RemoteResourceNotFound,
+                Kind::ResourceNotFound,
                 format!("no keystore record for branch-key-id={branch_key_id}, type={sort_key}",),
+            )
+            .about(
+                Service::DynamoDb,
+                Some(Resource::BranchKey(branch_key_id.to_string())),
             )
         })?;
 
@@ -295,7 +300,7 @@ impl BranchKeyStoreBuilder {
         let name_len = ddb_table_name.len();
         if !(DDB_TABLE_NAME_MIN_LEN..=DDB_TABLE_NAME_MAX_LEN).contains(&name_len) {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 format!(
                     "ddb_table_name must be between {DDB_TABLE_NAME_MIN_LEN} and {DDB_TABLE_NAME_MAX_LEN} characters, got {name_len}",
                 ),
@@ -332,7 +337,7 @@ impl BranchKeyStoreBuilder {
 }
 
 fn required<T>(value: Option<T>, field: &str) -> Result<T, Error> {
-    value.ok_or_else(|| Error::new(ErrorKind::Validation, format!("{field} is required")))
+    value.ok_or_else(|| Error::new(Kind::Validation, format!("{field} is required")))
 }
 
 #[async_trait]
@@ -363,13 +368,14 @@ impl Keystore for BranchKeyStore {
             Ok(resp) => {
                 let table = resp.table().ok_or_else(|| {
                     Error::new(
-                        ErrorKind::Remote,
+                        Kind::Service,
                         "DescribeTable succeeded but returned no table description",
                     )
+                    .about(Service::DynamoDb, None)
                 })?;
                 if !table_has_expected_schema(table) {
                     return Err(Error::new(
-                        ErrorKind::Validation,
+                        Kind::Validation,
                         format!(
                             "table '{table_name}' does not conform to the expected Key Store KeySchema"
                         ),
@@ -384,7 +390,7 @@ impl Keystore for BranchKeyStore {
                     .as_service_error()
                     .is_some_and(DescribeTableError::is_resource_not_found_exception);
                 if !is_not_found {
-                    return Err(map_ddb_error("DescribeTable", err));
+                    return Err(map_ddb_error("DescribeTable", table_name, err));
                 }
 
                 let resp = self
@@ -396,13 +402,14 @@ impl Keystore for BranchKeyStore {
                     .billing_mode(BillingMode::PayPerRequest)
                     .send()
                     .await
-                    .map_err(|e| map_ddb_error("CreateTable", e))?;
+                    .map_err(|e| map_ddb_error("CreateTable", table_name, e))?;
 
                 let table = resp.table_description().ok_or_else(|| {
                     Error::new(
-                        ErrorKind::Remote,
+                        Kind::Service,
                         "CreateTable succeeded but returned no table description",
                     )
+                    .about(Service::DynamoDb, None)
                 })?;
                 table_arn(table, table_name)
             }
@@ -418,7 +425,7 @@ impl Keystore for BranchKeyStore {
         // context (branch-key-store.md#createkey).
         if branch_key_id.is_some() && encryption_context.is_none() {
             return Err(Error::new(
-                ErrorKind::Validation,
+                Kind::Validation,
                 "CreateKey with a caller-supplied branch key id requires an encryption context",
             ));
         }
@@ -486,7 +493,7 @@ impl Keystore for BranchKeyStore {
             .set_transact_items(Some(transact_items))
             .send()
             .await
-            .map_err(|e| map_ddb_error("TransactWriteItems", e))?;
+            .map_err(|e| map_ddb_error("TransactWriteItems", &self.inner.ddb_table_name, e))?;
 
         Ok(branch_key_id)
     }
@@ -507,11 +514,12 @@ impl Keystore for BranchKeyStore {
             .get(ATTR_KMS_ARN)
             .ok_or_else(|| {
                 Error::new(
-                    ErrorKind::Remote,
+                    Kind::Service,
                     format!(
                         "ACTIVE record for '{branch_key_id}' is missing the 'kms-arn' attribute"
                     ),
                 )
+                .about(Service::DynamoDb, None)
             })?
             .clone();
         let resolved_arn = resolve_keystore_arn(&self.inner.kms_configuration, &stored_kms_arn)?;
@@ -536,7 +544,7 @@ impl Keystore for BranchKeyStore {
         .await
         .map_err(|e| {
             Error::with_cause(
-                ErrorKind::Cryptographic,
+                Kind::Cryptographic,
                 format!("failed to authenticate ACTIVE record for '{branch_key_id}'"),
                 e,
             )
@@ -614,7 +622,7 @@ impl Keystore for BranchKeyStore {
             .set_transact_items(Some(transact_items))
             .send()
             .await
-            .map_err(|e| map_ddb_error("TransactWriteItems", e))?;
+            .map_err(|e| map_ddb_error("TransactWriteItems", &self.inner.ddb_table_name, e))?;
 
         Ok(())
     }
@@ -754,22 +762,28 @@ fn table_has_expected_schema(table: &TableDescription) -> bool {
 fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, Error> {
     table.table_arn().map(String::from).ok_or_else(|| {
         Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("table '{table_name}' description is missing a TableArn"),
         )
+        .about(Service::DynamoDb, None)
     })
 }
 
 /// Map a DynamoDB request-builder `BuildError` into an `Internal` error.
 fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> Error {
-    Error::with_cause(ErrorKind::Internal, "failed to build a DynamoDB request", e)
+    Error::with_cause(Kind::Internal, "failed to build a DynamoDB request", e)
 }
 
-fn map_ddb_error<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Error
+fn map_ddb_error<E>(operation: &str, table_name: &str, err: SdkError<E, HttpResponse>) -> Error
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    Error::from_sdk(&format!("DynamoDB {operation}"), err)
+    Error::from_sdk(
+        Service::DynamoDb,
+        &format!("DynamoDB {operation}"),
+        Some(Resource::DynamoDbTable(table_name.to_owned())),
+        err,
+    )
 }
 
 /// Current UTC time as an ISO 8601 timestamp to microsecond precision
@@ -777,13 +791,9 @@ where
 fn now_iso8601_micros() -> Result<String, Error> {
     const FORMAT: &[time::format_description::FormatItem<'_>] =
         format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:6]Z");
-    OffsetDateTime::now_utc().format(FORMAT).map_err(|e| {
-        Error::with_cause(
-            ErrorKind::Internal,
-            "failed to format a keystore timestamp",
-            e,
-        )
-    })
+    OffsetDateTime::now_utc()
+        .format(FORMAT)
+        .map_err(|e| Error::with_cause(Kind::Internal, "failed to format a keystore timestamp", e))
 }
 
 /// Build the DynamoDB item for a keystore record from its encryption
@@ -847,18 +857,20 @@ fn record_from_ddb_item(
 ) -> Result<EncryptedRecord, Error> {
     let enc_attr = item.remove(ATTR_ENC).ok_or_else(|| {
         Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("record is missing the '{ATTR_ENC}' attribute"),
         )
+        .about(Service::DynamoDb, None)
     })?;
 
     let enc_blob: Blob = match enc_attr {
         AttributeValue::B(b) => b,
         other => {
             return Err(Error::new(
-                ErrorKind::Remote,
+                Kind::Service,
                 format!("record '{ATTR_ENC}' attribute must be Binary, got {other:?}",),
-            ));
+            )
+            .about(Service::DynamoDb, None));
         }
     };
 
@@ -881,9 +893,10 @@ fn record_from_ddb_item(
             }
             other => {
                 return Err(Error::new(
-                    ErrorKind::Remote,
+                    Kind::Service,
                     format!("record attribute '{k}' must be String or Number, got {other:?}",),
-                ));
+                )
+                .about(Service::DynamoDb, None));
             }
         }
     }

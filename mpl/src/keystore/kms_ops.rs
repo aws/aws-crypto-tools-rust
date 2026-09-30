@@ -13,7 +13,8 @@
 //! Callers pass references — neither helper takes ownership of the KMS
 //! client or the record.
 
-use crate::{Error, ErrorKind};
+use crate::Error;
+use crate::error::{Kind, Resource, Service};
 use std::collections::BTreeMap;
 
 use aws_sdk_kms::Client as KmsClient;
@@ -91,7 +92,7 @@ pub(crate) fn resolve_keystore_arn(
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
             if !is_arn_compatible(kms_config, record_kms_arn) {
                 return Err(Error::new(
-                    ErrorKind::Validation,
+                    Kind::Validation,
                     format!(
                         "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
                     ),
@@ -113,13 +114,16 @@ pub(crate) fn resolve_keystore_arn(
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery
 /// and MRDiscovery before passing the record's `kms-arn` to KMS.
 fn reject_alias_arn(arn: &str) -> Result<(), Error> {
-    let parts = parse_arn(arn)
-        .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
+    let parts = parse_arn(arn).map_err(|e| {
+        Error::with_cause(Kind::Service, "record kms-arn is malformed", e)
+            .about(Service::DynamoDb, None)
+    })?;
     if parts.resource_type == "alias" {
         return Err(Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("record kms-arn must not be an alias: {arn}"),
-        ));
+        )
+        .about(Service::DynamoDb, None));
     }
     Ok(())
 }
@@ -128,8 +132,10 @@ fn reject_alias_arn(arn: &str) -> Result<(), Error> {
 /// resource-type / resource portion (which may itself contain `/`) is
 /// preserved verbatim.
 fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, Error> {
-    let parts = parse_arn(arn)
-        .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
+    let parts = parse_arn(arn).map_err(|e| {
+        Error::with_cause(Kind::Service, "record kms-arn is malformed", e)
+            .about(Service::DynamoDb, None)
+    })?;
     Ok(format!(
         "arn:{}:{}:{}:{}:{}/{}",
         parts.partition,
@@ -155,40 +161,44 @@ pub(crate) async fn decrypt_branch_key(
 
     let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
         Error::new(
-            ErrorKind::Remote,
+            Kind::Service,
             format!("record is missing the '{ATTR_KMS_ARN}' attribute"),
         )
+        .about(Service::DynamoDb, None)
     })?;
 
     let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
 
     let response = kms_client
         .decrypt()
-        .key_id(resolved_key_id)
+        .key_id(&resolved_key_id)
         .ciphertext_blob(Blob::new(record.enc.clone()))
         .set_encryption_context(Some(ec.into_iter().collect()))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(|e| map_kms_error("Decrypt", e))?;
+        .map_err(|e| map_kms_error("Decrypt", &resolved_key_id, e))?;
 
     let plaintext = response
         .plaintext
         .ok_or_else(|| {
-            Error::new(
-                ErrorKind::Remote,
-                "KMS Decrypt response is missing Plaintext",
-            )
+            Error::new(Kind::Service, "KMS Decrypt response is missing Plaintext")
+                .about(Service::Kms, None)
         })?
         .into_inner();
     Ok(plaintext)
 }
 
-fn map_kms_error<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Error
+fn map_kms_error<E>(operation: &str, key_arn: &str, err: SdkError<E, HttpResponse>) -> Error
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    Error::from_sdk(&format!("AWS KMS {operation}"), err)
+    Error::from_sdk(
+        Service::Kms,
+        &format!("AWS KMS {operation}"),
+        Some(Resource::KmsKey(key_arn.to_owned())),
+        err,
+    )
 }
 
 /// Generate a fresh 32-byte data key wrapped under `key_arn`, bound to
@@ -213,15 +223,16 @@ pub(crate) async fn generate_wrapped_key(
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(|e| map_kms_error("GenerateDataKeyWithoutPlaintext", e))?;
+        .map_err(|e| map_kms_error("GenerateDataKeyWithoutPlaintext", key_arn, e))?;
 
     Ok(response
         .ciphertext_blob
         .ok_or_else(|| {
             Error::new(
-                ErrorKind::Remote,
+                Kind::Service,
                 "KMS GenerateDataKeyWithoutPlaintext response is missing CiphertextBlob",
             )
+            .about(Service::Kms, None)
         })?
         .into_inner())
 }
@@ -257,15 +268,16 @@ pub(crate) async fn reencrypt_wrapped_key(
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(|e| map_kms_error("ReEncrypt", e))?;
+        .map_err(|e| map_kms_error("ReEncrypt", key_arn, e))?;
 
     Ok(response
         .ciphertext_blob
         .ok_or_else(|| {
             Error::new(
-                ErrorKind::Remote,
+                Kind::Service,
                 "KMS ReEncrypt response is missing CiphertextBlob",
             )
+            .about(Service::Kms, None)
         })?
         .into_inner())
 }

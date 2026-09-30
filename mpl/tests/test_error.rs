@@ -1,128 +1,72 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `aws_crypto_mpl::Error`.
+//! Tests for `aws_crypto_mpl::Error`'s public surface.
 
 use std::error::Error as _;
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::io::Error as IoError;
 
-use aws_crypto_mpl::{Error, ErrorKind};
+use aws_crypto_mpl::Error;
+use aws_crypto_mpl::error::{
+    AccessDeniedError, CryptographicError, ProvideErrorKind, ProvideErrorMetadata, RequestId,
+    Resource, RetryErrorKind, RetryKind, Service, ServiceError, ValidationError,
+};
 
 #[test]
-fn new_keeps_kind_and_message_and_has_no_source() {
-    let err = Error::new(ErrorKind::Validation, "bad input");
-    assert_eq!(err.kind(), ErrorKind::Validation);
+fn a_struct_converts_into_its_variant() {
+    let err = Error::from(ValidationError::new("bad input"));
+    assert!(err.is_validation());
+    assert!(matches!(err, Error::Validation(_)));
     assert_eq!(err.message(), "bad input");
+    assert!(!err.is_retryable());
     assert!(err.source().is_none());
-    assert!(err.collected().is_empty());
 }
 
 #[test]
-fn with_cause_exposes_the_cause_through_source() {
-    let err = Error::with_cause(
-        ErrorKind::Remote,
-        "DynamoDB GetItem failed",
-        IoError::new(IoErrorKind::ConnectionReset, "reset"),
-    );
-    let source = err.source().expect("the cause is the source");
-    assert_eq!(source.to_string(), "reset");
-}
-
-#[test]
-fn throttled_and_transport_kinds_are_retryable_by_default() {
-    for kind in [ErrorKind::RemoteThrottled, ErrorKind::RemoteTransport] {
-        assert!(Error::new(kind, "x").is_retryable(), "{kind:?}");
-    }
-    for kind in [
-        ErrorKind::Validation,
-        ErrorKind::Cryptographic,
-        ErrorKind::RemoteAccessDenied,
-        ErrorKind::Remote,
-        ErrorKind::Internal,
-    ] {
-        assert!(!Error::new(kind, "x").is_retryable(), "{kind:?}");
-    }
-}
-
-#[test]
-fn wrap_keeps_the_inner_kind_and_retryability() {
-    let inner = Error::new(ErrorKind::RemoteThrottled, "DynamoDB GetItem failed");
-    let outer = Error::wrap("HierarchicalKeyring: get_active_branch_key failed", inner);
-    assert_eq!(outer.kind(), ErrorKind::RemoteThrottled);
-    assert!(outer.is_retryable());
+fn display_is_the_variant_then_the_message() {
     assert_eq!(
-        outer.message(),
-        "HierarchicalKeyring: get_active_branch_key failed"
+        Error::from(ValidationError::new("bad input")).to_string(),
+        "Validation: bad input"
     );
-    let source = outer.source().expect("the inner error is the source");
+}
+
+#[test]
+fn with_source_attaches_the_cause() {
+    let err = Error::from(CryptographicError::new("m").with_source(IoError::other("reset")));
+    assert_eq!(err.source().expect("the cause").to_string(), "reset");
+}
+
+#[test]
+fn a_built_remote_error_names_its_service_and_resource() {
+    let err: Error = AccessDeniedError::builder()
+        .message("denied")
+        .service(Service::Kms)
+        .resource(Resource::KmsKey("arn".into()))
+        .build()
+        .into();
+    let Error::AccessDenied(e) = &err else {
+        panic!("expected AccessDenied, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey("arn".into())));
+    assert_eq!(e.code(), None);
+    assert_eq!(e.request_id(), None);
+}
+
+#[test]
+fn the_sdk_traits_answer_from_the_error() {
+    let err: Error = ServiceError::builder()
+        .message("throttled")
+        .service(Service::DynamoDb)
+        .retry_kind(RetryKind::Throttling)
+        .build()
+        .into();
+    assert!(err.is_retryable());
     assert_eq!(
-        source.downcast_ref::<Error>().map(Error::message),
-        Some("DynamoDB GetItem failed")
+        err.retryable_error_kind(),
+        Some(RetryErrorKind::ThrottlingError)
     );
-}
-
-#[test]
-fn collection_keeps_every_error_and_nominates_a_cause_only_when_unambiguous() {
-    let a = Error::new(ErrorKind::Cryptographic, "EDK 0: tag mismatch");
-    let b = Error::new(ErrorKind::Cryptographic, "EDK 1: tag mismatch");
-
-    let one = Error::collection(
-        ErrorKind::Cryptographic,
-        "no EDK decrypted",
-        vec![a.clone()],
-    );
-    assert_eq!(one.collected(), std::slice::from_ref(&a));
-    assert!(
-        one.source().is_some(),
-        "a single collected error is the source"
-    );
-
-    let two = Error::collection(ErrorKind::Cryptographic, "no EDK decrypted", vec![a, b]);
-    assert_eq!(two.collected().len(), 2);
-    assert!(
-        two.source().is_none(),
-        "several collected errors have no single source"
-    );
-}
-
-#[test]
-fn collection_is_retryable_if_any_collected_error_is() {
-    let throttled = Error::new(ErrorKind::RemoteThrottled, "throttled");
-    let denied = Error::new(ErrorKind::RemoteAccessDenied, "denied");
-    let all = Error::collection(
-        ErrorKind::RemoteThrottled,
-        "m",
-        vec![throttled.clone(), throttled.clone()],
-    );
-    assert!(all.is_retryable());
-    let mixed = Error::collection(ErrorKind::Remote, "m", vec![throttled, denied.clone()]);
-    assert!(mixed.is_retryable());
-    let none = Error::collection(ErrorKind::Remote, "m", vec![denied.clone(), denied]);
-    assert!(!none.is_retryable());
-}
-
-#[test]
-fn display_renders_only_the_message() {
-    assert_eq!(
-        Error::new(ErrorKind::Validation, "bad input").to_string(),
-        "bad input"
-    );
-    let err = Error::collection(
-        ErrorKind::Cryptographic,
-        "no EDK decrypted",
-        vec![
-            Error::new(ErrorKind::Cryptographic, "EDK 0"),
-            Error::new(ErrorKind::Cryptographic, "EDK 1"),
-        ],
-    );
-    assert_eq!(err.to_string(), "no EDK decrypted");
-}
-
-#[test]
-fn equality_compares_kind_message_and_collected_but_not_cause() {
-    let plain = Error::new(ErrorKind::Remote, "m");
-    let caused = Error::with_cause(ErrorKind::Remote, "m", IoError::other("x"));
-    assert_eq!(plain, caused);
-    assert_ne!(plain, Error::new(ErrorKind::Internal, "m"));
-    assert_ne!(plain, Error::new(ErrorKind::Remote, "other"));
+    assert_eq!(ProvideErrorMetadata::code(&err), None);
+    assert_eq!(RequestId::request_id(&err), None);
+    assert_eq!(err.meta().code(), None);
 }

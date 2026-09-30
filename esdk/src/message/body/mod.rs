@@ -11,7 +11,7 @@ pub(crate) use body_decrypt::*;
 pub(crate) use body_encrypt::*;
 
 use crate::error::Error;
-use crate::error::{ErrorKind, err};
+use crate::error::{Kind, err};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_mpl_primitives::AesGcm;
 
@@ -21,7 +21,7 @@ pub(crate) fn get_alg_suite(info: &AlgorithmSuite) -> Result<AesGcm, Error> {
         24 => Ok(AesGcm::Aes192Gcm),
         32 => Ok(AesGcm::Aes256Gcm),
         other => Err(err(
-            ErrorKind::Internal,
+            Kind::Internal,
             format!("unsupported AES-GCM key length {other} in algorithm suite"),
         )),
     }

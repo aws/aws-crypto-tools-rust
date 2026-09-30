@@ -208,7 +208,7 @@ fn alg_id_target_to_core_rejects_unknown() {
     //# suite IDs defined by the core ESDK.
     let err = alg_id_target_to_core(F { repr: 0xFFFF }).unwrap_err();
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
@@ -313,7 +313,7 @@ fn make_frame_length_translates_and_rejects_zero() {
     //# value.
     let err = make_frame_length(0).unwrap_err();
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     assert!(make_frame_length(4096).is_ok());
@@ -387,87 +387,122 @@ fn make_kms_config_rejects_unknown_type() {
     //# supported value.
     let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
 
 #[test]
-fn classify_core_error_maps_each_kind_to_the_same_name() {
-    use aws_esdk::ErrorKind as E;
+fn classify_core_error_maps_each_variant_to_the_same_name() {
+    use aws_esdk::error as e;
     use ffi::ShimErrorKind as S;
-    let cases = [
-        (E::Validation, S::Validation),
-        (E::Serialization, S::Serialization),
-        (E::Cryptographic, S::Cryptographic),
-        (E::InvalidMaterials, S::InvalidMaterials),
-        (E::EncryptionContextMismatch, S::EncryptionContextMismatch),
-        (E::NoMatchingDataKey, S::NoMatchingDataKey),
-        (E::RemoteAccessDenied, S::RemoteAccessDenied),
-        (E::RemoteResourceNotFound, S::RemoteResourceNotFound),
-        (E::RemoteThrottled, S::RemoteThrottled),
-        (E::RemoteTransport, S::RemoteTransport),
-        (E::Remote, S::Remote),
-        (E::Internal, S::Internal),
-        (E::Io, S::Io),
+    let cases: [(aws_esdk::Error, S); 12] = [
+        (e::ValidationError::new("x").into(), S::Validation),
+        (e::SerializationError::new("x").into(), S::Serialization),
+        (e::CryptographicError::new("x").into(), S::Cryptographic),
+        (
+            e::InvalidMaterialsError::new("x").into(),
+            S::InvalidMaterials,
+        ),
+        (
+            e::EncryptionContextMismatchError::new("x").into(),
+            S::EncryptionContextMismatch,
+        ),
+        (
+            e::NoMatchingDataKeyError::new("x").into(),
+            S::NoMatchingDataKey,
+        ),
+        (e::AccessDeniedError::new("x").into(), S::AccessDenied),
+        (
+            e::ResourceNotFoundError::new("x").into(),
+            S::ResourceNotFound,
+        ),
+        (e::ServiceError::new("x").into(), S::Service),
+        (e::DispatchError::new("x").into(), S::Dispatch),
+        (e::InternalError::new("x").into(), S::Internal),
+        (e::IoError::new("x").into(), S::Io),
     ];
-    for (kind, expected) in cases {
-        assert_eq!(
-            classify_core_error(kind).repr,
-            expected.repr,
-            "for {kind:?}"
-        );
+    for (err, expected) in cases {
+        assert_eq!(classify_core_error(&err).repr, expected.repr, "for {err:?}");
     }
 }
 
-/// The `{kind}{SEP}{retryable}{SEP}` prefix the facade decodes.
-fn err_prefix(kind: ffi::ShimErrorKind, retryable: bool) -> String {
+/// The `kind=K<US>retry=R` prefix the facade decodes.
+fn err_prefix(kind: ffi::ShimErrorKind, retry: &str) -> String {
     format!(
-        "{}{ERROR_KIND_SEPARATOR}{}{ERROR_KIND_SEPARATOR}",
-        kind.repr,
-        u8::from(retryable)
+        "kind={}{ERROR_FIELD_SEPARATOR}retry={retry}{ERROR_FIELD_SEPARATOR}",
+        kind.repr
     )
 }
 
 #[test]
-fn core_err_encodes_an_mpl_errors_kind_and_retryability() {
-    use aws_crypto_mpl::{Error as MplError, ErrorKind as MplErrorKind};
+fn core_err_encodes_an_mpl_errors_kind_and_retry_kind() {
+    use aws_crypto_mpl::Error as MplError;
+    use aws_crypto_mpl::error::{NoMatchingDataKeyError, RetryKind, ServiceError, ValidationError};
     let cases = [
         (
-            MplError::new(MplErrorKind::NoMatchingDataKey, "x"),
+            MplError::from(NoMatchingDataKeyError::new("x")),
             ffi::ShimErrorKind::NoMatchingDataKey,
-            false,
+            "",
         ),
         (
-            MplError::new(MplErrorKind::RemoteThrottled, "x"),
-            ffi::ShimErrorKind::RemoteThrottled,
-            true,
+            MplError::from(
+                ServiceError::builder()
+                    .message("x")
+                    .retry_kind(RetryKind::Throttling)
+                    .build(),
+            ),
+            ffi::ShimErrorKind::Service,
+            "throttling",
         ),
         (
-            MplError::new(MplErrorKind::Validation, "x"),
+            MplError::from(ValidationError::new("x")),
             ffi::ShimErrorKind::Validation,
-            false,
+            "",
         ),
     ];
-    for (e, kind, retryable) in cases {
+    for (e, kind, retry) in cases {
         let err = core_err("op", e);
         assert!(
-            err.starts_with(&err_prefix(kind, retryable)),
+            err.starts_with(&err_prefix(kind, retry)),
             "unexpected error: {err}"
         );
     }
 }
 
 #[test]
+fn core_err_encodes_the_aws_call() {
+    use aws_crypto_mpl::Error as MplError;
+    use aws_crypto_mpl::error::{AccessDeniedError, Resource, Service};
+    let err = core_err(
+        "op",
+        MplError::from(
+            AccessDeniedError::builder()
+                .message("denied")
+                .service(Service::Kms)
+                .resource(Resource::KmsKey("arn:aws:kms:k".into()))
+                .build(),
+        ),
+    );
+    let sep = ERROR_FIELD_SEPARATOR;
+    assert!(
+        err.contains(&format!(
+            "{sep}service=kms{sep}resource_type=kms_key{sep}resource=arn:aws:kms:k{sep}"
+        )),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn shim_err_is_not_retryable() {
     let err = shim_err(ffi::ShimErrorKind::Validation, "op", "x");
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -485,7 +520,7 @@ fn encrypt_rejects_null_keyring() {
     //# materials source is supplied.
     let err = expect_err(encrypt(&unset_encrypt_input()));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -494,7 +529,7 @@ fn encrypt_rejects_null_keyring() {
 fn decrypt_rejects_null_keyring() {
     let err = expect_err(decrypt(&unset_decrypt_input()));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -530,7 +565,7 @@ fn create_keystore_rejects_unset_kms_config_type() {
     unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
     let err = expect_err(create_keystore(&unset_kms));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -546,7 +581,7 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
         &unset_hierarchical_keyring_input(),
     ));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -587,7 +622,7 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
         ),
     ));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -605,7 +640,7 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
         hierarchical_keyring_input_with_ttl(&keystore, ffi::Duration { secs: 5, nanos: 0 });
     let err = expect_err(create_hierarchical_keyring(&input));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 
@@ -620,7 +655,7 @@ fn create_default_cmc_builds_a_default_storm_tracking_cache() {
     assert_eq!(cache.inner.grace_period(), Some(Duration::from_secs(10)));
     let err = expect_err(create_default_cmc(0x8000_0000));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -666,7 +701,7 @@ fn create_storm_tracking_cmc_rejects_zero_sleep() {
     options.sleep = set_duration(0, 0);
     let err = expect_err(create_storm_tracking_cmc(&options));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -677,7 +712,7 @@ fn create_storm_tracking_cmc_rejects_out_of_range_durations() {
     options.grace_period = set_duration(u64::MAX, 1_000_000_000);
     let err = expect_err(create_storm_tracking_cmc(&options));
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -756,7 +791,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg::Unset,
     }));
     assert!(
-        unset.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        unset.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unset}"
     );
 
@@ -767,7 +802,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg { repr: 99 },
     }));
     assert!(
-        unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, false)),
+        unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unknown}"
     );
 }
@@ -1043,7 +1078,7 @@ fn stream_finish_surfaces_worker_panic() {
     let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
     let err = expect_err(state.finish());
     assert!(
-        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, false)),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, "")),
         "unexpected error: {err}"
     );
 }

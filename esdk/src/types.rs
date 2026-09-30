@@ -3,7 +3,7 @@
 //! Public API types for encrypt and decrypt operations.
 
 use crate::Error;
-use crate::val_err;
+use crate::error::val_err;
 use std::num::{NonZeroU32, NonZeroUsize};
 
 /// Internal union of the two ways a caller can supply materials, resolved from

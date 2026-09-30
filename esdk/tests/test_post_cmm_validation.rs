@@ -55,11 +55,10 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
     //# configured in the [client](client.md) encrypt MUST yield an error.
     let err = result
         .expect_err("encrypt must fail when algorithm suite is not supported by commitment policy");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
+    assert!(
+        err.is_validation(),
         "expected Validation error, got: {:?}",
-        err.kind()
+        err
     );
 }
 
@@ -90,11 +89,10 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     //# configured in the [client](client.md) decrypt MUST yield an error.
     let err = result
         .expect_err("decrypt must fail when algorithm suite is not supported by commitment policy");
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
+    assert!(
+        err.is_validation(),
         "expected Validation error, got: {:?}",
-        err.kind()
+        err
     );
 }
 

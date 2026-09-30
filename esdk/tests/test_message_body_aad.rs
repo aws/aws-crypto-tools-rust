@@ -6,7 +6,7 @@
 mod test_helpers;
 
 use aws_esdk::__test_internals::{BodyAADContent, body_aad};
-use aws_esdk::{DecryptInput, ErrorKind, decrypt};
+use aws_esdk::{DecryptInput, decrypt};
 use test_helpers::*;
 
 // Known literal values from the spec, repeated here verbatim so the tests
@@ -322,10 +322,9 @@ async fn test_body_aad_content_length_nonframed_rejects_tampered_length() {
         //= type=test
         //= reason=Tampered content_length causes AES-GCM auth failure.
         //# - For [nonframed data](message-body.md#nonframed-data), this value MUST equal the length, in bytes, of the plaintext data provided to the algorithm for encryption.
-        assert_eq!(
-            err.kind(),
-            ErrorKind::Cryptographic,
-            "{version:?}: expected ErrorKind::Cryptographic (AES-GCM tag mismatch), got {err:?}"
+        assert!(
+            err.is_cryptographic(),
+            "{version:?}: expected Cryptographic (AES-GCM tag mismatch), got {err:?}"
         );
     }
 }
@@ -407,10 +406,9 @@ async fn test_body_aad_sequence_number_framed_rejects_tampered_seq() {
     //= type=test
     //= reason=Tampered frame sequence number is rejected by the decryptor.
     //# For [framed data](message-body.md#framed-data), the value of this field MUST be the [frame sequence number](message-body.md#regular-frame-sequence-number).
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Serialization,
-        "expected ErrorKind::Serialization after tampering frame 1's seq from 1 to {tampered_seq}, got {err:?}"
+    assert!(
+        err.is_serialization(),
+        "expected Serialization after tampering frame 1's seq from 1 to {tampered_seq}, got {err:?}"
     );
 }
 
