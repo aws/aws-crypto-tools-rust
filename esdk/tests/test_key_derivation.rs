@@ -309,8 +309,8 @@ fn test_kdf_input_length_validation() {
     let err = result.expect_err("wrong-length PDK must be rejected");
     assert_eq!(
         err.kind(),
-        ErrorKind::ValidationError,
-        "wrong-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
+        ErrorKind::Validation,
+        "wrong-length PDK must yield ErrorKind::Validation, got: {err:?}"
     );
     assert!(
         err.to_string()
@@ -336,8 +336,8 @@ fn test_kdf_input_length_validation_too_long() {
     let err = result.expect_err("over-length PDK must be rejected");
     assert_eq!(
         err.kind(),
-        ErrorKind::ValidationError,
-        "over-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
+        ErrorKind::Validation,
+        "over-length PDK must yield ErrorKind::Validation, got: {err:?}"
     );
     assert!(
         err.to_string()
@@ -372,8 +372,8 @@ fn test_v2_message_id_length_validation() {
     let err = result.expect_err("wrong-length V2 message ID must be rejected");
     assert_eq!(
         err.kind(),
-        ErrorKind::ValidationError,
-        "wrong-length message ID must yield ErrorKind::ValidationError, got: {err:?}"
+        ErrorKind::Validation,
+        "wrong-length message ID must yield ErrorKind::Validation, got: {err:?}"
     );
     assert!(
         err.to_string().contains("message ID"),

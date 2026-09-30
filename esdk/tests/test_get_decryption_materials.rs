@@ -3,7 +3,7 @@
 
 //! Tests for spec/client-apis/decrypt.md#get-the-decryption-materials
 // The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait
-// whose signatures return `MaterialsError` by value; keep the large-Err allow
+// whose signatures return `MplError` by value; keep the large-Err allow
 // so the delegating spy's `Result` doesn't trip clippy::result_large_err.
 #![allow(clippy::result_large_err)]
 
@@ -11,10 +11,11 @@
 mod fixtures;
 mod test_helpers;
 
+use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::cmm::{self, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptionMaterials, KeyDerivationAlgorithm, MaterialsError,
+    DecryptionMaterials, EncryptionMaterials, KeyDerivationAlgorithm,
 };
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
@@ -62,12 +63,10 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     let err = decrypt(&invalid_input)
         .await
         .expect_err("wrong keyring must fail to obtain materials");
-    // Natively, the wrapped keyring's on_decrypt returns a MaterialsError that
-    // the ESDK surfaces as ErrorKind::MplError
     assert_eq!(
         err.kind(),
-        ErrorKind::MplError,
-        "expected MPL materials error from the wrong keyring's default CMM, got: {:?}",
+        ErrorKind::NoMatchingDataKey,
+        "expected the wrong keyring's default CMM to find no matching data key, got: {:?}",
         err.kind()
     );
 }
@@ -103,7 +102,7 @@ async fn test_pre_cmm_commitment_policy_check() {
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Policy that allows the parsed suite → Ok; policy that doesn't → ValidationError
+    //= reason=Policy that allows the parsed suite → Ok; policy that doesn't → Validation error
     //# If the parsed [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
@@ -120,11 +119,11 @@ async fn test_pre_cmm_commitment_policy_check() {
         .await
         .expect_err("policy that requires committing must reject non-committing suite");
     // The parsed-suite-vs-commitment-policy check runs pre-CMM in decrypt.rs and
-    // yields a ValidationError.
+    // yields a Validation error.
     assert_eq!(
         err.kind(),
-        ErrorKind::ValidationError,
-        "expected pre-CMM ValidationError, got: {:?}",
+        ErrorKind::Validation,
+        "expected pre-CMM Validation error, got: {:?}",
         err.kind()
     );
 }
@@ -213,14 +212,14 @@ async fn test_commit_key_derived_and_validated() {
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Untampered commit key → Ok; tampered commit key in header → ValidationError, proving the equality check runs
+    //= reason=Untampered commit key → Ok; tampered commit key in header → Validation error, proving the equality check runs
     //# If the [algorithm suite](../framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) supports [key commitment](../framework/algorithm-suites.md#key-commitment)
     //# then the [commit key](../framework/algorithm-suites.md#commit-key) MUST be derived from the plaintext data key
     //# using the [commit key derivation](../framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings).
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Header commit key must equal derived commit key; tampering breaks equality → ValidationError
+    //= reason=Header commit key must equal derived commit key; tampering breaks equality → Validation error
     //# The derived commit key MUST equal the commit key stored in the message header.
     assert!(
         decrypt(&valid_input).await.is_ok(),
@@ -228,8 +227,8 @@ async fn test_commit_key_derived_and_validated() {
     );
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::ValidationError,
-        "tampered commit key must produce ValidationError"
+        ErrorKind::Validation,
+        "tampered commit key must produce Validation error"
     );
 }
 
@@ -317,7 +316,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Supported ESDK suite ID → Ok; tampered to non-ESDK 0xFFFF → ValidationError
+    //= reason=Supported ESDK suite ID → Ok; tampered to non-ESDK 0xFFFF → Validation error
     //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
     //# decrypt MUST yield an error.
     //
@@ -333,8 +332,8 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     );
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::ValidationError,
-        "non-ESDK suite ID must produce ValidationError"
+        ErrorKind::Validation,
+        "non-ESDK suite ID must produce Validation error"
     );
 }
 
@@ -352,14 +351,14 @@ impl cmm::Cmm for DecryptSpyCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         self.inner.get_encryption_materials(request).await
     }
 
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         // Record observations from the request the ESDK constructed.
         *self.observed_edk_count.lock().unwrap() = Some(request.encrypted_data_keys().len());
         let keys: Vec<String> = request

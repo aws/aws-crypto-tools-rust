@@ -5,7 +5,7 @@
 //! obtains decryption materials from a keyring/CMM, derives the data key,
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
-use crate::error::{Error, esdk_err, val_err};
+use crate::error::{Error, ErrorKind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::header_types::ContentType;
@@ -144,14 +144,17 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     .await?;
 
     let Ok(ciphertext_len) = u64::try_from(input.ciphertext.len()) else {
-        return Err(esdk_err("Ciphertext length does not fit in u64"));
+        return Err(err(
+            ErrorKind::Internal,
+            "Ciphertext length does not fit in u64",
+        ));
     };
     if cursor.position() != ciphertext_len {
         //= spec/client-apis/decrypt.md#behavior
         //# - If this operation successfully completes the above steps
         //# but there are consumable bytes which are intended to be decrypted,
         //# this operation MUST fail.
-        return Err(esdk_err("Data after message footer"));
+        return Err(err(ErrorKind::Serialization, "Data after message footer"));
     }
 
     // Return excess capacity when the upper-bound reservation greatly exceeds
@@ -691,7 +694,10 @@ fn verify_signature(
     if !valid {
         //= spec/client-apis/decrypt.md#verify-the-signature
         //# If this verification is not successful, this operation MUST immediately halt and fail.
-        return Err(esdk_err("Signature verification failed"));
+        return Err(err(
+            ErrorKind::Cryptographic,
+            "Signature verification failed",
+        ));
     }
     Ok(())
 }

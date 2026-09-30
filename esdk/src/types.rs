@@ -507,7 +507,7 @@ impl<'a> EncryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if no plaintext was set,
+    /// Returns a `Validation` error if no plaintext was set,
     /// or if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptInput<'a>, Error> {
         let plaintext = self
@@ -786,7 +786,7 @@ impl EncryptStreamInputBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if not exactly one of a keyring or CMM was set.
+    /// Returns a `Validation` error if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptStreamInput {
@@ -1013,7 +1013,7 @@ impl<'a> DecryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if no ciphertext was set,
+    /// Returns a `Validation` error if no ciphertext was set,
     /// or if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptInput<'a>, Error> {
         let ciphertext = self
@@ -1219,7 +1219,7 @@ impl DecryptStreamInputBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if not exactly one of a keyring or CMM was set.
+    /// Returns a `Validation` error if not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(DecryptStreamInput {

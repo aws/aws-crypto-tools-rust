@@ -57,8 +57,8 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
         .expect_err("encrypt must fail when algorithm suite is not supported by commitment policy");
     assert_eq!(
         err.kind(),
-        ErrorKind::ValidationError,
-        "expected ValidationError, got: {:?}",
+        ErrorKind::Validation,
+        "expected Validation error, got: {:?}",
         err.kind()
     );
     let inner = err.to_string();
@@ -97,8 +97,8 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
         .expect_err("decrypt must fail when algorithm suite is not supported by commitment policy");
     assert_eq!(
         err.kind(),
-        ErrorKind::ValidationError,
-        "expected ValidationError, got: {:?}",
+        ErrorKind::Validation,
+        "expected Validation error, got: {:?}",
         err.kind()
     );
     let inner = err.to_string();
