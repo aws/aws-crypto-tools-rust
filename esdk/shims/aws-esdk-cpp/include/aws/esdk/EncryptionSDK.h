@@ -95,6 +95,10 @@ namespace Esdk {
 /// what() says which call failed, for logs.
 ///
 /// Later releases can add kinds, so code that switches on the kind needs a default case.
+///
+/// Messages are for people, not code.
+/// Their text can change in any release, including a minor or patch release.
+/// Decide from the exception type, kind(), and retryable(), never from what().
 enum class ErrorKind : std::uint8_t {
     Validation = 0,
     Serialization = 1,

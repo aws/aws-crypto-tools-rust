@@ -128,6 +128,10 @@ macro_rules! define_error {
         ///
         /// Later releases can add kinds, so a `match` needs a catch-all arm.
         ///
+        /// Messages are for people, not code.
+        /// Their text can change in any release, including a minor or patch release.
+        /// Decide from the kind, [`is_retryable`](Error::is_retryable), and the types in the source chain, never from the message.
+        ///
         /// ```ignore
         /// if err.is_retryable() {
         ///     // back off and retry
