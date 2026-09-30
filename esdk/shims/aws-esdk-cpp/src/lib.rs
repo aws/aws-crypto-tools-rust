@@ -135,6 +135,8 @@ use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::error::{Resource, RetryKind, Service};
+use aws_mpl_primitives::error::RemoteInfo;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -196,7 +198,7 @@ mod ffi {
     }
 
     /// ESDK Rust's error kinds, under the same names.
-    /// `encode_err` sends the kind to C++ as a prefix on the error message.
+    /// `encode_err` sends the kind to C++ in a header on the error message.
     //
     //= spec/shim/shim.md#error-classification
     //= reason=These are exactly the Rust ESDK's errors.
@@ -214,11 +216,10 @@ mod ffi {
         InvalidMaterials,
         EncryptionContextMismatch,
         NoMatchingDataKey,
-        RemoteAccessDenied,
-        RemoteResourceNotFound,
-        RemoteThrottled,
-        RemoteTransport,
-        Remote,
+        AccessDenied,
+        ResourceNotFound,
+        Service,
+        Dispatch,
         Internal,
         Io,
     }
@@ -453,20 +454,23 @@ struct CryptographicMaterialsCache {
     inner: SharedCmc,
 }
 
-// ASCII Unit Separator
-const ERROR_KIND_SEPARATOR: char = '\u{1f}';
+// ASCII Unit Separator, between the header fields.
+const ERROR_FIELD_SEPARATOR: char = '\u{1f}';
+// ASCII Record Separator, between the header and the message.
+const ERROR_HEADER_END: char = '\u{1e}';
 
-/// Encode an error the shim raises itself, which is never retryable.
+/// Encode an error the shim raises itself, which is never retryable and names no AWS call.
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
-    encode_err(kind, false, operation, message)
+    encode_err(kind, None, None, operation, message)
 }
 
-/// Encode an ESDK or MPL error with its kind and retryability.
+/// Encode an ESDK or MPL error with its variant, retry kind, and AWS call.
 fn core_err(operation: &str, e: impl Into<aws_esdk::Error>) -> String {
     let e: aws_esdk::Error = e.into();
     encode_err(
-        classify_core_error(e.kind()),
-        e.is_retryable(),
+        classify_core_error(&e),
+        e.__retry_kind(),
+        e.__remote(),
         operation,
         &e,
     )
@@ -474,39 +478,79 @@ fn core_err(operation: &str, e: impl Into<aws_esdk::Error>) -> String {
 
 fn encode_err(
     kind: ffi::ShimErrorKind,
-    retryable: bool,
+    retry: Option<RetryKind>,
+    remote: Option<&RemoteInfo>,
     operation: &str,
     message: impl std::fmt::Display,
 ) -> String {
+    use std::fmt::Write as _;
     // cxx passes only a message string across, not a typed error.
     // The facade decodes this layout back into a typed exception:
-    // `{kind}{SEP}{retryable}{SEP}{operation}: {message}`
-    //   - kind: the ShimErrorKind repr
-    //   - retryable: 1 or 0
-    //   - SEP: ERROR_KIND_SEPARATOR
-    // The facade splits on the first two separators only, so the message can contain one.
-    let kind = kind.repr;
-    let retryable = u8::from(retryable);
-    format!("{kind}{ERROR_KIND_SEPARATOR}{retryable}{ERROR_KIND_SEPARATOR}{operation}: {message}")
+    // `kind=K<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<RS>{operation}: {message}`
+    //   - K: the ShimErrorKind repr
+    //   - R: transient, throttling, server, client, or empty when not retryable
+    //   - S, T, N, C, I: empty when the error names no AWS call
+    //   - US, RS: ERROR_FIELD_SEPARATOR, ERROR_HEADER_END
+    // A value holding either separator is sent empty, so the header always parses.
+    let clean = |v: &str| {
+        if v.contains([ERROR_FIELD_SEPARATOR, ERROR_HEADER_END]) {
+            String::new()
+        } else {
+            v.to_owned()
+        }
+    };
+    let retry = match retry {
+        Some(RetryKind::Transient) => "transient",
+        Some(RetryKind::Throttling) => "throttling",
+        Some(RetryKind::Server) => "server",
+        Some(_) => "client",
+        None => "",
+    };
+    let service = match remote.map(|r| r.service) {
+        Some(Service::Kms) => "kms",
+        Some(Service::DynamoDb) => "dynamodb",
+        _ => "",
+    };
+    let (resource_type, resource) = match remote.and_then(|r| r.resource.as_ref()) {
+        Some(Resource::KmsKey(n)) => ("kms_key", clean(n)),
+        Some(Resource::DynamoDbTable(n)) => ("dynamodb_table", clean(n)),
+        Some(Resource::BranchKey(n)) => ("branch_key", clean(n)),
+        _ => ("", String::new()),
+    };
+    let code = remote
+        .and_then(|r| r.code.as_deref())
+        .map(clean)
+        .unwrap_or_default();
+    let request_id = remote
+        .and_then(|r| r.request_id.as_deref())
+        .map(clean)
+        .unwrap_or_default();
+    let sep = ERROR_FIELD_SEPARATOR;
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "kind={}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{ERROR_HEADER_END}{operation}: {message}",
+        kind.repr,
+    );
+    out
 }
 
-/// Map an ESDK Rust error kind to its ffi error kind.
-fn classify_core_error(kind: aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
-    use aws_esdk::ErrorKind as E;
+/// Map an ESDK Rust error to its ffi error kind.
+fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
+    use aws_esdk::Error as E;
     use ffi::ShimErrorKind as S;
-    match kind {
-        E::Validation => S::Validation,
-        E::Serialization => S::Serialization,
-        E::Cryptographic => S::Cryptographic,
-        E::InvalidMaterials => S::InvalidMaterials,
-        E::EncryptionContextMismatch => S::EncryptionContextMismatch,
-        E::NoMatchingDataKey => S::NoMatchingDataKey,
-        E::RemoteAccessDenied => S::RemoteAccessDenied,
-        E::RemoteResourceNotFound => S::RemoteResourceNotFound,
-        E::RemoteThrottled => S::RemoteThrottled,
-        E::RemoteTransport => S::RemoteTransport,
-        E::Remote => S::Remote,
-        E::Io => S::Io,
+    match e {
+        E::Validation(_) => S::Validation,
+        E::Serialization(_) => S::Serialization,
+        E::Cryptographic(_) => S::Cryptographic,
+        E::InvalidMaterials(_) => S::InvalidMaterials,
+        E::EncryptionContextMismatch(_) => S::EncryptionContextMismatch,
+        E::NoMatchingDataKey(_) => S::NoMatchingDataKey,
+        E::AccessDenied(_) => S::AccessDenied,
+        E::ResourceNotFound(_) => S::ResourceNotFound,
+        E::Service(_) => S::Service,
+        E::Dispatch(_) => S::Dispatch,
+        E::Io(_) => S::Io,
         _ => S::Internal,
     }
 }

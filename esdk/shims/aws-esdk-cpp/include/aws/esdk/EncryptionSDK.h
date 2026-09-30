@@ -12,6 +12,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -86,19 +87,19 @@ namespace Esdk {
 //# - The shim MUST define its own error type for its public surface.
 //
 /// What went wrong, as a caller would act on it.
-/// The same kinds, under the same names, as ESDK Rust's `ErrorKind`.
+/// The same kinds, under the same names, as ESDK Rust's `Error` variants.
 /// Each kind's exception class says when it occurs and what to do.
 ///
 /// Check retryable() first:
 /// a retryable error might succeed if the same call is made again later.
-/// Then decide from the kind.
+/// Then decide from the exception type.
 /// what() says which call failed, for logs.
 ///
 /// Later releases can add kinds, so code that switches on the kind needs a default case.
 ///
 /// Messages are for people, not code.
 /// Their text can change in any release, including a minor or patch release.
-/// Decide from the exception type, kind(), and retryable(), never from what().
+/// Decide from the exception type and its fields, never from what().
 enum class ErrorKind : std::uint8_t {
     Validation = 0,
     Serialization = 1,
@@ -106,13 +107,56 @@ enum class ErrorKind : std::uint8_t {
     InvalidMaterials = 3,
     EncryptionContextMismatch = 4,
     NoMatchingDataKey = 5,
-    RemoteAccessDenied = 6,
-    RemoteResourceNotFound = 7,
-    RemoteThrottled = 8,
-    RemoteTransport = 9,
-    Remote = 10,
-    Internal = 11,
-    Io = 12,
+    AccessDenied = 6,
+    ResourceNotFound = 7,
+    Service = 8,
+    Dispatch = 9,
+    Internal = 10,
+    Io = 11,
+};
+
+/// Why an error might succeed if the same call is made again later.
+/// The same values as the AWS SDK's retry classification.
+enum class RetryKind : std::uint8_t {
+    /// A connection-level failure, such as a timeout.
+    Transient,
+    /// The service throttled the request.
+    Throttling,
+    /// The service failed on its side.
+    Server,
+    /// The request failed but a retry can succeed.
+    Client,
+};
+
+/// The AWS service a remote error came from.
+enum class Service : std::uint8_t {
+    Kms,
+    DynamoDb,
+};
+
+/// What kind of AWS resource a remote error is about.
+enum class ResourceType : std::uint8_t {
+    /// A KMS key; the name is its ARN.
+    KmsKey,
+    /// A DynamoDB table; the name is the table name.
+    DynamoDbTable,
+    /// A hierarchical keyring branch key; the name is its ID.
+    BranchKey,
+};
+
+/// The AWS resource a remote error is about.
+struct Resource {
+    ResourceType type;
+    std::string name;
+};
+
+/// The details an exception carries beyond its kind and message.
+struct ErrorDetails {
+    std::optional<RetryKind> retry_kind;
+    std::optional<Service> service;
+    std::optional<Resource> resource;
+    std::optional<std::string> code;
+    std::optional<std::string> request_id;
 };
 
 /// Base exception for every failure this library reports.
@@ -124,15 +168,25 @@ public:
     /// Empty when ESDK Rust reports a kind this library does not know yet.
     std::optional<ErrorKind> kind() const noexcept { return kind_; }
     /// Whether the same call might succeed if retried.
-    bool retryable() const noexcept { return retryable_; }
+    bool retryable() const noexcept { return details_.retry_kind.has_value(); }
+    /// Why the same call might succeed if retried; empty if it cannot.
+    std::optional<RetryKind> retry_kind() const noexcept { return details_.retry_kind; }
+    /// The AWS service a remote error came from.
+    const std::optional<Service>& service() const noexcept { return details_.service; }
+    /// The AWS resource a remote error is about.
+    const std::optional<Resource>& resource() const noexcept { return details_.resource; }
+    /// The AWS service's error code, such as "AccessDeniedException"; empty unless a service answered.
+    const std::optional<std::string>& code() const noexcept { return details_.code; }
+    /// The AWS request ID, which AWS Support asks for; empty unless a service answered.
+    const std::optional<std::string>& request_id() const noexcept { return details_.request_id; }
 
 protected:
-    AwsEncryptionSdkException(ErrorKind kind, bool retryable, const std::string& msg)
-        : std::runtime_error(msg), kind_(kind), retryable_(retryable) {}
+    AwsEncryptionSdkException(ErrorKind kind, ErrorDetails details, const std::string& msg)
+        : std::runtime_error(msg), kind_(kind), details_(std::move(details)) {}
 
 private:
     std::optional<ErrorKind> kind_;
-    bool retryable_ = false;
+    ErrorDetails details_;
 };
 
 //= spec/shim/shim.md#error-classification
@@ -148,8 +202,8 @@ private:
 /// Fix the input; the same call cannot succeed.
 class ValidationException : public AwsEncryptionSdkException {
 public:
-    explicit ValidationException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::Validation, retryable, msg) {}
+    explicit ValidationException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Validation, std::move(details), msg) {}
 };
 
 /// The bytes are not a well-formed encrypted message,
@@ -158,8 +212,8 @@ public:
 /// Treat the message as corrupt; retrying cannot succeed.
 class SerializationException : public AwsEncryptionSdkException {
 public:
-    explicit SerializationException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::Serialization, retryable, msg) {}
+    explicit SerializationException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Serialization, std::move(details), msg) {}
 };
 
 /// A cryptographic check failed,
@@ -169,8 +223,8 @@ public:
 /// retrying cannot succeed.
 class CryptographicException : public AwsEncryptionSdkException {
 public:
-    explicit CryptographicException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::Cryptographic, retryable, msg) {}
+    explicit CryptographicException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Cryptographic, std::move(details), msg) {}
 };
 
 /// A keyring or CMM returned materials inconsistent with each other or with the algorithm suite,
@@ -179,8 +233,8 @@ public:
 /// Usually a bug in a custom keyring or CMM.
 class InvalidMaterialsException : public AwsEncryptionSdkException {
 public:
-    explicit InvalidMaterialsException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::InvalidMaterials, retryable, msg) {}
+    explicit InvalidMaterialsException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::InvalidMaterials, std::move(details), msg) {}
 };
 
 /// An encryption context does not match,
@@ -189,8 +243,8 @@ public:
 /// Check the encryption context passed to the call.
 class EncryptionContextMismatchException : public AwsEncryptionSdkException {
 public:
-    explicit EncryptionContextMismatchException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::EncryptionContextMismatch, retryable, msg) {}
+    explicit EncryptionContextMismatchException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::EncryptionContextMismatch, std::move(details), msg) {}
 };
 
 /// None of the configured keys wrapped any of the message's encrypted data keys,
@@ -199,56 +253,48 @@ public:
 /// Decrypt with a keyring that has one of the message's keys.
 class NoMatchingDataKeyException : public AwsEncryptionSdkException {
 public:
-    explicit NoMatchingDataKeyException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, retryable, msg) {}
+    explicit NoMatchingDataKeyException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, std::move(details), msg) {}
 };
 
 /// AWS KMS or DynamoDB denied access,
 /// for example because of missing IAM permissions or expired credentials.
 ///
-/// Fix the permissions or credentials.
-class RemoteAccessDeniedException : public AwsEncryptionSdkException {
+/// Fix the permissions or credentials for the service() and resource().
+class AccessDeniedException : public AwsEncryptionSdkException {
 public:
-    explicit RemoteAccessDeniedException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::RemoteAccessDenied, retryable, msg) {}
+    explicit AccessDeniedException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::AccessDenied, std::move(details), msg) {}
 };
 
 /// A KMS key, DynamoDB table, or branch key does not exist.
 ///
-/// Fix the configuration that names the resource.
-class RemoteResourceNotFoundException : public AwsEncryptionSdkException {
+/// Fix the configuration that names the resource().
+class ResourceNotFoundException : public AwsEncryptionSdkException {
 public:
-    explicit RemoteResourceNotFoundException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::RemoteResourceNotFound, retryable, msg) {}
+    explicit ResourceNotFoundException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::ResourceNotFound, std::move(details), msg) {}
 };
 
-/// AWS KMS or DynamoDB throttled the request.
+/// AWS KMS or DynamoDB rejected or failed the request for any other reason,
+/// for example throttling, an internal service error, or a KMS IncorrectKeyException.
 ///
-/// Retryable: back off and try again.
-class RemoteThrottledException : public AwsEncryptionSdkException {
+/// code() is the service's error code.
+/// A throttled or server-side failure is retryable.
+class ServiceException : public AwsEncryptionSdkException {
 public:
-    explicit RemoteThrottledException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::RemoteThrottled, retryable, msg) {}
+    explicit ServiceException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Service, std::move(details), msg) {}
 };
 
-/// A request to a remote service was not sent, or its response did not arrive,
+/// A request to AWS KMS or DynamoDB was not sent, or its response did not arrive,
 /// for example because of a network error, a timeout, or missing credentials or region.
 ///
-/// Retryable for a network error or timeout; check retryable().
-class RemoteTransportException : public AwsEncryptionSdkException {
+/// Retryable for a network error or timeout.
+class DispatchException : public AwsEncryptionSdkException {
 public:
-    explicit RemoteTransportException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::RemoteTransport, retryable, msg) {}
-};
-
-/// Any other failure from a remote service,
-/// for example a KMS IncorrectKeyException, a KMS internal error, or a malformed key store record.
-///
-/// A server-side failure is retryable.
-class RemoteException : public AwsEncryptionSdkException {
-public:
-    explicit RemoteException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::Remote, retryable, msg) {}
+    explicit DispatchException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Dispatch, std::move(details), msg) {}
 };
 
 /// An internal invariant was violated, for example a poisoned lock.
@@ -256,16 +302,16 @@ public:
 /// A bug; report it.
 class InternalException : public AwsEncryptionSdkException {
 public:
-    explicit InternalException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::Internal, retryable, msg) {}
+    explicit InternalException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Internal, std::move(details), msg) {}
 };
 
 /// A caller-supplied stream failed while streaming,
 /// for example a closed connection or a full disk.
 class IoException : public AwsEncryptionSdkException {
 public:
-    explicit IoException(const std::string& msg, bool retryable = false)
-        : AwsEncryptionSdkException(ErrorKind::Io, retryable, msg) {}
+    explicit IoException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Io, std::move(details), msg) {}
 };
 
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 

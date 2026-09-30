@@ -40,11 +40,10 @@ static_assert(eq(Aws::Esdk::ErrorKind::Cryptographic, ::aws_esdk_ffi::ShimErrorK
 static_assert(eq(Aws::Esdk::ErrorKind::InvalidMaterials, ::aws_esdk_ffi::ShimErrorKind::InvalidMaterials), "ErrorKind::InvalidMaterials");
 static_assert(eq(Aws::Esdk::ErrorKind::EncryptionContextMismatch, ::aws_esdk_ffi::ShimErrorKind::EncryptionContextMismatch), "ErrorKind::EncryptionContextMismatch");
 static_assert(eq(Aws::Esdk::ErrorKind::NoMatchingDataKey, ::aws_esdk_ffi::ShimErrorKind::NoMatchingDataKey), "ErrorKind::NoMatchingDataKey");
-static_assert(eq(Aws::Esdk::ErrorKind::RemoteAccessDenied, ::aws_esdk_ffi::ShimErrorKind::RemoteAccessDenied), "ErrorKind::RemoteAccessDenied");
-static_assert(eq(Aws::Esdk::ErrorKind::RemoteResourceNotFound, ::aws_esdk_ffi::ShimErrorKind::RemoteResourceNotFound), "ErrorKind::RemoteResourceNotFound");
-static_assert(eq(Aws::Esdk::ErrorKind::RemoteThrottled, ::aws_esdk_ffi::ShimErrorKind::RemoteThrottled), "ErrorKind::RemoteThrottled");
-static_assert(eq(Aws::Esdk::ErrorKind::RemoteTransport, ::aws_esdk_ffi::ShimErrorKind::RemoteTransport), "ErrorKind::RemoteTransport");
-static_assert(eq(Aws::Esdk::ErrorKind::Remote, ::aws_esdk_ffi::ShimErrorKind::Remote), "ErrorKind::Remote");
+static_assert(eq(Aws::Esdk::ErrorKind::AccessDenied, ::aws_esdk_ffi::ShimErrorKind::AccessDenied), "ErrorKind::AccessDenied");
+static_assert(eq(Aws::Esdk::ErrorKind::ResourceNotFound, ::aws_esdk_ffi::ShimErrorKind::ResourceNotFound), "ErrorKind::ResourceNotFound");
+static_assert(eq(Aws::Esdk::ErrorKind::Service, ::aws_esdk_ffi::ShimErrorKind::Service), "ErrorKind::Service");
+static_assert(eq(Aws::Esdk::ErrorKind::Dispatch, ::aws_esdk_ffi::ShimErrorKind::Dispatch), "ErrorKind::Dispatch");
 static_assert(eq(Aws::Esdk::ErrorKind::Internal, ::aws_esdk_ffi::ShimErrorKind::Internal), "ErrorKind::Internal");
 static_assert(eq(Aws::Esdk::ErrorKind::Io, ::aws_esdk_ffi::ShimErrorKind::Io), "ErrorKind::Io");
 

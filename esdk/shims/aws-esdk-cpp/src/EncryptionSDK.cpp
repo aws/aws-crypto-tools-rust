@@ -3,6 +3,7 @@
 #include "aws/esdk/EncryptionSDK.h"
 
 #include <algorithm>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,7 +21,7 @@ namespace detail {
 // A Rust error, decoded from the string lib.rs's encode_err builds.
 struct ShimError {
     ::ffi::ShimErrorKind kind;
-    bool retryable;
+    ErrorDetails details;
     std::string message;
 };
 
@@ -42,52 +43,97 @@ std::optional<std::uint8_t> parse_repr(std::string_view v) {
     return static_cast<std::uint8_t>(value);
 }
 
+std::optional<std::string> non_empty(std::string_view v) {
+    if (v.empty()) {
+        return std::nullopt;
+    }
+    return std::string(v);
+}
+
 // nullopt when `what` does not have the encode_err layout.
 std::optional<ShimError> decode_shim_error(std::string_view what) {
-    const auto first = what.find('\x1f');
-    if (first == std::string_view::npos) {
+    const auto header_end = what.find('\x1e');
+    if (header_end == std::string_view::npos) {
         return std::nullopt;
     }
-    const auto second = what.find('\x1f', first + 1);
-    if (second == std::string_view::npos) {
-        return std::nullopt;
+    std::map<std::string_view, std::string_view> fields;
+    std::string_view header = what.substr(0, header_end);
+    while (!header.empty()) {
+        const auto sep = header.find('\x1f');
+        const auto field = header.substr(0, sep);
+        const auto eq = field.find('=');
+        if (eq != std::string_view::npos) {
+            fields[field.substr(0, eq)] = field.substr(eq + 1);
+        }
+        if (sep == std::string_view::npos) {
+            break;
+        }
+        header.remove_prefix(sep + 1);
     }
-    const auto kind = parse_repr(what.substr(0, first));
+    const auto kind = parse_repr(fields["kind"]);
     if (!kind) {
         return std::nullopt;
     }
-    // Everything after the second separator is the message, so the message can contain a separator.
+    ErrorDetails details;
+    const auto retry = fields["retry"];
+    if (retry == "transient") {
+        details.retry_kind = RetryKind::Transient;
+    } else if (retry == "throttling") {
+        details.retry_kind = RetryKind::Throttling;
+    } else if (retry == "server") {
+        details.retry_kind = RetryKind::Server;
+    } else if (retry == "client") {
+        details.retry_kind = RetryKind::Client;
+    }
+    const auto service = fields["service"];
+    if (service == "kms") {
+        details.service = Service::Kms;
+    } else if (service == "dynamodb") {
+        details.service = Service::DynamoDb;
+    }
+    const auto resource_type = fields["resource_type"];
+    const std::string resource(fields["resource"]);
+    if (resource_type == "kms_key") {
+        details.resource = Resource{ResourceType::KmsKey, resource};
+    } else if (resource_type == "dynamodb_table") {
+        details.resource = Resource{ResourceType::DynamoDbTable, resource};
+    } else if (resource_type == "branch_key") {
+        details.resource = Resource{ResourceType::BranchKey, resource};
+    }
+    details.code = non_empty(fields["code"]);
+    details.request_id = non_empty(fields["request_id"]);
     return ShimError{
         static_cast<::ffi::ShimErrorKind>(*kind),
-        what.substr(first + 1, second - first - 1) == "1",
-        std::string(what.substr(second + 1)),
+        std::move(details),
+        std::string(what.substr(header_end + 1)),
     };
 }
 
 // Rethrow a Rust error as the matching C++ exception.
 [[noreturn]] void throw_shim_exception(const std::string& what) {
-    const auto error = decode_shim_error(what);
+    auto error = decode_shim_error(what);
     if (!error) {
         throw AwsEncryptionSdkException(what);
     }
+    auto& m = error->message;
+    auto& d = error->details;
     switch (error->kind) {
-        case ::ffi::ShimErrorKind::Validation: throw ValidationException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::Serialization: throw SerializationException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::Cryptographic: throw CryptographicException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::InvalidMaterials: throw InvalidMaterialsException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::EncryptionContextMismatch: throw EncryptionContextMismatchException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::NoMatchingDataKey: throw NoMatchingDataKeyException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::RemoteAccessDenied: throw RemoteAccessDeniedException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::RemoteResourceNotFound: throw RemoteResourceNotFoundException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::RemoteThrottled: throw RemoteThrottledException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::RemoteTransport: throw RemoteTransportException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::Remote: throw RemoteException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::Internal: throw InternalException(error->message, error->retryable);
-        case ::ffi::ShimErrorKind::Io: throw IoException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Validation: throw ValidationException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Serialization: throw SerializationException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Cryptographic: throw CryptographicException(m, std::move(d));
+        case ::ffi::ShimErrorKind::InvalidMaterials: throw InvalidMaterialsException(m, std::move(d));
+        case ::ffi::ShimErrorKind::EncryptionContextMismatch: throw EncryptionContextMismatchException(m, std::move(d));
+        case ::ffi::ShimErrorKind::NoMatchingDataKey: throw NoMatchingDataKeyException(m, std::move(d));
+        case ::ffi::ShimErrorKind::AccessDenied: throw AccessDeniedException(m, std::move(d));
+        case ::ffi::ShimErrorKind::ResourceNotFound: throw ResourceNotFoundException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Service: throw ServiceException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Dispatch: throw DispatchException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Internal: throw InternalException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Io: throw IoException(m, std::move(d));
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.
-        default: throw AwsEncryptionSdkException(error->message);
+        default: throw AwsEncryptionSdkException(m);
     }
 }
 
