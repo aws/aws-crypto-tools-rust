@@ -434,7 +434,15 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
         Ok(_) => panic!("GetItem against an unreachable table MUST fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
+    // Which of the two depends on the caller's IAM policy, as above.
+    assert!(
+        matches!(
+            err.kind(),
+            ErrorKind::RemoteAccessDenied | ErrorKind::RemoteResourceNotFound
+        ),
+        "expected an access-denied or not-found kind, got: {:?}",
+        err.kind()
+    );
 
     let sdk_err = err
         .source()
