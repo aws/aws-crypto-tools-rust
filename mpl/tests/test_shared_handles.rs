@@ -13,7 +13,13 @@ use aws_crypto_mpl::{
 };
 
 fn keyring() -> RawAesKeyring {
-    RawAesKeyring::new("namespace", "name", vec![0; 32], AesGcm::Aes256Gcm).unwrap()
+    RawAesKeyring::builder()
+        .key_namespace("namespace")
+        .key_name("name")
+        .wrapping_key(vec![0; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
+        .unwrap()
 }
 
 fn keystore() -> BranchKeyStore {
@@ -23,9 +29,8 @@ fn keystore() -> BranchKeyStore {
     build_without_io(
         BranchKeyStore::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .to_string(),
+            .kms_configuration(KmsConfiguration::kms_key_arn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
             ))
             .logical_keystore_name("test-logical")
             .ddb_client(aws_sdk_dynamodb::Client::new(&cfg))

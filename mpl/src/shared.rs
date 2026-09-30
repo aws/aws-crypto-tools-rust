@@ -21,7 +21,7 @@
 //! Callers pass a concrete component or an existing handle:
 //!
 //! ```ignore
-//! let raw = RawAesKeyring::new(...)?;
+//! let raw = RawAesKeyring::builder()...build()?;
 //! EncryptInput::with_keyring(pt, ec.clone(), raw.clone());
 //!
 //! let shared = SharedKeyring::new(raw);

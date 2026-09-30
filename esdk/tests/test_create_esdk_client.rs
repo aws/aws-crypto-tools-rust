@@ -44,13 +44,13 @@ const ESDK_NET_V400_MESSAGE: &[u8] = &[
 // the message must fail header authentication rather than decrypt.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_net_v400_message_is_not_readable() {
-    let raw_aes_keyring = RawAesKeyring::new(
-        "Some managed raw keys",
-        "My 256-bit AES wrapping key",
-        vec![0u8; 32],
-        AesGcm::Aes256Gcm,
-    )
-    .expect("raw AES keyring construction must succeed for the .NET v4.0.0 regression key");
+    let raw_aes_keyring = RawAesKeyring::builder()
+        .key_namespace("Some managed raw keys")
+        .key_name("My 256-bit AES wrapping key")
+        .wrapping_key(vec![0u8; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
+        .expect("raw AES keyring construction must succeed for the .NET v4.0.0 regression key");
 
     let input = DecryptInput::builder()
         .ciphertext(ESDK_NET_V400_MESSAGE)

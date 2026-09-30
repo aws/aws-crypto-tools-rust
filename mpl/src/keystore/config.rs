@@ -35,3 +35,25 @@ pub enum KmsConfiguration {
         region: String,
     },
 }
+
+impl KmsConfiguration {
+    /// A [`KmsConfiguration::KmsKeyArn`] for `arn`.
+    #[must_use]
+    pub fn kms_key_arn(arn: impl Into<String>) -> Self {
+        Self::KmsKeyArn(arn.into())
+    }
+
+    /// A [`KmsConfiguration::KmsMrKeyArn`] for `arn`.
+    #[must_use]
+    pub fn kms_mr_key_arn(arn: impl Into<String>) -> Self {
+        Self::KmsMrKeyArn(arn.into())
+    }
+
+    /// A [`KmsConfiguration::MrDiscovery`] for `region`.
+    #[must_use]
+    pub fn mr_discovery(region: impl Into<String>) -> Self {
+        Self::MrDiscovery {
+            region: region.into(),
+        }
+    }
+}

@@ -401,9 +401,9 @@ impl Keyring for HierarchicalKeyring {
     ) -> Result<EncryptionMaterials, MaterialsError> {
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
-        let plaintext_dk = match materials.plaintext_data_key() {
-            Some(pdk) => pdk.clone(),
-            None => generate_random_data_key(materials.algorithm_suite())?,
+        let (plaintext_dk, generated) = match materials.plaintext_data_key() {
+            Some(pdk) => (pdk.clone(), false),
+            None => (generate_random_data_key(materials.algorithm_suite())?, true),
         };
 
         let cache_id = cache_entry_identifier::build_cache_identifier(
@@ -470,28 +470,17 @@ impl Keyring for HierarchicalKeyring {
             }
         };
 
-        let edk = EncryptedDataKey::new(
-            KEY_PROVIDER_ID_HIERARCHY.to_string(),
-            branch_key_id.into_bytes(),
-            ciphertext,
-        );
+        let edk = EncryptedDataKey::builder()
+            .key_provider_id(KEY_PROVIDER_ID_HIERARCHY)
+            .key_provider_info(branch_key_id.into_bytes())
+            .ciphertext(ciphertext)
+            .build()?;
 
-        // Reaching this point means wrap succeeded above (any wrap failure
-        // returned via `?`); only at this point does the function build a
-        // new EncryptionMaterials value. The input `materials` parameter
-        // is owned but never mutated; we construct a fresh value so a
-        // caller's failure handling can re-use the original.
-        let mut new_edks: Vec<EncryptedDataKey> = materials.encrypted_data_keys().to_vec();
-        new_edks.push(edk);
-        EncryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            new_edks,
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            Some(plaintext_dk),
-            materials.signing_key().cloned(),
-            materials.symmetric_signing_keys().map(|s| s.to_vec()),
-        )
+        if generated {
+            materials.add_data_key(plaintext_dk, edk)
+        } else {
+            materials.add_encrypted_data_key(edk)
+        }
     }
 
     async fn on_decrypt(
@@ -509,11 +498,11 @@ impl Keyring for HierarchicalKeyring {
 
         let mut collected_errors: Vec<MaterialsError> = Vec::new();
         for edk in encrypted_data_keys {
-            if edk.key_provider_id != KEY_PROVIDER_ID_HIERARCHY {
+            if edk.key_provider_id() != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
             }
 
-            let Ok(edk_branch_key_id) = std::str::from_utf8(&edk.key_provider_info) else {
+            let Ok(edk_branch_key_id) = std::str::from_utf8(edk.key_provider_info()) else {
                 continue;
             };
 
@@ -523,14 +512,7 @@ impl Keyring for HierarchicalKeyring {
 
             match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
                 Ok(plaintext_dk_bytes) => {
-                    return DecryptionMaterials::new(
-                        materials.algorithm_suite_id(),
-                        materials.encryption_context().clone(),
-                        materials.required_encryption_context_keys().clone(),
-                        Some(PlaintextDataKey::new(plaintext_dk_bytes)),
-                        materials.verification_key().cloned(),
-                        materials.symmetric_signing_key().cloned(),
-                    );
+                    return materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes));
                 }
                 Err(e) => collected_errors.push(e),
             }
@@ -642,7 +624,7 @@ impl HierarchicalKeyring {
         // branch_key_wrap::unwrap re-validates the full layout (including the
         // trailing 16-byte tag) before doing the AES-GCM open; here we only
         // need the slice for the version.
-        let ciphertext = &edk.ciphertext;
+        let ciphertext = edk.ciphertext();
         if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
             return Err(MaterialsError::keyring_failed(format!(
                 "HierarchicalKeyring::on_decrypt: EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",

@@ -20,7 +20,7 @@ use std::sync::Arc;
 #[non_exhaustive]
 pub enum MaterialsErrorKind {
     /// Construction- or invariant-validation failure on a structure type.
-    /// Used by `EncryptionMaterials::new` / `DecryptionMaterials::new` /
+    /// Used by `EncryptionMaterialsBuilder::build` / `DecryptionMaterialsBuilder::build` /
     /// `EncryptionContext::new` / `BranchKeyMaterials::new`.
     Validation,
     /// A keyring's `on_encrypt` returned without attempting any of the
@@ -105,8 +105,8 @@ impl Eq for MaterialsError {}
 
 impl MaterialsError {
     /// Shorthand for a `Validation` error — the kind produced by the
-    /// structure constructors (`EncryptionMaterials::new`,
-    /// `DecryptionMaterials::new`, `EncryptionContext::new`,
+    /// structure constructors (`EncryptionMaterialsBuilder::build`,
+    /// `DecryptionMaterialsBuilder::build`, `EncryptionContext::new`,
     /// `BranchKeyMaterials::new`) when an invariant check fails. For other
     /// categories, use the kind-specific constructors below
     /// (`no_behavior_attempted`, `keyring_failed`, `no_matching_data_key`,

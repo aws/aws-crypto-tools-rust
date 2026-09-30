@@ -169,3 +169,19 @@ fn mrdiscovery_validate_is_always_ok() {
     };
     assert!(config.validate().is_ok());
 }
+
+#[test]
+fn test_constructors_build_matching_variants() {
+    assert!(matches!(
+        KmsConfiguration::kms_key_arn("arn:a"),
+        KmsConfiguration::KmsKeyArn(v) if v == "arn:a"
+    ));
+    assert!(matches!(
+        KmsConfiguration::kms_mr_key_arn("arn:b"),
+        KmsConfiguration::KmsMrKeyArn(v) if v == "arn:b"
+    ));
+    assert!(matches!(
+        KmsConfiguration::mr_discovery("us-west-2"),
+        KmsConfiguration::MrDiscovery { region } if region == "us-west-2"
+    ));
+}

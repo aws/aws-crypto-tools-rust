@@ -49,7 +49,7 @@ const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 
 /// A keyring that wraps and unwraps data keys with a local AES-GCM wrapping key.
 ///
-/// See [`RawAesKeyring::new`] for construction. The [`Keyring`] impl performs
+/// Construct with [`RawAesKeyring::builder`]. The [`Keyring`] impl performs
 /// AES-GCM encryption of the plaintext data key using the serialized
 /// encryption context as additional authenticated data.
 #[derive(Clone)]
@@ -79,52 +79,10 @@ impl std::fmt::Debug for RawAesKeyring {
 }
 
 impl RawAesKeyring {
-    /// Construct a raw AES keyring.
-    ///
-    /// `wrapping_key` MUST be a secret value of cryptographically secure
-    /// pseudo-random bytes, randomly generated from a cryptographically secure
-    /// entropy source. Its length MUST be 128, 192, or 256 bits and MUST match
-    /// the length specified by `wrapping_alg`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`MaterialsError`] when `wrapping_key`'s length does not match
-    /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
-    /// to or starts with the reserved value `aws-kms`.
-    pub fn new(
-        key_namespace: impl Into<String>,
-        key_name: impl Into<String>,
-        wrapping_key: Vec<u8>,
-        wrapping_alg: AesGcm,
-    ) -> Result<Self, MaterialsError> {
-        let key_namespace = key_namespace.into();
-        // A prefix check, not an equality check: `aws-kms-hierarchy`,
-        // `aws-kms-rsa` and `aws-kms-ecdh` are the key provider IDs of other
-        // AWS KMS keyrings, and an equality check would let this keyring emit
-        // encrypted data keys that impersonate them.
-        if key_namespace.starts_with(RESERVED_KEY_NAMESPACE_PREFIX) {
-            return Err(MaterialsError::new(format!(
-                "RawAesKeyring: key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
-            )));
-        }
-
-        let expected_key_len = usize::from(wrapping_alg.key_len());
-        if wrapping_key.len() != expected_key_len {
-            return Err(MaterialsError::new(format!(
-                "RawAesKeyring: wrapping key length ({}) does not match the length specified by {:?} ({expected_key_len})",
-                wrapping_key.len(),
-                wrapping_alg,
-            )));
-        }
-
-        Ok(Self {
-            inner: Arc::new(RawAesKeyringInner {
-                key_namespace,
-                key_name: key_name.into(),
-                wrapping_key,
-                wrapping_alg,
-            }),
-        })
+    /// Start a builder for `RawAesKeyring`. Every field is required.
+    #[must_use]
+    pub fn builder() -> RawAesKeyringBuilder {
+        RawAesKeyringBuilder::default()
     }
 
     /// The key namespace, used as the key provider ID of EDKs this keyring produces.
@@ -163,17 +121,57 @@ impl RawAesKeyring {
         info
     }
 
+    /// Wrap `plaintext_dk` under the wrapping key with a fresh random IV,
+    /// authenticating `aad`.
+    fn wrap_data_key(
+        &self,
+        plaintext_dk: &PlaintextDataKey,
+        aad: &[u8],
+    ) -> Result<EncryptedDataKey, MaterialsError> {
+        let mut iv = vec![0u8; IV_LENGTH];
+        generate_random_bytes(&mut iv).map_err(|e| {
+            MaterialsError::keyring_failed_with_cause(
+                "RawAesKeyring::on_encrypt: failed to obtain entropy for the AES-GCM IV",
+                e,
+            )
+        })?;
+
+        // aes_encrypt appends the AES-GCM ciphertext followed by the
+        // authentication tag, which is the EDK ciphertext structure.
+        let mut ciphertext = Vec::new();
+        aes_encrypt(
+            self.inner.wrapping_alg,
+            &iv,
+            &self.inner.wrapping_key,
+            plaintext_dk.as_bytes(),
+            aad,
+            &mut ciphertext,
+        )
+        .map_err(|e| {
+            MaterialsError::keyring_failed_with_cause(
+                "RawAesKeyring::on_encrypt: AES-GCM encryption of the plaintext data key failed",
+                e,
+            )
+        })?;
+
+        EncryptedDataKey::builder()
+            .key_provider_id(self.inner.key_namespace.as_str())
+            .key_provider_info(self.serialize_provider_info(&iv))
+            .ciphertext(ciphertext)
+            .build()
+    }
+
     /// Return the IV from `edk`'s key provider information if and only if this
     /// keyring should attempt to decrypt `edk`: the key provider ID equals this
     /// keyring's key namespace, the key provider information deserializes, the
     /// key name matches, and the IV and authentication tag lengths equal those
     /// specified by this keyring's wrapping algorithm.
     fn decryptable_edk_iv<'e>(&self, edk: &'e EncryptedDataKey) -> Option<&'e [u8]> {
-        if edk.key_provider_id != self.inner.key_namespace {
+        if edk.key_provider_id() != self.inner.key_namespace {
             return None;
         }
 
-        let info = &edk.key_provider_info;
+        let info = edk.key_provider_info();
         let name = self.inner.key_name.as_bytes();
         if info.len() != name.len() + AUTH_TAG_LEN_LEN + IV_LEN_LEN + IV_LENGTH {
             return None;
@@ -199,6 +197,119 @@ impl RawAesKeyring {
     }
 }
 
+/// Builder for [`RawAesKeyring`].
+#[derive(Default)]
+pub struct RawAesKeyringBuilder {
+    key_namespace: Option<String>,
+    key_name: Option<String>,
+    wrapping_key: Option<Vec<u8>>,
+    wrapping_alg: Option<AesGcm>,
+}
+
+impl std::fmt::Debug for RawAesKeyringBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawAesKeyringBuilder")
+            .field("key_namespace", &self.key_namespace)
+            .field("key_name", &self.key_name)
+            .field("wrapping_alg", &self.wrapping_alg)
+            .finish_non_exhaustive()
+    }
+}
+
+impl RawAesKeyringBuilder {
+    /// Set the key namespace, used as the key provider ID of EDKs this
+    /// keyring produces. Required. Must not be or start with `aws-kms`.
+    #[must_use]
+    pub fn key_namespace(mut self, key_namespace: impl Into<String>) -> Self {
+        self.key_namespace = Some(key_namespace.into());
+        self
+    }
+
+    /// Set the key name, serialized into the key provider information of EDKs
+    /// this keyring produces. Required.
+    #[must_use]
+    pub fn key_name(mut self, key_name: impl Into<String>) -> Self {
+        self.key_name = Some(key_name.into());
+        self
+    }
+
+    /// Set the wrapping key. Required.
+    ///
+    /// The wrapping key MUST be a secret value of cryptographically secure
+    /// pseudo-random bytes, randomly generated from a cryptographically secure
+    /// entropy source. Its length MUST be 128, 192, or 256 bits and MUST match
+    /// the length specified by the wrapping algorithm.
+    #[must_use]
+    pub fn wrapping_key(mut self, wrapping_key: impl Into<Vec<u8>>) -> Self {
+        self.wrapping_key = Some(wrapping_key.into());
+        self
+    }
+
+    /// Set the wrapping algorithm. Required.
+    #[must_use]
+    pub const fn wrapping_alg(mut self, wrapping_alg: AesGcm) -> Self {
+        self.wrapping_alg = Some(wrapping_alg);
+        self
+    }
+
+    /// Build the `RawAesKeyring`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MaterialsError`] when a field is unset, when the wrapping
+    /// key's length does not match the length specified by the wrapping
+    /// algorithm, or when the key namespace is equal to or starts with the
+    /// reserved value `aws-kms`.
+    pub fn build(self) -> Result<RawAesKeyring, MaterialsError> {
+        let Some(key_namespace) = self.key_namespace else {
+            return Err(MaterialsError::new(
+                "RawAesKeyring: a key namespace is required",
+            ));
+        };
+        let Some(key_name) = self.key_name else {
+            return Err(MaterialsError::new("RawAesKeyring: a key name is required"));
+        };
+        let Some(wrapping_key) = self.wrapping_key else {
+            return Err(MaterialsError::new(
+                "RawAesKeyring: a wrapping key is required",
+            ));
+        };
+        let Some(wrapping_alg) = self.wrapping_alg else {
+            return Err(MaterialsError::new(
+                "RawAesKeyring: a wrapping algorithm is required",
+            ));
+        };
+
+        // A prefix check, not an equality check: `aws-kms-hierarchy`,
+        // `aws-kms-rsa` and `aws-kms-ecdh` are the key provider IDs of other
+        // AWS KMS keyrings, and an equality check would let this keyring emit
+        // encrypted data keys that impersonate them.
+        if key_namespace.starts_with(RESERVED_KEY_NAMESPACE_PREFIX) {
+            return Err(MaterialsError::new(format!(
+                "RawAesKeyring: key namespace must not be or start with `{RESERVED_KEY_NAMESPACE_PREFIX}`, got `{key_namespace}`"
+            )));
+        }
+
+        let expected_key_len = usize::from(wrapping_alg.key_len());
+        if wrapping_key.len() != expected_key_len {
+            return Err(MaterialsError::new(format!(
+                "RawAesKeyring: wrapping key length ({}) does not match the length specified by {:?} ({expected_key_len})",
+                wrapping_key.len(),
+                wrapping_alg,
+            )));
+        }
+
+        Ok(RawAesKeyring {
+            inner: Arc::new(RawAesKeyringInner {
+                key_namespace,
+                key_name,
+                wrapping_key,
+                wrapping_alg,
+            }),
+        })
+    }
+}
+
 #[async_trait]
 impl Keyring for RawAesKeyring {
     async fn on_encrypt(
@@ -214,57 +325,17 @@ impl Keyring for RawAesKeyring {
             )
         })?;
 
-        let plaintext_dk = match materials.plaintext_data_key() {
-            Some(pdk) => pdk.clone(),
-            None => generate_random_data_key(materials.algorithm_suite())?,
-        };
-
-        let mut iv = vec![0u8; IV_LENGTH];
-        generate_random_bytes(&mut iv).map_err(|e| {
-            MaterialsError::keyring_failed_with_cause(
-                "RawAesKeyring::on_encrypt: failed to obtain entropy for the AES-GCM IV",
-                e,
-            )
-        })?;
-
-        // aes_encrypt appends the AES-GCM ciphertext followed by the
-        // authentication tag, which is the EDK ciphertext structure.
-        let mut ciphertext = Vec::new();
-        aes_encrypt(
-            self.inner.wrapping_alg,
-            &iv,
-            &self.inner.wrapping_key,
-            plaintext_dk.as_bytes(),
-            &aad,
-            &mut ciphertext,
-        )
-        .map_err(|e| {
-            MaterialsError::keyring_failed_with_cause(
-                "RawAesKeyring::on_encrypt: AES-GCM encryption of the plaintext data key failed",
-                e,
-            )
-        })?;
-
-        let edk = EncryptedDataKey::new(
-            self.inner.key_namespace.clone(),
-            self.serialize_provider_info(&iv),
-            ciphertext,
-        );
-
-        // Reaching this point means the wrap succeeded. The input `materials`
-        // is owned but never mutated; a fresh value is constructed so a
-        // caller's failure handling can re-use the original.
-        let mut new_edks = materials.encrypted_data_keys().to_vec();
-        new_edks.push(edk);
-        EncryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            new_edks,
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            Some(plaintext_dk),
-            materials.signing_key().cloned(),
-            materials.symmetric_signing_keys().map(<[_]>::to_vec),
-        )
+        match materials.plaintext_data_key() {
+            Some(plaintext_dk) => {
+                let edk = self.wrap_data_key(plaintext_dk, &aad)?;
+                materials.add_encrypted_data_key(edk)
+            }
+            None => {
+                let plaintext_dk = generate_random_data_key(materials.algorithm_suite())?;
+                let edk = self.wrap_data_key(&plaintext_dk, &aad)?;
+                materials.add_data_key(plaintext_dk, edk)
+            }
+        }
     }
 
     async fn on_decrypt(
@@ -304,15 +375,16 @@ impl Keyring for RawAesKeyring {
             };
             attempted_decryption = true;
 
-            if edk.ciphertext.len() < TAG_LENGTH {
+            if edk.ciphertext().len() < TAG_LENGTH {
                 collected_errors.push(MaterialsError::keyring_failed(format!(
                     "EncryptedDataKey {index}: insufficient data to decrypt: ciphertext is {} bytes, need at least the {TAG_LENGTH}-byte authentication tag",
-                    edk.ciphertext.len(),
+                    edk.ciphertext().len(),
                 )));
                 continue;
             }
-            let (encrypted_key, auth_tag) =
-                edk.ciphertext.split_at(edk.ciphertext.len() - TAG_LENGTH);
+            let (encrypted_key, auth_tag) = edk
+                .ciphertext()
+                .split_at(edk.ciphertext().len() - TAG_LENGTH);
 
             let mut plaintext_dk = vec![0u8; encrypted_key.len()];
             if let Err(e) = aes_decrypt(
@@ -339,14 +411,7 @@ impl Keyring for RawAesKeyring {
                 continue;
             }
 
-            return DecryptionMaterials::new(
-                materials.algorithm_suite_id(),
-                materials.encryption_context().clone(),
-                materials.required_encryption_context_keys().clone(),
-                Some(PlaintextDataKey::new(plaintext_dk)),
-                materials.verification_key().cloned(),
-                materials.symmetric_signing_key().cloned(),
-            );
+            return materials.add_data_key(PlaintextDataKey::new(plaintext_dk));
         }
 
         // The early return above is the only path that produces modified

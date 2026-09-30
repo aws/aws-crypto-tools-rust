@@ -52,7 +52,7 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
 
     // Key Provider ID Length
 
-    let kp_id_bytes = edk.key_provider_id.as_bytes();
+    let kp_id_bytes = edk.key_provider_id().as_bytes();
 
     //= spec/data-format/message-header.md#key-provider-id-length
     //# The key provider ID length MUST be interpreted as a UInt16.
@@ -78,7 +78,7 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
 
     //= spec/data-format/message-header.md#key-provider-information-length
     //# The key provider information length MUST be interpreted as a UInt16.
-    let Ok(kp_info_len) = u16::try_from(edk.key_provider_info.len()) else {
+    let Ok(kp_info_len) = u16::try_from(edk.key_provider_info().len()) else {
         return ser_err("Key provider info length too long for 16 bits");
     };
 
@@ -94,13 +94,13 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //
     //= spec/data-format/message-header.md#key-provider-information
     //# The key provider information MUST be interpreted as bytes.
-    write_bytes(w, &edk.key_provider_info)?;
+    write_bytes(w, edk.key_provider_info())?;
 
     // Encrypted Data Key Length
 
     //= spec/data-format/message-header.md#encrypted-data-key-length
     //# The encrypted data key length MUST be interpreted as a UInt16.
-    let Ok(edk_len) = u16::try_from(edk.ciphertext.len()) else {
+    let Ok(edk_len) = u16::try_from(edk.ciphertext().len()) else {
         return ser_err("Encrypted data key length too long for 16 bits");
     };
 
@@ -117,7 +117,7 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //= spec/data-format/message-header.md#encrypted-data-key
     //= type=implication
     //# The encrypted data key MUST be interpreted as bytes.
-    write_bytes(w, &edk.ciphertext)
+    write_bytes(w, edk.ciphertext())
 }
 
 pub(crate) fn read_edks(
@@ -231,5 +231,9 @@ pub(crate) fn read_edk(
     //# The encrypted data key MUST be interpreted as bytes.
     let edk = read_seq_u16(r, raw)?;
 
-    Ok(EncryptedDataKey::new(provider_id, provider_info, edk))
+    Ok(EncryptedDataKey::builder()
+        .key_provider_id(provider_id)
+        .key_provider_info(provider_info)
+        .ciphertext(edk)
+        .build()?)
 }

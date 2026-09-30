@@ -18,8 +18,6 @@
 //! cover the on-wire shape of the encrypted data key, the two constructor
 //! validations, and the negative paths Dafny leaves to its proofs.
 
-use std::collections::BTreeSet;
-
 use aws_crypto_mpl::{Keyring, RawAesKeyring};
 use aws_mpl_primitives::AesGcm;
 
@@ -66,13 +64,13 @@ fn unserializable_encryption_context() -> EncryptionContext {
 
 fn keyring_with(name: &str, wrapping_key_byte: u8) -> RawAesKeyring {
     let (namespace, _) = namespace_and_name();
-    RawAesKeyring::new(
-        namespace,
-        name.to_string(),
-        vec![wrapping_key_byte; 32],
-        AesGcm::Aes256Gcm,
-    )
-    .expect("constructing a 256-bit raw AES keyring")
+    RawAesKeyring::builder()
+        .key_namespace(namespace)
+        .key_name(name.to_string())
+        .wrapping_key(vec![wrapping_key_byte; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
+        .expect("constructing a 256-bit raw AES keyring")
 }
 
 fn default_keyring() -> RawAesKeyring {
@@ -81,28 +79,21 @@ fn default_keyring() -> RawAesKeyring {
 }
 
 fn encryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> EncryptionMaterials {
-    EncryptionMaterials::new(
-        SUITE,
-        vec![],
-        ec,
-        BTreeSet::new(),
-        pdk.map(PlaintextDataKey::new),
-        None,
-        None,
-    )
-    .expect("constructing encryption materials")
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .encryption_context(ec)
+        .set_plaintext_data_key(pdk.map(PlaintextDataKey::new))
+        .build()
+        .expect("constructing encryption materials")
 }
 
 fn decryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> DecryptionMaterials {
-    DecryptionMaterials::new(
-        SUITE,
-        ec,
-        BTreeSet::new(),
-        pdk.map(PlaintextDataKey::new),
-        None,
-        None,
-    )
-    .expect("constructing decryption materials")
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .encryption_context(ec)
+        .set_plaintext_data_key(pdk.map(PlaintextDataKey::new))
+        .build()
+        .expect("constructing decryption materials")
 }
 
 fn assert_kind(err: &MaterialsError, expected: MaterialsErrorKind) {
@@ -250,11 +241,12 @@ async fn test_on_decrypt_bad_and_good_edk_succeeds() {
 
     // Same provider id and provider info, so the keyring attempts it, but the
     // ciphertext will fail authentication.
-    let fake_edk = EncryptedDataKey::new(
-        edk.key_provider_id.clone(),
-        edk.key_provider_info.clone(),
-        vec![0u8; edk.ciphertext.len()],
-    );
+    let fake_edk = EncryptedDataKey::builder()
+        .key_provider_id(edk.key_provider_id())
+        .key_provider_info(edk.key_provider_info().to_vec())
+        .ciphertext(vec![0u8; edk.ciphertext().len()])
+        .build()
+        .unwrap();
 
     let decrypt_output = keyring
         .on_decrypt(decryption_materials(ec, None), &[fake_edk, edk])
@@ -366,11 +358,12 @@ async fn test_on_decrypt_unserializable_encryption_context_fails_before_edk_loop
     // The encryption context is serialized before any EDK is examined, so an
     // unserializable context fails even when no EDK could ever match.
     let keyring = default_keyring();
-    let foreign_edk = EncryptedDataKey::new(
-        "some-other-provider".to_string(),
-        b"some-other-info".to_vec(),
-        vec![0u8; 48],
-    );
+    let foreign_edk = EncryptedDataKey::builder()
+        .key_provider_id("some-other-provider")
+        .key_provider_info(b"some-other-info")
+        .ciphertext(vec![0u8; 48])
+        .build()
+        .unwrap();
 
     let result = keyring
         .on_decrypt(
@@ -406,7 +399,8 @@ async fn test_encrypted_data_key_wire_format() {
         .len();
 
     assert_eq!(
-        edk.key_provider_id, namespace,
+        edk.key_provider_id(),
+        namespace,
         "the key provider ID is the keyring's key namespace"
     );
 
@@ -414,31 +408,31 @@ async fn test_encrypted_data_key_wire_format() {
     // in bytes || IV
     let name_bytes = name.as_bytes();
     assert_eq!(
-        edk.key_provider_info.len(),
+        edk.key_provider_info().len(),
         name_bytes.len() + LENGTH_FIELDS + IV_LENGTH,
         "key provider info length"
     );
     assert_eq!(
-        &edk.key_provider_info[..name_bytes.len()],
+        &edk.key_provider_info()[..name_bytes.len()],
         name_bytes,
         "key provider info begins with the UTF-8 key name"
     );
     let tag_bits_offset = name_bytes.len();
     assert_eq!(
-        &edk.key_provider_info[tag_bits_offset..tag_bits_offset + 4],
+        &edk.key_provider_info()[tag_bits_offset..tag_bits_offset + 4],
         &128u32.to_be_bytes(),
         "authentication tag length is 128 bits, as a big-endian UInt32"
     );
     let iv_len_offset = tag_bits_offset + 4;
     assert_eq!(
-        &edk.key_provider_info[iv_len_offset..iv_len_offset + 4],
+        &edk.key_provider_info()[iv_len_offset..iv_len_offset + 4],
         &12u32.to_be_bytes(),
         "IV length is 12 bytes, as a big-endian UInt32"
     );
 
     // ciphertext = encrypted key || authentication tag
     assert_eq!(
-        edk.ciphertext.len(),
+        edk.ciphertext().len(),
         pdk_len + TAG_LENGTH,
         "ciphertext is the encrypted data key followed by the 16-byte authentication tag"
     );
@@ -448,9 +442,13 @@ async fn test_encrypted_data_key_wire_format() {
 async fn test_round_trip_every_wrapping_algorithm() {
     for alg in [AesGcm::Aes128Gcm, AesGcm::Aes192Gcm, AesGcm::Aes256Gcm] {
         let (namespace, name) = namespace_and_name();
-        let keyring =
-            RawAesKeyring::new(namespace, name, vec![0x2A; usize::from(alg.key_len())], alg)
-                .unwrap_or_else(|e| panic!("constructing a keyring for {alg:?}: {e}"));
+        let keyring = RawAesKeyring::builder()
+            .key_namespace(namespace)
+            .key_name(name)
+            .wrapping_key(vec![0x2A; usize::from(alg.key_len())])
+            .wrapping_alg(alg)
+            .build()
+            .unwrap_or_else(|e| panic!("constructing a keyring for {alg:?}: {e}"));
         let ec = small_encryption_context_a();
 
         let encrypt_output = keyring
@@ -516,14 +514,15 @@ async fn test_on_decrypt_rejects_tampered_iv() {
 
     // Flip a bit in the IV carried by the key provider info. The provider info
     // still deserializes, so the keyring attempts the decrypt and it fails.
-    let mut tampered_info = edk.key_provider_info.clone();
+    let mut tampered_info = edk.key_provider_info().to_vec();
     let last = tampered_info.len() - 1;
     tampered_info[last] ^= 0x01;
-    let tampered_edk = EncryptedDataKey::new(
-        edk.key_provider_id.clone(),
-        tampered_info,
-        edk.ciphertext.clone(),
-    );
+    let tampered_edk = EncryptedDataKey::builder()
+        .key_provider_id(edk.key_provider_id())
+        .key_provider_info(tampered_info)
+        .ciphertext(edk.ciphertext().to_vec())
+        .build()
+        .unwrap();
 
     let result = keyring
         .on_decrypt(decryption_materials(ec, None), &[tampered_edk])
@@ -544,11 +543,12 @@ async fn test_on_decrypt_skips_edk_with_wrong_key_provider_id() {
         .expect("on_encrypt succeeds");
     let edk = &encrypt_output.encrypted_data_keys()[0];
 
-    let foreign_edk = EncryptedDataKey::new(
-        "not-this-keyring".to_string(),
-        edk.key_provider_info.clone(),
-        edk.ciphertext.clone(),
-    );
+    let foreign_edk = EncryptedDataKey::builder()
+        .key_provider_id("not-this-keyring")
+        .key_provider_info(edk.key_provider_info().to_vec())
+        .ciphertext(edk.ciphertext().to_vec())
+        .build()
+        .unwrap();
 
     let result = keyring
         .on_decrypt(decryption_materials(ec, None), &[foreign_edk])
@@ -572,14 +572,15 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
 
     // Claim a 256-bit authentication tag, which does not match the wrapping
     // algorithm's 128-bit tag.
-    let mut tampered_info = edk.key_provider_info.clone();
+    let mut tampered_info = edk.key_provider_info().to_vec();
     let tag_bits_offset = name.len();
     tampered_info[tag_bits_offset..tag_bits_offset + 4].copy_from_slice(&256u32.to_be_bytes());
-    let tampered_edk = EncryptedDataKey::new(
-        edk.key_provider_id.clone(),
-        tampered_info,
-        edk.ciphertext.clone(),
-    );
+    let tampered_edk = EncryptedDataKey::builder()
+        .key_provider_id(edk.key_provider_id())
+        .key_provider_info(tampered_info)
+        .ciphertext(edk.ciphertext().to_vec())
+        .build()
+        .unwrap();
 
     let result = keyring
         .on_decrypt(decryption_materials(ec, None), &[tampered_edk])
@@ -602,14 +603,15 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
     let (_, name) = namespace_and_name();
 
     // Claim a 16-byte IV, which does not match the wrapping algorithm's 12.
-    let mut tampered_info = edk.key_provider_info.clone();
+    let mut tampered_info = edk.key_provider_info().to_vec();
     let iv_len_offset = name.len() + 4;
     tampered_info[iv_len_offset..iv_len_offset + 4].copy_from_slice(&16u32.to_be_bytes());
-    let tampered_edk = EncryptedDataKey::new(
-        edk.key_provider_id.clone(),
-        tampered_info,
-        edk.ciphertext.clone(),
-    );
+    let tampered_edk = EncryptedDataKey::builder()
+        .key_provider_id(edk.key_provider_id())
+        .key_provider_info(tampered_info)
+        .ciphertext(edk.ciphertext().to_vec())
+        .build()
+        .unwrap();
 
     let result = keyring
         .on_decrypt(decryption_materials(ec, None), &[tampered_edk])
@@ -630,11 +632,12 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
         .expect("on_encrypt succeeds");
     let edk = &encrypt_output.encrypted_data_keys()[0];
 
-    let truncated_edk = EncryptedDataKey::new(
-        edk.key_provider_id.clone(),
-        edk.key_provider_info.clone(),
-        vec![0u8; TAG_LENGTH - 1],
-    );
+    let truncated_edk = EncryptedDataKey::builder()
+        .key_provider_id(edk.key_provider_id())
+        .key_provider_info(edk.key_provider_info().to_vec())
+        .ciphertext(vec![0u8; TAG_LENGTH - 1])
+        .build()
+        .unwrap();
 
     let result = keyring
         .on_decrypt(decryption_materials(ec, None), &[truncated_edk])
@@ -652,10 +655,15 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
 }
 
 #[test]
-fn test_new_rejects_wrapping_key_length_mismatch() {
+fn test_build_rejects_wrapping_key_length_mismatch() {
     let (namespace, name) = namespace_and_name();
     // 16 bytes supplied for an algorithm that specifies 32.
-    let err = RawAesKeyring::new(namespace, name, vec![0u8; 16], AesGcm::Aes256Gcm)
+    let err = RawAesKeyring::builder()
+        .key_namespace(namespace)
+        .key_name(name)
+        .wrapping_key(vec![0u8; 16])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
     assert_kind(&err, MaterialsErrorKind::Validation);
     assert!(
@@ -667,7 +675,7 @@ fn test_new_rejects_wrapping_key_length_mismatch() {
 }
 
 #[test]
-fn test_new_accepts_every_wrapping_key_length() {
+fn test_build_accepts_every_wrapping_key_length() {
     let (namespace, name) = namespace_and_name();
     for (alg, expected_len) in [
         (AesGcm::Aes128Gcm, 16),
@@ -679,20 +687,25 @@ fn test_new_accepts_every_wrapping_key_length() {
             expected_len,
             "{alg:?} key length in bytes"
         );
-        RawAesKeyring::new(
-            namespace.clone(),
-            name.clone(),
-            vec![0u8; expected_len],
-            alg,
-        )
-        .unwrap_or_else(|e| panic!("{alg:?} with a {expected_len}-byte wrapping key: {e}"));
+        RawAesKeyring::builder()
+            .key_namespace(namespace.clone())
+            .key_name(name.clone())
+            .wrapping_key(vec![0u8; expected_len])
+            .wrapping_alg(alg)
+            .build()
+            .unwrap_or_else(|e| panic!("{alg:?} with a {expected_len}-byte wrapping key: {e}"));
     }
 }
 
 #[test]
-fn test_new_rejects_reserved_aws_kms_key_namespace() {
+fn test_build_rejects_reserved_aws_kms_key_namespace() {
     let (_, name) = namespace_and_name();
-    let err = RawAesKeyring::new("aws-kms", name, vec![0u8; 32], AesGcm::Aes256Gcm)
+    let err = RawAesKeyring::builder()
+        .key_namespace("aws-kms")
+        .key_name(name)
+        .wrapping_key(vec![0u8; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect_err("the reserved `aws-kms` key namespace must be rejected");
     assert_kind(&err, MaterialsErrorKind::Validation);
     assert!(
@@ -703,7 +716,7 @@ fn test_new_rejects_reserved_aws_kms_key_namespace() {
 }
 
 #[test]
-fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
+fn test_build_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
     // The key namespace becomes the EDK's key provider ID, so accepting any of
     // these would let a raw AES keyring emit encrypted data keys that
     // impersonate the corresponding AWS KMS keyring. All four are reserved by
@@ -718,8 +731,12 @@ fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
         // Not a real provider ID, but shares the reserved prefix.
         "aws-kms-but-not-really",
     ] {
-        let Err(err) =
-            RawAesKeyring::new(namespace, name.clone(), vec![0u8; 32], AesGcm::Aes256Gcm)
+        let Err(err) = RawAesKeyring::builder()
+            .key_namespace(namespace)
+            .key_name(name.clone())
+            .wrapping_key(vec![0u8; 32])
+            .wrapping_alg(AesGcm::Aes256Gcm)
+            .build()
         else {
             panic!("`{namespace}` must be rejected as reserved");
         };
@@ -728,13 +745,18 @@ fn test_new_rejects_key_provider_ids_of_the_aws_kms_keyrings() {
 }
 
 #[test]
-fn test_new_accepts_the_raw_ecdh_key_provider_id() {
+fn test_build_accepts_the_raw_ecdh_key_provider_id() {
     // `raw-ecdh` is the raw ECDH keyring's key provider ID, but it is not
     // covered by the reserved `aws-kms` prefix and the specification does not
     // reserve it against the raw AES keyring, so it is accepted. This pins the
     // rejection to the documented prefix rather than to a broader denylist.
     let (_, name) = namespace_and_name();
-    RawAesKeyring::new("raw-ecdh", name, vec![0u8; 32], AesGcm::Aes256Gcm)
+    RawAesKeyring::builder()
+        .key_namespace("raw-ecdh")
+        .key_name(name)
+        .wrapping_key(vec![0u8; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect("`raw-ecdh` is not reserved against the raw AES keyring");
 }
 
@@ -742,7 +764,12 @@ fn test_new_accepts_the_raw_ecdh_key_provider_id() {
 fn test_debug_does_not_leak_the_wrapping_key() {
     // The wrapping key is secret; Debug must not print its bytes.
     let (namespace, name) = namespace_and_name();
-    let keyring = RawAesKeyring::new(namespace, name, vec![0xAB; 32], AesGcm::Aes256Gcm)
+    let keyring = RawAesKeyring::builder()
+        .key_namespace(namespace)
+        .key_name(name)
+        .wrapping_key(vec![0xAB; 32])
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect("constructing a keyring");
 
     let rendered = format!("{keyring:?}");
@@ -792,5 +819,44 @@ async fn test_clone_is_interchangeable_with_original() {
                 .as_bytes(),
             &pdk,
         );
+    }
+}
+
+#[test]
+fn test_build_requires_every_field() {
+    let key = || vec![0u8; 32];
+    let cases = [
+        (
+            RawAesKeyring::builder()
+                .key_name("n")
+                .wrapping_key(key())
+                .wrapping_alg(AesGcm::Aes256Gcm),
+            "key namespace",
+        ),
+        (
+            RawAesKeyring::builder()
+                .key_namespace("ns")
+                .wrapping_key(key())
+                .wrapping_alg(AesGcm::Aes256Gcm),
+            "key name",
+        ),
+        (
+            RawAesKeyring::builder()
+                .key_namespace("ns")
+                .key_name("n")
+                .wrapping_alg(AesGcm::Aes256Gcm),
+            "wrapping key",
+        ),
+        (
+            RawAesKeyring::builder()
+                .key_namespace("ns")
+                .key_name("n")
+                .wrapping_key(key()),
+            "wrapping algorithm",
+        ),
+    ];
+    for (builder, field) in cases {
+        let err = builder.build().unwrap_err();
+        assert!(err.message.contains(field), "{field}: {}", err.message);
     }
 }

@@ -10,7 +10,7 @@
 
 #![cfg(feature = "test-utils")]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -46,28 +46,17 @@ const FAN_OUT: usize = 3;
 const SLEEP: Duration = Duration::from_millis(5);
 
 fn make_encryption_materials() -> EncryptionMaterials {
-    EncryptionMaterials::new(
-        SUITE,
-        vec![],
-        EncryptionContext::new(),
-        BTreeSet::new(),
-        None,
-        None,
-        None,
-    )
-    .expect("constructing empty encryption materials")
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .build()
+        .expect("constructing empty encryption materials")
 }
 
 fn make_decryption_materials() -> DecryptionMaterials {
-    DecryptionMaterials::new(
-        SUITE,
-        EncryptionContext::new(),
-        BTreeSet::new(),
-        None,
-        None,
-        None,
-    )
-    .expect("constructing empty decryption materials")
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .build()
+        .expect("constructing empty decryption materials")
 }
 
 fn make_branch_key_materials() -> BranchKeyMaterials {

@@ -99,7 +99,7 @@ async fn build_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -157,16 +157,11 @@ fn non_signing_suite() -> AlgorithmSuiteId {
 fn fresh_materials() -> EncryptionMaterials {
     let mut ec = EncryptionContext::new();
     ec.insert("region", "us-west-2");
-    EncryptionMaterials::new(
-        non_signing_suite(),
-        Vec::new(),
-        ec,
-        Default::default(),
-        None,
-        None,
-        None,
-    )
-    .unwrap()
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(non_signing_suite())
+        .encryption_context(ec)
+        .build()
+        .unwrap()
 }
 
 #[tokio::test]
@@ -184,11 +179,8 @@ async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
     // Exactly one EDK with the spec's provider id and provider info.
     let edks = materials_out.encrypted_data_keys();
     assert_eq!(edks.len(), 1);
-    assert_eq!(edks[0].key_provider_id, "aws-kms-hierarchy");
-    assert_eq!(
-        edks[0].key_provider_info.as_slice(),
-        BRANCH_KEY_ID.as_bytes()
-    );
+    assert_eq!(edks[0].key_provider_id(), "aws-kms-hierarchy");
+    assert_eq!(edks[0].key_provider_info(), BRANCH_KEY_ID.as_bytes());
 
     // Plaintext DK was generated (suite is 32 bytes).
     let pdk = materials_out.plaintext_data_key().unwrap();
@@ -205,7 +197,7 @@ async fn integ_on_encrypt_round_trips_through_real_keystore_and_kms() {
         .unwrap();
     assert_eq!(bkm.branch_key_version(), BRANCH_KEY_ACTIVE_VERSION);
 
-    let recovered = branch_key_unwrap(&bkm, &ec, &edks[0].ciphertext)
+    let recovered = branch_key_unwrap(&bkm, &ec, edks[0].ciphertext())
         .expect("EDK ciphertext MUST round-trip through real branch key materials");
     assert_eq!(recovered, pdk.as_bytes());
 }
@@ -237,15 +229,11 @@ async fn integ_on_decrypt_round_trips_through_real_keystore_and_kms() {
 
     // Build empty decryption materials with the same EC the encrypt side
     // used; the AAD bound into the EDK ciphertext is computed over this EC.
-    let dm_in = DecryptionMaterials::new(
-        non_signing_suite(),
-        ec,
-        Default::default(),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let dm_in = DecryptionMaterials::builder()
+        .algorithm_suite_id(non_signing_suite())
+        .encryption_context(ec)
+        .build()
+        .unwrap();
     let dm_out = keyring
         .on_decrypt(dm_in, &edks)
         .await
@@ -289,7 +277,7 @@ async fn build_keystore_with_kms_and_logical_name(
 ) -> BranchKeyStore {
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .kms_configuration(KmsConfiguration::kms_key_arn(KEY_ARN))
         .logical_keystore_name(logical_keystore_name)
         .ddb_client(ddb_client_us_west_2().await)
         .kms_client(kms)
@@ -303,7 +291,7 @@ async fn build_keystore_with_kms_and_logical_name(
 ///
 /// What this checks is narrower than why these tests expect a failure. Every
 /// `hk2` here is built by `build_keystore_with_kms_and_logical_name`, which pins
-/// `KmsConfiguration::KmsKeyArn(KEY_ARN)` — a us-west-2 ARN — while handing the
+/// `KmsConfiguration::kms_key_arn(KEY_ARN)` — a us-west-2 ARN — while handing the
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
@@ -370,9 +358,9 @@ async fn run_round_trip(
     // Verify the EDK was created with the expected branch key id.
     let edks = materials_out.encrypted_data_keys().to_vec();
     assert_eq!(edks.len(), 1);
-    assert_eq!(edks[0].key_provider_id, "aws-kms-hierarchy");
+    assert_eq!(edks[0].key_provider_id(), "aws-kms-hierarchy");
     assert_eq!(
-        edks[0].key_provider_info.as_slice(),
+        edks[0].key_provider_info(),
         expected_branch_key_id.as_bytes(),
         "EDK provider_info MUST equal the configured branch_key_id",
     );
@@ -382,8 +370,11 @@ async fn run_round_trip(
         .as_bytes()
         .to_vec();
 
-    let dm_in =
-        DecryptionMaterials::new(suite_id, ec, Default::default(), None, None, None).unwrap();
+    let dm_in = DecryptionMaterials::builder()
+        .algorithm_suite_id(suite_id)
+        .encryption_context(ec)
+        .build()
+        .unwrap();
     let dm_out = keyring
         .on_decrypt(dm_in, &edks)
         .await
@@ -415,18 +406,14 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
 
     let mut ec = EncryptionContext::new();
     ec.insert("region", "us-west-2");
-    let materials_in = EncryptionMaterials::new(
-        suite,
-        Vec::new(),
-        ec,
-        Default::default(),
-        Some(aws_crypto_mpl::structures::PlaintextDataKey::new(
+    let materials_in = EncryptionMaterials::builder()
+        .algorithm_suite_id(suite)
+        .encryption_context(ec)
+        .plaintext_data_key(aws_crypto_mpl::structures::PlaintextDataKey::new(
             zeroed.clone(),
-        )),
-        None,
-        None,
-    )
-    .unwrap();
+        ))
+        .build()
+        .unwrap();
 
     run_round_trip(&keyring, materials_in, BRANCH_KEY_ID).await;
 }
@@ -697,7 +684,7 @@ async fn integ_discovery_keystore_wraps_under_the_records_own_kms_key() {
     let edks = materials_out.encrypted_data_keys();
     assert_eq!(edks.len(), 1);
     assert_eq!(
-        edks[0].key_provider_info.as_slice(),
+        edks[0].key_provider_info(),
         DISCOVERY_BRANCH_KEY_ID.as_bytes(),
         "EDK provider info must carry the Discovery branch key id",
     );
@@ -713,7 +700,7 @@ async fn integ_discovery_keystore_wraps_under_the_records_own_kms_key() {
         DISCOVERY_BRANCH_KEY_ACTIVE_VERSION
     );
 
-    let recovered = branch_key_unwrap(&bkm, &ec, &edks[0].ciphertext)
+    let recovered = branch_key_unwrap(&bkm, &ec, edks[0].ciphertext())
         .expect("EDK from a Discovery keystore MUST round-trip through the same materials");
     assert_eq!(recovered, pdk.as_bytes());
 }
@@ -772,9 +759,7 @@ async fn integ_discovery_keystore_serves_two_branch_keys_under_different_kms_key
                 panic!("Discovery keystore must serve branch key {branch_key_id}: {e}")
             });
         assert_eq!(
-            materials_out.encrypted_data_keys()[0]
-                .key_provider_info
-                .as_slice(),
+            materials_out.encrypted_data_keys()[0].key_provider_info(),
             branch_key_id.as_bytes(),
         );
     }
@@ -817,9 +802,7 @@ async fn build_mr_discovery_keystore(region: &str) -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::MrDiscovery {
-            region: region.to_string(),
-        })
+        .kms_configuration(KmsConfiguration::mr_discovery(region))
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -845,10 +828,7 @@ async fn integ_mr_discovery_keystore_reaches_an_mrk_replica_in_the_configured_re
 
     let edks = materials_out.encrypted_data_keys();
     assert_eq!(edks.len(), 1);
-    assert_eq!(
-        edks[0].key_provider_info.as_slice(),
-        EAST_BRANCH_KEY.as_bytes(),
-    );
+    assert_eq!(edks[0].key_provider_info(), EAST_BRANCH_KEY.as_bytes(),);
     assert_eq!(materials_out.plaintext_data_key().unwrap().len(), 32);
 }
 

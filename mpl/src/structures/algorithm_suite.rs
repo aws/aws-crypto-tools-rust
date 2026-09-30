@@ -320,7 +320,7 @@ impl EsdkAlgorithmSuiteId {
     /// No ESDK suite includes a symmetric signature algorithm; this is always
     /// `false` for any constructible variant of `EsdkAlgorithmSuiteId`. The
     /// MUST-NOT-generate / MUST-NOT-verify clauses are enforced at the
-    /// `EncryptionMaterials::new` / `DecryptionMaterials::new` boundary.
+    /// `EncryptionMaterialsBuilder::build` / `DecryptionMaterialsBuilder::build` boundary.
     pub const fn has_symmetric_signing(self) -> bool {
         self.specification().symmetric_signature_algorithm.is_some()
     }

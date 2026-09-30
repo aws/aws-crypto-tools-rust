@@ -96,9 +96,8 @@ fn keystore_never_consulted() -> BranchKeyStore {
     build_without_io(
         BranchKeyStore::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .to_string(),
+            .kms_configuration(KmsConfiguration::kms_key_arn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
             ))
             .logical_keystore_name("test-logical")
             .kms_client(kms)
@@ -1374,30 +1373,19 @@ fn fake_branch_key_materials() -> BranchKeyMaterials {
 /// Empty encryption materials for `suite_id`. Suite choice is arbitrary unless
 /// a test depends on `encryption_key_length`.
 fn empty_encryption_materials(suite_id: AlgorithmSuiteId) -> EncryptionMaterials {
-    EncryptionMaterials::new(
-        suite_id,
-        Vec::new(),
-        EncryptionContext::new(),
-        Default::default(),
-        None,
-        None,
-        None,
-    )
-    .unwrap()
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(suite_id)
+        .build()
+        .unwrap()
 }
 
 /// Empty decryption materials for `suite_id`. Used only by the OnDecrypt
 /// suite; there is no OnEncrypt counterpart.
 fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials {
-    DecryptionMaterials::new(
-        suite_id,
-        EncryptionContext::new(),
-        Default::default(),
-        None,
-        None,
-        None,
-    )
-    .unwrap()
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(suite_id)
+        .build()
+        .unwrap()
 }
 
 /// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
@@ -1629,10 +1617,7 @@ mod onencrypt {
             .unwrap();
 
         let edk = &materials_out.encrypted_data_keys()[0];
-        assert_eq!(
-            edk.key_provider_info.as_slice(),
-            FAKE_BRANCH_KEY_ID.as_bytes()
-        );
+        assert_eq!(edk.key_provider_info(), FAKE_BRANCH_KEY_ID.as_bytes());
         assert_eq!(keystore.get_active_calls(), 1);
     }
 }
@@ -1682,15 +1667,11 @@ mod ondecrypt {
         let (pdk, edks) = produce_edk(&keyring, suite_id).await;
 
         // Build DM that ALREADY carries a plaintext data key.
-        let dm = DecryptionMaterials::new(
-            suite_id,
-            EncryptionContext::new(),
-            Default::default(),
-            Some(pdk),
-            None,
-            None,
-        )
-        .unwrap();
+        let dm = DecryptionMaterials::builder()
+            .algorithm_suite_id(suite_id)
+            .plaintext_data_key(pdk)
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(dm, &edks)
@@ -1717,7 +1698,7 @@ mod ondecrypt {
         // ciphertext layout (salt(16) || iv(12) || version(16) || ...)
         // independently of the on_decrypt parsing logic.
         const VERSION_OFFSET: usize = 16 + 12;
-        let on_wire_version = &edks[0].ciphertext[VERSION_OFFSET..VERSION_OFFSET + 16];
+        let on_wire_version = &edks[0].ciphertext()[VERSION_OFFSET..VERSION_OFFSET + 16];
         assert_eq!(on_wire_version, &FAKE_BRANCH_KEY_VERSION_BYTES);
 
         let _ = keyring
@@ -1771,11 +1752,12 @@ mod ondecrypt {
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
         // Prepend an EDK with the wrong provider id; the keyring MUST
         // skip it and continue to the next (matching) EDK.
-        let bogus = EncryptedDataKey::new(
-            "some-other-provider".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0xAA; 64],
-        );
+        let bogus = EncryptedDataKey::builder()
+            .key_provider_id("some-other-provider")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0xAA; 64])
+            .build()
+            .unwrap();
         edks.insert(0, bogus);
 
         let dm_out = keyring
@@ -1797,11 +1779,12 @@ mod ondecrypt {
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
         // 0x80 is a continuation byte with no leading byte → invalid
         // UTF-8; the keyring MUST skip the EDK rather than fail on it.
-        let bogus = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            vec![0x80, 0x80, 0x80],
-            vec![0xAA; 64],
-        );
+        let bogus = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(vec![0x80, 0x80, 0x80])
+            .ciphertext(vec![0xAA; 64])
+            .build()
+            .unwrap();
         edks.insert(0, bogus);
 
         let dm_out = keyring
@@ -1821,11 +1804,12 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
-        let bogus = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            b"some-other-branch-key-id".to_vec(),
-            vec![0xAA; 64],
-        );
+        let bogus = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(b"some-other-branch-key-id")
+            .ciphertext(vec![0xAA; 64])
+            .build()
+            .unwrap();
         edks.insert(0, bogus);
 
         let dm_out = keyring
@@ -1867,11 +1851,12 @@ mod ondecrypt {
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
-        let foreign = EncryptedDataKey::new(
-            "some-other-provider".to_string(),
-            b"some-other-info".to_vec(),
-            vec![0u8; 64],
-        );
+        let foreign = EncryptedDataKey::builder()
+            .key_provider_id("some-other-provider")
+            .key_provider_info(b"some-other-info")
+            .ciphertext(vec![0u8; 64])
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(empty_decryption_materials(suite_id), &[foreign])
@@ -1895,11 +1880,12 @@ mod ondecrypt {
         // but whose ciphertext is shorter than the spec's salt+iv+version
         // overhead (28 bytes). The keyring MUST surface the per-EDK error
         // in the final error message.
-        let truncated = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0u8; 4],
-        );
+        let truncated = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0u8; 4])
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
@@ -1942,16 +1928,18 @@ mod ondecrypt {
 
         // Two candidate EDKs, both too short but by different amounts so each
         // produces a distinguishable message in the aggregate.
-        let truncated_4 = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0u8; 4],
-        );
-        let truncated_8 = EncryptedDataKey::new(
-            "aws-kms-hierarchy".to_string(),
-            FAKE_BRANCH_KEY_ID.as_bytes().to_vec(),
-            vec![0u8; 8],
-        );
+        let truncated_4 = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0u8; 4])
+            .build()
+            .unwrap();
+        let truncated_8 = EncryptedDataKey::builder()
+            .key_provider_id("aws-kms-hierarchy")
+            .key_provider_info(FAKE_BRANCH_KEY_ID.as_bytes().to_vec())
+            .ciphertext(vec![0u8; 8])
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(

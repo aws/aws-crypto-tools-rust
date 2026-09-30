@@ -674,20 +674,16 @@ fn make_kms_config(
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
-        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.to_string())),
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::kms_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
-        ffi::KmsConfigurationType::KmsMrKeyArn => {
-            Ok(KmsConfiguration::KmsMrKeyArn(value.to_string()))
-        }
+        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsConfiguration::kms_mr_key_arn(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
         ffi::KmsConfigurationType::Discovery => Ok(KmsConfiguration::Discovery),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a multi-Region-key discovery configuration.
-        ffi::KmsConfigurationType::MrDiscovery => Ok(KmsConfiguration::MrDiscovery {
-            region: value.to_string(),
-        }),
+        ffi::KmsConfigurationType::MrDiscovery => Ok(KmsConfiguration::mr_discovery(value)),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST return an error when the target KMS configuration type is not a
         //# supported value.
@@ -1137,23 +1133,23 @@ fn wrapping_alg_target_to_core(
 //# - The shim MUST provide an operation that creates a raw AES keyring backed by
 //# the core ESDK.
 fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring>, String> {
-    let keyring = RawAesKeyring::new(
+    let keyring = RawAesKeyring::builder()
         //= spec/shim/esdk-shim.md#create-raw-aes-keyring
         //# - Creating a raw AES keyring MUST provide the target-supplied key namespace and
         //# key name to the core ESDK.
-        input.key_namespace.clone(),
-        input.key_name.clone(),
+        .key_namespace(input.key_namespace.clone())
+        .key_name(input.key_name.clone())
         //= spec/shim/esdk-shim.md#create-raw-aes-keyring
         //# - Creating a raw AES keyring MUST pass the target-supplied wrapping key to the
         //# core ESDK unmodified.
-        input.wrapping_key.to_vec(),
+        .wrapping_key(input.wrapping_key.to_vec())
         //= spec/shim/esdk-shim.md#create-raw-aes-keyring
         //# - Creating a raw AES keyring MUST provide the target-supplied wrapping algorithm
         //# to the core ESDK, converted as defined in
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
-        wrapping_alg_target_to_core(input.wrapping_alg)?,
-    )
-    .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
+        .wrapping_alg(wrapping_alg_target_to_core(input.wrapping_alg)?)
+        .build()
+        .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),

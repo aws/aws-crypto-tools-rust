@@ -29,7 +29,7 @@
 
 #![cfg(feature = "test-utils")]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
@@ -65,28 +65,17 @@ const TTL_FRESH_OFFSET: Duration = Duration::from_secs(7200);
 const STANDARD_TTL: Duration = Duration::from_secs(3600);
 
 fn make_encryption_materials() -> EncryptionMaterials {
-    EncryptionMaterials::new(
-        SUITE,
-        vec![],
-        EncryptionContext::new(),
-        BTreeSet::new(),
-        None,
-        None,
-        None,
-    )
-    .expect("constructing empty encryption materials")
+    EncryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .build()
+        .expect("constructing empty encryption materials")
 }
 
 fn make_decryption_materials() -> DecryptionMaterials {
-    DecryptionMaterials::new(
-        SUITE,
-        EncryptionContext::new(),
-        BTreeSet::new(),
-        None,
-        None,
-        None,
-    )
-    .expect("constructing empty decryption materials")
+    DecryptionMaterials::builder()
+        .algorithm_suite_id(SUITE)
+        .build()
+        .expect("constructing empty decryption materials")
 }
 
 fn make_branch_key_materials() -> BranchKeyMaterials {
