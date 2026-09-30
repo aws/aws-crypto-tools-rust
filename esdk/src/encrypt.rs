@@ -8,7 +8,7 @@
 use std::num::NonZeroU32;
 
 use crate::error::Error;
-use crate::error::{ErrorKind, err, ser_err, val_err};
+use crate::error::{ErrorKind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::encryption_context::write_empty_ec_or_write_aad;
@@ -653,8 +653,9 @@ fn build_header_body(
             encrypted_data_keys,
             frame_length,
         ),
-        v => ser_err(&format!(
-            "algorithm suite declares unsupported message format version {v}"
+        v => Err(err(
+            ErrorKind::Internal,
+            format!("algorithm suite declares unsupported message format version {v}"),
         )),
     }
 }
@@ -706,8 +707,9 @@ fn build_v1_header_body(
 ) -> Result<HeaderBody, Error> {
     let header_iv_length_usize = get_iv_length(suite);
     let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
-        return ser_err(&format!(
-            "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
+        return Err(err(
+            ErrorKind::Internal,
+            format!("IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"),
         ));
     };
     Ok(HeaderBody::V1Body(V1HeaderBody {
@@ -730,10 +732,13 @@ fn build_header_auth_tag(
 ) -> Result<HeaderAuth, Error> {
     let key_length = get_encrypt_key_length(suite);
     if data_key.len() != key_length {
-        return ser_err(&format!(
-            "incorrect data key length: got {}, expected {}",
-            data_key.len(),
-            key_length
+        return Err(err(
+            ErrorKind::Internal,
+            format!(
+                "incorrect data key length: got {}, expected {}",
+                data_key.len(),
+                key_length
+            ),
         ));
     }
 

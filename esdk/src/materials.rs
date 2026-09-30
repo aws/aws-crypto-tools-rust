@@ -49,6 +49,17 @@ pub(crate) async fn get_decryption_materials(
     //# from the message header.
     let encryption_context = header_body.encryption_context().clone();
 
+    // A conformant message carries the signing public key in its encryption context
+    // exactly when its suite signs.
+    // The CMM rejects a request that breaks this, but as bad input; here it is a malformed message.
+    let has_public_key = encryption_context.contains_key("aws-crypto-public-key");
+    if has_public_key != algorithm_suite_id.has_asymmetric_signing() {
+        return Err(err(
+            ErrorKind::Serialization,
+            "the header encryption context must contain 'aws-crypto-public-key' exactly when the algorithm suite signs",
+        ));
+    }
+
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Encrypted Data Keys: This MUST be the parsed [encrypted data keys](../data-format/message-header.md#encrypted-data-keys)
     //# from the message header.

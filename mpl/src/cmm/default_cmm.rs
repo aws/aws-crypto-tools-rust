@@ -185,7 +185,7 @@ impl Cmm for DefaultCmm {
         let verification_key = if suite_id.has_asymmetric_signing() {
             let Some(b64_bytes) = ec.get(RESERVED_AWS_CRYPTO_PUBLIC_KEY) else {
                 return Err(Error::new(
-                    ErrorKind::InvalidMaterials,
+                    ErrorKind::Validation,
                     "signing-suite request encryption context is missing the reserved 'aws-crypto-public-key' entry",
                 ));
             };
@@ -202,7 +202,7 @@ impl Cmm for DefaultCmm {
         } else {
             if ec.contains_key(RESERVED_AWS_CRYPTO_PUBLIC_KEY) {
                 return Err(Error::new(
-                    ErrorKind::InvalidMaterials,
+                    ErrorKind::Validation,
                     "non-signing-suite request encryption context contains the reserved 'aws-crypto-public-key' entry",
                 ));
             }

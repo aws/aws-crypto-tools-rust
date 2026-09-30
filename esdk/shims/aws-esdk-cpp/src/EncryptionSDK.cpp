@@ -83,6 +83,7 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         case ::ffi::ShimErrorKind::RemoteTransport: throw RemoteTransportException(error->message, error->retryable);
         case ::ffi::ShimErrorKind::Remote: throw RemoteException(error->message, error->retryable);
         case ::ffi::ShimErrorKind::Internal: throw InternalException(error->message, error->retryable);
+        case ::ffi::ShimErrorKind::Io: throw IoException(error->message, error->retryable);
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.

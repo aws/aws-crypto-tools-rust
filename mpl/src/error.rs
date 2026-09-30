@@ -30,12 +30,22 @@ impl Error {
         error
     }
 
-    /// The kind every error in `errors` shares, if there is one.
-    pub(crate) fn common_kind(errors: &[Self]) -> Option<ErrorKind> {
-        let (first, rest) = errors.split_first()?;
-        rest.iter()
-            .all(|e| e.kind() == first.kind())
-            .then_some(first.kind())
+    /// The kind for an error that aggregates `errors`.
+    ///
+    /// The shared kind when they all agree.
+    /// Otherwise the kind of the first retryable one, so a caller still sees a retryable kind.
+    /// Otherwise `fallback`.
+    pub(crate) fn aggregate_kind(errors: &[Self], fallback: ErrorKind) -> ErrorKind {
+        let Some((first, rest)) = errors.split_first() else {
+            return fallback;
+        };
+        if rest.iter().all(|e| e.kind() == first.kind()) {
+            return first.kind();
+        }
+        errors
+            .iter()
+            .find(|e| e.is_retryable())
+            .map_or(fallback, Self::kind)
     }
 }
 
@@ -155,6 +165,24 @@ mod tests {
                 "{code}: SDK error is the source"
             );
         }
+    }
+
+    #[test]
+    fn aggregate_kind_prefers_the_shared_kind_then_a_retryable_one() {
+        let tag = Error::new(ErrorKind::Cryptographic, "tag");
+        let throttled = Error::new(ErrorKind::RemoteThrottled, "throttled");
+        let denied = Error::new(ErrorKind::RemoteAccessDenied, "denied");
+        let f = ErrorKind::Internal;
+        assert_eq!(Error::aggregate_kind(&[], f), f);
+        assert_eq!(
+            Error::aggregate_kind(&[tag.clone(), tag.clone()], f),
+            ErrorKind::Cryptographic
+        );
+        assert_eq!(
+            Error::aggregate_kind(&[tag.clone(), throttled], f),
+            ErrorKind::RemoteThrottled
+        );
+        assert_eq!(Error::aggregate_kind(&[tag, denied], f), f);
     }
 
     #[test]

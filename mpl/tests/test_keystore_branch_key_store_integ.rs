@@ -270,7 +270,7 @@ async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(west) + EastBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -289,7 +289,7 @@ async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(east) + WestBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 // ─── TestGetActiveMrkKey: AP MRK config (key absent in region) ──────────────
@@ -345,7 +345,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
         Ok(_) => panic!("Configured KEY_ARN + DISCOVERY_BRANCH_KEY_ID MUST fail (ARN mismatch)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 // ─── TestGetActiveKeyWrongLogicalKeyStoreName ──────────────────────────────

@@ -120,6 +120,14 @@ pub const DEFAULT_STORM_INFLIGHT_TTL: Duration = Duration::from_secs(10);
 /// `StormTracker.DefaultStorm()`.
 pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
 
+/// Another caller held the in-flight slot for this key past `inflight_ttl`.
+/// Contention, not a fault: the next attempt usually finds the entry filled.
+fn inflight_ttl_exceeded() -> Error {
+    let mut err = Error::new(ErrorKind::Internal, "in-flight TTL exceeded");
+    err.set_retryable(true);
+    err
+}
+
 impl StormTrackingCmc {
     /// Start a builder for `StormTrackingCmc`. Every setter is optional.
     #[must_use]
@@ -306,7 +314,7 @@ impl StormTrackingCmc {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
                         if elapsed > self.inner.inflight_ttl {
-                            return Err(Error::new(ErrorKind::Internal, "in-flight TTL exceeded"));
+                            return Err(inflight_ttl_exceeded());
                         }
 
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
@@ -364,7 +372,7 @@ impl StormTrackingCmc {
             if let Some(deadline) = deadline
                 && now >= deadline
             {
-                return Err(Error::new(ErrorKind::Internal, "in-flight TTL exceeded"));
+                return Err(inflight_ttl_exceeded());
             }
 
             // Re-classify per Dafny `CheckNewEntry`: become leader when

@@ -173,7 +173,8 @@ macro_rules! define_error {
             /// A cryptographic check failed,
             /// for example an AES-GCM authentication tag or a message signature did not verify.
             ///
-            /// Treat the message as corrupt or modified; retrying cannot succeed.
+            /// The message is corrupt or modified, or is being decrypted with the wrong key;
+            /// retrying cannot succeed.
             Cryptographic,
             /// AWS KMS or `DynamoDB` denied access,
             /// for example because of missing IAM permissions or expired credentials.
@@ -298,7 +299,7 @@ macro_rules! define_error {
             ///
             /// [`collected`](Self::collected) returns the failures.
             /// With exactly one, it is also the [`source`](std::error::Error::source).
-            /// The error is retryable only if every collected failure is.
+            /// The error is retryable if any collected failure is.
             #[track_caller]
             pub fn collection(
                 kind: $kind,
@@ -315,8 +316,7 @@ macro_rules! define_error {
                         [only] => Some(std::sync::Arc::new(only.clone())),
                         _ => None,
                     };
-                let retryable =
-                    !collected.is_empty() && collected.iter().all(|e| e.core.retryable);
+                let retryable = collected.iter().any(|e| e.core.retryable);
                 Self {
                     core: $crate::error::ErrorCore::build(kind, message.into(), retryable, cause),
                     collected,

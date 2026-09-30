@@ -18,6 +18,11 @@ aws_mpl_primitives::define_error! {
     ///
     /// Treat the message as corrupt; retrying cannot succeed.
     Serialization,
+    /// A caller-supplied reader or writer failed while streaming,
+    /// for example a closed connection or a full disk.
+    ///
+    /// The [`source`](std::error::Error::source) is the [`std::io::Error`].
+    Io,
 }
 
 #[track_caller]

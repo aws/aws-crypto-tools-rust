@@ -414,6 +414,7 @@ fn classify_core_error_maps_each_kind_to_the_same_name() {
         (E::RemoteTransport, S::RemoteTransport),
         (E::Remote, S::Remote),
         (E::Internal, S::Internal),
+        (E::Io, S::Io),
     ];
     for (kind, expected) in cases {
         assert_eq!(

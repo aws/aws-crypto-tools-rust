@@ -317,7 +317,7 @@ async fn test_decrypt_materials_signing_suite_missing_public_key_fails() {
         EncryptionContext::new(),
     );
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -328,7 +328,7 @@ async fn test_decrypt_materials_non_signing_suite_with_public_key_fails() {
     ec.insert("aws-crypto-public-key", "some-value");
     let request = DecryptMaterialsRequest::new(non_signing_suite(), allow_policy(), vec![], ec);
     let err = cmm.decrypt_materials(request).await.expect_err("must fail");
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -734,5 +734,5 @@ async fn test_decrypt_materials_non_signing_suite_rejects_public_key_from_reprod
         .await
         .expect_err("must reject the reserved key regardless of which context carried it");
 
-    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }

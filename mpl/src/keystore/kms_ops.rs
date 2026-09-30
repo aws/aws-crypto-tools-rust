@@ -91,7 +91,7 @@ pub(crate) fn resolve_keystore_arn(
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
             if !is_arn_compatible(kms_config, record_kms_arn) {
                 return Err(Error::new(
-                    ErrorKind::Cryptographic,
+                    ErrorKind::Validation,
                     format!(
                         "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
                     ),

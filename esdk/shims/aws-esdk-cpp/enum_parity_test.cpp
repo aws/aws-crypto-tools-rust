@@ -45,6 +45,7 @@ static_assert(eq(Aws::Esdk::ErrorKind::RemoteThrottled, ::aws_esdk_ffi::ShimErro
 static_assert(eq(Aws::Esdk::ErrorKind::RemoteTransport, ::aws_esdk_ffi::ShimErrorKind::RemoteTransport), "ErrorKind::RemoteTransport");
 static_assert(eq(Aws::Esdk::ErrorKind::Remote, ::aws_esdk_ffi::ShimErrorKind::Remote), "ErrorKind::Remote");
 static_assert(eq(Aws::Esdk::ErrorKind::Internal, ::aws_esdk_ffi::ShimErrorKind::Internal), "ErrorKind::Internal");
+static_assert(eq(Aws::Esdk::ErrorKind::Io, ::aws_esdk_ffi::ShimErrorKind::Io), "ErrorKind::Io");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
