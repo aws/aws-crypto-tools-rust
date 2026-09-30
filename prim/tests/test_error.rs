@@ -6,29 +6,22 @@
 use aws_mpl_primitives::{AesGcm, DigestAlg, Error, ErrorKind, aes_encrypt, hkdf};
 
 fn make_error() -> Error {
-    // Trigger an error via a known-bad HKDF request. Its message is
-    // deterministic ("invalid key length ...").
+    // A known-bad HKDF request, which fails the same way every time.
     let mut okm = [0u8; 20];
     hkdf(DigestAlg::Sha256, &[], &[0u8; 16], &[&[]], &mut okm).unwrap_err()
 }
 
 #[test]
-fn test_error_is_cryptographic_and_display_starts_with_the_kind() {
+fn test_error_is_cryptographic_and_display_is_the_message() {
     let err = make_error();
     assert_eq!(err.kind(), ErrorKind::Cryptographic);
     assert!(!err.is_retryable());
-    let display = format!("{err}");
-    assert!(display.contains("invalid key length"));
+    assert_eq!(err.to_string(), err.message());
 }
 
 #[test]
 fn test_error_partial_eq_matches_on_message_only() {
-    // `Error::eq` compares kind and message, so two errors from the same call
-    // path compare equal. The backtrace never participates, and it is usually
-    // not even distinct: `Error` captures with `Backtrace::capture()`, which
-    // honours `RUST_BACKTRACE` and yields `<disabled>` when it is unset, so
-    // in a default run these two backtraces are byte-identical. They differ
-    // only under `RUST_BACKTRACE=1`, and `eq` ignores them either way.
+    // `Error::eq` ignores the backtrace, so two errors from the same call path are equal.
     let err1 = make_error();
     let err2 = make_error();
     assert_eq!(err1, err2);

@@ -2,10 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for spec/client-apis/decrypt.md#get-the-decryption-materials
-// The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait
-// whose signatures return `MplError` by value; keep the large-Err allow
-// so the delegating spy's `Result` doesn't trip clippy::result_large_err.
-#![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -212,14 +208,14 @@ async fn test_commit_key_derived_and_validated() {
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Untampered commit key → Ok; tampered commit key in header → Validation error, proving the equality check runs
+    //= reason=Untampered commit key → Ok; tampered commit key in header → Cryptographic error, proving the equality check runs
     //# If the [algorithm suite](../framework/algorithm-suites.md#algorithm-suites-encryption-key-derivation-settings) supports [key commitment](../framework/algorithm-suites.md#key-commitment)
     //# then the [commit key](../framework/algorithm-suites.md#commit-key) MUST be derived from the plaintext data key
     //# using the [commit key derivation](../framework/algorithm-suites.md#algorithm-suites-commit-key-derivation-settings).
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Header commit key must equal derived commit key; tampering breaks equality → Validation error
+    //= reason=Header commit key must equal derived commit key; tampering breaks equality → Cryptographic error
     //# The derived commit key MUST equal the commit key stored in the message header.
     assert!(
         decrypt(&valid_input).await.is_ok(),
@@ -227,8 +223,8 @@ async fn test_commit_key_derived_and_validated() {
     );
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Validation,
-        "tampered commit key must produce Validation error"
+        ErrorKind::Cryptographic,
+        "tampered commit key must produce Cryptographic error"
     );
 }
 
@@ -316,7 +312,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Supported ESDK suite ID → Ok; tampered to non-ESDK 0xFFFF → Validation error
+    //= reason=Supported ESDK suite ID → Ok; tampered to non-ESDK 0xFFFF → Serialization error
     //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
     //# decrypt MUST yield an error.
     //
@@ -332,8 +328,8 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     );
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Validation,
-        "non-ESDK suite ID must produce Validation error"
+        ErrorKind::Serialization,
+        "non-ESDK suite ID must produce Serialization error"
     );
 }
 

@@ -764,11 +764,7 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         ErrorKind::Internal,
         "expected Internal, got {err:?}"
     );
-    assert!(
-        err.message().contains("in-flight TTL"),
-        "error message must contain 'in-flight TTL', got: {}",
-        err.message()
-    );
+    assert!(err.is_retryable());
 }
 
 #[tokio::test]
@@ -844,7 +840,7 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
 // What: when a waiter is in `BlockMissInflight` and its per-waiter
 // deadline (`enter_time + inflight_ttl`) elapses without the entry
 // appearing or a leader slot opening, the wait loop must return
-// `Internal("InFlightTTL exceeded")`.
+// an `Internal` error.
 //
 // Why: the initial classifier's `elapsed > inflight_ttl` check only
 // fires when `get_cache_entry` is called AFTER the map-level TTL has
@@ -911,11 +907,7 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         ErrorKind::Internal,
         "expected Internal, got {err:?}"
     );
-    assert!(
-        err.message().contains("in-flight TTL"),
-        "error message must contain 'in-flight TTL', got: {}",
-        err.message()
-    );
+    assert!(err.is_retryable());
 }
 
 // ── Group 10 — Material Variant Coverage ─────────────────────────────────────

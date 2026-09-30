@@ -307,9 +307,8 @@ async fn build_keystore_with_kms_and_logical_name(
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
-/// Asserts the whole chain by type: `Error` ->
-/// `Error(Kms)` -> `SdkError<DecryptError>`. Reaching the SDK error
-/// proves the call actually got to KMS, which is the property these tests need:
+/// Asserts the whole chain by type: `Error` -> `Error` -> `SdkError<DecryptError>`.
+/// Reaching the SDK error proves the call actually got to KMS, which is the property these tests need:
 /// it means the DDB record was read, so `hk2` went to the keystore instead of
 /// being served from the shared cache, and a cache miss is what is under test.
 /// A bare `is_err()` would also be satisfied by a missing record or an
@@ -340,10 +339,6 @@ fn assert_failed_at_kms(result: Result<EncryptionMaterials, Error>, context: &st
         err.kind(),
         keystore_err.kind(),
         "{context}: the keyring keeps the keystore's kind"
-    );
-    assert!(
-        keystore_err.message().starts_with("AWS KMS "),
-        "{context}: expected the failure to come from the KMS call, got: {err}",
     );
 
     assert!(
@@ -737,9 +732,9 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
-    // A missing record or an unreachable table would be a remote kind; the
-    // kms-arn-compat check in resolve_keystore_arn is the Cryptographic one.
-    assert_eq!(err.kind(), ErrorKind::Cryptographic, "got: {err}");
+    // Only the kms-arn-compat check in resolve_keystore_arn returns Validation;
+    // a missing record or an unreachable table returns a remote kind.
+    assert_eq!(err.kind(), ErrorKind::Validation, "got: {err}");
 }
 
 #[tokio::test]

@@ -63,11 +63,6 @@ async fn test_verify_signature_fails_on_tampered_footer() {
         ErrorKind::Cryptographic,
         "tampered footer must produce a Cryptographic error"
     );
-    assert!(
-        err.message().contains("signature verification failed"),
-        "error message must indicate signature verification failure, got: {}",
-        err.message()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

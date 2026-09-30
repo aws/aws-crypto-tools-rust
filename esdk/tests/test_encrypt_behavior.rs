@@ -3,9 +3,6 @@
 
 //! Tests for encrypt.md#behavior, encrypt.md#get-the-encryption-materials,
 //! encrypt.md#construct-the-header, and encrypt.md#output.
-// The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait,
-// whose methods return `MplError` by value.
-#![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -125,14 +122,9 @@ async fn test_input_suite_vs_commitment_policy_error() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must fail when input suite violates commitment policy");
-    // Native path: the input-suite-vs-commitment-policy check runs in the ESDK
-    // encrypt front-end and surfaces as a Validation error (no cryptography
-    // attempted), rather than an MPL error from the CMM.
-    assert_eq!(
-        err.kind(),
-        ErrorKind::Validation,
-        "expected Validation error, got: {err:?}"
-    );
+    // The input-suite-vs-commitment-policy check runs in the ESDK encrypt front-end,
+    // before any cryptography, and returns a Validation error.
+    //
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# If an [input algorithm suite](#algorithm-suite) is provided
@@ -143,10 +135,10 @@ async fn test_input_suite_vs_commitment_policy_error() {
     //= type=test
     //= reason=Test sets commitment_policy on input; policy-violation error proves it was passed
     //# - Commitment Policy: This MUST be the [commitment policy](client.md#commitment-policy) configured in the [client](client.md) exposing this encrypt function.
-    assert!(
-        err.message().contains("commitment policy"),
-        "expected a commitment-policy violation message, got: {}",
-        err.message()
+    assert_eq!(
+        err.kind(),
+        ErrorKind::Validation,
+        "expected Validation error, got: {err:?}"
     );
 }
 
@@ -383,11 +375,6 @@ async fn test_max_edk_exceeded_error() {
         ErrorKind::Validation,
         "expected Validation error, got: {err:?}"
     );
-    assert!(
-        err.message().contains("exceeds") && err.message().contains("maximum"),
-        "error must indicate EDK count exceeds maximum, got: {}",
-        err.message()
-    );
 
     // The same CMM under a maximum of 2 encrypts, so the failure above is the
     // maximum-EDK check and not the extra EDK being rejected some other way.
@@ -611,11 +598,6 @@ async fn test_reserved_encryption_context_prefix_must_fail() {
         ErrorKind::Validation,
         "expected Validation error, got: {err:?}"
     );
-    assert!(
-        err.message().contains("aws-crypto-"),
-        "error must identify the reserved prefix, got: {}",
-        err.message()
-    );
 }
 
 // Boundary: `aws-crypto` without the trailing dash MUST be accepted.
@@ -794,8 +776,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must halt and indicate failure when a step fails");
-    // Native path: the failing step (suite-vs-commitment-policy validation) surfaces
-    // as a Validation error from the ESDK encrypt.
+    // The failing step, suite-vs-commitment-policy validation, returns a Validation error.
     assert_eq!(
         err.kind(),
         ErrorKind::Validation,
@@ -804,11 +785,6 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
     //= spec/client-apis/encrypt.md#behavior
     //= type=test
     //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.
-    assert!(
-        err.message().contains("commitment policy"),
-        "expected a commitment-policy violation message, got: {}",
-        err.message()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

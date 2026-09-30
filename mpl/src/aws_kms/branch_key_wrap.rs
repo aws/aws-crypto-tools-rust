@@ -80,10 +80,8 @@ pub fn compute_aad(
 /// Parse a UUID in canonical hyphenated form (8-4-4-4-12) into its 16 raw
 /// bytes.
 ///
-/// This parse is the validation gate on the branch-key-version string.
-/// Returns `Error` rather than panicking so a caller that hands us a
-/// malformed string (e.g. a corrupted keystore record or a fuzzer) gets a
-/// clean error instead of a process abort.
+/// This parse is the validation gate on the branch-key-version string,
+/// so a malformed string, such as one from a corrupted keystore record, returns an error.
 ///
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also
 /// accepts the 32-character simple form as well as braced and URN forms,
@@ -91,13 +89,13 @@ pub fn compute_aad(
 fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], Error> {
     if s.len() != 36 {
         return Err(Error::new(
-            ErrorKind::Validation,
+            ErrorKind::Remote,
             format!("branch key version is not a valid 36-char UUID: {s}",),
         ));
     }
     let uuid = Uuid::parse_str(s).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Validation,
+            ErrorKind::Remote,
             format!("branch key version is not a valid UUID: {s}"),
             e,
         )

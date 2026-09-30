@@ -8,7 +8,7 @@
 use std::num::NonZeroU32;
 
 use crate::error::Error;
-use crate::error::{ErrorKind, err, ser_err, val_err};
+use crate::error::{ErrorKind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::encryption_context::write_empty_ec_or_write_aad;
@@ -653,8 +653,9 @@ fn build_header_body(
             encrypted_data_keys,
             frame_length,
         ),
-        v => ser_err(&format!(
-            "algorithm suite declares unsupported message format version {v}"
+        v => Err(err(
+            ErrorKind::Internal,
+            format!("algorithm suite declares unsupported message format version {v}"),
         )),
     }
 }
@@ -669,13 +670,17 @@ fn build_v2_header_body(
     suite_data: Option<Vec<u8>>,
 ) -> Result<HeaderBody, Error> {
     let Some(sd) = suite_data else {
-        return ser_err("suite data must be present for a committing algorithm suite");
+        return Err(err(
+            ErrorKind::Internal,
+            "suite data must be present for a committing algorithm suite",
+        ));
     };
     let expected_len = suite.algorithm_suite_data_length();
     if sd.len() != expected_len {
-        return ser_err(
+        return Err(err(
+            ErrorKind::Internal,
             "suite data length must match the commitment key output length for a committing suite",
-        );
+        ));
     }
     //= spec/client-apis/encrypt.md#v2-header
     //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.
@@ -702,8 +707,9 @@ fn build_v1_header_body(
 ) -> Result<HeaderBody, Error> {
     let header_iv_length_usize = get_iv_length(suite);
     let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
-        return ser_err(&format!(
-            "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
+        return Err(err(
+            ErrorKind::Internal,
+            format!("IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"),
         ));
     };
     Ok(HeaderBody::V1Body(V1HeaderBody {
@@ -726,10 +732,13 @@ fn build_header_auth_tag(
 ) -> Result<HeaderAuth, Error> {
     let key_length = get_encrypt_key_length(suite);
     if data_key.len() != key_length {
-        return ser_err(&format!(
-            "incorrect data key length: got {}, expected {}",
-            data_key.len(),
-            key_length
+        return Err(err(
+            ErrorKind::Internal,
+            format!(
+                "incorrect data key length: got {}, expected {}",
+                data_key.len(),
+                key_length
+            ),
         ));
     }
 

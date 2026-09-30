@@ -88,7 +88,7 @@ impl RawAesKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when `wrapping_key`'s length does not match
+    /// Returns a `Validation` error when `wrapping_key`'s length does not match
     /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
     /// to or starts with the reserved value `aws-kms`.
     pub fn new(
@@ -384,7 +384,7 @@ impl Keyring for RawAesKeyring {
         //   "If no decryption succeeds, the keyring MUST fail"
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
-        let kind = Error::common_kind(&collected_errors).unwrap_or(ErrorKind::Cryptographic);
+        let kind = Error::aggregate_kind(&collected_errors, ErrorKind::Cryptographic);
         Err(Error::collection(
             kind,
             "unable to decrypt any encrypted data key",

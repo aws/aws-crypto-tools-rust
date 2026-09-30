@@ -279,14 +279,14 @@ async fn test_no_header_info_released_before_verification() {
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → Validation error with no DecryptOutput, so nothing released
+    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → Cryptographic error with no DecryptOutput, so nothing released
     //# Until the [header is verified](#verify-the-header), this operation MUST NOT
     //# release any parsed information from the header.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Validation,
-        "tampered header must produce Validation error, no output"
+        ErrorKind::Cryptographic,
+        "tampered header must produce Cryptographic error, no output"
     );
 }
 
@@ -658,10 +658,8 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let (sd_start, sd_end) = get("Algorithm Suite Data");
     assert_eq!(sd_end - sd_start, 32, "V2 Algorithm Suite Data is 32 bytes");
 
-    // Now tamper the V2 auth tag byte (immediately after Algorithm Suite Data)
-    // and confirm decrypt fails with Cryptographic error — direct proof that
-    // the implementation deserialized the auth tag from the wire and used it
-    // for header verification.
+    // Tampering the V2 auth tag byte, immediately after Algorithm Suite Data, must fail decrypt with Cryptographic.
+    // That shows decrypt read the auth tag from the wire and used it to verify the header.
     let auth_tag_offset = sd_end;
     let auth_tag_end = auth_tag_offset + 16;
     assert!(

@@ -86,7 +86,7 @@ fn collection_keeps_every_error_and_nominates_a_cause_only_when_unambiguous() {
 }
 
 #[test]
-fn collection_is_retryable_only_if_every_collected_error_is() {
+fn collection_is_retryable_if_any_collected_error_is() {
     let throttled = Error::new(ErrorKind::RemoteThrottled, "throttled");
     let denied = Error::new(ErrorKind::RemoteAccessDenied, "denied");
     let all = Error::collection(
@@ -95,8 +95,10 @@ fn collection_is_retryable_only_if_every_collected_error_is() {
         vec![throttled.clone(), throttled.clone()],
     );
     assert!(all.is_retryable());
-    let mixed = Error::collection(ErrorKind::Remote, "m", vec![throttled, denied]);
-    assert!(!mixed.is_retryable());
+    let mixed = Error::collection(ErrorKind::Remote, "m", vec![throttled, denied.clone()]);
+    assert!(mixed.is_retryable());
+    let none = Error::collection(ErrorKind::Remote, "m", vec![denied.clone(), denied]);
+    assert!(!none.is_retryable());
 }
 
 #[test]

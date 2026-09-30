@@ -196,7 +196,7 @@ mod ffi {
     }
 
     /// ESDK Rust's error kinds, under the same names.
-    /// Carried to C++ as a prefix on the error message (see `encode_err`).
+    /// `encode_err` sends the kind to C++ as a prefix on the error message.
     //
     //= spec/shim/shim.md#error-classification
     //= reason=These are exactly the Rust ESDK's errors.
@@ -220,6 +220,7 @@ mod ffi {
         RemoteTransport,
         Remote,
         Internal,
+        Io,
     }
 
     struct EncryptionContextItem {
@@ -452,16 +453,15 @@ struct CryptographicMaterialsCache {
     inner: SharedCmc,
 }
 
-// ASCII Unit Separator, used below
+// ASCII Unit Separator
 const ERROR_KIND_SEPARATOR: char = '\u{1f}';
 
-/// Encodes a shim error for the C++ facade. Called by every error-raising path
-/// that does not come from the core.
+/// Encode an error the shim raises itself, which is never retryable.
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
     encode_err(kind, false, operation, message)
 }
 
-/// Encodes an error from the ESDK or the MPL with its kind and retryability.
+/// Encode an ESDK or MPL error with its kind and retryability.
 fn core_err(operation: &str, e: impl Into<aws_esdk::Error>) -> String {
     let e: aws_esdk::Error = e.into();
     encode_err(
@@ -478,12 +478,13 @@ fn encode_err(
     operation: &str,
     message: impl std::fmt::Display,
 ) -> String {
-    // cxx can only pass a message string across, never a typed error.
+    // cxx passes only a message string across, not a typed error.
     // The facade decodes this layout back into a typed exception:
     // `{kind}{SEP}{retryable}{SEP}{operation}: {message}`
     //   - kind: the ShimErrorKind repr
     //   - retryable: 1 or 0
-    //   - SEP: ERROR_KIND_SEPARATOR, a control character that never appears in these messages
+    //   - SEP: ERROR_KIND_SEPARATOR
+    // The facade splits on the first two separators only, so the message can contain one.
     let kind = kind.repr;
     let retryable = u8::from(retryable);
     format!("{kind}{ERROR_KIND_SEPARATOR}{retryable}{ERROR_KIND_SEPARATOR}{operation}: {message}")
@@ -505,6 +506,7 @@ fn classify_core_error(kind: aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
         E::RemoteThrottled => S::RemoteThrottled,
         E::RemoteTransport => S::RemoteTransport,
         E::Remote => S::Remote,
+        E::Io => S::Io,
         _ => S::Internal,
     }
 }

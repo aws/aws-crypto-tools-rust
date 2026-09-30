@@ -83,6 +83,14 @@ struct StormTrackingCmcInner {
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
+/// Another caller held the in-flight slot for this key past `inflight_ttl`.
+/// Contention, not a fault: the next attempt usually finds the entry filled.
+fn inflight_ttl_exceeded() -> Error {
+    let mut err = Error::new(ErrorKind::Internal, "in-flight TTL exceeded");
+    err.set_retryable(true);
+    err
+}
+
 impl StormTrackingCmc {
     /// Construct a `StormTrackingCmc` from `config` using `SystemTime::now`
     /// as the clock.
@@ -214,8 +222,8 @@ impl StormTrackingCmc {
     ///
     /// All non-observability state-touching paths use this helper so
     /// pruning stays uniform across the classifier, the wait loop, and
-    /// `put_cache_entry`. Poisoned-mutex errors are surfaced as
-    /// `Error::storage_failed` instead of panics.
+    /// `put_cache_entry`.
+    /// A poisoned mutex returns an `Internal` error.
     fn state_locked(
         &self,
         now: SystemTime,
@@ -300,7 +308,7 @@ impl StormTrackingCmc {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
                         if elapsed > self.inner.inflight_ttl {
-                            return Err(Error::new(ErrorKind::Internal, "in-flight TTL exceeded"));
+                            return Err(inflight_ttl_exceeded());
                         }
 
                         if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
@@ -358,7 +366,7 @@ impl StormTrackingCmc {
             if let Some(deadline) = deadline
                 && now >= deadline
             {
-                return Err(Error::new(ErrorKind::Internal, "in-flight TTL exceeded"));
+                return Err(inflight_ttl_exceeded());
             }
 
             // Re-classify per Dafny `CheckNewEntry`: become leader when

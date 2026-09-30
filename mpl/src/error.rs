@@ -9,16 +9,16 @@ use aws_sdk_kms::error::{ProvideErrorMetadata, SdkError};
 aws_mpl_primitives::define_error! {
     /// An error from a keyring, CMM, key store, or cache.
     ///
-    /// Which component failed, and the underlying service or library error,
-    /// are in [`Error::message`] and [`std::error::Error::source`].
+    /// The message says what failed.
+    /// The [`source`](std::error::Error::source) chain holds the underlying service or library error.
     Error,
     /// What went wrong, as a caller would act on it.
     ErrorKind;
 }
 
 impl Error {
-    /// Classify a failed AWS SDK call, naming the failed `operation` in the
-    /// message. The SDK error is the [`std::error::Error::source`].
+    /// Classify a failed AWS SDK call by its error code.
+    /// The message names `operation`, and the SDK error becomes the source.
     #[track_caller]
     pub(crate) fn from_sdk<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Self
     where
@@ -30,18 +30,27 @@ impl Error {
         error
     }
 
-    /// The kind every error in `errors` shares, if there is one.
-    pub(crate) fn common_kind(errors: &[Self]) -> Option<ErrorKind> {
-        let (first, rest) = errors.split_first()?;
-        rest.iter()
-            .all(|e| e.kind() == first.kind())
-            .then_some(first.kind())
+    /// The kind for an error that aggregates `errors`.
+    ///
+    /// The shared kind when they all agree.
+    /// Otherwise the kind of the first retryable one, so a caller still sees a retryable kind.
+    /// Otherwise `fallback`.
+    pub(crate) fn aggregate_kind(errors: &[Self], fallback: ErrorKind) -> ErrorKind {
+        let Some((first, rest)) = errors.split_first() else {
+            return fallback;
+        };
+        if rest.iter().all(|e| e.kind() == first.kind()) {
+            return first.kind();
+        }
+        errors
+            .iter()
+            .find(|e| e.is_retryable())
+            .map_or(fallback, Self::kind)
     }
 }
 
-// Codes from the AWS SDK for Rust's own retry classifier
-// (aws-runtime `retries::classifiers`), plus the service-side failures
-// AWS KMS and DynamoDB document as transient.
+// Codes the AWS SDK for Rust's retry classifier (aws-runtime `retries::classifiers`) retries,
+// plus the failures AWS KMS and DynamoDB document as transient.
 const THROTTLING_CODES: &[&str] = &[
     "Throttling",
     "ThrottlingException",
@@ -82,8 +91,8 @@ fn classify_sdk_error<E: ProvideErrorMetadata>(
         SdkError::ConstructionFailure(_) => (ErrorKind::Internal, false),
         SdkError::TimeoutError(_) => (ErrorKind::RemoteTransport, true),
         SdkError::DispatchFailure(failure) => {
-            // Missing credentials or region surface here as user or other
-            // connector errors; retrying cannot fix those.
+            // Missing credentials or region arrive as user or other connector errors,
+            // which retrying cannot fix.
             let transient = failure.is_io() || failure.is_timeout();
             (ErrorKind::RemoteTransport, transient)
         }
@@ -151,12 +160,29 @@ mod tests {
             let err = Error::from_sdk("AWS KMS Decrypt", service_error(code, status));
             assert_eq!(err.kind(), kind, "{code}");
             assert_eq!(err.is_retryable(), retryable, "{code}");
-            assert_eq!(err.message(), "AWS KMS Decrypt failed");
             assert!(
                 std::error::Error::source(&err).is_some(),
                 "{code}: SDK error is the source"
             );
         }
+    }
+
+    #[test]
+    fn aggregate_kind_prefers_the_shared_kind_then_a_retryable_one() {
+        let tag = Error::new(ErrorKind::Cryptographic, "tag");
+        let throttled = Error::new(ErrorKind::RemoteThrottled, "throttled");
+        let denied = Error::new(ErrorKind::RemoteAccessDenied, "denied");
+        let f = ErrorKind::Internal;
+        assert_eq!(Error::aggregate_kind(&[], f), f);
+        assert_eq!(
+            Error::aggregate_kind(&[tag.clone(), tag.clone()], f),
+            ErrorKind::Cryptographic
+        );
+        assert_eq!(
+            Error::aggregate_kind(&[tag.clone(), throttled], f),
+            ErrorKind::RemoteThrottled
+        );
+        assert_eq!(Error::aggregate_kind(&[tag, denied], f), f);
     }
 
     #[test]

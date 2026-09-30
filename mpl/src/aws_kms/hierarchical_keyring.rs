@@ -345,13 +345,7 @@ impl HierarchicalKeyringBuilder {
         // OnDecrypt paths can build cache identifiers without re-reading it.
         let logical_keystore_name = keystore
             .get_key_store_info()
-            .map_err(|e| {
-                Error::with_cause(
-                    ErrorKind::Validation,
-                    "could not read the key store info",
-                    e,
-                )
-            })?
+            .map_err(|e| Error::wrap("could not read the key store info", e))?
             .logical_keystore_name;
 
         Ok(HierarchicalKeyring {
@@ -377,7 +371,7 @@ fn generate_partition_id() -> Result<Vec<u8>, Error> {
     let mut bytes = [0u8; 16];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
         Error::with_cause(
-            ErrorKind::Validation,
+            ErrorKind::Cryptographic,
             "failed to obtain entropy for partition-id v4 UUID",
             e,
         )
@@ -551,7 +545,7 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        let kind = Error::common_kind(&collected_errors).unwrap_or(ErrorKind::Cryptographic);
+        let kind = Error::aggregate_kind(&collected_errors, ErrorKind::Cryptographic);
         Err(Error::collection(
             kind,
             "failed to decrypt any encrypted data key",
@@ -606,7 +600,7 @@ impl HierarchicalKeyring {
         // here means the supplier is present.
         let Some(supplier) = &self.inner.branch_key_id_supplier else {
             return Err(Error::new(
-                ErrorKind::Validation,
+                ErrorKind::Internal,
                 "neither a branch_key_id nor a branch_key_id_supplier is configured",
             ));
         };
@@ -732,7 +726,7 @@ fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Er
     match &entry.materials {
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
         _ => Err(Error::new(
-            ErrorKind::Internal,
+            ErrorKind::Validation,
             "cache entry has wrong materials kind (expected BranchKey)",
         )),
     }

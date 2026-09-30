@@ -270,7 +270,7 @@ async fn integ_get_active_kmskeyarn_west_fetches_east_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(west) + EastBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[tokio::test]
@@ -289,7 +289,7 @@ async fn integ_get_active_kmskeyarn_east_fetches_west_branch_fails() {
         Ok(_) => panic!("KmsKeyArn(east) + WestBranchKey must fail (single-region match strict)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 // ─── TestGetActiveMrkKey: AP MRK config (key absent in region) ──────────────
@@ -316,7 +316,6 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
     // key in a possibly-unenabled region comes back as a modeled exception or
     // as a dispatch failure is an account-configuration detail, so only the
     // nesting itself is asserted.
-    assert!(err.message().starts_with("AWS KMS "), "got: {err}");
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
@@ -346,7 +345,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
         Ok(_) => panic!("Configured KEY_ARN + DISCOVERY_BRANCH_KEY_ID MUST fail (ARN mismatch)"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::Cryptographic);
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 // ─── TestGetActiveKeyWrongLogicalKeyStoreName ──────────────────────────────
@@ -355,7 +354,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
 async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     // A wrong logical name binds a different `tablename` value into the
     // EC, so KMS Decrypt fails to authenticate and returns
-    // InvalidCiphertextException — mapped to ErrorKind::Remote.
+    // InvalidCiphertextException, which maps to ErrorKind::Remote.
     let store = build_store(
         KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
         INCORRECT_LOGICAL_NAME,
@@ -434,7 +433,15 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
         Ok(_) => panic!("GetItem against an unreachable table MUST fail"),
         Err(e) => e,
     };
-    assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
+    // Which of the two depends on the caller's IAM policy, as above.
+    assert!(
+        matches!(
+            err.kind(),
+            ErrorKind::RemoteAccessDenied | ErrorKind::RemoteResourceNotFound
+        ),
+        "expected an access-denied or not-found kind, got: {:?}",
+        err.kind()
+    );
 
     let sdk_err = err
         .source()

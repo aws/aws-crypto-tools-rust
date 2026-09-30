@@ -91,7 +91,7 @@ pub(crate) fn resolve_keystore_arn(
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
             if !is_arn_compatible(kms_config, record_kms_arn) {
                 return Err(Error::new(
-                    ErrorKind::Cryptographic,
+                    ErrorKind::Validation,
                     format!(
                         "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
                     ),
@@ -117,7 +117,7 @@ fn reject_alias_arn(arn: &str) -> Result<(), Error> {
         .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
     if parts.resource_type == "alias" {
         return Err(Error::new(
-            ErrorKind::Cryptographic,
+            ErrorKind::Remote,
             format!("record kms-arn must not be an alias: {arn}"),
         ));
     }
@@ -184,9 +184,6 @@ pub(crate) async fn decrypt_branch_key(
     Ok(plaintext)
 }
 
-/// Classify a failed AWS KMS SDK call. The SDK error is the
-/// [`std::error::Error::source`], so a caller that needs a specific KMS
-/// exception can downcast to it.
 fn map_kms_error<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Error
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,

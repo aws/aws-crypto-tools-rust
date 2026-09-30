@@ -12,7 +12,7 @@ use super::v2_header_body::{
     commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
 };
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
-use crate::error::val_err;
+use crate::error::{ErrorKind, err, val_err};
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_lc_rs::constant_time;
@@ -155,7 +155,10 @@ pub(crate) fn validate_max_encrypted_data_keys(
     if edks.is_empty() {
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //# This value MUST be greater than 0.
-        return Err(val_err("encrypted data key count must be greater than 0"));
+        return Err(err(
+            ErrorKind::InvalidMaterials,
+            "encrypted data key count must be greater than 0",
+        ));
     }
 
     if let Some(max) = max_encrypted_data_keys
@@ -186,8 +189,9 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
         1 => MESSAGE_ID_LEN_V1,
         2 => MESSAGE_ID_LEN_V2,
         v => {
-            return ser_err(&format!(
-                "cannot generate message ID for unsupported message format version: {v}"
+            return Err(err(
+                ErrorKind::Internal,
+                format!("cannot generate message ID for unsupported message format version: {v}"),
             ));
         }
     };
@@ -214,7 +218,8 @@ pub(crate) fn validate_suite_data(
     if constant_time::verify_slices_are_equal(header_body.suite_data(), expected_suite_data)
         .is_err()
     {
-        return Err(val_err(
+        return Err(err(
+            ErrorKind::Cryptographic,
             "algorithm suite data does not match expected value",
         ));
     }
@@ -223,7 +228,8 @@ pub(crate) fn validate_suite_data(
     //# The length of the suite data field MUST be equal to the [Algorithm Suite Data Length](../framework/algorithm-suites.md#algorithm-suite-data-length) value
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
     if commit_key_length(suite) != expected_suite_data.len() {
-        return Err(val_err(
+        return Err(err(
+            ErrorKind::Internal,
             "algorithm suite data length does not match the algorithm suite's declared suite-data length",
         ));
     }
