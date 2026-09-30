@@ -24,9 +24,7 @@ pub mod record;
 use async_trait::async_trait;
 
 pub use branch_key_store::{BranchKeyStore, BranchKeyStoreBuilder};
-pub use config::{
-    Discovery, DiscoveryBuilder, KeyStoreInfo, KmsConfiguration, MrDiscovery, MrDiscoveryBuilder,
-};
+pub use config::{Discovery, KeyStoreInfo, KmsConfiguration, MrDiscovery};
 pub use error::{KeystoreError, KeystoreErrorKind};
 
 use crate::structures::{BeaconKeyMaterials, BranchKeyMaterials, EncryptionContext};

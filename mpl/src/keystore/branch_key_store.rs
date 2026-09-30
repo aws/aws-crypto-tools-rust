@@ -201,8 +201,8 @@ impl BranchKeyStoreBuilder {
     /// Set the KMS key configuration governing encryption and decryption.
     /// Required.
     #[must_use]
-    pub fn kms_configuration(mut self, config: KmsConfiguration) -> Self {
-        self.kms_configuration = Some(config);
+    pub fn kms_configuration(mut self, config: impl Into<KmsConfiguration>) -> Self {
+        self.kms_configuration = Some(config.into());
         self
     }
 

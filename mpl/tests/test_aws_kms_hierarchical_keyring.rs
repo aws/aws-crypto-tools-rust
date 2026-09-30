@@ -1317,7 +1317,7 @@ impl Keystore for FakeKeystore {
             keystore_name: "test-table".to_string(),
             logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
             grant_tokens: Vec::new(),
-            kms_configuration: KmsConfiguration::Discovery(Discovery::builder().build()),
+            kms_configuration: Discovery::default().into(),
         })
     }
 
@@ -1520,7 +1520,7 @@ mod onencrypt {
                     keystore_name: "table".to_string(),
                     logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
-                    kms_configuration: KmsConfiguration::Discovery(Discovery::builder().build()),
+                    kms_configuration: Discovery::default().into(),
                 })
             }
             async fn create_key_store(&self) -> Result<String, KeystoreError> {
@@ -2003,7 +2003,7 @@ mod ondecrypt {
                     keystore_name: "table".to_string(),
                     logical_keystore_name: FAKE_LOGICAL_KEYSTORE_NAME.to_string(),
                     grant_tokens: Vec::new(),
-                    kms_configuration: KmsConfiguration::Discovery(Discovery::builder().build()),
+                    kms_configuration: Discovery::default().into(),
                 })
             }
             async fn create_key_store(&self) -> Result<String, KeystoreError> {

@@ -35,36 +35,11 @@ pub enum KmsConfiguration {
 }
 
 /// Settings for [`KmsConfiguration::Discovery`].
-///
-/// Construct with [`Discovery::builder`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Discovery {}
 
-impl Discovery {
-    /// Start a builder for `Discovery`.
-    #[must_use]
-    pub fn builder() -> DiscoveryBuilder {
-        DiscoveryBuilder::default()
-    }
-}
-
-/// Builder for [`Discovery`].
-#[derive(Debug, Clone, Default)]
-#[non_exhaustive]
-pub struct DiscoveryBuilder {}
-
-impl DiscoveryBuilder {
-    /// Build the `Discovery`.
-    #[must_use]
-    pub fn build(self) -> Discovery {
-        Discovery {}
-    }
-}
-
 /// Settings for [`KmsConfiguration::MrDiscovery`].
-///
-/// Construct with [`MrDiscovery::builder`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct MrDiscovery {
@@ -72,10 +47,12 @@ pub struct MrDiscovery {
 }
 
 impl MrDiscovery {
-    /// Start a builder for `MrDiscovery`.
+    /// Rewrite any discovered MRK ARN to `region`.
     #[must_use]
-    pub fn builder() -> MrDiscoveryBuilder {
-        MrDiscoveryBuilder::default()
+    pub fn new(region: impl Into<String>) -> Self {
+        Self {
+            region: region.into(),
+        }
     }
 
     /// The region any discovered MRK ARN is rewritten to.
@@ -85,33 +62,14 @@ impl MrDiscovery {
     }
 }
 
-/// Builder for [`MrDiscovery`].
-#[derive(Debug, Clone, Default)]
-pub struct MrDiscoveryBuilder {
-    region: Option<String>,
+impl From<Discovery> for KmsConfiguration {
+    fn from(discovery: Discovery) -> Self {
+        Self::Discovery(discovery)
+    }
 }
 
-impl MrDiscoveryBuilder {
-    /// Set the region any discovered MRK ARN is rewritten to. Required.
-    #[must_use]
-    pub fn region(mut self, region: impl Into<String>) -> Self {
-        self.region = Some(region.into());
-        self
-    }
-
-    /// Build the `MrDiscovery`.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`KeystoreErrorKind::Configuration`](super::KeystoreErrorKind::Configuration)
-    /// error if no region was set.
-    pub fn build(self) -> Result<MrDiscovery, super::KeystoreError> {
-        let Some(region) = self.region else {
-            return Err(super::KeystoreError::new(
-                super::KeystoreErrorKind::Configuration,
-                "MrDiscovery: a region is required",
-            ));
-        };
-        Ok(MrDiscovery { region })
+impl From<MrDiscovery> for KmsConfiguration {
+    fn from(mr_discovery: MrDiscovery) -> Self {
+        Self::MrDiscovery(mr_discovery)
     }
 }

@@ -128,7 +128,7 @@ fn kms_mr_key_arn_incompatible_with_different_account() {
 
 #[test]
 fn discovery_compatible_with_any_arn() {
-    let config = KmsConfiguration::Discovery(Discovery::builder().build());
+    let config: KmsConfiguration = Discovery::default().into();
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
     assert!(is_arn_compatible(&config, ALIAS_ARN));
@@ -136,8 +136,7 @@ fn discovery_compatible_with_any_arn() {
 
 #[test]
 fn mrdiscovery_compatible_with_any_arn() {
-    let config =
-        KmsConfiguration::MrDiscovery(MrDiscovery::builder().region("us-west-2").build().unwrap());
+    let config: KmsConfiguration = MrDiscovery::new("us-west-2").into();
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
 }
@@ -157,19 +156,24 @@ fn kms_key_arn_validate_rejects_alias() {
 
 #[test]
 fn discovery_validate_is_always_ok() {
-    let config = KmsConfiguration::Discovery(Discovery::builder().build());
+    let config: KmsConfiguration = Discovery::default().into();
     assert!(config.validate().is_ok());
 }
 
 #[test]
 fn mrdiscovery_validate_is_always_ok() {
-    let config =
-        KmsConfiguration::MrDiscovery(MrDiscovery::builder().region("eu-west-1").build().unwrap());
+    let config: KmsConfiguration = MrDiscovery::new("eu-west-1").into();
     assert!(config.validate().is_ok());
 }
 
 #[test]
-fn mrdiscovery_builder_requires_region() {
-    let err = MrDiscovery::builder().build().unwrap_err();
-    assert_eq!(err.kind, KeystoreErrorKind::Configuration);
+fn discovery_structs_convert_into_matching_variants() {
+    assert!(matches!(
+        KmsConfiguration::from(Discovery::default()),
+        KmsConfiguration::Discovery(_)
+    ));
+    assert!(matches!(
+        KmsConfiguration::from(MrDiscovery::new("us-west-2")),
+        KmsConfiguration::MrDiscovery(m) if m.region() == "us-west-2"
+    ));
 }

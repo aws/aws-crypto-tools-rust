@@ -260,8 +260,7 @@ async fn new_with_alias_kms_arn_returns_configuration_error() {
 
 #[tokio::test]
 async fn new_with_discovery_config_succeeds_without_arn() {
-    let cfg = fixture_config_with_id("caller-id")
-        .kms_configuration(KmsConfiguration::Discovery(Discovery::builder().build()));
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(Discovery::default());
     cfg.build()
         .await
         .expect("Discovery config requires no ARN and must succeed");
@@ -269,9 +268,7 @@ async fn new_with_discovery_config_succeeds_without_arn() {
 
 #[tokio::test]
 async fn new_with_mr_discovery_config_succeeds() {
-    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::MrDiscovery(
-        MrDiscovery::builder().region("us-west-2").build().unwrap(),
-    ));
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(MrDiscovery::new("us-west-2"));
     cfg.build()
         .await
         .expect("MrDiscovery config requires no ARN and must succeed");
@@ -399,8 +396,7 @@ async fn create_key_with_branch_key_id_but_no_ec_fails() {
 
 #[tokio::test]
 async fn create_key_with_discovery_config_fails() {
-    let cfg = fixture_config_with_id("id-x")
-        .kms_configuration(KmsConfiguration::Discovery(Discovery::builder().build()));
+    let cfg = fixture_config_with_id("id-x").kms_configuration(Discovery::default());
     let store = cfg.build().await.unwrap();
     let err = match store.create_key(None, None).await {
         Ok(_) => panic!("create_key under a Discovery configuration must fail"),
@@ -424,8 +420,7 @@ async fn create_key_dispatches_to_kms() {
 
 #[tokio::test]
 async fn version_key_with_discovery_config_fails() {
-    let cfg = fixture_config_with_id("id-x")
-        .kms_configuration(KmsConfiguration::Discovery(Discovery::builder().build()));
+    let cfg = fixture_config_with_id("id-x").kms_configuration(Discovery::default());
     let store = cfg.build().await.unwrap();
     let err = match store.version_key("bk-1".to_string()).await {
         Ok(_) => panic!("version_key under a Discovery configuration must fail"),

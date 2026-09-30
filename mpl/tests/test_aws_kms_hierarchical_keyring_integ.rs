@@ -653,7 +653,7 @@ async fn build_discovery_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::Discovery(Discovery::builder().build()))
+        .kms_configuration(Discovery::default())
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -802,9 +802,7 @@ async fn build_mr_discovery_keystore(region: &str) -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::MrDiscovery(
-            MrDiscovery::builder().region(region).build().unwrap(),
-        ))
+        .kms_configuration(MrDiscovery::new(region))
         .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)

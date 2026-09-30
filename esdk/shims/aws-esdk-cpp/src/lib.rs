@@ -684,16 +684,10 @@ fn make_kms_config(
         }
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
-        ffi::KmsConfigurationType::Discovery => {
-            Ok(KmsConfiguration::Discovery(Discovery::builder().build()))
-        }
+        ffi::KmsConfigurationType::Discovery => Ok(Discovery::default().into()),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a multi-Region-key discovery configuration.
-        ffi::KmsConfigurationType::MrDiscovery => MrDiscovery::builder()
-            .region(value)
-            .build()
-            .map(KmsConfiguration::MrDiscovery)
-            .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, "create_keystore", e)),
+        ffi::KmsConfigurationType::MrDiscovery => Ok(MrDiscovery::new(value).into()),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST return an error when the target KMS configuration type is not a
         //# supported value.
