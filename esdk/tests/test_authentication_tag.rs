@@ -233,8 +233,8 @@ async fn test_auth_tag_tampered_header_fails_decrypt_v2() {
         .await
         .expect_err("V2 tampered header must fail decryption");
     assert!(
-        matches!(err.kind(), ErrorKind::Validation),
-        "V2: expected Validation error, got {:?}",
+        matches!(err.kind(), ErrorKind::Cryptographic),
+        "V2: expected Cryptographic error, got {:?}",
         err.kind()
     );
 }

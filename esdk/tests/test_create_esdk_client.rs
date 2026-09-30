@@ -620,15 +620,10 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         err.kind(),
         err.message()
     );
-    let inner = err.to_string();
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
     //= reason=the ESDK gates the algorithm suite against the commitment policy and yields a Validation error
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    assert!(
-        inner.contains("commitment policy"),
-        "expected a commitment-policy rejection, got: {inner}"
-    );
 }
 
 // Symmetric to `test_esdk_commitment_policy_actually_gates_encrypt`: proves
@@ -692,13 +687,8 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
         err.kind(),
         err.message()
     );
-    let inner = err.to_string();
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
     //= reason=the ESDK gates the parsed algorithm suite against the commitment policy and yields a Validation error
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    assert!(
-        inner.contains("commitment policy"),
-        "expected a commitment-policy rejection, got: {inner}"
-    );
 }

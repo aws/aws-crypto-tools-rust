@@ -302,12 +302,9 @@ async fn test_decrypt_rejects_duplicate_encryption_context_key() {
         let err = decrypt_err_with_second_key(version, b"keyA").await;
         assert_eq!(err.kind(), ErrorKind::Serialization, "{version:?}: {err:?}");
         let source = std::error::Error::source(&err)
-            .map(ToString::to_string)
-            .unwrap_or_default();
-        assert!(
-            source.contains("duplicate key in encryption context"),
-            "{version:?}: {err:?}"
-        );
+            .and_then(|e| e.downcast_ref::<aws_crypto_mpl::Error>())
+            .expect("the MPL error is the source");
+        assert_eq!(source.kind(), aws_crypto_mpl::ErrorKind::Validation);
     }
 }
 
@@ -317,11 +314,8 @@ async fn test_decrypt_rejects_out_of_order_encryption_context_keys() {
         let err = decrypt_err_with_second_key(version, b"key0").await;
         assert_eq!(err.kind(), ErrorKind::Serialization, "{version:?}: {err:?}");
         let source = std::error::Error::source(&err)
-            .map(ToString::to_string)
-            .unwrap_or_default();
-        assert!(
-            source.contains("encryption context keys are not in ascending order"),
-            "{version:?}: {err:?}"
-        );
+            .and_then(|e| e.downcast_ref::<aws_crypto_mpl::Error>())
+            .expect("the MPL error is the source");
+        assert_eq!(source.kind(), aws_crypto_mpl::ErrorKind::Validation);
     }
 }

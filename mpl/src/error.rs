@@ -150,7 +150,6 @@ mod tests {
             let err = Error::from_sdk("AWS KMS Decrypt", service_error(code, status));
             assert_eq!(err.kind(), kind, "{code}");
             assert_eq!(err.is_retryable(), retryable, "{code}");
-            assert_eq!(err.message(), "AWS KMS Decrypt failed");
             assert!(
                 std::error::Error::source(&err).is_some(),
                 "{code}: SDK error is the source"

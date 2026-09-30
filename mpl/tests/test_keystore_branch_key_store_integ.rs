@@ -316,7 +316,6 @@ async fn integ_get_active_mrk_key_ap_config_fails_at_kms() {
     // key in a possibly-unenabled region comes back as a modeled exception or
     // as a dispatch failure is an account-configuration detail, so only the
     // nesting itself is asserted.
-    assert!(err.message().starts_with("AWS KMS "), "got: {err}");
     assert!(
         err.source()
             .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())

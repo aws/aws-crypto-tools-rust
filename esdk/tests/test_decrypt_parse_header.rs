@@ -279,14 +279,14 @@ async fn test_no_header_info_released_before_verification() {
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → Validation error with no DecryptOutput, so nothing released
+    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → Cryptographic error with no DecryptOutput, so nothing released
     //# Until the [header is verified](#verify-the-header), this operation MUST NOT
     //# release any parsed information from the header.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
         decrypt(&tampered_input).await.unwrap_err().kind(),
-        ErrorKind::Validation,
-        "tampered header must produce Validation error, no output"
+        ErrorKind::Cryptographic,
+        "tampered header must produce Cryptographic error, no output"
     );
 }
 

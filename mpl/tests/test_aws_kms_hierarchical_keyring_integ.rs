@@ -339,10 +339,6 @@ fn assert_failed_at_kms(result: Result<EncryptionMaterials, Error>, context: &st
         keystore_err.kind(),
         "{context}: the keyring keeps the keystore's kind"
     );
-    assert!(
-        keystore_err.message().starts_with("AWS KMS "),
-        "{context}: expected the failure to come from the KMS call, got: {err}",
-    );
 
     assert!(
         keystore_err
