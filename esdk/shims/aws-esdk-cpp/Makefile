@@ -115,7 +115,6 @@ NON_LINUX ?=
 # Run the C++ integ tests and examples
 run-cpp:
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./raw_aes_keyring_example
-	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./handling_errors_example
 	./custom_keyring_example
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./streaming_example
 	LD_LIBRARY_PATH="$(CURDIR)/$(PROFILE_DIR)" ./streaming_chunks_example

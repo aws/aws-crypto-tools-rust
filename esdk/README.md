@@ -116,11 +116,11 @@ Runnable examples live under [`examples/`](examples/). Run one with
 | `raw_aes_keyring` | no |
 | `streaming` | no |
 | `custom_keyring` | no |
-| `handling_errors` | no |
-| `required_encryption_context` | no |
 | `hierarchical_keyring` | yes — KMS + DynamoDB |
+| `shared_storm_tracking_cache` | yes — KMS + DynamoDB |
+| `handling_errors` | yes — KMS + DynamoDB |
 
-`make examples` runs every example; the hierarchical one needs AWS credentials.
+`make examples` runs every example; the ones that need AWS also need AWS credentials.
 Add `LOCAL_ONLY=--local-only` to run only the offline examples:
 `make examples LOCAL_ONLY=--local-only`.
 
