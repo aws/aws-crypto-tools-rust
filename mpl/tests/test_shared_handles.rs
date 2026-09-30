@@ -46,7 +46,11 @@ fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
 }
 
 fn cache() -> LocalCmc {
-    LocalCmc::new(1, 1).unwrap()
+    LocalCmc::builder()
+        .entry_capacity(1)
+        .entry_pruning_tail_size(1)
+        .build()
+        .unwrap()
 }
 
 struct Supplier;

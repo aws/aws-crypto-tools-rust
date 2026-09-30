@@ -127,10 +127,7 @@
 use aws_config::{AppName, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::cmc::{
-    CacheType, CmcError, CmcErrorKind, DefaultCache, SharedCmc, StormTrackingCache,
-    create_cryptographic_materials_cache as create_cryptographic_materials_cache_core,
-};
+use aws_crypto_mpl::cmc::{CmcError, CmcErrorKind, SharedCmc, StormTrackingCmc};
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{
     BranchKeyStore, KeystoreError, KeystoreErrorKind, KmsConfiguration, SharedKeystore,
@@ -825,61 +822,72 @@ fn from_ffi_duration(d: ffi::Duration, field: &str, op: &str) -> Result<Duration
         })
 }
 
-// Create an ESDK Rust CacheType from the given FFI CacheType
-fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
-    let op = "create_cryptographic_materials_cache";
-    let capacity = |field: &str, v: u32| -> Result<usize, String> {
-        let bounded = i32::try_from(v).map_err(|_| {
-            shim_err(
-                ffi::ShimErrorKind::ValidationError,
-                op,
-                format!("{field} {v} exceeds the bridge's supported maximum"),
-            )
-        })?;
-        usize::try_from(bounded).map_err(|_| {
-            shim_err(
-                ffi::ShimErrorKind::ValidationError,
-                op,
-                format!("{field} {v} does not fit in usize"),
-            )
-        })
-    };
+const CACHE_OP: &str = "create_cryptographic_materials_cache";
+
+fn cache_count(field: &str, v: u32) -> Result<usize, String> {
+    let bounded = i32::try_from(v).map_err(|_| {
+        shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            CACHE_OP,
+            format!("{field} {v} exceeds the bridge's supported maximum"),
+        )
+    })?;
+    usize::try_from(bounded).map_err(|_| {
+        shim_err(
+            ffi::ShimErrorKind::ValidationError,
+            CACHE_OP,
+            format!("{field} {v} does not fit in usize"),
+        )
+    })
+}
+
+fn storm_tracking_err(e: aws_crypto_mpl::structures::MaterialsError) -> String {
+    shim_err(
+        ffi::ShimErrorKind::ValidationError,
+        CACHE_OP,
+        format!("failed to build StormTrackingCmc: {e}"),
+    )
+}
+
+// Create an ESDK Rust StormTrackingCmc from a StormTracking FFI CacheType
+fn make_storm_tracking(cache: &ffi::CacheType) -> Result<StormTrackingCmc, String> {
+    let op = CACHE_OP;
+    StormTrackingCmc::builder()
+        .entry_capacity(cache_count("entry_capacity", cache.entry_capacity)?)
+        .entry_pruning_tail_size(cache_count(
+            "entry_pruning_tail_size",
+            cache.entry_pruning_tail_size,
+        )?)
+        .grace_period(from_ffi_duration(cache.grace_period, "grace_period", op)?)
+        .grace_interval(from_ffi_duration(
+            cache.grace_interval,
+            "grace_interval",
+            op,
+        )?)
+        .fan_out(cache_count("fan_out", cache.fan_out)?)
+        .inflight_ttl(from_ffi_duration(cache.inflight_ttl, "inflight_ttl", op)?)
+        .sleep(from_ffi_duration(cache.sleep, "sleep", op)?)
+        .build()
+        .map_err(storm_tracking_err)
+}
+
+// Create an ESDK Rust cache from the given FFI CacheType
+fn make_cache(cache: &ffi::CacheType) -> Result<SharedCmc, String> {
+    let op = CACHE_OP;
     match cache.kind {
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a default cache.
-        ffi::CacheKind::Default => Ok(CacheType::Default(DefaultCache::new(capacity(
-            "entry_capacity",
-            cache.entry_capacity,
-        )?))),
+        ffi::CacheKind::Default => StormTrackingCmc::builder()
+            .entry_capacity(cache_count("entry_capacity", cache.entry_capacity)?)
+            .build()
+            .map(SharedCmc::new)
+            .map_err(storm_tracking_err),
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //# - The shim MUST support creating a storm tracking cache.
-        ffi::CacheKind::StormTracking => StormTrackingCache::builder()
-            .entry_capacity(capacity("entry_capacity", cache.entry_capacity)?)
-            .entry_pruning_tail_size(capacity(
-                "entry_pruning_tail_size",
-                cache.entry_pruning_tail_size,
-            )?)
-            .grace_period(from_ffi_duration(cache.grace_period, "grace_period", op)?)
-            .grace_interval(from_ffi_duration(
-                cache.grace_interval,
-                "grace_interval",
-                op,
-            )?)
-            .fan_out(capacity("fan_out", cache.fan_out)?)
-            .inflight_ttl(from_ffi_duration(cache.inflight_ttl, "inflight_ttl", op)?)
-            .sleep(from_ffi_duration(cache.sleep, "sleep", op)?)
-            .build()
-            .map(CacheType::StormTracking)
-            .map_err(|e| {
-                shim_err(
-                    ffi::ShimErrorKind::ValidationError,
-                    op,
-                    format!("failed to build StormTrackingCache: {e}"),
-                )
-            }),
+        ffi::CacheKind::StormTracking => make_storm_tracking(cache).map(SharedCmc::new),
         ffi::CacheKind::Shared => {
             let shared = require_handle(cache.shared, "shared cache", op)?;
-            Ok(CacheType::Shared(shared.inner.clone()))
+            Ok(shared.inner.clone())
         }
         //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
         //= type=exception
@@ -906,9 +914,7 @@ fn create_cryptographic_materials_cache(
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //# - Creating a cryptographic materials cache MUST provide the target-supplied
     //# cache type, with its values, to the core ESDK.
-    let cache_type = make_cache_type(cache)?;
-    let created = create_cryptographic_materials_cache_core(cache_type)
-        .map_err(|e| materials_err("create_cryptographic_materials_cache", &e))?;
+    let created = make_cache(cache)?;
     Ok(Box::new(CryptographicMaterialsCache { inner: created }))
 }
 
@@ -1287,13 +1293,13 @@ fn create_hierarchical_keyring(
     //# core ESDK's default cache.
     //
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
-    //= reason=A Shared CacheType carries an existing cache handle, which make_cache_type converts to the core's Shared cache referencing that exact instance.
+    //= reason=A Shared CacheType carries an existing cache handle, which make_cache returns as that exact SharedCmc.
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
-    let cache_type = input
+    let cache = input
         .cache
         .to_option()
-        .map(|cache| make_cache_type(&cache))
+        .map(|cache| make_cache(&cache))
         .transpose()?;
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
@@ -1310,8 +1316,8 @@ fn create_hierarchical_keyring(
         //# and time-to-live to the core ESDK.
         .ttl(ttl)
         .branch_key_id(input.branch_key_id.clone());
-    if let Some(cache_type) = cache_type {
-        builder = builder.cache(cache_type);
+    if let Some(cache) = cache {
+        builder = builder.cache(cache);
     }
     if let Some(partition_id) = partition_id {
         builder = builder.partition_id(partition_id);

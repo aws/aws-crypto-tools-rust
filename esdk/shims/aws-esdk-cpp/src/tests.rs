@@ -6,6 +6,7 @@
 //! decode end to end.
 
 use super::*;
+use aws_crypto_mpl::Cmc as _;
 use aws_crypto_mpl::keystore::Keystore as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
@@ -593,11 +594,11 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
     create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
         &keystore,
         ffi::Duration {
-            secs: 0,
+            secs: 10,
             nanos: 500_000_000,
         },
     ))
-    .expect("a 500 ms TTL must be accepted");
+    .expect("a 10.5 s TTL must be accepted");
 
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(
@@ -658,10 +659,25 @@ fn shared_cache_type_references_the_supplied_cache() {
         shared: &*cache as *const CryptographicMaterialsCache,
         ..base
     };
-    let Ok(CacheType::Shared(referenced)) = make_cache_type(&shared) else {
-        panic!("a Shared cache kind must yield CacheType::Shared");
-    };
+    let referenced = make_cache(&shared).expect("a Shared cache kind must convert");
     assert!(SharedCmc::ptr_eq(&referenced, &cache.inner));
+}
+
+#[test]
+fn default_cache_kind_builds_a_default_storm_tracking_cache() {
+    let cache = make_cache(&ffi::CacheType {
+        kind: ffi::CacheKind::Default,
+        entry_capacity: 10,
+        entry_pruning_tail_size: 0,
+        grace_period: ZERO_DURATION,
+        grace_interval: ZERO_DURATION,
+        fan_out: 0,
+        inflight_ttl: ZERO_DURATION,
+        sleep: ZERO_DURATION,
+        shared: std::ptr::null(),
+    })
+    .expect("default cache should build");
+    assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
 }
 
 fn storm_tracking_cache_input() -> ffi::CacheType {
@@ -690,9 +706,8 @@ fn storm_tracking_cache_input() -> ffi::CacheType {
 #[test]
 fn create_storm_tracking_cache_passes_each_duration_to_the_core() {
     let input = storm_tracking_cache_input();
-    let Ok(CacheType::StormTracking(params)) = make_cache_type(&input) else {
-        panic!("storm-tracking cache input must convert to a storm-tracking cache");
-    };
+    let params = make_storm_tracking(&input)
+        .expect("storm-tracking cache input must convert to a storm-tracking cache");
     assert_eq!(params.entry_capacity(), 10);
     assert_eq!(params.entry_pruning_tail_size(), 1);
     assert_eq!(params.grace_period(), Duration::from_secs(10));
@@ -707,7 +722,7 @@ fn create_storm_tracking_cache_passes_each_duration_to_the_core() {
 fn create_storm_tracking_cache_rejects_zero_sleep() {
     let mut input = storm_tracking_cache_input();
     input.sleep = ZERO_DURATION;
-    let err = expect_err(make_cache_type(&input));
+    let err = expect_err(make_cache(&input));
     assert!(err.contains("sleep"), "unexpected error: {err}");
 }
 
@@ -718,7 +733,7 @@ fn create_storm_tracking_cache_rejects_out_of_range_durations() {
         secs: u64::MAX,
         nanos: 1_000_000_000,
     };
-    let err = expect_err(make_cache_type(&input));
+    let err = expect_err(make_cache(&input));
     assert!(
         err.contains("grace_period is out of range"),
         "unexpected error: {err}"

@@ -17,10 +17,7 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::cache_config::{
-    CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache, create_cryptographic_materials_cache,
-};
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc, UsageMetadata};
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc, StormTrackingCmc, UsageMetadata};
 use crate::keystore::{Keystore, SharedKeystore};
 use crate::shared::IntoShared;
 use crate::structures::{
@@ -149,9 +146,8 @@ struct HierarchicalKeyringInner {
     /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
     logical_keystore_name: String,
 
-    /// Cryptographic-materials cache for branch-key materials. Either a
-    /// keyring-local `LocalCmc`/`StormTrackingCmc` built at construction
-    /// time, or a `Shared` cache supplied by the caller.
+    /// Cryptographic-materials cache for branch-key materials: the caller's
+    /// cache, or a keyring-local `StormTrackingCmc` built when none is set.
     cache: SharedCmc,
 }
 
@@ -210,7 +206,7 @@ pub struct HierarchicalKeyringBuilder {
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
-    cache: Option<CacheType>,
+    cache: Option<SharedCmc>,
     partition_id: Option<String>,
 }
 
@@ -256,11 +252,16 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
-    /// The cache for branch key materials; see [`CacheType`].
-    /// When unset, behaves as `CacheType::Default(DefaultCache::new(1000))`.
+    /// The cache for branch key materials.
+    /// Pass clones of one cache to several keyrings to share it.
+    /// When unset, the keyring builds its own [`StormTrackingCmc`] with the builder's defaults,
+    /// including an entry capacity of 1000.
+    ///
+    /// When the cache has a [grace period](Cmc::grace_period),
+    /// it must be less than the [TTL](Self::ttl).
     #[must_use]
-    pub fn cache(mut self, cache: CacheType) -> Self {
-        self.cache = Some(cache);
+    pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
+        self.cache = Some(cache.into_shared());
         self
     }
 
@@ -311,28 +312,22 @@ impl HierarchicalKeyringBuilder {
             ));
         }
 
-        // An absent `cache` is where the 1000-entry default lives: the model
-        // requires `DefaultCache.entryCapacity`, and documents this number on
-        // the keyring's own `cache` member.
-        let cache_type = cache.unwrap_or(CacheType::Default(DefaultCache::new(
-            DEFAULT_CACHE_ENTRY_CAPACITY,
-        )));
+        let cache = match cache {
+            Some(cache) => cache,
+            None => SharedCmc::new(
+                StormTrackingCmc::builder()
+                    .build()
+                    .map_err(|e| MaterialsError::new(format!("HierarchicalKeyring: {e}")))?,
+            ),
+        };
 
-        // The grace-period bound relates a storm-tracking parameter to this
-        // keyring's TTL, so it is checked here rather than inside
-        // `create_cryptographic_materials_cache`, which has no TTL to compare
-        // against when a cache is built standalone.
-        if let CacheType::StormTracking(params) = &cache_type
-            && params.grace_period() >= ttl
+        if let Some(grace_period) = cache.grace_period()
+            && grace_period >= ttl
         {
             return Err(MaterialsError::new(format!(
-                "HierarchicalKeyring: storm-tracking grace period ({:?}) must be less than the cache limit TTL ({ttl:?})",
-                params.grace_period(),
+                "HierarchicalKeyring: storm-tracking grace period ({grace_period:?}) must be less than the cache limit TTL ({ttl:?})",
             )));
         }
-
-        let cache = create_cryptographic_materials_cache(cache_type)
-            .map_err(|e| MaterialsError::new(format!("HierarchicalKeyring: {e}")))?;
 
         let partition_id_bytes = match partition_id {
             Some(s) => s.into_bytes(),

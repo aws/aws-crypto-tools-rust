@@ -4,7 +4,7 @@
 //! Integration tests for `StormTrackingCmc`.
 //!
 //! Gated behind the `test-utils` feature because these tests rely on
-//! `StormTrackingCmc::with_clock` and the `#[doc(hidden)]` inflight-map
+//! the `StormTrackingCmcBuilder::clock` setter and the `#[doc(hidden)]` inflight-map
 //! test hooks (`inner`, `peek_inflight`, `inflight_count`, `mark_inflight`),
 //! all of which are only compiled in when `test-utils` is enabled.
 
@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcErrorKind, LocalCmc, MessageUsage,
-    StormTrackingCache, StormTrackingCmc, UsageMetadata,
+    StormTrackingCmc, StormTrackingCmcBuilder, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
@@ -98,7 +98,7 @@ fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
     )
 }
 
-/// Build a `StormTrackingCache` from explicit settings.
+/// A `StormTrackingCmc` builder with explicit settings.
 fn storm_config(
     entry_capacity: usize,
     entry_pruning_tail_size: usize,
@@ -107,8 +107,8 @@ fn storm_config(
     fan_out: usize,
     inflight_ttl: Duration,
     sleep: Duration,
-) -> Result<StormTrackingCache, MaterialsError> {
-    StormTrackingCache::builder()
+) -> StormTrackingCmcBuilder {
+    StormTrackingCmc::builder()
         .entry_capacity(entry_capacity)
         .entry_pruning_tail_size(entry_pruning_tail_size)
         .grace_period(grace_period)
@@ -116,24 +116,21 @@ fn storm_config(
         .fan_out(fan_out)
         .inflight_ttl(inflight_ttl)
         .sleep(sleep)
-        .build()
 }
 
 /// Construct a `StormTrackingCmc` with a frozen clock at `now`.
 fn make_storm_tracking(now: SystemTime) -> StormTrackingCmc {
-    StormTrackingCmc::with_clock(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || now,
+    storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || now)
+    .build()
     .expect("StormTrackingCmc constructs")
 }
 
@@ -144,19 +141,17 @@ async fn test_initialization_accepts_local_cmc_parameters() {
     let now = anchor_now();
     let expiry = now + Duration::from_secs(3600);
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            8,
-            2,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || now,
+    let cmc = storm_config(
+        8,
+        2,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || now)
+    .build()
     .expect("construction with explicit LocalCmc parameters succeeds");
 
     // Round-trip proves the inner LocalCmc was configured with those parameters.
@@ -171,19 +166,17 @@ async fn test_initialization_accepts_local_cmc_parameters() {
 async fn test_initialization_requires_storm_tracking_parameters() {
     let now = anchor_now();
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            8,
-            2,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || now,
+    let cmc = storm_config(
+        8,
+        2,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || now)
+    .build()
     .expect("construction succeeds");
 
     assert_eq!(cmc.grace_period(), GRACE_PERIOD);
@@ -240,19 +233,17 @@ async fn test_grace_period_is_the_configured_duration() {
             false,
         ),
     ] {
-        let cmc = StormTrackingCmc::with_clock(
-            &storm_config(
-                8,
-                2,
-                grace_period,
-                grace_interval,
-                FAN_OUT,
-                inflight_ttl,
-                SLEEP,
-            )
-            .expect("valid config"),
-            move || now,
+        let cmc = storm_config(
+            8,
+            2,
+            grace_period,
+            grace_interval,
+            FAN_OUT,
+            inflight_ttl,
+            SLEEP,
         )
+        .clock(move || now)
+        .build()
         .expect("construction succeeds");
         cmc.put_cache_entry(b"k", make_entry_at(anchor, expiry))
             .await
@@ -274,19 +265,17 @@ async fn test_sub_second_grace_period_is_honored() {
     let expiry = anchor + Duration::from_millis(11);
     let now = anchor + Duration::from_millis(1);
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            8,
-            2,
-            Duration::from_millis(10),
-            Duration::from_millis(2),
-            FAN_OUT,
-            Duration::from_millis(5),
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || now,
+    let cmc = storm_config(
+        8,
+        2,
+        Duration::from_millis(10),
+        Duration::from_millis(2),
+        FAN_OUT,
+        Duration::from_millis(5),
+        SLEEP,
     )
+    .clock(move || now)
+    .build()
     .expect("construction succeeds");
     cmc.put_cache_entry(b"k", make_entry_at(anchor, expiry))
         .await
@@ -301,14 +290,14 @@ async fn test_sub_second_grace_period_is_honored() {
 
 // ── Group 3 — Builder defaults and validation ─────────────────────────────────
 
-fn assert_rejected(result: Result<StormTrackingCache, MaterialsError>, what: &str) {
+fn assert_rejected(result: Result<StormTrackingCmc, MaterialsError>, what: &str) {
     let err = result.expect_err(what);
     assert_eq!(err.kind, MaterialsErrorKind::Validation, "{what}: {err:?}");
 }
 
 #[test]
 fn test_builder_defaults() {
-    let config = StormTrackingCache::builder()
+    let config = StormTrackingCmc::builder()
         .build()
         .expect("the defaults are consistent");
     assert_eq!(config.entry_capacity(), 1000);
@@ -322,7 +311,7 @@ fn test_builder_defaults() {
 
 #[test]
 fn test_builder_applies_each_default_when_its_setter_is_omitted() {
-    let config = StormTrackingCache::builder()
+    let config = StormTrackingCmc::builder()
         .entry_capacity(5000)
         .grace_period(Duration::from_secs(30))
         .build()
@@ -338,7 +327,7 @@ fn test_builder_applies_each_default_when_its_setter_is_omitted() {
 
 #[test]
 fn test_builder_set_none_applies_the_default() {
-    let config = StormTrackingCache::builder()
+    let config = StormTrackingCmc::builder()
         .grace_interval(Duration::from_secs(5))
         .set_grace_interval(None)
         .set_fan_out(Some(3))
@@ -351,22 +340,22 @@ fn test_builder_set_none_applies_the_default() {
 #[test]
 fn test_invalid_settings_are_rejected() {
     assert_rejected(
-        StormTrackingCache::builder().fan_out(0).build(),
+        StormTrackingCmc::builder().fan_out(0).build(),
         "fan_out = 0",
     );
     assert_rejected(
-        StormTrackingCache::builder()
+        StormTrackingCmc::builder()
             .grace_interval(Duration::ZERO)
             .inflight_ttl(Duration::ZERO)
             .build(),
         "inflight_ttl = 0",
     );
     assert_rejected(
-        StormTrackingCache::builder().sleep(Duration::ZERO).build(),
+        StormTrackingCmc::builder().sleep(Duration::ZERO).build(),
         "sleep = 0",
     );
     assert_rejected(
-        StormTrackingCache::builder()
+        StormTrackingCmc::builder()
             .grace_interval(Duration::from_secs(2))
             .inflight_ttl(Duration::from_secs(1))
             .build(),
@@ -380,7 +369,7 @@ fn test_durations_are_stored_exactly() {
     let grace_interval = Duration::from_nanos(1_500);
     let inflight_ttl = Duration::from_secs(30);
     let sleep = Duration::from_nanos(1);
-    let config = StormTrackingCache::builder()
+    let config = StormTrackingCmc::builder()
         .grace_period(grace_period)
         .grace_interval(grace_interval)
         .inflight_ttl(inflight_ttl)
@@ -401,8 +390,14 @@ async fn test_cmc_trait_surface_matches_local_cmc() {
     let expiry = now + Duration::from_secs(3600);
 
     let storm: Box<dyn Cmc> = Box::new(make_storm_tracking(now));
-    let local: Box<dyn Cmc> =
-        Box::new(LocalCmc::with_clock(32, 4, move || now).expect("LocalCmc constructs"));
+    let local: Box<dyn Cmc> = Box::new(
+        LocalCmc::builder()
+            .entry_capacity(32)
+            .entry_pruning_tail_size(4)
+            .clock(move || now)
+            .build()
+            .expect("LocalCmc constructs"),
+    );
 
     for cmc in [&storm, &local] {
         cmc.put_cache_entry(b"k", make_entry_at(now, expiry))
@@ -439,19 +434,17 @@ async fn test_inflight_records_most_recent_nosuchentry_time() {
     // Advance clock to t2, past grace_interval, and get again.
     // grace_interval = 2s, so use t1 + 3s to be outside the grace interval.
     let t2 = t1 + Duration::from_secs(3); // > grace_interval=2s
-    let cmc2 = StormTrackingCmc::with_clock(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || t2,
+    let cmc2 = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || t2)
+    .build()
     .expect("constructs");
     cmc2.put_cache_entry(b"k", make_entry_at(t1, expiry))
         .await
@@ -684,18 +677,16 @@ async fn test_get_hit_within_grace_inflight_outside_interval_returns_none_and_up
 #[tokio::test]
 async fn test_get_miss_blocks_when_fanout_saturated_until_key_appears() {
     // This test requires real concurrency — use real clock + tokio spawn + timeout.
-    let cmc = StormTrackingCmc::new(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .build()
     .expect("constructs");
 
     let now = SystemTime::now();
@@ -775,18 +766,16 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
 async fn test_get_miss_inflight_within_interval_blocks_until_unblocked() {
     // Real concurrency test — pre-mark inflight just now (within grace interval),
     // saturate fan-out so the only unblock path is "key appears in cache".
-    let cmc = StormTrackingCmc::new(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .build()
     .expect("constructs");
 
     let now = SystemTime::now();
@@ -861,19 +850,17 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || *clock_reader.lock().expect("clock lock"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || *clock_reader.lock().expect("clock lock"))
+    .build()
     .expect("constructs");
 
     // Saturate fan-out with target + two other keys, all inflight at start.
@@ -1007,19 +994,17 @@ async fn test_block_miss_not_inflight_prunes_stale_entries_in_loop() {
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || *clock_reader.lock().expect("clock lock"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || *clock_reader.lock().expect("clock lock"))
+    .build()
     .expect("constructs");
 
     for i in 0..FAN_OUT {
@@ -1079,19 +1064,17 @@ async fn test_block_miss_inflight_keeps_waiting_when_slot_opens_but_key_still_in
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || *clock_reader.lock().expect("clock lock"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || *clock_reader.lock().expect("clock lock"))
+    .build()
     .expect("constructs");
 
     // Saturate fan-out: target + 2 other keys, all inflight at start.
@@ -1178,19 +1161,17 @@ async fn test_block_miss_inflight_uses_per_waiter_deadline_not_per_key() {
     let clock = Arc::new(StdMutex::new(start));
     let clock_reader = Arc::clone(&clock);
 
-    let cmc = StormTrackingCmc::with_clock(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
-        move || *clock_reader.lock().expect("clock lock"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .clock(move || *clock_reader.lock().expect("clock lock"))
+    .build()
     .expect("constructs");
 
     // Mark target inflight at start; saturate fan-out with other keys.
@@ -1287,18 +1268,16 @@ async fn test_concurrent_gets_on_same_key_coalesce_to_one_refresh() {
     const LEADER_FETCH_DELAY_MS: u64 = 100;
     const STORM_FAN_OUT: usize = 20;
 
-    let cmc = StormTrackingCmc::new(
-        &storm_config(
-            32,
-            4,
-            GRACE_PERIOD,
-            GRACE_INTERVAL,
-            STORM_FAN_OUT,
-            INFLIGHT_TTL,
-            SLEEP,
-        )
-        .expect("valid config"),
+    let cmc = storm_config(
+        32,
+        4,
+        GRACE_PERIOD,
+        GRACE_INTERVAL,
+        STORM_FAN_OUT,
+        INFLIGHT_TTL,
+        SLEEP,
     )
+    .build()
     .expect("constructs");
 
     let leader_count = Arc::new(AtomicUsize::new(0));

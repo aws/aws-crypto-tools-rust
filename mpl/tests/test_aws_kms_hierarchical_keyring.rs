@@ -34,7 +34,6 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
     HierarchicalKeyringBuilder, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
-use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
     BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
@@ -44,7 +43,7 @@ use aws_crypto_mpl::structures::{
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError,
     MaterialsErrorKind,
 };
-use aws_crypto_mpl::{LocalCmc, SharedCmc};
+use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, StormTrackingCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -233,6 +232,7 @@ fn build_with_sub_second_ttl_keeps_it_exactly() {
             .key_store(keystore_never_consulted())
             .ttl(ttl)
             .branch_key_id("branch-key-id")
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .build()
             .unwrap_or_else(|e| panic!("{ttl:?} must be accepted: {e}"));
         assert_eq!(keyring.ttl(), ttl);
@@ -242,7 +242,7 @@ fn build_with_sub_second_ttl_keeps_it_exactly() {
 #[test]
 fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
     let with_grace_ms = |grace_period_ms| {
-        let params = StormTrackingCache::builder()
+        let cache = StormTrackingCmc::builder()
             .entry_capacity(16)
             .entry_pruning_tail_size(4)
             .grace_period(Duration::from_millis(grace_period_ms))
@@ -251,12 +251,12 @@ fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
             .inflight_ttl(Duration::from_millis(100))
             .sleep(Duration::from_millis(10))
             .build()
-            .expect("valid StormTrackingCache");
+            .expect("valid StormTrackingCmc");
         HierarchicalKeyring::builder()
             .key_store(keystore_never_consulted())
             .ttl(Duration::from_millis(1500))
             .branch_key_id("bk")
-            .cache(CacheType::StormTracking(params))
+            .cache(cache)
             .build()
     };
     with_grace_ms(1_499).expect("1499 ms grace period < 1500 ms TTL must succeed");
@@ -274,7 +274,7 @@ fn build_with_positive_ttl_succeeds() {
         .key_store(keystore)
         .ttl(Duration::from_secs(1))
         .branch_key_id("branch-key-id")
-        .cache(CacheType::Default(DefaultCache::new(1000)))
+        .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
         .build();
 
     let keyring = result.expect("a 1-second TTL must be accepted");
@@ -440,48 +440,54 @@ fn build_with_branch_key_id_supplier_succeeds() {
     assert!(keyring.branch_key_id_supplier().is_some());
 }
 
-// ─── Cache wiring tests: which Cmc a given CacheType produces ───────────────
+// ─── Cache wiring tests: which Cmc the keyring stores ───────────────────────
 //
-// The keyring's only responsibility here is turning a `CacheType` into a
-// `Cmc`, so for the variants it builds itself, successful construction IS the
-// assertion. Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to
-// the cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
-// and is deliberately not re-derived through the keyring. The one exception is
-// `CacheType::Shared`, where the keyring must store the caller's cache verbatim
-// rather than build its own; nothing but a keyring test can check that.
+// Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to the
+// cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
+// and is deliberately not re-derived through the keyring. These tests check
+// only which cache the keyring stores and the grace-period bound it enforces.
 
 #[test]
-fn build_with_default_cache_succeeds() {
-    HierarchicalKeyring::builder()
-        .key_store(keystore_never_consulted())
-        .ttl(Duration::from_secs(3600))
-        .branch_key_id("bk")
-        .cache(CacheType::Default(DefaultCache::new(1)))
-        .build()
-        .expect("CacheType::Default must build a keyring-local cache");
-}
-
-#[test]
-fn build_with_cache_type_none_succeeds() {
-    HierarchicalKeyring::builder()
+fn build_without_cache_uses_default_storm_tracking_cmc() {
+    let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("bk")
         .build()
-        .expect("None cache_type must default to a built-in cache");
+        .expect("an unset cache must default to a built-in cache");
+    assert_eq!(
+        keyring.cache().grace_period(),
+        Some(Duration::from_secs(10)),
+        "the default cache is a storm-tracking cache with the default grace period"
+    );
+
+    let err = build_err(
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_secs(10))
+            .branch_key_id("bk"),
+        "TTL equal to the default grace period",
+    );
+    assert!(err.message.contains("grace period"), "got: {}", err.message);
 }
 
 #[test]
 fn build_with_shared_cache_round_trips_provided_cache() {
-    let supplied = SharedCmc::new(LocalCmc::new(8, 4).unwrap());
+    let supplied = SharedCmc::new(
+        LocalCmc::builder()
+            .entry_capacity(8)
+            .entry_pruning_tail_size(4)
+            .build()
+            .unwrap(),
+    );
 
     let keyring = HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600))
         .branch_key_id("bk")
-        .cache(CacheType::Shared(supplied.clone()))
+        .cache(supplied.clone())
         .build()
-        .expect("CacheType::Shared must succeed");
+        .expect("a SharedCmc must be accepted");
 
     // The exact cache supplied is what the keyring stores. Tested via
     // pointer-identity rather than behaviour because the struct field is
@@ -489,13 +495,32 @@ fn build_with_shared_cache_round_trips_provided_cache() {
     let stored: &SharedCmc = keyring.cache();
     assert!(
         SharedCmc::ptr_eq(stored, &supplied),
-        "CacheType::Shared MUST round-trip the supplied cache verbatim"
+        "the keyring MUST store the supplied SharedCmc itself"
     );
 }
 
 #[test]
+fn build_with_shared_storm_tracking_grace_period_equal_to_ttl_fails() {
+    let cache = SharedCmc::new(
+        StormTrackingCmc::builder()
+            .grace_period(Duration::from_secs(60))
+            .build()
+            .expect("valid StormTrackingCmc"),
+    );
+    let err = build_err(
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_secs(60))
+            .branch_key_id("bk")
+            .cache(cache),
+        "shared storm-tracking cache with grace_period == TTL",
+    );
+    assert!(err.message.contains("grace period"), "got: {}", err.message);
+}
+
+#[test]
 fn build_with_storm_tracking_cache_succeeds() {
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_secs(60))
@@ -504,19 +529,19 @@ fn build_with_storm_tracking_cache_succeeds() {
         .inflight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(3600)) // strictly greater than grace_period (60).
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
-        .expect("CacheType::StormTracking with grace_period < ttl must succeed");
+        .expect("a StormTrackingCmc with grace_period < ttl must succeed");
 }
 
 #[test]
 fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_secs(60))
@@ -525,12 +550,12 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
         .inflight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(60)) // equal to grace_period (60).
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
     {
         Ok(_) => panic!("StormTracking with grace_period == TTL must fail"),
@@ -545,7 +570,7 @@ fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
 
 #[test]
 fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_secs(120))
@@ -554,12 +579,12 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
         .inflight_ttl(Duration::from_secs(30))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     let err = match HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(60))
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
     {
         Ok(_) => panic!("StormTracking with grace_period > TTL must fail"),
@@ -576,7 +601,7 @@ fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
 fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
     // grace_period = 5_000 ms = 5 s, less than the 60 s TTL.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
-    let params = StormTrackingCache::builder()
+    let cache = StormTrackingCmc::builder()
         .entry_capacity(16)
         .entry_pruning_tail_size(4)
         .grace_period(Duration::from_millis(5_000))
@@ -585,12 +610,12 @@ fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
         .inflight_ttl(Duration::from_millis(1_000))
         .sleep(Duration::from_millis(10))
         .build()
-        .expect("valid StormTrackingCache");
+        .expect("valid StormTrackingCmc");
     HierarchicalKeyring::builder()
         .key_store(keystore_never_consulted())
         .ttl(Duration::from_secs(60))
         .branch_key_id("bk")
-        .cache(CacheType::StormTracking(params))
+        .cache(cache)
         .build()
         .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
 }
@@ -1401,13 +1426,13 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
 }
 
 /// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
-/// keyring-local default cache.
+/// keyring-local `LocalCmc`.
 fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(keystore)
         .ttl(Duration::from_secs(3600))
         .branch_key_id(branch_key_id)
-        .cache(CacheType::Default(DefaultCache::new(1000)))
+        .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
         .partition_id("partition-id")
         .build()
         .unwrap()
@@ -1469,7 +1494,11 @@ mod onencrypt {
         use std::time::SystemTime;
 
         const PARTITION: &str = "partition-id";
-        let cache = LocalCmc::new(8, 4).unwrap();
+        let cache = LocalCmc::builder()
+            .entry_capacity(8)
+            .entry_pruning_tail_size(4)
+            .build()
+            .unwrap();
         let now = SystemTime::now();
         cache
             .put_cache_entry(
@@ -1495,7 +1524,7 @@ mod onencrypt {
             .key_store(keystore.clone())
             .ttl(Duration::from_millis(1500))
             .branch_key_id(FAKE_BRANCH_KEY_ID)
-            .cache(CacheType::Shared(SharedCmc::new(cache)))
+            .cache(SharedCmc::new(cache))
             .partition_id(PARTITION)
             .build()
             .unwrap();
@@ -1574,7 +1603,7 @@ mod onencrypt {
             .key_store(FailingKeystore)
             .ttl(Duration::from_secs(3600))
             .branch_key_id("bk")
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .build()
             .unwrap();
 
@@ -1619,7 +1648,7 @@ mod onencrypt {
             .key_store(keystore.clone())
             .ttl(Duration::from_secs(3600))
             .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .build()
             .unwrap();
 
@@ -2067,7 +2096,7 @@ mod ondecrypt {
             .key_store(FailingKeystore)
             .ttl(Duration::from_secs(3600))
             .branch_key_id(FAKE_BRANCH_KEY_ID)
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .partition_id("partition-id")
             .build()
             .unwrap();
@@ -2108,7 +2137,7 @@ mod ondecrypt {
             .key_store(keystore.clone())
             .ttl(Duration::from_secs(3600))
             .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
             .partition_id("partition-id")
             .build()
             .unwrap();

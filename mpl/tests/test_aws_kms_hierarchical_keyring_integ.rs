@@ -70,14 +70,13 @@ use aws_sdk_kms::operation::decrypt::DecryptError;
 
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
 use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
 };
-use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
+use aws_crypto_mpl::{Cmc, Keyring, KmsConfiguration, LocalCmc, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -113,7 +112,7 @@ async fn build_keystore() -> BranchKeyStore {
 const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
 /// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
-/// default cache. Every test varies only these three things, so they share one
+/// `LocalCmc`. Every test varies only these three things, so they share one
 /// fixture.
 fn keyring_for(
     keystore: impl Keystore + 'static,
@@ -124,7 +123,7 @@ fn keyring_for(
         keystore,
         branch_key_id,
         partition,
-        CacheType::Default(DefaultCache::new(1000)),
+        LocalCmc::builder().entry_capacity(1000).build().unwrap(),
     )
 }
 
@@ -134,7 +133,7 @@ fn keyring_with_cache(
     keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
-    cache: CacheType,
+    cache: impl Cmc + 'static,
 ) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(keystore)
@@ -435,7 +434,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
 //
 // These four tests mirror the Dafny `TestSharedCache*` suites. They each
 // build two `HierarchicalKeyring`s (HK1, HK2) that share a single
-// `LocalCmc` via `CacheType::Shared`. HK1's keystore uses a us-west-2 KMS
+// `LocalCmc` by holding clones of one `SharedCmc`. HK1's keystore uses a us-west-2 KMS
 // client; HK2's keystore uses a us-east-2 KMS client. KEY_ARN is in
 // us-west-2, so any KMS Decrypt issued by HK2's keystore fails.
 //
@@ -451,10 +450,15 @@ fn shared_cache_materials() -> EncryptionMaterials {
     fresh_materials()
 }
 
-/// Build a fresh `LocalCmc`,
-/// suitable for constructing a `CacheType::Shared` for each of HK1 and HK2.
+/// Build a fresh `LocalCmc` whose clones HK1 and HK2 share.
 fn shared_cache() -> SharedCmc {
-    SharedCmc::new(aws_crypto_mpl::LocalCmc::new(100, 50).unwrap())
+    SharedCmc::new(
+        LocalCmc::builder()
+            .entry_capacity(100)
+            .entry_pruning_tail_size(50)
+            .build()
+            .unwrap(),
+    )
 }
 
 #[tokio::test]
@@ -478,18 +482,8 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
 
     let cache = shared_cache();
 
-    let hk1 = keyring_with_cache(
-        keystore_west,
-        BRANCH_KEY_ID,
-        "partitionId",
-        CacheType::Shared(cache.clone()),
-    );
-    let hk2 = keyring_with_cache(
-        keystore_east,
-        BRANCH_KEY_ID,
-        "partitionId",
-        CacheType::Shared(cache),
-    );
+    let hk1 = keyring_with_cache(keystore_west, BRANCH_KEY_ID, "partitionId", cache.clone());
+    let hk2 = keyring_with_cache(keystore_east, BRANCH_KEY_ID, "partitionId", cache);
 
     // HK2 encrypt fails first: the shared cache is cold, so it must reach KMS.
     assert_failed_at_kms(
@@ -529,14 +523,14 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
         .key_store(keystore_west)
         .ttl(FIXTURE_TTL)
         .branch_key_id(BRANCH_KEY_ID)
-        .cache(CacheType::Shared(cache.clone()))
+        .cache(cache.clone())
         .build()
         .unwrap();
     let hk2 = HierarchicalKeyring::builder()
         .key_store(keystore_east)
         .ttl(FIXTURE_TTL)
         .branch_key_id(BRANCH_KEY_ID)
-        .cache(CacheType::Shared(cache))
+        .cache(cache)
         .build()
         .unwrap();
 
@@ -574,14 +568,9 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
         keystore_west,
         BRANCH_KEY_ID,
         "partitionIdHK1",
-        CacheType::Shared(cache.clone()),
+        cache.clone(),
     );
-    let hk2 = keyring_with_cache(
-        keystore_east,
-        BRANCH_KEY_ID,
-        "partitionIdHK2",
-        CacheType::Shared(cache),
-    );
+    let hk2 = keyring_with_cache(keystore_east, BRANCH_KEY_ID, "partitionIdHK2", cache);
 
     assert_failed_at_kms(
         hk2.on_encrypt(shared_cache_materials()).await,
@@ -614,18 +603,8 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
 
     let cache = shared_cache();
 
-    let hk1 = keyring_with_cache(
-        keystore_west,
-        BRANCH_KEY_ID,
-        "partitionId",
-        CacheType::Shared(cache.clone()),
-    );
-    let hk2 = keyring_with_cache(
-        keystore_east,
-        BRANCH_KEY_ID,
-        "partitionId",
-        CacheType::Shared(cache),
-    );
+    let hk1 = keyring_with_cache(keystore_west, BRANCH_KEY_ID, "partitionId", cache.clone());
+    let hk2 = keyring_with_cache(keystore_east, BRANCH_KEY_ID, "partitionId", cache);
 
     assert_failed_at_kms(
         hk2.on_encrypt(shared_cache_materials()).await,

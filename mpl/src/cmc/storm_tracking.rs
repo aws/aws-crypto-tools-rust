@@ -37,7 +37,9 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 
-use super::{CacheEntry, Cmc, CmcError, LocalCmc, StormTrackingCache};
+use super::local::{CACHE_PRUNING_TAIL_SIZE, Clock};
+use super::{CacheEntry, Cmc, CmcError, LocalCmc};
+use crate::structures::MaterialsError;
 
 /// Per-key inflight tracking state, held under a `Mutex`.
 struct StormTrackingState {
@@ -71,6 +73,20 @@ pub struct StormTrackingCmc {
     inner: Arc<StormTrackingCmcInner>,
 }
 
+impl std::fmt::Debug for StormTrackingCmc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StormTrackingCmc")
+            .field("entry_capacity", &self.entry_capacity())
+            .field("entry_pruning_tail_size", &self.entry_pruning_tail_size())
+            .field("grace_period", &self.inner.grace_period)
+            .field("grace_interval", &self.inner.grace_interval)
+            .field("fan_out", &self.inner.fan_out)
+            .field("inflight_ttl", &self.inner.inflight_ttl)
+            .field("sleep", &self.inner.sleep)
+            .finish_non_exhaustive()
+    }
+}
+
 struct StormTrackingCmcInner {
     local: LocalCmc,
     grace_period: Duration,
@@ -79,80 +95,71 @@ struct StormTrackingCmcInner {
     inflight_ttl: Duration,
     sleep: Duration,
     state: Mutex<StormTrackingState>,
-    now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
+    now: Clock,
 }
 
+/// Default [`StormTrackingCmcBuilder::entry_capacity`], from Dafny's
+/// `StormTracker.DefaultStorm()`.
+pub const DEFAULT_STORM_ENTRY_CAPACITY: usize = 1000;
+/// Default [`StormTrackingCmcBuilder::grace_period`], from Dafny's
+/// `StormTracker.DefaultStorm()`.
+pub const DEFAULT_STORM_GRACE_PERIOD: Duration = Duration::from_secs(10);
+/// Default [`StormTrackingCmcBuilder::grace_interval`], from Dafny's
+/// `StormTracker.DefaultStorm()`.
+pub const DEFAULT_STORM_GRACE_INTERVAL: Duration = Duration::from_secs(1);
+/// Default [`StormTrackingCmcBuilder::fan_out`], from Dafny's
+/// `StormTracker.DefaultStorm()`.
+pub const DEFAULT_STORM_FAN_OUT: usize = 20;
+/// Default [`StormTrackingCmcBuilder::inflight_ttl`], from Dafny's
+/// `StormTracker.DefaultStorm()`.
+///
+/// The spec lists 20, which exceeds the default grace period
+/// and so breaks the spec's own "Inflight TTL MUST be less than or equal to the Grace Period" rule.
+pub const DEFAULT_STORM_INFLIGHT_TTL: Duration = Duration::from_secs(10);
+/// Default [`StormTrackingCmcBuilder::sleep`], from Dafny's
+/// `StormTracker.DefaultStorm()`.
+pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
+
 impl StormTrackingCmc {
-    /// Construct a `StormTrackingCmc` from `config` using `SystemTime::now`
-    /// as the clock.
-    pub fn new(config: &StormTrackingCache) -> Result<Self, CmcError> {
-        Self::with_clock_impl(config, SystemTime::now)
+    /// Start a builder for `StormTrackingCmc`. Every setter is optional.
+    #[must_use]
+    pub fn builder() -> StormTrackingCmcBuilder {
+        StormTrackingCmcBuilder::default()
     }
 
-    /// Test-only constructor with clock injection. Gated behind the
-    /// `test-utils` feature so it is not exposed to library consumers.
-    /// Tests use this to advance time deterministically without sleeping.
-    #[cfg(feature = "test-utils")]
-    #[doc(hidden)]
-    pub fn with_clock<F>(config: &StormTrackingCache, now: F) -> Result<Self, CmcError>
-    where
-        F: Fn() -> SystemTime + Send + Sync + 'static,
-    {
-        Self::with_clock_impl(config, now)
+    /// Maximum number of entries the inner [`LocalCmc`] holds.
+    pub fn entry_capacity(&self) -> usize {
+        self.inner.local.entry_capacity()
     }
 
-    /// Internal constructor that accepts an arbitrary clock. `pub(crate)`
-    /// to mirror `LocalCmc::with_clock_impl`'s visibility for consistency
-    /// across the two cache implementations; not part of the public API.
-    /// Callers use `new` (production) or `with_clock` (test-utils feature).
-    ///
-    /// `config` needs no validation here: [`StormTrackingCache`] can only
-    /// be built through its validating builder.
-    pub(crate) fn with_clock_impl<F>(config: &StormTrackingCache, now: F) -> Result<Self, CmcError>
-    where
-        F: Fn() -> SystemTime + Send + Sync + 'static,
-    {
-        let now_arc: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(now);
-        let inner_clock = Arc::clone(&now_arc);
-
-        let local = LocalCmc::with_clock_impl(
-            config.entry_capacity(),
-            config.entry_pruning_tail_size(),
-            move || inner_clock(),
-        )?;
-
-        Ok(Self {
-            inner: Arc::new(StormTrackingCmcInner {
-                local,
-                grace_period: config.grace_period(),
-                grace_interval: config.grace_interval(),
-                fan_out: config.fan_out(),
-                inflight_ttl: config.inflight_ttl(),
-                sleep: config.sleep(),
-                state: Mutex::new(StormTrackingState {
-                    inflight: HashMap::new(),
-                }),
-                now: now_arc,
-            }),
-        })
+    /// Number of least-recently-used entries each get checks for expired
+    /// entries to evict.
+    pub fn entry_pruning_tail_size(&self) -> usize {
+        self.inner.local.entry_pruning_tail_size()
     }
 
+    /// Window before expiry during which the cache attempts a refresh.
     pub fn grace_period(&self) -> Duration {
         self.inner.grace_period
     }
 
+    /// Time after which an inflight refresh is no longer considered
+    /// inflight.
     pub fn grace_interval(&self) -> Duration {
         self.inner.grace_interval
     }
 
+    /// Maximum number of keys that can have a refresh inflight at once.
     pub fn fan_out(&self) -> usize {
         self.inner.fan_out
     }
 
+    /// Time a waiting request may stay inflight before it fails.
     pub fn inflight_ttl(&self) -> Duration {
         self.inner.inflight_ttl
     }
 
+    /// Time a blocked request sleeps before reexamining the cache.
     pub fn sleep(&self) -> Duration {
         self.inner.sleep
     }
@@ -378,6 +385,214 @@ impl StormTrackingCmc {
     }
 }
 
+/// Builder for [`StormTrackingCmc`], returned by [`StormTrackingCmc::builder`].
+/// Every setter is optional;
+/// [`build`](Self::build) applies the default documented on each setter to any value left unset.
+#[derive(Clone, Default)]
+pub struct StormTrackingCmcBuilder {
+    entry_capacity: Option<usize>,
+    entry_pruning_tail_size: Option<usize>,
+    grace_period: Option<Duration>,
+    grace_interval: Option<Duration>,
+    fan_out: Option<usize>,
+    inflight_ttl: Option<Duration>,
+    sleep: Option<Duration>,
+    clock: Option<Clock>,
+}
+
+impl std::fmt::Debug for StormTrackingCmcBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StormTrackingCmcBuilder")
+            .field("entry_capacity", &self.entry_capacity)
+            .field("entry_pruning_tail_size", &self.entry_pruning_tail_size)
+            .field("grace_period", &self.grace_period)
+            .field("grace_interval", &self.grace_interval)
+            .field("fan_out", &self.fan_out)
+            .field("inflight_ttl", &self.inflight_ttl)
+            .field("sleep", &self.sleep)
+            .finish_non_exhaustive()
+    }
+}
+
+impl StormTrackingCmcBuilder {
+    /// Set the maximum number of entries. Defaults to 1000.
+    #[must_use]
+    pub const fn entry_capacity(mut self, n: usize) -> Self {
+        self.entry_capacity = Some(n);
+        self
+    }
+
+    /// Set the number of least-recently-used entries each get checks for
+    /// expired entries to evict. Defaults to 1.
+    #[must_use]
+    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+        self.entry_pruning_tail_size = Some(n);
+        self
+    }
+
+    /// Set the grace period. Defaults to 10 seconds.
+    #[must_use]
+    pub const fn grace_period(mut self, d: Duration) -> Self {
+        self.grace_period = Some(d);
+        self
+    }
+
+    /// Set the grace interval. Defaults to 1 second.
+    #[must_use]
+    pub const fn grace_interval(mut self, d: Duration) -> Self {
+        self.grace_interval = Some(d);
+        self
+    }
+
+    /// Set the fan-out. Defaults to 20. Must be at least 1.
+    #[must_use]
+    pub const fn fan_out(mut self, n: usize) -> Self {
+        self.fan_out = Some(n);
+        self
+    }
+
+    /// Set the inflight TTL. Defaults to 10 seconds.
+    #[must_use]
+    pub const fn inflight_ttl(mut self, d: Duration) -> Self {
+        self.inflight_ttl = Some(d);
+        self
+    }
+
+    /// Set how long a blocked request sleeps before reexamining the cache.
+    /// Defaults to 20 milliseconds.
+    #[must_use]
+    pub const fn sleep(mut self, d: Duration) -> Self {
+        self.sleep = Some(d);
+        self
+    }
+
+    /// Set or clear `entry_capacity`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`entry_capacity`](Self::entry_capacity).
+    #[must_use]
+    pub const fn set_entry_capacity(mut self, v: Option<usize>) -> Self {
+        self.entry_capacity = v;
+        self
+    }
+
+    /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
+    #[must_use]
+    pub const fn set_entry_pruning_tail_size(mut self, v: Option<usize>) -> Self {
+        self.entry_pruning_tail_size = v;
+        self
+    }
+
+    /// Set or clear `grace_period`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`grace_period`](Self::grace_period).
+    #[must_use]
+    pub const fn set_grace_period(mut self, v: Option<Duration>) -> Self {
+        self.grace_period = v;
+        self
+    }
+
+    /// Set or clear `grace_interval`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`grace_interval`](Self::grace_interval).
+    #[must_use]
+    pub const fn set_grace_interval(mut self, v: Option<Duration>) -> Self {
+        self.grace_interval = v;
+        self
+    }
+
+    /// Set or clear `fan_out`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`fan_out`](Self::fan_out).
+    #[must_use]
+    pub const fn set_fan_out(mut self, v: Option<usize>) -> Self {
+        self.fan_out = v;
+        self
+    }
+
+    /// Set or clear `inflight_ttl`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`inflight_ttl`](Self::inflight_ttl).
+    #[must_use]
+    pub const fn set_inflight_ttl(mut self, v: Option<Duration>) -> Self {
+        self.inflight_ttl = v;
+        self
+    }
+
+    /// Set or clear `sleep`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`sleep`](Self::sleep).
+    #[must_use]
+    pub const fn set_sleep(mut self, v: Option<Duration>) -> Self {
+        self.sleep = v;
+        self
+    }
+
+    /// Replace the cache's clock, so tests can advance time without sleeping.
+    /// Defaults to `SystemTime::now`.
+    #[cfg(feature = "test-utils")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn clock<F>(mut self, now: F) -> Self
+    where
+        F: Fn() -> SystemTime + Send + Sync + 'static,
+    {
+        self.clock = Some(Arc::new(now));
+        self
+    }
+
+    /// Apply defaults, validate the settings, and construct the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`MaterialsErrorKind::Validation`](crate::structures::MaterialsErrorKind::Validation) error if:
+    /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
+    /// - `grace_interval` exceeds `inflight_ttl`.
+    pub fn build(self) -> Result<StormTrackingCmc, MaterialsError> {
+        let fan_out = self.fan_out.unwrap_or(DEFAULT_STORM_FAN_OUT);
+        let grace_period = self.grace_period.unwrap_or(DEFAULT_STORM_GRACE_PERIOD);
+        let grace_interval = self.grace_interval.unwrap_or(DEFAULT_STORM_GRACE_INTERVAL);
+        let inflight_ttl = self.inflight_ttl.unwrap_or(DEFAULT_STORM_INFLIGHT_TTL);
+        let sleep = self.sleep.unwrap_or(DEFAULT_STORM_SLEEP);
+
+        if fan_out == 0 {
+            return Err(invalid("fan_out must be at least 1"));
+        }
+        if inflight_ttl.is_zero() {
+            return Err(invalid("inflight_ttl must be greater than zero"));
+        }
+        if sleep.is_zero() {
+            return Err(invalid("sleep must be greater than zero"));
+        }
+        if grace_interval > inflight_ttl {
+            return Err(invalid(format!(
+                "grace_interval ({grace_interval:?}) must be less than or equal to inflight_ttl ({inflight_ttl:?})"
+            )));
+        }
+
+        let now = self.clock.unwrap_or_else(|| Arc::new(SystemTime::now));
+        let local = LocalCmc::with_clock(
+            self.entry_capacity.unwrap_or(DEFAULT_STORM_ENTRY_CAPACITY),
+            self.entry_pruning_tail_size
+                .unwrap_or(CACHE_PRUNING_TAIL_SIZE),
+            Arc::clone(&now),
+        );
+
+        Ok(StormTrackingCmc {
+            inner: Arc::new(StormTrackingCmcInner {
+                local,
+                grace_period,
+                grace_interval,
+                fan_out,
+                inflight_ttl,
+                sleep,
+                state: Mutex::new(StormTrackingState {
+                    inflight: HashMap::new(),
+                }),
+                now,
+            }),
+        })
+    }
+}
+
+fn invalid(message: impl Into<String>) -> MaterialsError {
+    MaterialsError::new(format!("StormTrackingCmc: {}", message.into()))
+}
+
 /// Returns `true` if `now` is within the grace period for an entry expiring
 /// at `expiry`.
 ///
@@ -435,5 +650,9 @@ impl Cmc for StormTrackingCmc {
 
     async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
         self.inner.local.delete_cache_entry(cache_id).await
+    }
+
+    fn grace_period(&self) -> Option<Duration> {
+        Some(self.inner.grace_period)
     }
 }

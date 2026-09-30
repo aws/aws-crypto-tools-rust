@@ -345,7 +345,7 @@ public:
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
 public:
-    /// The best choice for most situations. Probably a StormTrackingCache.
+    /// The best choice for most situations: a storm tracking cache with default settings.
     /// \param entry_capacity Maximum number of entries cached.
     static CacheType Default(std::uint32_t entry_capacity);
     /// A cache safe for multi-threaded use that also limits redundant and
@@ -423,8 +423,8 @@ public:
     /// If any other type of cache in the CacheType union is provided,
     /// the Hierarchical Keyring will initialize a cache of that type,
     /// to be used with only this Hierarchical Keyring.
-    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
-    /// with entryCapacity = 1000.
+    /// If not set, a Default cache with entry_capacity = 1000 is initialized
+    /// to be used with only this Hierarchical Keyring.
     HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
         cache_ = cache;
         return *this;
