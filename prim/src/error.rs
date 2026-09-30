@@ -383,3 +383,27 @@ macro_rules! define_error {
         }
     };
 }
+
+/// Displays an error followed by every error in its
+/// [`source()`](std::error::Error::source) chain, separated by `": "`.
+///
+/// ```
+/// # use aws_mpl_primitives::error::DisplayErrorContext;
+/// # let err = std::io::Error::other("example");
+/// eprintln!("error: {}", DisplayErrorContext(&err));
+/// ```
+#[derive(Debug)]
+#[expect(clippy::exhaustive_structs)]
+pub struct DisplayErrorContext<E>(pub E);
+
+impl<E: std::error::Error> fmt::Display for DisplayErrorContext<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)?;
+        let mut cause = self.0.source();
+        while let Some(c) = cause {
+            write!(f, ": {c}")?;
+            cause = c.source();
+        }
+        Ok(())
+    }
+}

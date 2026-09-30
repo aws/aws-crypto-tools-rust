@@ -110,6 +110,7 @@
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
 mod error;
+pub use aws_mpl_primitives::error::DisplayErrorContext;
 pub use error::*;
 mod encrypt;
 pub use encrypt::*;
