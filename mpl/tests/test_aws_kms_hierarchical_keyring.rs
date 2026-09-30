@@ -1982,7 +1982,7 @@ mod ondecrypt {
             2,
             "both candidate EDK failures must be collected; got: {collected:?}",
         );
-        for per_edk in collected {
+        for per_edk in &collected {
             assert_eq!(per_edk.kind(), ErrorKind::Cryptographic);
             assert!(
                 per_edk.message().contains("ciphertext too short"),

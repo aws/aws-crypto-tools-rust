@@ -338,6 +338,12 @@ macro_rules! define_error {
             pub fn backtrace(&self) -> &std::backtrace::Backtrace {
                 &self.0.backtrace
             }
+
+            /// Override whether this error is retryable.
+            #[doc(hidden)]
+            pub fn set_retryable(&mut self, retryable: bool) {
+                self.0.retryable = retryable;
+            }
         }
 
         impl $crate::error::LibraryError for $error {

@@ -71,7 +71,7 @@ fn collection_keeps_every_error_and_nominates_a_cause_only_when_unambiguous() {
         "no EDK decrypted",
         vec![a.clone()],
     );
-    assert_eq!(one.collected(), std::slice::from_ref(&a));
+    assert_eq!(one.collected(), vec![a.clone()]);
     assert!(
         one.source().is_some(),
         "a single collected error is the source"
