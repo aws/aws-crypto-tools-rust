@@ -53,26 +53,6 @@ using namespace std::chrono_literals;
         }                                                                                   \
     } while (0)
 
-// Test utility -- OK iff `expr` throws `MplException` with kind `expected`
-#define CHECK_THROWS_MPL(expected, expr)                                                     \
-    do {                                                                                     \
-        ++::esdk_test::g_checks;                                                             \
-        try {                                                                                \
-            expr;                                                                            \
-            ++::esdk_test::g_failures;                                                       \
-            std::cerr << "FAIL: " << #expr << " did not throw\n";                           \
-        } catch (const Aws::Esdk::MplException& e) {                                        \
-            if (e.kind() != std::optional(expected)) {                                       \
-                ++::esdk_test::g_failures;                                                   \
-                std::cerr << "FAIL: " << #expr << " threw the wrong MplErrorKind: "          \
-                          << e.what() << "\n";                                              \
-            }                                                                                \
-        } catch (const std::exception& e) {                                                  \
-            ++::esdk_test::g_failures;                                                       \
-            std::cerr << "FAIL: " << #expr << " threw wrong type: " << e.what() << "\n";    \
-        }                                                                                    \
-    } while (0)
-
 namespace {
 
 using esdk_test::make_hierarchical_keyring;
@@ -240,8 +220,7 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
     //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
     //# wrapping algorithm of the same meaning.
-    CHECK_THROWS_MPL(Aws::Esdk::MplErrorKind::Validation,
-                     Aws::Esdk::RawAesKeyring(
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::RawAesKeyring(
                          "test-ns", "test-key", short_key,
                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
 }
@@ -255,7 +234,13 @@ void test_raw_aes_wrong_keyring_fails() {
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::EncryptionSDK sdk;
     auto ciphertext = sdk.encrypt(to_bytes("keyed to A"), keyring_a).ciphertext;
-    CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring_b));
+    CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(ciphertext, keyring_b));
+    try {
+        sdk.decrypt(ciphertext, keyring_b);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(e.kind() == Aws::Esdk::ErrorKind::Cryptographic);
+        ESDK_CHECK(!e.retryable());
+    }
 }
 
 void test_cache_kinds() {
@@ -286,8 +271,7 @@ void test_cache_kinds() {
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    CHECK_THROWS_MPL(Aws::Esdk::MplErrorKind::Configuration,
-                     Aws::Esdk::KeyStore("ab", "ab",
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::KeyStore("ab", "ab",
                                          "arn:aws:kms:us-west-2:000000000000:key/test",
                                          Aws::Esdk::KeyStoreOptions()
                                              .with_kms_client(kms)
@@ -303,8 +287,7 @@ void test_hierarchical_keyring_ttl() {
         Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
 
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
-    CHECK_THROWS_MPL(Aws::Esdk::MplErrorKind::Validation,
-                     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
 
@@ -318,8 +301,8 @@ void test_hierarchical_keyring_ttl() {
                 /*sleep=*/10ms));
     };
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1499ms));
-    CHECK_THROWS_MPL(
-        Aws::Esdk::MplErrorKind::Validation,
+    CHECK_THROWS_TYPE(
+        Aws::Esdk::ValidationException,
         Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1500ms)));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
