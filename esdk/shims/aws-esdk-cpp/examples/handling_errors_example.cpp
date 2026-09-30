@@ -4,6 +4,7 @@
 // Requires AWS credentials and the key store in basic_hierarchical_keyring_example.cpp.
 
 #include <chrono>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -49,6 +50,10 @@ Aws::Esdk::DecryptResult decrypt_with_retry(Aws::Esdk::EncryptionSDK& esdk,
             if (!e.retryable() || attempt == kMaxAttempts) {
                 throw;
             }
+            // Back off longer when the service throttled.
+            if (attempt == 1 && e.retry_kind() == Aws::Esdk::RetryKind::Throttling) {
+                delay = 1000ms;
+            }
             std::cerr << "decrypt attempt " << attempt << " failed, retrying in "
                       << delay.count() << "ms: " << e.what() << "\n";
             std::this_thread::sleep_for(delay);
@@ -58,31 +63,41 @@ Aws::Esdk::DecryptResult decrypt_with_retry(Aws::Esdk::EncryptionSDK& esdk,
 }
 
 // Say what to do about an exception that retrying cannot fix.
-void report(const Aws::Esdk::AwsEncryptionSdkException& e) {
-    // kind() is empty for a kind this library does not know yet.
-    const auto kind = e.kind();
-    if (kind == Aws::Esdk::ErrorKind::RemoteResourceNotFound) {
-        // A missing branch key or a missing table; what() names the call that failed.
-        std::cout << "a branch key or the key store table does not exist; check the configuration\n";
-    } else if (kind == Aws::Esdk::ErrorKind::RemoteAccessDenied) {
+// Each kind is its own exception type, so catch the ones you act on by type.
+void report(const std::exception_ptr& failure) {
+    try {
+        std::rethrow_exception(failure);
+    } catch (const Aws::Esdk::ResourceNotFoundException& e) {
+        // The exception names the missing resource, so there is no need to parse what().
+        const auto& r = e.resource();
+        if (r && r->type == Aws::Esdk::ResourceType::BranchKey) {
+            std::cout << "branch key " << r->name << " does not exist in the key store\n";
+        } else if (r && r->type == Aws::Esdk::ResourceType::DynamoDbTable) {
+            std::cout << "key store table " << r->name << " does not exist\n";
+        } else {
+            std::cout << "an AWS resource does not exist\n";
+        }
+    } catch (const Aws::Esdk::AccessDeniedException& e) {
         // IAM usually allows only the key store's own table,
         // so a request for a table that does not exist is often denied before DynamoDB looks for it.
-        std::cout << "access denied; check the IAM policy for the key store table and KMS key\n";
-    } else if (kind == Aws::Esdk::ErrorKind::RemoteTransport) {
+        const auto& r = e.resource();
+        std::cout << "access denied on " << (r ? r->name : std::string("an AWS resource"))
+                  << "; check the IAM policy\n";
+    } catch (const Aws::Esdk::ServiceException& e) {
+        // Any other answer from AWS; code() is the service's own error code.
+        std::cout << "AWS rejected the request with " << e.code().value_or("no code")
+                  << " (request ID " << e.request_id().value_or("none") << ")\n";
+    } catch (const Aws::Esdk::DispatchException&) {
         // Still failing after the retries, or not retryable at all, such as missing credentials.
         std::cout << "could not reach AWS; check the credentials, region, and network\n";
-    } else if (kind == Aws::Esdk::ErrorKind::Validation) {
+    } catch (const Aws::Esdk::ValidationException&) {
         std::cout << "invalid input or configuration; fix it and try again\n";
-    } else if (kind == Aws::Esdk::ErrorKind::Cryptographic ||
-               kind == Aws::Esdk::ErrorKind::NoMatchingDataKey ||
-               kind == Aws::Esdk::ErrorKind::Serialization ||
-               kind == Aws::Esdk::ErrorKind::EncryptionContextMismatch) {
+    } catch (const Aws::Esdk::CryptographicException&) {
         std::cout << "reject the message\n";
-    } else {
-        std::cout << "failed\n";
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        // The base type catches every other kind, including ones added later.
+        std::cout << "failed: " << e.what() << "\n";
     }
-    // For logs. Decide from the exception type and kind(), never from this text.
-    std::cout << "  " << e.what() << "\n";
 }
 
 // Encrypt with `keyring`, expecting it to fail, and report the failure.
@@ -91,8 +106,8 @@ bool expect_encrypt_failure(Aws::Esdk::EncryptionSDK& esdk,
     const std::vector<std::uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o'};
     try {
         esdk.encrypt(plaintext, keyring);
-    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
-        report(e);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
+        report(std::current_exception());
         return true;
     }
     std::cerr << "encrypt unexpectedly succeeded\n";
@@ -114,8 +129,8 @@ int main() {
             return 1;
         }
         std::cout << "decrypted the message\n";
-    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
-        report(e);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException&) {
+        report(std::current_exception());
         return 1;
     }
 

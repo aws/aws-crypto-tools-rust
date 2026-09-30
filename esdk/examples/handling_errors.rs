@@ -8,12 +8,12 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::error_chain::aws_service_error_code;
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::{
-    DecryptInput, DecryptOutput, DisplayErrorContext, EncryptInput, ErrorKind, decrypt, encrypt,
+use aws_esdk::error::{
+    DisplayErrorContext, Error, ProvideErrorKind, Resource, RetryErrorKind, Service,
 };
+use aws_esdk::{DecryptInput, DecryptOutput, EncryptInput, decrypt, encrypt};
 
 // The AWS Crypto Tools CI test key store.
 // Replace these with your own key store's table, name, KMS key ARN, and branch key ID.
@@ -50,22 +50,23 @@ async fn hierarchical_keyring(
 /// The KMS and DynamoDB clients already retry each call a few times.
 /// This loop retries the whole decrypt once those retries are used up,
 /// for example during a sustained throttle or a network outage.
-async fn decrypt_with_retry(input: &DecryptInput<'_>) -> Result<DecryptOutput, aws_esdk::Error> {
+async fn decrypt_with_retry(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     const MAX_ATTEMPTS: u32 = 4;
-    let mut delay = Duration::from_millis(200);
     let mut attempt = 1;
+    let mut delay: Option<Duration> = None;
     loop {
         match decrypt(input).await {
             Ok(output) => return Ok(output),
             // A retryable error might succeed if the same call is made again later.
             // Any other error fails the same way every time, so return it at once.
             Err(err) if err.is_retryable() && attempt < MAX_ATTEMPTS => {
+                let wait = delay.map_or_else(|| first_delay(&err), |d| d * 2);
                 eprintln!(
-                    "decrypt attempt {attempt} failed, retrying in {delay:?}: {}",
+                    "decrypt attempt {attempt} failed, retrying in {wait:?}: {}",
                     DisplayErrorContext(&err)
                 );
-                tokio::time::sleep(delay).await;
-                delay *= 2;
+                tokio::time::sleep(wait).await;
+                delay = Some(wait);
                 attempt += 1;
             }
             Err(err) => return Err(err),
@@ -73,43 +74,63 @@ async fn decrypt_with_retry(input: &DecryptInput<'_>) -> Result<DecryptOutput, a
     }
 }
 
+/// The first delay before retrying `err`.
+/// The SDK's retry kind says why the call might succeed later;
+/// back off longer when the service throttled.
+fn first_delay(err: &Error) -> Duration {
+    match err.retryable_error_kind() {
+        Some(RetryErrorKind::ThrottlingError) => Duration::from_secs(1),
+        _ => Duration::from_millis(200),
+    }
+}
+
 /// Say what to do about an error that retrying cannot fix.
-fn report(err: &aws_esdk::Error) {
-    match err.kind() {
-        ErrorKind::RemoteResourceNotFound => {
-            // The AWS service error code says which resource is missing.
-            // DynamoDB reports a missing table as ResourceNotFoundException.
-            // A missing branch key has no code: DynamoDB found the table but no record for the ID.
-            match aws_service_error_code(err) {
-                Some("ResourceNotFoundException") => {
-                    println!("the key store table does not exist; check the table name");
-                }
-                Some(code) => {
-                    println!("an AWS resource does not exist ({code}); check the configuration")
-                }
-                None => println!(
-                    "the branch key does not exist in the key store; check the branch key ID"
-                ),
+fn report(err: &Error) {
+    match err {
+        // The error names the missing resource, so there is no need to parse the message.
+        Error::ResourceNotFound(e) => match e.resource() {
+            Some(Resource::BranchKey(id)) => {
+                println!(
+                    "branch key {id} does not exist in the key store; create it or fix the ID"
+                );
             }
-        }
+            Some(Resource::DynamoDbTable(table)) => {
+                println!("key store table {table} does not exist; check the table name");
+            }
+            Some(Resource::KmsKey(arn)) => println!("KMS key {arn} does not exist"),
+            _ => println!("an AWS resource does not exist: {}", e.message()),
+        },
         // IAM usually allows only the key store's own table,
         // so a request for a table that does not exist is often denied before DynamoDB looks for it.
-        ErrorKind::RemoteAccessDenied => {
-            println!("access denied; check the IAM policy for the key store table and KMS key");
-        }
+        Error::AccessDenied(e) => match (e.service(), e.resource()) {
+            (Some(Service::Kms), Some(Resource::KmsKey(arn))) => {
+                println!("this role may not use KMS key {arn}; check its IAM policy");
+            }
+            (Some(Service::DynamoDb), Some(Resource::DynamoDbTable(table))) => {
+                println!("this role may not read table {table}; check its IAM policy");
+            }
+            _ => println!("access denied; check the IAM policy"),
+        },
+        // Any other answer from AWS; `code` is the service's own error code.
+        Error::Service(e) => println!(
+            "{:?} rejected the request with {:?} (request ID {:?})",
+            e.service(),
+            e.code(),
+            e.request_id()
+        ),
         // Still failing after the retries, or not retryable at all, such as missing credentials.
-        ErrorKind::RemoteTransport => {
+        Error::Dispatch(_) => {
             println!("could not reach AWS; check the credentials, region, and network");
         }
-        ErrorKind::Validation => println!("invalid input or configuration; fix it and try again"),
-        ErrorKind::Cryptographic
-        | ErrorKind::NoMatchingDataKey
-        | ErrorKind::Serialization
-        | ErrorKind::EncryptionContextMismatch => println!("reject the message"),
-        // ErrorKind is non-exhaustive, so a match needs a catch-all arm.
+        Error::Validation(_) => println!("invalid input or configuration; fix it and try again"),
+        Error::Cryptographic(_)
+        | Error::NoMatchingDataKey(_)
+        | Error::Serialization(_)
+        | Error::EncryptionContextMismatch(_) => println!("reject the message"),
+        // Error is non-exhaustive, so a match needs a catch-all arm.
         _ => println!("failed"),
     }
-    // The whole chain, for logs. Decide from the kind, never from this text.
+    // The whole chain, for logs. Decide from the variant and its fields, never from this text.
     println!("  {}", DisplayErrorContext(err));
 }
 
