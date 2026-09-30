@@ -127,9 +127,9 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
             .await
             .expect_err("multi-frame signed message must fail in streaming mode");
         assert!(
-            matches!(err.kind, ErrorKind::Esdk),
-            "expected ErrorKind::Esdk under {style:?}, got {:?}",
-            err.kind
+            matches!(err.kind(), ErrorKind::Validation),
+            "expected ErrorKind::Validation under {style:?}, got {:?}",
+            err.kind()
         );
 
         assert!(
@@ -185,9 +185,9 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     for (case, result) in [("neither", neither), ("both", both)] {
         let err = result.expect_err("EncryptStreamInput build must fail");
         assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError for {case}, got {:?}",
-            err.kind
+            matches!(err.kind(), ErrorKind::Validation),
+            "expected Validation error for {case}, got {:?}",
+            err.kind()
         );
     }
 
@@ -206,9 +206,9 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     for (case, result) in [("neither", neither), ("both", both)] {
         let err = result.expect_err("DecryptStreamInput build must fail");
         assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError for {case}, got {:?}",
-            err.kind
+            matches!(err.kind(), ErrorKind::Validation),
+            "expected Validation error for {case}, got {:?}",
+            err.kind()
         );
     }
 }

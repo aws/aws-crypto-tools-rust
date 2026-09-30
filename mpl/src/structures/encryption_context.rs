@@ -3,9 +3,8 @@
 
 //! Encryption context key-value mapping.
 
+use crate::{Error, ErrorKind};
 use std::collections::{BTreeMap, HashMap};
-
-use super::error::MaterialsError;
 
 /// A key-value mapping of arbitrary, non-secret, UTF-8 encoded strings used as AAD.
 ///
@@ -36,11 +35,7 @@ impl EncryptionContext {
     /// # Errors
     /// Returns a `Validation` error if `key` or `value` is not valid UTF-8.
     /// The context is left unchanged.
-    pub fn try_insert_utf8(
-        &mut self,
-        key: &[u8],
-        value: &[u8],
-    ) -> Result<Option<String>, MaterialsError> {
+    pub fn try_insert_utf8(&mut self, key: &[u8], value: &[u8]) -> Result<Option<String>, Error> {
         let key = utf8(key, "key")?;
         let value = utf8(value, "value")?;
         Ok(self.insert(key, value))
@@ -88,7 +83,7 @@ impl EncryptionContext {
 
     /// Serialize the encryption context to bytes.
     ///
-    pub fn serialize(&self) -> Result<Vec<u8>, MaterialsError> {
+    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         if self.0.is_empty() {
             return Ok(Vec::new());
         }
@@ -98,28 +93,37 @@ impl EncryptionContext {
         // In practice these limits are unreachable for encryption contexts, but we
         // return errors rather than silently producing invalid output.
         let Ok(count) = u16::try_from(self.0.len()) else {
-            return Err(MaterialsError::new(format!(
-                "Encryption context entry count {} exceeds u16::MAX",
-                self.0.len()
-            )));
+            return Err(Error::new(
+                ErrorKind::Validation,
+                format!(
+                    "encryption context entry count {} exceeds u16::MAX",
+                    self.0.len()
+                ),
+            ));
         };
         result.extend_from_slice(&count.to_be_bytes());
 
         for (key, value) in &self.0 {
             let Ok(key_len) = u16::try_from(key.len()) else {
-                return Err(MaterialsError::new(format!(
-                    "Encryption context key length {} exceeds u16::MAX",
-                    key.len()
-                )));
+                return Err(Error::new(
+                    ErrorKind::Validation,
+                    format!(
+                        "encryption context key length {} exceeds u16::MAX",
+                        key.len()
+                    ),
+                ));
             };
             result.extend_from_slice(&key_len.to_be_bytes());
             result.extend_from_slice(key.as_bytes());
 
             let Ok(val_len) = u16::try_from(value.len()) else {
-                return Err(MaterialsError::new(format!(
-                    "Encryption context value length {} exceeds u16::MAX",
-                    value.len()
-                )));
+                return Err(Error::new(
+                    ErrorKind::Validation,
+                    format!(
+                        "encryption context value length {} exceeds u16::MAX",
+                        value.len()
+                    ),
+                ));
             };
             result.extend_from_slice(&val_len.to_be_bytes());
             result.extend_from_slice(value.as_bytes());
@@ -133,19 +137,23 @@ impl EncryptionContext {
     /// Returns a `Validation` error if the bytes are malformed,
     /// list keys out of ascending order or repeat one,
     /// or hold a key or value that is not valid UTF-8.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, MaterialsError> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.is_empty() {
             return Ok(Self::new());
         }
 
         if bytes.len() < 2 {
-            return Err(MaterialsError::new("Insufficient bytes for count"));
+            return Err(Error::new(
+                ErrorKind::Validation,
+                "insufficient bytes for count",
+            ));
         }
 
         let count = u16::from_be_bytes([bytes[0], bytes[1]]);
         if count == 0 {
-            return Err(MaterialsError::new(
-                "Key-value pair count must be greater than 0",
+            return Err(Error::new(
+                ErrorKind::Validation,
+                "key-value pair count must be greater than 0",
             ));
         }
 
@@ -154,40 +162,54 @@ impl EncryptionContext {
 
         for _ in 0..count {
             if offset + 2 > bytes.len() {
-                return Err(MaterialsError::new("Insufficient bytes for key length"));
+                return Err(Error::new(
+                    ErrorKind::Validation,
+                    "insufficient bytes for key length",
+                ));
             }
             let key_len = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
             offset += 2;
 
             let key_end = offset + usize::from(key_len);
             if key_end > bytes.len() {
-                return Err(MaterialsError::new("Insufficient bytes for key"));
+                return Err(Error::new(
+                    ErrorKind::Validation,
+                    "insufficient bytes for key",
+                ));
             }
             let key = utf8(&bytes[offset..key_end], "key")?;
             offset = key_end;
 
             if offset + 2 > bytes.len() {
-                return Err(MaterialsError::new("Insufficient bytes for value length"));
+                return Err(Error::new(
+                    ErrorKind::Validation,
+                    "insufficient bytes for value length",
+                ));
             }
             let val_len = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
             offset += 2;
 
             let val_end = offset + usize::from(val_len);
             if val_end > bytes.len() {
-                return Err(MaterialsError::new("Insufficient bytes for value"));
+                return Err(Error::new(
+                    ErrorKind::Validation,
+                    "insufficient bytes for value",
+                ));
             }
             let value = utf8(&bytes[offset..val_end], "value")?;
             offset = val_end;
 
             if let Some((previous, _)) = map.last_key_value() {
                 if key == *previous {
-                    return Err(MaterialsError::new(format!(
-                        "Duplicate key in encryption context: {key:?}"
-                    )));
+                    return Err(Error::new(
+                        ErrorKind::Validation,
+                        format!("duplicate key in encryption context: {key:?}"),
+                    ));
                 }
                 if key < *previous {
-                    return Err(MaterialsError::new(
-                        "Encryption context keys are not in ascending order",
+                    return Err(Error::new(
+                        ErrorKind::Validation,
+                        "encryption context keys are not in ascending order",
                     ));
                 }
             }
@@ -195,10 +217,13 @@ impl EncryptionContext {
         }
 
         if offset != bytes.len() {
-            return Err(MaterialsError::new(format!(
-                "Trailing bytes after deserialization: {} byte(s) left over",
-                bytes.len() - offset
-            )));
+            return Err(Error::new(
+                ErrorKind::Validation,
+                format!(
+                    "trailing bytes after deserialization: {} byte(s) left over",
+                    bytes.len() - offset
+                ),
+            ));
         }
 
         Ok(Self(map))
@@ -206,18 +231,19 @@ impl EncryptionContext {
 }
 
 /// Decode an encryption context `field` ("key" or "value") as UTF-8.
-fn utf8(bytes: &[u8], field: &str) -> Result<String, MaterialsError> {
+fn utf8(bytes: &[u8], field: &str) -> Result<String, Error> {
     match std::str::from_utf8(bytes) {
         Ok(s) => Ok(s.to_owned()),
-        Err(e) => Err(MaterialsError::new_with_cause(
-            format!("Encryption context {field} is not valid UTF-8"),
+        Err(e) => Err(Error::with_cause(
+            ErrorKind::Validation,
+            format!("encryption context {field} is not valid UTF-8"),
             e,
         )),
     }
 }
 
 impl TryFrom<BTreeMap<Vec<u8>, Vec<u8>>> for EncryptionContext {
-    type Error = MaterialsError;
+    type Error = Error;
 
     /// # Errors
     /// Returns a `Validation` error if any key or value is not valid UTF-8.

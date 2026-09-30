@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -219,10 +220,9 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
     //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
     //# wrapping algorithm of the same meaning.
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::RawAesKeyring(
-                          "test-ns", "test-key", short_key,
-                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::RawAesKeyring(
+                         "test-ns", "test-key", short_key,
+                         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
 }
 
 void test_raw_aes_wrong_keyring_fails() {
@@ -234,7 +234,13 @@ void test_raw_aes_wrong_keyring_fails() {
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::EncryptionSDK sdk;
     auto ciphertext = sdk.encrypt(to_bytes("keyed to A"), keyring_a).ciphertext;
-    CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring_b));
+    CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(ciphertext, keyring_b));
+    try {
+        sdk.decrypt(ciphertext, keyring_b);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(e.kind() == Aws::Esdk::ErrorKind::Cryptographic);
+        ESDK_CHECK(!e.retryable());
+    }
 }
 
 void test_cache_kinds() {
@@ -246,32 +252,37 @@ void test_cache_kinds() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
     //# - The shim MUST support creating a storm tracking cache.
-    auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
-        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
+    auto storm_cache = Aws::Esdk::StormTrackingCmc(Aws::Esdk::StormTrackingCmcOptions()
+                                                       .with_entry_capacity(100)
+                                                       .with_entry_pruning_tail_size(1)
+                                                       .with_grace_period(10s)
+                                                       .with_grace_interval(1s)
+                                                       .with_fan_out(20)
+                                                       .with_inflight_ttl(10s)
+                                                       .with_sleep(20ms));
 
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
     //# - The shim MUST support creating a default cache.
-    auto default_cache =
-        Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::Default(100));
+    auto default_cache = Aws::Esdk::DefaultCmc(100);
     // entry_capacity above ESDK Rust's i32 limit is rejected.
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, Aws::Esdk::DefaultCmc(0x80000000u));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::CryptographicMaterialsCache(
-                          Aws::Esdk::CacheType::Default(0x80000000u)));
+                      Aws::Esdk::StormTrackingCmc(
+                          Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(0x80000000u)));
+    auto local_cache = Aws::Esdk::LocalCmc(100);
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, Aws::Esdk::LocalCmc(0x80000000u));
 }
 
 // This test is offline -- short table name rejection happens before any network calls
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    // KeystoreError kind: no C++ class of its own, so exactly the base exception type.
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
-                      Aws::Esdk::KeyStore("ab", "ab",
-                                          "arn:aws:kms:us-west-2:000000000000:key/test",
-                                          Aws::Esdk::KeyStoreOptions()
-                                              .with_kms_client(kms)
-                                              .with_ddb_client(ddb)));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::KeyStore("ab", "ab",
+                                         "arn:aws:kms:us-west-2:000000000000:key/test",
+                                         Aws::Esdk::KeyStoreOptions()
+                                             .with_kms_client(kms)
+                                             .with_ddb_client(ddb)));
 }
 
 void test_hierarchical_keyring_ttl() {
@@ -283,8 +294,7 @@ void test_hierarchical_keyring_ttl() {
         Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
 
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
                       Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
 
@@ -292,18 +302,18 @@ void test_hierarchical_keyring_ttl() {
     // so these pin the exact TTL value that reaches it.
     auto with_grace = [](std::chrono::milliseconds grace_period) {
         return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
-            Aws::Esdk::CacheType::StormTracking(
-                /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
-                /*grace_interval=*/100ms, /*fan_out=*/4, /*inflight_ttl=*/100ms,
-                /*sleep=*/10ms));
+            Aws::Esdk::StormTrackingCmc(Aws::Esdk::StormTrackingCmcOptions()
+                                            .with_grace_period(grace_period)
+                                            .with_grace_interval(100ms)
+                                            .with_inflight_ttl(100ms)));
     };
     Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1499ms));
     CHECK_THROWS_TYPE(
         Aws::Esdk::ValidationException,
         Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1500ms)));
     CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
-                          16, 4, 10s, 1s, 4, 10s, /*sleep=*/-1ms)));
+                      Aws::Esdk::StormTrackingCmc(
+                          Aws::Esdk::StormTrackingCmcOptions().with_sleep(-1ms)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
@@ -590,9 +600,8 @@ void test_full_resource_chain(const TestConfig& cfg) {
             .with_id("shim-integration-test")
             .with_grant_tokens({"grant-token-example"}));
 
-    Aws::Esdk::CryptographicMaterialsCache cache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
-        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
+    Aws::Esdk::StormTrackingCmc cache(
+        Aws::Esdk::StormTrackingCmcOptions().with_entry_capacity(100));
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
@@ -613,7 +622,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
             //# [cryptographic materials cache](#create-cryptographic-materials-cache),
             //# checked as defined in
             //# [Shim Specification: Handles and lifetimes](./shim.md#handles-and-lifetimes).
-            .with_cache(Aws::Esdk::CacheType::Shared(cache))
+            .with_cache(cache)
             //= spec/shim/esdk-shim.md#create-hierarchical-keyring
             //= type=test
             //# - Creating a hierarchical keyring MUST provide the target-supplied partition id to

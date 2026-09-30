@@ -308,14 +308,9 @@ fn test_kdf_input_length_validation() {
     //# specified by the algorithm suite commit key derivation setting.
     let err = result.expect_err("wrong-length PDK must be rejected");
     assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "wrong-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
-    );
-    assert!(
-        err.to_string()
-            .contains("does not match KDF input key length"),
-        "error must name the KDF input length mismatch, got: {err}"
+        err.kind(),
+        ErrorKind::InvalidMaterials,
+        "wrong-length PDK must yield ErrorKind::InvalidMaterials, got: {err:?}"
     );
 }
 
@@ -335,14 +330,9 @@ fn test_kdf_input_length_validation_too_long() {
 
     let err = result.expect_err("over-length PDK must be rejected");
     assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "over-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
-    );
-    assert!(
-        err.to_string()
-            .contains("does not match KDF input key length"),
-        "error must name the KDF input length mismatch, got: {err}"
+        err.kind(),
+        ErrorKind::InvalidMaterials,
+        "over-length PDK must yield ErrorKind::InvalidMaterials, got: {err:?}"
     );
 }
 
@@ -371,13 +361,9 @@ fn test_v2_message_id_length_validation() {
     //# - The salt MUST be the [message ID](../data-format/message-header.md#message-id) with a length of 256 bits.
     let err = result.expect_err("wrong-length V2 message ID must be rejected");
     assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "wrong-length message ID must yield ErrorKind::ValidationError, got: {err:?}"
-    );
-    assert!(
-        err.to_string().contains("message ID"),
-        "error must name the message ID length problem, got: {err}"
+        err.kind(),
+        ErrorKind::Internal,
+        "wrong-length message ID must yield ErrorKind::Internal, got: {err:?}"
     );
 }
 

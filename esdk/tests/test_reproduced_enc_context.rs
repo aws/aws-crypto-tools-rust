@@ -84,24 +84,24 @@ async fn test_mismatched_encryption_context_on_decrypt() {
         .await
         .expect_err("decrypt must fail when reproduced encryption context has mismatched values");
 
-    // We expect to fail because although the same key is present on the ec,
-    // the value is different. The MPL's reproduced-EC validation produces a
-    // pinned error message identifying the mechanism.
+    // The same key is present on the ec, but the value is different.
     assert_eq!(
-        err.kind,
-        ErrorKind::MplError,
-        "expected MplError, got: {:?}",
-        err.kind
+        err.kind(),
+        ErrorKind::EncryptionContextMismatch,
+        "expected EncryptionContextMismatch, got: {:?}",
+        err.kind()
     );
-    let inner = err.to_string();
+    let source = std::error::Error::source(&err)
+        .and_then(|e| e.downcast_ref::<aws_crypto_mpl::Error>())
+        .expect("the MPL error is the source");
+    assert_eq!(
+        source.kind(),
+        aws_crypto_mpl::ErrorKind::EncryptionContextMismatch
+    );
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
-    //= reason=Mismatched reproduced EC value triggers MPL "does not match reproduced encryption context" error, proving the reproduced EC was used
+    //= reason=Mismatched reproduced EC value fails the MPL reproduced-EC check with EncryptionContextMismatch, proving the reproduced EC was used
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
-    assert!(
-        inner.contains("does not match reproduced encryption context"),
-        "expected reproduced-EC mismatch error, got: {inner}"
-    );
 
     // Test that if we supply the right ec we will succeed.
     let decrypt_input = decrypt_builder

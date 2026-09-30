@@ -1,6 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use aws_crypto_mpl::ErrorKind;
 use std::collections::BTreeSet;
 
 use aws_crypto_mpl::structures::{
@@ -76,11 +77,9 @@ fn test_required_ec_keys_must_be_subset() {
         .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .message
-            .contains("not found in encryption context")
+    assert_eq!(
+        result.unwrap_err().kind(),
+        ErrorKind::EncryptionContextMismatch
     );
 }
 
@@ -97,12 +96,7 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
         .symmetric_signing_key(ssk)
         .build();
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .message
-            .contains("Symmetric signing key must not be present")
-    );
+    assert_eq!(result.unwrap_err().kind(), ErrorKind::InvalidMaterials);
 }
 
 #[test]
@@ -131,11 +125,7 @@ fn test_verification_key_length_must_match_algorithm_suite() {
         let err = result.expect_err(&format!(
             "{suite_id:?} with {bad_len}-byte verification key must fail"
         ));
-        assert!(
-            err.message.contains("Verification key length"),
-            "{suite_id:?} @ {bad_len}: unexpected error message: {}",
-            err.message
-        );
+        assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
     }
 }
 
@@ -182,7 +172,7 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
         .verification_key(vk)
         .build();
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
-    assert!(err.message.contains("Verification key must not be present"));
+    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
 }
 
 #[test]
@@ -212,11 +202,9 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
         .required_encryption_context_keys(reck)
         .build()
         .unwrap();
-    assert!(
-        mat.validate_aws_crypto_public_key()
-            .unwrap_err()
-            .to_string()
-            .contains("MUST NOT include")
+    assert_eq!(
+        mat.validate_aws_crypto_public_key().unwrap_err().kind(),
+        ErrorKind::InvalidMaterials
     );
 }
 
@@ -336,7 +324,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
         .build()
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert!(err.to_string().contains("MUST include"));
+    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
 }
 
 #[test]
@@ -373,7 +361,7 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
 #[test]
 fn test_builder_requires_algorithm_suite() {
     let err = DecryptionMaterials::builder().build().unwrap_err();
-    assert!(err.message.contains("algorithm suite is required"));
+    assert_eq!(err.kind(), ErrorKind::Validation);
 }
 
 #[test]
@@ -397,7 +385,7 @@ fn test_add_data_key_rejects_existing_key() {
     let err = mat
         .add_data_key(PlaintextDataKey::new(vec![8; 32]))
         .unwrap_err();
-    assert!(err.message.contains("already have a plaintext data key"));
+    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
 }
 
 #[test]
@@ -409,5 +397,5 @@ fn test_add_data_key_rejects_wrong_length() {
     let err = mat
         .add_data_key(PlaintextDataKey::new(vec![7; 16]))
         .unwrap_err();
-    assert!(err.message.contains("expected 32"));
+    assert_eq!(err.kind(), ErrorKind::InvalidMaterials);
 }

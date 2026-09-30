@@ -8,123 +8,22 @@
 //! caching CMM can hold an arbitrary, runtime-configured cache.
 //! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
 
-pub mod cache_config;
+pub mod default;
 pub mod entry;
 pub mod local;
 pub mod storm_tracking;
 
-use async_trait::async_trait;
-
-pub use cache_config::{
-    CacheType, DefaultCache, StormTrackingCache, StormTrackingCacheBuilder,
-    create_cryptographic_materials_cache,
-};
-pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
-pub use local::LocalCmc;
-pub use storm_tracking::StormTrackingCmc;
-
-use std::fmt;
 use std::sync::Arc;
 
-/// Categorisation of a `CmcError`. New kinds may be added in minor
-/// releases, hence `#[non_exhaustive]`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum CmcErrorKind {
-    /// A concrete CMC's underlying storage failed (lock poisoned, IO error,
-    /// etc.). Where the failure originated in a lower-level error, that
-    /// error is retained as the `cause`.
-    StorageFailed,
-    /// A concrete CMC could not honor the request because the entry shape
-    /// supplied by the caller is invalid (missing usage metadata at put
-    /// time, expiry-before-creation, etc.).
-    InvalidEntry,
-}
+use crate::Error;
+use async_trait::async_trait;
 
-/// Error type for `Cmc` trait operations. Mirrors the
-/// `MaterialsError`/`MaterialsErrorKind` shape used elsewhere in the MPL so
-/// callers have a single `kind` enum to match against.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct CmcError {
-    /// Categorisation of this error. Stable for matching at call sites.
-    pub kind: CmcErrorKind,
-    /// Free-form human-readable message describing this specific failure.
-    pub message: String,
-    /// The lower-level error that caused this error, if any. Exposed
-    /// through [`std::error::Error::source`] so consumers can walk the
-    /// error chain. Not compared by [`PartialEq`] because `dyn Error` does
-    /// not implement [`Eq`].
-    //
-    // `Cmc` is a public trait, so a cache implemented outside this crate
-    // needs a typed channel for the failure its store returned.
-    pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
-}
+pub use default::{DefaultCmc, DefaultCmcBuilder};
+pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+pub use local::{LocalCmc, LocalCmcBuilder};
+pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};
 
-impl PartialEq for CmcError {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.message == other.message
-    }
-}
-impl Eq for CmcError {}
-
-impl CmcError {
-    /// Construct a `StorageFailed` error with no underlying cause.
-    pub fn storage_failed(reason: impl Into<String>) -> Self {
-        Self {
-            kind: CmcErrorKind::StorageFailed,
-            message: reason.into(),
-            cause: None,
-        }
-    }
-
-    /// Construct a `StorageFailed` error wrapping the underlying store
-    /// failure. The cause is surfaced through
-    /// [`std::error::Error::source`].
-    pub fn storage_failed_with_cause(
-        reason: impl Into<String>,
-        cause: impl std::error::Error + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            kind: CmcErrorKind::StorageFailed,
-            message: reason.into(),
-            cause: Some(Arc::new(cause)),
-        }
-    }
-
-    /// Construct an `InvalidEntry` error.
-    pub fn invalid_entry(reason: impl Into<String>) -> Self {
-        Self {
-            kind: CmcErrorKind::InvalidEntry,
-            message: reason.into(),
-            cause: None,
-        }
-    }
-
-    /// Borrow the categorisation of this error.
-    pub const fn kind(&self) -> &CmcErrorKind {
-        &self.kind
-    }
-
-    /// Borrow the underlying cause, if this error wraps one.
-    pub fn cause(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
-        self.cause.as_deref()
-    }
-}
-
-impl fmt::Display for CmcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CmcError({:?}): {}", self.kind, self.message)
-    }
-}
-
-impl std::error::Error for CmcError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.cause
-            .as_ref()
-            .map(|c| c.as_ref() as &(dyn std::error::Error + 'static))
-    }
-}
+use std::time::Duration;
 
 //
 /// To hold a cache whose concrete type is chosen at runtime, use [`SharedCmc`].
@@ -134,19 +33,25 @@ pub trait Cmc: Send + Sync {
     /// Mirrors the `Put Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#put-cache-entry).
     //
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError>;
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error>;
 
     /// Retrieve the cache entry for the supplied cache identifier, returning
     /// `None` on cache miss. Mirrors the `Get Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
     //
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError>;
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error>;
 
     /// Delete the cache entry for the supplied cache identifier. Returns
     /// successfully whether or not an entry was present. Mirrors the
     /// `Delete Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#delete-cache-entry).
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError>;
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error>;
+
+    /// The storm-tracking grace period, for a cache that refreshes entries
+    /// this long before they expire. `None` for a cache without one.
+    fn grace_period(&self) -> Option<Duration> {
+        None
+    }
 }
 
 crate::shared::shared_handle!(
@@ -156,7 +61,7 @@ crate::shared::shared_handle!(
     /// Callers that know their cache's type pass it directly and never need this one.
     ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
-    /// Give several keyrings clones of one handle through [`CacheType::Shared`]
+    /// Give several keyrings clones of one handle
     /// and they read and write the same entries.
     SharedCmc,
     Cmc
@@ -164,15 +69,19 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Cmc for SharedCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
         self.0.put_cache_entry(cache_id, entry).await
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
         self.0.get_cache_entry(cache_id).await
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
         self.0.delete_cache_entry(cache_id).await
+    }
+
+    fn grace_period(&self) -> Option<Duration> {
+        self.0.grace_period()
     }
 }

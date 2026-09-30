@@ -14,13 +14,16 @@ pub mod aws_kms;
 mod client;
 pub mod cmc;
 pub mod cmm;
+pub mod error;
 pub mod error_chain;
 pub mod keyring;
 pub mod keystore;
 pub mod shared;
 pub mod structures;
 
+pub use aws_mpl_primitives::error::DisplayErrorContext;
 pub use client::*;
+pub use error::{Error, ErrorKind};
 pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
 // `RawAesKeyringBuilder::wrapping_alg`; without this a caller would have to depend on
@@ -32,21 +35,21 @@ pub use aws_kms::hierarchical_keyring::{
     BranchKeySupplier, HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
 
-// Re-exported because both SDK clients appear in the public signature of
-// `BranchKeyStoreBuilder`, and because a `KeystoreError` carries these crates' SDK
-// errors as its cause: downcasting to one requires the exact same crate
-// version, which a consumer declaring its own dependency may not resolve.
+// Both SDK clients appear in `BranchKeyStoreBuilder`'s public signature,
+// and a key store `Error` carries their SDK errors as its source.
+// Downcasting to one needs the exact crate version this crate uses,
+// which a consumer's own dependency might not resolve to.
 pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 
 pub use cmc::{
-    BytesUsage, CacheEntry, CacheType, CachedMaterials, Cmc, CmcError, CmcErrorKind, DefaultCache,
-    LocalCmc, MessageUsage, SharedCmc, StormTrackingCache, StormTrackingCacheBuilder,
-    StormTrackingCmc, UsageMetadata,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, DefaultCmc, DefaultCmcBuilder, LocalCmc,
+    LocalCmcBuilder, MessageUsage, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
+    UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};
 pub use keystore::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
     SharedKeystore, encryption_context, kms_config, record,
 };

@@ -2,196 +2,84 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Error types for the AWS Encryption SDK.
 
-use std::backtrace::Backtrace;
-use std::sync::Arc;
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-#[non_exhaustive]
-/// Individual error types for [`aws_esdk`](crate)
-pub enum ErrorKind {
-    /// Higher level ESDK errors
-    Esdk,
-    /// Error in serializing or deserializing the data
-    SerializationError,
-    /// Low level cryptographic error from `aws_mpl_primitives`
-    CryptographicError,
-    /// Error surfaced by the Material Providers Library while obtaining
-    /// encryption or decryption materials (from a keyring or CMM).
-    MplError,
-    /// Error surfaced by the MPL branch key store.
-    KeystoreError,
-    /// Error surfaced by the MPL cryptographic materials cache.
-    CacheError,
-    /// Malformed input. No cryptography has been attempted.
-    ValidationError,
-}
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-/// Base error type for [`aws_esdk`](crate)
-pub struct Error {
-    /// Error type
-    pub kind: ErrorKind,
-    /// message
-    pub message: String,
-    /// Backtrace captured when error was encountered.
-    pub backtrace: Arc<Backtrace>,
-    /// The Error causing the Error, if any.
-    pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
-}
-
-impl PartialEq for Error {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.message == other.message
-    }
-}
-impl Eq for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            ErrorKind::Esdk => write!(f, "Esdk Error {}", self.message),
-            ErrorKind::SerializationError => write!(f, "Serialization Error {}", self.message),
-            ErrorKind::CryptographicError => write!(f, "Cryptographic Error {}", self.message),
-            ErrorKind::MplError => write!(f, "MPL Error {}", self.message),
-            ErrorKind::KeystoreError => write!(f, "Keystore Error {}", self.message),
-            ErrorKind::CacheError => write!(f, "Cache Error {}", self.message),
-            ErrorKind::ValidationError => write!(f, "Validation Error {}", self.message),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match &self.cause {
-            Some(cause) => Some(cause.as_ref()),
-            None => None,
-        }
-    }
+aws_mpl_primitives::define_error! {
+    /// An error from the AWS Encryption SDK.
+    ///
+    /// The message says what failed.
+    /// The [`source`](std::error::Error::source) chain holds the underlying library or service error.
+    Error,
+    /// What went wrong, as a caller would act on it.
+    ///
+    /// An error from a keyring, CMM, key store, or cache keeps its kind:
+    /// each [`aws_crypto_mpl::ErrorKind`] has a kind here with the same name.
+    ErrorKind;
+    /// The bytes are not a well-formed encrypted message,
+    /// for example truncated input, an unsupported message version, or data after the footer.
+    ///
+    /// Treat the message as corrupt; retrying cannot succeed.
+    Serialization,
+    /// A caller-supplied reader or writer failed while streaming,
+    /// for example a closed connection or a full disk.
+    ///
+    /// The [`source`](std::error::Error::source) is the [`std::io::Error`].
+    Io,
 }
 
 #[track_caller]
 pub(crate) fn val_err(msg: impl Into<String>) -> Error {
-    Error {
-        kind: ErrorKind::ValidationError,
-        message: msg.into(),
-        backtrace: Arc::new(Backtrace::capture()),
-        cause: None,
-    }
+    Error::new(ErrorKind::Validation, msg)
 }
 
 #[track_caller]
-pub(crate) fn val_err_with_cause(
+pub(crate) fn err(kind: ErrorKind, msg: impl Into<String>) -> Error {
+    Error::new(kind, msg)
+}
+
+#[track_caller]
+pub(crate) fn err_with_cause(
+    kind: ErrorKind,
     msg: impl Into<String>,
     cause: impl std::error::Error + Send + Sync + 'static,
 ) -> Error {
-    Error {
-        kind: ErrorKind::ValidationError,
-        message: msg.into(),
-        backtrace: Arc::new(Backtrace::capture()),
-        cause: Some(Arc::new(cause)),
-    }
-}
-
-#[track_caller]
-pub(crate) fn esdk_err(msg: impl Into<String>) -> Error {
-    Error {
-        kind: ErrorKind::Esdk,
-        message: msg.into(),
-        backtrace: Arc::new(Backtrace::capture()),
-        cause: None,
-    }
+    Error::with_cause(kind, msg, cause)
 }
 
 #[track_caller]
 pub(crate) fn ser_err<T>(msg: &str) -> Result<T, Error> {
-    Err(Error {
-        kind: ErrorKind::SerializationError,
-        message: msg.into(),
-        backtrace: Arc::new(Backtrace::capture()),
-        cause: None,
-    })
+    Err(Error::new(ErrorKind::Serialization, msg))
 }
 
-impl From<aws_crypto_mpl::structures::MaterialsError> for Error {
+impl From<aws_crypto_mpl::Error> for Error {
     #[track_caller]
-    fn from(item: aws_crypto_mpl::structures::MaterialsError) -> Self {
-        Self {
-            kind: ErrorKind::MplError,
-            message: item.to_string(),
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: Some(Arc::new(item)),
-        }
-    }
-}
-
-impl From<aws_crypto_mpl::keystore::KeystoreError> for Error {
-    #[track_caller]
-    fn from(item: aws_crypto_mpl::keystore::KeystoreError) -> Self {
-        Self {
-            kind: ErrorKind::KeystoreError,
-            message: item.to_string(),
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: Some(Arc::new(item)),
-        }
-    }
-}
-
-impl From<aws_crypto_mpl::cmc::CmcError> for Error {
-    #[track_caller]
-    fn from(item: aws_crypto_mpl::cmc::CmcError) -> Self {
-        Self {
-            kind: ErrorKind::CacheError,
-            message: item.to_string(),
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: Some(Arc::new(item)),
-        }
+    fn from(item: aws_crypto_mpl::Error) -> Self {
+        Self::from_inner("the material providers library failed", item)
     }
 }
 
 impl From<aws_mpl_primitives::Error> for Error {
     #[track_caller]
     fn from(item: aws_mpl_primitives::Error) -> Self {
-        Self {
-            kind: ErrorKind::CryptographicError,
-            message: item.message,
-            backtrace: item.backtrace,
-            cause: None,
-        }
+        Self::from_inner("a cryptographic operation failed", item)
     }
 }
 
 impl From<aws_smithy_types::error::operation::BuildError> for Error {
     #[track_caller]
     fn from(item: aws_smithy_types::error::operation::BuildError) -> Self {
-        Self {
-            kind: ErrorKind::ValidationError,
-            message: format!("{item:?}"),
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: Some(Arc::new(item)),
-        }
+        Self::with_cause(ErrorKind::Validation, "could not build the request", item)
     }
 }
 
 impl From<&str> for Error {
     #[track_caller]
     fn from(item: &str) -> Self {
-        Self {
-            kind: ErrorKind::Esdk,
-            message: item.to_string(),
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: None,
-        }
+        Self::new(ErrorKind::Internal, item)
     }
 }
 
 impl From<String> for Error {
     #[track_caller]
     fn from(item: String) -> Self {
-        Self {
-            kind: ErrorKind::Esdk,
-            message: item,
-            backtrace: Arc::new(Backtrace::capture()),
-            cause: None,
-        }
+        Self::new(ErrorKind::Internal, item)
     }
 }

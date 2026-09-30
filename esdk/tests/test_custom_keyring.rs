@@ -19,8 +19,9 @@ use aws_esdk::*;
 
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError, PlaintextDataKey,
+    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, PlaintextDataKey,
 };
+use aws_crypto_mpl::{Error as MplError, ErrorKind as MplErrorKind};
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
 
 const PROVIDER_ID: &str = "local-test-keyring";
@@ -39,7 +40,7 @@ impl Keyring for LocalKekKeyring {
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         // Data key length in bytes, from the algorithm suite in the materials.
         let key_len = materials.algorithm_suite().encryption_key_length();
 
@@ -49,7 +50,11 @@ impl Keyring for LocalKekKeyring {
             None => {
                 let mut dk = vec![0u8; key_len];
                 generate_random_bytes(&mut dk).map_err(|e| {
-                    MaterialsError::keyring_failed_with_cause("failed to generate data key", e)
+                    MplError::with_cause(
+                        MplErrorKind::Cryptographic,
+                        "failed to generate data key",
+                        e,
+                    )
                 })?;
                 dk
             }
@@ -58,7 +63,7 @@ impl Keyring for LocalKekKeyring {
         // Wrap the data key under the KEK with a fresh IV.
         let mut iv = vec![0u8; WRAP_IV_LEN];
         generate_random_bytes(&mut iv).map_err(|e| {
-            MaterialsError::keyring_failed_with_cause("failed to generate wrap IV", e)
+            MplError::with_cause(MplErrorKind::Cryptographic, "failed to generate wrap IV", e)
         })?;
         let mut wrapped = Vec::new();
         aes_encrypt(
@@ -69,7 +74,9 @@ impl Keyring for LocalKekKeyring {
             &[],
             &mut wrapped,
         )
-        .map_err(|e| MaterialsError::keyring_failed_with_cause("failed to wrap data key", e))?;
+        .map_err(|e| {
+            MplError::with_cause(MplErrorKind::Cryptographic, "failed to wrap data key", e)
+        })?;
 
         // Append the wrapped key to the materials as this keyring's EDK.
         let mut edk_ciphertext = iv;
@@ -101,9 +108,10 @@ impl Keyring for LocalKekKeyring {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         if materials.plaintext_data_key().is_some() {
-            return Err(MaterialsError::plaintext_data_key_already_present(
+            return Err(MplError::new(
+                MplErrorKind::InvalidMaterials,
                 "on_decrypt requires materials without a plaintext data key",
             ));
         }
@@ -118,7 +126,8 @@ impl Keyring for LocalKekKeyring {
             }
             let bytes = &edk.ciphertext();
             if bytes.len() != WRAP_IV_LEN + key_len + WRAP_TAG_LEN {
-                return Err(MaterialsError::keyring_failed(
+                return Err(MplError::new(
+                    MplErrorKind::Cryptographic,
                     "EDK ciphertext has unexpected length",
                 ));
             }
@@ -135,7 +144,7 @@ impl Keyring for LocalKekKeyring {
                 &mut data_key,
             )
             .map_err(|e| {
-                MaterialsError::keyring_failed_with_cause("failed to unwrap data key", e)
+                MplError::with_cause(MplErrorKind::Cryptographic, "failed to unwrap data key", e)
             })?;
             return DecryptionMaterials::builder()
                 .algorithm_suite_id(materials.algorithm_suite_id())
@@ -149,7 +158,8 @@ impl Keyring for LocalKekKeyring {
                 .build();
         }
 
-        Err(MaterialsError::no_matching_data_key(
+        Err(MplError::new(
+            MplErrorKind::NoMatchingDataKey,
             "no EDK matched this keyring",
         ))
     }
@@ -217,8 +227,8 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     .await
     .expect_err("decrypt under a different KEK must fail");
     assert!(
-        matches!(err.kind, ErrorKind::MplError),
+        matches!(err.kind(), ErrorKind::Cryptographic),
         "expected the keyring's unwrap failure, got {:?}",
-        err.kind
+        err.kind()
     );
 }

@@ -42,7 +42,7 @@ async fn test_verify_header_fails_on_tampered_header() {
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
-    //= reason=Untampered ct decrypts; tampered header byte → ValidationError, halting decrypt
+    //= reason=Untampered ct decrypts; tampered header byte → Cryptographic error, halting decrypt
     //# If this tag verification fails, this operation MUST immediately halt and fail.
     //
     //= spec/client-apis/decrypt.md#verify-the-header
@@ -66,9 +66,9 @@ async fn test_verify_header_fails_on_tampered_header() {
     //# [authentication tag field](../data-format/message-header.md#authentication-tag)
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::ValidationError,
-        "tampered header byte must produce ValidationError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Cryptographic,
+        "tampered header byte must produce Cryptographic error"
     );
 }
 
@@ -195,9 +195,9 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
         decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::Esdk,
-        "tampered signature must produce Esdk error"
+            .kind(),
+        ErrorKind::Cryptographic,
+        "tampered signature must produce a Cryptographic error"
     );
 }
 

@@ -3,13 +3,13 @@
 
 //! Record format parsing and materials reconstruction for the branch key store.
 
+use crate::{Error, ErrorKind};
 use std::collections::BTreeMap;
 
 use crate::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX,
     TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
-use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
 use crate::structures::{BranchKeyMaterials, EncryptionContext};
 
 /// A DDB record at the string-keyed abstraction level.
@@ -73,7 +73,7 @@ pub fn to_attribute_map(
 /// encryption context by extracting entries prefixed with `aws-crypto-ec:`.
 pub fn custom_encryption_context_from_authenticated_encryption_context(
     authenticated_ec: &BTreeMap<String, String>,
-) -> Result<EncryptionContext, KeystoreError> {
+) -> Result<EncryptionContext, Error> {
     let mut ec = EncryptionContext::new();
 
     for (key, value) in authenticated_ec {
@@ -90,19 +90,19 @@ pub fn custom_encryption_context_from_authenticated_encryption_context(
 pub fn branch_key_materials_from_authenticated_encryption_context(
     authenticated_ec: &BTreeMap<String, String>,
     plaintext_branch_key: Vec<u8>,
-) -> Result<BranchKeyMaterials, KeystoreError> {
+) -> Result<BranchKeyMaterials, Error> {
     let type_attr = authenticated_ec.get(ATTR_TYPE).ok_or_else(|| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            "Missing 'type' attribute in authenticated encryption context",
+        Error::new(
+            ErrorKind::Remote,
+            "missing 'type' attribute in authenticated encryption context",
         )
     })?;
 
     if type_attr != TYPE_BRANCH_ACTIVE && !type_attr.starts_with(TYPE_BRANCH_VERSION_PREFIX) {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
+        return Err(Error::new(
+            ErrorKind::Remote,
             format!(
-                "Invalid type attribute: '{}'. Must be '{}' or start with '{}'",
+                "invalid type attribute: '{}', must be '{}' or start with '{}'",
                 type_attr, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX
             ),
         ));
@@ -113,8 +113,8 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         authenticated_ec
             .get(ATTR_VERSION)
             .ok_or_else(|| {
-                KeystoreError::new(
-                    KeystoreErrorKind::RecordMalformed,
+                Error::new(
+                    ErrorKind::Remote,
                     "type is 'branch:ACTIVE' but 'version' attribute is missing",
                 )
             })?
@@ -131,10 +131,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         .strip_prefix(TYPE_BRANCH_VERSION_PREFIX)
         .filter(|v| !v.is_empty())
         .ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::RecordMalformed,
+            Error::new(
+                ErrorKind::Remote,
                 format!(
-                    "Version string '{version_string}' MUST be '{TYPE_BRANCH_VERSION_PREFIX}' \
+                    "version string '{version_string}' MUST be '{TYPE_BRANCH_VERSION_PREFIX}' \
                      followed by a non-empty version"
                 ),
             )
@@ -144,9 +144,9 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     let branch_key_id = authenticated_ec
         .get(ATTR_BRANCH_KEY_ID)
         .ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::RecordMalformed,
-                "Missing 'branch-key-id' attribute in authenticated encryption context",
+            Error::new(
+                ErrorKind::Remote,
+                "missing 'branch-key-id' attribute in authenticated encryption context",
             )
         })?
         .clone();
@@ -155,9 +155,9 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         custom_encryption_context_from_authenticated_encryption_context(authenticated_ec)?;
 
     let branch_key: [u8; 32] = plaintext_branch_key.try_into().map_err(|v: Vec<u8>| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            format!("Branch key must be 32 bytes, got {}", v.len()),
+        Error::new(
+            ErrorKind::Remote,
+            format!("branch key must be 32 bytes, got {}", v.len()),
         )
     })?;
 
@@ -168,9 +168,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         encryption_context,
     )
     .map_err(|e| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            format!("Failed to construct BranchKeyMaterials: {}", e),
+        Error::with_cause(
+            ErrorKind::Remote,
+            "failed to construct branch key materials",
+            e,
         )
     })
 }

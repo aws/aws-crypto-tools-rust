@@ -1,6 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use aws_crypto_mpl::ErrorKind;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 
 #[test]
@@ -62,6 +63,6 @@ fn test_builder_requires_every_field() {
     ];
     for (builder, field) in missing {
         let err = builder.build().unwrap_err();
-        assert!(err.message.contains(field), "{field}: {}", err.message);
+        assert_eq!(err.kind(), ErrorKind::Validation, "missing {field}");
     }
 }

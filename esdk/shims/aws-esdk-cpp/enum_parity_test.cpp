@@ -31,16 +31,21 @@ static_assert(eq(::aws_esdk_ffi::KmsConfigurationType{}, ::aws_esdk_ffi::KmsConf
 static_assert(eq(::aws_esdk_ffi::AesWrappingAlg{}, ::aws_esdk_ffi::AesWrappingAlg::Unset), "zero-init AesWrappingAlg is Unset");
 static_assert(!eq(::aws_esdk_ffi::EsdkCommitmentPolicy{}, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "zero-init CommitmentPolicy is not a selection");
 static_assert(!eq(::aws_esdk_ffi::EsdkAlgorithmSuiteId{}, ::aws_esdk_ffi::EsdkAlgorithmSuiteId::AlgAes128GcmIv12Tag16NoKdf), "zero-init AlgorithmSuiteId is not a selection");
-static_assert(!eq(::aws_esdk_ffi::CacheKind{}, ::aws_esdk_ffi::CacheKind::Default), "zero-init CacheKind is not a selection");
 // The facade's guard decodes these reprs from the error-message prefix; a
 // renumbering here must fail this build, not misclassify errors at runtime.
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Esdk, 0), "ShimErrorKind::Esdk");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::SerializationError, 1), "ShimErrorKind::SerializationError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CryptographicError, 2), "ShimErrorKind::CryptographicError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::MplError, 3), "ShimErrorKind::MplError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::ValidationError, 4), "ShimErrorKind::ValidationError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::KeystoreError, 5), "ShimErrorKind::KeystoreError");
-static_assert(eq(::aws_esdk_ffi::ShimErrorKind::CacheError, 6), "ShimErrorKind::CacheError");
+static_assert(eq(Aws::Esdk::ErrorKind::Validation, ::aws_esdk_ffi::ShimErrorKind::Validation), "ErrorKind::Validation");
+static_assert(eq(Aws::Esdk::ErrorKind::Serialization, ::aws_esdk_ffi::ShimErrorKind::Serialization), "ErrorKind::Serialization");
+static_assert(eq(Aws::Esdk::ErrorKind::Cryptographic, ::aws_esdk_ffi::ShimErrorKind::Cryptographic), "ErrorKind::Cryptographic");
+static_assert(eq(Aws::Esdk::ErrorKind::InvalidMaterials, ::aws_esdk_ffi::ShimErrorKind::InvalidMaterials), "ErrorKind::InvalidMaterials");
+static_assert(eq(Aws::Esdk::ErrorKind::EncryptionContextMismatch, ::aws_esdk_ffi::ShimErrorKind::EncryptionContextMismatch), "ErrorKind::EncryptionContextMismatch");
+static_assert(eq(Aws::Esdk::ErrorKind::NoMatchingDataKey, ::aws_esdk_ffi::ShimErrorKind::NoMatchingDataKey), "ErrorKind::NoMatchingDataKey");
+static_assert(eq(Aws::Esdk::ErrorKind::RemoteAccessDenied, ::aws_esdk_ffi::ShimErrorKind::RemoteAccessDenied), "ErrorKind::RemoteAccessDenied");
+static_assert(eq(Aws::Esdk::ErrorKind::RemoteResourceNotFound, ::aws_esdk_ffi::ShimErrorKind::RemoteResourceNotFound), "ErrorKind::RemoteResourceNotFound");
+static_assert(eq(Aws::Esdk::ErrorKind::RemoteThrottled, ::aws_esdk_ffi::ShimErrorKind::RemoteThrottled), "ErrorKind::RemoteThrottled");
+static_assert(eq(Aws::Esdk::ErrorKind::RemoteTransport, ::aws_esdk_ffi::ShimErrorKind::RemoteTransport), "ErrorKind::RemoteTransport");
+static_assert(eq(Aws::Esdk::ErrorKind::Remote, ::aws_esdk_ffi::ShimErrorKind::Remote), "ErrorKind::Remote");
+static_assert(eq(Aws::Esdk::ErrorKind::Internal, ::aws_esdk_ffi::ShimErrorKind::Internal), "ErrorKind::Internal");
+static_assert(eq(Aws::Esdk::ErrorKind::Io, ::aws_esdk_ffi::ShimErrorKind::Io), "ErrorKind::Io");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");

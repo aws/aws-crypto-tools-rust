@@ -175,10 +175,10 @@ async fn test_edk_count_zero_rejected_on_decrypt() {
             .await
             .expect_err(&format!("{version:?}: decrypt must reject EDK count of 0"));
         assert!(
-            matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
-            "{version:?}: expected SerializationError, got: {} ({:?})",
-            err.message,
-            err.kind
+            matches!(err.kind(), aws_esdk::ErrorKind::Serialization),
+            "{version:?}: expected Serialization error, got: {} ({:?})",
+            err.message(),
+            err.kind()
         );
     }
 }

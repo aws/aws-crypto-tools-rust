@@ -56,7 +56,7 @@
     clippy::tests_outside_test_module,
 )]
 
-use std::sync::Arc;
+pub mod error;
 
 mod ecdsa;
 pub use ecdsa::*;
@@ -65,7 +65,6 @@ pub use hkdf::*;
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey};
 use aws_lc_rs::rand;
-use std::backtrace::Backtrace;
 
 /// Digest Algorithm. Default is Sha512
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -103,37 +102,16 @@ const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
     }
 }
 
-/// Error type for this crate
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct Error {
-    /// Text associated with the error
-    pub message: String,
-    /// Backtrace at time of creation
-    pub backtrace: Arc<Backtrace>,
+define_error! {
+    /// An error from a cryptographic primitive.
+    Error,
+    /// What went wrong, as a caller would act on it.
+    ErrorKind;
 }
-
-impl PartialEq for Error {
-    fn eq(&self, other: &Self) -> bool {
-        self.message == other.message
-    }
-}
-impl Eq for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Crypto Error {}", self.message)
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[track_caller]
 fn serr(s: String) -> Error {
-    Error {
-        message: s,
-        backtrace: Arc::new(Backtrace::capture()),
-    }
+    Error::new(ErrorKind::Cryptographic, s)
 }
 
 #[track_caller]
@@ -149,7 +127,7 @@ fn err<T>(s: String) -> Result<T, Error> {
 /// produce the requested number of bytes.
 pub fn generate_random_bytes(bytes: &mut [u8]) -> Result<(), Error> {
     rand::fill(bytes)
-        .map_err(|_| serr(format!("Failed to generate {} random bytes.", bytes.len())))?;
+        .map_err(|_| serr(format!("could not generate {} random bytes", bytes.len())))?;
     Ok(())
 }
 
@@ -206,13 +184,14 @@ pub fn aes_encrypt(
     let old_size = cipher_text.len();
     cipher_text.extend_from_slice(message);
     let cipher_slice = &mut cipher_text[old_size..];
-    let key = UnboundKey::new(alg, key).map_err(|e| serr(format!("new {e:?}")))?;
-    let nonce = Nonce::try_assume_unique_for_key(iv).map_err(|e| serr(format!("new {e:?}")))?;
+    let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
+    let nonce = Nonce::try_assume_unique_for_key(iv)
+        .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
     let key = LessSafeKey::new(key);
     let aad = Aad::from(aad);
     let tag = key
         .seal_in_place_separate_tag(nonce, aad, cipher_slice)
-        .map_err(|e| serr(format!("Seal {e:?}")))?;
+        .map_err(|_| serr("AES-GCM encryption failed".to_owned()))?;
     cipher_text.extend_from_slice(tag.as_ref());
     Ok(())
 }
@@ -235,18 +214,19 @@ pub fn aes_decrypt(
 ) -> Result<(), Error> {
     if plain_text.len() < cipher_text.len() {
         return err(format!(
-            "aes_decrypt : Plain text buffer length of {} is less than cipher text length of {}.",
+            "plaintext buffer of {} bytes is shorter than the {} byte ciphertext",
             plain_text.len(),
             cipher_text.len()
         ));
     }
     let alg = get_aes_alg(alg);
-    let key = UnboundKey::new(alg, key).map_err(|e| serr(format!("new {e:?}")))?;
-    let nonce = Nonce::try_assume_unique_for_key(iv).map_err(|e| serr(format!("new {e:?}")))?;
+    let key = UnboundKey::new(alg, key).map_err(|_| serr("invalid AES-GCM key".to_owned()))?;
+    let nonce = Nonce::try_assume_unique_for_key(iv)
+        .map_err(|_| serr("invalid AES-GCM nonce".to_owned()))?;
     let key = LessSafeKey::new(key);
     let aad = Aad::from(aad);
     key.open_separate_gather(nonce, aad, cipher_text, auth_tag, plain_text)
-        .map_err(|e| serr(format!("gather {e:?}")))?;
+        .map_err(|_| serr("authentication tag did not match".to_owned()))?;
     Ok(())
 }
 
@@ -267,7 +247,7 @@ pub fn hmac(alg: DigestAlg, key: &[u8], msg: &[u8], out: &mut [u8]) -> Result<()
     let want_len = get_digest_alg(alg).output_len();
     if out.len() != want_len {
         return err(format!(
-            "hmac : output buffer length of {} does not match the {want_len} byte {alg:?} output.",
+            "output buffer of {} bytes does not match the {want_len} byte {alg:?} output",
             out.len()
         ));
     }
@@ -296,7 +276,7 @@ pub fn digest(alg: DigestAlg, data: &[u8], out: &mut [u8]) -> Result<(), Error> 
     let digest_alg = get_digest_alg(alg);
     if out.len() != digest_alg.output_len() {
         return err(format!(
-            "digest : output buffer length of {} does not match the {} byte {:?} output.",
+            "output buffer of {} bytes does not match the {} byte {:?} output",
             out.len(),
             digest_alg.output_len(),
             alg
@@ -344,6 +324,6 @@ pub fn kbkdf_ctr_hmac(
     let algorithm = aws_lc_rs::kdf::get_kbkdf_ctr_hmac_algorithm(alg_id)
         .ok_or_else(|| serr(format!("KBKDF-CTR-HMAC-{alg:?} algorithm is unavailable")))?;
     aws_lc_rs::kdf::kbkdf_ctr_hmac(algorithm, ikm, info, okm)
-        .map_err(|e| serr(format!("kbkdf_ctr_hmac {e:?}")))?;
+        .map_err(|_| serr("KBKDF-CTR-HMAC derivation failed".to_owned()))?;
     Ok(())
 }

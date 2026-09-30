@@ -3,6 +3,7 @@
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
 use crate::error::{Error, val_err};
+use crate::error::{ErrorKind, err};
 use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
 use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
@@ -19,7 +20,7 @@ use aws_crypto_mpl::structures::{
 pub(crate) fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
 ) -> Result<SharedCmm, Error> {
-    match input_source.ok_or_else(|| val_err("A Materials Source must be provided"))? {
+    match input_source.ok_or_else(|| val_err("a materials source must be provided"))? {
         MaterialSource::Cmm(cmm) => Ok(cmm),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -47,6 +48,17 @@ pub(crate) async fn get_decryption_materials(
     //# - Encryption Context: This MUST be the parsed [encryption context](../data-format/message-header.md#aad)
     //# from the message header.
     let encryption_context = header_body.encryption_context().clone();
+
+    // A conformant message carries the signing public key in its encryption context
+    // exactly when its suite signs.
+    // The CMM rejects a request that breaks this, but as bad input; here it is a malformed message.
+    let has_public_key = encryption_context.contains_key("aws-crypto-public-key");
+    if has_public_key != algorithm_suite_id.has_asymmetric_signing() {
+        return Err(err(
+            ErrorKind::Serialization,
+            "the header encryption context must contain 'aws-crypto-public-key' exactly when the algorithm suite signs",
+        ));
+    }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Encrypted Data Keys: This MUST be the parsed [encrypted data keys](../data-format/message-header.md#encrypted-data-keys)
@@ -86,25 +98,31 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#keyring
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let materials = cmm.decrypt_materials(request).await?;
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .map_err(|e| Error::from_inner("the CMM could not provide decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
     if !policy.allows_for_decrypt(materials.algorithm_suite_id()) {
-        return Err(val_err(
-            "Algorithm suite is not supported by the configured commitment policy for decryption",
+        return Err(err(
+            ErrorKind::InvalidMaterials,
+            "algorithm suite is not supported by the configured commitment policy for decryption",
         ));
     }
 
     if materials.plaintext_data_key().is_none() {
-        return Err(val_err(
-            "Decryption materials are missing a plaintext data key",
+        return Err(err(
+            ErrorKind::InvalidMaterials,
+            "decryption materials are missing a plaintext data key",
         ));
     }
 
     if !is_esdk_encryption_context(materials.encryption_context()) {
-        return Err(val_err(
+        return Err(err(
+            ErrorKind::InvalidMaterials,
             "CMM failed to return serializable decryption materials",
         ));
     }
@@ -155,30 +173,37 @@ pub(crate) async fn get_encryption_materials(
         request = request.with_max_plaintext_length(len as u64);
     }
 
-    let materials = cmm.get_encryption_materials(request).await?;
+    let materials = cmm
+        .get_encryption_materials(request)
+        .await
+        .map_err(|e| Error::from_inner("the CMM could not provide encryption materials", e))?;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) encrypt MUST yield an error.
     if !policy.allows_for_encrypt(materials.algorithm_suite_id()) {
-        return Err(val_err(
-            "Algorithm suite is not supported by the configured commitment policy for encryption",
+        return Err(err(
+            ErrorKind::InvalidMaterials,
+            "algorithm suite is not supported by the configured commitment policy for encryption",
         ));
     }
 
     if materials.plaintext_data_key().is_none() {
-        return Err(val_err(
-            "Encryption materials are missing a plaintext data key",
+        return Err(err(
+            ErrorKind::InvalidMaterials,
+            "encryption materials are missing a plaintext data key",
         ));
     }
 
     if !is_esdk_encryption_context(materials.encryption_context()) {
-        return Err(val_err(
+        return Err(err(
+            ErrorKind::InvalidMaterials,
             "CMM failed to return serializable encryption materials",
         ));
     }
     if !is_esdk_encrypted_data_keys(materials.encrypted_data_keys()) {
-        return Err(val_err(
+        return Err(err(
+            ErrorKind::InvalidMaterials,
             "CMM failed to return serializable encrypted data keys",
         ));
     }

@@ -3,10 +3,8 @@
 
 //! Helpers for inspecting the `source()` chain of an MPL error.
 //!
-//! An error that wraps a lower-level failure keeps it as a cause, so an AWS
-//! SDK error raised inside the keystore is still reachable from the
-//! [`MaterialsError`](crate::structures::MaterialsError) a keyring hands
-//! back.
+//! An AWS SDK error from inside the key store stays in the chain,
+//! so it is reachable from the [`Error`](crate::Error) a keyring returns.
 
 use std::error::Error;
 
@@ -20,7 +18,7 @@ use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 /// use aws_crypto_mpl::error_chain::find_in_error_chain;
 /// use aws_sdk_kms::error::SdkError;
 /// use aws_sdk_kms::operation::decrypt::DecryptError;
-/// # fn example(err: &aws_crypto_mpl::structures::MaterialsError) {
+/// # fn example(err: &aws_crypto_mpl::Error) {
 /// if let Some(sdk) = find_in_error_chain::<SdkError<DecryptError>>(err) {
 ///     if sdk.as_service_error().is_some_and(DecryptError::is_incorrect_key_exception) {
 ///         // the branch key's ciphertext was encrypted under a different KMS key
@@ -49,20 +47,14 @@ where
     None
 }
 
-/// The AWS service error code (`"AccessDeniedException"`,
-/// `"ThrottlingException"`, …) for the SDK failure underlying `err`, if any.
+/// The AWS service error code, such as `"AccessDeniedException"`, of the SDK failure behind `err`.
 ///
-/// Walks the `source()` chain, so this works on any error this crate
-/// returns — a `MaterialsError` from a keyring as well as a `KeystoreError`
-/// — without the caller knowing which AWS operation was in flight.
+/// Searches the `source()` chain, so it works on any error this crate returns
+/// without knowing which AWS operation failed.
 ///
-/// Returns `None` when the chain holds no SDK error, and also when the SDK
-/// error is not a *service* error: per
-/// `aws_smithy_runtime_api::client::result`, construction, timeout,
-/// dispatch, and response-parsing failures carry no service metadata, so a
-/// missing-credentials or connection failure has no code. Match on
-/// [`KeystoreError::kind`](crate::KeystoreError::kind) to separate those
-/// from a rejection by the service.
+/// `None` when the chain holds no SDK service error.
+/// A missing-credentials or connection failure has no code;
+/// its [`Error::kind`](crate::Error::kind) is `RemoteTransport`.
 pub fn aws_service_error_code<'a>(err: &'a (dyn Error + 'static)) -> Option<&'a str> {
     // A new arm is required for every AWS operation this crate invokes: the
     // lookup is a downcast, which matches one concrete type.

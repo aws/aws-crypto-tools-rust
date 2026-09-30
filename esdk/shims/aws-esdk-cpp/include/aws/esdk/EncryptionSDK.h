@@ -85,11 +85,54 @@ namespace Esdk {
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
 //
+/// What went wrong, as a caller would act on it.
+/// The same kinds, under the same names, as ESDK Rust's `ErrorKind`.
+/// Each kind's exception class says when it occurs and what to do.
+///
+/// Check retryable() first:
+/// a retryable error might succeed if the same call is made again later.
+/// Then decide from the kind.
+/// what() says which call failed, for logs.
+///
+/// Later releases can add kinds, so code that switches on the kind needs a default case.
+///
+/// Messages are for people, not code.
+/// Their text can change in any release, including a minor or patch release.
+/// Decide from the exception type, kind(), and retryable(), never from what().
+enum class ErrorKind : std::uint8_t {
+    Validation = 0,
+    Serialization = 1,
+    Cryptographic = 2,
+    InvalidMaterials = 3,
+    EncryptionContextMismatch = 4,
+    NoMatchingDataKey = 5,
+    RemoteAccessDenied = 6,
+    RemoteResourceNotFound = 7,
+    RemoteThrottled = 8,
+    RemoteTransport = 9,
+    Remote = 10,
+    Internal = 11,
+    Io = 12,
+};
+
 /// Base exception for every failure this library reports.
 /// Catching this type catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
+    /// What went wrong.
+    /// Empty when ESDK Rust reports a kind this library does not know yet.
+    std::optional<ErrorKind> kind() const noexcept { return kind_; }
+    /// Whether the same call might succeed if retried.
+    bool retryable() const noexcept { return retryable_; }
+
+protected:
+    AwsEncryptionSdkException(ErrorKind kind, bool retryable, const std::string& msg)
+        : std::runtime_error(msg), kind_(kind), retryable_(retryable) {}
+
+private:
+    std::optional<ErrorKind> kind_;
+    bool retryable_ = false;
 };
 
 //= spec/shim/shim.md#error-classification
@@ -98,26 +141,131 @@ public:
 //# - Every exposed error kind MUST also be identifiable as the shim's own base
 //# error type, so a target that handles only the base type is unaffected when a
 //# kind is added.
-//
-/// The message bytes are malformed and could not be read or written.
-/// No cryptography was attempted.
-class SerializationException : public AwsEncryptionSdkException {
-public:
-    explicit SerializationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
-};
 
-/// A cryptographic operation failed (ex. auth tag did not verify).
-/// Retrying the same input cannot succeed.
-class CryptographicException : public AwsEncryptionSdkException {
-public:
-    explicit CryptographicException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
-};
-
-/// An input is invalid (malformed/unrecognized value, or a missing required input type.)
-/// Fix the input; retrying the same input cannot succeed.
+/// An input or configuration value is invalid,
+/// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
+///
+/// Fix the input; the same call cannot succeed.
 class ValidationException : public AwsEncryptionSdkException {
 public:
-    explicit ValidationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+    explicit ValidationException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Validation, retryable, msg) {}
+};
+
+/// The bytes are not a well-formed encrypted message,
+/// for example truncated input, an unsupported message version, or data after the footer.
+///
+/// Treat the message as corrupt; retrying cannot succeed.
+class SerializationException : public AwsEncryptionSdkException {
+public:
+    explicit SerializationException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Serialization, retryable, msg) {}
+};
+
+/// A cryptographic check failed,
+/// for example an AES-GCM authentication tag or a message signature did not verify.
+///
+/// The message is corrupt or modified, or is being decrypted with the wrong key;
+/// retrying cannot succeed.
+class CryptographicException : public AwsEncryptionSdkException {
+public:
+    explicit CryptographicException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Cryptographic, retryable, msg) {}
+};
+
+/// A keyring or CMM returned materials inconsistent with each other or with the algorithm suite,
+/// for example no plaintext data key after encryption, or a signing key for a suite that does not sign.
+///
+/// Usually a bug in a custom keyring or CMM.
+class InvalidMaterialsException : public AwsEncryptionSdkException {
+public:
+    explicit InvalidMaterialsException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::InvalidMaterials, retryable, msg) {}
+};
+
+/// An encryption context does not match,
+/// for example a required key is missing, or a value passed to decrypt differs from the message's.
+///
+/// Check the encryption context passed to the call.
+class EncryptionContextMismatchException : public AwsEncryptionSdkException {
+public:
+    explicit EncryptionContextMismatchException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::EncryptionContextMismatch, retryable, msg) {}
+};
+
+/// None of the configured keys wrapped any of the message's encrypted data keys,
+/// for example when decrypting with a keyring that did not encrypt the message.
+///
+/// Decrypt with a keyring that has one of the message's keys.
+class NoMatchingDataKeyException : public AwsEncryptionSdkException {
+public:
+    explicit NoMatchingDataKeyException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, retryable, msg) {}
+};
+
+/// AWS KMS or DynamoDB denied access,
+/// for example because of missing IAM permissions or expired credentials.
+///
+/// Fix the permissions or credentials.
+class RemoteAccessDeniedException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteAccessDeniedException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteAccessDenied, retryable, msg) {}
+};
+
+/// A KMS key, DynamoDB table, or branch key does not exist.
+///
+/// Fix the configuration that names the resource.
+class RemoteResourceNotFoundException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteResourceNotFoundException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteResourceNotFound, retryable, msg) {}
+};
+
+/// AWS KMS or DynamoDB throttled the request.
+///
+/// Retryable: back off and try again.
+class RemoteThrottledException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteThrottledException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteThrottled, retryable, msg) {}
+};
+
+/// A request to a remote service was not sent, or its response did not arrive,
+/// for example because of a network error, a timeout, or missing credentials or region.
+///
+/// Retryable for a network error or timeout; check retryable().
+class RemoteTransportException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteTransportException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::RemoteTransport, retryable, msg) {}
+};
+
+/// Any other failure from a remote service,
+/// for example a KMS IncorrectKeyException, a KMS internal error, or a malformed key store record.
+///
+/// A server-side failure is retryable.
+class RemoteException : public AwsEncryptionSdkException {
+public:
+    explicit RemoteException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Remote, retryable, msg) {}
+};
+
+/// An internal invariant was violated, for example a poisoned lock.
+///
+/// A bug; report it.
+class InternalException : public AwsEncryptionSdkException {
+public:
+    explicit InternalException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Internal, retryable, msg) {}
+};
+
+/// A caller-supplied stream failed while streaming,
+/// for example a closed connection or a full disk.
+class IoException : public AwsEncryptionSdkException {
+public:
+    explicit IoException(const std::string& msg, bool retryable = false)
+        : AwsEncryptionSdkException(ErrorKind::Io, retryable, msg) {}
 };
 
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
@@ -162,7 +310,6 @@ struct DdbClientImpl;
 struct KeyStoreImpl;
 struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
-struct CacheTypeLowerer;
 struct BytesFactory;
 
 // Every duration parameter accepts any integer std::chrono::duration.
@@ -284,109 +431,105 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-class CacheType;
-
-/// A constructed cryptographic materials cache.
-/// Copies share the underlying cache.
+/// Base cryptographic materials cache type.
+/// Copies share the underlying cache: give several keyrings copies of one cache
+/// and they read and write the same entries.
 class CryptographicMaterialsCache {
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
-    friend class CacheType;
     friend class HierarchicalKeyring;
+
+protected:
     explicit CryptographicMaterialsCache(
         std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
         : impl_(std::move(impl)) {}
-
-public:
-    /// Constructs the cache described by `cache`.
-    /// \param cache Which type of local cache to use.
-    explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
-/// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
-class CacheType {
+/// Optional storm tracking cache parameters.
+/// A field left unset keeps the ESDK Rust's default.
+class StormTrackingCmcOptions {
+    std::optional<std::uint32_t> entry_capacity_;
+    std::optional<std::uint32_t> entry_pruning_tail_size_;
+    std::optional<std::chrono::nanoseconds> grace_period_;
+    std::optional<std::chrono::nanoseconds> grace_interval_;
+    std::optional<std::uint32_t> fan_out_;
+    std::optional<std::chrono::nanoseconds> inflight_ttl_;
+    std::optional<std::chrono::nanoseconds> sleep_;
+    friend class StormTrackingCmc;
+
 public:
-    /// The best choice for most situations. Probably a StormTrackingCache.
-    /// \param entry_capacity Maximum number of entries cached.
-    static CacheType Default(std::uint32_t entry_capacity);
-    /// A cache safe for multi-threaded use that also limits redundant and
-    /// overly parallel backend calls.
-    /// For a cache with sensible defaults, use Default instead.
-    /// \param entry_capacity Maximum number of entries cached.
-    /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    /// \param grace_period Time before expiration to begin refreshing.
-    /// \param grace_interval Time between refresh attempts.
-    /// \param fan_out Maximum number of simultaneous refresh attempts.
-    /// \param inflight_ttl Time until a refresh attempt is forgotten.
-    /// \param sleep Time a thread sleeps when fan_out is exceeded.
-    template <class GraceRep, class GracePeriod, class IntervalRep, class IntervalPeriod,
-              class InflightRep, class InflightPeriod, class SleepRep, class SleepPeriod>
-    static CacheType StormTracking(
-        std::uint32_t entry_capacity,
-        std::uint32_t entry_pruning_tail_size,
-        std::chrono::duration<GraceRep, GracePeriod> grace_period,
-        std::chrono::duration<IntervalRep, IntervalPeriod> grace_interval,
-        std::uint32_t fan_out,
-        std::chrono::duration<InflightRep, InflightPeriod> inflight_ttl,
-        std::chrono::duration<SleepRep, SleepPeriod> sleep) {
-        return StormTracking(entry_capacity, entry_pruning_tail_size,
-                             detail::to_nanoseconds(grace_period),
-                             detail::to_nanoseconds(grace_interval), fan_out,
-                             detail::to_nanoseconds(inflight_ttl), detail::to_nanoseconds(sleep),
-                             Tag{});
+    /// Maximum number of entries cached. Defaults to 1000.
+    StormTrackingCmcOptions& with_entry_capacity(std::uint32_t n) { entry_capacity_ = n; return *this; }
+    /// Number of least-recently-used entries checked for expiry on each lookup. Defaults to 1.
+    StormTrackingCmcOptions& with_entry_pruning_tail_size(std::uint32_t n) { entry_pruning_tail_size_ = n; return *this; }
+    /// Time before expiry at which one request starts refreshing an entry. Defaults to 10 seconds.
+    /// Must be less than the TTL of any Hierarchical Keyring using this cache.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_grace_period(std::chrono::duration<Rep, Period> d) {
+        grace_period_ = detail::to_nanoseconds(d);
+        return *this;
     }
-    /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
-    /// the user should provide an already constructed CryptographicMaterialsCache
-    /// to the Hierarchical Keyring at initialization.
-    static CacheType Shared(const CryptographicMaterialsCache& cache);
+    /// Time other requests wait before another one may try refreshing. Defaults to 1 second.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_grace_interval(std::chrono::duration<Rep, Period> d) {
+        grace_interval_ = detail::to_nanoseconds(d);
+        return *this;
+    }
+    /// Maximum number of entries being refreshed at the same time. Defaults to 20.
+    StormTrackingCmcOptions& with_fan_out(std::uint32_t n) { fan_out_ = n; return *this; }
+    /// Time a refresh may run before another request may retry it. Defaults to 10 seconds.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_inflight_ttl(std::chrono::duration<Rep, Period> d) {
+        inflight_ttl_ = detail::to_nanoseconds(d);
+        return *this;
+    }
+    /// Time a waiting request sleeps before checking the cache again. Defaults to 20 milliseconds.
+    template <class Rep, class Period>
+    StormTrackingCmcOptions& with_sleep(std::chrono::duration<Rep, Period> d) {
+        sleep_ = detail::to_nanoseconds(d);
+        return *this;
+    }
+};
 
-private:
-    // Keeps the private overload out of overload resolution for callers,
-    // so std::chrono::nanoseconds arguments still select the public template.
-    struct Tag {};
-    static CacheType StormTracking(std::uint32_t entry_capacity,
-                                   std::uint32_t entry_pruning_tail_size,
-                                   std::chrono::nanoseconds grace_period,
-                                   std::chrono::nanoseconds grace_interval,
-                                   std::uint32_t fan_out,
-                                   std::chrono::nanoseconds inflight_ttl,
-                                   std::chrono::nanoseconds sleep,
-                                   Tag);
+/// The best choice for most situations: a StormTrackingCmc with default options
+/// and the given entry capacity.
+class DefaultCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates the default cache.
+    /// \param entry_capacity Maximum number of entries cached.
+    explicit DefaultCmc(std::uint32_t entry_capacity);
+};
 
-    enum class Kind { Default, StormTracking, Shared };
-    explicit CacheType(Kind kind) : kind_(kind) {}
-    Kind kind_;
-    std::uint32_t entry_capacity_ = 0;
-    std::uint32_t entry_pruning_tail_size_ = 0;
-    std::chrono::nanoseconds grace_period_{};
-    std::chrono::nanoseconds grace_interval_{};
-    std::uint32_t fan_out_ = 0;
-    std::chrono::nanoseconds inflight_ttl_{};
-    std::chrono::nanoseconds sleep_{};
-    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
-    friend class CryptographicMaterialsCache;
-    friend class HierarchicalKeyring;
-    friend struct detail::CacheTypeLowerer;
+/// A cache safe for multi-threaded use that also limits redundant and
+/// overly parallel backend calls.
+/// For a cache with sensible defaults, use DefaultCmc instead.
+class StormTrackingCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates a storm tracking cache.
+    /// \param options Optional storm tracking parameters.
+    explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
+};
+
+/// A single-threaded-style LRU cache with no storm protection.
+class LocalCmc : public CryptographicMaterialsCache {
+public:
+    /// Creates a local cache.
+    /// \param entry_capacity Maximum number of entries cached. Zero caches nothing.
+    explicit LocalCmc(std::uint32_t entry_capacity);
 };
 
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class HierarchicalKeyringOptions {
-    std::optional<CacheType> cache_;
+    std::optional<CryptographicMaterialsCache> cache_;
     std::optional<std::string> partition_id_;
     friend class HierarchicalKeyring;
 
 public:
-    /// Sets the type of cache for this Hierarchical Keyring.
-    /// By providing an already initialized 'Shared' cache, users can determine the scope of the cache.
-    /// That is, if the cache is shared across other Cryptographic Material Providers,
-    /// for instance other Hierarchical Keyrings or Caching Cryptographic Materials Managers (Caching CMMs).
-    /// If any other type of cache in the CacheType union is provided,
-    /// the Hierarchical Keyring will initialize a cache of that type,
-    /// to be used with only this Hierarchical Keyring.
-    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
-    /// with entryCapacity = 1000.
-    HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
+    /// The cache for this Hierarchical Keyring.
+    /// Give several Hierarchical Keyrings (or other Cryptographic Material Providers) copies of
+    /// one cache to share it; pass a cache to only this keyring to keep it private.
+    /// If not set, a DefaultCmc with entry_capacity = 1000 is created for only this keyring.
+    HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
         cache_ = cache;
         return *this;
     }

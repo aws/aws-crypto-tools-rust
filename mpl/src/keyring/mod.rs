@@ -7,15 +7,14 @@
 //! keyring. The macro makes this work by rewriting each `async fn`
 //! to return a boxed future.
 
+use crate::Error;
 use async_trait::async_trait;
 
 pub mod raw_aes_keyring;
 
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
 
-use crate::structures::{
-    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
-};
+use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 
 /// To hold a keyring whose concrete type is chosen at runtime, use [`SharedKeyring`].
 #[async_trait]
@@ -27,7 +26,7 @@ pub trait Keyring: Send + Sync {
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError>;
+    ) -> Result<EncryptionMaterials, Error>;
 
     /// Modify the supplied [`DecryptionMaterials`] by deriving the plaintext
     /// data key from one of the supplied encrypted data keys. See the
@@ -37,7 +36,7 @@ pub trait Keyring: Send + Sync {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError>;
+    ) -> Result<DecryptionMaterials, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -54,7 +53,7 @@ impl Keyring for SharedKeyring {
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, Error> {
         self.0.on_encrypt(materials).await
     }
 
@@ -62,7 +61,7 @@ impl Keyring for SharedKeyring {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, Error> {
         self.0.on_decrypt(materials, encrypted_data_keys).await
     }
 }

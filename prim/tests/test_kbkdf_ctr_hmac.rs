@@ -28,6 +28,7 @@
 //! [`TestKDF_TestVectors.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestKDF_TestVectors.dfy
 //! [`KdfCtr.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/src/KDF/KdfCtr.dfy
 
+use aws_mpl_primitives::ErrorKind;
 use aws_mpl_primitives::{DigestAlg, Error, kbkdf_ctr_hmac};
 
 /// UTF-8 bytes of "aws-kms-hierarchy" — the purpose label used by the C
@@ -376,5 +377,5 @@ fn test_kbkdf_ctr_hmac_empty_okm() {
     let info = [0u8; 4];
     let mut okm: [u8; 0] = [];
     let err = kbkdf_ctr_hmac(DigestAlg::Sha256, &ikm, &info, &mut okm).unwrap_err();
-    assert!(err.message.contains("kbkdf_ctr_hmac"));
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }

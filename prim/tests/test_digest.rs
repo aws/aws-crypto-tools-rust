@@ -6,6 +6,7 @@
 //!
 //! [`TestDigest.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestDigest.dfy
 
+use aws_mpl_primitives::ErrorKind;
 use aws_mpl_primitives::{DigestAlg, Error, digest};
 
 const ASDF: [u8; 4] = [97, 115, 100, 102];
@@ -82,5 +83,5 @@ fn test_digest_rejects_wrong_length_output_buffer() {
     // for the wrong digest.
     let mut out = [0u8; 32];
     let err = digest(DigestAlg::Sha512, &ASDF, &mut out).unwrap_err();
-    assert!(err.message.contains("output buffer length of 32"));
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }

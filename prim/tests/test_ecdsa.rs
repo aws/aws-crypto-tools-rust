@@ -8,6 +8,7 @@
 //!
 //! [`TestSignature.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestSignature.dfy
 
+use aws_mpl_primitives::ErrorKind;
 use aws_mpl_primitives::{
     DigestAlg, DigestContext, EcdsaSignatureAlgorithm, Error, digest, ecdsa_generate_keypair,
     ecdsa_sign, ecdsa_sign_digest, ecdsa_verify, ecdsa_verify_context, field_size, signature_len,
@@ -147,7 +148,7 @@ fn test_ecdsa_sign_rejects_wrong_length_buffer() -> Result<(), Error> {
     // for the wrong curve.
     let mut sig = [0u8; 103];
     let err = ecdsa_sign(alg, &keys.signing_key, b"m", &mut sig).unwrap_err();
-    assert!(err.message.contains("signature buffer length of 103"));
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
     Ok(())
 }
 
@@ -159,7 +160,7 @@ fn test_ecdsa_sign_digest_rejects_wrong_length_buffer() -> Result<(), Error> {
     ctx.update(b"m");
     let mut sig = [0u8; 70];
     let err = ecdsa_sign_digest(alg, &keys.signing_key, ctx, &mut sig).unwrap_err();
-    assert!(err.message.contains("signature buffer length of 70"));
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
     Ok(())
 }
 
@@ -171,7 +172,7 @@ fn test_ecdsa_sign_with_bad_private_key() {
     let alg = EcdsaSignatureAlgorithm::EcdsaP256;
     let mut sig = vec![0u8; signature_len(alg)];
     let err = ecdsa_sign(alg, &[0u8; 8], b"m", &mut sig).unwrap_err();
-    assert!(!err.message.is_empty());
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
 }
 
 #[test]
@@ -181,7 +182,7 @@ fn test_ecdsa_sign_digest_with_bad_private_key() -> Result<(), Error> {
     ctx.update(b"m");
     let mut sig = vec![0u8; signature_len(alg)];
     let err = ecdsa_sign_digest(alg, &[0u8; 8], ctx, &mut sig).unwrap_err();
-    assert!(!err.message.is_empty());
+    assert_eq!(err.kind(), ErrorKind::Cryptographic);
     Ok(())
 }
 

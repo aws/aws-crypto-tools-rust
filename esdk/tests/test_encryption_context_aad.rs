@@ -300,15 +300,11 @@ async fn decrypt_err_with_second_key(version: Version, second_key: &[u8; 4]) -> 
 async fn test_decrypt_rejects_duplicate_encryption_context_key() {
     for version in VERSIONS {
         let err = decrypt_err_with_second_key(version, b"keyA").await;
-        assert_eq!(
-            err.kind,
-            ErrorKind::SerializationError,
-            "{version:?}: {err:?}"
-        );
-        assert!(
-            err.message.contains("Duplicate key in encryption context"),
-            "{version:?}: {err:?}"
-        );
+        assert_eq!(err.kind(), ErrorKind::Serialization, "{version:?}: {err:?}");
+        let source = std::error::Error::source(&err)
+            .and_then(|e| e.downcast_ref::<aws_crypto_mpl::Error>())
+            .expect("the MPL error is the source");
+        assert_eq!(source.kind(), aws_crypto_mpl::ErrorKind::Validation);
     }
 }
 
@@ -316,15 +312,10 @@ async fn test_decrypt_rejects_duplicate_encryption_context_key() {
 async fn test_decrypt_rejects_out_of_order_encryption_context_keys() {
     for version in VERSIONS {
         let err = decrypt_err_with_second_key(version, b"key0").await;
-        assert_eq!(
-            err.kind,
-            ErrorKind::SerializationError,
-            "{version:?}: {err:?}"
-        );
-        assert!(
-            err.message
-                .contains("Encryption context keys are not in ascending order"),
-            "{version:?}: {err:?}"
-        );
+        assert_eq!(err.kind(), ErrorKind::Serialization, "{version:?}: {err:?}");
+        let source = std::error::Error::source(&err)
+            .and_then(|e| e.downcast_ref::<aws_crypto_mpl::Error>())
+            .expect("the MPL error is the source");
+        assert_eq!(source.kind(), aws_crypto_mpl::ErrorKind::Validation);
     }
 }

@@ -7,6 +7,7 @@
 //! See [`LocalCmc`] for the public API. Behavioral requirements are
 //! specified in `../spec/framework/local-cryptographic-materials-cache.md`.
 
+use crate::{Error, ErrorKind};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -14,7 +15,7 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use lru::LruCache;
 
-use super::{CacheEntry, Cmc, CmcError};
+use super::{CacheEntry, Cmc};
 
 /// Internal storage type — the `lru` crate's `LruCache` keyed by cache id
 /// with `Arc<CacheEntry>` values so `get` can hand out a reference-counted
@@ -33,6 +34,18 @@ pub struct LocalCmc {
     inner: Arc<LocalCmcInner>,
 }
 
+impl std::fmt::Debug for LocalCmc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalCmc")
+            .field("entry_capacity", &self.inner.entry_capacity)
+            .field(
+                "entry_pruning_tail_size",
+                &self.inner.entry_pruning_tail_size,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
 struct LocalCmcInner {
     /// Configured maximum number of stored entries. The cache MUST NOT
     /// exceed this value once `put` has returned.
@@ -44,59 +57,46 @@ struct LocalCmcInner {
     /// (no-store cache); `Some(LruCache)` otherwise.
     store: Mutex<Option<Inner>>,
     /// Clock seam — `SystemTime::now`.
-    now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
+    now: Clock,
 }
 
+/// Number of least-recently-used entries a cache scans per `get`,
+/// evicting any that are TTL-expired, when the builder leaves it unset.
+///
+/// Every path in the Dafny implementation uses 1: `LocalCMC`'s constructor default,
+/// `StormTracker.DefaultStorm()`, and each `entryPruningTailSize.UnwrapOr(1)`
+/// at the create-cache switch.
+pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
+
+/// The clock a cache reads the current time from.
+pub(crate) type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
+
 impl LocalCmc {
-    /// Construct a `LocalCmc` with the supplied entry capacity and entry
-    /// pruning tail size.
-    ///
-    /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
-    /// and `get` always returns `None`.
-    pub fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Result<Self, CmcError> {
-        Self::with_clock_impl(entry_capacity, entry_pruning_tail_size, SystemTime::now)
+    /// Start a builder for `LocalCmc`.
+    #[must_use]
+    pub fn builder() -> LocalCmcBuilder {
+        LocalCmcBuilder::default()
     }
 
-    /// Test-only constructor with clock injection. Gated behind the
-    /// `test-utils` feature so it is not exposed to library consumers.
-    /// Tests use this to fast-forward past entry TTLs without sleeping.
-    #[cfg(feature = "test-utils")]
-    #[doc(hidden)]
-    pub fn with_clock<F>(
+    /// Constructor that accepts an arbitrary clock, shared with
+    /// `StormTrackingCmc` so its inner `LocalCmc` reads the same clock.
+    pub(crate) fn with_clock(
         entry_capacity: usize,
         entry_pruning_tail_size: usize,
-        now: F,
-    ) -> Result<Self, CmcError>
-    where
-        F: Fn() -> SystemTime + Send + Sync + 'static,
-    {
-        Self::with_clock_impl(entry_capacity, entry_pruning_tail_size, now)
-    }
-
-    /// Internal constructor that accepts an arbitrary clock. `pub(crate)`
-    /// so `StormTrackingCmc` can construct its inner `LocalCmc` without
-    /// depending on the `test-utils`-gated public `with_clock`; not part
-    /// of the public API.
-    pub(crate) fn with_clock_impl<F>(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        now: F,
-    ) -> Result<Self, CmcError>
-    where
-        F: Fn() -> SystemTime + Send + Sync + 'static,
-    {
+        now: Clock,
+    ) -> Self {
         // `NonZeroUsize::new` returns `None` for `0`; the resulting
         // `Option<LruCache>` is `None` for the no-store cache and
         // `Some(LruCache::new(cap))` otherwise.
         let inner = NonZeroUsize::new(entry_capacity).map(LruCache::new);
-        Ok(Self {
+        Self {
             inner: Arc::new(LocalCmcInner {
                 entry_capacity,
                 entry_pruning_tail_size,
                 store: Mutex::new(inner),
-                now: Arc::new(now),
+                now,
             }),
-        })
+        }
     }
 
     /// Configured entry capacity.
@@ -111,17 +111,17 @@ impl LocalCmc {
 
     /// Number of currently stored entries. Useful for tests asserting
     /// capacity invariants.
-    pub fn len(&self) -> Result<usize, CmcError> {
+    pub fn len(&self) -> Result<usize, Error> {
         let inner = self
             .inner
             .store
             .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         Ok(inner.as_ref().map_or(0, LruCache::len))
     }
 
     /// Whether the cache currently holds zero entries.
-    pub fn is_empty(&self) -> Result<bool, CmcError> {
+    pub fn is_empty(&self) -> Result<bool, Error> {
         Ok(self.len()? == 0)
     }
 
@@ -151,14 +151,85 @@ impl LocalCmc {
     }
 }
 
+/// Builder for [`LocalCmc`], returned by [`LocalCmc::builder`].
+#[derive(Clone, Default)]
+pub struct LocalCmcBuilder {
+    entry_capacity: Option<usize>,
+    entry_pruning_tail_size: Option<usize>,
+    clock: Option<Clock>,
+}
+
+impl std::fmt::Debug for LocalCmcBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalCmcBuilder")
+            .field("entry_capacity", &self.entry_capacity)
+            .field("entry_pruning_tail_size", &self.entry_pruning_tail_size)
+            .finish_non_exhaustive()
+    }
+}
+
+impl LocalCmcBuilder {
+    /// Set the maximum number of entries. Required.
+    ///
+    /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
+    /// and `get` always returns `None`.
+    #[must_use]
+    pub const fn entry_capacity(mut self, n: usize) -> Self {
+        self.entry_capacity = Some(n);
+        self
+    }
+
+    /// Set the number of least-recently-used entries each get checks for
+    /// expired entries to evict. Defaults to 1.
+    #[must_use]
+    pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
+        self.entry_pruning_tail_size = Some(n);
+        self
+    }
+
+    /// Replace the cache's clock, so tests can fast-forward past entry TTLs
+    /// without sleeping. Defaults to `SystemTime::now`.
+    #[cfg(feature = "test-utils")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn clock<F>(mut self, now: F) -> Self
+    where
+        F: Fn() -> SystemTime + Send + Sync + 'static,
+    {
+        self.clock = Some(Arc::new(now));
+        self
+    }
+
+    /// Construct the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation)
+    /// error if `entry_capacity` is unset.
+    pub fn build(self) -> Result<LocalCmc, Error> {
+        let Some(entry_capacity) = self.entry_capacity else {
+            return Err(Error::new(
+                ErrorKind::Validation,
+                "an entry capacity is required",
+            ));
+        };
+        Ok(LocalCmc::with_clock(
+            entry_capacity,
+            self.entry_pruning_tail_size
+                .unwrap_or(CACHE_PRUNING_TAIL_SIZE),
+            self.clock.unwrap_or_else(|| Arc::new(SystemTime::now)),
+        ))
+    }
+}
+
 #[async_trait]
 impl Cmc for LocalCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
         let mut inner = self
             .inner
             .store
             .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             // Zero-capacity cache: never store. Silently drop the entry so
             // the post-condition `len == 0 <= entry_capacity` holds.
@@ -171,12 +242,12 @@ impl Cmc for LocalCmc {
         Ok(())
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
         let mut inner = self
             .inner
             .store
             .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             return Ok(None);
         };
@@ -201,12 +272,12 @@ impl Cmc for LocalCmc {
         }
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
         let mut inner = self
             .inner
             .store
             .lock()
-            .map_err(|e| CmcError::storage_failed(format!("LocalCmc lock poisoned: {e}")))?;
+            .map_err(|_| Error::new(ErrorKind::Internal, "cache lock poisoned"))?;
         let Some(cache) = inner.as_mut() else {
             return Ok(());
         };

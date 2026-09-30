@@ -38,16 +38,16 @@ async fn test_unsupported_version_rejected() {
 
     //= spec/client-apis/decrypt.md#parse-the-header
     //= type=test
-    //= reason=Supported version byte → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported version byte → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported version](../data-format/message-header.md#supported-versions).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported version must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported version byte must produce SerializationError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Serialization,
+        "unsupported version byte must produce Serialization error"
     );
 }
 
@@ -88,16 +88,16 @@ async fn test_unsupported_content_type_v1_rejected() {
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Supported content type byte → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported content type byte → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported content type](../data-format/message-header.md#supported-content-types).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported content type must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported V1 content type must produce SerializationError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Serialization,
+        "unsupported V1 content type must produce Serialization error"
     );
 }
 
@@ -138,16 +138,16 @@ async fn test_unsupported_content_type_v2_rejected() {
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Supported content type byte → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported content type byte → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported content type](../data-format/message-header.md#supported-content-types).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported content type must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported V2 content type must produce SerializationError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Serialization,
+        "unsupported V2 content type must produce Serialization error"
     );
 }
 
@@ -184,16 +184,16 @@ async fn test_unsupported_type_rejected() {
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Supported type byte (0x80) → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported type byte (0x80) → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported type](../data-format/message-header.md#supported-types).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported type must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported V1 type byte must produce SerializationError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Serialization,
+        "unsupported V1 type byte must produce Serialization error"
     );
 }
 
@@ -233,7 +233,7 @@ async fn test_max_encrypted_data_keys_enforcement() {
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=2 EDKs on wire + max=2 → Ok; same ct + max=1 → SerializationError, halting deserialization
+    //= reason=2 EDKs on wire + max=2 → Ok; same ct + max=1 → Serialization error, halting deserialization
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys)
     //# deserialized from the [message header](../data-format/message-header.md)
     //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md),
@@ -245,8 +245,8 @@ async fn test_max_encrypted_data_keys_enforcement() {
     );
     assert_eq!(
         decrypt(&limiting_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "max=1 with 2 EDKs on wire must produce SerializationError"
+        ErrorKind::Serialization,
+        "max=1 with 2 EDKs on wire must produce Serialization error"
     );
 }
 */
@@ -279,14 +279,14 @@ async fn test_no_header_info_released_before_verification() {
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → ValidationError with no DecryptOutput, so nothing released
+    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → Cryptographic error with no DecryptOutput, so nothing released
     //# Until the [header is verified](#verify-the-header), this operation MUST NOT
     //# release any parsed information from the header.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::ValidationError,
-        "tampered header must produce ValidationError, no output"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Cryptographic,
+        "tampered header must produce Cryptographic error, no output"
     );
 }
 
@@ -331,16 +331,16 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
     //
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Untampered V1 message decrypts; tampered V1 auth tag byte → CryptographicError, proving the tag was deserialized and used
+    //= reason=Untampered V1 message decrypts; tampered V1 auth tag byte → Cryptographic error, proving the tag was deserialized and used
     //# - MUST deserialize the [Authentication Tag](../data-format/message-header.md#authentication-tag).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "valid V1 ct must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered V1 auth tag must produce CryptographicError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Cryptographic,
+        "tampered V1 auth tag must produce Cryptographic error"
     );
 }
 
@@ -379,16 +379,16 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Untampered V1 message decrypts; tampered V1 header auth IV byte → CryptographicError, proving IV was deserialized and used
+    //= reason=Untampered V1 message decrypts; tampered V1 header auth IV byte → Cryptographic error, proving IV was deserialized and used
     //# - MUST deserialize the [IV](../data-format/message-header.md#iv).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "valid V1 ct must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered V1 header auth IV must produce CryptographicError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Cryptographic,
+        "tampered V1 header auth IV must produce Cryptographic error"
     );
 }
 
@@ -658,10 +658,8 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let (sd_start, sd_end) = get("Algorithm Suite Data");
     assert_eq!(sd_end - sd_start, 32, "V2 Algorithm Suite Data is 32 bytes");
 
-    // Now tamper the V2 auth tag byte (immediately after Algorithm Suite Data)
-    // and confirm decrypt fails with CryptographicError — direct proof that
-    // the implementation deserialized the auth tag from the wire and used it
-    // for header verification.
+    // Tampering the V2 auth tag byte, immediately after Algorithm Suite Data, must fail decrypt with Cryptographic.
+    // That shows decrypt read the auth tag from the wire and used it to verify the header.
     let auth_tag_offset = sd_end;
     let auth_tag_end = auth_tag_offset + 16;
     assert!(
@@ -690,15 +688,15 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     //
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Untampered ct decrypts; tampered V2 auth tag byte → CryptographicError, proving the auth tag was deserialized and used
+    //= reason=Untampered ct decrypts; tampered V2 auth tag byte → Cryptographic error, proving the auth tag was deserialized and used
     //# - MUST deserialize the [Authentication Tag](../data-format/message-header.md#authentication-tag).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "valid V2 ct must decrypt"
     );
     assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered V2 auth tag must produce CryptographicError"
+        decrypt(&tampered_input).await.unwrap_err().kind(),
+        ErrorKind::Cryptographic,
+        "tampered V2 auth tag must produce Cryptographic error"
     );
 }

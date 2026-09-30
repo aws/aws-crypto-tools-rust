@@ -3,7 +3,7 @@
 
 //! Encrypted data key structure.
 
-use super::error::MaterialsError;
+use crate::{Error, ErrorKind};
 
 /// An encrypted data key comprised of provider ID, provider info, and ciphertext.
 ///
@@ -83,22 +83,25 @@ impl EncryptedDataKeyBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`MaterialsErrorKind::Validation`](super::MaterialsErrorKind::Validation)
+    /// Returns a [`ErrorKind::Validation`](crate::ErrorKind::Validation)
     /// error if any field is unset.
-    pub fn build(self) -> Result<EncryptedDataKey, MaterialsError> {
+    pub fn build(self) -> Result<EncryptedDataKey, Error> {
         let Some(key_provider_id) = self.key_provider_id else {
-            return Err(MaterialsError::new(
-                "EncryptedDataKey: a key provider ID is required",
+            return Err(Error::new(
+                ErrorKind::Validation,
+                "a key provider ID is required",
             ));
         };
         let Some(key_provider_info) = self.key_provider_info else {
-            return Err(MaterialsError::new(
-                "EncryptedDataKey: key provider information is required",
+            return Err(Error::new(
+                ErrorKind::Validation,
+                "key provider information is required",
             ));
         };
         let Some(ciphertext) = self.ciphertext else {
-            return Err(MaterialsError::new(
-                "EncryptedDataKey: a ciphertext is required",
+            return Err(Error::new(
+                ErrorKind::Validation,
+                "a ciphertext is required",
             ));
         };
         Ok(EncryptedDataKey {

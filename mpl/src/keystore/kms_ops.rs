@@ -13,14 +13,16 @@
 //! Callers pass references — neither helper takes ownership of the KMS
 //! client or the record.
 
+use crate::{Error, ErrorKind};
 use std::collections::BTreeMap;
 
 use aws_sdk_kms::Client as KmsClient;
+use aws_sdk_kms::config::http::HttpResponse;
+use aws_sdk_kms::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_kms::primitives::Blob;
 
 use crate::keystore::attributes::{ATTR_ENC, ATTR_KMS_ARN};
 use crate::keystore::config::KmsConfiguration;
-use crate::keystore::error::{KeystoreError, KeystoreErrorKind};
 use crate::keystore::kms_config::{is_arn_compatible, parse_arn};
 use crate::keystore::record::EncryptedRecord;
 
@@ -84,14 +86,14 @@ pub(crate) fn build_authenticated_encryption_context(
 pub(crate) fn resolve_keystore_arn(
     kms_config: &KmsConfiguration,
     record_kms_arn: &str,
-) -> Result<String, KeystoreError> {
+) -> Result<String, Error> {
     match kms_config {
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
             if !is_arn_compatible(kms_config, record_kms_arn) {
-                return Err(KeystoreError::new(
-                    KeystoreErrorKind::Authentication,
+                return Err(Error::new(
+                    ErrorKind::Validation,
                     format!(
-                        "Record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
+                        "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
                     ),
                 ));
             }
@@ -110,17 +112,13 @@ pub(crate) fn resolve_keystore_arn(
 
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery
 /// and MRDiscovery before passing the record's `kms-arn` to KMS.
-fn reject_alias_arn(arn: &str) -> Result<(), KeystoreError> {
-    let parts = parse_arn(arn).map_err(|e| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            format!("Record kms-arn is malformed: {}", e.message()),
-        )
-    })?;
+fn reject_alias_arn(arn: &str) -> Result<(), Error> {
+    let parts = parse_arn(arn)
+        .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
     if parts.resource_type == "alias" {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Authentication,
-            format!("Record kms-arn must not be an alias: {arn}"),
+        return Err(Error::new(
+            ErrorKind::Remote,
+            format!("record kms-arn must not be an alias: {arn}"),
         ));
     }
     Ok(())
@@ -129,13 +127,9 @@ fn reject_alias_arn(arn: &str) -> Result<(), KeystoreError> {
 /// Rewrite the region segment of an AWS ARN to `new_region`. The
 /// resource-type / resource portion (which may itself contain `/`) is
 /// preserved verbatim.
-fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, KeystoreError> {
-    let parts = parse_arn(arn).map_err(|e| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            format!("Record kms-arn is malformed: {}", e.message()),
-        )
-    })?;
+fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, Error> {
+    let parts = parse_arn(arn)
+        .map_err(|e| Error::with_cause(ErrorKind::Remote, "record kms-arn is malformed", e))?;
     Ok(format!(
         "arn:{}:{}:{}:{}:{}/{}",
         parts.partition,
@@ -156,13 +150,13 @@ pub(crate) async fn decrypt_branch_key(
     record: &EncryptedRecord,
     logical_keystore_name: &str,
     grant_tokens: &[String],
-) -> Result<Vec<u8>, KeystoreError> {
+) -> Result<Vec<u8>, Error> {
     let ec = build_authenticated_encryption_context(&record.attributes, logical_keystore_name);
 
     let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
-        KeystoreError::new(
-            KeystoreErrorKind::RecordMalformed,
-            format!("Record is missing the '{ATTR_KMS_ARN}' attribute"),
+        Error::new(
+            ErrorKind::Remote,
+            format!("record is missing the '{ATTR_KMS_ARN}' attribute"),
         )
     })?;
 
@@ -181,8 +175,8 @@ pub(crate) async fn decrypt_branch_key(
     let plaintext = response
         .plaintext
         .ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::Kms,
+            Error::new(
+                ErrorKind::Remote,
                 "KMS Decrypt response is missing Plaintext",
             )
         })?
@@ -190,28 +184,11 @@ pub(crate) async fn decrypt_branch_key(
     Ok(plaintext)
 }
 
-/// Map a failed AWS KMS SDK call into a `KeystoreError`, naming the
-/// `operation` that failed. We collapse all SDK error variants into
-/// `KeystoreErrorKind::Kms` since callers only need the categorisation,
-/// not the raw SDK error type. The originating SDK error is retained as
-/// the `cause`, reachable through [`std::error::Error::source`], so a
-/// caller that needs to distinguish a specific KMS exception (an
-/// `IncorrectKeyException` from throttling, say) can downcast to it
-/// rather than parsing the message.
-///
-/// `SdkError`'s `Display` is a bare lifecycle label ("service error",
-/// "dispatch failure"), so the message names this layer only. The
-/// exception, its code, and its message are one link down the chain;
-/// `aws_sdk_kms::error::DisplayErrorContext` prints the whole chain.
-fn map_kms_error<E>(operation: &str, err: E) -> KeystoreError
+fn map_kms_error<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Error
 where
-    E: std::error::Error + Send + Sync + 'static,
+    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    KeystoreError::with_cause(
-        KeystoreErrorKind::Kms,
-        format!("AWS KMS {operation} failed"),
-        err,
-    )
+    Error::from_sdk(&format!("AWS KMS {operation}"), err)
 }
 
 /// Generate a fresh 32-byte data key wrapped under `key_arn`, bound to
@@ -222,7 +199,7 @@ pub(crate) async fn generate_wrapped_key(
     key_arn: &str,
     encryption_context: &BTreeMap<String, String>,
     grant_tokens: &[String],
-) -> Result<Vec<u8>, KeystoreError> {
+) -> Result<Vec<u8>, Error> {
     let response = kms_client
         .generate_data_key_without_plaintext()
         .key_id(key_arn)
@@ -241,8 +218,8 @@ pub(crate) async fn generate_wrapped_key(
     Ok(response
         .ciphertext_blob
         .ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::Kms,
+            Error::new(
+                ErrorKind::Remote,
                 "KMS GenerateDataKeyWithoutPlaintext response is missing CiphertextBlob",
             )
         })?
@@ -259,7 +236,7 @@ pub(crate) async fn reencrypt_wrapped_key(
     source_encryption_context: &BTreeMap<String, String>,
     destination_encryption_context: &BTreeMap<String, String>,
     grant_tokens: &[String],
-) -> Result<Vec<u8>, KeystoreError> {
+) -> Result<Vec<u8>, Error> {
     let response = kms_client
         .re_encrypt()
         .ciphertext_blob(Blob::new(ciphertext.to_vec()))
@@ -285,8 +262,8 @@ pub(crate) async fn reencrypt_wrapped_key(
     Ok(response
         .ciphertext_blob
         .ok_or_else(|| {
-            KeystoreError::new(
-                KeystoreErrorKind::Kms,
+            Error::new(
+                ErrorKind::Remote,
                 "KMS ReEncrypt response is missing CiphertextBlob",
             )
         })?

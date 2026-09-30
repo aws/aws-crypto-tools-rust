@@ -128,7 +128,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set (config provided in two places).
     /// Otherwise, returns whatever [`encrypt`](crate::encrypt) returns.
     //= spec/client-apis/client.md#encrypt
@@ -142,7 +142,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set.
     /// Otherwise, returns whatever [`decrypt`](crate::decrypt) returns.
     //= spec/client-apis/client.md#decrypt
@@ -156,7 +156,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set.
     /// Otherwise, returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
     pub async fn encrypt_stream(
@@ -173,7 +173,7 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
+    /// Returns a `Validation` error if the input's commitment policy is not the default
     /// or its EDK cap is set.
     /// Otherwise, returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
     pub async fn decrypt_stream(
@@ -238,7 +238,7 @@ where
             "EsdkConfig is provided by both the Esdk client and the input struct. \
              Set commitment_policy and max_encrypted_data_keys \
              in exactly one place: on the Esdk client (via Esdk::builder), or on the \
-             input struct (when using the free encrypt/decrypt functions).",
+             input struct (when using the free encrypt/decrypt functions)",
         ));
     }
     let mut filled = input.clone();

@@ -9,9 +9,10 @@ mod fixtures;
 mod test_helpers;
 
 use async_trait::async_trait;
+use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
+use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials};
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;
@@ -27,7 +28,7 @@ impl Cmm for SuiteOverrideCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         // Rebuild the inner request, replacing the caller's requested suite
         // with the CMM's chosen suite while carrying the remaining fields
         // through unchanged. The inner default CMM then produces materials
@@ -51,7 +52,7 @@ impl Cmm for SuiteOverrideCmm {
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }

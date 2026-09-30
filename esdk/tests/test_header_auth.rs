@@ -172,9 +172,9 @@ async fn test_corrupted_header_auth_tag_fails_decrypt() {
             "{version:?}: corrupted header auth tag must fail decryption"
         ));
         assert_eq!(
-            err.kind,
-            ErrorKind::CryptographicError,
-            "{version:?}: expected CryptographicError, got {err:?}"
+            err.kind(),
+            ErrorKind::Cryptographic,
+            "{version:?}: expected Cryptographic error, got {err:?}"
         );
     }
 }
