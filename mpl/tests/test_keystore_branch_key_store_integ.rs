@@ -355,7 +355,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
 async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     // A wrong logical name binds a different `tablename` value into the
     // EC, so KMS Decrypt fails to authenticate and returns
-    // InvalidCiphertextException — mapped to ErrorKind::Remote.
+    // InvalidCiphertextException, which maps to ErrorKind::Remote.
     let store = build_store(
         KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
         INCORRECT_LOGICAL_NAME,

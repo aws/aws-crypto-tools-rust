@@ -3,19 +3,18 @@
 //! Error types for the AWS Encryption SDK.
 
 aws_mpl_primitives::define_error! {
-    /// Base error type for [`aws_esdk`](crate).
+    /// An error from the AWS Encryption SDK.
     ///
-    /// Which component failed, and the underlying library or service error,
-    /// are in [`Error::message`] and [`std::error::Error::source`].
+    /// The message says what failed.
+    /// The [`source`](std::error::Error::source) chain holds the underlying library or service error.
     Error,
     /// What went wrong, as a caller would act on it.
     ///
-    /// The kinds a keyring, CMM, key store, or cache reports are
-    /// [`aws_crypto_mpl::ErrorKind`]'s, under the same names.
+    /// An error from a keyring, CMM, key store, or cache keeps its kind:
+    /// each [`aws_crypto_mpl::ErrorKind`] has a kind here with the same name.
     ErrorKind;
-    /// The bytes are not a well-formed encrypted message, for example
-    /// truncated input, an unsupported message version, or data after the
-    /// message footer.
+    /// The bytes are not a well-formed encrypted message,
+    /// for example truncated input, an unsupported message version, or data after the footer.
     ///
     /// Treat the message as corrupt; retrying cannot succeed.
     Serialization,

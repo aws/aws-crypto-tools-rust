@@ -103,7 +103,7 @@ const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
 }
 
 define_error! {
-    /// Error type for this crate.
+    /// An error from a cryptographic primitive.
     Error,
     /// What went wrong, as a caller would act on it.
     ErrorKind;

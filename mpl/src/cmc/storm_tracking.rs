@@ -214,8 +214,8 @@ impl StormTrackingCmc {
     ///
     /// All non-observability state-touching paths use this helper so
     /// pruning stays uniform across the classifier, the wait loop, and
-    /// `put_cache_entry`. Poisoned-mutex errors are surfaced as
-    /// `Error::storage_failed` instead of panics.
+    /// `put_cache_entry`.
+    /// A poisoned mutex returns an `Internal` error.
     fn state_locked(
         &self,
         now: SystemTime,

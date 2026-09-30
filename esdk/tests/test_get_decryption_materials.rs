@@ -2,10 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Tests for spec/client-apis/decrypt.md#get-the-decryption-materials
-// The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait
-// whose signatures return `MplError` by value; keep the large-Err allow
-// so the delegating spy's `Result` doesn't trip clippy::result_large_err.
-#![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;

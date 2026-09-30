@@ -17,8 +17,7 @@ namespace Aws {
 namespace Esdk {
 namespace detail {
 
-// An error from the Rust side, decoded from the message cxx carries across.
-// lib.rs's encode_err writes it as `{kind}\x1f{retryable}\x1f{message}`.
+// A Rust error, decoded from the string lib.rs's encode_err builds.
 struct ShimError {
     ::ffi::ShimErrorKind kind;
     bool retryable;
@@ -57,8 +56,7 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
     if (!kind) {
         return std::nullopt;
     }
-    // The message is everything after the second separator, so a separator
-    // inside the message itself is left alone.
+    // Everything after the second separator is the message, so the message can contain a separator.
     return ShimError{
         static_cast<::ffi::ShimErrorKind>(*kind),
         what.substr(first + 1, second - first - 1) == "1",

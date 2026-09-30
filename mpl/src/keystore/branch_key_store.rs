@@ -276,7 +276,7 @@ impl BranchKeyStoreBuilder {
     ///
     /// # Errors
     ///
-    /// Returns `Error::Configuration` if:
+    /// Returns a `Validation` error if:
     /// - a required field is unset,
     /// - the table name is outside DynamoDB's 3-255 character bounds, or
     /// - the KMS configuration is invalid (malformed ARN, alias, non-`kms` service).
@@ -765,9 +765,6 @@ fn ddb_build_err(e: aws_sdk_dynamodb::error::BuildError) -> Error {
     Error::with_cause(ErrorKind::Internal, "failed to build a DynamoDB request", e)
 }
 
-/// Classify a failed DynamoDB SDK call. The SDK error is the
-/// [`std::error::Error::source`], so a caller needing a specific DynamoDB
-/// exception can downcast to it.
 fn map_ddb_error<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Error
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,

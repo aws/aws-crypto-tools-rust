@@ -9,16 +9,16 @@ use aws_sdk_kms::error::{ProvideErrorMetadata, SdkError};
 aws_mpl_primitives::define_error! {
     /// An error from a keyring, CMM, key store, or cache.
     ///
-    /// Which component failed, and the underlying service or library error,
-    /// are in [`Error::message`] and [`std::error::Error::source`].
+    /// The message says what failed.
+    /// The [`source`](std::error::Error::source) chain holds the underlying service or library error.
     Error,
     /// What went wrong, as a caller would act on it.
     ErrorKind;
 }
 
 impl Error {
-    /// Classify a failed AWS SDK call, naming the failed `operation` in the
-    /// message. The SDK error is the [`std::error::Error::source`].
+    /// Classify a failed AWS SDK call by its error code.
+    /// The message names `operation`, and the SDK error becomes the source.
     #[track_caller]
     pub(crate) fn from_sdk<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Self
     where
@@ -39,9 +39,8 @@ impl Error {
     }
 }
 
-// Codes from the AWS SDK for Rust's own retry classifier
-// (aws-runtime `retries::classifiers`), plus the service-side failures
-// AWS KMS and DynamoDB document as transient.
+// Codes the AWS SDK for Rust's retry classifier (aws-runtime `retries::classifiers`) retries,
+// plus the failures AWS KMS and DynamoDB document as transient.
 const THROTTLING_CODES: &[&str] = &[
     "Throttling",
     "ThrottlingException",
@@ -82,8 +81,8 @@ fn classify_sdk_error<E: ProvideErrorMetadata>(
         SdkError::ConstructionFailure(_) => (ErrorKind::Internal, false),
         SdkError::TimeoutError(_) => (ErrorKind::RemoteTransport, true),
         SdkError::DispatchFailure(failure) => {
-            // Missing credentials or region surface here as user or other
-            // connector errors; retrying cannot fix those.
+            // Missing credentials or region arrive as user or other connector errors,
+            // which retrying cannot fix.
             let transient = failure.is_io() || failure.is_timeout();
             (ErrorKind::RemoteTransport, transient)
         }

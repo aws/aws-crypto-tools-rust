@@ -184,9 +184,6 @@ pub(crate) async fn decrypt_branch_key(
     Ok(plaintext)
 }
 
-/// Classify a failed AWS KMS SDK call. The SDK error is the
-/// [`std::error::Error::source`], so a caller that needs a specific KMS
-/// exception can downcast to it.
 fn map_kms_error<E>(operation: &str, err: SdkError<E, HttpResponse>) -> Error
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,

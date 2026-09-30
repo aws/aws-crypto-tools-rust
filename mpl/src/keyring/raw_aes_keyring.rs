@@ -88,7 +88,7 @@ impl RawAesKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when `wrapping_key`'s length does not match
+    /// Returns a `Validation` error when `wrapping_key`'s length does not match
     /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
     /// to or starts with the reserved value `aws-kms`.
     pub fn new(

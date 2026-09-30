@@ -1167,8 +1167,8 @@ fn wrap_two_calls_produce_distinct_ciphertexts() {
 
 #[test]
 fn unwrap_too_short_ciphertext_returns_error() {
-    // A ciphertext shorter than the fixed 60-byte overhead cannot possibly
-    // hold the salt+iv+version+tag layout. Unwrap must fail with Cryptographic.
+    // A ciphertext shorter than the fixed 60-byte overhead cannot hold the salt+iv+version+tag layout,
+    // so unwrap fails with Cryptographic.
     let materials = fixture_materials_empty_ec();
     let too_short = vec![0u8; 32];
 
@@ -1591,9 +1591,7 @@ mod onencrypt {
         };
         assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
 
-        // The keystore failure is attached as the cause, not merely formatted
-        // into the message, so a caller can recover the originating
-        // `Error` by type instead of parsing text.
+        // A caller can recover the keystore's `Error` by type from the source.
         let cause = err
             .source()
             .expect("the keystore failure must be attached as the cause");
@@ -2088,8 +2086,7 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
         assert_eq!(err.kind(), ErrorKind::RemoteResourceNotFound);
-        // The per-attempt failures are carried on `collected()`; Display shows
-        // only this error's own message.
+        // Each attempt's failure is in `collected()`, not in the message.
         assert!(
             err.collected()
                 .iter()
