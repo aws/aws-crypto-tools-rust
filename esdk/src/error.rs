@@ -85,17 +85,3 @@ impl From<aws_smithy_types::error::operation::BuildError> for Error {
         Self::with_cause(Kind::Validation, "could not build the request", item)
     }
 }
-
-impl From<&str> for Error {
-    #[track_caller]
-    fn from(item: &str) -> Self {
-        Self::new(Kind::Internal, item)
-    }
-}
-
-impl From<String> for Error {
-    #[track_caller]
-    fn from(item: String) -> Self {
-        Self::new(Kind::Internal, item)
-    }
-}
