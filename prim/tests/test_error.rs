@@ -1,12 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the error shape `define_error!` generates.
+//! Tests for the primitives' error type and the shared error types.
 
 use std::error::Error as _;
 
-use aws_mpl_primitives::error::{DisplayErrorContext, Resource, RetryKind, Service};
-use aws_mpl_primitives::{CryptographicError, DigestAlg, Error, hkdf};
+use aws_mpl_primitives::error::{
+    ConflictReason, CryptographicError, InternalError, Resource, RetryKind, Service,
+};
+use aws_mpl_primitives::{DigestAlg, Error, hkdf};
 
 fn make_error() -> Error {
     // A known-bad HKDF request, which fails the same way every time.
@@ -17,9 +19,11 @@ fn make_error() -> Error {
 #[test]
 fn a_primitive_failure_is_a_non_retryable_cryptographic_error() {
     let err = make_error();
-    assert!(err.is_cryptographic());
-    assert!(!err.is_retryable());
     assert!(matches!(err, Error::Cryptographic(_)));
+    assert!(!err.is_retryable());
+    assert_eq!(err.name(), "Cryptographic");
+    assert_eq!(err.service(), None);
+    assert_eq!(err.resource(), None);
 }
 
 #[test]
@@ -38,88 +42,78 @@ fn a_struct_converts_into_its_variant() {
 
 #[test]
 fn the_builder_sets_the_message_source_and_retry_kind() {
-    let built = CryptographicError::builder()
-        .message("m")
-        .source(std::io::Error::other("cause"))
+    let built = InternalError::builder()
         .retry_kind(RetryKind::Transient)
+        .source(std::io::Error::other("cause"))
+        .message("m")
         .build();
     assert_eq!(built.message(), "m");
-    assert!(built.is_retryable());
+    assert_eq!(built.retry_kind(), Some(RetryKind::Transient));
     assert_eq!(built.source().unwrap().to_string(), "cause");
-}
-
-mod other_library {
-    aws_mpl_primitives::define_error! {
-        /// An error from another library.
-        pub enum Error {
-            Cryptographic(CryptographicError, is_cryptographic),
-            AccessDenied(AccessDeniedError, is_access_denied, remote),
-            /// A kind only this library has.
-            Extra(ExtraError, is_extra),
-            Internal(InternalError, is_internal),
-        }
-    }
-
-    pub fn from_prim(message: &str, inner: aws_mpl_primitives::Error) -> Error {
-        Error::from_inner(message, inner)
-    }
-
-    pub fn denied() -> Error {
-        AccessDeniedError::builder()
-            .message("denied")
-            .service(super::Service::Kms)
-            .resource(super::Resource::KmsKey("arn".into()))
-            .build()
-            .into()
-    }
-
-    pub fn wrapped(message: &str, inner: Error) -> Error {
-        Error::wrap(message, inner)
-    }
-
-    pub fn extra() -> Error {
-        ExtraError::new("only here").into()
-    }
+    assert_eq!(built.to_string(), "Internal: m (retryable: transient)");
 }
 
 #[test]
-fn from_inner_keeps_the_variant_by_name_with_its_own_message() {
-    let inner: Error = CryptographicError::new("tag mismatch").into();
-    let outer = other_library::from_prim("could not decrypt", inner);
-    assert!(outer.is_cryptographic());
-    assert_eq!(outer.message(), "could not decrypt");
+fn alternate_display_prints_the_source_chain() {
+    let inner = Error::from(CryptographicError::new("tag mismatch"));
+    let err = Error::from(InternalError::new("outer").with_source(inner));
     assert_eq!(
-        DisplayErrorContext(&outer).to_string(),
-        "Cryptographic: could not decrypt: Cryptographic: tag mismatch"
+        format!("{err:#}"),
+        "Internal: outer: Cryptographic: tag mismatch"
+    );
+    assert_eq!(err.to_string(), "Internal: outer");
+}
+
+#[test]
+fn find_source_searches_the_chain_including_self() {
+    let err = Error::from(InternalError::new("outer").with_source(std::io::Error::other("io")));
+    assert!(err.find_source::<Error>().is_some());
+    assert_eq!(
+        err.find_source::<std::io::Error>().map(ToString::to_string),
+        Some("io".to_owned())
+    );
+    assert!(err.find_source::<std::fmt::Error>().is_none());
+}
+
+#[test]
+fn service_and_resource_display() {
+    assert_eq!(Service::Kms.to_string(), "AWS KMS");
+    assert_eq!(Service::DynamoDb.to_string(), "Amazon DynamoDB");
+    assert_eq!(Service::Kms.as_str(), "kms");
+    assert_eq!(Service::DynamoDb.as_str(), "dynamodb");
+    let cases = [
+        (
+            Resource::KmsKey("arn:aws:kms:k".into()),
+            "KMS key arn:aws:kms:k",
+        ),
+        (
+            Resource::DynamoDbTable("KeyStoreTable".into()),
+            "table KeyStoreTable",
+        ),
+        (
+            Resource::BranchKey("my-branch-key".into()),
+            "branch key my-branch-key",
+        ),
+        (Resource::Cache, "materials cache"),
+        (
+            Resource::Keyring("my-namespace/my-key".into()),
+            "keyring my-namespace/my-key",
+        ),
+        (Resource::Cmm("default".into()), "CMM default"),
+    ];
+    for (resource, text) in cases {
+        assert_eq!(resource.to_string(), text);
+    }
+    assert_eq!(RetryKind::Throttling.to_string(), "throttling");
+    assert_ne!(
+        ConflictReason::AlreadyExists,
+        ConflictReason::ConcurrentModification
     );
 }
 
 #[test]
-fn a_remote_error_names_its_service_and_resource_through_wrapping() {
-    let outer = other_library::wrapped("could not get the key", other_library::denied());
-    let other_library::Error::AccessDenied(e) = &outer else {
-        panic!("expected AccessDenied, got {outer:?}");
-    };
-    assert_eq!(e.service(), Some(Service::Kms));
-    assert_eq!(e.resource(), Some(&Resource::KmsKey("arn".into())));
-    assert_eq!(e.code(), None);
-}
-
-mod third_library {
-    aws_mpl_primitives::define_error! {
-        /// A library without `Extra`.
-        pub enum Error {
-            Cryptographic(CryptographicError, is_cryptographic),
-            Internal(InternalError, is_internal),
-        }
-    }
-
-    pub fn from_other(inner: super::other_library::Error) -> Error {
-        Error::from_inner("m", inner)
-    }
-}
-
-#[test]
-fn from_inner_maps_a_variant_with_no_shared_name_to_internal() {
-    assert!(third_library::from_other(other_library::extra()).is_internal());
+fn errors_are_send_sync_and_static() {
+    fn check<T: Send + Sync + 'static>() {}
+    check::<Error>();
+    check::<CryptographicError>();
 }

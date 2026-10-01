@@ -136,7 +136,6 @@ use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore}
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Resource, RetryKind, Service};
-use aws_mpl_primitives::error::RemoteInfo;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -461,25 +460,18 @@ const ERROR_HEADER_END: char = '\u{1e}';
 
 /// Encode an error the shim raises itself, which is never retryable and names no AWS call.
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
-    encode_err(kind, None, None, operation, message)
+    encode_err(kind, None, operation, message)
 }
 
 /// Encode an ESDK or MPL error with its variant, retry kind, and AWS call.
 fn core_err(operation: &str, e: impl Into<aws_esdk::Error>) -> String {
     let e: aws_esdk::Error = e.into();
-    encode_err(
-        classify_core_error(&e),
-        e.__retry_kind(),
-        e.__remote(),
-        operation,
-        &e,
-    )
+    encode_err(classify_core_error(&e), Some(&e), operation, &e)
 }
 
 fn encode_err(
     kind: ffi::ShimErrorKind,
-    retry: Option<RetryKind>,
-    remote: Option<&RemoteInfo>,
+    err: Option<&aws_esdk::Error>,
     operation: &str,
     message: impl std::fmt::Display,
 ) -> String {
@@ -499,30 +491,30 @@ fn encode_err(
             v.to_owned()
         }
     };
-    let retry = match retry {
+    let retry = match err.and_then(aws_esdk::Error::retry_kind) {
         Some(RetryKind::Transient) => "transient",
         Some(RetryKind::Throttling) => "throttling",
         Some(RetryKind::Server) => "server",
         Some(_) => "client",
         None => "",
     };
-    let service = match remote.map(|r| r.service) {
+    let service = match err.and_then(aws_esdk::Error::service) {
         Some(Service::Kms) => "kms",
         Some(Service::DynamoDb) => "dynamodb",
         _ => "",
     };
-    let (resource_type, resource) = match remote.and_then(|r| r.resource.as_ref()) {
+    let (resource_type, resource) = match err.and_then(aws_esdk::Error::resource) {
         Some(Resource::KmsKey(n)) => ("kms_key", clean(n)),
         Some(Resource::DynamoDbTable(n)) => ("dynamodb_table", clean(n)),
         Some(Resource::BranchKey(n)) => ("branch_key", clean(n)),
         _ => ("", String::new()),
     };
-    let code = remote
-        .and_then(|r| r.code.as_deref())
+    let code = err
+        .and_then(aws_esdk::Error::code)
         .map(clean)
         .unwrap_or_default();
-    let request_id = remote
-        .and_then(|r| r.request_id.as_deref())
+    let request_id = err
+        .and_then(aws_esdk::Error::request_id)
         .map(clean)
         .unwrap_or_default();
     let sep = ERROR_FIELD_SEPARATOR;

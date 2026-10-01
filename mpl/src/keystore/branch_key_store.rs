@@ -162,7 +162,7 @@ impl BranchKeyStore {
                 format!("no keystore record for branch-key-id={branch_key_id}, type={sort_key}",),
             )
             .about(
-                Service::DynamoDb,
+                Some(Service::DynamoDb),
                 Some(Resource::BranchKey(branch_key_id.to_string())),
             )
         })?;
@@ -371,7 +371,7 @@ impl Keystore for BranchKeyStore {
                         Kind::Service,
                         "DescribeTable succeeded but returned no table description",
                     )
-                    .about(Service::DynamoDb, None)
+                    .about(Some(Service::DynamoDb), None)
                 })?;
                 if !table_has_expected_schema(table) {
                     return Err(Error::new(
@@ -409,7 +409,7 @@ impl Keystore for BranchKeyStore {
                         Kind::Service,
                         "CreateTable succeeded but returned no table description",
                     )
-                    .about(Service::DynamoDb, None)
+                    .about(Some(Service::DynamoDb), None)
                 })?;
                 table_arn(table, table_name)
             }
@@ -519,7 +519,7 @@ impl Keystore for BranchKeyStore {
                         "ACTIVE record for '{branch_key_id}' is missing the 'kms-arn' attribute"
                     ),
                 )
-                .about(Service::DynamoDb, None)
+                .about(Some(Service::DynamoDb), None)
             })?
             .clone();
         let resolved_arn = resolve_keystore_arn(&self.inner.kms_configuration, &stored_kms_arn)?;
@@ -765,7 +765,7 @@ fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, Error
             Kind::Service,
             format!("table '{table_name}' description is missing a TableArn"),
         )
-        .about(Service::DynamoDb, None)
+        .about(Some(Service::DynamoDb), None)
     })
 }
 
@@ -860,7 +860,7 @@ fn record_from_ddb_item(
             Kind::Service,
             format!("record is missing the '{ATTR_ENC}' attribute"),
         )
-        .about(Service::DynamoDb, None)
+        .about(Some(Service::DynamoDb), None)
     })?;
 
     let enc_blob: Blob = match enc_attr {
@@ -870,7 +870,7 @@ fn record_from_ddb_item(
                 Kind::Service,
                 format!("record '{ATTR_ENC}' attribute must be Binary, got {other:?}",),
             )
-            .about(Service::DynamoDb, None));
+            .about(Some(Service::DynamoDb), None));
         }
     };
 
@@ -896,7 +896,7 @@ fn record_from_ddb_item(
                     Kind::Service,
                     format!("record attribute '{k}' must be String or Number, got {other:?}",),
                 )
-                .about(Service::DynamoDb, None));
+                .about(Some(Service::DynamoDb), None));
             }
         }
     }

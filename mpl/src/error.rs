@@ -2,43 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The error type every operation in this crate returns.
+//!
+//! [`Error`] and its variant structs are generated from `errors.toml`
+//! at the repository root by `cargo xtask gen-errors`.
 
-use std::sync::Arc;
-
-use aws_mpl_primitives::error::RemoteInfo;
 use aws_sdk_kms::config::http::HttpResponse;
 use aws_sdk_kms::error::SdkError;
 
-pub use aws_mpl_primitives::error::{
-    DisplayErrorContext, ErrorBuilder, Resource, RetryKind, Service,
-};
-pub use aws_sdk_kms::error::{ErrorMetadata, ProvideErrorMetadata};
-pub use aws_sdk_kms::operation::RequestId;
-pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+mod generated;
 
-aws_mpl_primitives::define_error! {
-    /// An error from a keyring, CMM, key store, or cache.
-    ///
-    /// The message says what failed.
-    /// The [`source`](std::error::Error::source) chain holds the underlying service or library error.
-    pub enum Error {
-        Validation(ValidationError, is_validation),
-        InvalidMaterials(InvalidMaterialsError, is_invalid_materials),
-        EncryptionContextMismatch(EncryptionContextMismatchError, is_encryption_context_mismatch),
-        NoMatchingDataKey(NoMatchingDataKeyError, is_no_matching_data_key),
-        Cryptographic(CryptographicError, is_cryptographic),
-        AccessDenied(AccessDeniedError, is_access_denied, remote),
-        ResourceNotFound(ResourceNotFoundError, is_resource_not_found, remote),
-        Service(ServiceError, is_service, remote),
-        Dispatch(DispatchError, is_dispatch, remote),
-        Internal(InternalError, is_internal),
-    }
-    sdk(aws_smithy_types, RequestId);
-}
+pub use generated::*;
+
+pub use aws_mpl_primitives::error::{ConflictReason, Resource, RetryKind, Service};
+pub use aws_smithy_types::error::display::DisplayErrorContext;
+pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
+pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
+pub use aws_types::request_id::RequestId;
 
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
-    /// The message names `operation`, and the SDK error becomes the source.
+    ///
+    /// The message is "`operation` failed", and the SDK error becomes the source.
     #[track_caller]
     pub(crate) fn from_sdk<E>(
         service: Service,
@@ -50,64 +34,94 @@ impl Error {
         E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
     {
         let (kind, retry) = classify_sdk_error(&err);
-        let mut remote = RemoteInfo::new(service, resource);
         let meta = err.as_service_error().map(|e| e.meta().clone());
-        remote.code = meta.as_ref().and_then(|m| m.code()).map(str::to_owned);
-        remote.request_id = err.request_id().map(str::to_owned);
-        let mut error = Self::with_cause(kind, format!("{operation} failed"), err);
+        let code = meta.as_ref().and_then(|m| m.code()).map(str::to_owned);
+        let request_id = err.request_id().map(str::to_owned);
+        let mut error = Self::with_cause(kind, format!("{operation} failed"), err)
+            .about(Some(service), resource);
         error.set_retry(retry);
-        if kind != Kind::Internal {
-            error.set_remote(remote);
-        }
-        if let Some(meta) = meta {
-            error.set_sdk_meta(Arc::new(meta));
-        }
+        error.set_sdk(code, request_id, meta);
         error
     }
 
-    /// Name the AWS `service` and `resource` this error is about.
+    /// An error that aggregates `errors`,
+    /// for a keyring or CMM that tried several things and every one failed.
+    ///
+    /// With exactly one error, returns it unchanged.
+    /// Otherwise the variant is the one every error shares or, for a mix,
+    /// the first present of `AccessDenied`, `ResourceNotFound`, `Throttling`, `Dispatch`,
+    /// `Service`, `InvalidMaterials`, `EncryptionContextMismatch`, `Cryptographic`,
+    /// and `NoMatchingDataKey`.
+    /// The result is retryable if any error is,
+    /// and keeps each detail, such as `resource()`, that every error shares.
+    ///
+    /// ```
+    /// use aws_crypto_mpl::Error;
+    ///
+    /// let err = Error::aggregate(
+    ///     "no encrypted data key could be decrypted",
+    ///     vec![
+    ///         Error::no_matching_data_key("encrypted data key 0 belongs to another keyring"),
+    ///         Error::cryptographic("encrypted data key 1 did not decrypt"),
+    ///     ],
+    /// );
+    /// assert!(err.is_cryptographic());
+    /// assert_eq!(err.collected().len(), 2);
+    /// ```
+    #[track_caller]
     #[must_use]
-    pub(crate) fn about(mut self, service: Service, resource: Option<Resource>) -> Self {
-        self.set_remote(RemoteInfo::new(service, resource));
-        self
+    pub fn aggregate(message: impl Into<String>, mut errors: Vec<Self>) -> Self {
+        if errors.len() == 1
+            && let Some(only) = errors.pop()
+        {
+            return only;
+        }
+        if errors.is_empty() {
+            return Self::new(Kind::Internal, message);
+        }
+        let kind = Self::aggregate_kind(&errors);
+        Self::collection(kind, message, errors)
     }
 
-    /// The kind for an error that aggregates `errors`.
+    /// The variant for an error that aggregates `errors`.
     ///
-    /// The shared kind when they all agree.
-    /// Otherwise the kind of the first retryable one, so a caller still sees a retryable kind.
-    /// Otherwise `fallback`.
-    pub(crate) fn aggregate_kind(errors: &[Self], fallback: Kind) -> Kind {
+    /// The variant every error shares,
+    /// or for a mix the first present in the order of `AGGREGATE_PRIORITY`,
+    /// or else the first error's.
+    pub(crate) fn aggregate_kind(errors: &[Self]) -> Kind {
         let Some((first, rest)) = errors.split_first() else {
-            return fallback;
+            return Kind::Internal;
         };
         if rest.iter().all(|e| e.kind() == first.kind()) {
             return first.kind();
         }
-        errors
+        AGGREGATE_PRIORITY
             .iter()
-            .find(|e| e.is_retryable())
-            .map_or(fallback, Self::kind)
+            .copied()
+            .find(|k| errors.iter().any(|e| e.kind() == *k))
+            .unwrap_or_else(|| first.kind())
     }
 }
 
-// Codes the AWS SDK for Rust's retry classifier (aws-runtime `retries::classifiers`) retries,
-// plus the failures AWS KMS and DynamoDB document as transient.
-const THROTTLING_CODES: &[&str] = &[
-    "Throttling",
-    "ThrottlingException",
-    "ThrottledException",
-    "RequestThrottledException",
-    "TooManyRequestsException",
-    "ProvisionedThroughputExceededException",
-    "TransactionInProgressException",
-    "RequestLimitExceeded",
-    "BandwidthLimitExceeded",
-    "LimitExceededException",
-    "RequestThrottled",
-    "SlowDown",
-    "PriorRequestNotComplete",
+/// Which variant a collection of mixed errors gets: the first present.
+const AGGREGATE_PRIORITY: &[Kind] = &[
+    Kind::AccessDenied,
+    Kind::ResourceNotFound,
+    Kind::Throttling,
+    Kind::Dispatch,
+    Kind::Service,
+    Kind::InvalidMaterials,
+    Kind::EncryptionContextMismatch,
+    Kind::Cryptographic,
+    Kind::NoMatchingDataKey,
 ];
+
+// The codes the AWS SDK for Rust's retry classifier retries as throttling.
+use aws_runtime::retries::classifiers::THROTTLING_ERRORS as THROTTLING_CODES;
+
+/// The codes the AWS SDK for Rust's retry classifier retries as transient
+/// (`aws_runtime::retries::classifiers::TRANSIENT_ERRORS`),
+/// plus the failures AWS KMS and DynamoDB document as transient.
 const TRANSIENT_CODES: &[&str] = &[
     "RequestTimeout",
     "RequestTimeoutException",
@@ -117,13 +131,20 @@ const TRANSIENT_CODES: &[&str] = &[
     "InternalServerError",
     "ServiceUnavailable",
 ];
+
+/// The codes AWS KMS and DynamoDB return when the caller's credentials or permissions are refused.
 const ACCESS_DENIED_CODES: &[&str] = &[
     "AccessDeniedException",
+    "NotAuthorized",
     "UnrecognizedClientException",
     "InvalidSignatureException",
+    "IncompleteSignature",
+    "IncompleteSignatureException",
+    "MissingAuthenticationTokenException",
     "ExpiredTokenException",
     "InvalidGrantTokenException",
 ];
+
 const NOT_FOUND_CODES: &[&str] = &["NotFoundException", "ResourceNotFoundException"];
 
 fn classify_sdk_error<E: ProvideErrorMetadata>(
@@ -142,7 +163,7 @@ fn classify_sdk_error<E: ProvideErrorMetadata>(
         SdkError::ServiceError(ctx) => {
             let code = ctx.err().code().unwrap_or_default();
             if THROTTLING_CODES.contains(&code) {
-                (Kind::Service, Some(RetryKind::Throttling))
+                (Kind::Throttling, Some(RetryKind::Throttling))
             } else if ACCESS_DENIED_CODES.contains(&code) {
                 (Kind::AccessDenied, None)
             } else if NOT_FOUND_CODES.contains(&code) {
@@ -188,10 +209,17 @@ mod tests {
             (
                 "ThrottlingException",
                 400,
-                Kind::Service,
+                Kind::Throttling,
+                Some(RetryKind::Throttling),
+            ),
+            (
+                "EC2ThrottledException",
+                400,
+                Kind::Throttling,
                 Some(RetryKind::Throttling),
             ),
             ("AccessDeniedException", 400, Kind::AccessDenied, None),
+            ("ExpiredTokenException", 400, Kind::AccessDenied, None),
             ("NotFoundException", 400, Kind::ResourceNotFound, None),
             (
                 "ResourceNotFoundException",
@@ -216,12 +244,11 @@ mod tests {
         for (code, status, kind, retry) in cases {
             let err = from_kms(service_error(code, status));
             assert_eq!(err.kind(), kind, "{code}");
-            assert_eq!(err.__retry_kind(), retry, "{code}");
+            assert_eq!(err.retry_kind(), retry, "{code}");
             assert_eq!(err.code(), Some(code));
             assert_eq!(ProvideErrorMetadata::code(&err), Some(code));
-            let remote = err.__remote().expect("a service error is remote");
-            assert_eq!(remote.service, Service::Kms);
-            assert_eq!(remote.resource, Some(Resource::KmsKey("arn".into())));
+            assert_eq!(err.service(), Some(Service::Kms));
+            assert_eq!(err.resource(), Some(&Resource::KmsKey("arn".into())));
             assert!(
                 std::error::Error::source(&err).is_some(),
                 "{code}: SDK error is the source"
@@ -236,7 +263,7 @@ mod tests {
             err.retryable_error_kind(),
             Some(RetryErrorKind::ThrottlingError)
         );
-        assert!(err.is_retryable());
+        assert!(err.is_throttling());
     }
 
     #[test]
@@ -245,23 +272,35 @@ mod tests {
             "timed out",
         ));
         assert!(err.is_dispatch());
-        assert!(err.is_retryable());
+        assert_eq!(err.retry_kind(), Some(RetryKind::Transient));
         assert_eq!(err.code(), None);
+        assert_eq!(err.service(), Some(Service::Kms));
     }
 
     #[test]
-    fn aggregate_kind_prefers_the_shared_kind_then_a_retryable_one() {
-        let tag = || Error::new(Kind::Cryptographic, "tag");
-        let mut throttled = Error::new(Kind::Service, "throttled");
-        throttled.set_retry(Some(RetryKind::Throttling));
-        let denied = Error::new(Kind::AccessDenied, "denied");
-        let f = Kind::Internal;
-        assert_eq!(Error::aggregate_kind(&[], f), f);
+    fn aggregate_kind_prefers_the_shared_kind_then_the_priority_order() {
+        let e = Error::new;
+        assert_eq!(Error::aggregate_kind(&[]), Kind::Internal);
         assert_eq!(
-            Error::aggregate_kind(&[tag(), tag()], f),
+            Error::aggregate_kind(&[e(Kind::Cryptographic, "a"), e(Kind::Cryptographic, "b")]),
             Kind::Cryptographic
         );
-        assert_eq!(Error::aggregate_kind(&[tag(), throttled], f), Kind::Service);
-        assert_eq!(Error::aggregate_kind(&[tag(), denied], f), f);
+        assert_eq!(
+            Error::aggregate_kind(&[
+                e(Kind::NoMatchingDataKey, "a"),
+                e(Kind::Cryptographic, "b"),
+                e(Kind::Throttling, "c"),
+                e(Kind::AccessDenied, "d"),
+            ]),
+            Kind::AccessDenied
+        );
+        assert_eq!(
+            Error::aggregate_kind(&[e(Kind::NoMatchingDataKey, "a"), e(Kind::Cryptographic, "b")]),
+            Kind::Cryptographic
+        );
+        assert_eq!(
+            Error::aggregate_kind(&[e(Kind::Validation, "a"), e(Kind::Internal, "b")]),
+            Kind::Validation
+        );
     }
 }

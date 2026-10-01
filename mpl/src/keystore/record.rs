@@ -97,7 +97,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
             Kind::Service,
             "missing 'type' attribute in authenticated encryption context",
         )
-        .about(Service::DynamoDb, None)
+        .about(Some(Service::DynamoDb), None)
     })?;
 
     if type_attr != TYPE_BRANCH_ACTIVE && !type_attr.starts_with(TYPE_BRANCH_VERSION_PREFIX) {
@@ -108,7 +108,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
                 type_attr, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX
             ),
         )
-        .about(Service::DynamoDb, None));
+        .about(Some(Service::DynamoDb), None));
     }
 
     // Resolve version string based on type attribute value.
@@ -120,7 +120,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
                     Kind::Service,
                     "type is 'branch:ACTIVE' but 'version' attribute is missing",
                 )
-                .about(Service::DynamoDb, None)
+                .about(Some(Service::DynamoDb), None)
             })?
             .clone()
     } else {
@@ -142,7 +142,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
                      followed by a non-empty version"
                 ),
             )
-            .about(Service::DynamoDb, None)
+            .about(Some(Service::DynamoDb), None)
         })?
         .to_string();
 
@@ -153,7 +153,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
                 Kind::Service,
                 "missing 'branch-key-id' attribute in authenticated encryption context",
             )
-            .about(Service::DynamoDb, None)
+            .about(Some(Service::DynamoDb), None)
         })?
         .clone();
 
@@ -165,7 +165,7 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
             Kind::Service,
             format!("branch key must be 32 bytes, got {}", v.len()),
         )
-        .about(Service::DynamoDb, None)
+        .about(Some(Service::DynamoDb), None)
     })?;
 
     BranchKeyMaterials::new(
@@ -176,6 +176,6 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     )
     .map_err(|e| {
         Error::with_cause(Kind::Service, "failed to construct branch key materials", e)
-            .about(Service::DynamoDb, None)
+            .about(Some(Service::DynamoDb), None)
     })
 }

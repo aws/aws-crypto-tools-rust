@@ -410,12 +410,7 @@ impl Keyring for HierarchicalKeyring {
             None,
         );
 
-        let cached = self
-            .inner
-            .cache
-            .get_cache_entry(&cache_id)
-            .await
-            .map_err(|e| Error::wrap("could not get the cache entry", e))?;
+        let cached = self.inner.cache.get_cache_entry(&cache_id).await?;
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -427,8 +422,7 @@ impl Keyring for HierarchicalKeyring {
                     .inner
                     .keystore
                     .get_active_branch_key(branch_key_id.clone())
-                    .await
-                    .map_err(|e| Error::wrap("could not get the active branch key", e))?;
+                    .await?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -437,11 +431,7 @@ impl Keyring for HierarchicalKeyring {
                     now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
-                self.inner
-                    .cache
-                    .put_cache_entry(&cache_id, entry)
-                    .await
-                    .map_err(|e| Error::wrap("could not put the cache entry", e))?;
+                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
 
                 branch_key_wrap::wrap(
                     &bkm,
@@ -542,9 +532,8 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        let kind = Error::aggregate_kind(&collected_errors, Kind::Cryptographic);
-        Err(Error::collection(
-            kind,
+        // With exactly one candidate, its error is the one returned.
+        Err(Error::aggregate(
             "failed to decrypt any encrypted data key",
             collected_errors,
         ))
@@ -653,12 +642,7 @@ impl HierarchicalKeyring {
             Some(&branch_key_version),
         );
 
-        let cached = self
-            .inner
-            .cache
-            .get_cache_entry(&cache_id)
-            .await
-            .map_err(|e| Error::wrap("could not get the cache entry", e))?;
+        let cached = self.inner.cache.get_cache_entry(&cache_id).await?;
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -669,8 +653,7 @@ impl HierarchicalKeyring {
                     .inner
                     .keystore
                     .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
-                    .await
-                    .map_err(|e| Error::wrap("could not get the branch key version", e))?;
+                    .await?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -679,11 +662,7 @@ impl HierarchicalKeyring {
                     now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
-                self.inner
-                    .cache
-                    .put_cache_entry(&cache_id, entry)
-                    .await
-                    .map_err(|e| Error::wrap("could not put the cache entry", e))?;
+                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
                 bkm
             }
         };

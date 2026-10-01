@@ -1546,23 +1546,10 @@ mod onencrypt {
         };
         assert!(err.is_resource_not_found(), "{:?}", err);
 
-        // A caller can recover the keystore's `Error` by type from the source.
-        let cause = err
-            .source()
-            .expect("the keystore failure must be attached as the cause");
-        let keystore_err = cause
-            .downcast_ref::<Error>()
-            .expect("the cause must be the originating Error");
-        assert!(keystore_err.is_resource_not_found(), "{:?}", keystore_err);
-
-        // The chain is walkable past the keystore boundary too: whatever the
-        // keystore itself wrapped stays reachable. In production this level is
-        // the AWS SDK error carrying the concrete KMS or DDB exception.
-        let root = keystore_err
-            .source()
-            .expect("the keystore's own cause must remain reachable");
+        // The key store's error is returned as is, and its cause stays reachable.
+        // In production that cause is the AWS SDK error.
         assert_eq!(
-            root.downcast_ref::<IoError>()
+            err.find_source::<IoError>()
                 .expect("the root cause must survive unchanged")
                 .kind(),
             IoErrorKind::NotFound,
@@ -1843,7 +1830,7 @@ mod ondecrypt {
     }
 
     #[tokio::test]
-    async fn on_decrypt_with_a_single_failing_edk_attaches_it_as_the_cause() {
+    async fn on_decrypt_with_a_single_failing_edk_returns_its_error() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
@@ -1862,25 +1849,10 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
+        // Exactly one candidate EDK failed, so its error is returned as is,
+        // not as a collection of one.
         assert!(err.is_cryptographic(), "{:?}", err);
-        assert!(err.collected().iter().any(|e| e.is_cryptographic()));
-
-        // Exactly one candidate EDK failed, so that failure is attached as the
-        // cause rather than only being formatted into the message.
-        let per_edk = err
-            .source()
-            .expect("the single per-EDK failure must be attached as the cause")
-            .downcast_ref::<Error>()
-            .expect("the cause must be the per-EDK Error");
-        assert!(per_edk.is_cryptographic(), "{:?}", per_edk);
-
-        // It is also present on `collected`, so a caller has one uniform place
-        // to read the collected failures without branching on how many there
-        // were.
-        assert!(
-            std::ptr::eq(&err.collected()[0], per_edk),
-            "the single failure must also be collected",
-        );
+        assert!(err.collected().is_empty());
     }
 
     #[tokio::test]
@@ -2025,30 +1997,10 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
+        // One candidate EDK, so the key store's error is returned as is.
         assert!(err.is_resource_not_found(), "{:?}", err);
-        // Each attempt's failure is in `collected()`, not in the message.
-        assert_eq!(err.collected().len(), 1);
-        assert!(
-            err.collected()[0].is_resource_not_found(),
-            "{:?}",
-            err.collected()[0]
-        );
-
-        // One candidate EDK, so on_decrypt attaches that per-EDK failure as
-        // the cause and the chain stays walkable all the way to the keystore.
-        let per_edk = err
-            .source()
-            .expect("a single failing EDK must be attached as the cause")
-            .downcast_ref::<Error>()
-            .expect("the cause must be the per-EDK Error");
-        assert!(per_edk.is_resource_not_found(), "{:?}", per_edk);
-
-        let keystore_err = per_edk
-            .source()
-            .expect("the per-EDK failure must itself carry the keystore cause")
-            .downcast_ref::<Error>()
-            .expect("the root cause must be the originating Error");
-        assert!(keystore_err.is_resource_not_found(), "{:?}", keystore_err);
+        assert!(err.collected().is_empty());
+        assert_eq!(err.message(), "no such branch key version");
     }
 
     #[tokio::test]

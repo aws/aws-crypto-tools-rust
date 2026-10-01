@@ -303,7 +303,7 @@ impl Keyring for RawAesKeyring {
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
                 collected_errors.push(Error::new(Kind::NoMatchingDataKey, format!(
-                    "encrypted data key {index} did not match the AES keyring, expected key provider id {}",
+                    "encrypted data key {index} did not match the keyring, expected key provider id {}",
                     self.inner.key_namespace,
                 )));
                 continue;
@@ -360,9 +360,7 @@ impl Keyring for RawAesKeyring {
         // materials; reaching this line means no decryption succeeded, so the
         // input `materials` is dropped unmodified.
 
-        // Nothing here was this keyring's. The per-EDK rejections ride along on
-        // the error, but the category stays `NoMatchingDataKey`: aggregating
-        // sub-errors does not change what kind of failure this is.
+        // Nothing here was this keyring's.
         if !attempted_decryption {
             return Err(if collected_errors.is_empty() {
                 Error::new(
@@ -370,24 +368,19 @@ impl Keyring for RawAesKeyring {
                     "no encrypted data key was supplied",
                 )
             } else {
-                Error::collection(
-                    Kind::NoMatchingDataKey,
+                Error::aggregate(
                     "no encrypted data key matched this keyring",
                     collected_errors,
                 )
             });
         }
 
-        // At least one EDK was this keyring's and decryption still failed. The
-        // per-attempt errors stay typed on the returned error, so a caller can
-        // inspect each one.
+        // At least one EDK was this keyring's and decryption still failed.
         //
         //   "If no decryption succeeds, the keyring MUST fail"
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
-        let kind = Error::aggregate_kind(&collected_errors, Kind::Cryptographic);
-        Err(Error::collection(
-            kind,
+        Err(Error::aggregate(
             "unable to decrypt any encrypted data key",
             collected_errors,
         ))

@@ -102,13 +102,8 @@ const fn get_digest_alg(x: DigestAlg) -> &'static aws_lc_rs::digest::Algorithm {
     }
 }
 
-define_error! {
-    /// An error from a cryptographic primitive.
-    pub enum Error {
-        Cryptographic(CryptographicError, is_cryptographic),
-        Internal(InternalError, is_internal),
-    }
-}
+pub use error::Error;
+use error::Kind;
 
 #[track_caller]
 fn serr(s: String) -> Error {

@@ -101,7 +101,7 @@ pub(crate) async fn get_decryption_materials(
     let materials = cmm
         .decrypt_materials(request)
         .await
-        .map_err(|e| Error::from_inner("the CMM could not provide decryption materials", e))?;
+        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
@@ -176,7 +176,7 @@ pub(crate) async fn get_encryption_materials(
     let materials = cmm
         .get_encryption_materials(request)
         .await
-        .map_err(|e| Error::from_inner("the CMM could not provide encryption materials", e))?;
+        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
