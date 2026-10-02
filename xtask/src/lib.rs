@@ -40,6 +40,9 @@ pub struct Variant {
     pub credentials_codes: Vec<String>,
     #[serde(default)]
     pub reason: Option<String>,
+    /// A value of `reason`'s type, for the generated tests.
+    #[serde(default)]
+    pub reason_example: Option<String>,
 }
 
 /// One `[[library]]`.
@@ -295,6 +298,7 @@ impl Gen<'_> {
             s.push_str(&self.strukt(v));
         }
         s.push_str(&self.builders());
+        s.push_str(&self.tests());
         s
     }
 
@@ -1275,6 +1279,118 @@ impl From<{st}> for Error {{
 
 "#
         );
+        s
+    }
+
+    fn tests(&self) -> String {
+        let mut s = String::from(
+            "\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    fn cause() -> std::io::Error {\n        std::io::Error::other(\"the cause\")\n    }\n",
+        );
+        for v in self.variants() {
+            let n = &v.name;
+            let st = &v.strukt;
+            let p = &v.predicate;
+            let mut set = String::new();
+            let mut check_struct = String::new();
+            let mut check_enum = String::new();
+            if v.remote {
+                // `resource` before `service`: the builder setters work in any order.
+                set.push_str(".resource(Resource::BranchKey(\"bk\".into())).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
+                for target in ["s", "e"] {
+                    let out = if target == "s" {
+                        &mut check_struct
+                    } else {
+                        &mut check_enum
+                    };
+                    let _ = write!(
+                        out,
+                        "        assert_eq!({target}.service(), Some(Service::DynamoDb));\n        assert_eq!({target}.resource(), Some(&Resource::BranchKey(\"bk\".into())));\n        assert_eq!({target}.code(), Some(\"SomeCode\"));\n        assert_eq!({target}.request_id(), Some(\"req-1\"));\n"
+                    );
+                }
+            } else {
+                check_enum.push_str("        assert_eq!(e.service(), None);\n        assert_eq!(e.resource(), None);\n        assert_eq!(e.code(), None);\n        assert_eq!(e.request_id(), None);\n");
+            }
+            if let (Some(_), Some(x)) = (&v.reason, &v.reason_example) {
+                let _ = write!(set, ".reason({x})");
+                let _ = writeln!(check_struct, "        assert_eq!(s.reason(), Some({x}));");
+            }
+            if !v.credentials_codes.is_empty() {
+                let c = &v.credentials_codes[0];
+                let _ = writeln!(
+                    check_struct,
+                    "        assert!(!s.is_credentials());\n        assert!({st}::builder().code(\"{c}\").build().is_credentials());"
+                );
+            }
+            let sdk = if self.lib.sdk {
+                "        assert_eq!(ProvideErrorKind::retryable_error_kind(&e), Some(ErrorKind::ServerError));\n        assert_eq!(ProvideErrorKind::code(&e), e.code());\n        assert_eq!(RequestId::request_id(&e), e.request_id());\n        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);\n"
+            } else {
+                ""
+            };
+            let _ = write!(
+                s,
+                r#"
+    #[test]
+    fn {p}_builder_and_accessors() {{
+        let s = {st}::builder()
+            {set}
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+{check_struct}        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("{n}: what went wrong ("));
+        assert!(format!("{{s:?}}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.{p}());
+        assert_eq!(e.name(), "{n}");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+{check_enum}{sdk}        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("{n}: what went wrong ("));
+        assert!(format!("{{e:#}}").ends_with(": the cause"));
+        assert!(format!("{{e:?}}").contains("{n}"));
+
+        let plain = {st}::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }}
+"#
+            );
+        }
+        if self.lib.short_constructors {
+            s.push_str("\n    #[test]\n    fn short_constructors() {\n");
+            for name in [
+                "Validation",
+                "InvalidMaterials",
+                "EncryptionContextMismatch",
+                "NoMatchingDataKey",
+                "Cryptographic",
+                "Internal",
+            ] {
+                if !self.has(name) {
+                    continue;
+                }
+                let v = self.variant(name);
+                let f = v.predicate.trim_start_matches("is_");
+                let _ = writeln!(
+                    s,
+                    "        let e = Error::{f}(\"m\").with_source(cause());\n        assert!(e.{p}());\n        assert_eq!(e.message(), \"m\");\n        assert!(e.find_source::<std::io::Error>().is_some());",
+                    p = v.predicate
+                );
+            }
+            s.push_str("    }\n");
+        }
+        s.push_str("}\n");
         s
     }
 

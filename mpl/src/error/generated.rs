@@ -3182,3 +3182,695 @@ pub mod builders {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cause() -> std::io::Error {
+        std::io::Error::other("the cause")
+    }
+
+    #[test]
+    fn is_validation_builder_and_accessors() {
+        let s = ValidationError::builder()
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Validation: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_validation());
+        assert_eq!(e.name(), "Validation");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), None);
+        assert_eq!(e.resource(), None);
+        assert_eq!(e.code(), None);
+        assert_eq!(e.request_id(), None);
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Validation: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Validation"));
+
+        let plain = ValidationError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_invalid_materials_builder_and_accessors() {
+        let s = InvalidMaterialsError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(
+            s.to_string()
+                .starts_with("InvalidMaterials: what went wrong (")
+        );
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_invalid_materials());
+        assert_eq!(e.name(), "InvalidMaterials");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(
+            e.to_string()
+                .starts_with("InvalidMaterials: what went wrong (")
+        );
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("InvalidMaterials"));
+
+        let plain = InvalidMaterialsError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_encryption_context_mismatch_builder_and_accessors() {
+        let s = EncryptionContextMismatchError::builder()
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(
+            s.to_string()
+                .starts_with("EncryptionContextMismatch: what went wrong (")
+        );
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_encryption_context_mismatch());
+        assert_eq!(e.name(), "EncryptionContextMismatch");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), None);
+        assert_eq!(e.resource(), None);
+        assert_eq!(e.code(), None);
+        assert_eq!(e.request_id(), None);
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(
+            e.to_string()
+                .starts_with("EncryptionContextMismatch: what went wrong (")
+        );
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("EncryptionContextMismatch"));
+
+        let plain = EncryptionContextMismatchError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_no_matching_data_key_builder_and_accessors() {
+        let s = NoMatchingDataKeyError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(
+            s.to_string()
+                .starts_with("NoMatchingDataKey: what went wrong (")
+        );
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_no_matching_data_key());
+        assert_eq!(e.name(), "NoMatchingDataKey");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(
+            e.to_string()
+                .starts_with("NoMatchingDataKey: what went wrong (")
+        );
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("NoMatchingDataKey"));
+
+        let plain = NoMatchingDataKeyError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_cryptographic_builder_and_accessors() {
+        let s = CryptographicError::builder()
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(
+            s.to_string()
+                .starts_with("Cryptographic: what went wrong (")
+        );
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_cryptographic());
+        assert_eq!(e.name(), "Cryptographic");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), None);
+        assert_eq!(e.resource(), None);
+        assert_eq!(e.code(), None);
+        assert_eq!(e.request_id(), None);
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(
+            e.to_string()
+                .starts_with("Cryptographic: what went wrong (")
+        );
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Cryptographic"));
+
+        let plain = CryptographicError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_access_denied_builder_and_accessors() {
+        let s = AccessDeniedError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(!s.is_credentials());
+        assert!(
+            AccessDeniedError::builder()
+                .code("ExpiredTokenException")
+                .build()
+                .is_credentials()
+        );
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("AccessDenied: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_access_denied());
+        assert_eq!(e.name(), "AccessDenied");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("AccessDenied: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("AccessDenied"));
+
+        let plain = AccessDeniedError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_resource_not_found_builder_and_accessors() {
+        let s = ResourceNotFoundError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(
+            s.to_string()
+                .starts_with("ResourceNotFound: what went wrong (")
+        );
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_resource_not_found());
+        assert_eq!(e.name(), "ResourceNotFound");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(
+            e.to_string()
+                .starts_with("ResourceNotFound: what went wrong (")
+        );
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("ResourceNotFound"));
+
+        let plain = ResourceNotFoundError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_throttling_builder_and_accessors() {
+        let s = ThrottlingError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Throttling: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_throttling());
+        assert_eq!(e.name(), "Throttling");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Throttling: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Throttling"));
+
+        let plain = ThrottlingError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_conflict_builder_and_accessors() {
+        let s = ConflictError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .reason(ConflictReason::ConcurrentModification)
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert_eq!(s.reason(), Some(ConflictReason::ConcurrentModification));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Conflict: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_conflict());
+        assert_eq!(e.name(), "Conflict");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Conflict: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Conflict"));
+
+        let plain = ConflictError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_service_builder_and_accessors() {
+        let s = ServiceError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Service: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_service());
+        assert_eq!(e.name(), "Service");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Service: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Service"));
+
+        let plain = ServiceError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_dispatch_builder_and_accessors() {
+        let s = DispatchError::builder()
+            .resource(Resource::BranchKey("bk".into()))
+            .service(Service::DynamoDb)
+            .code("SomeCode")
+            .request_id("req-1")
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(s.code(), Some("SomeCode"));
+        assert_eq!(s.request_id(), Some("req-1"));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Dispatch: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_dispatch());
+        assert_eq!(e.name(), "Dispatch");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(e.code(), Some("SomeCode"));
+        assert_eq!(e.request_id(), Some("req-1"));
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Dispatch: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Dispatch"));
+
+        let plain = DispatchError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_internal_builder_and_accessors() {
+        let s = InternalError::builder()
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Internal: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_internal());
+        assert_eq!(e.name(), "Internal");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), None);
+        assert_eq!(e.resource(), None);
+        assert_eq!(e.code(), None);
+        assert_eq!(e.request_id(), None);
+        assert_eq!(
+            ProvideErrorKind::retryable_error_kind(&e),
+            Some(ErrorKind::ServerError)
+        );
+        assert_eq!(ProvideErrorKind::code(&e), e.code());
+        assert_eq!(RequestId::request_id(&e), e.request_id());
+        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Internal: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Internal"));
+
+        let plain = InternalError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn short_constructors() {
+        let e = Error::validation("m").with_source(cause());
+        assert!(e.is_validation());
+        assert_eq!(e.message(), "m");
+        assert!(e.find_source::<std::io::Error>().is_some());
+        let e = Error::invalid_materials("m").with_source(cause());
+        assert!(e.is_invalid_materials());
+        assert_eq!(e.message(), "m");
+        assert!(e.find_source::<std::io::Error>().is_some());
+        let e = Error::encryption_context_mismatch("m").with_source(cause());
+        assert!(e.is_encryption_context_mismatch());
+        assert_eq!(e.message(), "m");
+        assert!(e.find_source::<std::io::Error>().is_some());
+        let e = Error::no_matching_data_key("m").with_source(cause());
+        assert!(e.is_no_matching_data_key());
+        assert_eq!(e.message(), "m");
+        assert!(e.find_source::<std::io::Error>().is_some());
+        let e = Error::cryptographic("m").with_source(cause());
+        assert!(e.is_cryptographic());
+        assert_eq!(e.message(), "m");
+        assert!(e.find_source::<std::io::Error>().is_some());
+        let e = Error::internal("m").with_source(cause());
+        assert!(e.is_internal());
+        assert_eq!(e.message(), "m");
+        assert!(e.find_source::<std::io::Error>().is_some());
+    }
+}

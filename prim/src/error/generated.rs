@@ -847,3 +847,96 @@ pub mod builders {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cause() -> std::io::Error {
+        std::io::Error::other("the cause")
+    }
+
+    #[test]
+    fn is_cryptographic_builder_and_accessors() {
+        let s = CryptographicError::builder()
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(
+            s.to_string()
+                .starts_with("Cryptographic: what went wrong (")
+        );
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_cryptographic());
+        assert_eq!(e.name(), "Cryptographic");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), None);
+        assert_eq!(e.resource(), None);
+        assert_eq!(e.code(), None);
+        assert_eq!(e.request_id(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(
+            e.to_string()
+                .starts_with("Cryptographic: what went wrong (")
+        );
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Cryptographic"));
+
+        let plain = CryptographicError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn is_internal_builder_and_accessors() {
+        let s = InternalError::builder()
+            .retry_kind(RetryKind::Server)
+            .source(cause())
+            .collected(Vec::new())
+            .message("what went wrong")
+            .build();
+        assert_eq!(s.message(), "what went wrong");
+        assert!(s.is_retryable());
+        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
+        assert!(std::error::Error::source(&s).is_some());
+        assert!(s.to_string().starts_with("Internal: what went wrong ("));
+        assert!(format!("{s:?}").contains("what went wrong"));
+
+        let e = Error::from(s);
+        assert!(e.is_internal());
+        assert_eq!(e.name(), "Internal");
+        assert_eq!(e.message(), "what went wrong");
+        assert!(e.is_retryable());
+        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
+        assert_eq!(e.service(), None);
+        assert_eq!(e.resource(), None);
+        assert_eq!(e.code(), None);
+        assert_eq!(e.request_id(), None);
+        assert!(e.collected().is_empty());
+        let _ = e.backtrace();
+        assert!(e.find_source::<std::io::Error>().is_some());
+        assert!(e.to_string().starts_with("Internal: what went wrong ("));
+        assert!(format!("{e:#}").ends_with(": the cause"));
+        assert!(format!("{e:?}").contains("Internal"));
+
+        let plain = InternalError::new("plain").with_source(cause());
+        assert_eq!(plain.message(), "plain");
+        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
+        assert!(std::error::Error::source(&plain).is_some());
+        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+}

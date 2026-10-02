@@ -14,6 +14,7 @@
 #   default_retry          the retry kind a new error of this variant has
 #   credentials_codes      error codes for which `is_credentials()` is true
 #   reason                 the type `reason()` returns
+#   reason_example         a value of that type, for the generated tests
 #
 # `[[library]]`: one per crate.
 #   name                the name conversions use, as in `from_<name>`
@@ -233,6 +234,7 @@ struct = "ConflictError"
 predicate = "is_conflict"
 remote = true
 reason = "ConflictReason"
+reason_example = "ConflictReason::ConcurrentModification"
 doc = """
 The request conflicts with the current state of `resource()`,
 for example creating a branch key whose ID already exists,
