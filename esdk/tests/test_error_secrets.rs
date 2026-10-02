@@ -183,3 +183,50 @@ async fn kms_failures_contain_no_branch_key_bytes() {
     assert!(err.is_invalid_materials(), "{err:?}");
     assert_no_secrets(&err);
 }
+
+/// Decrypt a message under the fake's branch key with a hierarchical keyring backed by `fake`.
+async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
+    let input = EncryptInput::builder()
+        .plaintext(PLAINTEXT.as_bytes())
+        .encryption_context(context(EC_VALUE))
+        .keyring(FakeAws::ok().keyring().await)
+        .build()
+        .unwrap();
+    let ciphertext = encrypt(&input).await.unwrap().ciphertext;
+    let input = DecryptInput::builder()
+        .ciphertext(&ciphertext)
+        .keyring(fake.keyring().await)
+        .build()
+        .unwrap();
+    decrypt(&input).await.unwrap_err()
+}
+
+#[tokio::test]
+async fn an_unparseable_kms_response_does_not_reach_the_error() {
+    // A KMS Decrypt response cut off after its plaintext branch key of `KEY_BYTE`.
+    let fake = FakeAws::new(|op, _| {
+        (op == "TrentService.Decrypt").then(|| {
+            Reply::ok(format!(
+                r#"{{"KeyId":"{KEY_ARN}","Plaintext":"WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo=","EncryptionAlgorithm":"SYMM"#
+            ))
+        })
+    });
+    let err = hierarchical_decrypt_error(fake).await;
+    assert!(err.is_service(), "{err:?}");
+    assert_no_secrets(&err);
+}
+
+#[tokio::test]
+async fn an_unparseable_dynamodb_response_does_not_reach_the_error() {
+    // A GetItem response cut off inside a branch key record's encryption context attribute.
+    let fake = FakeAws::new(|op, _| {
+        (op == "DynamoDB_20120810.GetItem").then(|| {
+            Reply::ok(format!(
+                r#"{{"Item":{{"branch-key-id":{{"S":"{BRANCH_KEY_ID}"}},"aws-crypto-ec:tenant":{{"S":"{EC_VALUE}"#
+            ))
+        })
+    });
+    let err = hierarchical_decrypt_error(fake).await;
+    assert!(err.is_service(), "{err:?}");
+    assert_no_secrets(&err);
+}
