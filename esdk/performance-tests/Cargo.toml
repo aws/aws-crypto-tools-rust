@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 aws-esdk = { path = ".." }
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../../unsafe-unreviewed-mpl/mpl" }
+aws-crypto-mpl = { path = "../../mpl" }
 
 tokio = { version = "1.49", features = ["full"] }
 
