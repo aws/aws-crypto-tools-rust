@@ -27,6 +27,8 @@ zeroize = "1.8.2"
 
 # Necessary for examples
 [dev-dependencies]
+aws-crypto-mpl = { path = "../mpl", features = ["test-utils"] }
+aws-smithy-runtime-api = { version = "=1.17.0", features = ["http-1x"] }
 tokio = { version = "1.49.0", features = ["rt", "macros", "rt-multi-thread"] }
 pem = "3.0.6"
 aws-config = "1.8.12"

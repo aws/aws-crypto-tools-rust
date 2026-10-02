@@ -2,7 +2,7 @@
 #
 # `cargo xtask gen-errors` writes each library's `src/error/generated.rs` from this file,
 # and `cargo xtask gen-errors --check` fails when those files are stale.
-# See `xtask/ERRORS.md` for what an error message may contain.
+# See "What errors may contain" in CONTRIBUTING.md before writing an error message.
 #
 # `[[variant]]`: every variant any library can have, in the order the enums list them.
 #   name       the variant, for example `Validation` in `Error::Validation(ValidationError)`
