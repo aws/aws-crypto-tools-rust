@@ -43,11 +43,32 @@ std::optional<std::uint8_t> parse_repr(std::string_view v) {
     return static_cast<std::uint8_t>(value);
 }
 
+// Parses a decimal byte length; nullopt if `v` is not one.
+std::optional<std::size_t> parse_len(std::string_view v) {
+    if (v.empty() || v.size() > 9) {
+        return std::nullopt;
+    }
+    std::size_t value = 0;
+    for (const char c : v) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        value = value * 10 + static_cast<std::size_t>(c - '0');
+    }
+    return value;
+}
+
 std::optional<std::string> non_empty(std::string_view v) {
     if (v.empty()) {
         return std::nullopt;
     }
     return std::string(v);
+}
+
+// The message part of `what`, without the header: what follows the header end, or all of `what`.
+std::string message_part(std::string_view what) {
+    const auto header_end = what.find('\x1e');
+    return std::string(header_end == std::string_view::npos ? what : what.substr(header_end + 1));
 }
 
 // nullopt when `what` does not have the encode_err layout.
@@ -99,13 +120,34 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         details.resource = Resource{ResourceType::DynamoDbTable, resource};
     } else if (resource_type == "branch_key") {
         details.resource = Resource{ResourceType::BranchKey, resource};
+    } else if (resource_type == "cache") {
+        details.resource = Resource{ResourceType::Cache, ""};
+    } else if (resource_type == "keyring") {
+        details.resource = Resource{ResourceType::Keyring, resource};
+    } else if (resource_type == "cmm") {
+        details.resource = Resource{ResourceType::Cmm, resource};
     }
     details.code = non_empty(fields["code"]);
     details.request_id = non_empty(fields["request_id"]);
+    const auto reason = fields["conflict_reason"];
+    if (reason == "already_exists") {
+        details.conflict_reason = ConflictReason::AlreadyExists;
+    } else if (reason == "concurrent_modification") {
+        details.conflict_reason = ConflictReason::ConcurrentModification;
+    }
+    details.credentials = fields["credentials"] == "1";
+    details.name = std::string(fields["name"]);
+    // The message part is the Rust `{}` text, `display_len` bytes, then the `{:#}` text.
+    const std::string_view body = what.substr(header_end + 1);
+    const auto display_len = parse_len(fields["display_len"]);
+    if (!display_len || *display_len > body.size()) {
+        return std::nullopt;
+    }
+    details.full_message = std::string(body.substr(*display_len));
     return ShimError{
         static_cast<::ffi::ShimErrorKind>(*kind),
         std::move(details),
-        std::string(what.substr(header_end + 1)),
+        std::string(body.substr(0, *display_len)),
     };
 }
 
@@ -113,7 +155,7 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
 [[noreturn]] void throw_shim_exception(const std::string& what) {
     auto error = decode_shim_error(what);
     if (!error) {
-        throw AwsEncryptionSdkException(what);
+        throw AwsEncryptionSdkException(message_part(what));
     }
     auto& m = error->message;
     auto& d = error->details;
@@ -130,6 +172,8 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         case ::ffi::ShimErrorKind::Dispatch: throw DispatchException(m, std::move(d));
         case ::ffi::ShimErrorKind::Internal: throw InternalException(m, std::move(d));
         case ::ffi::ShimErrorKind::Io: throw IoException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Throttling: throw ThrottlingException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Conflict: throw ConflictException(m, std::move(d));
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.

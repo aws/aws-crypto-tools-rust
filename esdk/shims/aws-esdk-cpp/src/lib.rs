@@ -221,6 +221,8 @@ mod ffi {
         Dispatch,
         Internal,
         Io,
+        Throttling,
+        Conflict,
     }
 
     struct EncryptionContextItem {
@@ -460,30 +462,59 @@ const ERROR_HEADER_END: char = '\u{1e}';
 
 /// Encode an error the shim raises itself, which is never retryable and names no AWS call.
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
-    encode_err(kind, None, operation, message)
+    let name = shim_kind_name(kind);
+    let text = format!("{name}: {operation}: {message}");
+    encode_err(kind, None, name, &text, &text)
 }
 
-/// Encode an ESDK or MPL error with its variant, retry kind, and AWS call.
-fn core_err(operation: &str, e: impl Into<aws_esdk::Error>) -> String {
+/// Encode an ESDK or MPL error with its variant, retry kind, details,
+/// and its Rust `{}` and `{:#}` text.
+fn core_err(e: impl Into<aws_esdk::Error>) -> String {
     let e: aws_esdk::Error = e.into();
-    encode_err(classify_core_error(&e), Some(&e), operation, &e)
+    encode_err(
+        classify_core_error(&e),
+        Some(&e),
+        e.name(),
+        &e.to_string(),
+        &format!("{e:#}"),
+    )
+}
+
+/// The Rust variant name of a kind the shim raises itself.
+fn shim_kind_name(kind: ffi::ShimErrorKind) -> &'static str {
+    use ffi::ShimErrorKind as S;
+    match kind {
+        S::Validation => "Validation",
+        S::Serialization => "Serialization",
+        S::Io => "Io",
+        _ => "Internal",
+    }
 }
 
 fn encode_err(
     kind: ffi::ShimErrorKind,
     err: Option<&aws_esdk::Error>,
-    operation: &str,
-    message: impl std::fmt::Display,
+    name: &str,
+    display: &str,
+    full: &str,
 ) -> String {
+    use aws_esdk::error::ConflictReason;
     use std::fmt::Write as _;
     // cxx passes only a message string across, not a typed error.
     // The facade decodes this layout back into a typed exception:
-    // `kind=K<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<RS>{operation}: {message}`
+    // `kind=K<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<US>`
+    // `conflict_reason=X<US>credentials=B<US>name=V<US>display_len=L<RS>{display}{full}`
     //   - K: the ShimErrorKind repr
     //   - R: transient, throttling, server, client, or empty when not retryable
-    //   - S, T, N, C, I: empty when the error names no AWS call
+    //   - S: kms, dynamodb, or empty
+    //   - T: kms_key, dynamodb_table, branch_key, cache, keyring, cmm, or empty
+    //   - N, C, I: empty when the error has none
+    //   - X: already_exists, concurrent_modification, or empty
+    //   - B: 1 when an AccessDenied error is about credentials, else 0
+    //   - V: the Rust variant name, such as Throttling
+    //   - L: the byte length of `display`, the Rust `{}` text; `full` is the `{:#}` text
     //   - US, RS: ERROR_FIELD_SEPARATOR, ERROR_HEADER_END
-    // A value holding either separator is sent empty, so the header always parses.
+    // A header value holding either separator is sent empty, so the header always parses.
     let clean = |v: &str| {
         if v.contains([ERROR_FIELD_SEPARATOR, ERROR_HEADER_END]) {
             String::new()
@@ -491,22 +522,19 @@ fn encode_err(
             v.to_owned()
         }
     };
-    let retry = match err.and_then(aws_esdk::Error::retry_kind) {
-        Some(RetryKind::Transient) => "transient",
-        Some(RetryKind::Throttling) => "throttling",
-        Some(RetryKind::Server) => "server",
-        Some(_) => "client",
-        None => "",
-    };
-    let service = match err.and_then(aws_esdk::Error::service) {
-        Some(Service::Kms) => "kms",
-        Some(Service::DynamoDb) => "dynamodb",
-        _ => "",
-    };
+    let retry = err
+        .and_then(aws_esdk::Error::retry_kind)
+        .map_or("", RetryKind::as_str);
+    let service = err
+        .and_then(aws_esdk::Error::service)
+        .map_or("", Service::as_str);
     let (resource_type, resource) = match err.and_then(aws_esdk::Error::resource) {
         Some(Resource::KmsKey(n)) => ("kms_key", clean(n)),
         Some(Resource::DynamoDbTable(n)) => ("dynamodb_table", clean(n)),
         Some(Resource::BranchKey(n)) => ("branch_key", clean(n)),
+        Some(Resource::Cache) => ("cache", String::new()),
+        Some(Resource::Keyring(n)) => ("keyring", clean(n)),
+        Some(Resource::Cmm(n)) => ("cmm", clean(n)),
         _ => ("", String::new()),
     };
     let code = err
@@ -517,12 +545,26 @@ fn encode_err(
         .and_then(aws_esdk::Error::request_id)
         .map(clean)
         .unwrap_or_default();
+    let conflict_reason = match err {
+        Some(aws_esdk::Error::Conflict(c)) => match c.reason() {
+            Some(ConflictReason::AlreadyExists) => "already_exists",
+            Some(ConflictReason::ConcurrentModification) => "concurrent_modification",
+            _ => "",
+        },
+        _ => "",
+    };
+    let credentials = match err {
+        Some(aws_esdk::Error::AccessDenied(a)) if a.is_credentials() => "1",
+        _ => "0",
+    };
+    let name = clean(name);
     let sep = ERROR_FIELD_SEPARATOR;
     let mut out = String::new();
     let _ = write!(
         out,
-        "kind={}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{ERROR_HEADER_END}{operation}: {message}",
+        "kind={}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{sep}conflict_reason={conflict_reason}{sep}credentials={credentials}{sep}name={name}{sep}display_len={}{ERROR_HEADER_END}{display}{full}",
         kind.repr,
+        display.len(),
     );
     out
 }
@@ -540,6 +582,8 @@ fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
         E::NoMatchingDataKey(_) => S::NoMatchingDataKey,
         E::AccessDenied(_) => S::AccessDenied,
         E::ResourceNotFound(_) => S::ResourceNotFound,
+        E::Throttling(_) => S::Throttling,
+        E::Conflict(_) => S::Conflict,
         E::Service(_) => S::Service,
         E::Dispatch(_) => S::Dispatch,
         E::Io(_) => S::Io,
@@ -548,8 +592,8 @@ fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
 }
 
 /// Map a core input builder's `build()` error through the shim's error translation.
-fn build_core_input<T>(built: Result<T, aws_esdk::Error>, operation: &str) -> Result<T, String> {
-    built.map_err(|e| core_err(operation, e))
+fn build_core_input<T>(built: Result<T, aws_esdk::Error>) -> Result<T, String> {
+    built.map_err(core_err)
 }
 
 /// Validates a C++-supplied resource handle, then borrows the resource behind it.
@@ -853,8 +897,7 @@ fn create_cryptographic_materials_cache(
     //# - Creating a cryptographic materials cache MUST provide the target-supplied
     //# cache type, with its values, to the core ESDK.
     let cache_type = make_cache_type(cache)?;
-    let created = create_cryptographic_materials_cache_core(cache_type)
-        .map_err(|e| core_err("create_cryptographic_materials_cache", e))?;
+    let created = create_cryptographic_materials_cache_core(cache_type).map_err(core_err)?;
     Ok(Box::new(CryptographicMaterialsCache { inner: created }))
 }
 
@@ -1037,9 +1080,9 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
         //# source (see [Resources](#resources)).
         .keyring(keyring.inner.clone());
-    let core_input = build_core_input(apply_encrypt_options(builder, input)?.build(), "encrypt")?;
+    let core_input = build_core_input(apply_encrypt_options(builder, input)?.build())?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
-    let output = output.map_err(|e| core_err("encrypt", e))?;
+    let output = output.map_err(core_err)?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1070,9 +1113,9 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //# converted as defined in [Encryption context](#encryption-context).
         .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .keyring(keyring.inner.clone());
-    let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
+    let core_input = build_core_input(apply_decrypt_options(builder, input)?.build())?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
-    let output = output.map_err(|e| core_err("decrypt", e))?;
+    let output = output.map_err(core_err)?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1117,7 +1160,6 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
-    let op = "create_keystore";
     let builder = BranchKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
@@ -1148,9 +1190,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
         .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
-    let store = TOKIO_RUNTIME
-        .block_on(builder.build())
-        .map_err(|e| core_err(op, e))?;
+    let store = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
     Ok(Box::new(KeyStore {
         inner: SharedKeystore::new(store),
     }))
@@ -1207,7 +1247,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
         wrapping_alg_target_to_core(input.wrapping_alg)?,
     )
-    .map_err(|e| core_err("create_raw_aes_keyring", e))?;
+    .map_err(core_err)?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),
@@ -1262,9 +1302,7 @@ fn create_hierarchical_keyring(
     if let Some(partition_id) = partition_id {
         builder = builder.partition_id(partition_id);
     }
-    let keyring = builder
-        .build()
-        .map_err(|e| core_err("create_hierarchical_keyring", e))?;
+    let keyring = builder.build().map_err(core_err)?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),
@@ -1510,7 +1548,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                 .transpose()?,
         )
         .build();
-    let core_input = build_core_input(core_input, "encrypt_stream")?;
+    let core_input = build_core_input(core_input)?;
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1519,7 +1557,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                     &mut writer,
                     &core_input,
                 ))
-                .map_err(|e| core_err("encrypt_stream", e))?;
+                .map_err(core_err)?;
             //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
             //# - A successful finish step MUST return the same non-payload outputs as
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
@@ -1559,7 +1597,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 .transpose()?,
         )
         .build();
-    let core_input = build_core_input(core_input, "decrypt_stream")?;
+    let core_input = build_core_input(core_input)?;
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1573,7 +1611,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
                 //# and the shim MUST surface the core ESDK's refusal to stream a message whose
                 //# verification cannot complete until the end of the message.
-                .map_err(|e| core_err("decrypt_stream", e))?;
+                .map_err(core_err)?;
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
                 encryption_context: encryption_context_core_to_target(output.encryption_context),
