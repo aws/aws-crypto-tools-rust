@@ -931,6 +931,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
     /// The backtrace captured when this error was created.
     ///
     /// Disabled unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
+    #[allow(clippy::must_use_candidate)] // clippy releases disagree on whether `&Backtrace` is already must_use
     pub fn backtrace(&self) -> &Backtrace {{
         &self.data().backtrace
     }}
