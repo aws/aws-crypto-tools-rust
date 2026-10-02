@@ -624,7 +624,6 @@ fn test_new_rejects_wrapping_key_length_mismatch() {
     let err = RawAesKeyring::new(namespace, name, vec![0u8; 16], AesGcm::Aes256Gcm)
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
     assert!(err.is_validation(), "{:?}", err);
-    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]

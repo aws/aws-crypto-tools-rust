@@ -353,7 +353,7 @@ async fn integ_get_active_key_with_arn_disagreement_fails() {
 async fn integ_get_active_key_wrong_logical_name_fails_at_kms() {
     // A wrong logical name binds a different `tablename` value into the
     // EC, so KMS Decrypt fails to authenticate and returns
-    // InvalidCiphertextException, which maps to ErrorKind::Remote.
+    // InvalidCiphertextException, which is a `Service` error.
     let store = build_store(
         KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
         INCORRECT_LOGICAL_NAME,
@@ -462,7 +462,7 @@ async fn integ_get_active_key_does_not_exist() {
     )
     .await;
     let err = match store.get_active_branch_key("Robbie".to_string()).await {
-        Ok(_) => panic!("nonexistent branch key MUST fail with RemoteResourceNotFound"),
+        Ok(_) => panic!("nonexistent branch key MUST fail with ResourceNotFound"),
         Err(e) => e,
     };
     assert!(err.is_resource_not_found(), "{:?}", err);

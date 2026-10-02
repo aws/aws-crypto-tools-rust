@@ -75,7 +75,6 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
         .ddb_client(ddb);
     let err = build_err(builder).await;
     assert!(err.is_validation(), "{:?}", err);
-    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[tokio::test]
@@ -313,7 +312,7 @@ async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
 // ─── Read-path APIs ─────────────────────────────────────────────────────────
 //
 // Without AWS credentials the read path fails at the SDK call.
-// A `RemoteTransport` error shows the method reached the SDK: with no credentials, the request is never sent.
+// A `Dispatch` error shows the method reached the SDK: with no credentials, the request is never sent.
 // The real-AWS integration tests cover the happy path.
 
 #[tokio::test]

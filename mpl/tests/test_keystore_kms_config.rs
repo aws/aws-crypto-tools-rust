@@ -30,13 +30,11 @@ fn parse_arn_extracts_all_six_segments() {
 fn parse_arn_rejects_too_few_segments() {
     let err = parse_arn("arn:aws:kms:us-east-1:111122223333").unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
-    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn parse_arn_rejects_missing_resource_slash() {
     let err = parse_arn("arn:aws:kms:us-east-1:111122223333:key-no-slash").unwrap_err();
-    assert!(err.is_validation(), "{:?}", err);
     assert!(err.is_validation(), "{:?}", err);
 }
 

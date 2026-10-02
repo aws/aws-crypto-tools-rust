@@ -154,7 +154,6 @@ fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
     };
 
     assert!(err.is_validation(), "{:?}", err);
-    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -198,7 +197,6 @@ fn build_without_ttl_returns_validation_error() {
             .branch_key_id("branch-key-id"),
         "no TTL",
     );
-    assert!(err.is_validation(), "{:?}", err);
     assert!(err.is_validation(), "{:?}", err);
 }
 

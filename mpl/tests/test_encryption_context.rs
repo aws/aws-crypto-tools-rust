@@ -73,7 +73,6 @@ fn test_out_of_order_keys_rejected_on_deserialize() {
     ];
     let err = EncryptionContext::deserialize(bytes).unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
-    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -235,7 +234,6 @@ fn test_serialize_rejects_oversize_value() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
-    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
@@ -254,7 +252,6 @@ fn test_serialize_rejects_too_many_entries() {
     let result = ec.serialize();
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.is_validation(), "{:?}", err);
     assert!(err.is_validation(), "{:?}", err);
 }
 
