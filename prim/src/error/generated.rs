@@ -104,10 +104,9 @@ impl ErrorData {
                 r.resource.as_ref(),
                 r.code.as_deref(),
                 r.request_id.as_deref(),
-                self.retry,
             )
         } else {
-            details(None, None, None, None, self.retry)
+            details(None, None, None, None)
         };
         Level {
             name,
@@ -164,7 +163,6 @@ fn details(
     resource: Option<&Resource>,
     code: Option<&str>,
     request_id: Option<&str>,
-    retry: Option<RetryKind>,
 ) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(service) = service {
@@ -178,9 +176,6 @@ fn details(
     }
     if let Some(request_id) = request_id {
         out.push(format!("request {request_id}"));
-    }
-    if let Some(retry) = retry {
-        out.push(format!("retryable: {retry}"));
     }
     out
 }
@@ -206,13 +201,7 @@ macro_rules! level {
         Level {
             name: e.name(),
             message: e.message(),
-            details: details(
-                e.service(),
-                e.resource(),
-                e.code(),
-                e.request_id(),
-                e.retry_kind(),
-            ),
+            details: details(e.service(), e.resource(), e.code(), e.request_id()),
             tried: tried(e.collected().iter().map(|c| c.resource())),
             collected: e.collected().iter().map(as_display).collect(),
         }
@@ -868,10 +857,7 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert!(std::error::Error::source(&s).is_some());
-        assert!(
-            s.to_string()
-                .starts_with("Cryptographic: what went wrong (")
-        );
+        assert_eq!(s.to_string(), "Cryptographic: what went wrong");
         assert!(format!("{s:?}").contains("what went wrong"));
 
         let e = Error::from(s);
@@ -887,10 +873,7 @@ mod tests {
         assert!(e.collected().is_empty());
         let _ = e.backtrace();
         assert!(e.find_source::<std::io::Error>().is_some());
-        assert!(
-            e.to_string()
-                .starts_with("Cryptographic: what went wrong (")
-        );
+        assert_eq!(e.to_string(), "Cryptographic: what went wrong");
         assert!(format!("{e:#}").ends_with(": the cause"));
         assert!(format!("{e:?}").contains("Cryptographic"));
 
@@ -913,7 +896,7 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert!(std::error::Error::source(&s).is_some());
-        assert!(s.to_string().starts_with("Internal: what went wrong ("));
+        assert_eq!(s.to_string(), "Internal: what went wrong");
         assert!(format!("{s:?}").contains("what went wrong"));
 
         let e = Error::from(s);
@@ -929,7 +912,7 @@ mod tests {
         assert!(e.collected().is_empty());
         let _ = e.backtrace();
         assert!(e.find_source::<std::io::Error>().is_some());
-        assert!(e.to_string().starts_with("Internal: what went wrong ("));
+        assert_eq!(e.to_string(), "Internal: what went wrong");
         assert!(format!("{e:#}").ends_with(": the cause"));
         assert!(format!("{e:?}").contains("Internal"));
 

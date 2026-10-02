@@ -219,11 +219,11 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
     assert_eq!(e.service(), None);
     assert_eq!(
         err.to_string(),
-        "Throttling: encrypt could not get encryption materials (materials cache, retryable: throttling)"
+        "Throttling: encrypt could not get encryption materials (materials cache)"
     );
     assert_eq!(
         format!("{err:#}"),
-        "Throttling: encrypt could not get encryption materials (materials cache, retryable: throttling): \
+        "Throttling: encrypt could not get encryption materials (materials cache): \
          timed out waiting for another caller to fetch branch key my-branch-key"
     );
 }

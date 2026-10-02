@@ -50,7 +50,7 @@ fn the_builder_sets_the_message_source_and_retry_kind() {
     assert_eq!(built.message(), "m");
     assert_eq!(built.retry_kind(), Some(RetryKind::Transient));
     assert_eq!(built.source().unwrap().to_string(), "cause");
-    assert_eq!(built.to_string(), "Internal: m (retryable: transient)");
+    assert_eq!(built.to_string(), "Internal: m");
 }
 
 #[test]
