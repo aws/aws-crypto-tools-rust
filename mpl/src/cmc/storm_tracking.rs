@@ -124,9 +124,11 @@ pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
 /// Another caller held the in-flight slot for this key past `inflight_ttl`.
 /// Contention, not a fault: the next attempt usually finds the entry filled.
 fn inflight_ttl_exceeded() -> Error {
-    let mut err = Error::new(Kind::Internal, "in-flight TTL exceeded");
-    err.set_retry(Some(crate::error::RetryKind::Transient));
-    err
+    Error::new(
+        Kind::Throttling,
+        "timed out waiting for another caller to fill the cache entry",
+    )
+    .about(None, Some(crate::error::Resource::Cache))
 }
 
 impl StormTrackingCmc {

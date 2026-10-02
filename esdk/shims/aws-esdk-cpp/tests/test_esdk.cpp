@@ -243,6 +243,29 @@ void test_raw_aes_wrong_keyring_fails() {
     }
 }
 
+void test_no_matching_data_key_names_the_keyring() {
+    std::vector<std::uint8_t> key(32, 0x01);
+    Aws::Esdk::RawAesKeyring encrypting("test-ns", "test-key", key,
+                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::RawAesKeyring decrypting("test-ns", "other-key", key,
+                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto ciphertext = sdk.encrypt(to_bytes("keyed to test-key"), encrypting).ciphertext;
+    CHECK_THROWS_TYPE(Aws::Esdk::NoMatchingDataKeyException, sdk.decrypt(ciphertext, decrypting));
+    try {
+        sdk.decrypt(ciphertext, decrypting);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(e.name() == "NoMatchingDataKey");
+        ESDK_CHECK(e.resource().has_value());
+        ESDK_CHECK(e.resource()->type == Aws::Esdk::ResourceType::Keyring);
+        ESDK_CHECK(e.resource()->name == "test-ns/other-key");
+        ESDK_CHECK(!e.service().has_value());
+        const std::string what = e.what();
+        ESDK_CHECK(what == "NoMatchingDataKey: decrypt could not get decryption materials (keyring test-ns/other-key)");
+        ESDK_CHECK(e.full_message().rfind(what + ": encrypted data key 0 did not match the keyring", 0) == 0);
+    }
+}
+
 void test_cache_kinds() {
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
@@ -783,6 +806,7 @@ int main(int argc, char** argv) {
         test_raw_aes_non_ascii_encryption_context_round_trips();
         test_non_utf8_encryption_context_throws_invalid_argument();
         test_raw_aes_wrong_keyring_fails();
+        test_no_matching_data_key_names_the_keyring();
         test_raw_aes_mismatched_key_length_throws();
         test_cache_kinds();
         test_keystore_rejects_short_table_name();

@@ -68,6 +68,10 @@ impl DefaultCmm {
 
 #[async_trait]
 impl Cmm for DefaultCmm {
+    fn name(&self) -> &str {
+        "default"
+    }
+
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,

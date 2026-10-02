@@ -8,7 +8,7 @@
 //! `Keyring` impl in [`super::hierarchical_keyring`].
 
 use crate::Error;
-use crate::error::{Kind, Service};
+use crate::error::{Kind, Resource, Service};
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
@@ -62,7 +62,7 @@ pub fn compute_aad(
     branch_key_version: &str,
     encryption_context: &EncryptionContext,
 ) -> Result<Vec<u8>, Error> {
-    let version_bytes = uuid_str_to_16_bytes(branch_key_version)?;
+    let version_bytes = uuid_str_to_16_bytes(branch_key_version, branch_key_id)?;
 
     let serialized_ec = encryption_context.serialize()?;
 
@@ -87,21 +87,20 @@ pub fn compute_aad(
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also
 /// accepts the 32-character simple form as well as braced and URN forms,
 /// and only the canonical hyphenated form is 36 characters.
-fn uuid_str_to_16_bytes(s: &str) -> Result<[u8; VERSION_LEN], Error> {
-    if s.len() != 36 {
-        return Err(Error::new(
-            Kind::Service,
-            format!("branch key version is not a valid 36-char UUID: {s}",),
+fn uuid_str_to_16_bytes(s: &str, branch_key_id: &str) -> Result<[u8; VERSION_LEN], Error> {
+    let malformed = |message: String| {
+        Error::new(Kind::InvalidMaterials, message).about(
+            Some(Service::DynamoDb),
+            Some(Resource::BranchKey(branch_key_id.to_owned())),
         )
-        .about(Service::DynamoDb, None));
+    };
+    if s.len() != 36 {
+        return Err(malformed(format!(
+            "branch key version is not a valid 36-char UUID: {s}"
+        )));
     }
     let uuid = Uuid::parse_str(s).map_err(|e| {
-        Error::with_cause(
-            Kind::Service,
-            format!("branch key version is not a valid UUID: {s}"),
-            e,
-        )
-        .about(Service::DynamoDb, None)
+        malformed(format!("branch key version is not a valid UUID: {s}")).with_source(e)
     })?;
     Ok(*uuid.as_bytes())
 }
@@ -177,7 +176,8 @@ pub fn wrap(
         encryption_context,
     )?;
 
-    let version_bytes = uuid_str_to_16_bytes(materials.branch_key_version())?;
+    let version_bytes =
+        uuid_str_to_16_bytes(materials.branch_key_version(), materials.branch_key_id())?;
 
     // 5. Assemble the on-wire layout and AES-256-GCM encrypt directly into it.
     //

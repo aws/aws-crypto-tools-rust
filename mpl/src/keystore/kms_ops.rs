@@ -87,6 +87,7 @@ pub(crate) fn build_authenticated_encryption_context(
 pub(crate) fn resolve_keystore_arn(
     kms_config: &KmsConfiguration,
     record_kms_arn: &str,
+    branch_key_id: &str,
 ) -> Result<String, Error> {
     match kms_config {
         KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
@@ -101,40 +102,45 @@ pub(crate) fn resolve_keystore_arn(
             Ok(configured.clone())
         }
         KmsConfiguration::Discovery => {
-            reject_alias_arn(record_kms_arn)?;
+            reject_alias_arn(record_kms_arn, branch_key_id)?;
             Ok(record_kms_arn.to_string())
         }
         KmsConfiguration::MrDiscovery { region } => {
-            reject_alias_arn(record_kms_arn)?;
-            rewrite_arn_region(record_kms_arn, region)
+            reject_alias_arn(record_kms_arn, branch_key_id)?;
+            rewrite_arn_region(record_kms_arn, region, branch_key_id)
         }
     }
 }
 
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery
 /// and MRDiscovery before passing the record's `kms-arn` to KMS.
-fn reject_alias_arn(arn: &str) -> Result<(), Error> {
+fn reject_alias_arn(arn: &str, branch_key_id: &str) -> Result<(), Error> {
     let parts = parse_arn(arn).map_err(|e| {
-        Error::with_cause(Kind::Service, "record kms-arn is malformed", e)
-            .about(Service::DynamoDb, None)
+        malformed_record(branch_key_id, "record kms-arn is malformed").with_source(e)
     })?;
     if parts.resource_type == "alias" {
-        return Err(Error::new(
-            Kind::Service,
+        return Err(malformed_record(
+            branch_key_id,
             format!("record kms-arn must not be an alias: {arn}"),
-        )
-        .about(Service::DynamoDb, None));
+        ));
     }
     Ok(())
+}
+
+/// An error for a malformed branch key record.
+fn malformed_record(branch_key_id: &str, message: impl Into<String>) -> Error {
+    Error::new(Kind::InvalidMaterials, message).about(
+        Some(Service::DynamoDb),
+        Some(Resource::BranchKey(branch_key_id.to_owned())),
+    )
 }
 
 /// Rewrite the region segment of an AWS ARN to `new_region`. The
 /// resource-type / resource portion (which may itself contain `/`) is
 /// preserved verbatim.
-fn rewrite_arn_region(arn: &str, new_region: &str) -> Result<String, Error> {
+fn rewrite_arn_region(arn: &str, new_region: &str, branch_key_id: &str) -> Result<String, Error> {
     let parts = parse_arn(arn).map_err(|e| {
-        Error::with_cause(Kind::Service, "record kms-arn is malformed", e)
-            .about(Service::DynamoDb, None)
+        malformed_record(branch_key_id, "record kms-arn is malformed").with_source(e)
     })?;
     Ok(format!(
         "arn:{}:{}:{}:{}:{}/{}",
@@ -154,20 +160,20 @@ pub(crate) async fn decrypt_branch_key(
     kms_client: &KmsClient,
     kms_config: &KmsConfiguration,
     record: &EncryptedRecord,
+    branch_key_id: &str,
     logical_keystore_name: &str,
     grant_tokens: &[String],
 ) -> Result<Vec<u8>, Error> {
     let ec = build_authenticated_encryption_context(&record.attributes, logical_keystore_name);
 
     let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
-        Error::new(
-            Kind::Service,
+        malformed_record(
+            branch_key_id,
             format!("record is missing the '{ATTR_KMS_ARN}' attribute"),
         )
-        .about(Service::DynamoDb, None)
     })?;
 
-    let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn)?;
+    let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn, branch_key_id)?;
 
     let response = kms_client
         .decrypt()
@@ -177,13 +183,21 @@ pub(crate) async fn decrypt_branch_key(
         .set_grant_tokens(Some(grant_tokens.to_vec()))
         .send()
         .await
-        .map_err(|e| map_kms_error("Decrypt", &resolved_key_id, e))?;
+        .map_err(|e| {
+            map_kms_error(
+                &format!("Decrypt of branch key {branch_key_id}"),
+                &resolved_key_id,
+                e,
+            )
+        })?;
 
     let plaintext = response
         .plaintext
         .ok_or_else(|| {
-            Error::new(Kind::Service, "KMS Decrypt response is missing Plaintext")
-                .about(Service::Kms, None)
+            Error::new(Kind::Service, "KMS Decrypt response is missing Plaintext").about(
+                Some(Service::Kms),
+                Some(Resource::KmsKey(resolved_key_id.clone())),
+            )
         })?
         .into_inner();
     Ok(plaintext)
@@ -232,7 +246,7 @@ pub(crate) async fn generate_wrapped_key(
                 Kind::Service,
                 "KMS GenerateDataKeyWithoutPlaintext response is missing CiphertextBlob",
             )
-            .about(Service::Kms, None)
+            .about(Some(Service::Kms), None)
         })?
         .into_inner())
 }
@@ -277,7 +291,7 @@ pub(crate) async fn reencrypt_wrapped_key(
                 Kind::Service,
                 "KMS ReEncrypt response is missing CiphertextBlob",
             )
-            .about(Service::Kms, None)
+            .about(Some(Service::Kms), None)
         })?
         .into_inner())
 }
