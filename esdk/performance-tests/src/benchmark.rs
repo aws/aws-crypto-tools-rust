@@ -4,7 +4,9 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{BranchKeyStore, CacheType, DefaultCache, HierarchicalKeyring, KmsConfiguration};
+use aws_crypto_mpl::{
+    BranchKeyStore, CacheType, DefaultCache, HierarchicalKeyring, KmsConfiguration,
+};
 use aws_esdk::{CommitmentPolicy, Esdk};
 use log::info;
 use sysinfo::System;
