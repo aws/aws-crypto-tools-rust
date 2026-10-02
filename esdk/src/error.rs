@@ -39,7 +39,7 @@
 //! Log `{:#}`.
 //!
 //! **Reaching the AWS SDK error.**
-//! The error from AWS KMS or DynamoDB stays in the source chain.
+//! The error from AWS KMS or `DynamoDB` stays in the source chain.
 //! [`find_source`](Error::find_source) returns it by type;
 //! use the SDK crates [`aws_crypto_mpl`] re-exports, so the versions match.
 //!
@@ -111,7 +111,7 @@
 //! # }
 //! ```
 //!
-//! For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
+//! For errors from AWS KMS or `DynamoDB`, the AWS SDK client has already retried
 //! according to its `RetryConfig`, so retry only at a higher level with your own backoff.
 //! Materials-cache throttling is not retried internally.
 //!

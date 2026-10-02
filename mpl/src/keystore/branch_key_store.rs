@@ -289,10 +289,7 @@ impl BranchKeyStoreBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a `Validation` error if:
-    /// - a required field is unset,
-    /// - the table name is outside DynamoDB's 3-255 character bounds, or
-    /// - the KMS configuration is invalid (malformed ARN, alias, non-`kms` service).
+    /// - [`Validation`](crate::Error::Validation): a required field is unset, the table name is outside DynamoDB's 3-255 character bounds, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
     pub async fn build(self) -> Result<BranchKeyStore, Error> {
         let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
         let logical_keystore_name = required(self.logical_keystore_name, "logical_keystore_name")?;
@@ -350,6 +347,9 @@ fn required<T>(value: Option<T>, field: &str) -> Result<T, Error> {
 
 #[async_trait]
 impl Keystore for BranchKeyStore {
+    /// # Errors
+    ///
+    /// Reads only in-memory configuration and never returns an error.
     fn get_key_store_info(&self) -> Result<KeyStoreInfo, Error> {
         Ok(KeyStoreInfo {
             keystore_id: self.inner.keystore_id.clone(),
@@ -360,6 +360,11 @@ impl Keystore for BranchKeyStore {
         })
     }
 
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): the table exists but does not match the required key store schema.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an Amazon DynamoDB call failed, or returned a success response with no table description or ARN (`Service`); `resource()` is the table.
+    /// - [`Internal`](crate::Error::Internal): building a DynamoDB request failed.
     async fn create_key_store(&self) -> Result<String, Error> {
         let table_name = &self.inner.ddb_table_name;
 
@@ -430,6 +435,12 @@ impl Keystore for BranchKeyStore {
         }
     }
 
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): the input is invalid, for example a caller-supplied branch key id without an encryption context, a non-single-key KMS configuration, or an invalid encryption context.
+    /// - [`Conflict`](crate::Error::Conflict): the branch key id already exists; `resource()` is the branch key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no ciphertext (`Service`); `resource()` is the KMS key or the table.
+    /// - [`Internal`](crate::Error::Internal): building a DynamoDB request or formatting the record timestamp failed.
     async fn create_key(
         &self,
         branch_key_id: Option<String>,
@@ -520,6 +531,14 @@ impl Keystore for BranchKeyStore {
         Ok(branch_key_id)
     }
 
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): the KMS configuration is not a single key, or the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the ACTIVE record is missing a required attribute or is malformed; `resource()` is the branch key.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): AWS KMS rejected the stored ACTIVE record as tampered with (`InvalidCiphertextException`).
+    /// - [`Conflict`](crate::Error::Conflict): the branch key was rotated concurrently; `resource()` is the branch key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no ciphertext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no ACTIVE record exists for the branch key (`resource()` is the branch key).
+    /// - [`Internal`](crate::Error::Internal): building a DynamoDB request or formatting the record timestamp failed.
     async fn version_key(&self, branch_key_id: String) -> Result<(), Error> {
         // VersionKey requires a single-key KMS configuration.
         let configured_arn = self.configured_kms_key_arn()?.to_string();
@@ -566,11 +585,16 @@ impl Keystore for BranchKeyStore {
         )
         .await
         .map_err(|e| {
-            Error::with_cause(
-                Kind::Cryptographic,
-                format!("failed to authenticate ACTIVE record for '{branch_key_id}'"),
-                e,
-            )
+            // KMS rejects a ciphertext whose encryption context was altered.
+            if e.code() == Some("InvalidCiphertextException") {
+                Error::with_cause(
+                    Kind::Cryptographic,
+                    format!("failed to authenticate ACTIVE record for '{branch_key_id}'"),
+                    e,
+                )
+            } else {
+                e
+            }
         })?;
 
         // Build the new version's encryption contexts from the old ACTIVE
@@ -658,6 +682,11 @@ impl Keystore for BranchKeyStore {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keystore record is malformed or missing a required attribute; `resource()` is the branch key.
+    /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no plaintext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no keystore record exists for the branch key (`resource()` is the branch key).
     async fn get_active_branch_key(
         &self,
         branch_key_id: String,
@@ -681,6 +710,11 @@ impl Keystore for BranchKeyStore {
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
+    /// # Errors
+    ///
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keystore record is malformed or missing a required attribute; `resource()` is the branch key.
+    /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no plaintext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no keystore record exists for the branch key (`resource()` is the branch key).
     async fn get_branch_key_version(
         &self,
         branch_key_id: String,
@@ -704,6 +738,11 @@ impl Keystore for BranchKeyStore {
         branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)
     }
 
+    /// # Errors
+    ///
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keystore record is malformed or missing a required attribute; `resource()` is the branch key.
+    /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no plaintext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no keystore record exists for the branch key (`resource()` is the branch key).
     async fn get_beacon_key(&self, branch_key_id: String) -> Result<BeaconKeyMaterials, Error> {
         let record = self
             .fetch_record(&branch_key_id, TYPE_BEACON_ACTIVE)

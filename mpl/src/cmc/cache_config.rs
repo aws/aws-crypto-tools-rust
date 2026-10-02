@@ -276,9 +276,7 @@ impl StormTrackingCacheBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`Validation`](crate::Error::Validation) error if:
-    /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
-    /// - `grace_interval` exceeds `inflight_ttl`.
+    /// - [`Validation`](crate::Error::Validation): `fan_out`, `inflight_ttl`, or `sleep` is zero, or `grace_interval` exceeds `inflight_ttl`.
     pub fn build(self) -> Result<StormTrackingCache, Error> {
         let config = StormTrackingCache {
             entry_capacity: self.entry_capacity.unwrap_or(DEFAULT_CACHE_ENTRY_CAPACITY),
@@ -342,7 +340,7 @@ pub enum CacheType {
 ///
 /// # Errors
 ///
-/// Returns an error if the underlying cache rejects the supplied parameters.
+/// - [`Validation`](crate::Error::Validation): the underlying cache rejects the supplied parameters.
 pub fn create_cryptographic_materials_cache(cache_type: CacheType) -> Result<SharedCmc, Error> {
     match cache_type {
         CacheType::Default(default_cache) => {

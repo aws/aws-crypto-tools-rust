@@ -372,3 +372,23 @@ fn name_is_the_variant_name() {
     );
     assert_eq!(Error::from(ThrottlingError::new("m")).name(), "Throttling");
 }
+
+#[tokio::test]
+async fn version_key_keeps_the_kms_classification_of_the_record_check() {
+    use aws_crypto_mpl::Keystore;
+    let version_key_error = |code: &'static str| async move {
+        FakeAws::new(move |op, _| {
+            (op == "TrentService.ReEncrypt").then(|| Reply::error(400, code, "r"))
+        })
+        .key_store()
+        .await
+        .version_key(BRANCH_KEY_ID.into())
+        .await
+        .unwrap_err()
+    };
+    let denied = version_key_error("AccessDeniedException").await;
+    assert!(denied.is_access_denied(), "{denied:?}");
+    assert_eq!(denied.resource(), Some(&Resource::KmsKey(KEY_ARN.into())));
+    let tampered = version_key_error("InvalidCiphertextException").await;
+    assert!(tampered.is_cryptographic(), "{tampered:?}");
+}

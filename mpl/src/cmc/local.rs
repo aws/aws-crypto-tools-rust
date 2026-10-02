@@ -55,6 +55,10 @@ impl LocalCmc {
     ///
     /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
     /// and `get` always returns `None`.
+    ///
+    /// # Errors
+    ///
+    /// Does not return an error.
     pub fn new(entry_capacity: usize, entry_pruning_tail_size: usize) -> Result<Self, Error> {
         Self::with_clock_impl(entry_capacity, entry_pruning_tail_size, SystemTime::now)
     }

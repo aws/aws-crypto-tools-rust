@@ -269,6 +269,13 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Construct a new hierarchical keyring.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): obtaining entropy for the default partition id failed.
+    ///
+    /// Any error the configured key store returns while reporting its info is propagated with its variant unchanged; the built-in [`BranchKeyStore`](crate::BranchKeyStore) returns none.
     pub fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,

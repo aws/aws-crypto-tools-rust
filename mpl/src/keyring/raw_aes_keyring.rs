@@ -91,9 +91,7 @@ impl RawAesKeyring {
     ///
     /// # Errors
     ///
-    /// Returns a `Validation` error when `wrapping_key`'s length does not match
-    /// the length specified by `wrapping_alg`, or when `key_namespace` is equal
-    /// to or starts with the reserved value `aws-kms`.
+    /// - [`Validation`](crate::Error::Validation): `wrapping_key`'s length does not match the length specified by `wrapping_alg`, or `key_namespace` is equal to or starts with the reserved value `aws-kms`.
     pub fn new(
         key_namespace: impl Into<String>,
         key_name: impl Into<String>,

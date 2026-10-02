@@ -97,6 +97,10 @@ fn inflight_ttl_exceeded() -> Error {
 impl StormTrackingCmc {
     /// Construct a `StormTrackingCmc` from `config` using `SystemTime::now`
     /// as the clock.
+    ///
+    /// # Errors
+    ///
+    /// Does not return an error.
     pub fn new(config: &StormTrackingCache) -> Result<Self, Error> {
         Self::with_clock_impl(config, SystemTime::now)
     }
