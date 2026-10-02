@@ -3,6 +3,118 @@
 
 //! The error type every operation in this crate returns.
 //!
+//! # Handling errors
+//!
+//! Every keyring, CMM, key store, and cache operation returns [`Error`],
+//! one `#[non_exhaustive]` enum with one struct per variant,
+//! like an AWS SDK for Rust service error.
+//! The AWS Encryption SDK keeps each variant under the same name.
+//!
+//! **Decide in two steps.**
+//! First check [`is_retryable`](Error::is_retryable):
+//! a retryable error might succeed if the same call is made again later,
+//! and [`retry_kind`](Error::retry_kind) says how to back off.
+//! Otherwise match on the variant; each variant's docs say what to do.
+//! Later releases can add variants, so a `match` needs a catch-all arm.
+//!
+//! **Read the details from accessors.**
+//! [`service`](Error::service) is the AWS service a failed call went to,
+//! [`code`](Error::code) is that service's error code,
+//! and [`request_id`](Error::request_id) is the ID AWS Support asks for.
+//! [`resource`](Error::resource) is the resource you need to act on.
+//! Other resources involved are named in the message:
+//! when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
+//! because the fix is a KMS permission, and the message names the branch key.
+//!
+//! **Messages are for people.**
+//! [`message`](Error::message) and `Display` are for people and logs,
+//! and their text can change in any release.
+//! Decide from the variant and its accessors, never from the message.
+//!
+//! **`{}` and `{:#}`.**
+//! `{}` prints this error: `Variant: message (details)`.
+//! `{:#}` adds each error in the source chain, without repeating what the previous one said.
+//! Log `{:#}`.
+//! [`DisplayErrorContext`] prints the chain of an error that is not one of these.
+//!
+//! **Reaching the AWS SDK error.**
+//! The error from AWS KMS or DynamoDB stays in the source chain.
+//! [`find_source`](Error::find_source) returns it by type;
+//! use the re-exported `aws_crypto_mpl::aws_sdk_kms` and
+//! `aws_crypto_mpl::aws_sdk_dynamodb`, so the versions match.
+//!
+//! ## Key store conflicts
+//!
+//! `create_key` and `version_key` write conditionally.
+//! When the condition fails, the error is [`Conflict`](Error::Conflict),
+//! and [`reason`](ConflictError::reason) says why:
+//!
+//! ```no_run
+//! # async fn example(store: aws_crypto_mpl::BranchKeyStore) -> Result<(), aws_crypto_mpl::Error> {
+//! use aws_crypto_mpl::Keystore;
+//! use aws_crypto_mpl::error::{ConflictReason, Error};
+//!
+//! match store.version_key("my-branch-key".into()).await {
+//!     // Another caller rotated the branch key first; it has a new version already.
+//!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::ConcurrentModification) => Ok(()),
+//!     other => other,
+//! }?;
+//!
+//! match store.create_key(Some("my-branch-key".into()), Some(Default::default())).await {
+//!     Ok(_) => {}
+//!     // The branch key ID is in use; use the existing key or pick another ID.
+//!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::AlreadyExists) => {}
+//!     Err(e) => return Err(e),
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Throttling
+//!
+//! A [`Throttling`](Error::Throttling) error is always retryable.
+//! Match it only to learn what was throttled, for example to record it:
+//!
+//! ```
+//! # fn record_throttle(_: &str) {}
+//! use aws_crypto_mpl::error::{Error, Resource};
+//!
+//! fn record(err: &Error) {
+//!     if let Error::Throttling(e) = err {
+//!         match (e.service(), e.resource()) {
+//!             (Some(service), _) => record_throttle(service.as_str()),
+//!             (None, Some(Resource::Cache)) => record_throttle("materials-cache"),
+//!             _ => record_throttle("other"),
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
+//! according to its `RetryConfig`, so retry only at a higher level with your own backoff.
+//! Materials-cache throttling is not retried internally.
+//!
+//! ## Testing your error handling
+//!
+//! Every variant struct has `new` and a [builder](builders), so you can construct
+//! the errors this crate returns, for example from a fake key store:
+//!
+//! ```
+//! use aws_crypto_mpl::error::{ConflictError, ConflictReason, Error, Resource, Service};
+//!
+//! let err = Error::from(
+//!     ConflictError::builder()
+//!         .message("branch key my-branch-key was rotated concurrently")
+//!         .service(Service::DynamoDb)
+//!         .resource(Resource::BranchKey("my-branch-key".into()))
+//!         .reason(ConflictReason::ConcurrentModification)
+//!         .build(),
+//! );
+//! assert!(!err.is_retryable());
+//! ```
+//!
+//! Keyring and CMM authors: see [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors).
+//!
 //! [`Error`] and its variant structs are generated from `errors.toml`
 //! at the repository root by `cargo xtask gen-errors`.
 

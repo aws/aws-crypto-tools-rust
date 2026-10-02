@@ -1279,14 +1279,14 @@ impl From<{st}> for Error {{
 
     fn builders(&self) -> String {
         let reason_ty = self.reason_type();
-        let mut s = String::from(
+        let first = self.variants()[0].strukt.clone();
+        let mut s = format!(
             r"/// Builders for the error structs, for example
-/// [`ValidationErrorBuilder`](builders::ValidationErrorBuilder) from
-/// `ValidationError::builder()`.
+/// [`{first}Builder`](builders::{first}Builder) from `{first}::builder()`.
 ///
 /// Use them to construct the errors this library returns, for example in tests.
-pub mod builders {
-    use super::{BoxError, Error, ErrorData, Kind, Remote, RetryKind};
+pub mod builders {{
+    use super::{{BoxError, Error, ErrorData, Kind, Remote, RetryKind}};
 ",
         );
         if self.variants().iter().any(|v| v.remote) {

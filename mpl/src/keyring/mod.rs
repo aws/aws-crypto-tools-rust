@@ -6,6 +6,41 @@
 //! Uses #[async_trait] so that the CMM can hold any runtime defined
 //! keyring. The macro makes this work by rewriting each `async fn`
 //! to return a boxed future.
+//!
+//! # Errors for keyring and CMM authors
+//!
+//! A custom [`Keyring`] or [`Cmm`](crate::Cmm) returns [`Error`],
+//! and the AWS Encryption SDK passes the variant on to its caller,
+//! so pick the variant that tells the caller what to do:
+//!
+//! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to
+//!   this keyring, judged by its key provider ID and key provider info, before trying to decrypt.
+//! - **[`Cryptographic`](Error::Cryptographic)** when an encrypted data key belongs to this keyring
+//!   but does not decrypt.
+//! - **[`InvalidMaterials`](Error::InvalidMaterials)** when the materials are inconsistent,
+//!   for example they already hold a plaintext data key.
+//! - **[`Validation`](Error::Validation)** when the keyring's own configuration is invalid.
+//!
+//! Construct them with the short constructors, and keep the underlying error with
+//! [`with_source`](Error::with_source):
+//!
+//! ```
+//! use aws_crypto_mpl::Error;
+//!
+//! # let io_error = std::io::Error::other("connection reset");
+//! let err = Error::cryptographic("encrypted data key 0 did not decrypt").with_source(io_error);
+//! assert!(err.is_cryptographic());
+//! ```
+//!
+//! When several encrypted data keys each fail, return them together with
+//! [`Error::aggregate`], which picks the variant and keeps the details they share;
+//! with one failure it returns that failure.
+//!
+//! Implement [`name`](Keyring::name): errors about your keyring show it.
+//! You do not need to set `resource()` to your keyring:
+//! the AWS Encryption SDK sets it to [`Resource::Keyring`](crate::error::Resource::Keyring)
+//! or [`Resource::Cmm`](crate::error::Resource::Cmm) and your name
+//! when your materials are rejected or no data key matched.
 
 use crate::Error;
 use async_trait::async_trait;

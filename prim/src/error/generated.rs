@@ -734,8 +734,7 @@ impl From<InternalError> for Error {
 }
 
 /// Builders for the error structs, for example
-/// [`ValidationErrorBuilder`](builders::ValidationErrorBuilder) from
-/// `ValidationError::builder()`.
+/// [`CryptographicErrorBuilder`](builders::CryptographicErrorBuilder) from `CryptographicError::builder()`.
 ///
 /// Use them to construct the errors this library returns, for example in tests.
 pub mod builders {

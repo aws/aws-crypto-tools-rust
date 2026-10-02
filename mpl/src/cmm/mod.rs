@@ -7,6 +7,9 @@
 //! Uses #[async_trait] so that the CMM can hold any runtime defined
 //! CMM. The macro makes this work by rewriting each `async fn`
 //! to return a boxed future.
+//!
+//! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
+//! for which error to return.
 
 pub mod default_cmm;
 pub mod request;
