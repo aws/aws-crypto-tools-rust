@@ -142,7 +142,7 @@ impl AppState {
             .map_err(|e| ServerError::Esdk(e.message))?;
         let output = aws_esdk::encrypt(&input)
             .await
-            .map_err(|e| ServerError::Esdk(e.message))?;
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(EncryptResponse {
             ciphertext: output.ciphertext,
         })
@@ -161,7 +161,7 @@ impl AppState {
             .map_err(|e| ServerError::Esdk(e.message))?;
         let output = aws_esdk::decrypt(&input)
             .await
-            .map_err(|e| ServerError::Esdk(e.message))?;
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(DecryptResponse {
             plaintext: output.plaintext,
         })
