@@ -49,6 +49,10 @@ An error's message, details, and `Debug` output reach logs, so they follow these
 - **Allowed:** ARNs, table names, branch key IDs, keyring and CMM names, error codes,
   and request IDs.
 
+An error's `Debug` shows another library's error, such as an AWS SDK error, as its `Display` chain.
+The AWS SDK error's own `Debug` includes the raw HTTP response, whose body can hold a plaintext
+key or item attribute values; it stays reachable through `source()` and `find_source`.
+
 `esdk/tests/test_error_secrets.rs` checks failing operations against these rules.
 
 ## Contributing via Pull Requests

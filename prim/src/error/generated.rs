@@ -163,7 +163,12 @@ impl ErrorData {
             }
         }
         if let Some(source) = &self.source {
-            d.field("source", source);
+            let source: &(dyn std::error::Error + 'static) = &**source;
+            if level_of(source).is_some() {
+                d.field("source", &source);
+            } else {
+                d.field("source", &SourceText(source));
+            }
         }
         if let Some(collection) = &self.collection {
             d.field("collection", collection);
@@ -265,6 +270,25 @@ fn level_of<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<Level<'a>> {
         return Some(level!(e));
     }
     None
+}
+
+/// Another library's error, shown in `Debug` as its `Display` chain.
+///
+/// An AWS SDK error's `Debug` includes the raw HTTP response, whose body can hold a
+/// plaintext key or item attribute values; its `Display` chain does not.
+struct SourceText<'a>(&'a (dyn std::error::Error + 'static));
+
+impl fmt::Debug for SourceText<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut text = self.0.to_string();
+        let mut link = self.0.source();
+        while let Some(e) = link {
+            text.push_str(": ");
+            text.push_str(&e.to_string());
+            link = e.source();
+        }
+        fmt::Debug::fmt(&text, f)
+    }
 }
 
 /// Write `level`, leaving out what it repeats from `prev`.
