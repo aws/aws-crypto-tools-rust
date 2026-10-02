@@ -10,7 +10,7 @@
 //! [`super::cache_entry_identifier`].
 
 use crate::Error;
-use crate::error::Kind;
+use crate::error::{Kind, Resource};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -272,6 +272,13 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// Construct a new hierarchical keyring.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): obtaining entropy for the default partition id failed.
+    ///
+    /// Any error the configured key store returns while reporting its info is propagated with its variant unchanged; the built-in [`BranchKeyStore`](crate::BranchKeyStore) returns none.
     pub fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
@@ -388,6 +395,11 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
+    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
+    fn name(&self) -> &str {
+        self.inner.branch_key_id.as_deref().unwrap_or("supplier")
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
@@ -412,7 +424,7 @@ impl Keyring for HierarchicalKeyring {
             .cache
             .get_cache_entry(&cache_id)
             .await
-            .map_err(|e| Error::wrap("could not get the cache entry", e))?;
+            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?;
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -424,8 +436,7 @@ impl Keyring for HierarchicalKeyring {
                     .inner
                     .keystore
                     .get_active_branch_key(branch_key_id.clone())
-                    .await
-                    .map_err(|e| Error::wrap("could not get the active branch key", e))?;
+                    .await?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -434,11 +445,7 @@ impl Keyring for HierarchicalKeyring {
                     now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
-                self.inner
-                    .cache
-                    .put_cache_entry(&cache_id, entry)
-                    .await
-                    .map_err(|e| Error::wrap("could not put the cache entry", e))?;
+                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
 
                 branch_key_wrap::wrap(
                     &bkm,
@@ -521,9 +528,8 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        let kind = Error::aggregate_kind(&collected_errors, Kind::Cryptographic);
-        Err(Error::collection(
-            kind,
+        // With exactly one candidate, its error is the one returned.
+        Err(Error::all_failed(
             "failed to decrypt any encrypted data key",
             collected_errors,
         ))
@@ -637,7 +643,7 @@ impl HierarchicalKeyring {
             .cache
             .get_cache_entry(&cache_id)
             .await
-            .map_err(|e| Error::wrap("could not get the cache entry", e))?;
+            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?;
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -648,8 +654,7 @@ impl HierarchicalKeyring {
                     .inner
                     .keystore
                     .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
-                    .await
-                    .map_err(|e| Error::wrap("could not get the branch key version", e))?;
+                    .await?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -658,17 +663,24 @@ impl HierarchicalKeyring {
                     now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
-                self.inner
-                    .cache
-                    .put_cache_entry(&cache_id, entry)
-                    .await
-                    .map_err(|e| Error::wrap("could not put the cache entry", e))?;
+                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
                 bkm
             }
         };
 
         branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
     }
+}
+
+/// Name the branch key in a cache throttling error,
+/// which names only the cache because the cache's keys are opaque.
+fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
+    if e.is_throttling() && e.resource() == Some(&Resource::Cache) {
+        e.set_message(format!(
+            "timed out waiting for another caller to fetch branch key {branch_key_id}"
+        ));
+    }
+    e
 }
 
 /// Generate a random plaintext data key of the algorithm suite's

@@ -59,6 +59,8 @@ pub struct RawAesKeyring {
 }
 
 struct RawAesKeyringInner {
+    /// `{key_namespace}/{key_name}`, which `name()` returns.
+    name: String,
     key_namespace: String,
     key_name: String,
     wrapping_key: Vec<u8>,
@@ -259,10 +261,7 @@ impl RawAesKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a `Validation` error when a field is unset, when the wrapping
-    /// key's length does not match the length specified by the wrapping
-    /// algorithm, or when the key namespace is equal to or starts with the
-    /// reserved value `aws-kms`.
+    /// - [`Validation`](crate::Error::Validation): a field is unset, the wrapping key's length does not match the length specified by the wrapping algorithm, or the key namespace is equal to or starts with the reserved value `aws-kms`.
     pub fn build(self) -> Result<RawAesKeyring, Error> {
         let Some(key_namespace) = self.key_namespace else {
             return Err(Error::new(Kind::Validation, "a key namespace is required"));
@@ -307,6 +306,7 @@ impl RawAesKeyringBuilder {
 
         Ok(RawAesKeyring {
             inner: Arc::new(RawAesKeyringInner {
+                name: format!("{key_namespace}/{key_name}"),
                 key_namespace,
                 key_name,
                 wrapping_key,
@@ -318,6 +318,11 @@ impl RawAesKeyringBuilder {
 
 #[async_trait]
 impl Keyring for RawAesKeyring {
+    /// `{key_namespace}/{key_name}`.
+    fn name(&self) -> &str {
+        &self.inner.name
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
@@ -371,7 +376,7 @@ impl Keyring for RawAesKeyring {
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
                 collected_errors.push(Error::new(Kind::NoMatchingDataKey, format!(
-                    "encrypted data key {index} did not match the AES keyring, expected key provider id {}",
+                    "encrypted data key {index} did not match the keyring, expected key provider id {}",
                     self.inner.key_namespace,
                 )));
                 continue;
@@ -422,9 +427,7 @@ impl Keyring for RawAesKeyring {
         // materials; reaching this line means no decryption succeeded, so the
         // input `materials` is dropped unmodified.
 
-        // Nothing here was this keyring's. The per-EDK rejections ride along on
-        // the error, but the category stays `NoMatchingDataKey`: aggregating
-        // sub-errors does not change what kind of failure this is.
+        // Nothing here was this keyring's.
         if !attempted_decryption {
             return Err(if collected_errors.is_empty() {
                 Error::new(
@@ -432,24 +435,19 @@ impl Keyring for RawAesKeyring {
                     "no encrypted data key was supplied",
                 )
             } else {
-                Error::collection(
-                    Kind::NoMatchingDataKey,
+                Error::all_failed(
                     "no encrypted data key matched this keyring",
                     collected_errors,
                 )
             });
         }
 
-        // At least one EDK was this keyring's and decryption still failed. The
-        // per-attempt errors stay typed on the returned error, so a caller can
-        // inspect each one.
+        // At least one EDK was this keyring's and decryption still failed.
         //
         //   "If no decryption succeeds, the keyring MUST fail"
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
-        let kind = Error::aggregate_kind(&collected_errors, Kind::Cryptographic);
-        Err(Error::collection(
-            kind,
+        Err(Error::all_failed(
             "unable to decrypt any encrypted data key",
             collected_errors,
         ))

@@ -54,7 +54,8 @@ where
 ///
 /// `None` when the chain holds no SDK service error.
 /// A missing-credentials or connection failure has no code;
-/// its [`Error::kind`](crate::Error::kind) is `RemoteTransport`.
+/// it is a [`Dispatch`](crate::Error::Dispatch) error.
+/// [`Error::code`](crate::Error::code) answers the same question without searching.
 pub fn aws_service_error_code<'a>(err: &'a (dyn Error + 'static)) -> Option<&'a str> {
     // A new arm is required for every AWS operation this crate invokes: the
     // lookup is a downcast, which matches one concrete type.

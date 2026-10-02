@@ -93,7 +93,7 @@ namespace Esdk {
 /// Check retryable() first:
 /// a retryable error might succeed if the same call is made again later.
 /// Then decide from the exception type.
-/// what() says which call failed, for logs.
+/// what() is the Rust error's message and details; full_message() adds its causes, for logs.
 ///
 /// Later releases can add kinds, so code that switches on the kind needs a default case.
 ///
@@ -113,6 +113,8 @@ enum class ErrorKind : std::uint8_t {
     Dispatch = 9,
     Internal = 10,
     Io = 11,
+    Throttling = 12,
+    Conflict = 13,
 };
 
 /// Why an error might succeed if the same call is made again later.
@@ -128,13 +130,14 @@ enum class RetryKind : std::uint8_t {
     Client,
 };
 
-/// The AWS service a remote error came from.
+/// The AWS service an error is about.
 enum class Service : std::uint8_t {
     Kms,
     DynamoDb,
 };
 
-/// What kind of AWS resource a remote error is about.
+/// What kind of resource an error is about.
+/// Not limited to AWS resources: a keyring, a CMM, or the materials cache can be one.
 enum class ResourceType : std::uint8_t {
     /// A KMS key; the name is its ARN.
     KmsKey,
@@ -142,12 +145,27 @@ enum class ResourceType : std::uint8_t {
     DynamoDbTable,
     /// A hierarchical keyring branch key; the name is its ID.
     BranchKey,
+    /// A cryptographic materials cache; the name is empty.
+    Cache,
+    /// A keyring; the name is the keyring's name.
+    Keyring,
+    /// A CMM; the name is the CMM's name.
+    Cmm,
 };
 
-/// The AWS resource a remote error is about.
+/// The resource you need to act on. Other resources involved are named in the message.
 struct Resource {
     ResourceType type;
     std::string name;
+};
+
+/// Why a request conflicts with the current state of a resource.
+enum class ConflictReason : std::uint8_t {
+    /// The resource already exists, for example create_key with a branch key ID that is in use.
+    AlreadyExists,
+    /// Another caller changed the resource between this call's read and its write,
+    /// for example two version_key calls on the same branch key.
+    ConcurrentModification,
 };
 
 /// The details an exception carries beyond its kind and message.
@@ -157,13 +175,19 @@ struct ErrorDetails {
     std::optional<Resource> resource;
     std::optional<std::string> code;
     std::optional<std::string> request_id;
+    std::optional<ConflictReason> conflict_reason;
+    bool credentials = false;
+    /// The Rust variant name, such as "Throttling".
+    std::string name;
+    /// The Rust error with its causes, as `{:#}` prints it.
+    std::string full_message;
 };
 
 /// Base exception for every failure this library reports.
 /// Catching this type catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
-    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
+    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg), message_(msg) {}
     /// What went wrong.
     /// Empty when ESDK Rust reports a kind this library does not know yet.
     std::optional<ErrorKind> kind() const noexcept { return kind_; }
@@ -171,22 +195,31 @@ public:
     bool retryable() const noexcept { return details_.retry_kind.has_value(); }
     /// Why the same call might succeed if retried; empty if it cannot.
     std::optional<RetryKind> retry_kind() const noexcept { return details_.retry_kind; }
-    /// The AWS service a remote error came from.
+    /// The AWS service the failed call went to; empty when no AWS service was involved.
     const std::optional<Service>& service() const noexcept { return details_.service; }
-    /// The AWS resource a remote error is about.
+    /// The resource you need to act on; other resources involved are named in the message.
     const std::optional<Resource>& resource() const noexcept { return details_.resource; }
     /// The AWS service's error code, such as "AccessDeniedException"; empty unless a service answered.
     const std::optional<std::string>& code() const noexcept { return details_.code; }
     /// The AWS request ID, which AWS Support asks for; empty unless a service answered.
     const std::optional<std::string>& request_id() const noexcept { return details_.request_id; }
+    /// The Rust variant name, such as "Throttling". Stable across releases, for metrics and logs.
+    /// Empty for an exception this library raised without a Rust error.
+    const std::string& name() const noexcept { return details_.name; }
+    /// The message with every cause, for logs. Equal to what() when there is no cause.
+    const std::string& full_message() const noexcept {
+        return details_.full_message.empty() ? message_ : details_.full_message;
+    }
 
 protected:
     AwsEncryptionSdkException(ErrorKind kind, ErrorDetails details, const std::string& msg)
-        : std::runtime_error(msg), kind_(kind), details_(std::move(details)) {}
+        : std::runtime_error(msg), kind_(kind), details_(std::move(details)), message_(msg) {}
+    const ErrorDetails& details() const noexcept { return details_; }
 
 private:
     std::optional<ErrorKind> kind_;
     ErrorDetails details_;
+    std::string message_;
 };
 
 //= spec/shim/shim.md#error-classification
@@ -227,10 +260,13 @@ public:
         : AwsEncryptionSdkException(ErrorKind::Cryptographic, std::move(details), msg) {}
 };
 
-/// A keyring or CMM returned materials inconsistent with each other or with the algorithm suite,
-/// for example no plaintext data key after encryption, or a signing key for a suite that does not sign.
+/// A keyring, CMM, or key store returned materials that are inconsistent or malformed,
+/// for example no plaintext data key after encryption, a signing key for a suite that does not sign,
+/// or a branch key record with a missing attribute or a key of the wrong length.
 ///
-/// Usually a bug in a custom keyring or CMM.
+/// resource() names the branch key, keyring, or CMM.
+/// Usually a bug in a custom keyring or CMM, or a corrupt key store record;
+/// retrying cannot succeed.
 class InvalidMaterialsException : public AwsEncryptionSdkException {
 public:
     explicit InvalidMaterialsException(const std::string& msg, ErrorDetails details = {})
@@ -250,6 +286,7 @@ public:
 /// None of the configured keys wrapped any of the message's encrypted data keys,
 /// for example when decrypting with a keyring that did not encrypt the message.
 ///
+/// resource() names the keyring or CMM that was used.
 /// Decrypt with a keyring that has one of the message's keys.
 class NoMatchingDataKeyException : public AwsEncryptionSdkException {
 public:
@@ -257,14 +294,16 @@ public:
         : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, std::move(details), msg) {}
 };
 
-/// AWS KMS or DynamoDB denied access,
-/// for example because of missing IAM permissions or expired credentials.
+/// AWS KMS or DynamoDB denied access.
 ///
-/// Fix the permissions or credentials for the service() and resource().
+/// is_credentials() says whether the credentials are expired or invalid;
+/// otherwise fix the permissions for service() on resource().
 class AccessDeniedException : public AwsEncryptionSdkException {
 public:
     explicit AccessDeniedException(const std::string& msg, ErrorDetails details = {})
         : AwsEncryptionSdkException(ErrorKind::AccessDenied, std::move(details), msg) {}
+    /// Whether the credentials are expired or invalid, rather than missing a permission.
+    bool is_credentials() const noexcept { return details().credentials; }
 };
 
 /// A KMS key, DynamoDB table, or branch key does not exist.
@@ -276,11 +315,37 @@ public:
         : AwsEncryptionSdkException(ErrorKind::ResourceNotFound, std::move(details), msg) {}
 };
 
+/// A service or resource throttled the request.
+///
+/// service() and resource() say what was throttled:
+/// AWS KMS, DynamoDB, or the materials cache (ResourceType::Cache, with no service()).
+/// Always retryable, with RetryKind::Throttling.
+class ThrottlingException : public AwsEncryptionSdkException {
+public:
+    explicit ThrottlingException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Throttling, std::move(details), msg) {}
+};
+
+/// The request conflicts with the current state of resource(),
+/// for example creating a branch key whose ID already exists,
+/// or rotating a branch key that another caller rotated at the same time.
+///
+/// reason() says which.
+/// Re-read the resource before acting; retrying the same call unchanged is not safe.
+/// Not retryable.
+class ConflictException : public AwsEncryptionSdkException {
+public:
+    explicit ConflictException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Conflict, std::move(details), msg) {}
+    /// Why the request conflicts, when known.
+    std::optional<ConflictReason> reason() const noexcept { return details().conflict_reason; }
+};
+
 /// AWS KMS or DynamoDB rejected or failed the request for any other reason,
-/// for example throttling, an internal service error, or a KMS IncorrectKeyException.
+/// for example an internal service error or a KMS IncorrectKeyException.
 ///
 /// code() is the service's error code.
-/// A throttled or server-side failure is retryable.
+/// A server-side failure is retryable.
 class ServiceException : public AwsEncryptionSdkException {
 public:
     explicit ServiceException(const std::string& msg, ErrorDetails details = {})
@@ -299,7 +364,7 @@ public:
 
 /// An internal invariant was violated, for example a poisoned lock.
 ///
-/// A bug; report it.
+/// A bug; report it. Never retryable.
 class InternalException : public AwsEncryptionSdkException {
 public:
     explicit InternalException(const std::string& msg, ErrorDetails details = {})
