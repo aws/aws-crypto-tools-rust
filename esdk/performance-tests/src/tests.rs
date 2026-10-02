@@ -4,7 +4,7 @@
 use crate::alloc;
 use anyhow::Result;
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk};
-use aws_mpl_legacy::dafny::types::keyring::KeyringRef;
+use aws_crypto_mpl::HierarchicalKeyring;
 use chrono::Utc;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -27,14 +27,15 @@ impl EsdkBenchmark {
     /// Runs one encrypt+decrypt cycle and returns (encrypt_ms, decrypt_ms).
     async fn encrypt_decrypt(
         esdk_client: &Esdk,
-        keyring: &KeyringRef,
+        keyring: &HierarchicalKeyring,
         data: &[u8],
     ) -> Result<(f64, f64)> {
-        let encrypt_input = EncryptInput::with_legacy_keyring(
-            data,
-            Self::benchmark_encryption_context(data.len()),
-            keyring.clone(),
-        );
+        let encrypt_input = EncryptInput::builder()
+            .plaintext(data)
+            .encryption_context(Self::benchmark_encryption_context(data.len()))
+            .keyring(keyring.clone())
+            .build()
+            .map_err(|e| anyhow::anyhow!("invalid encrypt input: {e}"))?;
 
         let encrypt_start = Instant::now();
         let encrypt_output = esdk_client
@@ -45,11 +46,11 @@ impl EsdkBenchmark {
 
         let ciphertext = encrypt_output.ciphertext;
 
-        let decrypt_input = DecryptInput::with_legacy_keyring(
-            &ciphertext,
-            EncryptionContext::new(),
-            keyring.clone(),
-        );
+        let decrypt_input = DecryptInput::builder()
+            .ciphertext(&ciphertext)
+            .keyring(keyring.clone())
+            .build()
+            .map_err(|e| anyhow::anyhow!("invalid decrypt input: {e}"))?;
 
         let decrypt_start = Instant::now();
         let decrypt_output = esdk_client
