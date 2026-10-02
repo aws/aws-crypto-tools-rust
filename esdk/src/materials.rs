@@ -2,17 +2,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
-use crate::error::{Error, val_err};
+use crate::error::{Error, Resource, val_err};
 use crate::error::{Kind, err};
 use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
 use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
+use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };
+
+impl MaterialSource {
+    /// The caller's keyring or CMM, as errors about its materials name it.
+    pub(crate) fn resource(&self) -> Resource {
+        match self {
+            Self::Cmm(cmm) => Resource::Cmm(cmm.name().to_owned()),
+            Self::Keyring(keyring) => Resource::Keyring(keyring.name().to_owned()),
+        }
+    }
+}
+
+/// Name the caller's keyring or CMM, `source`, in an error about the materials it provided,
+/// unless the error already names something more specific, such as a branch key.
+pub(crate) fn name_material_source(mut e: Error, source: Option<&Resource>) -> Error {
+    if (e.is_invalid_materials() || e.is_no_matching_data_key()) && e.resource().is_none() {
+        e.set_resource(source.cloned());
+    }
+    e
+}
 
 /// Resolve the CMM for an operation from the resolved material source.
 /// A supplied CMM is used directly.
@@ -101,7 +121,7 @@ pub(crate) async fn get_decryption_materials(
     let materials = cmm
         .decrypt_materials(request)
         .await
-        .map_err(|e| Error::from_inner("the CMM could not provide decryption materials", e))?;
+        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
@@ -123,7 +143,7 @@ pub(crate) async fn get_decryption_materials(
     if !is_esdk_encryption_context(materials.encryption_context()) {
         return Err(err(
             Kind::InvalidMaterials,
-            "CMM failed to return serializable decryption materials",
+            "decryption materials have an encryption context that cannot be serialized",
         ));
     }
     Ok(materials)
@@ -176,7 +196,7 @@ pub(crate) async fn get_encryption_materials(
     let materials = cmm
         .get_encryption_materials(request)
         .await
-        .map_err(|e| Error::from_inner("the CMM could not provide encryption materials", e))?;
+        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
@@ -198,13 +218,13 @@ pub(crate) async fn get_encryption_materials(
     if !is_esdk_encryption_context(materials.encryption_context()) {
         return Err(err(
             Kind::InvalidMaterials,
-            "CMM failed to return serializable encryption materials",
+            "encryption materials have an encryption context that cannot be serialized",
         ));
     }
     if !is_esdk_encrypted_data_keys(materials.encrypted_data_keys()) {
         return Err(err(
             Kind::InvalidMaterials,
-            "CMM failed to return serializable encrypted data keys",
+            "encryption materials have encrypted data keys that cannot be serialized",
         ));
     }
     Ok(materials)

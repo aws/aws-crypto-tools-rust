@@ -18,7 +18,6 @@
 //! cover the on-wire shape of the encrypted data key, the two constructor
 //! validations, and the negative paths Dafny leaves to its proofs.
 
-
 use aws_crypto_mpl::{Keyring, RawAesKeyring};
 use aws_mpl_primitives::AesGcm;
 
@@ -202,12 +201,13 @@ async fn test_on_decrypt_key_name_mismatch() {
         .await;
 
     let err = result.expect_err("a key name mismatch must not decrypt");
+    // One EDK, so its rejection is the error, not a collection of one.
     assert!(err.is_no_matching_data_key(), "{:?}", err);
-    assert!(
-        !err.collected().is_empty(),
-        "the rejected EDK must still be reported, collected on the error: {err}",
+    assert!(err.collected().is_empty());
+    assert_eq!(
+        err.message(),
+        "encrypted data key 0 did not match the keyring, expected key provider id child0 Namespace"
     );
-    assert!(err.collected().iter().any(|e| e.is_no_matching_data_key()));
 }
 
 // Ported from Dafny `TestOnDecryptBadAndGoodEdkSucceeds`.
@@ -617,7 +617,7 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
     // The provider info matched, so this EDK was attempted and the failure is
     // a decryption failure rather than a no-match.
     assert!(err.is_cryptographic(), "{:?}", err);
-    assert!(err.collected().iter().any(|e| e.is_cryptographic()));
+    assert!(err.collected().is_empty());
 }
 
 #[test]
@@ -631,7 +631,6 @@ fn test_build_rejects_wrapping_key_length_mismatch() {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()
         .expect_err("a wrapping key that does not match the algorithm must be rejected");
-    assert!(err.is_validation(), "{:?}", err);
     assert!(err.is_validation(), "{:?}", err);
 }
 

@@ -5,6 +5,8 @@
 
 use std::collections::BTreeMap;
 
+use aws_crypto_mpl::error::{Resource, Service};
+
 use aws_crypto_mpl::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
@@ -114,8 +116,7 @@ fn materials_reconstruction_rejects_invalid_type_value() {
     let ec = make_authenticated_ec("invalid:type", "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid type");
-    assert!(err.is_service(), "{:?}", err);
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -123,7 +124,7 @@ fn materials_reconstruction_rejects_beacon_type() {
     let ec = make_authenticated_ec("beacon:ACTIVE", "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("beacon:ACTIVE is not valid for branch key materials");
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -140,7 +141,7 @@ fn materials_reconstruction_branch_active_rejects_missing_version() {
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject missing version");
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -168,7 +169,7 @@ fn materials_branch_key_rejects_wrong_length() {
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, vec![0x01; 16])
         .expect_err("should reject non-32-byte key");
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -195,7 +196,7 @@ fn materials_version_rejects_invalid_prefix() {
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some("invalid:prefix:uuid"));
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid version prefix");
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -274,7 +275,7 @@ fn materials_reconstruction_rejects_bare_version_prefix_type() {
     let ec = make_authenticated_ec(TYPE_BRANCH_VERSION_PREFIX, "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("bare 'branch:version:' with no version must be rejected");
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -286,7 +287,7 @@ fn materials_reconstruction_rejects_active_with_bare_version_attribute() {
     );
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("ACTIVE with bare 'branch:version:' version must be rejected");
-    assert!(err.is_service(), "{:?}", err);
+    assert_malformed(&err);
 }
 
 // to_attribute_map and encryption_context_from_item are inverses: projecting a
@@ -350,4 +351,15 @@ fn additional_item_attributes_are_carried_verbatim() {
     assert_eq!(ec["custom-column"], "value");
     assert_eq!(ec[&format!("{}dept", CUSTOM_EC_PREFIX)], "eng");
     assert!(!ec.contains_key(&format!("{0}{0}dept", CUSTOM_EC_PREFIX)));
+}
+
+/// A malformed record is `InvalidMaterials` about the branch key, from DynamoDB.
+#[track_caller]
+fn assert_malformed(err: &aws_crypto_mpl::Error) {
+    let aws_crypto_mpl::Error::InvalidMaterials(e) = err else {
+        panic!("expected InvalidMaterials, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.resource(), Some(&Resource::BranchKey("test-id".into())));
+    assert_eq!(e.code(), None);
 }

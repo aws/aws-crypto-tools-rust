@@ -11,7 +11,8 @@
 #![cfg(feature = "test-utils")]
 
 use aws_crypto_mpl::Error;
-use std::collections::BTreeMap;
+use aws_crypto_mpl::error::{Resource, RetryKind};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -739,7 +740,12 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         "inflight TTL exceeded MUST return an error"
     );
     let err = result.expect_err("error");
-    assert!(err.is_internal(), "expected Internal, got {err:?}");
+    let Error::Throttling(e) = &err else {
+        panic!("expected Throttling, got {err:?}");
+    };
+    assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
+    assert_eq!(e.service(), None);
+    assert_eq!(e.resource(), Some(&Resource::Cache));
     assert!(err.is_retryable());
 }
 
@@ -874,7 +880,12 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         .expect("getter must complete after per-waiter deadline elapses")
         .expect("task joins");
     let err = result.expect_err("must be an error once the deadline fires");
-    assert!(err.is_internal(), "expected Internal, got {err:?}");
+    let Error::Throttling(e) = &err else {
+        panic!("expected Throttling, got {err:?}");
+    };
+    assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
+    assert_eq!(e.service(), None);
+    assert_eq!(e.resource(), Some(&Resource::Cache));
     assert!(err.is_retryable());
 }
 

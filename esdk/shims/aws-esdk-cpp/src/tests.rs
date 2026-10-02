@@ -401,7 +401,7 @@ fn make_kms_config_rejects_unknown_type() {
 fn classify_core_error_maps_each_variant_to_the_same_name() {
     use aws_esdk::error as e;
     use ffi::ShimErrorKind as S;
-    let cases: [(aws_esdk::Error, S); 12] = [
+    let cases: [(aws_esdk::Error, S); 14] = [
         (e::ValidationError::new("x").into(), S::Validation),
         (e::SerializationError::new("x").into(), S::Serialization),
         (e::CryptographicError::new("x").into(), S::Cryptographic),
@@ -426,6 +426,8 @@ fn classify_core_error_maps_each_variant_to_the_same_name() {
         (e::DispatchError::new("x").into(), S::Dispatch),
         (e::InternalError::new("x").into(), S::Internal),
         (e::IoError::new("x").into(), S::Io),
+        (e::ThrottlingError::new("x").into(), S::Throttling),
+        (e::ConflictError::new("x").into(), S::Conflict),
     ];
     for (err, expected) in cases {
         assert_eq!(classify_core_error(&err).repr, expected.repr, "for {err:?}");
@@ -461,13 +463,18 @@ fn core_err_encodes_an_mpl_errors_kind_and_retry_kind() {
             "throttling",
         ),
         (
+            MplError::from(aws_crypto_mpl::error::ThrottlingError::new("x")),
+            ffi::ShimErrorKind::Throttling,
+            "throttling",
+        ),
+        (
             MplError::from(ValidationError::new("x")),
             ffi::ShimErrorKind::Validation,
             "",
         ),
     ];
     for (e, kind, retry) in cases {
-        let err = core_err("op", e);
+        let err = core_err(e);
         assert!(
             err.starts_with(&err_prefix(kind, retry)),
             "unexpected error: {err}"
@@ -479,16 +486,13 @@ fn core_err_encodes_an_mpl_errors_kind_and_retry_kind() {
 fn core_err_encodes_the_aws_call() {
     use aws_crypto_mpl::Error as MplError;
     use aws_crypto_mpl::error::{AccessDeniedError, Resource, Service};
-    let err = core_err(
-        "op",
-        MplError::from(
-            AccessDeniedError::builder()
-                .message("denied")
-                .service(Service::Kms)
-                .resource(Resource::KmsKey("arn:aws:kms:k".into()))
-                .build(),
-        ),
-    );
+    let err = core_err(MplError::from(
+        AccessDeniedError::builder()
+            .message("denied")
+            .service(Service::Kms)
+            .resource(Resource::KmsKey("arn:aws:kms:k".into()))
+            .build(),
+    ));
     let sep = ERROR_FIELD_SEPARATOR;
     assert!(
         err.contains(&format!(
@@ -496,6 +500,90 @@ fn core_err_encodes_the_aws_call() {
         )),
         "unexpected error: {err}"
     );
+}
+
+/// The header field `name`, from an encoded error.
+fn header_field<'a>(encoded: &'a str, name: &str) -> &'a str {
+    let header = &encoded[..encoded.find(ERROR_HEADER_END).expect("a header")];
+    header
+        .split(ERROR_FIELD_SEPARATOR)
+        .find_map(|f| f.strip_prefix(&format!("{name}=")))
+        .expect("the field")
+}
+
+/// The Rust `{}` and `{:#}` text after the header.
+fn message_parts(encoded: &str) -> (&str, &str) {
+    let body = &encoded[encoded.find(ERROR_HEADER_END).expect("a header") + 1..];
+    let len: usize = header_field(encoded, "display_len").parse().unwrap();
+    body.split_at(len)
+}
+
+#[test]
+fn core_err_encodes_the_new_resources_reason_credentials_and_name() {
+    use aws_esdk::error::{
+        AccessDeniedError, ConflictError, ConflictReason, Resource, Service, ThrottlingError,
+    };
+    let throttled = core_err(ThrottlingError::builder().resource(Resource::Cache).build());
+    assert_eq!(header_field(&throttled, "resource_type"), "cache");
+    assert_eq!(header_field(&throttled, "service"), "");
+    assert_eq!(header_field(&throttled, "name"), "Throttling");
+
+    let keyring = core_err(
+        aws_esdk::error::NoMatchingDataKeyError::builder()
+            .resource(Resource::Keyring("ns/name".into()))
+            .build(),
+    );
+    assert_eq!(header_field(&keyring, "resource_type"), "keyring");
+    assert_eq!(header_field(&keyring, "resource"), "ns/name");
+
+    let cmm = core_err(
+        aws_esdk::error::InvalidMaterialsError::builder()
+            .resource(Resource::Cmm("default".into()))
+            .build(),
+    );
+    assert_eq!(header_field(&cmm, "resource_type"), "cmm");
+    assert_eq!(header_field(&cmm, "resource"), "default");
+
+    let conflict = core_err(
+        ConflictError::builder()
+            .service(Service::DynamoDb)
+            .reason(ConflictReason::ConcurrentModification)
+            .build(),
+    );
+    assert_eq!(
+        header_field(&conflict, "conflict_reason"),
+        "concurrent_modification"
+    );
+    assert_eq!(header_field(&conflict, "credentials"), "0");
+
+    let expired = core_err(
+        AccessDeniedError::builder()
+            .code("ExpiredTokenException")
+            .build(),
+    );
+    assert_eq!(header_field(&expired, "credentials"), "1");
+}
+
+#[test]
+fn core_err_sends_the_display_and_alternate_text() {
+    use aws_esdk::error::InternalError;
+    let err = aws_esdk::Error::from(
+        InternalError::new("outer").with_source(std::io::Error::other("the cause")),
+    );
+    let encoded = core_err(err);
+    let (display, full) = message_parts(&encoded);
+    assert_eq!(display, "Internal: outer");
+    assert_eq!(full, "Internal: outer: the cause");
+}
+
+#[test]
+fn a_message_holding_the_separators_still_decodes() {
+    use aws_esdk::error::InternalError;
+    let message = format!("a{ERROR_HEADER_END}b{ERROR_FIELD_SEPARATOR}c");
+    let encoded = core_err(InternalError::new(message.clone()));
+    let (display, full) = message_parts(&encoded);
+    assert_eq!(display, format!("Internal: {message}"));
+    assert_eq!(full, display);
 }
 
 #[test]
