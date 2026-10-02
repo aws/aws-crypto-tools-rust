@@ -548,3 +548,120 @@ async fn version_key_without_an_active_branch_key_names_the_branch_key() {
         Some(&Resource::BranchKey(BRANCH_KEY_ID.into()))
     );
 }
+
+/// Wraps the data key under two keyrings, so the message has two encrypted data keys.
+struct Both<A, B>(A, B);
+
+#[async_trait::async_trait]
+impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Keyring
+    for Both<A, B>
+{
+    async fn on_encrypt(
+        &self,
+        materials: aws_crypto_mpl::structures::EncryptionMaterials,
+    ) -> Result<aws_crypto_mpl::structures::EncryptionMaterials, aws_crypto_mpl::Error> {
+        let materials = self.0.on_encrypt(materials).await?;
+        self.1.on_encrypt(materials).await
+    }
+
+    async fn on_decrypt(
+        &self,
+        _: aws_crypto_mpl::structures::DecryptionMaterials,
+        _: &[aws_crypto_mpl::structures::EncryptedDataKey],
+    ) -> Result<aws_crypto_mpl::structures::DecryptionMaterials, aws_crypto_mpl::Error> {
+        unreachable!("the tests decrypt with another keyring")
+    }
+}
+
+#[tokio::test]
+async fn failures_lists_every_attempt_behind_a_keyring_error() {
+    // Encrypted data key 0 is another keyring's; data key 1 is this keyring's name but a different key.
+    let other = RawAesKeyring::new("other", "key", vec![1; 32], AesGcm::Aes256Gcm).unwrap();
+    let same_name_other_key =
+        RawAesKeyring::new("ns", "key", vec![2; 32], AesGcm::Aes256Gcm).unwrap();
+    let ciphertext = encrypt_with(Both(other, same_name_other_key)).await;
+    let keyring = RawAesKeyring::new("ns", "key", vec![3; 32], AesGcm::Aes256Gcm).unwrap();
+    let err = decrypt_with(&ciphertext, keyring).await.unwrap_err();
+
+    assert!(err.is_cryptographic(), "{err:?}");
+    assert!(err.collected().is_empty());
+    let mpl = err.find_source::<aws_crypto_mpl::Error>().unwrap();
+    assert_eq!(mpl.collected().len(), 2);
+
+    let failures = err.failures();
+    assert_eq!(failures.len(), 2);
+    assert!(failures[0].is_no_matching_data_key(), "{:?}", failures[0]);
+    assert!(failures[1].is_cryptographic(), "{:?}", failures[1]);
+    assert!(
+        failures[1]
+            .find_source::<aws_mpl_primitives::Error>()
+            .is_some(),
+        "{:?}",
+        failures[1]
+    );
+    assert_eq!(failures[1].message(), mpl.collected()[1].message());
+}
+
+#[tokio::test]
+async fn failures_of_a_single_failure_is_itself() {
+    let err = hierarchical_decrypt_error(on(
+        "TrentService.Decrypt",
+        Reply::error(400, "AccessDeniedException", "6f1c2e9a"),
+    ))
+    .await;
+    let failures = err.failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].name(), err.name());
+    assert_eq!(failures[0].message(), err.message());
+    assert_eq!(failures[0].resource(), err.resource());
+    assert_eq!(failures[0].request_id(), err.request_id());
+}
+
+#[tokio::test]
+async fn two_attempts_denied_and_throttled_is_retryable_throttling() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let ciphertext = encrypt_with(Both(
+        FakeAws::ok().keyring().await,
+        FakeAws::ok().keyring().await,
+    ))
+    .await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let fake = FakeAws::new(move |op, _| {
+        (op == "TrentService.Decrypt").then(|| {
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Reply::error(400, "AccessDeniedException", "req-1")
+            } else {
+                Reply::error(400, "ThrottlingException", "req-2")
+            }
+        })
+    });
+    let err = decrypt_with(&ciphertext, fake.keyring().await)
+        .await
+        .unwrap_err();
+    assert!(err.is_throttling(), "{err:?}");
+    assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
+    assert_eq!(err.resource(), Some(&Resource::KmsKey(KEY_ARN.into())));
+    assert_eq!(err.request_id(), None);
+    let failures = err.failures();
+    assert_eq!(failures.len(), 2);
+    assert!(failures[0].is_access_denied());
+    assert_eq!(failures[0].request_id(), Some("req-1"));
+    assert!(failures[1].is_throttling());
+    assert_eq!(failures[1].request_id(), Some("req-2"));
+}
+
+#[tokio::test]
+async fn a_clone_keeps_the_sdk_error_and_prints_the_same() {
+    use aws_crypto_mpl::aws_sdk_kms::error::SdkError;
+    use aws_crypto_mpl::aws_sdk_kms::operation::decrypt::DecryptError;
+    let err = hierarchical_decrypt_error(on(
+        "TrentService.Decrypt",
+        Reply::error(400, "AccessDeniedException", "6f1c2e9a"),
+    ))
+    .await;
+    let clone = err.clone();
+    assert!(clone.find_source::<SdkError<DecryptError>>().is_some());
+    assert_eq!(format!("{clone:#}"), format!("{err:#}"));
+    assert_eq!(format!("{clone:?}"), format!("{err:?}"));
+}

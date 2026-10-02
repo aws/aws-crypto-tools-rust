@@ -550,7 +550,7 @@ impl Keyring for HierarchicalKeyring {
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
         // With exactly one candidate, its error is the one returned.
-        Err(Error::aggregate(
+        Err(Error::all_failed(
             "failed to decrypt any encrypted data key",
             collected_errors,
         ))

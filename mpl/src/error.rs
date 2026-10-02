@@ -125,7 +125,7 @@ mod generated;
 
 pub use generated::*;
 
-pub use aws_mpl_primitives::error::{ConflictReason, Resource, RetryKind, Service};
+pub use aws_mpl_primitives::error::{Collection, ConflictReason, Resource, RetryKind, Service};
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
@@ -156,21 +156,26 @@ impl Error {
         error
     }
 
-    /// An error that aggregates `errors`,
-    /// for a keyring or CMM that tried several things and every one failed.
+    /// An error for several attempts at the same goal, every one of which failed,
+    /// such as a keyring's attempt to decrypt each encrypted data key.
+    /// Any one attempt succeeding would have been enough.
     ///
     /// With exactly one error, returns it unchanged.
-    /// Otherwise the variant is the one every error shares or, for a mix,
+    /// Otherwise [`collected`](Self::collected) holds every error and
+    /// [`collection`](Self::collection) is [`Collection::AllFailed`].
+    /// If any attempt is retryable, the result takes the first retryable attempt's variant and retry kind,
+    /// since retrying could make that attempt succeed.
+    /// Otherwise the variant is the one every attempt shares or, for a mix,
     /// the first present of `AccessDenied`, `ResourceNotFound`, `Throttling`, `Dispatch`,
     /// `Service`, `InvalidMaterials`, `EncryptionContextMismatch`, `Cryptographic`,
-    /// and `NoMatchingDataKey`.
-    /// The result is retryable if any error is,
-    /// and keeps each detail, such as `resource()`, that every error shares.
+    /// and `NoMatchingDataKey`, and the result is not retryable.
+    /// Each detail every attempt shares, such as `resource()`, is kept.
     ///
     /// ```
     /// use aws_crypto_mpl::Error;
+    /// use aws_crypto_mpl::error::Collection;
     ///
-    /// let err = Error::aggregate(
+    /// let err = Error::all_failed(
     ///     "no encrypted data key could be decrypted",
     ///     vec![
     ///         Error::no_matching_data_key("encrypted data key 0 belongs to another keyring"),
@@ -178,11 +183,74 @@ impl Error {
     ///     ],
     /// );
     /// assert!(err.is_cryptographic());
+    /// assert_eq!(err.collection(), Some(Collection::AllFailed));
     /// assert_eq!(err.collected().len(), 2);
     /// ```
     #[track_caller]
     #[must_use]
-    pub fn aggregate(message: impl Into<String>, mut errors: Vec<Self>) -> Self {
+    pub fn all_failed(message: impl Into<String>, errors: Vec<Self>) -> Self {
+        Self::collect_failures(
+            Collection::AllFailed,
+            message,
+            errors,
+            |errors| match errors.iter().find(|e| e.is_retryable()) {
+                Some(retryable) => (retryable.kind(), retryable.retry_kind()),
+                None => (Self::shared_or_priority_kind(errors.iter()), None),
+            },
+        )
+    }
+
+    /// An error for several steps an operation needed, where any one failing was enough to fail it,
+    /// and `errors` are the steps that failed.
+    ///
+    /// With exactly one error, returns it unchanged.
+    /// Otherwise [`collected`](Self::collected) holds every error and
+    /// [`collection`](Self::collection) is [`Collection::AnyFailed`].
+    /// If any step is not retryable, the result is not retryable and takes the variant of the
+    /// non-retryable steps, chosen as for [`all_failed`](Self::all_failed), since retrying cannot make
+    /// that step succeed.
+    /// Otherwise the variant is chosen the same way among every step, with that step's retry kind.
+    /// Each detail every step shares is kept.
+    ///
+    /// ```
+    /// use aws_crypto_mpl::Error;
+    /// use aws_crypto_mpl::error::Collection;
+    ///
+    /// let err = Error::any_failed(
+    ///     "two keyrings could not wrap the data key",
+    ///     vec![
+    ///         Error::validation("the first keyring is misconfigured"),
+    ///         Error::internal("the second keyring hit a bug"),
+    ///     ],
+    /// );
+    /// assert!(err.is_validation());
+    /// assert_eq!(err.collection(), Some(Collection::AnyFailed));
+    /// ```
+    #[track_caller]
+    #[must_use]
+    pub fn any_failed(message: impl Into<String>, errors: Vec<Self>) -> Self {
+        Self::collect_failures(Collection::AnyFailed, message, errors, |errors| {
+            if errors.iter().any(|e| !e.is_retryable()) {
+                let permanent = errors.iter().filter(|e| !e.is_retryable());
+                (Self::shared_or_priority_kind(permanent), None)
+            } else {
+                let kind = Self::shared_or_priority_kind(errors.iter());
+                let retry = errors
+                    .iter()
+                    .find(|e| e.kind() == kind)
+                    .and_then(Self::retry_kind);
+                (kind, retry)
+            }
+        })
+    }
+
+    #[track_caller]
+    fn collect_failures(
+        collection: Collection,
+        message: impl Into<String>,
+        mut errors: Vec<Self>,
+        choose: impl FnOnce(&[Self]) -> (Kind, Option<RetryKind>),
+    ) -> Self {
         if errors.len() == 1
             && let Some(only) = errors.pop()
         {
@@ -191,26 +259,26 @@ impl Error {
         if errors.is_empty() {
             return Self::new(Kind::Internal, message);
         }
-        let kind = Self::aggregate_kind(&errors);
-        Self::collection(kind, message, errors)
+        let (kind, retry) = choose(&errors);
+        Self::collect(kind, retry, collection, message, errors)
     }
 
-    /// The variant for an error that aggregates `errors`.
-    ///
     /// The variant every error shares,
     /// or for a mix the first present in the order of `AGGREGATE_PRIORITY`,
     /// or else the first error's.
-    pub(crate) fn aggregate_kind(errors: &[Self]) -> Kind {
-        let Some((first, rest)) = errors.split_first() else {
+    pub(crate) fn shared_or_priority_kind<'a>(
+        errors: impl Iterator<Item = &'a Self> + Clone,
+    ) -> Kind {
+        let Some(first) = errors.clone().next() else {
             return Kind::Internal;
         };
-        if rest.iter().all(|e| e.kind() == first.kind()) {
+        if errors.clone().all(|e| e.kind() == first.kind()) {
             return first.kind();
         }
         AGGREGATE_PRIORITY
             .iter()
             .copied()
-            .find(|k| errors.iter().any(|e| e.kind() == *k))
+            .find(|k| errors.clone().any(|e| e.kind() == *k))
             .unwrap_or_else(|| first.kind())
     }
 }
@@ -390,15 +458,16 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_kind_prefers_the_shared_kind_then_the_priority_order() {
+    fn shared_or_priority_kind_prefers_the_shared_kind_then_the_priority_order() {
         let e = Error::new;
-        assert_eq!(Error::aggregate_kind(&[]), Kind::Internal);
+        let k = |errors: &[Error]| Error::shared_or_priority_kind(errors.iter());
+        assert_eq!(k(&[]), Kind::Internal);
         assert_eq!(
-            Error::aggregate_kind(&[e(Kind::Cryptographic, "a"), e(Kind::Cryptographic, "b")]),
+            k(&[e(Kind::Cryptographic, "a"), e(Kind::Cryptographic, "b")]),
             Kind::Cryptographic
         );
         assert_eq!(
-            Error::aggregate_kind(&[
+            k(&[
                 e(Kind::NoMatchingDataKey, "a"),
                 e(Kind::Cryptographic, "b"),
                 e(Kind::Throttling, "c"),
@@ -407,11 +476,11 @@ mod tests {
             Kind::AccessDenied
         );
         assert_eq!(
-            Error::aggregate_kind(&[e(Kind::NoMatchingDataKey, "a"), e(Kind::Cryptographic, "b")]),
+            k(&[e(Kind::NoMatchingDataKey, "a"), e(Kind::Cryptographic, "b")]),
             Kind::Cryptographic
         );
         assert_eq!(
-            Error::aggregate_kind(&[e(Kind::Validation, "a"), e(Kind::Internal, "b")]),
+            k(&[e(Kind::Validation, "a"), e(Kind::Internal, "b")]),
             Kind::Validation
         );
     }

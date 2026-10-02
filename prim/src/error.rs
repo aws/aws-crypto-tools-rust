@@ -129,6 +129,20 @@ impl fmt::Display for RetryKind {
     }
 }
 
+/// How the failures an error collects relate to the operation that failed.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Collection {
+    /// Each collected error is one attempt at the same goal, and every attempt failed;
+    /// any one succeeding would have been enough,
+    /// for example a keyring trying each encrypted data key.
+    /// Retrying can help if any attempt could succeed later.
+    AllFailed,
+    /// Each collected error is a step the operation needed, and any one failing was enough to fail it.
+    /// Retrying cannot help if any step can never succeed.
+    AnyFailed,
+}
+
 /// Why a request conflicts with the current state of a resource.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

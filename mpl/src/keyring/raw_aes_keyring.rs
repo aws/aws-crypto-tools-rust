@@ -375,7 +375,7 @@ impl Keyring for RawAesKeyring {
                     "no encrypted data key was supplied",
                 )
             } else {
-                Error::aggregate(
+                Error::all_failed(
                     "no encrypted data key matched this keyring",
                     collected_errors,
                 )
@@ -387,7 +387,7 @@ impl Keyring for RawAesKeyring {
         //   "If no decryption succeeds, the keyring MUST fail"
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/raw-aes-keyring.md#ondecrypt
-        Err(Error::aggregate(
+        Err(Error::all_failed(
             "unable to decrypt any encrypted data key",
             collected_errors,
         ))

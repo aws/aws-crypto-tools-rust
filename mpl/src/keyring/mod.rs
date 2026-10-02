@@ -32,9 +32,13 @@
 //! assert!(err.is_cryptographic());
 //! ```
 //!
-//! When several encrypted data keys each fail, return them together with
-//! [`Error::aggregate`], which picks the variant and keeps the details they share;
-//! with one failure it returns that failure.
+//! When you try several encrypted data keys and each fails, return them together with
+//! [`Error::all_failed`]: any one succeeding would have been enough,
+//! so it is retryable if any attempt is.
+//! When several steps your keyring needed fail, return them with [`Error::any_failed`]:
+//! one permanent failure makes the whole operation not retryable.
+//! Both pick the variant and keep the details every failure shares,
+//! and with one failure return that failure.
 //!
 //! Implement [`name`](Keyring::name): errors about your keyring show it.
 //! You do not need to set `resource()` to your keyring:

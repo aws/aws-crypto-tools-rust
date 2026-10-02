@@ -8,8 +8,8 @@ use std::io::Error as IoError;
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::error::{
-    AccessDeniedError, CryptographicError, ProvideErrorKind, ProvideErrorMetadata, RequestId,
-    Resource, RetryErrorKind, RetryKind, Service, ServiceError, ValidationError,
+    AccessDeniedError, Collection, CryptographicError, ProvideErrorKind, ProvideErrorMetadata,
+    RequestId, Resource, RetryErrorKind, RetryKind, Service, ServiceError, ValidationError,
 };
 
 #[test]
@@ -138,15 +138,15 @@ fn denied(request_id: &str) -> Error {
 }
 
 #[test]
-fn aggregate_of_one_error_returns_it() {
-    let err = Error::aggregate("all failed", vec![denied("r1")]);
+fn all_failed_of_one_error_returns_it() {
+    let err = Error::all_failed("all failed", vec![denied("r1")]);
     assert_eq!(err.message(), "AWS KMS Decrypt failed");
     assert!(err.collected().is_empty());
 }
 
 #[test]
-fn aggregate_keeps_the_details_every_error_shares() {
-    let err = Error::aggregate("all failed", vec![denied("r1"), denied("r2")]);
+fn all_failed_keeps_the_details_every_error_shares() {
+    let err = Error::all_failed("all failed", vec![denied("r1"), denied("r2")]);
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
@@ -156,12 +156,13 @@ fn aggregate_keeps_the_details_every_error_shares() {
     // The request IDs differ, so the aggregate has none.
     assert_eq!(e.request_id(), None);
     assert_eq!(err.collected().len(), 2);
+    assert_eq!(err.collection(), Some(Collection::AllFailed));
 }
 
 #[test]
-fn aggregate_of_mixed_errors_takes_the_first_variant_by_priority() {
+fn all_failed_takes_the_first_retryable_variant() {
     use aws_crypto_mpl::error::ThrottlingError;
-    let err = Error::aggregate(
+    let err = Error::all_failed(
         "all failed",
         vec![
             Error::no_matching_data_key("a"),
@@ -172,6 +173,97 @@ fn aggregate_of_mixed_errors_takes_the_first_variant_by_priority() {
     );
     assert!(err.is_throttling(), "{err:?}");
     assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
+    assert_eq!(err.collection(), Some(Collection::AllFailed));
+}
+
+#[test]
+fn all_failed_without_a_retryable_error_takes_the_first_variant_by_priority() {
+    let err = Error::all_failed(
+        "all failed",
+        vec![
+            Error::no_matching_data_key("a"),
+            Error::cryptographic("b"),
+            Error::invalid_materials("d"),
+        ],
+    );
+    assert!(err.is_invalid_materials(), "{err:?}");
+    assert!(!err.is_retryable());
+}
+
+#[test]
+fn all_failed_of_throttling_and_access_denied_is_retryable_throttling() {
+    use aws_crypto_mpl::error::ThrottlingError;
+    let err = Error::all_failed(
+        "all failed",
+        vec![ThrottlingError::new("t").into(), denied("r1")],
+    );
+    assert!(err.is_throttling(), "{err:?}");
+    assert!(err.is_retryable());
+    assert_eq!(err.collection(), Some(Collection::AllFailed));
+}
+
+#[test]
+fn any_failed_of_throttling_and_access_denied_is_access_denied_and_not_retryable() {
+    use aws_crypto_mpl::error::ThrottlingError;
+    let err = Error::any_failed(
+        "a step failed",
+        vec![ThrottlingError::new("t").into(), denied("r1")],
+    );
+    assert!(err.is_access_denied(), "{err:?}");
+    assert!(!err.is_retryable());
+    assert_eq!(err.collection(), Some(Collection::AnyFailed));
+    assert_eq!(err.collected().len(), 2);
+}
+
+#[test]
+fn any_failed_of_only_retryable_errors_takes_the_chosen_variants_retry_kind() {
+    use aws_crypto_mpl::error::{ServiceError, ThrottlingError};
+    let server: Error = ServiceError::builder()
+        .message("s")
+        .retry_kind(RetryKind::Server)
+        .build()
+        .into();
+    let err = Error::any_failed(
+        "a step failed",
+        vec![server, ThrottlingError::new("t").into()],
+    );
+    assert!(err.is_throttling(), "{err:?}");
+    assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
+}
+
+#[test]
+fn failures_flattens_nested_collections() {
+    let inner = Error::all_failed(
+        "inner",
+        vec![Error::cryptographic("a"), Error::cryptographic("b")],
+    );
+    let err = Error::all_failed("outer", vec![inner, Error::no_matching_data_key("c")]);
+    let failures = err.failures();
+    let messages: Vec<&str> = failures.iter().map(Error::message).collect();
+    assert_eq!(messages, ["a", "b", "c"]);
+}
+
+#[test]
+fn failures_of_a_single_error_is_itself() {
+    let err = denied("r1");
+    let failures = err.failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].name(), err.name());
+    assert_eq!(failures[0].message(), err.message());
+    assert_eq!(failures[0].resource(), err.resource());
+    assert_eq!(failures[0].request_id(), err.request_id());
+}
+
+#[test]
+fn a_clone_keeps_the_source_and_prints_the_same() {
+    let err = denied("r1");
+    let clone = err.clone();
+    assert!(clone.find_source::<std::io::Error>().is_none());
+    assert_eq!(format!("{clone:#}"), format!("{err:#}"));
+    let with_source = Error::cryptographic("c").with_source(std::io::Error::other("io"));
+    let clone = with_source.clone();
+    assert!(clone.find_source::<std::io::Error>().is_some());
+    assert_eq!(format!("{clone:#}"), format!("{with_source:#}"));
 }
 
 #[test]
@@ -208,7 +300,7 @@ fn alternate_display_drops_what_each_level_repeats() {
 
 #[test]
 fn a_collection_prints_each_collected_error() {
-    let err = Error::aggregate(
+    let err = Error::all_failed(
         "no encrypted data key decrypted",
         vec![
             Error::from(

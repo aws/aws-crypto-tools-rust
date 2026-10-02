@@ -115,6 +115,36 @@
 //! according to its `RetryConfig`, so retry only at a higher level with your own backoff.
 //! Materials-cache throttling is not retried internally.
 //!
+//! ## Seeing every failure
+//!
+//! A keyring that tries several encrypted data keys, and fails on every one,
+//! returns one error that collects each attempt's failure.
+//! The ESDK error's [`collected`](Error::collected) is empty: the keyring's error is its
+//! [`source`](std::error::Error::source), and that error holds the attempts.
+//! [`failures`](Error::failures) returns every failure behind an error,
+//! at any depth, as this crate's [`Error`]; a single failure yields itself:
+//!
+//! ```no_run
+//! # fn grant_kms_decrypt(_: &str) {}
+//! # fn backoff() {}
+//! # async fn example(input: aws_esdk::DecryptInput<'_>) {
+//! use aws_esdk::error::{Error, Resource};
+//!
+//! if let Err(e) = aws_esdk::decrypt(&input).await {
+//!     for attempt in e.failures() {
+//!         match attempt {
+//!             Error::AccessDenied(a) => match a.resource() {
+//!                 Some(Resource::KmsKey(arn)) => grant_kms_decrypt(arn),
+//!                 _ => {}
+//!             },
+//!             Error::Throttling(_) => backoff(),
+//!             _ => {}
+//!         }
+//!     }
+//! }
+//! # }
+//! ```
+//!
 //! ## Testing your error handling
 //!
 //! Every variant struct has `new` and a [builder](builders), so you can construct
@@ -141,7 +171,7 @@ mod generated;
 
 pub use generated::*;
 
-pub use aws_mpl_primitives::error::{ConflictReason, Resource, RetryKind, Service};
+pub use aws_mpl_primitives::error::{Collection, ConflictReason, Resource, RetryKind, Service};
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};

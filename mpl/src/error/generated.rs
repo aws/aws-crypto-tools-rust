@@ -16,13 +16,14 @@
 
 use std::backtrace::Backtrace;
 use std::fmt;
+use std::sync::Arc;
 
-use aws_mpl_primitives::error::{ConflictReason, Resource, RetryKind, Service};
+use aws_mpl_primitives::error::{Collection, ConflictReason, Resource, RetryKind, Service};
 use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
 use aws_types::request_id::RequestId;
 
-type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
 /// An error from a keyring, CMM, key store, or cache.
 ///
@@ -39,7 +40,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 /// For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
 /// according to its `RetryConfig`, so retry only at a higher level with your own backoff.
 /// Materials-cache throttling is not retried internally.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
     /// An input or configuration value is invalid,
@@ -141,15 +142,17 @@ struct Remote {
 }
 
 /// The fields behind every variant struct.
+#[derive(Clone)]
 struct ErrorData {
     message: String,
     retry: Option<RetryKind>,
     remote: Remote,
     reason: Option<ConflictReason>,
     meta: Option<ErrorMetadata>,
-    source: Option<BoxError>,
+    source: Option<ArcError>,
+    collection: Option<Collection>,
     collected: Vec<Error>,
-    backtrace: Backtrace,
+    backtrace: Arc<Backtrace>,
 }
 
 impl ErrorData {
@@ -161,8 +164,9 @@ impl ErrorData {
             reason: None,
             meta: None,
             source: None,
+            collection: None,
             collected: Vec::new(),
-            backtrace: Backtrace::capture(),
+            backtrace: Arc::new(Backtrace::capture()),
         }
     }
 
@@ -179,6 +183,26 @@ impl ErrorData {
             let s: &(dyn std::error::Error + 'static) = s;
             s
         })
+    }
+
+    /// The fields of a collection that every collected error shares.
+    fn shared_remote(collected: &[Error]) -> Remote {
+        let mut remote = Remote::default();
+        if let Some((first, rest)) = collected.split_first() {
+            if rest.iter().all(|e| e.service() == first.service()) {
+                remote.service = first.service();
+            }
+            if rest.iter().all(|e| e.resource() == first.resource()) {
+                remote.resource = first.resource().cloned();
+            }
+            if rest.iter().all(|e| e.code() == first.code()) {
+                remote.code = first.code().map(str::to_owned);
+            }
+            if rest.iter().all(|e| e.request_id() == first.request_id()) {
+                remote.request_id = first.request_id().map(str::to_owned);
+            }
+        }
+        remote
     }
 
     fn level(&self, name: &'static str, remote: bool) -> Level<'_> {
@@ -229,11 +253,40 @@ impl ErrorData {
         if let Some(source) = &self.source {
             d.field("source", source);
         }
+        if let Some(collection) = &self.collection {
+            d.field("collection", collection);
+        }
         if !self.collected.is_empty() {
             d.field("collected", &self.collected);
         }
         d.finish()
     }
+}
+
+/// An error's fields, for a library that converts this library's errors.
+///
+/// Not part of the public API.
+#[doc(hidden)]
+#[derive(Clone)]
+#[allow(
+    missing_docs,
+    missing_debug_implementations,
+    clippy::exhaustive_structs
+)]
+pub struct ErrorParts {
+    pub name: &'static str,
+    pub message: String,
+    pub retry: Option<RetryKind>,
+    pub service: Option<Service>,
+    pub resource: Option<Resource>,
+    pub code: Option<String>,
+    pub request_id: Option<String>,
+    pub reason: Option<ConflictReason>,
+    pub meta: Option<ErrorMetadata>,
+    pub collection: Option<Collection>,
+    pub collected: Vec<Error>,
+    pub source: Option<ArcError>,
+    pub backtrace: Arc<Backtrace>,
 }
 
 /// One error in a chain, as `Display` prints it.
@@ -466,7 +519,7 @@ impl Error {
         cause: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
         let mut data = ErrorData::new(message.into());
-        data.source = Some(Box::new(cause));
+        data.source = Some(Arc::new(cause));
         Self::from_data(kind, data)
     }
 
@@ -479,35 +532,27 @@ impl Error {
         data.remote = inner.data().remote.clone();
         data.reason = inner.data().reason;
         data.meta.clone_from(&inner.data().meta);
-        data.source = Some(Box::new(inner));
+        data.source = Some(Arc::new(inner));
         Self::from_data(kind, data)
     }
 
-    /// Construct an error of `kind` that aggregates two or more failures.
-    ///
-    /// It is retryable if any of them is,
-    /// and keeps each detail they all share.
+    /// Construct an error of `kind` that collects two or more failures,
+    /// keeping each detail they all share.
     #[track_caller]
-    pub(crate) fn collection(kind: Kind, message: impl Into<String>, collected: Vec<Self>) -> Self {
+    pub(crate) fn collect(
+        kind: Kind,
+        retry: Option<RetryKind>,
+        collection: Collection,
+        message: impl Into<String>,
+        collected: Vec<Self>,
+    ) -> Self {
         debug_assert!(
             collected.len() > 1,
             "a collection holds two or more failures"
         );
         let mut data = ErrorData::new(message.into());
-        data.retry = collected.iter().find_map(Self::retry_kind);
+        data.remote = ErrorData::shared_remote(&collected);
         if let Some((first, rest)) = collected.split_first() {
-            if rest.iter().all(|e| e.service() == first.service()) {
-                data.remote.service = first.service();
-            }
-            if rest.iter().all(|e| e.resource() == first.resource()) {
-                data.remote.resource = first.resource().cloned();
-            }
-            if rest.iter().all(|e| e.code() == first.code()) {
-                data.remote.code = first.code().map(str::to_owned);
-            }
-            if rest.iter().all(|e| e.request_id() == first.request_id()) {
-                data.remote.request_id = first.request_id().map(str::to_owned);
-            }
             if rest.iter().all(|e| e.data().reason == first.data().reason) {
                 data.reason = first.data().reason;
             }
@@ -515,8 +560,11 @@ impl Error {
                 data.meta.clone_from(&first.data().meta);
             }
         }
+        data.collection = Some(collection);
         data.collected = collected;
-        Self::from_data(kind, data)
+        let mut err = Self::from_data(kind, data);
+        err.set_retry(retry);
+        err
     }
 
     pub(crate) const fn kind(&self) -> Kind {
@@ -692,13 +740,74 @@ impl Error {
         }
     }
 
-    /// The failures behind an error that aggregates several,
-    /// such as a keyring's failure for each encrypted data key it tried.
+    /// The failures this error collects, at this level only.
     ///
-    /// Empty for any other error.
+    /// Non-empty for an error built by a collecting constructor,
+    /// such as a keyring's error for every encrypted data key it tried.
+    /// Empty for every other error, including one whose *source* is a collection:
+    /// use [`failures`](Self::failures) to see every failure behind an error.
     #[must_use]
     pub fn collected(&self) -> &[Self] {
         &self.data().collected
+    }
+
+    /// How the collected failures relate, or `None` when this error collects none.
+    #[must_use]
+    pub fn collection(&self) -> Option<Collection> {
+        self.data().collection
+    }
+
+    /// Every failure behind this error, at any depth, as this crate's `Error`.
+    ///
+    /// A collected error's own collected errors are included in its place,
+    /// and a collection found in the source chain is used when this error collects nothing.
+    /// A single failure yields itself.
+    #[must_use]
+    pub fn failures(&self) -> Vec<Self> {
+        if !self.collected().is_empty() {
+            return self.collected().iter().flat_map(Self::failures).collect();
+        }
+        let mut link = std::error::Error::source(self);
+        while let Some(e) = link {
+            if let Some(e) = e.downcast_ref::<Self>()
+                && !e.collected().is_empty()
+            {
+                return e.failures();
+            }
+            if let Some(e) = e.downcast_ref::<aws_mpl_primitives::error::Error>()
+                && !e.collected().is_empty()
+            {
+                return e
+                    .collected()
+                    .iter()
+                    .flat_map(|c| Self::from_prim_parts(c).failures())
+                    .collect();
+            }
+            link = e.source();
+        }
+        vec![self.clone()]
+    }
+
+    /// This error's fields, for a converting library.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __parts(&self) -> ErrorParts {
+        let data = self.data();
+        ErrorParts {
+            name: self.name(),
+            message: data.message.clone(),
+            retry: data.retry,
+            service: data.remote.service,
+            resource: data.remote.resource.clone(),
+            code: data.remote.code.clone(),
+            request_id: data.remote.request_id.clone(),
+            reason: data.reason,
+            meta: data.meta.clone(),
+            collection: data.collection,
+            collected: data.collected.clone(),
+            source: data.source.clone(),
+            backtrace: Arc::clone(&data.backtrace),
+        }
     }
 
     /// The backtrace captured when this error was created.
@@ -731,7 +840,7 @@ impl Error {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data_mut().source = Some(Box::new(source));
+        self.data_mut().source = Some(Arc::new(source));
         self
     }
 
@@ -892,8 +1001,36 @@ impl Error {
             code: inner.code().map(str::to_owned),
             request_id: inner.request_id().map(str::to_owned),
         };
-        data.source = Some(Box::new(inner));
+        data.source = Some(Arc::new(inner));
         Self::from_data(kind, data)
+    }
+
+    /// The same failure as `inner`, as this library's error.
+    ///
+    /// Every field is kept: the variant by name (or the fallback in `errors.toml`),
+    /// the message, retry kind, details, collected errors, and the same source and backtrace.
+    pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::error::Error) -> Self {
+        let parts = inner.__parts();
+        let kind = match parts.name {
+            "Cryptographic" => Kind::Cryptographic,
+            "Internal" => Kind::Internal,
+            // Unreachable: gen-errors checks that every `prim` variant maps to a variant here.
+            _ => Kind::Internal,
+        };
+        let mut data = ErrorData::new(parts.message);
+        data.remote = Remote {
+            service: parts.service,
+            resource: parts.resource,
+            code: parts.code,
+            request_id: parts.request_id,
+        };
+        data.collection = parts.collection;
+        data.collected = parts.collected.iter().map(Self::from_prim_parts).collect();
+        data.source = parts.source;
+        data.backtrace = parts.backtrace;
+        let mut err = Self::from_data(kind, data);
+        err.set_retry(parts.retry);
+        err
     }
 }
 
@@ -941,6 +1078,7 @@ impl RequestId for Error {
 /// assert!(err.is_validation());
 /// assert!(!err.is_retryable());
 /// ```
+#[derive(Clone)]
 pub struct ValidationError {
     data: Box<ErrorData>,
 }
@@ -965,7 +1103,7 @@ impl ValidationError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1037,6 +1175,7 @@ impl From<ValidationError> for Error {
 ///     assert_eq!(e.resource(), Some(&Resource::BranchKey("my-branch-key".into())));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct InvalidMaterialsError {
     data: Box<ErrorData>,
 }
@@ -1061,7 +1200,7 @@ impl InvalidMaterialsError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1157,6 +1296,7 @@ impl From<InvalidMaterialsError> for Error {
 /// ));
 /// assert!(err.is_encryption_context_mismatch());
 /// ```
+#[derive(Clone)]
 pub struct EncryptionContextMismatchError {
     data: Box<ErrorData>,
 }
@@ -1181,7 +1321,7 @@ impl EncryptionContextMismatchError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1251,6 +1391,7 @@ impl From<EncryptionContextMismatchError> for Error {
 ///     assert_eq!(e.resource(), Some(&Resource::Keyring("my-namespace/my-key".into())));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct NoMatchingDataKeyError {
     data: Box<ErrorData>,
 }
@@ -1275,7 +1416,7 @@ impl NoMatchingDataKeyError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1371,6 +1512,7 @@ impl From<NoMatchingDataKeyError> for Error {
 /// assert!(err.is_cryptographic());
 /// assert!(!err.is_retryable());
 /// ```
+#[derive(Clone)]
 pub struct CryptographicError {
     data: Box<ErrorData>,
 }
@@ -1395,7 +1537,7 @@ impl CryptographicError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1471,6 +1613,7 @@ impl From<CryptographicError> for Error {
 ///     assert_eq!(e.request_id(), Some("6f1c2e9a"));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct AccessDeniedError {
     data: Box<ErrorData>,
 }
@@ -1495,7 +1638,7 @@ impl AccessDeniedError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1614,6 +1757,7 @@ impl From<AccessDeniedError> for Error {
 ///     assert_eq!(e.resource(), Some(&Resource::BranchKey("my-branch-key".into())));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ResourceNotFoundError {
     data: Box<ErrorData>,
 }
@@ -1638,7 +1782,7 @@ impl ResourceNotFoundError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1743,6 +1887,7 @@ impl From<ResourceNotFoundError> for Error {
 ///     assert_eq!(e.resource(), Some(&Resource::Cache));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ThrottlingError {
     data: Box<ErrorData>,
 }
@@ -1767,7 +1912,7 @@ impl ThrottlingError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -1873,6 +2018,7 @@ impl From<ThrottlingError> for Error {
 ///     assert_eq!(e.reason(), Some(ConflictReason::ConcurrentModification));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ConflictError {
     data: Box<ErrorData>,
 }
@@ -1897,7 +2043,7 @@ impl ConflictError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -2008,6 +2154,7 @@ impl From<ConflictError> for Error {
 ///     assert!(e.is_retryable());
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ServiceError {
     data: Box<ErrorData>,
 }
@@ -2032,7 +2179,7 @@ impl ServiceError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -2135,6 +2282,7 @@ impl From<ServiceError> for Error {
 ///     assert_eq!(e.retry_kind(), Some(RetryKind::Transient));
 /// }
 /// ```
+#[derive(Clone)]
 pub struct DispatchError {
     data: Box<ErrorData>,
 }
@@ -2159,7 +2307,7 @@ impl DispatchError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -2253,6 +2401,7 @@ impl From<DispatchError> for Error {
 /// assert!(err.is_internal());
 /// assert!(!err.is_retryable());
 /// ```
+#[derive(Clone)]
 pub struct InternalError {
     data: Box<ErrorData>,
 }
@@ -2277,7 +2426,7 @@ impl InternalError {
     /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
     #[must_use]
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Box::new(source));
+        self.data.source = Some(Arc::new(source));
         self
     }
 
@@ -2331,8 +2480,10 @@ impl From<InternalError> for Error {
 ///
 /// Use them to construct the errors this library returns, for example in tests.
 pub mod builders {
+    use std::sync::Arc;
+
     use super::ConflictReason;
-    use super::{BoxError, Error, ErrorData, Kind, Remote, RetryKind};
+    use super::{ArcError, ErrorData, Kind, Remote, RetryKind};
     use super::{Resource, Service};
 
     /// Builds a [`ValidationError`](super::ValidationError).
@@ -2340,10 +2491,9 @@ pub mod builders {
     #[must_use]
     pub struct ValidationErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl ValidationErrorBuilder {
@@ -2355,19 +2505,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2381,7 +2525,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::Validation));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::ValidationError {
                 data: Box::new(data),
             }
@@ -2393,10 +2536,9 @@ pub mod builders {
     #[must_use]
     pub struct InvalidMaterialsErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl InvalidMaterialsErrorBuilder {
@@ -2408,19 +2550,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2458,7 +2594,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::InvalidMaterials));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::InvalidMaterialsError {
                 data: Box::new(data),
             }
@@ -2470,10 +2605,9 @@ pub mod builders {
     #[must_use]
     pub struct EncryptionContextMismatchErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl EncryptionContextMismatchErrorBuilder {
@@ -2485,19 +2619,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2511,7 +2639,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::EncryptionContextMismatch));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::EncryptionContextMismatchError {
                 data: Box::new(data),
             }
@@ -2523,10 +2650,9 @@ pub mod builders {
     #[must_use]
     pub struct NoMatchingDataKeyErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl NoMatchingDataKeyErrorBuilder {
@@ -2538,19 +2664,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2588,7 +2708,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::NoMatchingDataKey));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::NoMatchingDataKeyError {
                 data: Box::new(data),
             }
@@ -2600,10 +2719,9 @@ pub mod builders {
     #[must_use]
     pub struct CryptographicErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl CryptographicErrorBuilder {
@@ -2615,19 +2733,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2641,7 +2753,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::Cryptographic));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::CryptographicError {
                 data: Box::new(data),
             }
@@ -2653,10 +2764,9 @@ pub mod builders {
     #[must_use]
     pub struct AccessDeniedErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl AccessDeniedErrorBuilder {
@@ -2668,19 +2778,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2718,7 +2822,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::AccessDenied));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::AccessDeniedError {
                 data: Box::new(data),
             }
@@ -2730,10 +2833,9 @@ pub mod builders {
     #[must_use]
     pub struct ResourceNotFoundErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl ResourceNotFoundErrorBuilder {
@@ -2745,19 +2847,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2795,7 +2891,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::ResourceNotFound));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::ResourceNotFoundError {
                 data: Box::new(data),
             }
@@ -2807,10 +2902,9 @@ pub mod builders {
     #[must_use]
     pub struct ThrottlingErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl ThrottlingErrorBuilder {
@@ -2822,19 +2916,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2872,7 +2960,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::Throttling));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::ThrottlingError {
                 data: Box::new(data),
             }
@@ -2884,11 +2971,10 @@ pub mod builders {
     #[must_use]
     pub struct ConflictErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
         reason: Option<ConflictReason>,
-        collected: Vec<Error>,
     }
 
     impl ConflictErrorBuilder {
@@ -2900,19 +2986,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -2957,7 +3037,6 @@ pub mod builders {
             data.remote = self.remote;
             data.reason = self.reason;
             data.source = self.source;
-            data.collected = self.collected;
             super::ConflictError {
                 data: Box::new(data),
             }
@@ -2969,10 +3048,9 @@ pub mod builders {
     #[must_use]
     pub struct ServiceErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl ServiceErrorBuilder {
@@ -2984,19 +3062,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -3034,7 +3106,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::Service));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::ServiceError {
                 data: Box::new(data),
             }
@@ -3046,10 +3117,9 @@ pub mod builders {
     #[must_use]
     pub struct DispatchErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl DispatchErrorBuilder {
@@ -3061,19 +3131,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -3111,7 +3175,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::Dispatch));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::DispatchError {
                 data: Box::new(data),
             }
@@ -3123,10 +3186,9 @@ pub mod builders {
     #[must_use]
     pub struct InternalErrorBuilder {
         message: String,
-        source: Option<BoxError>,
+        source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-        collected: Vec<Error>,
     }
 
     impl InternalErrorBuilder {
@@ -3138,19 +3200,13 @@ pub mod builders {
 
         /// The error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Box::new(source));
+            self.source = Some(Arc::new(source));
             self
         }
 
         /// Mark the error retryable, and say how to back off.
         pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
-            self
-        }
-
-        /// The failures behind an error that aggregates several.
-        pub fn collected(mut self, collected: Vec<Error>) -> Self {
-            self.collected = collected;
             self
         }
 
@@ -3164,7 +3220,6 @@ pub mod builders {
                 .or_else(|| ErrorData::default_retry(Kind::Internal));
             data.remote = self.remote;
             data.source = self.source;
-            data.collected = self.collected;
             super::InternalError {
                 data: Box::new(data),
             }
@@ -3185,7 +3240,6 @@ mod tests {
         let s = ValidationError::builder()
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3235,7 +3289,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3291,7 +3344,6 @@ mod tests {
         let s = EncryptionContextMismatchError::builder()
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3341,7 +3393,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3397,7 +3448,6 @@ mod tests {
         let s = CryptographicError::builder()
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3447,7 +3497,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3514,7 +3563,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3574,7 +3622,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3635,7 +3682,6 @@ mod tests {
             .reason(ConflictReason::ConcurrentModification)
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3696,7 +3742,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3756,7 +3801,6 @@ mod tests {
             .request_id("req-1")
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
@@ -3812,7 +3856,6 @@ mod tests {
         let s = InternalError::builder()
             .retry_kind(RetryKind::Server)
             .source(cause())
-            .collected(Vec::new())
             .message("what went wrong")
             .build();
         assert_eq!(s.message(), "what went wrong");
