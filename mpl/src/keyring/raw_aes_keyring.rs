@@ -59,6 +59,8 @@ pub struct RawAesKeyring {
 }
 
 struct RawAesKeyringInner {
+    /// `{key_namespace}/{key_name}`, which `name()` returns.
+    name: String,
     key_namespace: String,
     key_name: String,
     wrapping_key: Vec<u8>,
@@ -124,10 +126,12 @@ impl RawAesKeyring {
             ));
         }
 
+        let key_name = key_name.into();
         Ok(Self {
             inner: Arc::new(RawAesKeyringInner {
+                name: format!("{key_namespace}/{key_name}"),
                 key_namespace,
-                key_name: key_name.into(),
+                key_name,
                 wrapping_key,
                 wrapping_alg,
             }),
@@ -208,6 +212,11 @@ impl RawAesKeyring {
 
 #[async_trait]
 impl Keyring for RawAesKeyring {
+    /// `{key_namespace}/{key_name}`.
+    fn name(&self) -> &str {
+        &self.inner.name
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,

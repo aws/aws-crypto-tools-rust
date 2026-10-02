@@ -10,7 +10,7 @@
 //! [`super::cache_entry_identifier`].
 
 use crate::Error;
-use crate::error::Kind;
+use crate::error::{Kind, Resource};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -391,6 +391,11 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
+    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
+    fn name(&self) -> &str {
+        self.inner.branch_key_id.as_deref().unwrap_or("supplier")
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
@@ -410,7 +415,12 @@ impl Keyring for HierarchicalKeyring {
             None,
         );
 
-        let cached = self.inner.cache.get_cache_entry(&cache_id).await?;
+        let cached = self
+            .inner
+            .cache
+            .get_cache_entry(&cache_id)
+            .await
+            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?;
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -642,7 +652,12 @@ impl HierarchicalKeyring {
             Some(&branch_key_version),
         );
 
-        let cached = self.inner.cache.get_cache_entry(&cache_id).await?;
+        let cached = self
+            .inner
+            .cache
+            .get_cache_entry(&cache_id)
+            .await
+            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?;
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -669,6 +684,17 @@ impl HierarchicalKeyring {
 
         branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
     }
+}
+
+/// Name the branch key in a cache throttling error,
+/// which names only the cache because the cache's keys are opaque.
+fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
+    if e.is_throttling() && e.resource() == Some(&Resource::Cache) {
+        e.set_message(format!(
+            "timed out waiting for another caller to fetch branch key {branch_key_id}"
+        ));
+    }
+    e
 }
 
 /// Generate a random plaintext data key of the algorithm suite's

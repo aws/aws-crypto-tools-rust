@@ -22,6 +22,16 @@ use crate::structures::{DecryptionMaterials, EncryptionMaterials};
 /// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
 pub trait Cmm: Send + Sync {
+    /// A short name for this CMM, which errors show.
+    ///
+    /// The ESDK reports a failure of a caller's CMM with
+    /// `resource()` set to [`Resource::Cmm`](crate::error::Resource::Cmm) and this name.
+    /// It should be stable and short, and must not contain secrets.
+    /// The default is the type's name.
+    fn name(&self) -> &str {
+        std::any::type_name::<Self>()
+    }
+
     /// Assemble encryption materials for an encrypt request. Mirrors the
     /// `Get Encryption Materials` behavior of the
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#get-encryption-materials).
@@ -50,6 +60,10 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Cmm for SharedCmm {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,

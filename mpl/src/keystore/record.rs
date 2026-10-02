@@ -4,7 +4,7 @@
 //! Record format parsing and materials reconstruction for the branch key store.
 
 use crate::Error;
-use crate::error::{Kind, Service};
+use crate::error::{Kind, Resource, Service};
 use std::collections::BTreeMap;
 
 use crate::keystore::attributes::{
@@ -93,22 +93,20 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
     plaintext_branch_key: Vec<u8>,
 ) -> Result<BranchKeyMaterials, Error> {
     let type_attr = authenticated_ec.get(ATTR_TYPE).ok_or_else(|| {
-        Error::new(
-            Kind::Service,
+        malformed(
+            authenticated_ec,
             "missing 'type' attribute in authenticated encryption context",
         )
-        .about(Some(Service::DynamoDb), None)
     })?;
 
     if type_attr != TYPE_BRANCH_ACTIVE && !type_attr.starts_with(TYPE_BRANCH_VERSION_PREFIX) {
-        return Err(Error::new(
-            Kind::Service,
+        return Err(malformed(
+            authenticated_ec,
             format!(
                 "invalid type attribute: '{}', must be '{}' or start with '{}'",
                 type_attr, TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX
             ),
-        )
-        .about(Some(Service::DynamoDb), None));
+        ));
     }
 
     // Resolve version string based on type attribute value.
@@ -116,11 +114,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         authenticated_ec
             .get(ATTR_VERSION)
             .ok_or_else(|| {
-                Error::new(
-                    Kind::Service,
+                malformed(
+                    authenticated_ec,
                     "type is 'branch:ACTIVE' but 'version' attribute is missing",
                 )
-                .about(Some(Service::DynamoDb), None)
             })?
             .clone()
     } else {
@@ -135,25 +132,23 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         .strip_prefix(TYPE_BRANCH_VERSION_PREFIX)
         .filter(|v| !v.is_empty())
         .ok_or_else(|| {
-            Error::new(
-                Kind::Service,
+            malformed(
+                authenticated_ec,
                 format!(
                     "version string '{version_string}' MUST be '{TYPE_BRANCH_VERSION_PREFIX}' \
                      followed by a non-empty version"
                 ),
             )
-            .about(Some(Service::DynamoDb), None)
         })?
         .to_string();
 
     let branch_key_id = authenticated_ec
         .get(ATTR_BRANCH_KEY_ID)
         .ok_or_else(|| {
-            Error::new(
-                Kind::Service,
+            malformed(
+                authenticated_ec,
                 "missing 'branch-key-id' attribute in authenticated encryption context",
             )
-            .about(Some(Service::DynamoDb), None)
         })?
         .clone();
 
@@ -161,11 +156,10 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         custom_encryption_context_from_authenticated_encryption_context(authenticated_ec)?;
 
     let branch_key: [u8; 32] = plaintext_branch_key.try_into().map_err(|v: Vec<u8>| {
-        Error::new(
-            Kind::Service,
+        malformed(
+            authenticated_ec,
             format!("branch key must be 32 bytes, got {}", v.len()),
         )
-        .about(Some(Service::DynamoDb), None)
     })?;
 
     BranchKeyMaterials::new(
@@ -175,7 +169,17 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         encryption_context,
     )
     .map_err(|e| {
-        Error::with_cause(Kind::Service, "failed to construct branch key materials", e)
-            .about(Some(Service::DynamoDb), None)
+        malformed(authenticated_ec, "failed to construct branch key materials").with_source(e)
     })
+}
+
+/// An error for a branch key record that is malformed,
+/// naming the branch key when the record has an ID.
+fn malformed(authenticated_ec: &BTreeMap<String, String>, message: impl Into<String>) -> Error {
+    Error::new(Kind::InvalidMaterials, message).about(
+        Some(Service::DynamoDb),
+        authenticated_ec
+            .get(ATTR_BRANCH_KEY_ID)
+            .map(|id| Resource::BranchKey(id.clone())),
+    )
 }

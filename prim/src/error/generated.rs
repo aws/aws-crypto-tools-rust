@@ -410,6 +410,11 @@ impl Error {
         self
     }
 
+    /// Replace the message.
+    pub(crate) fn set_message(&mut self, message: impl Into<String>) {
+        self.data_mut().message = message.into();
+    }
+
     /// Name the resource this error is about, keeping its service.
     pub(crate) fn set_resource(&mut self, resource: Option<Resource>) {
         self.data_mut().remote.resource = resource;

@@ -28,21 +28,24 @@ fn every_mpl_variant_keeps_its_name() {
     for inner in every_mpl_variant() {
         let name = inner.name();
         let outer = Error::from(inner);
-        let same = match (&outer, name) {
+        let same = matches!(
+            (&outer, name),
             (Error::Validation(_), "Validation")
-            | (Error::InvalidMaterials(_), "InvalidMaterials")
-            | (Error::EncryptionContextMismatch(_), "EncryptionContextMismatch")
-            | (Error::NoMatchingDataKey(_), "NoMatchingDataKey")
-            | (Error::Cryptographic(_), "Cryptographic")
-            | (Error::AccessDenied(_), "AccessDenied")
-            | (Error::ResourceNotFound(_), "ResourceNotFound")
-            | (Error::Throttling(_), "Throttling")
-            | (Error::Conflict(_), "Conflict")
-            | (Error::Service(_), "Service")
-            | (Error::Dispatch(_), "Dispatch")
-            | (Error::Internal(_), "Internal") => true,
-            _ => false,
-        };
+                | (Error::InvalidMaterials(_), "InvalidMaterials")
+                | (
+                    Error::EncryptionContextMismatch(_),
+                    "EncryptionContextMismatch"
+                )
+                | (Error::NoMatchingDataKey(_), "NoMatchingDataKey")
+                | (Error::Cryptographic(_), "Cryptographic")
+                | (Error::AccessDenied(_), "AccessDenied")
+                | (Error::ResourceNotFound(_), "ResourceNotFound")
+                | (Error::Throttling(_), "Throttling")
+                | (Error::Conflict(_), "Conflict")
+                | (Error::Service(_), "Service")
+                | (Error::Dispatch(_), "Dispatch")
+                | (Error::Internal(_), "Internal")
+        );
         assert!(same, "{name} became {}", outer.name());
         assert!(outer.find_source::<mpl::Error>().is_some());
     }

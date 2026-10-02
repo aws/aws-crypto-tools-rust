@@ -19,6 +19,16 @@ use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMateria
 /// To hold a keyring whose concrete type is chosen at runtime, use [`SharedKeyring`].
 #[async_trait]
 pub trait Keyring: Send + Sync {
+    /// A short name for this keyring, which errors show.
+    ///
+    /// The ESDK reports a failure of a caller's keyring with
+    /// `resource()` set to [`Resource::Keyring`](crate::error::Resource::Keyring) and this name.
+    /// It should be stable and short, and must not contain secrets.
+    /// The default is the type's name.
+    fn name(&self) -> &str {
+        std::any::type_name::<Self>()
+    }
+
     /// Modify the supplied [`EncryptionMaterials`] by generating and/or
     /// encrypting a data key. See the
     /// [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
@@ -50,6 +60,10 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Keyring for SharedKeyring {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,

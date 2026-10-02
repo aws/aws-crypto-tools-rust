@@ -170,6 +170,36 @@ async fn internal_encrypt(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptStreamOutput, Error> {
+    let source = input_source.as_ref().map(MaterialSource::resource);
+    encrypt_steps(
+        plaintext,
+        ciphertext,
+        plaintext_len,
+        input_source,
+        encryption_context,
+        algorithm_suite_id,
+        frame_length,
+        max_encrypted_data_keys,
+        commitment_policy,
+    )
+    .await
+    .map_err(|e| materials::name_material_source(e, source.as_ref()))
+}
+
+/// The encrypt steps; [`internal_encrypt`] names the material source in their errors.
+#[expect(clippy::too_many_arguments)]
+async fn encrypt_steps(
+    plaintext: &mut dyn SafeRead,
+    // ciphertext is the output buffer for this function
+    ciphertext: &mut dyn SafeWrite,
+    plaintext_len: Option<usize>,
+    input_source: Option<MaterialSource>,
+    encryption_context: &EncryptionContext,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    frame_length: NonZeroU32,
+    max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
+    commitment_policy: CommitmentPolicy,
+) -> Result<EncryptStreamOutput, Error> {
     //= spec/client-apis/encrypt.md#behavior
     //= reason=Every step uses ?; any failure returns Err to the caller
     //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.

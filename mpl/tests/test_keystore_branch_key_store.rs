@@ -472,12 +472,12 @@ async fn the_message_does_not_render_the_sdk_errors_display() {
 
     assert_eq!(
         err.message(),
-        "DynamoDB GetItem failed",
+        "DynamoDB GetItem for branch key bk-1 failed",
         "the message must name this layer and the operation, with no SDK Display appended"
     );
     assert_eq!(
         err.to_string(),
-        "Dispatch: DynamoDB GetItem failed",
+        "Dispatch: DynamoDB GetItem for branch key bk-1 failed (Amazon DynamoDB, table test-table)",
         "Display renders only this layer; a chain-walking printer renders the cause"
     );
 }

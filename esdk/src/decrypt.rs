@@ -223,6 +223,30 @@ async fn internal_decrypt(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: CommitmentPolicy,
 ) -> Result<DecryptStreamOutput, Error> {
+    let source = input_source.as_ref().map(MaterialSource::resource);
+    decrypt_steps(
+        ciphertext,
+        plaintext,
+        input_source,
+        encryption_context,
+        mode,
+        max_encrypted_data_keys,
+        commitment_policy,
+    )
+    .await
+    .map_err(|e| materials::name_material_source(e, source.as_ref()))
+}
+
+/// The decrypt steps; [`internal_decrypt`] names the material source in their errors.
+async fn decrypt_steps(
+    ciphertext: &mut dyn SafeRead,
+    plaintext: &mut dyn SafeWrite,
+    input_source: Option<MaterialSource>,
+    encryption_context: &EncryptionContext,
+    mode: DecryptMode,
+    max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
+    commitment_policy: CommitmentPolicy,
+) -> Result<DecryptStreamOutput, Error> {
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 1 MUST be [Parse the header](#parse-the-header)
@@ -556,7 +580,8 @@ fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //# If this tag verification fails, this operation MUST immediately halt and fail.
-    maybe_header_auth?;
+    maybe_header_auth
+        .map_err(|e| Error::from_prim("the header authentication tag did not verify", e))?;
 
     Ok(state)
 }
