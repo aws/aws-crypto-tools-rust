@@ -392,3 +392,159 @@ async fn version_key_keeps_the_kms_classification_of_the_record_check() {
     let tampered = version_key_error("InvalidCiphertextException").await;
     assert!(tampered.is_cryptographic(), "{tampered:?}");
 }
+
+/// The error from encrypting under the fake's hierarchical keyring.
+async fn hierarchical_encrypt_error(fake: FakeAws) -> Error {
+    let input = EncryptInput::builder()
+        .plaintext(b"hello")
+        .keyring(fake.keyring().await)
+        .build()
+        .unwrap();
+    encrypt(&input).await.expect_err("the fake fails the call")
+}
+
+fn on(op: &'static str, reply: Reply) -> FakeAws {
+    FakeAws::new(move |o, _| (o == op).then(|| reply.clone()))
+}
+
+#[tokio::test]
+async fn dynamodb_access_denied_names_the_table() {
+    let err = hierarchical_decrypt_error(on(
+        "DynamoDB_20120810.GetItem",
+        Reply::error(400, "AccessDeniedException", "ddb-denied"),
+    ))
+    .await;
+    let Error::AccessDenied(e) = &err else {
+        panic!("expected AccessDenied, got {err:?}");
+    };
+    assert!(!e.is_credentials());
+    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.resource(), Some(&Resource::DynamoDbTable(TABLE.into())));
+    assert_eq!(e.code(), Some("AccessDeniedException"));
+    assert_eq!(e.request_id(), Some("ddb-denied"));
+}
+
+#[tokio::test]
+async fn a_missing_kms_key_names_the_kms_key() {
+    let err = hierarchical_decrypt_error(on(
+        "TrentService.Decrypt",
+        Reply::error(400, "NotFoundException", "kms-not-found"),
+    ))
+    .await;
+    let Error::ResourceNotFound(e) = &err else {
+        panic!("expected ResourceNotFound, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(KEY_ARN.into())));
+    assert_eq!(e.code(), Some("NotFoundException"));
+}
+
+#[tokio::test]
+async fn a_missing_table_names_the_table() {
+    let err = hierarchical_decrypt_error(on(
+        "DynamoDB_20120810.GetItem",
+        Reply::error(400, "ResourceNotFoundException", "ddb-not-found"),
+    ))
+    .await;
+    let Error::ResourceNotFound(e) = &err else {
+        panic!("expected ResourceNotFound, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.resource(), Some(&Resource::DynamoDbTable(TABLE.into())));
+    assert_eq!(e.code(), Some("ResourceNotFoundException"));
+}
+
+#[tokio::test]
+async fn a_truncated_message_is_serialization() {
+    let keyring = RawAesKeyring::new("ns", "name", vec![7; 32], AesGcm::Aes256Gcm).unwrap();
+    let ciphertext = encrypt_with(keyring.clone()).await;
+    let err = decrypt_with(&ciphertext[..ciphertext.len() / 2], keyring)
+        .await
+        .unwrap_err();
+    assert!(err.is_serialization(), "{err:?}");
+    assert!(!err.is_retryable());
+}
+
+#[tokio::test]
+async fn encrypt_kms_access_denied_names_the_kms_key() {
+    let err = hierarchical_encrypt_error(on(
+        "TrentService.Decrypt",
+        Reply::error(400, "AccessDeniedException", "6f1c2e9a"),
+    ))
+    .await;
+    let Error::AccessDenied(e) = &err else {
+        panic!("expected AccessDenied, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(KEY_ARN.into())));
+    assert_eq!(e.request_id(), Some("6f1c2e9a"));
+    assert!(
+        err.message()
+            .starts_with("encrypt could not get encryption materials")
+    );
+}
+
+#[tokio::test]
+async fn encrypt_expired_credentials_are_credentials() {
+    let err = hierarchical_encrypt_error(on(
+        "DynamoDB_20120810.GetItem",
+        Reply::error(400, "ExpiredTokenException", "ddb-request"),
+    ))
+    .await;
+    let Error::AccessDenied(e) = &err else {
+        panic!("expected AccessDenied, got {err:?}");
+    };
+    assert!(e.is_credentials());
+    assert_eq!(e.resource(), Some(&Resource::DynamoDbTable(TABLE.into())));
+}
+
+#[tokio::test]
+async fn encrypt_without_an_active_branch_key_names_the_branch_key() {
+    let err = hierarchical_encrypt_error(on("DynamoDB_20120810.GetItem", Reply::ok("{}"))).await;
+    let Error::ResourceNotFound(e) = &err else {
+        panic!("expected ResourceNotFound, got {err:?}");
+    };
+    assert_eq!(
+        e.resource(),
+        Some(&Resource::BranchKey(BRANCH_KEY_ID.into()))
+    );
+}
+
+#[tokio::test]
+async fn create_key_kms_access_denied_names_the_kms_key() {
+    use aws_crypto_mpl::Keystore;
+    let fake = on(
+        "TrentService.GenerateDataKeyWithoutPlaintext",
+        Reply::error(400, "AccessDeniedException", "gdk-denied"),
+    );
+    let err = fake
+        .key_store()
+        .await
+        .create_key(Some(BRANCH_KEY_ID.into()), Some(EncryptionContext::new()))
+        .await
+        .unwrap_err();
+    let aws_crypto_mpl::Error::AccessDenied(e) = &err else {
+        panic!("expected AccessDenied, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(KEY_ARN.into())));
+    assert_eq!(e.request_id(), Some("gdk-denied"));
+}
+
+#[tokio::test]
+async fn version_key_without_an_active_branch_key_names_the_branch_key() {
+    use aws_crypto_mpl::Keystore;
+    let err = on("DynamoDB_20120810.GetItem", Reply::ok("{}"))
+        .key_store()
+        .await
+        .version_key(BRANCH_KEY_ID.into())
+        .await
+        .unwrap_err();
+    let aws_crypto_mpl::Error::ResourceNotFound(e) = &err else {
+        panic!("expected ResourceNotFound, got {err:?}");
+    };
+    assert_eq!(
+        e.resource(),
+        Some(&Resource::BranchKey(BRANCH_KEY_ID.into()))
+    );
+}
