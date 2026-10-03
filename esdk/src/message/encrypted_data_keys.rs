@@ -172,7 +172,10 @@ pub(crate) fn read_edks(
         //# decrypt MUST process no more bytes and yield an error.
         return Err(err(
             Kind::Validation,
-            "ciphertext encrypted data keys exceed maximum encrypted data keys limit",
+            format!(
+                "encrypted data key count {count} exceeds configured maximum {}",
+                max_edks.get()
+            ),
         ));
     }
 

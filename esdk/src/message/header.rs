@@ -220,7 +220,7 @@ pub(crate) fn validate_suite_data(
     {
         return Err(err(
             Kind::Cryptographic,
-            "algorithm suite data does not match expected value",
+            "the key commitment in the message header does not match the derived commit key",
         ));
     }
 

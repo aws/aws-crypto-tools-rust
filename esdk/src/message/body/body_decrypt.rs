@@ -563,7 +563,7 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     let enc_content = serialize_functions::read_seq_u64_bounded(
         ciphertext,
         header::SAFE_MAX_ENCRYPT,
-        "frame exceeds AES-GCM cryptographic safety for a single key/iv",
+        "nonframed encrypted content length exceeds the 64 GiB maximum",
         sig_digest,
     )?;
     // read_seq_u64_bounded reads the u64 length then reads exactly that many bytes,

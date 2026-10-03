@@ -315,7 +315,7 @@ async fn decrypt_steps(
     if suite_has_signature != state.dec_mat.verification_key().is_some() {
         return Err(err(
             Kind::InvalidMaterials,
-            "decryption materials verification_key presence must match algorithm suite signature algorithm",
+            "decryption materials must include a verification key exactly when the algorithm suite has a signature algorithm",
         ));
     }
 
@@ -461,7 +461,7 @@ async fn step_get_decryption_materials(
     if &suite != header_body.algorithm_suite() {
         return Err(err(
             Kind::InvalidMaterials,
-            "stored header algorithm suite does not match decryption algorithm suite",
+            "the algorithm suite in the decryption materials does not match the message header's algorithm suite",
         ));
     }
 
