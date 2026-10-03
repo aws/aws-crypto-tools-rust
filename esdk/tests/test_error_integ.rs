@@ -236,7 +236,7 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
     let key_store = BranchKeyStore::builder()
         .ddb_table_name(TABLE)
         .logical_keystore_name(TABLE)
-        .kms_configuration(KmsConfiguration::Discovery)
+        .kms_configuration(KmsConfiguration::Discovery(Default::default()))
         .kms_client(aws_sdk_kms::Client::new(&config))
         .ddb_client(aws_sdk_dynamodb::Client::new(&config))
         .build()

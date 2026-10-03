@@ -717,7 +717,9 @@ async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyrin
     let key_store = aws_crypto_mpl::BranchKeyStore::builder()
         .ddb_table_name(TABLE)
         .logical_keystore_name(TABLE)
-        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery)
+        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
+            Default::default(),
+        ))
         .kms_client(fake.kms_client())
         .ddb_client(fake.ddb_client())
         .build()
