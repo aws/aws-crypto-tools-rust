@@ -181,6 +181,8 @@ struct ErrorDetails {
     std::string name;
     /// The Rust error with its causes, as `{:#}` prints it.
     std::string full_message;
+    /// Where the Rust error was created; empty unless backtrace capture is enabled.
+    std::string backtrace;
 };
 
 /// Base exception for every failure this library reports.
@@ -210,6 +212,10 @@ public:
     const std::string& full_message() const noexcept {
         return details_.full_message.empty() ? message_ : details_.full_message;
     }
+    /// Where in ESDK Rust the error was created, for bug reports.
+    /// Empty unless the process set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`
+    /// before the error occurred, and for an exception this library raised without a Rust error.
+    const std::string& backtrace() const noexcept { return details_.backtrace; }
 
 protected:
     AwsEncryptionSdkException(ErrorKind kind, ErrorDetails details, const std::string& msg)

@@ -137,13 +137,17 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
     }
     details.credentials = fields["credentials"] == "1";
     details.name = std::string(fields["name"]);
-    // The message part is the Rust `{}` text, `display_len` bytes, then the `{:#}` text.
+    // The message part is the Rust `{}` text, `display_len` bytes, then the `{:#}` text,
+    // `full_len` bytes, then the Rust backtrace.
     const std::string_view body = what.substr(header_end + 1);
     const auto display_len = parse_len(fields["display_len"]);
-    if (!display_len || *display_len > body.size()) {
+    const auto full_len = parse_len(fields["full_len"]);
+    if (!display_len || !full_len || *display_len > body.size() ||
+        *full_len > body.size() - *display_len) {
         return std::nullopt;
     }
-    details.full_message = std::string(body.substr(*display_len));
+    details.full_message = std::string(body.substr(*display_len, *full_len));
+    details.backtrace = std::string(body.substr(*display_len + *full_len));
     return ShimError{
         static_cast<::ffi::ShimErrorKind>(*kind),
         std::move(details),
