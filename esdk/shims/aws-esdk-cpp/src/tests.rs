@@ -513,9 +513,44 @@ fn header_field<'a>(encoded: &'a str, name: &str) -> &'a str {
 
 /// The Rust `{}` and `{:#}` text after the header.
 fn message_parts(encoded: &str) -> (&str, &str) {
+    let (display, full, _) = body_parts(encoded);
+    (display, full)
+}
+
+/// The Rust `{}` text, `{:#}` text and backtrace after the header.
+fn body_parts(encoded: &str) -> (&str, &str, &str) {
     let body = &encoded[encoded.find(ERROR_HEADER_END).expect("a header") + 1..];
-    let len: usize = header_field(encoded, "display_len").parse().unwrap();
-    body.split_at(len)
+    let display_len: usize = header_field(encoded, "display_len").parse().unwrap();
+    let full_len: usize = header_field(encoded, "full_len").parse().unwrap();
+    let (display, rest) = body.split_at(display_len);
+    let (full, backtrace) = rest.split_at(full_len);
+    (display, full, backtrace)
+}
+
+#[test]
+fn core_err_carries_the_backtrace_after_the_messages() {
+    use aws_esdk::error::InternalError;
+    let err = InternalError::new("example");
+    let captured = backtrace_text(origin_backtrace(&aws_esdk::Error::from(err.clone())));
+    let encoded = core_err(err);
+    let (display, full, backtrace) = body_parts(&encoded);
+    assert_eq!(display, "Internal: example");
+    assert_eq!(full, "Internal: example");
+    assert_eq!(backtrace, captured);
+}
+
+#[test]
+fn the_backtrace_is_the_innermost_library_errors() {
+    let inner = aws_crypto_mpl::Error::internal("origin");
+    let outer = aws_esdk::Error::from(inner.clone());
+    assert!(std::ptr::eq(origin_backtrace(&outer), inner.backtrace()));
+}
+
+#[test]
+fn shim_err_has_no_backtrace() {
+    let encoded = shim_err(ffi::ShimErrorKind::Validation, "decrypt", "bad input");
+    let (_, _, backtrace) = body_parts(&encoded);
+    assert_eq!(backtrace, "");
 }
 
 #[test]

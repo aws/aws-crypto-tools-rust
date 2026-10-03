@@ -449,7 +449,7 @@ const ERROR_HEADER_END: char = '\u{1e}';
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
     let name = shim_kind_name(kind);
     let text = format!("{name}: {operation}: {message}");
-    encode_err(kind, None, name, &text, &text)
+    encode_err(kind, None, name, &text, &text, "")
 }
 
 /// Encode an ESDK or MPL error with its variant, retry kind, details,
@@ -462,7 +462,34 @@ fn core_err(e: impl Into<aws_esdk::Error>) -> String {
         e.name(),
         &e.to_string(),
         &format!("{e:#}"),
+        &backtrace_text(origin_backtrace(&e)),
     )
+}
+
+/// The backtrace of the innermost library error in `e`'s source chain:
+/// where the failure started, not where the ESDK added context.
+fn origin_backtrace(e: &aws_esdk::Error) -> &std::backtrace::Backtrace {
+    let mut found = e.backtrace();
+    let mut link = std::error::Error::source(e);
+    while let Some(err) = link {
+        if let Some(inner) = err.downcast_ref::<aws_esdk::Error>() {
+            found = inner.backtrace();
+        } else if let Some(inner) = err.downcast_ref::<aws_crypto_mpl::Error>() {
+            found = inner.backtrace();
+        } else if let Some(inner) = err.downcast_ref::<aws_mpl_primitives::Error>() {
+            found = inner.backtrace();
+        }
+        link = err.source();
+    }
+    found
+}
+
+/// The backtrace's text, or empty when none was captured.
+fn backtrace_text(backtrace: &std::backtrace::Backtrace) -> String {
+    match backtrace.status() {
+        std::backtrace::BacktraceStatus::Captured => backtrace.to_string(),
+        _ => String::new(),
+    }
 }
 
 /// The Rust variant name of a kind the shim raises itself.
@@ -482,13 +509,14 @@ fn encode_err(
     name: &str,
     display: &str,
     full: &str,
+    backtrace: &str,
 ) -> String {
     use aws_esdk::error::ConflictReason;
     use std::fmt::Write as _;
     // cxx passes only a message string across, not a typed error.
     // The facade decodes this layout back into a typed exception:
     // `kind=K<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<US>`
-    // `conflict_reason=X<US>credentials=B<US>name=V<US>display_len=L<RS>{display}{full}`
+    // `conflict_reason=X<US>credentials=B<US>name=V<US>display_len=L<US>full_len=F<RS>{display}{full}{backtrace}`
     //   - K: the ShimErrorKind repr
     //   - R: transient, throttling, server, client, or empty when not retryable
     //   - S: kms, dynamodb, or empty
@@ -497,7 +525,9 @@ fn encode_err(
     //   - X: already_exists, concurrent_modification, or empty
     //   - B: 1 when an AccessDenied error is about credentials, else 0
     //   - V: the Rust variant name, such as Throttling
-    //   - L: the byte length of `display`, the Rust `{}` text; `full` is the `{:#}` text
+    //   - L: the byte length of `display`, the Rust `{}` text
+    //   - F: the byte length of `full`, the Rust `{:#}` text; the rest is the Rust backtrace,
+    //     empty unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` enabled its capture
     //   - US, RS: ERROR_FIELD_SEPARATOR, ERROR_HEADER_END
     // A header value holding either separator is sent empty, so the header always parses.
     let clean = |v: &str| {
@@ -547,9 +577,10 @@ fn encode_err(
     let mut out = String::new();
     let _ = write!(
         out,
-        "kind={}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{sep}conflict_reason={conflict_reason}{sep}credentials={credentials}{sep}name={name}{sep}display_len={}{ERROR_HEADER_END}{display}{full}",
+        "kind={}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{sep}conflict_reason={conflict_reason}{sep}credentials={credentials}{sep}name={name}{sep}display_len={}{sep}full_len={}{ERROR_HEADER_END}{display}{full}{backtrace}",
         kind.repr,
         display.len(),
+        full.len(),
     );
     out
 }
@@ -671,7 +702,7 @@ fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSu
         _ => Err(shim_err(
             ffi::ShimErrorKind::Internal,
             "algorithm suite translation",
-            "core returned an algorithm suite id unknown to the C++ bindings",
+            "ESDK Rust returned an algorithm suite ID this version of the C++ library does not recognize",
         )),
     }
 }
@@ -744,7 +775,7 @@ fn make_frame_length(frame_length: u32) -> Result<NonZeroU32, String> {
         shim_err(
             ffi::ShimErrorKind::Validation,
             "frame length translation",
-            "Frame length must be non-zero",
+            "frame length must be greater than zero",
         )
     })
 }
@@ -780,7 +811,7 @@ fn make_kms_config(
         _ => Err(shim_err(
             ffi::ShimErrorKind::Validation,
             "create_keystore",
-            "Invalid KmsConfigurationType",
+            "unrecognized KMS configuration type",
         )),
     }
 }
@@ -1219,7 +1250,7 @@ fn wrapping_alg_target_to_core(
         _ => Err(shim_err(
             ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
-            "Invalid AesWrappingAlg",
+            "unrecognized AES wrapping algorithm",
         )),
     }
 }

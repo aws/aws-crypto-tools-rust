@@ -708,3 +708,55 @@ async fn a_clone_keeps_the_sdk_error_and_prints_the_same() {
     assert_eq!(format!("{clone:#}"), format!("{err:#}"));
     assert_eq!(format!("{clone:?}"), format!("{err:?}"));
 }
+
+/// A key in another account, which only a discovery key store would call.
+const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
+
+/// A hierarchical keyring over a discovery key store: the KMS key comes from each branch key record.
+async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyring {
+    let key_store = aws_crypto_mpl::BranchKeyStore::builder()
+        .ddb_table_name(TABLE)
+        .logical_keystore_name(TABLE)
+        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
+            Default::default(),
+        ))
+        .kms_client(fake.kms_client())
+        .ddb_client(fake.ddb_client())
+        .build()
+        .await
+        .unwrap();
+    aws_crypto_mpl::HierarchicalKeyring::builder()
+        .key_store(key_store)
+        .branch_key_id(BRANCH_KEY_ID)
+        .ttl(std::time::Duration::from_secs(600))
+        .build()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_discovery_key_store_names_the_kms_key_from_the_record() {
+    // Every record names RECORD_KEY_ARN; AWS KMS denies decrypting under it.
+    let fake = FakeAws::new(|op, body| match op {
+        "DynamoDB_20120810.GetItem" => {
+            let record_type = fake_aws::string_attribute(body, "type").unwrap_or("branch:ACTIVE");
+            Some(Reply::ok(
+                fake_aws::record(record_type, "AAAA", "").replace(KEY_ARN, RECORD_KEY_ARN),
+            ))
+        }
+        "TrentService.Decrypt" => Some(Reply::error(400, "AccessDeniedException", "disc-req")),
+        _ => None,
+    });
+    let input = EncryptInput::builder()
+        .plaintext(b"hello")
+        .keyring(discovery_keyring(&fake).await)
+        .build()
+        .unwrap();
+    let err = encrypt(&input).await.unwrap_err();
+    let Error::AccessDenied(e) = &err else {
+        panic!("expected AccessDenied, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(RECORD_KEY_ARN.into())));
+    assert_eq!(e.request_id(), Some("disc-req"));
+    assert!(err.to_string().contains(RECORD_KEY_ARN), "{err}");
+}
