@@ -222,3 +222,33 @@ async fn integ_create_key_with_an_existing_id_is_an_already_exists_conflict() {
     assert!(e.request_id().is_some());
     assert!(!err.is_retryable());
 }
+
+/// A branch key whose record names a multi-Region key in us-east-1.
+const EAST_BRANCH_KEY_ID: &str = "MyEastBranch2";
+const EAST_MRK_ARN: &str =
+    "arn:aws:kms:us-east-1:658956600833:key/mrk-80bd8ecdcd4342aebd84b7dc9da498a7";
+
+#[tokio::test]
+async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
+    // A discovery key store calls the KMS key the record names. The us-west-2 client
+    // cannot use the us-east-1 key, so AWS KMS rejects it.
+    let config = sdk_config().await;
+    let key_store = BranchKeyStore::builder()
+        .ddb_table_name(TABLE)
+        .logical_keystore_name(TABLE)
+        .kms_configuration(KmsConfiguration::Discovery)
+        .kms_client(aws_sdk_kms::Client::new(&config))
+        .ddb_client(aws_sdk_dynamodb::Client::new(&config))
+        .build()
+        .await
+        .expect("the key store configuration is valid");
+    let err = encrypt_error(key_store, EAST_BRANCH_KEY_ID).await;
+    assert_eq!(err.service(), Some(Service::Kms), "{err:?}");
+    assert_eq!(
+        err.resource(),
+        Some(&Resource::KmsKey(EAST_MRK_ARN.into())),
+        "{err:?}"
+    );
+    assert!(err.code().is_some(), "{err:?}");
+    assert!(err.request_id().is_some(), "{err:?}");
+}

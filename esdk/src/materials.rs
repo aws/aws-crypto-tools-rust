@@ -40,7 +40,7 @@ pub(crate) fn name_material_source(mut e: Error, source: Option<&Resource>) -> E
 pub(crate) fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
 ) -> Result<SharedCmm, Error> {
-    match input_source.ok_or_else(|| val_err("a materials source must be provided"))? {
+    match input_source.ok_or_else(|| val_err("a keyring or CMM must be provided"))? {
         MaterialSource::Cmm(cmm) => Ok(cmm),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials

@@ -601,7 +601,7 @@ fn validate_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
     for (key, _) in ec.iter() {
         if key.starts_with(RESERVED_ENCRYPTION_CONTEXT) {
             return Err(val_err(
-                "encryption context keys cannot contain reserved prefix 'aws-crypto-'",
+                "encryption context keys must not begin with the reserved prefix 'aws-crypto-'",
             ));
         }
     }

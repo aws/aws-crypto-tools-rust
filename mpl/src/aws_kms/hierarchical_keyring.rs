@@ -617,7 +617,7 @@ impl HierarchicalKeyring {
             return Err(Error::new(
                 Kind::Cryptographic,
                 format!(
-                    "EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",
+                    "encrypted data key ciphertext too short to contain the branch key version: {} bytes (need at least {})",
                     ciphertext.len(),
                     CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN,
                 ),
