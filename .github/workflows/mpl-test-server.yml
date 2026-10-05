@@ -7,6 +7,8 @@ on:
       - "mpl/**"
       - ".github/workflows/mpl-test-server.yml"
   push:
+    branches:
+      - main
     paths:
       - "mpl-test-server/**"
       - "mpl/**"
@@ -54,3 +56,18 @@ jobs:
 
       - name: Test
         run: cargo test --verbose
+
+  # The cross-language TestServer run, from the shared commons workflow. This
+  # checkout supplies the rust server; every other server comes from its
+  # configured branch. Only the pairs involving rust run; the full matrix runs in commons.
+  test-server:
+    name: TestServer
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/mpl-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
