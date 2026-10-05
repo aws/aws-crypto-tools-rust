@@ -8,11 +8,13 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::cmm::{self, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptionMaterials, KeyDerivationAlgorithm,
+use aws_crypto_mpl::cmm::DecryptMaterialsInput;
+use aws_crypto_mpl::cmm::{self, DefaultCmm};
+use aws_crypto_mpl::cmm::{
+    DecryptMaterialsOutput, GetEncryptionMaterialsInput, GetEncryptionMaterialsOutput,
 };
+use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::structures::KeyDerivationAlgorithm;
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;
@@ -353,15 +355,15 @@ struct DecryptSpyCmm {
 impl cmm::Cmm for DecryptSpyCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MplError> {
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         self.inner.get_encryption_materials(request).await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MplError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         // Record observations from the request the ESDK constructed.
         *self.observed_edk_count.lock().unwrap() = Some(request.encrypted_data_keys().len());
         let keys: Vec<String> = request

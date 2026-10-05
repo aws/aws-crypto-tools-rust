@@ -21,10 +21,11 @@ use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc, UsageMetadata};
 use crate::key_store::KeyStoreClient;
+use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, PlaintextDataKey,
+    PlaintextDataKey,
 };
 
 /// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
@@ -403,10 +404,8 @@ impl Keyring for HierarchicalKeyring {
         self.inner.branch_key_id.as_deref().unwrap_or("supplier")
     }
 
-    async fn on_encrypt(
-        &self,
-        materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, Error> {
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+        let materials = input.materials;
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let (plaintext_dk, generated) = match materials.plaintext_data_key() {
@@ -467,18 +466,19 @@ impl Keyring for HierarchicalKeyring {
             .ciphertext(ciphertext)
             .build()?;
 
-        if generated {
-            materials.add_data_key(plaintext_dk, edk)
+        let materials = if generated {
+            materials.add_data_key(plaintext_dk, edk)?
         } else {
-            materials.add_encrypted_data_key(edk)
-        }
+            materials.add_encrypted_data_key(edk)?
+        };
+        OnEncryptOutput::builder().materials(materials).build()
     }
 
-    async fn on_decrypt(
-        &self,
-        materials: DecryptionMaterials,
-        encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, Error> {
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+        let OnDecryptInput {
+            materials,
+            encrypted_data_keys,
+        } = input;
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
@@ -489,7 +489,7 @@ impl Keyring for HierarchicalKeyring {
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let mut collected_errors: Vec<Error> = Vec::new();
-        for edk in encrypted_data_keys {
+        for edk in &encrypted_data_keys {
             if edk.key_provider_id() != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
             }
@@ -504,7 +504,9 @@ impl Keyring for HierarchicalKeyring {
 
             match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
                 Ok(plaintext_dk_bytes) => {
-                    return materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes));
+                    let materials =
+                        materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;
+                    return OnDecryptOutput::builder().materials(materials).build();
                 }
                 Err(e) => collected_errors.push(e),
             }

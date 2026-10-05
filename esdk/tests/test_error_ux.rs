@@ -6,7 +6,9 @@
 
 mod fake_aws;
 
+use aws_crypto_mpl::keyring::OnEncryptInput;
 use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::structures::EncryptionContext;
 use aws_esdk::error::{
     BranchKey, Cache, DynamoDbTable, Error, KeyringResource, KmsKey, Resource, RetryKind, Service,
@@ -614,17 +616,18 @@ impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Key
 {
     async fn on_encrypt(
         &self,
-        materials: aws_crypto_mpl::structures::EncryptionMaterials,
-    ) -> Result<aws_crypto_mpl::structures::EncryptionMaterials, aws_crypto_mpl::Error> {
-        let materials = self.0.on_encrypt(materials).await?;
-        self.1.on_encrypt(materials).await
+        input: OnEncryptInput,
+    ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
+        let materials = self.0.on_encrypt(input).await?.into_materials();
+        self.1
+            .on_encrypt(OnEncryptInput::builder().materials(materials).build()?)
+            .await
     }
 
     async fn on_decrypt(
         &self,
-        _: aws_crypto_mpl::structures::DecryptionMaterials,
-        _: &[aws_crypto_mpl::structures::EncryptedDataKey],
-    ) -> Result<aws_crypto_mpl::structures::DecryptionMaterials, aws_crypto_mpl::Error> {
+        _: OnDecryptInput,
+    ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
         unreachable!("the tests decrypt with another keyring")
     }
 }

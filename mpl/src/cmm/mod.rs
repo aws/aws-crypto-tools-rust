@@ -12,15 +12,17 @@
 //! for which error to return.
 
 pub mod default_cmm;
-pub mod request;
+mod types;
 
 use crate::Error;
 use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
-pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
-
-use crate::structures::{DecryptionMaterials, EncryptionMaterials};
+pub use types::{
+    DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
+    DecryptMaterialsOutputBuilder, GetEncryptionMaterialsInput, GetEncryptionMaterialsInputBuilder,
+    GetEncryptionMaterialsOutput, GetEncryptionMaterialsOutputBuilder,
+};
 
 /// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
@@ -40,16 +42,16 @@ pub trait Cmm: Send + Sync {
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#get-encryption-materials).
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, Error>;
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error>;
 
     /// Assemble decryption materials for a decrypt request. Mirrors the
     /// `Decrypt Materials` behavior of the
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#decrypt-materials).
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, Error>;
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -69,15 +71,15 @@ impl Cmm for SharedCmm {
 
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, Error> {
-        self.0.get_encryption_materials(request).await
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+        self.0.get_encryption_materials(input).await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, Error> {
-        self.0.decrypt_materials(request).await
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error> {
+        self.0.decrypt_materials(input).await
     }
 }

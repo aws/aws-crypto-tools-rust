@@ -1,11 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// TODO: give every operation an input type, for consistency with the Dafny MPL
-// and the Smithy model it is generated from. `KeyStore`, `Cmm` and
-// `BranchKeySupplier` already take one; `Keyring` and `Cmc` still take their
-// members as positional parameters, so a member added to a model structure
-// upstream is a breaking change here rather than an additive one.
+// TODO: give `Cmc`'s operations an input and an output type, as the other
+// customer-implementable traits have, for consistency with the Dafny MPL and
+// the Smithy model it is generated from.
 
 pub mod aws_kms;
 mod builder;
@@ -44,7 +42,7 @@ pub use cmc::{
     LocalCmcBuilder, MessageUsage, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
     UsageMetadata,
 };
-pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
+pub use cmm::{Cmm, DefaultCmm, SharedCmm};
 pub use key_store::{
     BranchKeyStore, BranchKeyStoreBuilder, KeyStore, KeyStoreClient, KmsConfiguration,
     encryption_context, kms_config, record,

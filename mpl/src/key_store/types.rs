@@ -246,7 +246,7 @@ impl CreateKeyStoreOutput {
         &self.table_arn
     }
 
-    /// Consume the CreateKeyStore output, yielding the table arn.
+    /// The table ARN, consuming the output.
     #[must_use]
     pub fn into_table_arn(self) -> String {
         self.table_arn
@@ -399,7 +399,7 @@ impl CreateKeyOutput {
         &self.branch_key_id
     }
 
-    /// Consume the CreateKey output, yielding the branch key id.
+    /// The branch key id, consuming the output.
     #[must_use]
     pub fn into_branch_key_id(self) -> String {
         self.branch_key_id
@@ -613,7 +613,7 @@ impl GetActiveBranchKeyOutput {
         &self.branch_key_materials
     }
 
-    /// Consume the GetActiveBranchKey output, yielding the branch key materials.
+    /// The branch key materials, consuming the output.
     #[must_use]
     pub fn into_branch_key_materials(self) -> BranchKeyMaterials {
         self.branch_key_materials
@@ -774,7 +774,7 @@ impl GetBranchKeyVersionOutput {
         &self.branch_key_materials
     }
 
-    /// Consume the GetBranchKeyVersion output, yielding the branch key materials.
+    /// The branch key materials, consuming the output.
     #[must_use]
     pub fn into_branch_key_materials(self) -> BranchKeyMaterials {
         self.branch_key_materials
@@ -904,7 +904,7 @@ impl GetBeaconKeyOutput {
         &self.beacon_key_materials
     }
 
-    /// Consume the GetBeaconKey output, yielding the beacon key materials.
+    /// The beacon key materials, consuming the output.
     #[must_use]
     pub fn into_beacon_key_materials(self) -> BeaconKeyMaterials {
         self.beacon_key_materials

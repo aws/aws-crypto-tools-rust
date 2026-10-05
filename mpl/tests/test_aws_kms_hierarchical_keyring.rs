@@ -42,6 +42,7 @@ use aws_crypto_mpl::key_store::{
     GetKeyStoreInfoInput, GetKeyStoreInfoOutput, KeyStore, KmsConfiguration, VersionKeyInput,
     VersionKeyOutput,
 };
+use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
@@ -1417,7 +1418,12 @@ mod onencrypt {
 
         // First call: cache miss → key store is called.
         keyring
-            .on_encrypt(empty_encryption_materials(non_signing_suite()))
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(empty_encryption_materials(non_signing_suite()))
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -1427,7 +1433,12 @@ mod onencrypt {
         );
 
         keyring
-            .on_encrypt(empty_encryption_materials(non_signing_suite()))
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(empty_encryption_materials(non_signing_suite()))
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -1491,7 +1502,12 @@ mod onencrypt {
             .build()
             .unwrap();
         keyring
-            .on_encrypt(empty_encryption_materials(non_signing_suite()))
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(empty_encryption_materials(non_signing_suite()))
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap();
         key_store.get_active_calls() == 1
@@ -1567,7 +1583,12 @@ mod onencrypt {
             .unwrap();
 
         let err = match keyring
-            .on_encrypt(empty_encryption_materials(non_signing_suite()))
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(empty_encryption_materials(non_signing_suite()))
+                    .build()
+                    .unwrap(),
+            )
             .await
         {
             Ok(_) => panic!("on_encrypt must fail when key store.get_active_branch_key fails"),
@@ -1597,9 +1618,15 @@ mod onencrypt {
             .unwrap();
 
         let materials_out = keyring
-            .on_encrypt(empty_encryption_materials(non_signing_suite()))
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(empty_encryption_materials(non_signing_suite()))
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .unwrap();
+            .unwrap()
+            .into_materials();
 
         let edk = &materials_out.encrypted_data_keys()[0];
         assert_eq!(edk.key_provider_info(), FAKE_BRANCH_KEY_ID.as_bytes());
@@ -1628,7 +1655,16 @@ mod ondecrypt {
         suite_id: AlgorithmSuiteId,
     ) -> (PlaintextDataKey, Vec<EncryptedDataKey>) {
         let materials_in = empty_encryption_materials(suite_id);
-        let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
+        let materials_out = keyring
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(materials_in)
+                    .build()
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_materials();
         let pdk = materials_out
             .plaintext_data_key()
             .unwrap()
@@ -1659,7 +1695,13 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(dm, &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(dm)
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
         assert!(err.is_invalid_materials(), "{:?}", err);
@@ -1687,9 +1729,16 @@ mod ondecrypt {
         assert_eq!(on_wire_version, &FAKE_BRANCH_KEY_VERSION_BYTES);
 
         let _ = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .unwrap();
+            .unwrap()
+            .into_materials();
 
         assert_eq!(key_store.get_version_calls(), 1);
         assert_eq!(
@@ -1708,9 +1757,16 @@ mod ondecrypt {
 
         // First on_decrypt: cache MISS → key store is called.
         let _ = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .unwrap();
+            .unwrap()
+            .into_materials();
         assert_eq!(
             key_store.get_version_calls(),
             1,
@@ -1718,9 +1774,16 @@ mod ondecrypt {
         );
 
         let _ = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .unwrap();
+            .unwrap()
+            .into_materials();
         assert_eq!(
             key_store.get_version_calls(),
             1,
@@ -1746,9 +1809,16 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .expect("on_decrypt must succeed by falling through to the matching EDK");
+            .expect("on_decrypt must succeed by falling through to the matching EDK")
+            .into_materials();
         assert_eq!(
             dm_out.plaintext_data_key().unwrap().as_bytes(),
             expected_pdk.as_bytes(),
@@ -1773,9 +1843,16 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .expect("on_decrypt must succeed by falling through to the matching EDK");
+            .expect("on_decrypt must succeed by falling through to the matching EDK")
+            .into_materials();
         assert_eq!(
             dm_out.plaintext_data_key().unwrap().as_bytes(),
             expected_pdk.as_bytes(),
@@ -1798,9 +1875,16 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .expect("on_decrypt must succeed by falling through to the matching EDK");
+            .expect("on_decrypt must succeed by falling through to the matching EDK")
+            .into_materials();
         assert_eq!(
             dm_out.plaintext_data_key().unwrap().as_bytes(),
             expected_pdk.as_bytes(),
@@ -1816,7 +1900,13 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
 
         let err = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &[])
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(Vec::new())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
 
@@ -1844,7 +1934,13 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &[foreign])
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(vec![foreign])
+                    .build()
+                    .unwrap(),
+            )
             .await
             .expect_err("an EDK from another provider MUST NOT be decrypted");
 
@@ -1873,7 +1969,13 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(vec![truncated])
+                    .build()
+                    .unwrap(),
+            )
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         // Exactly one candidate EDK failed, so its error is returned as is,
@@ -1905,8 +2007,11 @@ mod ondecrypt {
 
         let err = keyring
             .on_decrypt(
-                empty_decryption_materials(suite_id),
-                &[truncated_4, truncated_8],
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(vec![truncated_4, truncated_8])
+                    .build()
+                    .unwrap(),
             )
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
@@ -2021,7 +2126,13 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .expect_err("on_decrypt must fail when key store.get_branch_key_version fails");
         // One candidate EDK, so the key store's error is returned as is.
@@ -2046,9 +2157,16 @@ mod ondecrypt {
         let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;
 
         let dm_out = keyring
-            .on_decrypt(empty_decryption_materials(suite_id), &edks)
+            .on_decrypt(
+                OnDecryptInput::builder()
+                    .materials(empty_decryption_materials(suite_id))
+                    .encrypted_data_keys(edks.to_vec())
+                    .build()
+                    .unwrap(),
+            )
             .await
-            .expect("on_decrypt with a supplier-resolved branch_key_id must succeed");
+            .expect("on_decrypt with a supplier-resolved branch_key_id must succeed")
+            .into_materials();
         assert_eq!(
             dm_out.plaintext_data_key().unwrap().as_bytes(),
             expected_pdk.as_bytes(),

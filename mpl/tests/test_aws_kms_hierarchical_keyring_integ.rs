@@ -71,6 +71,7 @@ use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::key_store::{BranchKeyStore, Discovery, KeyStore, KeyStoreClient, MrDiscovery};
+use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
@@ -170,9 +171,15 @@ async fn integ_on_encrypt_round_trips_through_real_key_store_and_kms() {
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
     let materials_out = keyring
-        .on_encrypt(materials_in)
+        .on_encrypt(
+            OnEncryptInput::builder()
+                .materials(materials_in)
+                .build()
+                .unwrap(),
+        )
         .await
-        .expect("on_encrypt against real key store must succeed");
+        .expect("on_encrypt against real key store must succeed")
+        .into_materials();
 
     // Exactly one EDK with the spec's provider id and provider info.
     let edks = materials_out.encrypted_data_keys();
@@ -220,7 +227,16 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
 
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
-    let materials_out = keyring.on_encrypt(materials_in).await.unwrap();
+    let materials_out = keyring
+        .on_encrypt(
+            OnEncryptInput::builder()
+                .materials(materials_in)
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .into_materials();
     let pdk_bytes = materials_out
         .plaintext_data_key()
         .unwrap()
@@ -236,9 +252,16 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
         .build()
         .unwrap();
     let dm_out = keyring
-        .on_decrypt(dm_in, &edks)
+        .on_decrypt(
+            OnDecryptInput::builder()
+                .materials(dm_in)
+                .encrypted_data_keys(edks.to_vec())
+                .build()
+                .unwrap(),
+        )
         .await
-        .expect("on_decrypt against real key store must succeed for an EDK we just produced");
+        .expect("on_decrypt against real key store must succeed for an EDK we just produced")
+        .into_materials();
 
     assert_eq!(
         dm_out.plaintext_data_key().unwrap().as_bytes(),
@@ -332,9 +355,15 @@ async fn run_round_trip(
     let ec = materials_in.encryption_context().clone();
 
     let materials_out = keyring
-        .on_encrypt(materials_in)
+        .on_encrypt(
+            OnEncryptInput::builder()
+                .materials(materials_in)
+                .build()
+                .unwrap(),
+        )
         .await
-        .expect("on_encrypt against real key store must succeed");
+        .expect("on_encrypt against real key store must succeed")
+        .into_materials();
 
     // Verify the EDK was created with the expected branch key id.
     let edks = materials_out.encrypted_data_keys().to_vec();
@@ -357,9 +386,16 @@ async fn run_round_trip(
         .build()
         .unwrap();
     let dm_out = keyring
-        .on_decrypt(dm_in, &edks)
+        .on_decrypt(
+            OnDecryptInput::builder()
+                .materials(dm_in)
+                .encrypted_data_keys(edks.to_vec())
+                .build()
+                .unwrap(),
+        )
         .await
-        .expect("on_decrypt against real key store must succeed for an EDK we just produced");
+        .expect("on_decrypt against real key store must succeed for an EDK we just produced")
+        .into_materials();
 
     assert_eq!(
         dm_out.plaintext_data_key().unwrap().as_bytes(),
@@ -456,7 +492,14 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_key_store_na
 
     // HK2 encrypt fails first: the shared cache is cold, so it must reach KMS.
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt before the cache is populated",
     );
 
@@ -504,14 +547,28 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
         .unwrap();
 
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt MUST fail before the cache is populated",
     );
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt MUST still fail — distinct random partition ids prevent cache reuse",
     );
 }
@@ -543,14 +600,28 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
     let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionIdHK2", cache);
 
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt MUST fail before the cache is populated",
     );
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt MUST still fail — distinct partition ids prevent cache reuse",
     );
 }
@@ -577,14 +648,28 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_key_sto
     let hk2 = keyring_with_cache(key_store_east, BRANCH_KEY_ID, "partitionId", cache);
 
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt MUST fail before the cache is populated",
     );
 
     run_round_trip(&hk1, shared_cache_materials(), BRANCH_KEY_ID).await;
 
     assert_failed_at_kms(
-        hk2.on_encrypt(shared_cache_materials()).await,
+        hk2.on_encrypt(
+            OnEncryptInput::builder()
+                .materials(shared_cache_materials())
+                .build()
+                .unwrap(),
+        )
+        .await
+        .map(|o| o.into_materials()),
         "HK2 on_encrypt MUST still fail — different logical key store names prevent cache reuse",
     );
 }
@@ -639,9 +724,15 @@ async fn integ_discovery_key_store_wraps_under_the_records_own_kms_key() {
     let materials_in = fresh_materials();
     let ec = materials_in.encryption_context().clone();
     let materials_out = keyring
-        .on_encrypt(materials_in)
+        .on_encrypt(
+            OnEncryptInput::builder()
+                .materials(materials_in)
+                .build()
+                .unwrap(),
+        )
         .await
-        .expect("Discovery key store must wrap under the branch-key record's own kms-arn");
+        .expect("Discovery key store must wrap under the branch-key record's own kms-arn")
+        .into_materials();
 
     let edks = materials_out.encrypted_data_keys();
     assert_eq!(edks.len(), 1);
@@ -682,7 +773,12 @@ async fn integ_pinned_key_store_rejects_a_branch_key_under_another_kms_key() {
     );
 
     let err = keyring
-        .on_encrypt(fresh_materials())
+        .on_encrypt(
+            OnEncryptInput::builder()
+                .materials(fresh_materials())
+                .build()
+                .unwrap(),
+        )
         .await
         .expect_err("a key store pinned to KEY_ARN MUST reject the Discovery-only branch key");
     // Only the kms-arn-compat check in resolve_key_store_arn returns Validation;
@@ -708,11 +804,17 @@ async fn integ_discovery_key_store_serves_two_branch_keys_under_different_kms_ke
     ] {
         let keyring = keyring_for(key_store.clone(), branch_key_id, partition);
         let materials_out = keyring
-            .on_encrypt(fresh_materials())
+            .on_encrypt(
+                OnEncryptInput::builder()
+                    .materials(fresh_materials())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap_or_else(|e| {
                 panic!("Discovery key store must serve branch key {branch_key_id}: {e}")
-            });
+            })
+            .into_materials();
         assert_eq!(
             materials_out.encrypted_data_keys()[0].key_provider_info(),
             branch_key_id.as_bytes(),
@@ -777,9 +879,9 @@ async fn integ_mr_discovery_key_store_reaches_an_mrk_replica_in_the_configured_r
         "partition-id-integ-mrdiscovery",
     );
 
-    let materials_out = keyring.on_encrypt(fresh_materials()).await.expect(
+    let materials_out = keyring.on_encrypt(OnEncryptInput::builder().materials(fresh_materials()).build().unwrap()).await.expect(
         "MrDiscovery MUST rewrite the record's us-east-1 ARN into us-west-2 and reach the replica",
-    );
+    ).into_materials();
 
     let edks = materials_out.encrypted_data_keys();
     assert_eq!(edks.len(), 1);
@@ -799,7 +901,12 @@ async fn integ_discovery_key_store_cannot_reach_an_out_of_region_mrk() {
     );
 
     let err = keyring
-        .on_encrypt(fresh_materials())
+        .on_encrypt(
+            OnEncryptInput::builder()
+                .materials(fresh_materials())
+                .build()
+                .unwrap(),
+        )
         .await
         .expect_err("plain Discovery MUST NOT reach a us-east-1 MRK from a us-west-2 client");
     assert!(err.is_service(), "{:?}", err);

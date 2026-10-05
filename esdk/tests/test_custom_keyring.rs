@@ -18,7 +18,9 @@ mod test_helpers;
 use aws_esdk::*;
 
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::keyring::Keyring;
+use aws_crypto_mpl::keyring::{
+    Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
+};
 use aws_crypto_mpl::structures::{
     DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, PlaintextDataKey,
 };
@@ -37,10 +39,9 @@ struct LocalKekKeyring {
 
 #[async_trait::async_trait]
 impl Keyring for LocalKekKeyring {
-    async fn on_encrypt(
-        &self,
-        materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MplError> {
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
+        let materials = input.materials();
+
         // Data key length in bytes, from the algorithm suite in the materials.
         let key_len = materials.algorithm_suite().encryption_key_length();
 
@@ -100,7 +101,7 @@ impl Keyring for LocalKekKeyring {
 
         // Rebuild the materials with the data key set and our EDK appended,
         // cloning the remaining fields through the accessors.
-        EncryptionMaterials::builder()
+        let materials = EncryptionMaterials::builder()
             .algorithm_suite_id(materials.algorithm_suite_id())
             .encrypted_data_keys(new_edks)
             .encryption_context(materials.encryption_context().clone())
@@ -108,14 +109,13 @@ impl Keyring for LocalKekKeyring {
             .plaintext_data_key(PlaintextDataKey::new(data_key))
             .set_signing_key(materials.signing_key().cloned())
             .set_symmetric_signing_keys(materials.symmetric_signing_keys().map(<[_]>::to_vec))
-            .build()
+            .build()?;
+        OnEncryptOutput::builder().materials(materials).build()
     }
 
-    async fn on_decrypt(
-        &self,
-        materials: DecryptionMaterials,
-        encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MplError> {
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, MplError> {
+        let materials = input.materials();
+
         if materials.plaintext_data_key().is_some() {
             return Err(MplError::from(
                 aws_crypto_mpl::error::InvalidMaterialsError::new(
@@ -128,7 +128,7 @@ impl Keyring for LocalKekKeyring {
         let key_len = materials.algorithm_suite().encryption_key_length();
 
         // Unwrap the data key from the EDK this keyring produced.
-        for edk in encrypted_data_keys {
+        for edk in input.encrypted_data_keys() {
             if edk.key_provider_id() != PROVIDER_ID {
                 continue;
             }
@@ -158,7 +158,7 @@ impl Keyring for LocalKekKeyring {
                         .with_source(e),
                 )
             })?;
-            return DecryptionMaterials::builder()
+            let materials = DecryptionMaterials::builder()
                 .algorithm_suite_id(materials.algorithm_suite_id())
                 .encryption_context(materials.encryption_context().clone())
                 .required_encryption_context_keys(
@@ -167,7 +167,8 @@ impl Keyring for LocalKekKeyring {
                 .plaintext_data_key(PlaintextDataKey::new(data_key))
                 .set_verification_key(materials.verification_key().cloned())
                 .set_symmetric_signing_key(materials.symmetric_signing_key().cloned())
-                .build();
+                .build()?;
+            return OnDecryptOutput::builder().materials(materials).build();
         }
 
         Err(MplError::from(
