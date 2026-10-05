@@ -258,8 +258,8 @@ void test_no_matching_data_key_names_the_keyring() {
     } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
         ESDK_CHECK(e.name() == "NoMatchingDataKey");
         ESDK_CHECK(e.resource().has_value());
-        ESDK_CHECK(e.resource()->type == Aws::Esdk::ResourceType::Keyring);
-        ESDK_CHECK(e.resource()->name == "test-ns/other-key");
+        ESDK_CHECK(e.resource()->type() == Aws::Esdk::ResourceType::Keyring);
+        ESDK_CHECK(e.resource()->name() == "test-ns/other-key");
         ESDK_CHECK(!e.service().has_value());
         const std::string what = e.what();
         ESDK_CHECK(what == "NoMatchingDataKey: decrypt could not get decryption materials (keyring test-ns/other-key)");
@@ -393,8 +393,8 @@ void test_values_this_library_does_not_know() {
         ESDK_CHECK(!e.retry_kind().has_value());
         ESDK_CHECK(!e.service().has_value());
         ESDK_CHECK(e.resource().has_value());
-        ESDK_CHECK(e.resource()->type == Aws::Esdk::ResourceType::Unknown);
-        ESDK_CHECK(e.resource()->name == "my-bucket");
+        ESDK_CHECK(e.resource()->type() == Aws::Esdk::ResourceType::Unknown);
+        ESDK_CHECK(e.resource()->name() == "my-bucket");
         ESDK_CHECK(e.code() == "SomeCode");
         ESDK_CHECK(e.request_id() == "req-1");
     }

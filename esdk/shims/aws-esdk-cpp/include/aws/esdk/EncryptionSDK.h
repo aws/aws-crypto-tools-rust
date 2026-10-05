@@ -162,9 +162,17 @@ enum class ResourceType : std::uint8_t {
 };
 
 /// The resource you need to act on. Other resources involved are named in the message.
-struct Resource {
-    ResourceType type;
-    std::string name;
+class Resource {
+public:
+    Resource(ResourceType type, std::string name) : type_(type), name_(std::move(name)) {}
+    /// What kind of resource this is.
+    ResourceType type() const noexcept { return type_; }
+    /// The resource's name; what it holds depends on type().
+    const std::string& name() const noexcept { return name_; }
+
+private:
+    ResourceType type_;
+    std::string name_;
 };
 
 /// Why a request conflicts with the current state of a resource.
@@ -179,6 +187,7 @@ enum class ConflictReason : std::uint8_t {
 };
 
 /// The details an exception carries beyond its kind and message.
+/// For constructing exceptions in tests; read an exception's details through its accessors.
 struct ErrorDetails {
     bool retryable = false;
     /// Empty when the error is not retryable, or its retry kind is one this library does not know yet.
@@ -216,13 +225,13 @@ public:
     /// empty if it cannot, or if the reason is one this library does not know yet.
     std::optional<RetryKind> retry_kind() const noexcept { return details_.retry_kind; }
     /// The AWS service the failed call went to; empty when no AWS service was involved.
-    const std::optional<Service>& service() const noexcept { return details_.service; }
+    std::optional<Service> service() const noexcept { return details_.service; }
     /// The resource you need to act on; other resources involved are named in the message.
-    const std::optional<Resource>& resource() const noexcept { return details_.resource; }
+    std::optional<Resource> resource() const { return details_.resource; }
     /// The AWS service's error code, such as "AccessDeniedException"; empty unless a service answered.
-    const std::optional<std::string>& code() const noexcept { return details_.code; }
+    std::optional<std::string> code() const { return details_.code; }
     /// The AWS request ID, which AWS Support asks for; empty unless a service answered.
-    const std::optional<std::string>& request_id() const noexcept { return details_.request_id; }
+    std::optional<std::string> request_id() const { return details_.request_id; }
     /// The Rust variant name, such as "Throttling". Stable across releases, for metrics and logs.
     /// Empty for an exception this library raised without a Rust error.
     const std::string& name() const noexcept { return details_.name; }
