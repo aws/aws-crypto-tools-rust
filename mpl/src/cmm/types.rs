@@ -1,0 +1,480 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+//! Inputs and outputs of the [`Cmm`](super::Cmm) operations.
+
+use std::collections::BTreeSet;
+
+use crate::Error;
+use crate::builder::required;
+use crate::structures::{
+    AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
+    EncryptionMaterials,
+};
+
+/// Input for [`Cmm::get_encryption_materials`](super::Cmm::get_encryption_materials).
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct GetEncryptionMaterialsInput {
+    pub(crate) encryption_context: EncryptionContext,
+    pub(crate) commitment_policy: CommitmentPolicy,
+    pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
+    pub(crate) required_encryption_context_keys: Option<BTreeSet<String>>,
+    pub(crate) max_plaintext_length: Option<u64>,
+}
+
+impl GetEncryptionMaterialsInput {
+    /// Start a builder for `GetEncryptionMaterialsInput`.
+    #[must_use]
+    pub fn builder() -> GetEncryptionMaterialsInputBuilder {
+        GetEncryptionMaterialsInputBuilder::default()
+    }
+
+    /// The encryption context the caller supplied. May be empty.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
+
+    /// The commitment policy the algorithm suite must satisfy.
+    #[must_use]
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
+        self.commitment_policy
+    }
+
+    /// The algorithm suite to use. When unset, the CMM picks one from the commitment policy.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
+        self.algorithm_suite_id
+    }
+
+    /// The encryption context keys that must be supplied again at decrypt time.
+    #[must_use]
+    pub fn required_encryption_context_keys(&self) -> Option<&BTreeSet<String>> {
+        self.required_encryption_context_keys.as_ref()
+    }
+
+    /// The maximum plaintext length the materials are for. When unset, there is no bound.
+    #[must_use]
+    pub const fn max_plaintext_length(&self) -> Option<u64> {
+        self.max_plaintext_length
+    }
+}
+
+/// Builder for [`GetEncryptionMaterialsInput`].
+#[derive(Debug, Clone, Default)]
+pub struct GetEncryptionMaterialsInputBuilder {
+    encryption_context: Option<EncryptionContext>,
+    commitment_policy: Option<CommitmentPolicy>,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    required_encryption_context_keys: Option<BTreeSet<String>>,
+    max_plaintext_length: Option<u64>,
+}
+
+impl GetEncryptionMaterialsInputBuilder {
+    /// Set the encryption context the caller supplied. May be empty.
+    /// Required.
+    #[must_use]
+    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(encryption_context.into());
+        self
+    }
+
+    /// Set or clear the encryption context from an `Option`.
+    /// To set a value, use [`Self::encryption_context`].
+    #[must_use]
+    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+        self.encryption_context = encryption_context;
+        self
+    }
+
+    /// Set the commitment policy the algorithm suite must satisfy.
+    /// Required.
+    #[must_use]
+    pub fn commitment_policy(mut self, commitment_policy: impl Into<CommitmentPolicy>) -> Self {
+        self.commitment_policy = Some(commitment_policy.into());
+        self
+    }
+
+    /// Set or clear the commitment policy from an `Option`.
+    /// To set a value, use [`Self::commitment_policy`].
+    #[must_use]
+    pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
+        self.commitment_policy = commitment_policy;
+        self
+    }
+
+    /// Set the algorithm suite to use. When unset, the CMM picks one from the commitment policy.
+    #[must_use]
+    pub fn algorithm_suite_id(mut self, algorithm_suite_id: impl Into<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = Some(algorithm_suite_id.into());
+        self
+    }
+
+    /// Set or clear the algorithm suite id from an `Option`.
+    /// To set a value, use [`Self::algorithm_suite_id`].
+    #[must_use]
+    pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = algorithm_suite_id;
+        self
+    }
+
+    /// Set the encryption context keys that must be supplied again at decrypt time.
+    #[must_use]
+    pub fn required_encryption_context_keys(
+        mut self,
+        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.required_encryption_context_keys = Some(
+            required_encryption_context_keys
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        );
+        self
+    }
+
+    /// Set or clear the required encryption context keys from an `Option`.
+    /// To set a value, use [`Self::required_encryption_context_keys`].
+    #[must_use]
+    pub fn set_required_encryption_context_keys(
+        mut self,
+        required_encryption_context_keys: Option<BTreeSet<String>>,
+    ) -> Self {
+        self.required_encryption_context_keys = required_encryption_context_keys;
+        self
+    }
+
+    /// Set the maximum plaintext length the materials are for. When unset, there is no bound.
+    #[must_use]
+    pub fn max_plaintext_length(mut self, max_plaintext_length: impl Into<u64>) -> Self {
+        self.max_plaintext_length = Some(max_plaintext_length.into());
+        self
+    }
+
+    /// Set or clear the max plaintext length from an `Option`.
+    /// To set a value, use [`Self::max_plaintext_length`].
+    #[must_use]
+    pub fn set_max_plaintext_length(mut self, max_plaintext_length: Option<u64>) -> Self {
+        self.max_plaintext_length = max_plaintext_length;
+        self
+    }
+
+    /// Build the `GetEncryptionMaterialsInput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `encryption_context` or `commitment_policy` is unset.
+    pub fn build(self) -> Result<GetEncryptionMaterialsInput, Error> {
+        Ok(GetEncryptionMaterialsInput {
+            encryption_context: required(self.encryption_context, "encryption_context")?,
+            commitment_policy: required(self.commitment_policy, "commitment_policy")?,
+            algorithm_suite_id: self.algorithm_suite_id,
+            required_encryption_context_keys: self.required_encryption_context_keys,
+            max_plaintext_length: self.max_plaintext_length,
+        })
+    }
+}
+
+/// Output of [`Cmm::get_encryption_materials`](super::Cmm::get_encryption_materials).
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct GetEncryptionMaterialsOutput {
+    pub(crate) encryption_materials: EncryptionMaterials,
+}
+
+impl GetEncryptionMaterialsOutput {
+    /// Start a builder for `GetEncryptionMaterialsOutput`.
+    #[must_use]
+    pub fn builder() -> GetEncryptionMaterialsOutputBuilder {
+        GetEncryptionMaterialsOutputBuilder::default()
+    }
+
+    /// The encryption materials.
+    #[must_use]
+    pub const fn encryption_materials(&self) -> &EncryptionMaterials {
+        &self.encryption_materials
+    }
+
+    /// The encryption materials, consuming the output.
+    #[must_use]
+    pub fn into_encryption_materials(self) -> EncryptionMaterials {
+        self.encryption_materials
+    }
+}
+
+/// Builder for [`GetEncryptionMaterialsOutput`].
+#[derive(Debug, Default)]
+pub struct GetEncryptionMaterialsOutputBuilder {
+    encryption_materials: Option<EncryptionMaterials>,
+}
+
+impl GetEncryptionMaterialsOutputBuilder {
+    /// Set the encryption materials.
+    /// Required.
+    #[must_use]
+    pub fn encryption_materials(
+        mut self,
+        encryption_materials: impl Into<EncryptionMaterials>,
+    ) -> Self {
+        self.encryption_materials = Some(encryption_materials.into());
+        self
+    }
+
+    /// Set or clear the encryption materials from an `Option`.
+    /// To set a value, use [`Self::encryption_materials`].
+    #[must_use]
+    pub fn set_encryption_materials(
+        mut self,
+        encryption_materials: Option<EncryptionMaterials>,
+    ) -> Self {
+        self.encryption_materials = encryption_materials;
+        self
+    }
+
+    /// Build the `GetEncryptionMaterialsOutput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `encryption_materials` is unset.
+    pub fn build(self) -> Result<GetEncryptionMaterialsOutput, Error> {
+        Ok(GetEncryptionMaterialsOutput {
+            encryption_materials: required(self.encryption_materials, "encryption_materials")?,
+        })
+    }
+}
+
+/// Input for [`Cmm::decrypt_materials`](super::Cmm::decrypt_materials).
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct DecryptMaterialsInput {
+    pub(crate) algorithm_suite_id: AlgorithmSuiteId,
+    pub(crate) commitment_policy: CommitmentPolicy,
+    pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
+    pub(crate) encryption_context: EncryptionContext,
+    pub(crate) reproduced_encryption_context: Option<EncryptionContext>,
+}
+
+impl DecryptMaterialsInput {
+    /// Start a builder for `DecryptMaterialsInput`.
+    #[must_use]
+    pub fn builder() -> DecryptMaterialsInputBuilder {
+        DecryptMaterialsInputBuilder::default()
+    }
+
+    /// The algorithm suite in the message header.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+        self.algorithm_suite_id
+    }
+
+    /// The commitment policy the algorithm suite must satisfy.
+    #[must_use]
+    pub const fn commitment_policy(&self) -> CommitmentPolicy {
+        self.commitment_policy
+    }
+
+    /// The encrypted data keys in the message header.
+    #[must_use]
+    pub fn encrypted_data_keys(&self) -> &[EncryptedDataKey] {
+        &self.encrypted_data_keys
+    }
+
+    /// The encryption context in the message header. May be empty.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
+    }
+
+    /// The encryption context the caller expects the message to have.
+    #[must_use]
+    pub fn reproduced_encryption_context(&self) -> Option<&EncryptionContext> {
+        self.reproduced_encryption_context.as_ref()
+    }
+}
+
+/// Builder for [`DecryptMaterialsInput`].
+#[derive(Debug, Clone, Default)]
+pub struct DecryptMaterialsInputBuilder {
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    commitment_policy: Option<CommitmentPolicy>,
+    encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
+    encryption_context: Option<EncryptionContext>,
+    reproduced_encryption_context: Option<EncryptionContext>,
+}
+
+impl DecryptMaterialsInputBuilder {
+    /// Set the algorithm suite in the message header.
+    /// Required.
+    #[must_use]
+    pub fn algorithm_suite_id(mut self, algorithm_suite_id: impl Into<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = Some(algorithm_suite_id.into());
+        self
+    }
+
+    /// Set or clear the algorithm suite id from an `Option`.
+    /// To set a value, use [`Self::algorithm_suite_id`].
+    #[must_use]
+    pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
+        self.algorithm_suite_id = algorithm_suite_id;
+        self
+    }
+
+    /// Set the commitment policy the algorithm suite must satisfy.
+    /// Required.
+    #[must_use]
+    pub fn commitment_policy(mut self, commitment_policy: impl Into<CommitmentPolicy>) -> Self {
+        self.commitment_policy = Some(commitment_policy.into());
+        self
+    }
+
+    /// Set or clear the commitment policy from an `Option`.
+    /// To set a value, use [`Self::commitment_policy`].
+    #[must_use]
+    pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
+        self.commitment_policy = commitment_policy;
+        self
+    }
+
+    /// Set the encrypted data keys in the message header.
+    /// Required.
+    #[must_use]
+    pub fn encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.encrypted_data_keys = Some(encrypted_data_keys.into());
+        self
+    }
+
+    /// Set or clear the encrypted data keys from an `Option`.
+    /// To set a value, use [`Self::encrypted_data_keys`].
+    #[must_use]
+    pub fn set_encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.encrypted_data_keys = encrypted_data_keys;
+        self
+    }
+
+    /// Set the encryption context in the message header. May be empty.
+    /// Required.
+    #[must_use]
+    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(encryption_context.into());
+        self
+    }
+
+    /// Set or clear the encryption context from an `Option`.
+    /// To set a value, use [`Self::encryption_context`].
+    #[must_use]
+    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+        self.encryption_context = encryption_context;
+        self
+    }
+
+    /// Set the encryption context the caller expects the message to have.
+    #[must_use]
+    pub fn reproduced_encryption_context(
+        mut self,
+        reproduced_encryption_context: impl Into<EncryptionContext>,
+    ) -> Self {
+        self.reproduced_encryption_context = Some(reproduced_encryption_context.into());
+        self
+    }
+
+    /// Set or clear the reproduced encryption context from an `Option`.
+    /// To set a value, use [`Self::reproduced_encryption_context`].
+    #[must_use]
+    pub fn set_reproduced_encryption_context(
+        mut self,
+        reproduced_encryption_context: Option<EncryptionContext>,
+    ) -> Self {
+        self.reproduced_encryption_context = reproduced_encryption_context;
+        self
+    }
+
+    /// Build the `DecryptMaterialsInput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id`, `commitment_policy`, `encrypted_data_keys` or `encryption_context` is unset.
+    pub fn build(self) -> Result<DecryptMaterialsInput, Error> {
+        Ok(DecryptMaterialsInput {
+            algorithm_suite_id: required(self.algorithm_suite_id, "algorithm_suite_id")?,
+            commitment_policy: required(self.commitment_policy, "commitment_policy")?,
+            encrypted_data_keys: required(self.encrypted_data_keys, "encrypted_data_keys")?,
+            encryption_context: required(self.encryption_context, "encryption_context")?,
+            reproduced_encryption_context: self.reproduced_encryption_context,
+        })
+    }
+}
+
+/// Output of [`Cmm::decrypt_materials`](super::Cmm::decrypt_materials).
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct DecryptMaterialsOutput {
+    pub(crate) decryption_materials: DecryptionMaterials,
+}
+
+impl DecryptMaterialsOutput {
+    /// Start a builder for `DecryptMaterialsOutput`.
+    #[must_use]
+    pub fn builder() -> DecryptMaterialsOutputBuilder {
+        DecryptMaterialsOutputBuilder::default()
+    }
+
+    /// The decryption materials.
+    #[must_use]
+    pub const fn decryption_materials(&self) -> &DecryptionMaterials {
+        &self.decryption_materials
+    }
+
+    /// The decryption materials, consuming the output.
+    #[must_use]
+    pub fn into_decryption_materials(self) -> DecryptionMaterials {
+        self.decryption_materials
+    }
+}
+
+/// Builder for [`DecryptMaterialsOutput`].
+#[derive(Debug, Default)]
+pub struct DecryptMaterialsOutputBuilder {
+    decryption_materials: Option<DecryptionMaterials>,
+}
+
+impl DecryptMaterialsOutputBuilder {
+    /// Set the decryption materials.
+    /// Required.
+    #[must_use]
+    pub fn decryption_materials(
+        mut self,
+        decryption_materials: impl Into<DecryptionMaterials>,
+    ) -> Self {
+        self.decryption_materials = Some(decryption_materials.into());
+        self
+    }
+
+    /// Set or clear the decryption materials from an `Option`.
+    /// To set a value, use [`Self::decryption_materials`].
+    #[must_use]
+    pub fn set_decryption_materials(
+        mut self,
+        decryption_materials: Option<DecryptionMaterials>,
+    ) -> Self {
+        self.decryption_materials = decryption_materials;
+        self
+    }
+
+    /// Build the `DecryptMaterialsOutput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `decryption_materials` is unset.
+    pub fn build(self) -> Result<DecryptMaterialsOutput, Error> {
+        Ok(DecryptMaterialsOutput {
+            decryption_materials: required(self.decryption_materials, "decryption_materials")?,
+        })
+    }
+}

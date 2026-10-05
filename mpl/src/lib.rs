@@ -1,27 +1,17 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// TODO: give every operation an input type, for consistency with the Dafny MPL
-// and the Smithy model it is generated from. `Cmm` and `BranchKeySupplier`
-// already take one (`EncryptionMaterialsRequest`, `DecryptMaterialsRequest`,
-// `GetBranchKeyIdInput`); `Keystore`, `Keyring` and `Cmc` still take their
-// members as positional parameters, so a member added to a model structure
-// upstream is a breaking change here rather than an additive one. These are
-// customer-implementable traits, so the conversion is breaking and should land
-// in one change rather than trait by trait.
-
 pub mod aws_kms;
-mod client;
+mod builder;
 pub mod cmc;
 pub mod cmm;
 pub mod error;
 pub mod error_chain;
+pub mod key_store;
 pub mod keyring;
-pub mod keystore;
 pub mod shared;
 pub mod structures;
 
-pub use client::*;
 pub use error::Error;
 pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
@@ -46,9 +36,8 @@ pub use cmc::{
     LocalCmcBuilder, MessageUsage, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
     UsageMetadata,
 };
-pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
-pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};
-pub use keystore::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
-    SharedKeystore, encryption_context, kms_config, record,
+pub use cmm::{Cmm, DefaultCmm, SharedCmm};
+pub use key_store::{
+    BranchKeyStore, BranchKeyStoreBuilder, KeyStore, KeyStoreClient, KmsConfiguration,
 };
+pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

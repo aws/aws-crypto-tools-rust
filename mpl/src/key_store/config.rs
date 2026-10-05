@@ -1,25 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Configuration types for the [`Keystore`](super::Keystore) trait.
+//! KMS configuration of a [`KeyStore`](super::KeyStore).
 
-/// Information about a configured keystore, returned by
-/// [`Keystore::get_key_store_info`](super::Keystore::get_key_store_info).
-#[derive(Debug, Clone)]
-pub struct KeyStoreInfo {
-    /// The keystore identifier.
-    pub keystore_id: String,
-    /// The DynamoDB table name.
-    pub keystore_name: String,
-    /// The logical keystore name.
-    pub logical_keystore_name: String,
-    /// The configured AWS KMS grant tokens.
-    pub grant_tokens: Vec<String>,
-    /// The KMS configuration for this keystore.
-    pub kms_configuration: KmsConfiguration,
-}
-
-/// The KMS key configuration for a keystore.
+/// The KMS key configuration for a key store.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum KmsConfiguration {

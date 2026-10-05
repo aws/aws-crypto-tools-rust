@@ -4,12 +4,14 @@
 //! The default Cryptographic Materials Cache: the cache to use when the only
 //! setting that matters is how many entries it holds.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 
-use super::{CacheEntry, Cmc, StormTrackingCmc};
+use super::{
+    Cmc, DeleteCacheEntryInput, DeleteCacheEntryOutput, GetCacheEntryInput, GetCacheEntryOutput,
+    PutCacheEntryInput, PutCacheEntryOutput, StormTrackingCmc,
+};
 use crate::Error;
 use crate::error::Kind;
 
@@ -52,6 +54,13 @@ impl DefaultCmcBuilder {
         self
     }
 
+    /// Set or clear the maximum number of entries, for forwarding an existing `Option`.
+    #[must_use]
+    pub const fn set_entry_capacity(mut self, n: Option<usize>) -> Self {
+        self.entry_capacity = n;
+        self
+    }
+
     /// Construct the cache.
     ///
     /// # Errors
@@ -75,19 +84,28 @@ impl DefaultCmcBuilder {
 
 #[async_trait]
 impl Cmc for DefaultCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
-        self.inner.put_cache_entry(cache_id, entry).await
+    async fn put_cache_entry(
+        &self,
+        input: PutCacheEntryInput,
+    ) -> Result<PutCacheEntryOutput, Error> {
+        self.inner.put_cache_entry(input).await
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
-        self.inner.get_cache_entry(cache_id).await
+    async fn get_cache_entry(
+        &self,
+        input: GetCacheEntryInput,
+    ) -> Result<GetCacheEntryOutput, Error> {
+        self.inner.get_cache_entry(input).await
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
-        self.inner.delete_cache_entry(cache_id).await
+    async fn delete_cache_entry(
+        &self,
+        input: DeleteCacheEntryInput,
+    ) -> Result<DeleteCacheEntryOutput, Error> {
+        self.inner.delete_cache_entry(input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {
-        Cmc::grace_period(&self.inner)
+        self.inner.grace_period()
     }
 }

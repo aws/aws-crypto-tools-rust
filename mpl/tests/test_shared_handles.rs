@@ -3,13 +3,11 @@
 
 //! Converting an existing `Shared*` handle reuses it instead of nesting it.
 
-use aws_config::{BehaviorVersion, SdkConfig};
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::{
-    AesGcm, BranchKeyStore, BranchKeyStoreBuilder, BranchKeySupplier, Cmc, Cmm, DefaultCmm,
-    IntoShared, Keyring, Keystore, KmsConfiguration, LocalCmc, RawAesKeyring,
-    SharedBranchKeySupplier, SharedCmc, SharedCmm, SharedKeyring, SharedKeystore,
+    AesGcm, BranchKeySupplier, Cmc, Cmm, DefaultCmm, IntoShared, Keyring, LocalCmc, RawAesKeyring,
+    SharedBranchKeySupplier, SharedCmc, SharedCmm, SharedKeyring,
 };
 
 fn keyring() -> RawAesKeyring {
@@ -20,35 +18,6 @@ fn keyring() -> RawAesKeyring {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()
         .unwrap()
-}
-
-fn keystore() -> BranchKeyStore {
-    let cfg = SdkConfig::builder()
-        .behavior_version(BehaviorVersion::latest())
-        .build();
-    build_without_io(
-        BranchKeyStore::builder()
-            .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .to_string(),
-            ))
-            .logical_keystore_name("test-logical")
-            .ddb_client(aws_sdk_dynamodb::Client::new(&cfg))
-            .kms_client(aws_sdk_kms::Client::new(&cfg)),
-    )
-}
-
-/// Builds `builder` by polling its future once.
-/// With both clients supplied, `build` does no IO, so it is ready on the first poll.
-fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
-    use std::future::Future;
-    use std::task::{Context, Poll, Waker};
-    let mut fut = std::pin::pin!(builder.build());
-    match fut.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
-        Poll::Ready(result) => result.expect("BranchKeyStore construction must succeed"),
-        Poll::Pending => panic!("build with both clients supplied must not await"),
-    }
 }
 
 fn cache() -> LocalCmc {
@@ -66,7 +35,9 @@ impl BranchKeySupplier for Supplier {
         &self,
         _input: GetBranchKeyIdInput,
     ) -> Result<GetBranchKeyIdOutput, Error> {
-        Ok(GetBranchKeyIdOutput::new("branch-key-id".to_string()))
+        GetBranchKeyIdOutput::builder()
+            .branch_key_id("branch-key-id".to_string())
+            .build()
     }
 }
 
@@ -104,11 +75,6 @@ fn shared_keyring_reuses_handle() {
 #[test]
 fn shared_cmm_reuses_handle() {
     assert_reuses_handle!(SharedCmm, Cmm, DefaultCmm::new(keyring()));
-}
-
-#[test]
-fn shared_keystore_reuses_handle() {
-    assert_reuses_handle!(SharedKeystore, Keystore, keystore());
 }
 
 #[test]

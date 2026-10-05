@@ -18,7 +18,7 @@
 //!   - the AWS KMS keyring (`create_aws_kms_keyring`);
 //!   - the raw RSA keyring (`create_raw_rsa_keyring`) + Dafny RSA key-pair
 //!     generation;
-//!   - the AWS KMS hierarchical keyring wired through a Dafny keystore client.
+//!   - the AWS KMS hierarchical keyring wired through a Dafny key store client.
 //!
 //! Re-enable (and port to the native API) once the native MPL grows a
 //! Required Encryption Context CMM and the corresponding keyrings.
@@ -90,7 +90,7 @@ async fn get_hierarchical_keyring(mpl: &MplClient) -> KeyringRef {
         .build()
         .unwrap();
 
-    let key_store = KeystoreClient::from_conf(key_store_config).unwrap();
+    let key_store = KeyStoreClient::from_conf(key_store_config).unwrap();
 
     mpl.create_aws_kms_hierarchical_keyring()
         .key_store(key_store)

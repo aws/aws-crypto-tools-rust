@@ -119,57 +119,78 @@ enum class ErrorKind : std::uint8_t {
 
 /// Why an error might succeed if the same call is made again later.
 /// The same values as the AWS SDK's retry classification.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
 enum class RetryKind : std::uint8_t {
     /// A connection-level failure, such as a timeout.
-    Transient,
+    Transient = 0,
     /// The service throttled the request.
-    Throttling,
+    Throttling = 1,
     /// The service failed on its side.
-    Server,
+    Server = 2,
     /// The request failed but a retry can succeed.
-    Client,
+    Client = 3,
 };
 
 /// The AWS service an error is about.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
 enum class Service : std::uint8_t {
-    Kms,
-    DynamoDb,
+    Kms = 0,
+    DynamoDb = 1,
 };
 
 /// What kind of resource an error is about.
 /// Not limited to AWS resources: a keyring, a CMM, or the materials cache can be one.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
 enum class ResourceType : std::uint8_t {
     /// A KMS key; the name is its ARN.
-    KmsKey,
+    KmsKey = 0,
     /// A DynamoDB table; the name is the table name.
-    DynamoDbTable,
+    DynamoDbTable = 1,
     /// A hierarchical keyring branch key; the name is its ID.
-    BranchKey,
+    BranchKey = 2,
     /// A cryptographic materials cache; the name is empty.
-    Cache,
+    Cache = 3,
     /// A keyring; the name is the keyring's name.
-    Keyring,
+    Keyring = 4,
     /// A CMM; the name is the CMM's name.
-    Cmm,
+    Cmm = 5,
+    /// A resource this library does not know yet; the name describes it.
+    Unknown = 255,
 };
 
 /// The resource you need to act on. Other resources involved are named in the message.
-struct Resource {
-    ResourceType type;
-    std::string name;
+class Resource {
+public:
+    Resource(ResourceType type, std::string name) : type_(type), name_(std::move(name)) {}
+    /// What kind of resource this is.
+    ResourceType type() const noexcept { return type_; }
+    /// The resource's name; what it holds depends on type().
+    const std::string& name() const noexcept { return name_; }
+
+private:
+    ResourceType type_;
+    std::string name_;
 };
 
 /// Why a request conflicts with the current state of a resource.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
 enum class ConflictReason : std::uint8_t {
     /// The resource already exists, for example create_key with a branch key ID that is in use.
-    AlreadyExists,
+    AlreadyExists = 0,
     /// Another caller changed the resource between this call's read and its write,
     /// for example two version_key calls on the same branch key.
-    ConcurrentModification,
+    ConcurrentModification = 1,
 };
 
 /// The details an exception carries beyond its kind and message.
+/// For constructing exceptions in tests; read an exception's details through its accessors.
 struct ErrorDetails {
+    bool retryable = false;
+    /// Empty when the error is not retryable, or its retry kind is one this library does not know yet.
     std::optional<RetryKind> retry_kind;
     std::optional<Service> service;
     std::optional<Resource> resource;
@@ -185,6 +206,11 @@ struct ErrorDetails {
     std::string backtrace;
 };
 
+namespace detail {
+// Rethrows an encoded ESDK Rust error as the matching exception.
+[[noreturn]] void throw_shim_exception(const std::string& what);
+}  // namespace detail
+
 /// Base exception for every failure this library reports.
 /// Catching this type catches everything the shim can throw.
 class AwsEncryptionSdkException : public std::runtime_error {
@@ -194,17 +220,18 @@ public:
     /// Empty when ESDK Rust reports a kind this library does not know yet.
     std::optional<ErrorKind> kind() const noexcept { return kind_; }
     /// Whether the same call might succeed if retried.
-    bool retryable() const noexcept { return details_.retry_kind.has_value(); }
-    /// Why the same call might succeed if retried; empty if it cannot.
+    bool retryable() const noexcept { return details_.retryable; }
+    /// Why the same call might succeed if retried;
+    /// empty if it cannot, or if the reason is one this library does not know yet.
     std::optional<RetryKind> retry_kind() const noexcept { return details_.retry_kind; }
     /// The AWS service the failed call went to; empty when no AWS service was involved.
-    const std::optional<Service>& service() const noexcept { return details_.service; }
+    std::optional<Service> service() const noexcept { return details_.service; }
     /// The resource you need to act on; other resources involved are named in the message.
-    const std::optional<Resource>& resource() const noexcept { return details_.resource; }
+    std::optional<Resource> resource() const { return details_.resource; }
     /// The AWS service's error code, such as "AccessDeniedException"; empty unless a service answered.
-    const std::optional<std::string>& code() const noexcept { return details_.code; }
+    std::optional<std::string> code() const { return details_.code; }
     /// The AWS request ID, which AWS Support asks for; empty unless a service answered.
-    const std::optional<std::string>& request_id() const noexcept { return details_.request_id; }
+    std::optional<std::string> request_id() const { return details_.request_id; }
     /// The Rust variant name, such as "Throttling". Stable across releases, for metrics and logs.
     /// Empty for an exception this library raised without a Rust error.
     const std::string& name() const noexcept { return details_.name; }
@@ -218,11 +245,14 @@ public:
     const std::string& backtrace() const noexcept { return details_.backtrace; }
 
 protected:
-    AwsEncryptionSdkException(ErrorKind kind, ErrorDetails details, const std::string& msg)
+    /// An empty kind is an ESDK Rust error kind this library does not know yet.
+    AwsEncryptionSdkException(std::optional<ErrorKind> kind, ErrorDetails details, const std::string& msg)
         : std::runtime_error(msg), kind_(kind), details_(std::move(details)), message_(msg) {}
     const ErrorDetails& details() const noexcept { return details_; }
 
 private:
+    friend void detail::throw_shim_exception(const std::string& what);
+
     std::optional<ErrorKind> kind_;
     ErrorDetails details_;
     std::string message_;

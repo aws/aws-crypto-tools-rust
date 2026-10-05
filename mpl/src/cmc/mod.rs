@@ -11,16 +11,24 @@
 pub mod default;
 pub mod entry;
 pub mod local;
+mod operation;
 pub mod storm_tracking;
-
-use std::sync::Arc;
 
 use crate::Error;
 use async_trait::async_trait;
 
 pub use default::{DefaultCmc, DefaultCmcBuilder};
-pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+pub use entry::{
+    BytesUsage, CacheEntry, CacheEntryBuilder, CachedMaterials, MessageUsage, UsageMetadata,
+    UsageMetadataBuilder,
+};
 pub use local::{LocalCmc, LocalCmcBuilder};
+pub use operation::{
+    DeleteCacheEntryInput, DeleteCacheEntryInputBuilder, DeleteCacheEntryOutput,
+    DeleteCacheEntryOutputBuilder, GetCacheEntryInput, GetCacheEntryInputBuilder,
+    GetCacheEntryOutput, GetCacheEntryOutputBuilder, PutCacheEntryInput, PutCacheEntryInputBuilder,
+    PutCacheEntryOutput, PutCacheEntryOutputBuilder,
+};
 pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};
 
 use std::time::Duration;
@@ -33,19 +41,28 @@ pub trait Cmc: Send + Sync {
     /// Mirrors the `Put Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#put-cache-entry).
     //
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error>;
+    async fn put_cache_entry(
+        &self,
+        input: PutCacheEntryInput,
+    ) -> Result<PutCacheEntryOutput, Error>;
 
-    /// Retrieve the cache entry for the supplied cache identifier, returning
-    /// `None` on cache miss. Mirrors the `Get Cache Entry` behavior of the
+    /// Retrieve the cache entry for the supplied cache identifier.
+    /// The output's entry is `None` on a cache miss. Mirrors the `Get Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
     //
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error>;
+    async fn get_cache_entry(
+        &self,
+        input: GetCacheEntryInput,
+    ) -> Result<GetCacheEntryOutput, Error>;
 
     /// Delete the cache entry for the supplied cache identifier. Returns
     /// successfully whether or not an entry was present. Mirrors the
     /// `Delete Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#delete-cache-entry).
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error>;
+    async fn delete_cache_entry(
+        &self,
+        input: DeleteCacheEntryInput,
+    ) -> Result<DeleteCacheEntryOutput, Error>;
 
     /// The storm-tracking grace period, for a cache that refreshes entries
     /// this long before they expire. `None` for a cache without one.
@@ -69,16 +86,25 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Cmc for SharedCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
-        self.0.put_cache_entry(cache_id, entry).await
+    async fn put_cache_entry(
+        &self,
+        input: PutCacheEntryInput,
+    ) -> Result<PutCacheEntryOutput, Error> {
+        self.0.put_cache_entry(input).await
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
-        self.0.get_cache_entry(cache_id).await
+    async fn get_cache_entry(
+        &self,
+        input: GetCacheEntryInput,
+    ) -> Result<GetCacheEntryOutput, Error> {
+        self.0.get_cache_entry(input).await
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
-        self.0.delete_cache_entry(cache_id).await
+    async fn delete_cache_entry(
+        &self,
+        input: DeleteCacheEntryInput,
+    ) -> Result<DeleteCacheEntryOutput, Error> {
+        self.0.delete_cache_entry(input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {

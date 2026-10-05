@@ -4,13 +4,15 @@
 //! AWS KMS Hierarchical Keyring.
 //!
 //! Provides the keyring's construction and configuration surface, its
-//! OnEncrypt and OnDecrypt operations, and the keystore- / cache-fallthrough
+//! OnEncrypt and OnDecrypt operations, and the key store- / cache-fallthrough
 //! they share. The pure-crypto wrap and unwrap operations live in
 //! [`super::branch_key_wrap`] and the cache identifier formulas in
 //! [`super::cache_entry_identifier`].
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::{Cache, Kind, Resource};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -19,64 +21,132 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc, UsageMetadata};
-use crate::keystore::{Keystore, SharedKeystore};
+use crate::cmc::{
+    CacheEntry, CachedMaterials, Cmc, DefaultCmc, GetCacheEntryInput, PutCacheEntryInput, SharedCmc,
+};
+use crate::key_store::KeyStoreClient;
+use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, PlaintextDataKey,
+    PlaintextDataKey,
 };
 
-/// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
-/// `GetBranchKeyIdInput`, whose only member is the encryption context.
-///
-/// A struct rather than a bare `EncryptionContext` parameter so that a member
-/// added to the model later does not break every implementor of the trait.
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// Input for [`BranchKeySupplier::get_branch_key_id`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GetBranchKeyIdInput {
     encryption_context: EncryptionContext,
 }
 
 impl GetBranchKeyIdInput {
-    /// Construct the input from the encryption context of the operation being
-    /// performed.
+    /// Start a builder for `GetBranchKeyIdInput`.
     #[must_use]
-    pub const fn new(encryption_context: EncryptionContext) -> Self {
-        Self { encryption_context }
+    pub fn builder() -> GetBranchKeyIdInputBuilder {
+        GetBranchKeyIdInputBuilder::default()
     }
 
-    /// The encryption context used with this encryption or decryption.
+    /// The encryption context of the encryption or decryption.
     #[must_use]
     pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
 
-/// Output of [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
-/// `GetBranchKeyIdOutput`, whose only member is the branch key id.
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// Builder for [`GetBranchKeyIdInput`].
+#[derive(Debug, Clone, Default)]
+pub struct GetBranchKeyIdInputBuilder {
+    encryption_context: Option<EncryptionContext>,
+}
+
+impl GetBranchKeyIdInputBuilder {
+    /// Set the encryption context of the encryption or decryption.
+    /// Required.
+    #[must_use]
+    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(encryption_context.into());
+        self
+    }
+
+    /// Set or clear the encryption context from an `Option`.
+    /// To set a value, use [`Self::encryption_context`].
+    #[must_use]
+    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+        self.encryption_context = encryption_context;
+        self
+    }
+
+    /// Build the `GetBranchKeyIdInput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `encryption_context` is unset.
+    pub fn build(self) -> Result<GetBranchKeyIdInput, Error> {
+        Ok(GetBranchKeyIdInput {
+            encryption_context: required(self.encryption_context, "encryption_context")?,
+        })
+    }
+}
+
+/// Output of [`BranchKeySupplier::get_branch_key_id`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GetBranchKeyIdOutput {
     branch_key_id: String,
 }
 
 impl GetBranchKeyIdOutput {
-    /// Construct the output from the chosen branch key id.
+    /// Start a builder for `GetBranchKeyIdOutput`.
     #[must_use]
-    pub const fn new(branch_key_id: String) -> Self {
-        Self { branch_key_id }
+    pub fn builder() -> GetBranchKeyIdOutputBuilder {
+        GetBranchKeyIdOutputBuilder::default()
     }
 
-    /// The identifier of the branch key that should wrap or unwrap the data
-    /// key for this operation.
+    /// The identifier of the branch key that wraps or unwraps the data key.
     #[must_use]
     pub fn branch_key_id(&self) -> &str {
         &self.branch_key_id
     }
 
-    /// Consume the output, yielding the branch key id.
+    /// The branch key id, consuming the output.
     #[must_use]
     pub fn into_branch_key_id(self) -> String {
         self.branch_key_id
+    }
+}
+
+/// Builder for [`GetBranchKeyIdOutput`].
+#[derive(Debug, Clone, Default)]
+pub struct GetBranchKeyIdOutputBuilder {
+    branch_key_id: Option<String>,
+}
+
+impl GetBranchKeyIdOutputBuilder {
+    /// Set the identifier of the branch key that wraps or unwraps the data key.
+    /// Required.
+    #[must_use]
+    pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
+        self.branch_key_id = Some(branch_key_id.into());
+        self
+    }
+
+    /// Set or clear the branch key id from an `Option`.
+    /// To set a value, use [`Self::branch_key_id`].
+    #[must_use]
+    pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
+        self.branch_key_id = branch_key_id;
+        self
+    }
+
+    /// Build the `GetBranchKeyIdOutput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `branch_key_id` is unset.
+    pub fn build(self) -> Result<GetBranchKeyIdOutput, Error> {
+        Ok(GetBranchKeyIdOutput {
+            branch_key_id: required(self.branch_key_id, "branch_key_id")?,
+        })
     }
 }
 
@@ -114,7 +184,7 @@ impl BranchKeySupplier for SharedBranchKeySupplier {
 /// AWS KMS Hierarchical Keyring.
 ///
 /// Construct with [`HierarchicalKeyring::builder`].
-/// The [`Keyring`] impl wires the configured cache and keystore into the
+/// The [`Keyring`] impl wires the configured cache and key store into the
 /// OnEncrypt / OnDecrypt algorithms.
 #[derive(Clone)]
 pub struct HierarchicalKeyring {
@@ -122,7 +192,7 @@ pub struct HierarchicalKeyring {
 }
 
 struct HierarchicalKeyringInner {
-    keystore: SharedKeystore,
+    key_store: KeyStoreClient,
 
     ttl: Duration,
 
@@ -137,10 +207,10 @@ struct HierarchicalKeyringInner {
 
     partition_id_bytes: Vec<u8>,
 
-    /// The keystore's logical name, which the cache identifier formulas bind.
-    /// Not a construction parameter: it is read from the keystore's own
+    /// The key store's logical name, which the cache identifier formulas bind.
+    /// Not a construction parameter: it is read from the key store's own
     /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
-    logical_keystore_name: String,
+    logical_key_store_name: String,
 
     /// Cryptographic-materials cache for branch-key materials: the caller's
     /// cache, or a keyring-local `DefaultCmc` built when none is set.
@@ -171,25 +241,21 @@ impl HierarchicalKeyring {
         self.inner.branch_key_id_supplier.as_ref()
     }
 
-    /// The configured keystore.
-    pub fn keystore(&self) -> &SharedKeystore {
-        &self.inner.keystore
+    /// The configured key store.
+    pub fn key_store(&self) -> &KeyStoreClient {
+        &self.inner.key_store
     }
 
     /// The partition id: the UTF-8 bytes of the caller's string,
     /// or the 16 bytes of a v4 UUID the keyring generated.
-    ///
-    /// Not part of the public API; exposed for tests.
-    #[doc(hidden)]
-    pub fn partition_id_bytes(&self) -> &[u8] {
+    #[cfg(feature = "test-utils")]
+    pub(crate) fn partition_id_bytes(&self) -> &[u8] {
         &self.inner.partition_id_bytes
     }
 
     /// The configured cache.
-    ///
-    /// Not part of the public API; exposed for tests.
-    #[doc(hidden)]
-    pub fn cache(&self) -> &SharedCmc {
+    #[cfg(feature = "test-utils")]
+    pub(crate) fn cache(&self) -> &SharedCmc {
         &self.inner.cache
     }
 }
@@ -201,7 +267,7 @@ const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 /// [`HierarchicalKeyring::builder`].
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
-    key_store: Option<SharedKeystore>,
+    key_store: Option<KeyStoreClient>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
@@ -220,10 +286,12 @@ impl std::fmt::Debug for HierarchicalKeyringBuilder {
 }
 
 impl HierarchicalKeyringBuilder {
-    /// The keystore. Required.
+    /// The key store. Required.
+    ///
+    /// Pass a [`KeyStoreClient`], or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
     #[must_use]
-    pub fn key_store(mut self, key_store: impl Keystore + 'static) -> Self {
-        self.key_store = Some(key_store.into_shared());
+    pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
+        self.key_store = Some(key_store.into());
         self
     }
 
@@ -289,7 +357,7 @@ impl HierarchicalKeyringBuilder {
             partition_id,
         } = self;
 
-        let Some(keystore) = key_store else {
+        let Some(key_store) = key_store else {
             return Err(Error::new(Kind::Validation, "a key store is required"));
         };
 
@@ -342,21 +410,22 @@ impl HierarchicalKeyringBuilder {
             None => generate_partition_id()?,
         };
 
-        // Resolve the keystore's logical name once, here, so the OnEncrypt and
+        // Resolve the key store's logical name once, here, so the OnEncrypt and
         // OnDecrypt paths can build cache identifiers without re-reading it.
-        let logical_keystore_name = keystore
+        let logical_key_store_name = key_store
             .get_key_store_info()
+            .send()
             .map_err(|e| Error::wrap("could not read the key store info", e))?
-            .logical_keystore_name;
+            .logical_key_store_name;
 
         Ok(HierarchicalKeyring {
             inner: Arc::new(HierarchicalKeyringInner {
-                keystore,
+                key_store,
                 ttl,
                 branch_key_id,
                 branch_key_id_supplier,
                 partition_id_bytes,
-                logical_keystore_name,
+                logical_key_store_name,
                 cache,
             }),
         })
@@ -384,11 +453,8 @@ fn generate_partition_id() -> Result<Vec<u8>, Error> {
 }
 
 /// Convert the 16-byte representation of a UUID back to its canonical
-/// 36-character hyphenated string form (`8-4-4-4-12`). The output is a
-/// well-formed UUIDv4 string suitable for passing to
-/// [`BranchKeyMaterials::new`] and the wrap/unwrap machinery when the
-/// input bytes were produced by a v4 UUID generator (variant + version
-/// bits already set).
+/// 36-character hyphenated string form (`8-4-4-4-12`), the form the key store
+/// takes as a branch key version.
 fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
     uuid::Uuid::from_bytes(*bytes).hyphenated().to_string()
 }
@@ -396,14 +462,12 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
     /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
-    fn name(&self) -> &str {
-        self.inner.branch_key_id.as_deref().unwrap_or("supplier")
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
     }
 
-    async fn on_encrypt(
-        &self,
-        materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, Error> {
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+        let materials = input.materials;
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let (plaintext_dk, generated) = match materials.plaintext_data_key() {
@@ -414,7 +478,7 @@ impl Keyring for HierarchicalKeyring {
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_ENCRYPT,
             &self.inner.partition_id_bytes,
-            &self.inner.logical_keystore_name,
+            &self.inner.logical_key_store_name,
             &branch_key_id,
             None,
         );
@@ -422,9 +486,10 @@ impl Keyring for HierarchicalKeyring {
         let cached = self
             .inner
             .cache
-            .get_cache_entry(&cache_id)
+            .get_cache_entry(GetCacheEntryInput::builder().identifier(cache_id).build()?)
             .await
-            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?;
+            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?
+            .into_entry();
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -434,18 +499,28 @@ impl Keyring for HierarchicalKeyring {
             _ => {
                 let bkm = self
                     .inner
-                    .keystore
-                    .get_active_branch_key(branch_key_id.clone())
-                    .await?;
+                    .key_store
+                    .get_active_branch_key()
+                    .branch_key_id(&branch_key_id)
+                    .send()
+                    .await?
+                    .branch_key_materials;
 
                 let now = SystemTime::now();
-                let entry = CacheEntry::new(
-                    CachedMaterials::BranchKey(bkm.clone()),
-                    now,
-                    now + self.inner.ttl,
-                    UsageMetadata::default(),
-                );
-                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
+                let entry = CacheEntry::builder()
+                    .materials(CachedMaterials::BranchKey(bkm.clone()))
+                    .creation_time(now)
+                    .expiry_time(now + self.inner.ttl)
+                    .build()?;
+                self.inner
+                    .cache
+                    .put_cache_entry(
+                        PutCacheEntryInput::builder()
+                            .identifier(cache_id)
+                            .entry(entry)
+                            .build()?,
+                    )
+                    .await?;
 
                 branch_key_wrap::wrap(
                     &bkm,
@@ -461,18 +536,19 @@ impl Keyring for HierarchicalKeyring {
             .ciphertext(ciphertext)
             .build()?;
 
-        if generated {
-            materials.add_data_key(plaintext_dk, edk)
+        let materials = if generated {
+            materials.add_data_key(plaintext_dk, edk)?
         } else {
-            materials.add_encrypted_data_key(edk)
-        }
+            materials.add_encrypted_data_key(edk)?
+        };
+        OnEncryptOutput::builder().materials(materials).build()
     }
 
-    async fn on_decrypt(
-        &self,
-        materials: DecryptionMaterials,
-        encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, Error> {
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+        let OnDecryptInput {
+            materials,
+            encrypted_data_keys,
+        } = input;
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
@@ -483,7 +559,7 @@ impl Keyring for HierarchicalKeyring {
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let mut collected_errors: Vec<Error> = Vec::new();
-        for edk in encrypted_data_keys {
+        for edk in &encrypted_data_keys {
             if edk.key_provider_id() != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
             }
@@ -498,7 +574,9 @@ impl Keyring for HierarchicalKeyring {
 
             match self.try_decrypt_edk(&materials, edk, &branch_key_id).await {
                 Ok(plaintext_dk_bytes) => {
-                    return materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes));
+                    let materials =
+                        materials.add_data_key(PlaintextDataKey::new(plaintext_dk_bytes))?;
+                    return OnDecryptOutput::builder().materials(materials).build();
                 }
                 Err(e) => collected_errors.push(e),
             }
@@ -510,7 +588,7 @@ impl Keyring for HierarchicalKeyring {
         // but never mutated) is dropped without modification.
 
         // Nothing was attempted: every supplied EDK was filtered out before
-        // the keystore was consulted, so this is not an aggregate of failures
+        // the key store was consulted, so this is not an aggregate of failures
         // but a distinct one — no encrypted data key matched this keyring.
         if collected_errors.is_empty() {
             return Err(Error::new(
@@ -552,19 +630,11 @@ const CIPHERTEXT_VERSION_LEN: usize = 16;
 
 /// Cache-identifier scope byte for OnEncrypt, passed to
 /// `cache_entry_identifier::build_cache_identifier`.
-///
-/// Hidden from the public API surface; intended for tests that recompute the
-/// identifier independently of the keyring.
-#[doc(hidden)]
-pub const SCOPE_ID_ENCRYPT: u8 = 0x01;
+pub(crate) const SCOPE_ID_ENCRYPT: u8 = 0x01;
 
 /// Cache-identifier scope byte for OnDecrypt, passed to
 /// `cache_entry_identifier::build_cache_identifier`.
-///
-/// Hidden from the public API surface; intended for tests that recompute the
-/// identifier independently of the keyring.
-#[doc(hidden)]
-pub const SCOPE_ID_DECRYPT: u8 = 0x02;
+pub(crate) const SCOPE_ID_DECRYPT: u8 = 0x02;
 
 impl HierarchicalKeyring {
     /// Resolve the branch-key id for this operation: either the
@@ -589,13 +659,15 @@ impl HierarchicalKeyring {
 
         // The input owns its encryption context, so the clone happens only on
         // the supplier path — a static branch key id never pays for it.
-        let input = GetBranchKeyIdInput::new(encryption_context.clone());
+        let input = GetBranchKeyIdInput::builder()
+            .encryption_context(encryption_context.clone())
+            .build()?;
         Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
     }
 
     /// Run the OnDecrypt steps for a single (already-filtered) EDK:
     /// parse the version, compute the cache identifier, do the cache
-    /// and keystore fallthrough to obtain branch-key materials, and
+    /// and key store fallthrough to obtain branch-key materials, and
     /// unwrap the EDK ciphertext. Returns the recovered plaintext
     /// data-key bytes on success.
     ///
@@ -633,7 +705,7 @@ impl HierarchicalKeyring {
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_DECRYPT,
             &self.inner.partition_id_bytes,
-            &self.inner.logical_keystore_name,
+            &self.inner.logical_key_store_name,
             branch_key_id,
             Some(&branch_key_version),
         );
@@ -641,9 +713,10 @@ impl HierarchicalKeyring {
         let cached = self
             .inner
             .cache
-            .get_cache_entry(&cache_id)
+            .get_cache_entry(GetCacheEntryInput::builder().identifier(cache_id).build()?)
             .await
-            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?;
+            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?
+            .into_entry();
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -652,18 +725,29 @@ impl HierarchicalKeyring {
             _ => {
                 let bkm = self
                     .inner
-                    .keystore
-                    .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
-                    .await?;
+                    .key_store
+                    .get_branch_key_version()
+                    .branch_key_id(branch_key_id)
+                    .branch_key_version(&branch_key_version)
+                    .send()
+                    .await?
+                    .branch_key_materials;
 
                 let now = SystemTime::now();
-                let entry = CacheEntry::new(
-                    CachedMaterials::BranchKey(bkm.clone()),
-                    now,
-                    now + self.inner.ttl,
-                    UsageMetadata::default(),
-                );
-                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
+                let entry = CacheEntry::builder()
+                    .materials(CachedMaterials::BranchKey(bkm.clone()))
+                    .creation_time(now)
+                    .expiry_time(now + self.inner.ttl)
+                    .build()?;
+                self.inner
+                    .cache
+                    .put_cache_entry(
+                        PutCacheEntryInput::builder()
+                            .identifier(cache_id)
+                            .entry(entry)
+                            .build()?,
+                    )
+                    .await?;
                 bkm
             }
         };
@@ -702,7 +786,7 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, E
 fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
     let now = SystemTime::now();
     let elapsed = now
-        .duration_since(entry.creation_time)
+        .duration_since(entry.creation_time())
         .unwrap_or(Duration::ZERO);
     elapsed <= ttl
 }
@@ -711,7 +795,7 @@ fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
 /// entry, failing if the entry holds non-branch-key materials (which
 /// would indicate a cache identifier collision).
 fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Error> {
-    match &entry.materials {
+    match entry.materials() {
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
         _ => Err(Error::new(
             Kind::Validation,

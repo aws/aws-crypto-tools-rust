@@ -130,10 +130,10 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::keystore::{
-    BranchKeyStore, Discovery, KmsConfiguration, MrDiscovery, SharedKeystore,
+use aws_crypto_mpl::key_store::{
+    BranchKeyStore, Discovery, KeyStoreClient, KmsConfiguration, MrDiscovery,
 };
+use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Resource, RetryKind, Service};
@@ -210,20 +210,23 @@ mod ffi {
     //= type=implication
     //# - The shim MUST NOT invent error kinds the core library does not define.
     enum ShimErrorKind {
-        Validation,
-        Serialization,
-        Cryptographic,
-        InvalidMaterials,
-        EncryptionContextMismatch,
-        NoMatchingDataKey,
-        AccessDenied,
-        ResourceNotFound,
-        Service,
-        Dispatch,
-        Internal,
-        Io,
-        Throttling,
-        Conflict,
+        Validation = 0,
+        Serialization = 1,
+        Cryptographic = 2,
+        InvalidMaterials = 3,
+        EncryptionContextMismatch = 4,
+        NoMatchingDataKey = 5,
+        AccessDenied = 6,
+        ResourceNotFound = 7,
+        Service = 8,
+        Dispatch = 9,
+        Internal = 10,
+        Io = 11,
+        Throttling = 12,
+        Conflict = 13,
+        /// Reserved, not a kind: an ESDK Rust variant this shim does not map.
+        /// C++ throws the base exception, with no kind.
+        Unknown = 255,
     }
 
     struct EncryptionContextItem {
@@ -429,7 +432,7 @@ struct MplDdbClient {
 }
 
 struct KeyStore {
-    inner: SharedKeystore,
+    inner: KeyStoreClient,
 }
 
 struct Keyring {
@@ -515,13 +518,16 @@ fn encode_err(
     use std::fmt::Write as _;
     // cxx passes only a message string across, not a typed error.
     // The facade decodes this layout back into a typed exception:
-    // `kind=K<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<US>`
+    // `kind=K<US>retryable=Y<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<US>`
     // `conflict_reason=X<US>credentials=B<US>name=V<US>display_len=L<US>full_len=F<RS>{display}{full}{backtrace}`
-    //   - K: the ShimErrorKind repr
+    //   - K: the ShimErrorKind repr; Unknown for a variant the shim does not map
+    //   - Y: 1 when the error is retryable, else 0
     //   - R: transient, throttling, server, client, or empty when not retryable
     //   - S: kms, dynamodb, or empty
-    //   - T: kms_key, dynamodb_table, branch_key, cache, keyring, cmm, or empty
-    //   - N, C, I: empty when the error has none
+    //   - T: kms_key, dynamodb_table, branch_key, cache, keyring, cmm,
+    //     unknown for a resource the shim does not map, or empty
+    //   - N: the resource's name; for unknown, its `Display` text
+    //   - C, I: empty when the error has none
     //   - X: already_exists, concurrent_modification, or empty
     //   - B: 1 when an AccessDenied error is about credentials, else 0
     //   - V: the Rust variant name, such as Throttling
@@ -537,6 +543,11 @@ fn encode_err(
             v.to_owned()
         }
     };
+    let retryable = if err.is_some_and(aws_esdk::Error::is_retryable) {
+        "1"
+    } else {
+        "0"
+    };
     let retry = err
         .and_then(aws_esdk::Error::retry_kind)
         .map_or("", RetryKind::as_str);
@@ -550,7 +561,8 @@ fn encode_err(
         Some(Resource::Cache(_)) => ("cache", String::new()),
         Some(Resource::Keyring(keyring)) => ("keyring", clean(keyring.name())),
         Some(Resource::Cmm(cmm)) => ("cmm", clean(cmm.name())),
-        _ => ("", String::new()),
+        Some(other) => ("unknown", clean(&other.to_string())),
+        None => ("", String::new()),
     };
     let code = err
         .and_then(aws_esdk::Error::code)
@@ -577,7 +589,7 @@ fn encode_err(
     let mut out = String::new();
     let _ = write!(
         out,
-        "kind={}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{sep}conflict_reason={conflict_reason}{sep}credentials={credentials}{sep}name={name}{sep}display_len={}{sep}full_len={}{ERROR_HEADER_END}{display}{full}{backtrace}",
+        "kind={}{sep}retryable={retryable}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{sep}conflict_reason={conflict_reason}{sep}credentials={credentials}{sep}name={name}{sep}display_len={}{sep}full_len={}{ERROR_HEADER_END}{display}{full}{backtrace}",
         kind.repr,
         display.len(),
         full.len(),
@@ -603,7 +615,8 @@ fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
         E::Service(_) => S::Service,
         E::Dispatch(_) => S::Dispatch,
         E::Io(_) => S::Io,
-        _ => S::Internal,
+        E::Internal(_) => S::Internal,
+        _ => S::Unknown,
     }
 }
 
@@ -1193,7 +1206,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
         .ddb_table_name(input.ddb_table_name.clone())
-        .logical_keystore_name(input.logical_key_store_name.clone())
+        .logical_key_store_name(input.logical_key_store_name.clone())
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied KMS configuration to the
         //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
@@ -1220,7 +1233,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
 
     let store = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
     Ok(Box::new(KeyStore {
-        inner: SharedKeystore::new(store),
+        inner: KeyStoreClient::new(store),
     }))
 }
 

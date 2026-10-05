@@ -8,9 +8,9 @@ mod fake_aws;
 
 use async_trait::async_trait;
 use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring};
-use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials, PlaintextDataKey,
-};
+use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
+use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
+use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
 use aws_esdk::{AlgorithmSuiteId, DecryptInput, EncryptInput, Error, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply};
@@ -67,8 +67,9 @@ struct KnownDataKey(RawAesKeyring);
 impl Keyring for KnownDataKey {
     async fn on_encrypt(
         &self,
-        m: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, aws_crypto_mpl::Error> {
+        input: OnEncryptInput,
+    ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
+        let m = input.materials();
         let m = EncryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
             .encrypted_data_keys(m.encrypted_data_keys().to_vec())
@@ -78,15 +79,16 @@ impl Keyring for KnownDataKey {
             .set_signing_key(m.signing_key().cloned())
             .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))
             .build()?;
-        self.0.on_encrypt(m).await
+        self.0
+            .on_encrypt(OnEncryptInput::builder().materials(m).build()?)
+            .await
     }
 
     async fn on_decrypt(
         &self,
-        m: DecryptionMaterials,
-        edks: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, aws_crypto_mpl::Error> {
-        self.0.on_decrypt(m, edks).await
+        input: OnDecryptInput,
+    ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
+        self.0.on_decrypt(input).await
     }
 }
 

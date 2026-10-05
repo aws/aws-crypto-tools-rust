@@ -105,7 +105,7 @@ impl ErrorData {
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {
             if rest.iter().all(|e| e.service() == first.service()) {
-                remote.service = first.service();
+                remote.service = first.service().cloned();
             }
             if rest.iter().all(|e| e.resource() == first.resource()) {
                 remote.resource = first.resource().cloned();
@@ -124,7 +124,7 @@ impl ErrorData {
         let r = &self.remote;
         let details = if remote {
             details(
-                r.service,
+                r.service.as_ref(),
                 r.resource.as_ref(),
                 r.code.as_deref(),
                 r.request_id.as_deref(),
@@ -215,7 +215,7 @@ struct Level<'a> {
 
 /// The details `Display` prints after the message, in order.
 fn details(
-    service: Option<Service>,
+    service: Option<&Service>,
     resource: Option<&Resource>,
     code: Option<&str>,
     request_id: Option<&str>,
@@ -513,7 +513,7 @@ impl Error {
     ///
     /// `None` for an error that is not about an AWS call.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<&Service> {
         match self {
             _ => None,
         }
@@ -598,7 +598,7 @@ impl Error {
             name: self.name(),
             message: data.message.clone(),
             retry: data.retry,
-            service: data.remote.service,
+            service: data.remote.service.clone(),
             resource: data.remote.resource.clone(),
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),
@@ -722,13 +722,13 @@ impl CryptographicError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -809,13 +809,13 @@ impl InternalError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -877,7 +877,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -922,7 +922,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -943,6 +943,14 @@ pub mod builders {
         }
     }
 }
+
+// Fails to compile if `Error` or a variant struct is not `Send + Sync + 'static`.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Error>();
+    assert_send_sync::<CryptographicError>();
+    assert_send_sync::<InternalError>();
+};
 
 #[cfg(test)]
 mod tests {

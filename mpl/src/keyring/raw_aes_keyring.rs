@@ -5,15 +5,15 @@
 
 use crate::Error;
 use crate::error::Kind;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
 
 use crate::Keyring;
-use crate::structures::{
-    AlgorithmSuite, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, PlaintextDataKey,
-};
+use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
+use crate::structures::{AlgorithmSuite, EncryptedDataKey, PlaintextDataKey};
 
 /// Byte width of the authentication-tag-length field of the serialized key
 /// provider information.
@@ -319,14 +319,12 @@ impl RawAesKeyringBuilder {
 #[async_trait]
 impl Keyring for RawAesKeyring {
     /// `{key_namespace}/{key_name}`.
-    fn name(&self) -> &str {
-        &self.inner.name
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.inner.name)
     }
 
-    async fn on_encrypt(
-        &self,
-        materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, Error> {
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+        let materials = input.materials;
         // Serialized before any encryption is attempted, so an unserializable
         // encryption context fails the operation rather than producing an EDK.
         let aad = materials
@@ -334,24 +332,25 @@ impl Keyring for RawAesKeyring {
             .serialize()
             .map_err(|e| Error::wrap("failed to serialize the encryption context", e))?;
 
-        match materials.plaintext_data_key() {
+        let materials = match materials.plaintext_data_key() {
             Some(plaintext_dk) => {
                 let edk = self.wrap_data_key(plaintext_dk, &aad)?;
-                materials.add_encrypted_data_key(edk)
+                materials.add_encrypted_data_key(edk)?
             }
             None => {
                 let plaintext_dk = generate_random_data_key(materials.algorithm_suite())?;
                 let edk = self.wrap_data_key(&plaintext_dk, &aad)?;
-                materials.add_data_key(plaintext_dk, edk)
+                materials.add_data_key(plaintext_dk, edk)?
             }
-        }
+        };
+        OnEncryptOutput::builder().materials(materials).build()
     }
 
-    async fn on_decrypt(
-        &self,
-        materials: DecryptionMaterials,
-        encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, Error> {
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+        let OnDecryptInput {
+            materials,
+            encrypted_data_keys,
+        } = input;
         if materials.plaintext_data_key().is_some() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
@@ -420,7 +419,8 @@ impl Keyring for RawAesKeyring {
                 continue;
             }
 
-            return materials.add_data_key(PlaintextDataKey::new(plaintext_dk));
+            let materials = materials.add_data_key(PlaintextDataKey::new(plaintext_dk))?;
+            return OnDecryptOutput::builder().materials(materials).build();
         }
 
         // The early return above is the only path that produces modified

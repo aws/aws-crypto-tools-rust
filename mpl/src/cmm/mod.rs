@@ -12,15 +12,19 @@
 //! for which error to return.
 
 pub mod default_cmm;
-pub mod request;
+mod types;
 
 use crate::Error;
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
-pub use request::{DecryptMaterialsRequest, EncryptionMaterialsRequest};
-
-use crate::structures::{DecryptionMaterials, EncryptionMaterials};
+pub use types::{
+    DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
+    DecryptMaterialsOutputBuilder, GetEncryptionMaterialsInput, GetEncryptionMaterialsInputBuilder,
+    GetEncryptionMaterialsOutput, GetEncryptionMaterialsOutputBuilder,
+};
 
 /// To hold a CMM whose concrete type is chosen at runtime, use [`SharedCmm`].
 #[async_trait]
@@ -30,9 +34,10 @@ pub trait Cmm: Send + Sync {
     /// The ESDK reports a failure of a caller's CMM with
     /// `resource()` set to [`Resource::Cmm`](crate::error::Resource::Cmm) and this name.
     /// It should be stable and short, and must not contain secrets.
+    /// Return `Cow::Owned` for a name built at runtime.
     /// The default is the type's name.
-    fn name(&self) -> &str {
-        std::any::type_name::<Self>()
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(std::any::type_name::<Self>())
     }
 
     /// Assemble encryption materials for an encrypt request. Mirrors the
@@ -40,16 +45,16 @@ pub trait Cmm: Send + Sync {
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#get-encryption-materials).
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, Error>;
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error>;
 
     /// Assemble decryption materials for a decrypt request. Mirrors the
     /// `Decrypt Materials` behavior of the
     /// [CMM interface specification](../../../spec/framework/cmm-interface.md#decrypt-materials).
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, Error>;
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -63,21 +68,21 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Cmm for SharedCmm {
-    fn name(&self) -> &str {
+    fn name(&self) -> Cow<'_, str> {
         self.0.name()
     }
 
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, Error> {
-        self.0.get_encryption_materials(request).await
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+        self.0.get_encryption_materials(input).await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, Error> {
-        self.0.decrypt_materials(request).await
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error> {
+        self.0.decrypt_materials(input).await
     }
 }

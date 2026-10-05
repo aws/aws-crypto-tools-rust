@@ -29,16 +29,43 @@
 
 #![cfg(feature = "test-utils")]
 
-use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use aws_crypto_mpl::Error;
+
 use aws_crypto_mpl::cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, MessageUsage, UsageMetadata,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, DeleteCacheEntryInput, GetCacheEntryInput,
+    LocalCmc, MessageUsage, PutCacheEntryInput, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
     EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
+
+/// Positional shorthand for the `Cmc` operations.
+#[async_trait::async_trait]
+trait CmcExt: Cmc {
+    async fn put_entry(&self, id: &[u8], entry: CacheEntry) -> Result<(), Error> {
+        let input = PutCacheEntryInput::builder()
+            .identifier(id)
+            .entry(entry)
+            .build()?;
+        self.put_cache_entry(input).await.map(|_| ())
+    }
+
+    async fn get_entry(&self, id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+        let input = GetCacheEntryInput::builder().identifier(id).build()?;
+        Ok(self.get_cache_entry(input).await?.into_entry())
+    }
+
+    async fn delete_entry(&self, id: &[u8]) -> Result<(), Error> {
+        let input = DeleteCacheEntryInput::builder().identifier(id).build()?;
+        self.delete_cache_entry(input).await.map(|_| ())
+    }
+}
+
+impl<T: Cmc + ?Sized> CmcExt for T {}
 
 // Fixtures
 
@@ -79,31 +106,37 @@ fn make_decryption_materials() -> DecryptionMaterials {
 }
 
 fn make_branch_key_materials() -> BranchKeyMaterials {
-    BranchKeyMaterials::new(
-        [0u8; 32],
-        "test-branch-key-id".to_string(),
-        "00000000-0000-4000-8000-000000000000".to_string(),
-        EncryptionContext::new(),
-    )
-    .expect("constructing branch key materials")
+    BranchKeyMaterials::builder()
+        .branch_key([0u8; 32])
+        .branch_key_id("test-branch-key-id".to_string())
+        .branch_key_version("00000000-0000-4000-8000-000000000000".to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .expect("constructing branch key materials")
 }
 
 fn make_beacon_key_materials() -> BeaconKeyMaterials {
-    BeaconKeyMaterials::new(
-        "test-beacon-key-id".to_string(),
-        EncryptionContext::new(),
-        None,
-        Option::<BTreeMap<String, Vec<u8>>>::None,
-    )
+    BeaconKeyMaterials::builder()
+        .beacon_key_id("test-beacon-key-id".to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .unwrap()
 }
 
 fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {
-    CacheEntry::new(
-        CachedMaterials::Encryption(make_encryption_materials()),
-        creation,
-        expiry,
-        UsageMetadata::new(MessageUsage(0), BytesUsage(0)),
-    )
+    CacheEntry::builder()
+        .materials(CachedMaterials::Encryption(make_encryption_materials()))
+        .creation_time(creation)
+        .expiry_time(expiry)
+        .usage_metadata(
+            UsageMetadata::builder()
+                .messages_used(MessageUsage::new(0))
+                .bytes_used(BytesUsage::new(0))
+                .build()
+                .expect("usage metadata builds"),
+        )
+        .build()
+        .expect("cache entry builds")
 }
 
 fn make_entry_with_usage(
@@ -111,12 +144,13 @@ fn make_entry_with_usage(
     expiry: SystemTime,
     usage: UsageMetadata,
 ) -> CacheEntry {
-    CacheEntry::new(
-        CachedMaterials::Encryption(make_encryption_materials()),
-        creation,
-        expiry,
-        usage,
-    )
+    CacheEntry::builder()
+        .materials(CachedMaterials::Encryption(make_encryption_materials()))
+        .creation_time(creation)
+        .expiry_time(expiry)
+        .usage_metadata(usage)
+        .build()
+        .expect("cache entry builds")
 }
 
 /// A reference instant used as the "now" anchor for tests that mix fresh
@@ -146,7 +180,7 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
     let creation = anchor_now();
     let expiry = creation + STANDARD_TTL;
     zero_cap
-        .put_cache_entry(b"id", make_entry_at(creation, expiry))
+        .put_entry(b"id", make_entry_at(creation, expiry))
         .await
         .expect("put on zero-capacity cache succeeds");
     assert_eq!(
@@ -157,7 +191,7 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
 
     // Get on a zero-capacity cache returns Ok(None) — nothing was stored.
     let got = zero_cap
-        .get_cache_entry(b"id")
+        .get_entry(b"id")
         .await
         .expect("get on zero-capacity cache succeeds");
     assert!(
@@ -167,7 +201,7 @@ async fn test_initialization_accepts_zero_and_max_capacity() {
 
     // Delete on a zero-capacity cache is a no-op that returns Ok.
     zero_cap
-        .delete_cache_entry(b"id")
+        .delete_entry(b"id")
         .await
         .expect("delete on zero-capacity cache succeeds");
 
@@ -200,7 +234,7 @@ async fn test_put_within_capacity_does_not_evict() {
     let expiry = now + STANDARD_TTL;
 
     for i in 0..3u8 {
-        cmc.put_cache_entry(&[i], make_entry_at(creation, expiry))
+        cmc.put_entry(&[i], make_entry_at(creation, expiry))
             .await
             .expect("put succeeds");
     }
@@ -208,16 +242,18 @@ async fn test_put_within_capacity_does_not_evict() {
     assert_eq!(cmc.len().expect("len succeeds"), 3);
     for i in 0..3u8 {
         let got = cmc
-            .get_cache_entry(&[i])
+            .get_entry(&[i])
             .await
             .expect("get succeeds")
             .unwrap_or_else(|| panic!("id {i} survives within-capacity puts"));
         assert_eq!(
-            got.expiry_time, expiry,
+            got.expiry_time(),
+            expiry,
             "id {i} returns the expiry_time it was put with",
         );
         assert_eq!(
-            got.creation_time, creation,
+            got.creation_time(),
+            creation,
             "id {i} returns the creation_time it was put with",
         );
     }
@@ -235,17 +271,17 @@ async fn test_put_over_capacity_evicts_lru() {
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
-    cmc.put_cache_entry(b"oldest", make_entry_at(creation, expiry))
+    cmc.put_entry(b"oldest", make_entry_at(creation, expiry))
         .await
         .expect("put oldest succeeds");
-    cmc.put_cache_entry(b"middle", make_entry_at(creation, expiry))
+    cmc.put_entry(b"middle", make_entry_at(creation, expiry))
         .await
         .expect("put middle succeeds");
-    cmc.put_cache_entry(b"newest", make_entry_at(creation, expiry))
+    cmc.put_entry(b"newest", make_entry_at(creation, expiry))
         .await
         .expect("put newest succeeds even though cache was at capacity");
 
-    let evicted = cmc.get_cache_entry(b"oldest").await.expect("get succeeds");
+    let evicted = cmc.get_entry(b"oldest").await.expect("get succeeds");
     assert!(evicted.is_none(), "oldest LRU entry MUST have been evicted");
 }
 
@@ -263,7 +299,7 @@ async fn test_capacity_invariant_holds_after_put_returns() {
     let expiry = now + STANDARD_TTL;
 
     for i in 0..5u8 {
-        cmc.put_cache_entry(&[i], make_entry_at(creation, expiry))
+        cmc.put_entry(&[i], make_entry_at(creation, expiry))
             .await
             .expect("put succeeds");
         assert!(
@@ -289,21 +325,18 @@ async fn test_get_drops_ttl_expired_entry() {
         .build()
         .expect("LocalCmc constructs");
 
-    cmc.put_cache_entry(b"expiring", make_entry_at(creation, expiry))
+    cmc.put_entry(b"expiring", make_entry_at(creation, expiry))
         .await
         .expect("put succeeds");
 
-    let got = cmc
-        .get_cache_entry(b"expiring")
-        .await
-        .expect("get succeeds");
+    let got = cmc.get_entry(b"expiring").await.expect("get succeeds");
     assert!(got.is_none(), "TTL-expired entry MUST NOT be returned");
 }
 
 #[tokio::test]
 async fn test_get_at_exact_expiry_returns_none() {
-    // Boundary: `frozen_now == entry.expiry_time` exactly. The
-    // implementation uses `entry.expiry_time <= now` (inclusive on the
+    // Boundary: `frozen_now == entry.expiry_time()` exactly. The
+    // implementation uses `entry.expiry_time() <= now` (inclusive on the
     // expired side) in BOTH the get-side TTL check and `prune_tail`, so an
     // entry whose expiry equals "now" is TTL-expired and MUST NOT be
     // returned. This test pins the `<=` boundary so a refactor to `<`
@@ -318,7 +351,7 @@ async fn test_get_at_exact_expiry_returns_none() {
         .build()
         .expect("LocalCmc constructs");
 
-    cmc.put_cache_entry(b"at-expiry", make_entry_at(creation, expiry))
+    cmc.put_entry(b"at-expiry", make_entry_at(creation, expiry))
         .await
         .expect("put succeeds");
 
@@ -326,10 +359,7 @@ async fn test_get_at_exact_expiry_returns_none() {
     // already carries the `#get-cache-entry` "MUST NOT return TTL-expired"
     // citation. This test strengthens the SAME requirement at the
     // `<=` boundary so a future refactor to `<` fails loudly.
-    let got = cmc
-        .get_cache_entry(b"at-expiry")
-        .await
-        .expect("get succeeds");
+    let got = cmc.get_entry(b"at-expiry").await.expect("get succeeds");
     assert!(
         got.is_none(),
         "entry whose expiry_time == now MUST NOT be returned",
@@ -363,12 +393,12 @@ async fn test_get_prunes_tail_window() {
 
     // Insert 3 expired (will be the LRU tail) followed by 2 fresh.
     for i in 0..3u8 {
-        cmc.put_cache_entry(&[b'e', i], make_entry_at(creation, expired))
+        cmc.put_entry(&[b'e', i], make_entry_at(creation, expired))
             .await
             .expect("put expired succeeds");
     }
     for i in 0..2u8 {
-        cmc.put_cache_entry(&[b'f', i], make_entry_at(creation, fresh))
+        cmc.put_entry(&[b'f', i], make_entry_at(creation, fresh))
             .await
             .expect("put fresh succeeds");
     }
@@ -377,7 +407,7 @@ async fn test_get_prunes_tail_window() {
     // Trigger a get on a fresh entry — the prune-on-get pass should drop
     // every TTL-expired entry in the LRU tail before returning.
     let _ = cmc
-        .get_cache_entry(&[b'f', 0])
+        .get_entry(&[b'f', 0])
         .await
         .expect("get on fresh entry succeeds");
 
@@ -405,19 +435,19 @@ async fn test_pruning_evicts_all_ttl_expired_in_tail() {
         .expect("LocalCmc constructs");
 
     for i in 0..4u8 {
-        cmc.put_cache_entry(&[b'e', i], make_entry_at(creation, expired))
+        cmc.put_entry(&[b'e', i], make_entry_at(creation, expired))
             .await
             .expect("put expired succeeds");
     }
-    cmc.put_cache_entry(b"fresh", make_entry_at(creation, fresh))
+    cmc.put_entry(b"fresh", make_entry_at(creation, fresh))
         .await
         .expect("put fresh succeeds");
 
     // Drive prune via a get on the fresh entry.
-    let _ = cmc.get_cache_entry(b"fresh").await.expect("get succeeds");
+    let _ = cmc.get_entry(b"fresh").await.expect("get succeeds");
 
     for i in 0..4u8 {
-        let got = cmc.get_cache_entry(&[b'e', i]).await.expect("get succeeds");
+        let got = cmc.get_entry(&[b'e', i]).await.expect("get succeeds");
         assert!(
             got.is_none(),
             "TTL-expired entry e{i} MUST be evicted by pruning"
@@ -446,19 +476,19 @@ async fn test_pruning_does_not_evict_outside_tail() {
     assert_eq!(cmc.entry_pruning_tail_size(), 1);
 
     // Put a fresh entry first — this becomes the LRU tail.
-    cmc.put_cache_entry(b"fresh-tail", make_entry_at(creation, fresh))
+    cmc.put_entry(b"fresh-tail", make_entry_at(creation, fresh))
         .await
         .expect("put fresh-tail succeeds");
     // Put a TTL-expired entry — this becomes the MRU end (outside the
     // 1-entry tail window).
-    cmc.put_cache_entry(b"expired-mru", make_entry_at(creation, expired))
+    cmc.put_entry(b"expired-mru", make_entry_at(creation, expired))
         .await
         .expect("put expired-mru succeeds");
 
     // Trigger a prune by getting an unrelated id (cache miss still
     // executes the prune step before lookup).
     let _ = cmc
-        .get_cache_entry(b"unrelated")
+        .get_entry(b"unrelated")
         .await
         .expect("get unrelated succeeds");
 
@@ -484,19 +514,17 @@ async fn test_put_then_get_returns_inserted_entry() {
     let expiry = now + STANDARD_TTL;
 
     let entry = make_entry_at(creation, expiry);
-    let expected_creation = entry.creation_time;
-    let expected_expiry = entry.expiry_time;
-    cmc.put_cache_entry(b"id-1", entry)
-        .await
-        .expect("put succeeds");
+    let expected_creation = entry.creation_time();
+    let expected_expiry = entry.expiry_time();
+    cmc.put_entry(b"id-1", entry).await.expect("put succeeds");
 
     let got = cmc
-        .get_cache_entry(b"id-1")
+        .get_entry(b"id-1")
         .await
         .expect("get succeeds")
         .expect("entry is present");
-    assert_eq!(got.creation_time, expected_creation);
-    assert_eq!(got.expiry_time, expected_expiry);
+    assert_eq!(got.creation_time(), expected_creation);
+    assert_eq!(got.expiry_time(), expected_expiry);
 }
 
 #[tokio::test]
@@ -504,7 +532,11 @@ async fn test_usage_metadata_round_trips_through_put_get() {
     let now = anchor_now();
     let creation = now;
     let expiry = now + STANDARD_TTL;
-    let usage = UsageMetadata::new(MessageUsage(7), BytesUsage(2048));
+    let usage = UsageMetadata::builder()
+        .messages_used(MessageUsage::new(7))
+        .bytes_used(BytesUsage::new(2048))
+        .build()
+        .expect("usage metadata builds");
 
     // Exercise every `CachedMaterials` variant so this test discharges the
     // abstract-trait "must include all usage metadata" requirement across
@@ -533,27 +565,36 @@ async fn test_usage_metadata_round_trips_through_put_get() {
             .clock(move || now)
             .build()
             .expect("LocalCmc constructs");
-        let entry = CacheEntry::new(materials, creation, expiry, usage);
-        cmc.put_cache_entry(b"id-usage", entry)
+        let entry = CacheEntry::builder()
+            .materials(materials)
+            .creation_time(creation)
+            .expiry_time(expiry)
+            .usage_metadata(usage)
+            .build()
+            .expect("cache entry builds");
+        cmc.put_entry(b"id-usage", entry)
             .await
             .expect("put succeeds");
 
         let got = cmc
-            .get_cache_entry(b"id-usage")
+            .get_entry(b"id-usage")
             .await
             .expect("get succeeds")
             .unwrap_or_else(|| panic!("{label}: entry is present"));
 
         assert_eq!(
-            got.usage_metadata, usage,
+            got.usage_metadata(),
+            usage,
             "{label}: usage metadata must round-trip through put/get"
         );
         assert_eq!(
-            got.creation_time, creation,
+            got.creation_time(),
+            creation,
             "{label}: creation_time must round-trip through put/get"
         );
         assert_eq!(
-            got.expiry_time, expiry,
+            got.expiry_time(),
+            expiry,
             "{label}: expiry_time must round-trip through put/get"
         );
     }
@@ -571,15 +612,23 @@ async fn test_concurrent_put_atomic_visibility() {
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
-    let usage_a = UsageMetadata::new(MessageUsage(11), BytesUsage(111));
-    let usage_b = UsageMetadata::new(MessageUsage(22), BytesUsage(222));
+    let usage_a = UsageMetadata::builder()
+        .messages_used(MessageUsage::new(11))
+        .bytes_used(BytesUsage::new(111))
+        .build()
+        .expect("usage metadata builds");
+    let usage_b = UsageMetadata::builder()
+        .messages_used(MessageUsage::new(22))
+        .bytes_used(BytesUsage::new(222))
+        .build()
+        .expect("usage metadata builds");
 
     let cmc_a = cmc.clone();
     let cmc_b = cmc.clone();
 
     let task_a = tokio::spawn(async move {
         cmc_a
-            .put_cache_entry(
+            .put_entry(
                 b"shared-id",
                 make_entry_with_usage(creation, expiry, usage_a),
             )
@@ -587,7 +636,7 @@ async fn test_concurrent_put_atomic_visibility() {
     });
     let task_b = tokio::spawn(async move {
         cmc_b
-            .put_cache_entry(
+            .put_entry(
                 b"shared-id",
                 make_entry_with_usage(creation, expiry, usage_b),
             )
@@ -604,7 +653,7 @@ async fn test_concurrent_put_atomic_visibility() {
         .expect("task b put succeeds");
 
     let got = cmc
-        .get_cache_entry(b"shared-id")
+        .get_entry(b"shared-id")
         .await
         .expect("get succeeds")
         .expect("entry is present");
@@ -612,9 +661,9 @@ async fn test_concurrent_put_atomic_visibility() {
     // Whichever put won, the stored usage metadata must equal one of the
     // two supplied values verbatim (no torn read across the two fields).
     assert!(
-        got.usage_metadata == usage_a || got.usage_metadata == usage_b,
+        got.usage_metadata() == usage_a || got.usage_metadata() == usage_b,
         "concurrent puts MUST yield one of the two supplied UsageMetadata values, observed {:?}",
-        got.usage_metadata
+        got.usage_metadata()
     );
 }
 
@@ -632,17 +681,14 @@ async fn test_delete_existing_entry_then_get_returns_none() {
     let creation = now;
     let expiry = now + STANDARD_TTL;
 
-    cmc.put_cache_entry(b"id-to-delete", make_entry_at(creation, expiry))
+    cmc.put_entry(b"id-to-delete", make_entry_at(creation, expiry))
         .await
         .expect("put succeeds");
-    cmc.delete_cache_entry(b"id-to-delete")
+    cmc.delete_entry(b"id-to-delete")
         .await
         .expect("delete succeeds");
 
-    let got = cmc
-        .get_cache_entry(b"id-to-delete")
-        .await
-        .expect("get succeeds");
+    let got = cmc.get_entry(b"id-to-delete").await.expect("get succeeds");
     assert!(got.is_none(), "deleted id returns None");
 }
 
@@ -653,7 +699,7 @@ async fn test_delete_missing_entry_returns_ok() {
         .entry_pruning_tail_size(1)
         .build()
         .expect("LocalCmc constructs");
-    cmc.delete_cache_entry(b"never-inserted")
+    cmc.delete_entry(b"never-inserted")
         .await
         .expect("delete on missing id MUST succeed");
 }
@@ -673,7 +719,7 @@ async fn test_is_empty_reflects_stored_count() {
 
     let creation = now;
     let expiry = now + STANDARD_TTL;
-    cmc.put_cache_entry(b"id", make_entry_at(creation, expiry))
+    cmc.put_entry(b"id", make_entry_at(creation, expiry))
         .await
         .expect("put succeeds");
     assert!(
@@ -681,9 +727,7 @@ async fn test_is_empty_reflects_stored_count() {
         "cache with a live entry MUST NOT report empty"
     );
 
-    cmc.delete_cache_entry(b"id")
-        .await
-        .expect("delete succeeds");
+    cmc.delete_entry(b"id").await.expect("delete succeeds");
     assert!(
         cmc.is_empty().expect("is_empty succeeds"),
         "cache MUST report empty after deleting its only entry"
@@ -710,21 +754,18 @@ async fn test_get_evicts_expired_entry_outside_tail_window() {
         .expect("LocalCmc constructs");
 
     // Put a fresh entry first — this becomes the LRU tail entry.
-    cmc.put_cache_entry(b"fresh-tail", make_entry_at(creation, fresh))
+    cmc.put_entry(b"fresh-tail", make_entry_at(creation, fresh))
         .await
         .expect("put fresh-tail succeeds");
     // Put a TTL-expired entry — this becomes MRU and lies OUTSIDE the
     // 1-entry pruning tail window.
-    cmc.put_cache_entry(b"expired-mru", make_entry_at(creation, expired))
+    cmc.put_entry(b"expired-mru", make_entry_at(creation, expired))
         .await
         .expect("put expired-mru succeeds");
 
     // A direct get on the expired MRU entry MUST NOT return it, even
     // though the tail-window prune would not have touched it.
-    let got = cmc
-        .get_cache_entry(b"expired-mru")
-        .await
-        .expect("get succeeds");
+    let got = cmc.get_entry(b"expired-mru").await.expect("get succeeds");
     assert!(
         got.is_none(),
         "TTL-expired entry outside the tail window MUST NOT be returned by get"
@@ -733,7 +774,7 @@ async fn test_get_evicts_expired_entry_outside_tail_window() {
     // And it MUST have been evicted from the cache — a follow-up get
     // remains a miss.
     assert!(
-        cmc.get_cache_entry(b"expired-mru")
+        cmc.get_entry(b"expired-mru")
             .await
             .expect("get succeeds")
             .is_none(),
@@ -758,13 +799,13 @@ async fn test_clone_shares_entries_with_original() {
     let clone = original.clone();
 
     original
-        .put_cache_entry(b"id-1", make_entry_at(now, now + STANDARD_TTL))
+        .put_entry(b"id-1", make_entry_at(now, now + STANDARD_TTL))
         .await
         .expect("put succeeds");
 
     assert!(
         clone
-            .get_cache_entry(b"id-1")
+            .get_entry(b"id-1")
             .await
             .expect("get succeeds")
             .is_some(),

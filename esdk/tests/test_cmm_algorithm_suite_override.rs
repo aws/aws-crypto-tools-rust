@@ -10,9 +10,12 @@ mod test_helpers;
 
 use async_trait::async_trait;
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
+use aws_crypto_mpl::cmm::GetEncryptionMaterialsInput;
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
+use aws_crypto_mpl::cmm::{
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsOutput,
+};
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials};
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;
@@ -27,32 +30,33 @@ struct SuiteOverrideCmm {
 impl Cmm for SuiteOverrideCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MplError> {
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         // Rebuild the inner request, replacing the caller's requested suite
         // with the CMM's chosen suite while carrying the remaining fields
         // through unchanged. The inner default CMM then produces materials
         // bound to the overridden suite.
-        let mut inner_request = EncryptionMaterialsRequest::new(
-            request.encryption_context().clone(),
-            request.commitment_policy(),
-        )
-        .with_algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
-            self.suite,
-        ));
+        let mut inner_request = GetEncryptionMaterialsInput::builder()
+            .encryption_context(request.encryption_context().clone())
+            .commitment_policy(request.commitment_policy())
+            .algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
+                self.suite,
+            ));
         if let Some(keys) = request.required_encryption_context_keys() {
-            inner_request = inner_request.with_required_encryption_context_keys(keys.clone());
+            inner_request = inner_request.required_encryption_context_keys(keys.clone());
         }
         if let Some(len) = request.max_plaintext_length() {
-            inner_request = inner_request.with_max_plaintext_length(len);
+            inner_request = inner_request.max_plaintext_length(len);
         }
-        self.inner.get_encryption_materials(inner_request).await
+        self.inner
+            .get_encryption_materials(inner_request.build()?)
+            .await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MplError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }
