@@ -307,7 +307,6 @@ fn transaction_canceled(reasons: &str) -> Reply {
 
 #[tokio::test]
 async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
-    use aws_crypto_mpl::Keystore;
     use aws_esdk::error::ConflictReason;
     let fake = FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.TransactWriteItems")
@@ -316,7 +315,9 @@ async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
     let err = fake
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
@@ -349,7 +350,6 @@ async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
 
 #[tokio::test]
 async fn create_key_condition_failure_is_an_already_exists_conflict() {
-    use aws_crypto_mpl::Keystore;
     use aws_esdk::error::ConflictReason;
     let fake = FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.TransactWriteItems")
@@ -358,7 +358,10 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
     let err = fake
         .key_store()
         .await
-        .create_key(Some(BRANCH_KEY_ID.into()), Some(EncryptionContext::new()))
+        .create_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .encryption_context(EncryptionContext::new())
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
@@ -374,7 +377,6 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
 
 #[tokio::test]
 async fn a_transaction_conflict_is_a_retryable_service_error() {
-    use aws_crypto_mpl::Keystore;
     let fake = FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.TransactWriteItems")
             .then(|| transaction_canceled(r#"{"Code":"TransactionConflict"}"#))
@@ -382,7 +384,9 @@ async fn a_transaction_conflict_is_a_retryable_service_error() {
     let err = fake
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err();
     assert!(err.is_service(), "{err:?}");
@@ -405,14 +409,15 @@ fn name_is_the_variant_name() {
 
 #[tokio::test]
 async fn version_key_keeps_the_kms_classification_of_the_record_check() {
-    use aws_crypto_mpl::Keystore;
     let version_key_error = |code: &'static str| async move {
         FakeAws::new(move |op, _| {
             (op == "TrentService.ReEncrypt").then(|| Reply::error(400, code, "r"))
         })
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err()
     };
@@ -560,7 +565,6 @@ async fn encrypt_without_an_active_branch_key_names_the_branch_key() {
 
 #[tokio::test]
 async fn create_key_kms_access_denied_names_the_kms_key() {
-    use aws_crypto_mpl::Keystore;
     let fake = on(
         "TrentService.GenerateDataKeyWithoutPlaintext",
         Reply::error(400, "AccessDeniedException", "gdk-denied"),
@@ -568,7 +572,10 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
     let err = fake
         .key_store()
         .await
-        .create_key(Some(BRANCH_KEY_ID.into()), Some(EncryptionContext::new()))
+        .create_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .encryption_context(EncryptionContext::new())
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::AccessDenied(e) = &err else {
@@ -581,11 +588,12 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
 
 #[tokio::test]
 async fn version_key_without_an_active_branch_key_names_the_branch_key() {
-    use aws_crypto_mpl::Keystore;
     let err = on("DynamoDB_20120810.GetItem", Reply::ok("{}"))
         .key_store()
         .await
-        .version_key(BRANCH_KEY_ID.into())
+        .version_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::ResourceNotFound(e) = &err else {
@@ -741,7 +749,7 @@ const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
 async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyring {
     let key_store = aws_crypto_mpl::BranchKeyStore::builder()
         .ddb_table_name(TABLE)
-        .logical_keystore_name(TABLE)
+        .logical_key_store_name(TABLE)
         .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
             Default::default(),
         ))

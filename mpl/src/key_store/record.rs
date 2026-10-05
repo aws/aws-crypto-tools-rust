@@ -7,7 +7,7 @@ use crate::Error;
 use crate::error::{BranchKey, Kind, Resource, Service};
 use std::collections::BTreeMap;
 
-use crate::keystore::attributes::{
+use crate::key_store::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX,
     TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
@@ -22,7 +22,7 @@ pub struct EncryptedRecord {
 
 /// Projects an [`EncryptedRecord`] into the authenticated encryption context,
 /// mirroring the Dafny `ToBranchKeyContext`: every stored attribute except
-/// `enc`, plus a `tablename` attribute holding the logical keystore name.
+/// `enc`, plus a `tablename` attribute holding the logical key store name.
 ///
 /// Attributes present on the item beyond the standard record fields are
 /// carried through verbatim — the spec requires every item attribute (except
@@ -33,7 +33,7 @@ pub struct EncryptedRecord {
 /// dropped defensively.
 pub fn encryption_context_from_item(
     record: &EncryptedRecord,
-    logical_keystore_name: &str,
+    logical_key_store_name: &str,
 ) -> BTreeMap<String, String> {
     let mut ec: BTreeMap<String, String> = record
         .attributes
@@ -44,7 +44,7 @@ pub fn encryption_context_from_item(
 
     ec.insert(
         ATTR_TABLENAME.to_string(),
-        logical_keystore_name.to_string(),
+        logical_key_store_name.to_string(),
     );
 
     ec

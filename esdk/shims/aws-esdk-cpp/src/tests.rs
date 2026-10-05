@@ -7,7 +7,6 @@
 
 use super::*;
 use aws_crypto_mpl::Cmc as _;
-use aws_crypto_mpl::keystore::Keystore as _;
 use ffi::EsdkAlgorithmSuiteId as F;
 use ffi::EsdkCommitmentPolicy as P;
 
@@ -333,7 +332,7 @@ fn max_edks_zero_is_no_limit_positive_is_limit() {
 
 #[test]
 fn make_kms_config_accepts_key_arn() {
-    use aws_crypto_mpl::keystore::KmsConfiguration;
+    use aws_crypto_mpl::key_store::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS key ARN configuration.
@@ -345,7 +344,7 @@ fn make_kms_config_accepts_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_mr_key_arn() {
-    use aws_crypto_mpl::keystore::KmsConfiguration;
+    use aws_crypto_mpl::key_store::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
@@ -357,7 +356,7 @@ fn make_kms_config_accepts_mr_key_arn() {
 
 #[test]
 fn make_kms_config_accepts_discovery() {
-    use aws_crypto_mpl::keystore::KmsConfiguration;
+    use aws_crypto_mpl::key_store::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a discovery configuration.
@@ -369,7 +368,7 @@ fn make_kms_config_accepts_discovery() {
 
 #[test]
 fn make_kms_config_accepts_mr_discovery() {
-    use aws_crypto_mpl::keystore::KmsConfiguration;
+    use aws_crypto_mpl::key_store::KmsConfiguration;
     //= spec/shim/esdk-shim.md#kms-configuration
     //= type=test
     //# - The shim MUST translate a multi-Region-key discovery configuration.
@@ -715,11 +714,11 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
 }
 
 fn hierarchical_keyring_input_with_ttl(
-    keystore: &KeyStore,
+    key_store: &KeyStore,
     ttl: ffi::Duration,
 ) -> ffi::HierarchicalKeyringInput {
     let mut input = unset_hierarchical_keyring_input();
-    input.key_store = keystore as *const KeyStore;
+    input.key_store = key_store as *const KeyStore;
     input.branch_key_id = "branch-key-id".to_string();
     input.ttl = ttl;
     input
@@ -729,10 +728,10 @@ fn hierarchical_keyring_input_with_ttl(
 fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
-    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+    let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
     create_hierarchical_keyring(&hierarchical_keyring_input_with_ttl(
-        &keystore,
+        &key_store,
         ffi::Duration {
             secs: 10,
             nanos: 500_000_000,
@@ -742,7 +741,7 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
 
     let err = expect_err(create_hierarchical_keyring(
         &hierarchical_keyring_input_with_ttl(
-            &keystore,
+            &key_store,
             ffi::Duration {
                 secs: u64::MAX,
                 nanos: 1_000_000_000,
@@ -759,13 +758,13 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
 fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let kms = create_kms_client(&unset_client_config()).expect("kms client");
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
-    let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
+    let key_store = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
     // The default cache's 10 s grace period rejects a 5 s TTL; a local cache
     // has no grace period, so the same TTL is accepted only when the keyring
     // is built around the supplied cache.
     let mut input =
-        hierarchical_keyring_input_with_ttl(&keystore, ffi::Duration { secs: 5, nanos: 0 });
+        hierarchical_keyring_input_with_ttl(&key_store, ffi::Duration { secs: 5, nanos: 0 });
     let err = expect_err(create_hierarchical_keyring(&input));
     assert!(
         err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
@@ -891,8 +890,8 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
 
     let unset = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
-    let info = unset.inner.get_key_store_info().expect("info");
-    assert!(info.grant_tokens.is_empty());
+    let info = unset.inner.get_key_store_info().send().expect("info");
+    assert!(info.grant_tokens().is_empty());
 
     let mut cfg = keystore_config_with_clients(&kms, &ddb);
     cfg.id = ffi::OptString {
@@ -901,9 +900,9 @@ fn create_keystore_forwards_id_and_grant_tokens() {
     };
     cfg.grant_tokens = vec!["g1".to_string(), "g2".to_string()];
     let store = create_keystore(&cfg).expect("key store");
-    let info = store.inner.get_key_store_info().expect("info");
-    assert_eq!(info.keystore_id, "the-id");
-    assert_eq!(info.grant_tokens, vec!["g1", "g2"]);
+    let info = store.inner.get_key_store_info().send().expect("info");
+    assert_eq!(info.key_store_id(), "the-id");
+    assert_eq!(info.grant_tokens(), ["g1", "g2"]);
 }
 
 #[test]

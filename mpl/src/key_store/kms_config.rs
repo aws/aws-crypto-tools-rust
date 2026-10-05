@@ -6,7 +6,7 @@
 use crate::Error;
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
 use crate::error::Kind;
-use crate::keystore::config::KmsConfiguration;
+use crate::key_store::config::KmsConfiguration;
 
 /// The parsed parts of an AWS ARN.
 #[derive(Debug, Clone, PartialEq, Eq)]

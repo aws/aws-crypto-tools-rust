@@ -70,7 +70,7 @@ impl EsdkBenchmark {
             .kms_client(aws_sdk_kms::Client::new(&sdk_config))
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
             .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
             .build()
             .await

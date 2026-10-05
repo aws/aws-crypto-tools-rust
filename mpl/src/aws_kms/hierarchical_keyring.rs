@@ -4,7 +4,7 @@
 //! AWS KMS Hierarchical Keyring.
 //!
 //! Provides the keyring's construction and configuration surface, its
-//! OnEncrypt and OnDecrypt operations, and the keystore- / cache-fallthrough
+//! OnEncrypt and OnDecrypt operations, and the key store- / cache-fallthrough
 //! they share. The pure-crypto wrap and unwrap operations live in
 //! [`super::branch_key_wrap`] and the cache identifier formulas in
 //! [`super::cache_entry_identifier`].
@@ -20,7 +20,7 @@ use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc, UsageMetadata};
-use crate::keystore::{Keystore, SharedKeystore};
+use crate::key_store::KeyStoreClient;
 use crate::shared::IntoShared;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
@@ -114,7 +114,7 @@ impl BranchKeySupplier for SharedBranchKeySupplier {
 /// AWS KMS Hierarchical Keyring.
 ///
 /// Construct with [`HierarchicalKeyring::builder`].
-/// The [`Keyring`] impl wires the configured cache and keystore into the
+/// The [`Keyring`] impl wires the configured cache and key store into the
 /// OnEncrypt / OnDecrypt algorithms.
 #[derive(Clone)]
 pub struct HierarchicalKeyring {
@@ -122,7 +122,7 @@ pub struct HierarchicalKeyring {
 }
 
 struct HierarchicalKeyringInner {
-    keystore: SharedKeystore,
+    key_store: KeyStoreClient,
 
     ttl: Duration,
 
@@ -137,10 +137,10 @@ struct HierarchicalKeyringInner {
 
     partition_id_bytes: Vec<u8>,
 
-    /// The keystore's logical name, which the cache identifier formulas bind.
-    /// Not a construction parameter: it is read from the keystore's own
+    /// The key store's logical name, which the cache identifier formulas bind.
+    /// Not a construction parameter: it is read from the key store's own
     /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
-    logical_keystore_name: String,
+    logical_key_store_name: String,
 
     /// Cryptographic-materials cache for branch-key materials: the caller's
     /// cache, or a keyring-local `DefaultCmc` built when none is set.
@@ -171,9 +171,9 @@ impl HierarchicalKeyring {
         self.inner.branch_key_id_supplier.as_ref()
     }
 
-    /// The configured keystore.
-    pub fn keystore(&self) -> &SharedKeystore {
-        &self.inner.keystore
+    /// The configured key store.
+    pub fn key_store(&self) -> &KeyStoreClient {
+        &self.inner.key_store
     }
 
     /// The partition id: the UTF-8 bytes of the caller's string,
@@ -201,7 +201,7 @@ const DEFAULT_CACHE_ENTRY_CAPACITY: usize = 1000;
 /// [`HierarchicalKeyring::builder`].
 #[derive(Default)]
 pub struct HierarchicalKeyringBuilder {
-    key_store: Option<SharedKeystore>,
+    key_store: Option<KeyStoreClient>,
     ttl: Option<Duration>,
     branch_key_id: Option<String>,
     branch_key_id_supplier: Option<SharedBranchKeySupplier>,
@@ -220,10 +220,12 @@ impl std::fmt::Debug for HierarchicalKeyringBuilder {
 }
 
 impl HierarchicalKeyringBuilder {
-    /// The keystore. Required.
+    /// The key store. Required.
+    ///
+    /// Pass a [`KeyStoreClient`], or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
     #[must_use]
-    pub fn key_store(mut self, key_store: impl Keystore + 'static) -> Self {
-        self.key_store = Some(key_store.into_shared());
+    pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
+        self.key_store = Some(key_store.into());
         self
     }
 
@@ -289,7 +291,7 @@ impl HierarchicalKeyringBuilder {
             partition_id,
         } = self;
 
-        let Some(keystore) = key_store else {
+        let Some(key_store) = key_store else {
             return Err(Error::new(Kind::Validation, "a key store is required"));
         };
 
@@ -342,21 +344,22 @@ impl HierarchicalKeyringBuilder {
             None => generate_partition_id()?,
         };
 
-        // Resolve the keystore's logical name once, here, so the OnEncrypt and
+        // Resolve the key store's logical name once, here, so the OnEncrypt and
         // OnDecrypt paths can build cache identifiers without re-reading it.
-        let logical_keystore_name = keystore
+        let logical_key_store_name = key_store
             .get_key_store_info()
+            .send()
             .map_err(|e| Error::wrap("could not read the key store info", e))?
-            .logical_keystore_name;
+            .logical_key_store_name;
 
         Ok(HierarchicalKeyring {
             inner: Arc::new(HierarchicalKeyringInner {
-                keystore,
+                key_store,
                 ttl,
                 branch_key_id,
                 branch_key_id_supplier,
                 partition_id_bytes,
-                logical_keystore_name,
+                logical_key_store_name,
                 cache,
             }),
         })
@@ -414,7 +417,7 @@ impl Keyring for HierarchicalKeyring {
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_ENCRYPT,
             &self.inner.partition_id_bytes,
-            &self.inner.logical_keystore_name,
+            &self.inner.logical_key_store_name,
             &branch_key_id,
             None,
         );
@@ -434,9 +437,12 @@ impl Keyring for HierarchicalKeyring {
             _ => {
                 let bkm = self
                     .inner
-                    .keystore
-                    .get_active_branch_key(branch_key_id.clone())
-                    .await?;
+                    .key_store
+                    .get_active_branch_key()
+                    .branch_key_id(&branch_key_id)
+                    .send()
+                    .await?
+                    .branch_key_materials;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
@@ -510,7 +516,7 @@ impl Keyring for HierarchicalKeyring {
         // but never mutated) is dropped without modification.
 
         // Nothing was attempted: every supplied EDK was filtered out before
-        // the keystore was consulted, so this is not an aggregate of failures
+        // the key store was consulted, so this is not an aggregate of failures
         // but a distinct one — no encrypted data key matched this keyring.
         if collected_errors.is_empty() {
             return Err(Error::new(
@@ -595,7 +601,7 @@ impl HierarchicalKeyring {
 
     /// Run the OnDecrypt steps for a single (already-filtered) EDK:
     /// parse the version, compute the cache identifier, do the cache
-    /// and keystore fallthrough to obtain branch-key materials, and
+    /// and key store fallthrough to obtain branch-key materials, and
     /// unwrap the EDK ciphertext. Returns the recovered plaintext
     /// data-key bytes on success.
     ///
@@ -633,7 +639,7 @@ impl HierarchicalKeyring {
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_DECRYPT,
             &self.inner.partition_id_bytes,
-            &self.inner.logical_keystore_name,
+            &self.inner.logical_key_store_name,
             branch_key_id,
             Some(&branch_key_version),
         );
@@ -652,9 +658,13 @@ impl HierarchicalKeyring {
             _ => {
                 let bkm = self
                     .inner
-                    .keystore
-                    .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
-                    .await?;
+                    .key_store
+                    .get_branch_key_version()
+                    .branch_key_id(branch_key_id)
+                    .branch_key_version(&branch_key_version)
+                    .send()
+                    .await?
+                    .branch_key_materials;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(

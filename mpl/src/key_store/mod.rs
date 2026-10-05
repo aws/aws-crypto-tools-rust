@@ -1,0 +1,167 @@
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+//! The [`KeyStore`] trait, which every key store implements,
+//! and [`KeyStoreClient`], through which callers use one.
+//!
+//! ```no_run
+//! # async fn example() -> Result<(), aws_crypto_mpl::Error> {
+//! use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
+//!
+//! let key_store = KeyStoreClient::new(
+//!     BranchKeyStore::builder()
+//!         .ddb_table_name("my-table")
+//!         .logical_key_store_name("my-table")
+//!         .kms_configuration(KmsConfiguration::KmsKeyArn(
+//!             "arn:aws:kms:us-west-2:111122223333:key/my-key".to_owned(),
+//!         ))
+//!         .build()
+//!         .await?,
+//! );
+//! let branch_key_id = key_store.create_key().send().await?.into_branch_key_id();
+//! key_store.version_key().branch_key_id(&branch_key_id).send().await?;
+//! # Ok(())
+//! # }
+//! ```
+
+pub mod attributes;
+pub mod branch_key_store;
+mod client;
+pub mod config;
+pub mod encryption_context;
+pub mod kms_config;
+pub(crate) mod kms_ops;
+pub mod record;
+mod types;
+
+use crate::Error;
+use async_trait::async_trait;
+
+pub use branch_key_store::{BranchKeyStore, BranchKeyStoreBuilder};
+pub use client::{
+    CreateKeyFluentBuilder, CreateKeyStoreFluentBuilder, GetActiveBranchKeyFluentBuilder,
+    GetBeaconKeyFluentBuilder, GetBranchKeyVersionFluentBuilder, GetKeyStoreInfoFluentBuilder,
+    KeyStoreClient, VersionKeyFluentBuilder,
+};
+pub use config::{Discovery, KmsConfiguration, MrDiscovery};
+pub use types::{
+    CreateKeyInput, CreateKeyInputBuilder, CreateKeyOutput, CreateKeyOutputBuilder,
+    CreateKeyStoreInput, CreateKeyStoreInputBuilder, CreateKeyStoreOutput,
+    CreateKeyStoreOutputBuilder, GetActiveBranchKeyInput, GetActiveBranchKeyInputBuilder,
+    GetActiveBranchKeyOutput, GetActiveBranchKeyOutputBuilder, GetBeaconKeyInput,
+    GetBeaconKeyInputBuilder, GetBeaconKeyOutput, GetBeaconKeyOutputBuilder,
+    GetBranchKeyVersionInput, GetBranchKeyVersionInputBuilder, GetBranchKeyVersionOutput,
+    GetBranchKeyVersionOutputBuilder, GetKeyStoreInfoInput, GetKeyStoreInfoInputBuilder,
+    GetKeyStoreInfoOutput, GetKeyStoreInfoOutputBuilder, VersionKeyInput, VersionKeyInputBuilder,
+    VersionKeyOutput, VersionKeyOutputBuilder,
+};
+
+/// A key store: the storage and AWS KMS protection of branch keys and beacon keys.
+///
+/// Implement this trait to provide a key store.
+/// To call one, wrap it in a [`KeyStoreClient`].
+///
+/// Uses `#[async_trait]` so that [`KeyStoreClient`] can hold any key store as `dyn KeyStore`.
+#[async_trait]
+pub trait KeyStore: Send + Sync {
+    /// Returns the configuration of this key store.
+    ///
+    /// It is fixed when the key store is constructed,
+    /// so this is synchronous and performs no IO.
+    /// The Hierarchical Keyring reads it once, when it is built.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation reads only in-memory
+    /// configuration and never returns an error. Other implementations may
+    /// return any variant.
+    fn get_key_store_info(
+        &self,
+        input: GetKeyStoreInfoInput,
+    ) -> Result<GetKeyStoreInfoOutput, Error>;
+
+    /// Creates the DynamoDB table that backs this key store, or validates an existing one.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation returns:
+    /// - [`Validation`](crate::Error::Validation): the table exists but does not match the required key store schema.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an Amazon DynamoDB call failed, or returned a success response with no table description or ARN (`Service`); `resource()` is the table.
+    /// - [`Internal`](crate::Error::Internal): building a DynamoDB request failed.
+    ///
+    /// Other implementations may return different variants.
+    async fn create_key_store(
+        &self,
+        input: CreateKeyStoreInput,
+    ) -> Result<CreateKeyStoreOutput, Error>;
+
+    /// Creates a new branch key and its beacon key.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation returns:
+    /// - [`Validation`](crate::Error::Validation): the input is invalid, for example a caller-supplied branch key id without an encryption context, a non-single-key KMS configuration, or an invalid encryption context.
+    /// - [`Conflict`](crate::Error::Conflict): the branch key id already exists; `resource()` is the branch key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no ciphertext (`Service`); `resource()` is the KMS key or the table.
+    /// - [`Internal`](crate::Error::Internal): building a DynamoDB request or formatting the record timestamp failed.
+    ///
+    /// Other implementations may return different variants.
+    async fn create_key(&self, input: CreateKeyInput) -> Result<CreateKeyOutput, Error>;
+
+    /// Rotates the ACTIVE branch key to a new version.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation returns:
+    /// - [`Validation`](crate::Error::Validation): the KMS configuration is not a single key, or the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the ACTIVE record is missing a required attribute or is malformed; `resource()` is the branch key.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): AWS KMS rejected the stored ACTIVE record as tampered with (`InvalidCiphertextException`).
+    /// - [`Conflict`](crate::Error::Conflict): the branch key was rotated concurrently; `resource()` is the branch key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no ciphertext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no ACTIVE record exists for the branch key (`resource()` is the branch key).
+    /// - [`Internal`](crate::Error::Internal): building a DynamoDB request or formatting the record timestamp failed.
+    ///
+    /// Other implementations may return different variants.
+    async fn version_key(&self, input: VersionKeyInput) -> Result<VersionKeyOutput, Error>;
+
+    /// Returns the ACTIVE branch key materials for a branch key.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation returns:
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the key store record is malformed or missing a required attribute; `resource()` is the branch key.
+    /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no plaintext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no key store record exists for the branch key (`resource()` is the branch key).
+    ///
+    /// Other implementations may return different variants.
+    async fn get_active_branch_key(
+        &self,
+        input: GetActiveBranchKeyInput,
+    ) -> Result<GetActiveBranchKeyOutput, Error>;
+
+    /// Returns the branch key materials for a specific version of a branch key.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation returns:
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the key store record is malformed or missing a required attribute; `resource()` is the branch key.
+    /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no plaintext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no key store record exists for the branch key (`resource()` is the branch key).
+    ///
+    /// Other implementations may return different variants.
+    async fn get_branch_key_version(
+        &self,
+        input: GetBranchKeyVersionInput,
+    ) -> Result<GetBranchKeyVersionOutput, Error>;
+
+    /// Returns the beacon key materials for a branch key.
+    ///
+    /// # Errors
+    ///
+    /// The built-in [`BranchKeyStore`] implementation returns:
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the key store record is malformed or missing a required attribute; `resource()` is the branch key.
+    /// - [`Validation`](crate::Error::Validation): the record's `kms-arn` is not compatible with the configured KMS key.
+    /// - [`AccessDenied`](crate::Error::AccessDenied), [`ResourceNotFound`](crate::Error::ResourceNotFound), [`Throttling`](crate::Error::Throttling), [`Service`](crate::Error::Service), [`Dispatch`](crate::Error::Dispatch): an AWS KMS or Amazon DynamoDB call failed, or AWS KMS returned no plaintext (`Service`); `resource()` is the KMS key or the table. `ResourceNotFound` also when no key store record exists for the branch key (`resource()` is the branch key).
+    ///
+    /// Other implementations may return different variants.
+    async fn get_beacon_key(&self, input: GetBeaconKeyInput) -> Result<GetBeaconKeyOutput, Error>;
+}

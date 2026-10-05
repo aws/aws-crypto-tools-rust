@@ -50,17 +50,21 @@
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
-//! # async fn example(store: aws_crypto_mpl::BranchKeyStore) -> Result<(), aws_crypto_mpl::Error> {
-//! use aws_crypto_mpl::Keystore;
+//! # async fn example(key_store: aws_crypto_mpl::KeyStoreClient) -> Result<(), aws_crypto_mpl::Error> {
 //! use aws_crypto_mpl::error::{ConflictReason, Error};
 //!
-//! match store.version_key("my-branch-key".into()).await {
+//! match key_store.version_key().branch_key_id("my-branch-key").send().await {
+//!     Ok(_) => {}
 //!     // Another caller rotated the branch key first; it has a new version already.
-//!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::ConcurrentModification) => Ok(()),
-//!     other => other,
-//! }?;
+//!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::ConcurrentModification) => {}
+//!     Err(e) => return Err(e),
+//! }
 //!
-//! match store.create_key(Some("my-branch-key".into()), Some(Default::default())).await {
+//! let create = key_store
+//!     .create_key()
+//!     .branch_key_id("my-branch-key")
+//!     .encryption_context(aws_crypto_mpl::structures::EncryptionContext::new());
+//! match create.send().await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.
 //!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::AlreadyExists) => {}

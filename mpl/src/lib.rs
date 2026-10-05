@@ -2,22 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // TODO: give every operation an input type, for consistency with the Dafny MPL
-// and the Smithy model it is generated from. `Cmm` and `BranchKeySupplier`
-// already take one (`EncryptionMaterialsRequest`, `DecryptMaterialsRequest`,
-// `GetBranchKeyIdInput`); `Keystore`, `Keyring` and `Cmc` still take their
+// and the Smithy model it is generated from. `KeyStore`, `Cmm` and
+// `BranchKeySupplier` already take one; `Keyring` and `Cmc` still take their
 // members as positional parameters, so a member added to a model structure
-// upstream is a breaking change here rather than an additive one. These are
-// customer-implementable traits, so the conversion is breaking and should land
-// in one change rather than trait by trait.
+// upstream is a breaking change here rather than an additive one.
 
 pub mod aws_kms;
+mod builder;
 mod client;
 pub mod cmc;
 pub mod cmm;
 pub mod error;
 pub mod error_chain;
+pub mod key_store;
 pub mod keyring;
-pub mod keystore;
 pub mod shared;
 pub mod structures;
 
@@ -47,8 +45,8 @@ pub use cmc::{
     UsageMetadata,
 };
 pub use cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest, SharedCmm};
-pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};
-pub use keystore::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
-    SharedKeystore, encryption_context, kms_config, record,
+pub use key_store::{
+    BranchKeyStore, BranchKeyStoreBuilder, KeyStore, KeyStoreClient, KmsConfiguration,
+    encryption_context, kms_config, record,
 };
+pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

@@ -130,10 +130,10 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
-use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::keystore::{
-    BranchKeyStore, Discovery, KmsConfiguration, MrDiscovery, SharedKeystore,
+use aws_crypto_mpl::key_store::{
+    BranchKeyStore, Discovery, KeyStoreClient, KmsConfiguration, MrDiscovery,
 };
+use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Resource, RetryKind, Service};
@@ -429,7 +429,7 @@ struct MplDdbClient {
 }
 
 struct KeyStore {
-    inner: SharedKeystore,
+    inner: KeyStoreClient,
 }
 
 struct Keyring {
@@ -1193,7 +1193,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.
         .ddb_table_name(input.ddb_table_name.clone())
-        .logical_keystore_name(input.logical_key_store_name.clone())
+        .logical_key_store_name(input.logical_key_store_name.clone())
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied KMS configuration to the
         //# core ESDK, converted as defined in [KMS configuration](#kms-configuration).
@@ -1220,7 +1220,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
 
     let store = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
     Ok(Box::new(KeyStore {
-        inner: SharedKeystore::new(store),
+        inner: KeyStoreClient::new(store),
     }))
 }
 

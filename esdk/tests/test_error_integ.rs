@@ -12,7 +12,8 @@ use aws_crypto_mpl::aws_sdk_dynamodb;
 use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::{BranchKeyStore, HierarchicalKeyring, Keystore, KmsConfiguration};
+use aws_crypto_mpl::structures::EncryptionContext;
+use aws_crypto_mpl::{BranchKeyStore, HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
 use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
 use aws_esdk::{EncryptInput, encrypt};
 
@@ -35,7 +36,7 @@ async fn sdk_config() -> aws_config::SdkConfig {
         .await
 }
 
-async fn key_store(table: &str, kms_key_arn: &str) -> BranchKeyStore {
+async fn key_store(table: &str, kms_key_arn: &str) -> KeyStoreClient {
     let config = sdk_config().await;
     key_store_with(
         table,
@@ -51,19 +52,20 @@ async fn key_store_with(
     kms_key_arn: &str,
     kms: aws_sdk_kms::Client,
     ddb: aws_sdk_dynamodb::Client,
-) -> BranchKeyStore {
+) -> KeyStoreClient {
     BranchKeyStore::builder()
         .ddb_table_name(table)
-        .logical_keystore_name(TABLE)
+        .logical_key_store_name(TABLE)
         .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.to_owned()))
         .kms_client(kms)
         .ddb_client(ddb)
         .build()
         .await
         .expect("the key store configuration is valid")
+        .into()
 }
 
-async fn encrypt_error(key_store: BranchKeyStore, branch_key_id: &str) -> Error {
+async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str) -> Error {
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store)
         .branch_key_id(branch_key_id)
@@ -167,7 +169,8 @@ async fn integ_create_key_with_a_missing_kms_key_names_the_kms_key() {
     // when the caller's permissions do not cover the key ID.
     let err = key_store(TABLE, MISSING_KMS_KEY_ARN)
         .await
-        .create_key(None, None)
+        .create_key()
+        .send()
         .await
         .unwrap_err();
     let (service, resource) = match &err {
@@ -189,7 +192,8 @@ async fn integ_create_key_with_a_missing_kms_key_names_the_kms_key() {
 async fn integ_create_key_with_another_accounts_kms_key_is_access_denied() {
     let err = key_store(TABLE, OTHER_ACCOUNT_KMS_KEY_ARN)
         .await
-        .create_key(None, None)
+        .create_key()
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::AccessDenied(e) = &err else {
@@ -209,10 +213,10 @@ async fn integ_create_key_with_another_accounts_kms_key_is_access_denied() {
 async fn integ_create_key_with_an_existing_id_is_an_already_exists_conflict() {
     let err = key_store(TABLE, KMS_KEY_ARN)
         .await
-        .create_key(
-            Some(BRANCH_KEY_ID.into()),
-            Some([("purpose", "test")].into_iter().collect()),
-        )
+        .create_key()
+        .branch_key_id(BRANCH_KEY_ID)
+        .encryption_context(EncryptionContext::from_iter([("purpose", "test")]))
+        .send()
         .await
         .unwrap_err();
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
@@ -241,7 +245,7 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
     let config = sdk_config().await;
     let key_store = BranchKeyStore::builder()
         .ddb_table_name(TABLE)
-        .logical_keystore_name(TABLE)
+        .logical_key_store_name(TABLE)
         .kms_configuration(KmsConfiguration::Discovery(Default::default()))
         .kms_client(aws_sdk_kms::Client::new(&config))
         .ddb_client(aws_sdk_dynamodb::Client::new(&config))
