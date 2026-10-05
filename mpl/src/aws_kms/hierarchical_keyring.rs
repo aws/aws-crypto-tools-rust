@@ -11,6 +11,7 @@
 
 use crate::Error;
 use crate::error::{Cache, Kind, Resource};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -398,8 +399,8 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
     /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
-    fn name(&self) -> &str {
-        self.inner.branch_key_id.as_deref().unwrap_or("supplier")
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
     }
 
     async fn on_encrypt(

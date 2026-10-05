@@ -434,10 +434,12 @@ fn classify_core_error_maps_each_variant_to_the_same_name() {
     }
 }
 
-/// The `kind=K<US>retry=R` prefix the facade decodes.
+/// The `kind=K<US>retryable=Y<US>retry=R` prefix the facade decodes.
 fn err_prefix(kind: ffi::ShimErrorKind, retry: &str) -> String {
+    let sep = ERROR_FIELD_SEPARATOR;
+    let retryable = u8::from(!retry.is_empty());
     format!(
-        "kind={}{ERROR_FIELD_SEPARATOR}retry={retry}{ERROR_FIELD_SEPARATOR}",
+        "kind={}{sep}retryable={retryable}{sep}retry={retry}{sep}",
         kind.repr
     )
 }

@@ -359,7 +359,7 @@ fn assert_malformed(err: &aws_crypto_mpl::Error) {
     let aws_crypto_mpl::Error::InvalidMaterials(e) = err else {
         panic!("expected InvalidMaterials, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new("test-id")))
