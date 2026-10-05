@@ -1,0 +1,31 @@
+[package]
+name = "aws-crypto-test-vectors"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "CLI tool that generates and consumes test-vector manifests for AWS Crypto Tools Rust crates (mpl)."
+authors = ["AWS-CryptoTools"]
+
+[[bin]]
+name = "test-vectors"
+path = "src/main.rs"
+
+[lib]
+name = "aws_crypto_test_vectors"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "=1.0.99"
+async-trait = "=0.1.83"
+aws-crypto-mpl = { path = "../mpl" }
+base64 = "=0.22.1"
+clap = { version = "=4.5.20", features = ["derive"] }
+indexmap = { version = "=2.6.0", features = ["serde"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.140", features = ["preserve_order"] }
+thiserror = "=1.0.69"
+tokio = { version = "=1.49.0", features = ["rt", "macros"], default-features = false }
+uuid = { version = "=1.23.3", features = ["v4", "v5"] }
+
+[dev-dependencies]
+tempfile = "=3.14.0"

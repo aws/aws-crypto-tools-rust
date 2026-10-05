@@ -9,7 +9,15 @@
 //! mirrors the AWS SDK for Rust's older operation-error convention — a public
 //! `kind` enum carrying a categorisation, plus a free-form human-readable
 //! message and an optional lower-level `cause` exposed through
-//! [`std::error::Error::source`].
+//! [`std::error::Error::source`]. See for example
+//! <https://github.com/awslabs/aws-sdk-rust/blob/v0.0.20-alpha/sdk/kms/src/error.rs>
+//! where each KMS operation error is a struct with a `kind` field whose enum
+//! variants enumerate the SDK-recognised failure categories. Customers
+//! consuming the MPL want a SINGLE error type to filter on at the call site
+//! (`match err.kind() { ... }` or `if matches!(err.kind(), ...)`), then drill
+//! into the message for diagnostics. A separate `KeyringError`, `CmmError`,
+//! `MaterialsValidationError` zoo would force the customer to either match on
+//! a sum-of-sums or convert each into their own application error.
 
 use std::fmt;
 use std::sync::Arc;
@@ -69,7 +77,8 @@ pub struct MaterialsError {
     pub message: String,
     /// The lower-level error that caused this error, if any. Exposed
     /// through [`std::error::Error::source`] so consumers can walk the
-    /// error chain. Not compared by [`PartialEq`].
+    /// error chain. Not compared by [`PartialEq`] because `dyn Error` does
+    /// not implement [`Eq`].
     pub cause: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
     /// Every failure collected while attempting an operation that ultimately
     /// failed — for example, a keyring's `on_decrypt` trying each candidate

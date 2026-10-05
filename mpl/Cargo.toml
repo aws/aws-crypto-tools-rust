@@ -22,6 +22,10 @@ uuid = { version = "=1.23.3", features = ["v4"] }
 default = []
 test-utils = []
 
+[[example]]
+name = "aws_kms_hierarchical"
+path = "examples/aws_kms_hierarchical/main.rs"
+
 [dev-dependencies]
 # Used only by tests, as an implementation-independent digest oracle for the
 # cache-identifier byte-layout assertions.
