@@ -16,7 +16,10 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use lru::LruCache;
 
-use super::{CacheEntry, Cmc};
+use super::{
+    CacheEntry, Cmc, DeleteCacheEntryInput, DeleteCacheEntryOutput, GetCacheEntryInput,
+    GetCacheEntryOutput, PutCacheEntryInput, PutCacheEntryOutput,
+};
 
 /// Internal storage type — the `lru` crate's `LruCache` keyed by cache id
 /// with `Arc<CacheEntry>` values so `get` can hand out a reference-counted
@@ -126,6 +129,38 @@ impl LocalCmc {
         Ok(self.len()? == 0)
     }
 
+    /// Look up a fresh entry, pruning the tail and evicting the entry if it
+    /// has TTL-expired.
+    pub(crate) fn get_fresh(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+        let mut inner = self
+            .inner
+            .store
+            .lock()
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
+        let Some(cache) = inner.as_mut() else {
+            return Ok(None);
+        };
+
+        self.prune_tail(cache);
+
+        let now = (self.inner.now)();
+        // Peek first (no LRU promotion) so a TTL-expired entry is not
+        // promoted before being evicted.
+        let is_fresh = cache.peek(cache_id).map(|entry| entry.expiry_time() > now);
+        match is_fresh {
+            // Fresh: promote to MRU via `get` and hand back an Arc clone.
+            Some(true) => Ok(cache.get(cache_id).cloned()),
+            // Expired: evict and report a miss. The prune step above may
+            // have already removed this entry if it was in the tail
+            // window; if so, `pop` is a no-op.
+            Some(false) => {
+                cache.pop(cache_id);
+                Ok(None)
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Walk the `entry_pruning_tail_size` least-recently-used entries and
     /// drop any that have TTL-expired. Holds the inner Mutex for the
     /// duration of the walk.
@@ -143,7 +178,7 @@ impl LocalCmc {
             .iter()
             .rev()
             .take(take_n)
-            .filter(|(_, entry)| entry.expiry_time <= now)
+            .filter(|(_, entry)| entry.expiry_time() <= now)
             .map(|(k, _)| k.clone())
             .collect();
         for cache_id in &to_remove {
@@ -180,11 +215,26 @@ impl LocalCmcBuilder {
         self
     }
 
+    /// Set or clear the maximum number of entries, for forwarding an existing `Option`.
+    #[must_use]
+    pub const fn set_entry_capacity(mut self, n: Option<usize>) -> Self {
+        self.entry_capacity = n;
+        self
+    }
+
     /// Set the number of least-recently-used entries each get checks for
     /// expired entries to evict. Defaults to 1.
     #[must_use]
     pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
+        self
+    }
+
+    /// Set or clear `entry_pruning_tail_size`, for forwarding an existing `Option`.
+    /// `None` applies the default documented on [`entry_pruning_tail_size`](Self::entry_pruning_tail_size).
+    #[must_use]
+    pub const fn set_entry_pruning_tail_size(mut self, n: Option<usize>) -> Self {
+        self.entry_pruning_tail_size = n;
         self
     }
 
@@ -225,7 +275,11 @@ impl LocalCmcBuilder {
 
 #[async_trait]
 impl Cmc for LocalCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
+    async fn put_cache_entry(
+        &self,
+        input: PutCacheEntryInput,
+    ) -> Result<PutCacheEntryOutput, Error> {
+        let (identifier, entry) = input.into_parts();
         let mut inner = self
             .inner
             .store
@@ -234,55 +288,36 @@ impl Cmc for LocalCmc {
         let Some(cache) = inner.as_mut() else {
             // Zero-capacity cache: never store. Silently drop the entry so
             // the post-condition `len == 0 <= entry_capacity` holds.
-            return Ok(());
+            return Ok(PutCacheEntryOutput::default());
         };
         // `LruCache::put` evicts the LRU entry before insertion when the
         // cache is at capacity, keeping `len <= entry_capacity` at all
         // observation points.
-        cache.put(cache_id.to_vec(), Arc::new(entry));
-        Ok(())
+        cache.put(identifier, Arc::new(entry));
+        Ok(PutCacheEntryOutput::default())
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+    async fn get_cache_entry(
+        &self,
+        input: GetCacheEntryInput,
+    ) -> Result<GetCacheEntryOutput, Error> {
+        GetCacheEntryOutput::builder()
+            .set_entry(self.get_fresh(input.identifier())?)
+            .build()
+    }
+
+    async fn delete_cache_entry(
+        &self,
+        input: DeleteCacheEntryInput,
+    ) -> Result<DeleteCacheEntryOutput, Error> {
         let mut inner = self
             .inner
             .store
             .lock()
             .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
-        let Some(cache) = inner.as_mut() else {
-            return Ok(None);
-        };
-
-        self.prune_tail(cache);
-
-        let now = (self.inner.now)();
-        // Peek first (no LRU promotion) so a TTL-expired entry is not
-        // promoted before being evicted.
-        let is_fresh = cache.peek(cache_id).map(|entry| entry.expiry_time > now);
-        match is_fresh {
-            // Fresh: promote to MRU via `get` and hand back an Arc clone.
-            Some(true) => Ok(cache.get(cache_id).cloned()),
-            // Expired: evict and report a miss. The prune step above may
-            // have already removed this entry if it was in the tail
-            // window; if so, `pop` is a no-op.
-            Some(false) => {
-                cache.pop(cache_id);
-                Ok(None)
-            }
-            None => Ok(None),
+        if let Some(cache) = inner.as_mut() {
+            cache.pop(input.identifier());
         }
-    }
-
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
-        let mut inner = self
-            .inner
-            .store
-            .lock()
-            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
-        let Some(cache) = inner.as_mut() else {
-            return Ok(());
-        };
-        cache.pop(cache_id);
-        Ok(())
+        Ok(DeleteCacheEntryOutput::default())
     }
 }

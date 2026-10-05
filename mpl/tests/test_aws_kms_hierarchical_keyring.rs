@@ -1448,7 +1448,7 @@ mod onencrypt {
     /// The entry's own expiry is an hour out, so only the keyring's TTL check can reject it.
     async fn on_encrypt_consults_keystore_for_entry_aged(age: Duration) -> bool {
         use aws_crypto_mpl::Cmc;
-        use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials, UsageMetadata};
+        use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials, PutCacheEntryInput};
         use std::time::SystemTime;
 
         const PARTITION: &str = "partition-id";
@@ -1458,21 +1458,25 @@ mod onencrypt {
             .build()
             .unwrap();
         let now = SystemTime::now();
+        let entry = CacheEntry::builder()
+            .materials(CachedMaterials::BranchKey(fake_branch_key_materials()))
+            .creation_time(now - age)
+            .expiry_time(now + Duration::from_secs(3600))
+            .build()
+            .unwrap();
         cache
             .put_cache_entry(
-                &build_cache_identifier(
-                    SCOPE_ID_ENCRYPT,
-                    PARTITION.as_bytes(),
-                    FAKE_LOGICAL_KEYSTORE_NAME,
-                    FAKE_BRANCH_KEY_ID,
-                    None,
-                ),
-                CacheEntry::new(
-                    CachedMaterials::BranchKey(fake_branch_key_materials()),
-                    now - age,
-                    now + Duration::from_secs(3600),
-                    UsageMetadata::default(),
-                ),
+                PutCacheEntryInput::builder()
+                    .identifier(build_cache_identifier(
+                        SCOPE_ID_ENCRYPT,
+                        PARTITION.as_bytes(),
+                        FAKE_LOGICAL_KEYSTORE_NAME,
+                        FAKE_BRANCH_KEY_ID,
+                        None,
+                    ))
+                    .entry(entry)
+                    .build()
+                    .unwrap(),
             )
             .await
             .unwrap();

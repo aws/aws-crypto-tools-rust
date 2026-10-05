@@ -4,7 +4,7 @@
 // TODO: give every operation an input type, for consistency with the Dafny MPL
 // and the Smithy model it is generated from. `Cmm` and `BranchKeySupplier`
 // already take one (`EncryptionMaterialsRequest`, `DecryptMaterialsRequest`,
-// `GetBranchKeyIdInput`); `Keystore`, `Keyring` and `Cmc` still take their
+// `GetBranchKeyIdInput`), as does `Cmc`; `Keystore` and `Keyring` still take their
 // members as positional parameters, so a member added to a model structure
 // upstream is a breaking change here rather than an additive one. These are
 // customer-implementable traits, so the conversion is breaking and should land

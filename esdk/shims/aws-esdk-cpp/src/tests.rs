@@ -816,7 +816,7 @@ fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
             .expect("storm-tracking cache should build");
     assert_eq!(cache.entry_capacity(), 10);
     assert_eq!(cache.entry_pruning_tail_size(), 1);
-    assert_eq!(cache.grace_period(), Duration::from_secs(10));
+    assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
     assert_eq!(cache.grace_interval(), Duration::from_millis(500));
     assert_eq!(cache.fan_out(), 20);
     assert_eq!(cache.inflight_ttl(), Duration::from_millis(2250));
