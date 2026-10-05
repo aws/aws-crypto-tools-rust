@@ -944,6 +944,14 @@ pub mod builders {
     }
 }
 
+// Fails to compile if `Error` or a variant struct is not `Send + Sync + 'static`.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Error>();
+    assert_send_sync::<CryptographicError>();
+    assert_send_sync::<InternalError>();
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

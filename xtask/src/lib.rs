@@ -308,7 +308,20 @@ impl Gen<'_> {
             s.push_str(&self.strukt(v));
         }
         s.push_str(&self.builders());
+        s.push_str(&self.thread_safety());
         s.push_str(&self.tests());
+        s
+    }
+
+    fn thread_safety(&self) -> String {
+        let mut s = String::from(
+            "\n// Fails to compile if `Error` or a variant struct is not `Send + Sync + 'static`.\n\
+             const _: () = {\n    const fn assert_send_sync<T: Send + Sync + 'static>() {}\n    assert_send_sync::<Error>();\n",
+        );
+        for v in self.variants() {
+            let _ = writeln!(s, "    assert_send_sync::<{}>();", v.strukt);
+        }
+        s.push_str("};\n");
         s
     }
 

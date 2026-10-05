@@ -3614,6 +3614,26 @@ pub mod builders {
     }
 }
 
+// Fails to compile if `Error` or a variant struct is not `Send + Sync + 'static`.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Error>();
+    assert_send_sync::<ValidationError>();
+    assert_send_sync::<InvalidMaterialsError>();
+    assert_send_sync::<EncryptionContextMismatchError>();
+    assert_send_sync::<NoMatchingDataKeyError>();
+    assert_send_sync::<CryptographicError>();
+    assert_send_sync::<AccessDeniedError>();
+    assert_send_sync::<ResourceNotFoundError>();
+    assert_send_sync::<ThrottlingError>();
+    assert_send_sync::<ConflictError>();
+    assert_send_sync::<ServiceError>();
+    assert_send_sync::<DispatchError>();
+    assert_send_sync::<SerializationError>();
+    assert_send_sync::<IoError>();
+    assert_send_sync::<InternalError>();
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
