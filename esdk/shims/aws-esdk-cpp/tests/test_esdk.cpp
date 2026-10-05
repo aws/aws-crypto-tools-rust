@@ -364,6 +364,53 @@ void test_error_kinds() {
     CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(tampered, keyring));
 }
 
+// An ESDK Rust error as lib.rs's encode_err sends it, with the message "Future: m".
+std::string encoded_error(const std::string& kind, const std::string& conflict_reason) {
+    const std::string us = "\x1f";
+    const std::string message = "Future: m";
+    return "kind=" + kind + us + "retryable=1" + us + "retry=future" + us + "service=s3" + us +
+           "resource_type=bucket" + us + "resource=my-bucket" + us + "code=SomeCode" + us +
+           "request_id=req-1" + us + "conflict_reason=" + conflict_reason + us + "credentials=0" +
+           us + "name=Future" + us + "display_len=9" + us + "full_len=9" + "\x1e" + message +
+           message;
+}
+
+void test_values_this_library_does_not_know() {
+    const auto unknown_kind = encoded_error("255", "");
+    //= spec/shim/shim.md#error-classification
+    //= type=test
+    //# - An error whose kind the shim does not expose MUST be reported as the shim's
+    //# own base error type.
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      Aws::Esdk::detail::throw_shim_exception(unknown_kind));
+    try {
+        Aws::Esdk::detail::throw_shim_exception(unknown_kind);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(!e.kind().has_value());
+        ESDK_CHECK(std::string(e.what()) == "Future: m");
+        ESDK_CHECK(e.name() == "Future");
+        ESDK_CHECK(e.retryable());
+        ESDK_CHECK(!e.retry_kind().has_value());
+        ESDK_CHECK(!e.service().has_value());
+        ESDK_CHECK(e.resource().has_value());
+        ESDK_CHECK(e.resource()->type == Aws::Esdk::ResourceType::Unknown);
+        ESDK_CHECK(e.resource()->name == "my-bucket");
+        ESDK_CHECK(e.code() == "SomeCode");
+        ESDK_CHECK(e.request_id() == "req-1");
+    }
+
+    const auto unknown_reason = encoded_error("13", "future");
+    CHECK_THROWS_TYPE(Aws::Esdk::ConflictException,
+                      Aws::Esdk::detail::throw_shim_exception(unknown_reason));
+    try {
+        Aws::Esdk::detail::throw_shim_exception(unknown_reason);
+    } catch (const Aws::Esdk::ConflictException& e) {
+        ESDK_CHECK(e.kind() == Aws::Esdk::ErrorKind::Conflict);
+        ESDK_CHECK(!e.reason().has_value());
+        ESDK_CHECK(e.retryable());
+    }
+}
+
 void test_client_configuration() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
@@ -813,6 +860,7 @@ int main(int argc, char** argv) {
         test_keystore_rejects_short_table_name();
         test_hierarchical_keyring_ttl();
         test_error_kinds();
+        test_values_this_library_does_not_know();
         test_client_configuration();
         test_bytes_and_string_ergonomics();
         test_streaming();

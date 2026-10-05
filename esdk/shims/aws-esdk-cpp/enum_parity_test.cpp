@@ -48,6 +48,25 @@ static_assert(eq(Aws::Esdk::ErrorKind::Internal, ::aws_esdk_ffi::ShimErrorKind::
 static_assert(eq(Aws::Esdk::ErrorKind::Io, ::aws_esdk_ffi::ShimErrorKind::Io), "ErrorKind::Io");
 static_assert(eq(Aws::Esdk::ErrorKind::Throttling, ::aws_esdk_ffi::ShimErrorKind::Throttling), "ErrorKind::Throttling");
 static_assert(eq(Aws::Esdk::ErrorKind::Conflict, ::aws_esdk_ffi::ShimErrorKind::Conflict), "ErrorKind::Conflict");
+// The reserved Unknown repr is not a C++ ErrorKind, so it decodes to the base exception.
+static_assert(eq(::aws_esdk_ffi::ShimErrorKind::Unknown, 255), "ShimErrorKind::Unknown");
+
+// The facade decodes these from strings; their values are part of the C++ API.
+static_assert(eq(Aws::Esdk::RetryKind::Transient, 0), "RetryKind::Transient");
+static_assert(eq(Aws::Esdk::RetryKind::Throttling, 1), "RetryKind::Throttling");
+static_assert(eq(Aws::Esdk::RetryKind::Server, 2), "RetryKind::Server");
+static_assert(eq(Aws::Esdk::RetryKind::Client, 3), "RetryKind::Client");
+static_assert(eq(Aws::Esdk::Service::Kms, 0), "Service::Kms");
+static_assert(eq(Aws::Esdk::Service::DynamoDb, 1), "Service::DynamoDb");
+static_assert(eq(Aws::Esdk::ResourceType::KmsKey, 0), "ResourceType::KmsKey");
+static_assert(eq(Aws::Esdk::ResourceType::DynamoDbTable, 1), "ResourceType::DynamoDbTable");
+static_assert(eq(Aws::Esdk::ResourceType::BranchKey, 2), "ResourceType::BranchKey");
+static_assert(eq(Aws::Esdk::ResourceType::Cache, 3), "ResourceType::Cache");
+static_assert(eq(Aws::Esdk::ResourceType::Keyring, 4), "ResourceType::Keyring");
+static_assert(eq(Aws::Esdk::ResourceType::Cmm, 5), "ResourceType::Cmm");
+static_assert(eq(Aws::Esdk::ResourceType::Unknown, 255), "ResourceType::Unknown");
+static_assert(eq(Aws::Esdk::ConflictReason::AlreadyExists, 0), "ConflictReason::AlreadyExists");
+static_assert(eq(Aws::Esdk::ConflictReason::ConcurrentModification, 1), "ConflictReason::ConcurrentModification");
 
 
 static_assert(eq(Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt, ::aws_esdk_ffi::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt), "ForbidEncryptAllowDecrypt");
