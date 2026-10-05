@@ -245,18 +245,14 @@ impl HierarchicalKeyring {
 
     /// The partition id: the UTF-8 bytes of the caller's string,
     /// or the 16 bytes of a v4 UUID the keyring generated.
-    ///
-    /// Not part of the public API; exposed for tests.
-    #[doc(hidden)]
-    pub fn partition_id_bytes(&self) -> &[u8] {
+    #[cfg(feature = "test-utils")]
+    pub(crate) fn partition_id_bytes(&self) -> &[u8] {
         &self.inner.partition_id_bytes
     }
 
     /// The configured cache.
-    ///
-    /// Not part of the public API; exposed for tests.
-    #[doc(hidden)]
-    pub fn cache(&self) -> &SharedCmc {
+    #[cfg(feature = "test-utils")]
+    pub(crate) fn cache(&self) -> &SharedCmc {
         &self.inner.cache
     }
 }
@@ -623,19 +619,11 @@ const CIPHERTEXT_VERSION_LEN: usize = 16;
 
 /// Cache-identifier scope byte for OnEncrypt, passed to
 /// `cache_entry_identifier::build_cache_identifier`.
-///
-/// Hidden from the public API surface; intended for tests that recompute the
-/// identifier independently of the keyring.
-#[doc(hidden)]
-pub const SCOPE_ID_ENCRYPT: u8 = 0x01;
+pub(crate) const SCOPE_ID_ENCRYPT: u8 = 0x01;
 
 /// Cache-identifier scope byte for OnDecrypt, passed to
 /// `cache_entry_identifier::build_cache_identifier`.
-///
-/// Hidden from the public API surface; intended for tests that recompute the
-/// identifier independently of the keyring.
-#[doc(hidden)]
-pub const SCOPE_ID_DECRYPT: u8 = 0x02;
+pub(crate) const SCOPE_ID_DECRYPT: u8 = 0x02;
 
 impl HierarchicalKeyring {
     /// Resolve the branch-key id for this operation: either the

@@ -3,12 +3,14 @@
 
 //! Tests for key store encryption context construction.
 
-use aws_crypto_mpl::key_store::attributes::{
+#![cfg(feature = "test-utils")]
+
+use aws_crypto_mpl::key_store::__test_internals::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
     TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
-use aws_crypto_mpl::key_store::encryption_context::{
+use aws_crypto_mpl::key_store::__test_internals::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
 };

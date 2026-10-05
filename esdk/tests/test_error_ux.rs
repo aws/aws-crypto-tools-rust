@@ -202,8 +202,7 @@ async fn kms_throttling_is_throttling_about_the_kms_key() {
 #[tokio::test]
 async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
     use aws_crypto_mpl::HierarchicalKeyring;
-    use aws_crypto_mpl::aws_kms::__test_internals::build_cache_identifier;
-    use aws_crypto_mpl::aws_kms::hierarchical_keyring::SCOPE_ID_ENCRYPT;
+    use aws_crypto_mpl::aws_kms::__test_internals::{SCOPE_ID_ENCRYPT, build_cache_identifier};
     use aws_crypto_mpl::cmc::{SharedCmc, StormTrackingCmc};
     use std::time::{Duration, SystemTime};
 

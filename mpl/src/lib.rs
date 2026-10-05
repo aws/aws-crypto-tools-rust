@@ -7,7 +7,6 @@
 
 pub mod aws_kms;
 mod builder;
-mod client;
 pub mod cmc;
 pub mod cmm;
 pub mod error;
@@ -17,7 +16,6 @@ pub mod keyring;
 pub mod shared;
 pub mod structures;
 
-pub use client::*;
 pub use error::Error;
 pub use shared::IntoShared;
 // Re-exported because `AesGcm` appears in the public signature of
@@ -45,6 +43,5 @@ pub use cmc::{
 pub use cmm::{Cmm, DefaultCmm, SharedCmm};
 pub use key_store::{
     BranchKeyStore, BranchKeyStoreBuilder, KeyStore, KeyStoreClient, KmsConfiguration,
-    encryption_context, kms_config, record,
 };
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

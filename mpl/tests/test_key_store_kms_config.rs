@@ -3,7 +3,11 @@
 
 //! Tests for KMS configuration ARN parsing, validation, and compatibility.
 
-use aws_crypto_mpl::key_store::kms_config::{is_arn_compatible, parse_arn, validate_kms_key_arn};
+#![cfg(feature = "test-utils")]
+
+use aws_crypto_mpl::key_store::__test_internals::kms_config::{
+    is_arn_compatible, parse_arn, validate_kms_key_arn,
+};
 use aws_crypto_mpl::key_store::{Discovery, KmsConfiguration, MrDiscovery};
 
 const VALID_KMS_ARN: &str =

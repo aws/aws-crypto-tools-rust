@@ -3,6 +3,8 @@
 
 //! Tests for `aws_kms::user_agent::with_user_agent`.
 
+#![cfg(feature = "test-utils")]
+
 use aws_config::{BehaviorVersion, FrameworkMetadata, SdkConfig};
 use aws_sdk_kms::Client as KmsClient;
 

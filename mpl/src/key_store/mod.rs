@@ -24,14 +24,14 @@
 //! # }
 //! ```
 
-pub mod attributes;
+mod attributes;
 pub mod branch_key_store;
 mod client;
 pub mod config;
-pub mod encryption_context;
-pub mod kms_config;
-pub(crate) mod kms_ops;
-pub mod record;
+mod encryption_context;
+mod kms_config;
+mod kms_ops;
+mod record;
 mod types;
 
 use crate::Error;
@@ -164,4 +164,23 @@ pub trait KeyStore: Send + Sync {
     ///
     /// Other implementations may return different variants.
     async fn get_beacon_key(&self, input: GetBeaconKeyInput) -> Result<GetBeaconKeyOutput, Error>;
+}
+
+/// Internals that the crate's own integration tests reach.
+/// Not part of the public API and may change in any release.
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    pub mod attributes {
+        pub use crate::key_store::attributes::*;
+    }
+    pub mod encryption_context {
+        pub use crate::key_store::encryption_context::*;
+    }
+    pub mod kms_config {
+        pub use crate::key_store::kms_config::*;
+    }
+    pub mod record {
+        pub use crate::key_store::record::*;
+    }
 }

@@ -17,6 +17,8 @@
 //! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
 //! [aad]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#branch-key-wrapping-and-unwrapping-aad
 
+#![cfg(feature = "test-utils")]
+
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
@@ -29,11 +31,12 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::{
-    build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
+    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT, build_cache_identifier, cache, compute_aad,
+    partition_id_bytes, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    HierarchicalKeyringBuilder, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
+    HierarchicalKeyringBuilder,
 };
 use aws_crypto_mpl::key_store::{
     BranchKeyStore, BranchKeyStoreBuilder, CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput,
@@ -276,7 +279,7 @@ fn partition_id_default_is_16_byte_v4_uuid() {
         .build()
         .expect("constructor with no partition id must succeed");
 
-    let bytes = keyring.partition_id_bytes();
+    let bytes = partition_id_bytes(&keyring);
 
     assert_eq!(
         bytes.len(),
@@ -321,8 +324,8 @@ fn partition_id_default_two_calls_are_distinct() {
         .expect("second constructor call must succeed");
 
     assert_ne!(
-        a.partition_id_bytes(),
-        b.partition_id_bytes(),
+        partition_id_bytes(&a),
+        partition_id_bytes(&b),
         "two default partition ids must be distinct (CSPRNG collision is overwhelmingly unlikely)",
     );
 }
@@ -368,7 +371,7 @@ fn partition_id_provided_is_utf8_round_tripped() {
             });
 
         assert_eq!(
-            keyring.partition_id_bytes(),
+            partition_id_bytes(&keyring),
             original.as_bytes(),
             "{label}: partition id bytes MUST be the caller's UTF-8 bytes verbatim",
         );
@@ -385,15 +388,14 @@ fn partition_id_is_not_unicode_normalized() {
     let decomposed = "cafe\u{0301}"; // e + combining acute
 
     let id_of = |partition: &str| {
-        HierarchicalKeyring::builder()
+        let keyring = HierarchicalKeyring::builder()
             .key_store(key_store_never_consulted())
             .ttl(Duration::from_secs(3600))
             .branch_key_id("branch-key-id")
             .partition_id(partition)
             .build()
-            .expect("constructor must succeed")
-            .partition_id_bytes()
-            .to_vec()
+            .expect("constructor must succeed");
+        partition_id_bytes(&keyring).to_vec()
     };
 
     assert_eq!(id_of(precomposed), precomposed.as_bytes());
@@ -441,7 +443,7 @@ fn build_without_cache_uses_default_cmc() {
         .build()
         .expect("an unset cache must default to a built-in cache");
     assert_eq!(
-        keyring.cache().grace_period(),
+        cache(&keyring).grace_period(),
         Some(Duration::from_secs(10)),
         "the default cache has the storm-tracking default grace period"
     );
@@ -477,7 +479,7 @@ fn build_with_shared_cache_round_trips_provided_cache() {
     // The exact cache supplied is what the keyring stores. Tested via
     // pointer-identity rather than behaviour because the struct field is
     // not directly observable.
-    let stored: &SharedCmc = keyring.cache();
+    let stored: &SharedCmc = cache(&keyring);
     assert!(
         SharedCmc::ptr_eq(stored, &supplied),
         "the keyring MUST store the supplied SharedCmc itself"

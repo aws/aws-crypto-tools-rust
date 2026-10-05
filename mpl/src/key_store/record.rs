@@ -8,8 +8,8 @@ use crate::error::{BranchKey, Kind, Resource, Service};
 use std::collections::BTreeMap;
 
 use crate::key_store::attributes::{
-    ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX,
-    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
+    ATTR_BRANCH_KEY_ID, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
+    TYPE_BRANCH_VERSION_PREFIX,
 };
 use crate::structures::{BranchKeyMaterials, EncryptionContext};
 
@@ -31,6 +31,7 @@ pub struct EncryptedRecord {
 /// here. `enc` is held separately on [`EncryptedRecord`] and is never part of
 /// the encryption context; an `enc` key appearing among `attributes` is
 /// dropped defensively.
+#[cfg(feature = "test-utils")]
 pub fn encryption_context_from_item(
     record: &EncryptedRecord,
     logical_key_store_name: &str,
@@ -38,12 +39,12 @@ pub fn encryption_context_from_item(
     let mut ec: BTreeMap<String, String> = record
         .attributes
         .iter()
-        .filter(|(k, _)| k.as_str() != ATTR_ENC)
+        .filter(|(k, _)| k.as_str() != super::attributes::ATTR_ENC)
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
     ec.insert(
-        ATTR_TABLENAME.to_string(),
+        super::attributes::ATTR_TABLENAME.to_string(),
         logical_key_store_name.to_string(),
     );
 
@@ -54,13 +55,14 @@ pub fn encryption_context_from_item(
 /// `ToAttributeMap`: the stored attributes are the encryption context minus
 /// `tablename` (which exists only in the context), and the wrapped branch key
 /// becomes the separate `enc` value.
+#[cfg(feature = "test-utils")]
 pub fn to_attribute_map(
     encryption_context: &BTreeMap<String, String>,
     encrypted_key: Vec<u8>,
 ) -> EncryptedRecord {
     let attributes = encryption_context
         .iter()
-        .filter(|(k, _)| k.as_str() != ATTR_TABLENAME)
+        .filter(|(k, _)| k.as_str() != super::attributes::ATTR_TABLENAME)
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
