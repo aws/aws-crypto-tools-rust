@@ -10,6 +10,7 @@
 //! [`super::cache_entry_identifier`].
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::{Cache, Kind, Resource};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -28,56 +29,121 @@ use crate::structures::{
     PlaintextDataKey,
 };
 
-/// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
-/// `GetBranchKeyIdInput`, whose only member is the encryption context.
-///
-/// A struct rather than a bare `EncryptionContext` parameter so that a member
-/// added to the model later does not break every implementor of the trait.
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// Input for [`BranchKeySupplier::get_branch_key_id`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GetBranchKeyIdInput {
     encryption_context: EncryptionContext,
 }
 
 impl GetBranchKeyIdInput {
-    /// Construct the input from the encryption context of the operation being
-    /// performed.
+    /// Start a builder for `GetBranchKeyIdInput`.
     #[must_use]
-    pub const fn new(encryption_context: EncryptionContext) -> Self {
-        Self { encryption_context }
+    pub fn builder() -> GetBranchKeyIdInputBuilder {
+        GetBranchKeyIdInputBuilder::default()
     }
 
-    /// The encryption context used with this encryption or decryption.
+    /// The encryption context of the encryption or decryption.
     #[must_use]
     pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 }
 
-/// Output of [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
-/// `GetBranchKeyIdOutput`, whose only member is the branch key id.
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// Builder for [`GetBranchKeyIdInput`].
+#[derive(Debug, Clone, Default)]
+pub struct GetBranchKeyIdInputBuilder {
+    encryption_context: Option<EncryptionContext>,
+}
+
+impl GetBranchKeyIdInputBuilder {
+    /// Set the encryption context of the encryption or decryption.
+    /// Required.
+    #[must_use]
+    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(encryption_context.into());
+        self
+    }
+
+    /// Set or clear the encryption context from an `Option`.
+    /// To set a value, use [`Self::encryption_context`].
+    #[must_use]
+    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+        self.encryption_context = encryption_context;
+        self
+    }
+
+    /// Build the `GetBranchKeyIdInput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `encryption_context` is unset.
+    pub fn build(self) -> Result<GetBranchKeyIdInput, Error> {
+        Ok(GetBranchKeyIdInput {
+            encryption_context: required(self.encryption_context, "encryption_context")?,
+        })
+    }
+}
+
+/// Output of [`BranchKeySupplier::get_branch_key_id`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GetBranchKeyIdOutput {
     branch_key_id: String,
 }
 
 impl GetBranchKeyIdOutput {
-    /// Construct the output from the chosen branch key id.
+    /// Start a builder for `GetBranchKeyIdOutput`.
     #[must_use]
-    pub const fn new(branch_key_id: String) -> Self {
-        Self { branch_key_id }
+    pub fn builder() -> GetBranchKeyIdOutputBuilder {
+        GetBranchKeyIdOutputBuilder::default()
     }
 
-    /// The identifier of the branch key that should wrap or unwrap the data
-    /// key for this operation.
+    /// The identifier of the branch key that wraps or unwraps the data key.
     #[must_use]
     pub fn branch_key_id(&self) -> &str {
         &self.branch_key_id
     }
 
-    /// Consume the output, yielding the branch key id.
+    /// The branch key id, consuming the output.
     #[must_use]
     pub fn into_branch_key_id(self) -> String {
         self.branch_key_id
+    }
+}
+
+/// Builder for [`GetBranchKeyIdOutput`].
+#[derive(Debug, Clone, Default)]
+pub struct GetBranchKeyIdOutputBuilder {
+    branch_key_id: Option<String>,
+}
+
+impl GetBranchKeyIdOutputBuilder {
+    /// Set the identifier of the branch key that wraps or unwraps the data key.
+    /// Required.
+    #[must_use]
+    pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
+        self.branch_key_id = Some(branch_key_id.into());
+        self
+    }
+
+    /// Set or clear the branch key id from an `Option`.
+    /// To set a value, use [`Self::branch_key_id`].
+    #[must_use]
+    pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
+        self.branch_key_id = branch_key_id;
+        self
+    }
+
+    /// Build the `GetBranchKeyIdOutput`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Validation`](crate::Error::Validation): `branch_key_id` is unset.
+    pub fn build(self) -> Result<GetBranchKeyIdOutput, Error> {
+        Ok(GetBranchKeyIdOutput {
+            branch_key_id: required(self.branch_key_id, "branch_key_id")?,
+        })
     }
 }
 
@@ -388,11 +454,8 @@ fn generate_partition_id() -> Result<Vec<u8>, Error> {
 }
 
 /// Convert the 16-byte representation of a UUID back to its canonical
-/// 36-character hyphenated string form (`8-4-4-4-12`). The output is a
-/// well-formed UUIDv4 string suitable for passing to
-/// [`BranchKeyMaterials::new`] and the wrap/unwrap machinery when the
-/// input bytes were produced by a v4 UUID generator (variant + version
-/// bits already set).
+/// 36-character hyphenated string form (`8-4-4-4-12`), the form the key store
+/// takes as a branch key version.
 fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
     uuid::Uuid::from_bytes(*bytes).hyphenated().to_string()
 }
@@ -597,7 +660,9 @@ impl HierarchicalKeyring {
 
         // The input owns its encryption context, so the clone happens only on
         // the supplier path — a static branch key id never pays for it.
-        let input = GetBranchKeyIdInput::new(encryption_context.clone());
+        let input = GetBranchKeyIdInput::builder()
+            .encryption_context(encryption_context.clone())
+            .build()?;
         Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
     }
 

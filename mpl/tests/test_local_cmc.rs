@@ -29,7 +29,6 @@
 
 #![cfg(feature = "test-utils")]
 
-use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
@@ -79,22 +78,21 @@ fn make_decryption_materials() -> DecryptionMaterials {
 }
 
 fn make_branch_key_materials() -> BranchKeyMaterials {
-    BranchKeyMaterials::new(
-        [0u8; 32],
-        "test-branch-key-id".to_string(),
-        "00000000-0000-4000-8000-000000000000".to_string(),
-        EncryptionContext::new(),
-    )
-    .expect("constructing branch key materials")
+    BranchKeyMaterials::builder()
+        .branch_key([0u8; 32])
+        .branch_key_id("test-branch-key-id".to_string())
+        .branch_key_version("00000000-0000-4000-8000-000000000000".to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .expect("constructing branch key materials")
 }
 
 fn make_beacon_key_materials() -> BeaconKeyMaterials {
-    BeaconKeyMaterials::new(
-        "test-beacon-key-id".to_string(),
-        EncryptionContext::new(),
-        None,
-        Option::<BTreeMap<String, Vec<u8>>>::None,
-    )
+    BeaconKeyMaterials::builder()
+        .beacon_key_id("test-beacon-key-id".to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .unwrap()
 }
 
 fn make_entry_at(creation: SystemTime, expiry: SystemTime) -> CacheEntry {

@@ -798,12 +798,13 @@ impl KeyStore for BranchKeyStore {
             .unwrap_or(branch_key_id);
 
         GetBeaconKeyOutput::builder()
-            .beacon_key_materials(BeaconKeyMaterials::new(
-                beacon_key_id,
-                custom_ec,
-                Some(plaintext),
-                None,
-            ))
+            .beacon_key_materials(
+                BeaconKeyMaterials::builder()
+                    .beacon_key_id(beacon_key_id)
+                    .encryption_context(custom_ec)
+                    .beacon_key(plaintext)
+                    .build()?,
+            )
             .build()
     }
 }

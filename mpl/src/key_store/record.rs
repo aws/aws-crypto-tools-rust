@@ -162,15 +162,15 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         )
     })?;
 
-    BranchKeyMaterials::new(
-        branch_key,
-        branch_key_id,
-        branch_key_version,
-        encryption_context,
-    )
-    .map_err(|e| {
-        malformed(authenticated_ec, "failed to construct branch key materials").with_source(e)
-    })
+    BranchKeyMaterials::builder()
+        .branch_key(branch_key)
+        .branch_key_id(branch_key_id)
+        .branch_key_version(branch_key_version)
+        .encryption_context(encryption_context)
+        .build()
+        .map_err(|e| {
+            malformed(authenticated_ec, "failed to construct branch key materials").with_source(e)
+        })
 }
 
 /// An error for a branch key record that is malformed,

@@ -427,6 +427,13 @@ async fn create_key_dispatches_to_kms() {
 }
 
 #[tokio::test]
+async fn version_key_without_a_branch_key_id_fails_before_dispatch() {
+    let store = KeyStoreClient::new(fixture_config_with_id("id-x").build().await.unwrap());
+    let err = store.version_key().send().await.unwrap_err();
+    assert!(err.is_validation(), "{:?}", err);
+}
+
+#[tokio::test]
 async fn version_key_with_discovery_config_fails() {
     let cfg = fixture_config_with_id("id-x").kms_configuration(Discovery::default());
     let store = KeyStoreClient::new(cfg.build().await.unwrap());

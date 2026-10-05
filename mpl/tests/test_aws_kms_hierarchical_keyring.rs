@@ -82,7 +82,9 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
         &self,
         _input: GetBranchKeyIdInput,
     ) -> Result<GetBranchKeyIdOutput, Error> {
-        Ok(GetBranchKeyIdOutput::new(self.0.to_string()))
+        GetBranchKeyIdOutput::builder()
+            .branch_key_id(self.0.to_string())
+            .build()
     }
 }
 
@@ -777,13 +779,13 @@ fn fixed_branch_key() -> [u8; 32] {
 }
 
 fn fixture_materials_with_ec(ec: EncryptionContext) -> BranchKeyMaterials {
-    BranchKeyMaterials::new(
-        fixed_branch_key(),
-        FIXTURE_BRANCH_KEY_ID.to_string(),
-        FIXTURE_VERSION.to_string(),
-        ec,
-    )
-    .expect("BranchKeyMaterials::new must accept the fixture inputs")
+    BranchKeyMaterials::builder()
+        .branch_key(fixed_branch_key())
+        .branch_key_id(FIXTURE_BRANCH_KEY_ID.to_string())
+        .branch_key_version(FIXTURE_VERSION.to_string())
+        .encryption_context(ec)
+        .build()
+        .expect("BranchKeyMaterials::new must accept the fixture inputs")
 }
 
 fn fixture_materials_empty_ec() -> BranchKeyMaterials {
@@ -1034,13 +1036,13 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     // but otherwise identical inputs.
     let mut other_branch_key = fixed_branch_key();
     other_branch_key[0] ^= 0xFF;
-    let materials_unwrap = BranchKeyMaterials::new(
-        other_branch_key,
-        FIXTURE_BRANCH_KEY_ID.to_string(),
-        FIXTURE_VERSION.to_string(),
-        EncryptionContext::new(),
-    )
-    .expect("materials with different branch_key must construct");
+    let materials_unwrap = BranchKeyMaterials::builder()
+        .branch_key(other_branch_key)
+        .branch_key_id(FIXTURE_BRANCH_KEY_ID.to_string())
+        .branch_key_version(FIXTURE_VERSION.to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .expect("materials with different branch_key must construct");
 
     let result = branch_key_unwrap(
         &materials_unwrap,
@@ -1071,13 +1073,13 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
 
     // Same branch_key bytes (so KDF derivation is identical), same EC, same
     // version — but a different branch_key_id, which means the AAD differs.
-    let materials_unwrap = BranchKeyMaterials::new(
-        fixed_branch_key(),
-        "different-branch-key-id".to_string(),
-        FIXTURE_VERSION.to_string(),
-        EncryptionContext::new(),
-    )
-    .expect("BranchKeyMaterials::new must accept the alternate id");
+    let materials_unwrap = BranchKeyMaterials::builder()
+        .branch_key(fixed_branch_key())
+        .branch_key_id("different-branch-key-id".to_string())
+        .branch_key_version(FIXTURE_VERSION.to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .expect("BranchKeyMaterials::new must accept the alternate id");
 
     let result = branch_key_unwrap(
         &materials_unwrap,
@@ -1361,13 +1363,13 @@ impl KeyStore for FakeKeyStore {
 /// Canned branch-key materials with an empty encryption context. The wrap /
 /// unwrap AAD binds the *input* materials' EC, not this one.
 fn fake_branch_key_materials() -> BranchKeyMaterials {
-    BranchKeyMaterials::new(
-        FAKE_BRANCH_KEY,
-        FAKE_BRANCH_KEY_ID.to_string(),
-        FAKE_BRANCH_KEY_VERSION.to_string(),
-        EncryptionContext::new(),
-    )
-    .unwrap()
+    BranchKeyMaterials::builder()
+        .branch_key(FAKE_BRANCH_KEY)
+        .branch_key_id(FAKE_BRANCH_KEY_ID.to_string())
+        .branch_key_version(FAKE_BRANCH_KEY_VERSION.to_string())
+        .encryption_context(EncryptionContext::new())
+        .build()
+        .unwrap()
 }
 
 /// Empty encryption materials for `suite_id`. Suite choice is arbitrary unless

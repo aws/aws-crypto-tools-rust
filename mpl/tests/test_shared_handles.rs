@@ -35,7 +35,9 @@ impl BranchKeySupplier for Supplier {
         &self,
         _input: GetBranchKeyIdInput,
     ) -> Result<GetBranchKeyIdOutput, Error> {
-        Ok(GetBranchKeyIdOutput::new("branch-key-id".to_string()))
+        GetBranchKeyIdOutput::builder()
+            .branch_key_id("branch-key-id".to_string())
+            .build()
     }
 }
 
