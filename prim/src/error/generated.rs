@@ -722,13 +722,13 @@ impl CryptographicError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -809,13 +809,13 @@ impl InternalError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -877,7 +877,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -922,7 +922,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }

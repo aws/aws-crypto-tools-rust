@@ -1233,13 +1233,13 @@ impl ValidationError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -1330,13 +1330,13 @@ impl InvalidMaterialsError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1344,7 +1344,7 @@ impl InvalidMaterialsError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -1352,7 +1352,7 @@ impl InvalidMaterialsError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1451,13 +1451,13 @@ impl EncryptionContextMismatchError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -1546,13 +1546,13 @@ impl NoMatchingDataKeyError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1560,7 +1560,7 @@ impl NoMatchingDataKeyError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -1568,7 +1568,7 @@ impl NoMatchingDataKeyError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1667,13 +1667,13 @@ impl CryptographicError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -1768,13 +1768,13 @@ impl AccessDeniedError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1782,7 +1782,7 @@ impl AccessDeniedError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -1790,7 +1790,7 @@ impl AccessDeniedError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1912,13 +1912,13 @@ impl ResourceNotFoundError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1926,7 +1926,7 @@ impl ResourceNotFoundError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -1934,7 +1934,7 @@ impl ResourceNotFoundError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2042,13 +2042,13 @@ impl ThrottlingError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2056,7 +2056,7 @@ impl ThrottlingError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -2064,7 +2064,7 @@ impl ThrottlingError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2173,13 +2173,13 @@ impl ConflictError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2187,7 +2187,7 @@ impl ConflictError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -2195,7 +2195,7 @@ impl ConflictError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2217,7 +2217,7 @@ impl ConflictError {
 
     /// Why the request conflicts, when known.
     #[must_use]
-    pub const fn reason(&self) -> Option<ConflictReason> {
+    pub fn reason(&self) -> Option<ConflictReason> {
         self.data.reason
     }
 }
@@ -2309,13 +2309,13 @@ impl ServiceError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2323,7 +2323,7 @@ impl ServiceError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -2331,7 +2331,7 @@ impl ServiceError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2437,13 +2437,13 @@ impl DispatchError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2451,7 +2451,7 @@ impl DispatchError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -2459,7 +2459,7 @@ impl DispatchError {
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2556,13 +2556,13 @@ impl SerializationError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -2644,13 +2644,13 @@ impl IoError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -2731,13 +2731,13 @@ impl InternalError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -2801,7 +2801,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -2846,13 +2846,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -2915,7 +2915,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -2960,13 +2960,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3029,7 +3029,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3074,13 +3074,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3143,13 +3143,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3212,13 +3212,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3282,13 +3282,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3312,7 +3312,7 @@ pub mod builders {
         }
 
         /// Why the request conflicts.
-        pub const fn reason(mut self, reason: ConflictReason) -> Self {
+        pub fn reason(mut self, reason: ConflictReason) -> Self {
             self.reason = Some(reason);
             self
         }
@@ -3358,13 +3358,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3427,13 +3427,13 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -3496,7 +3496,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3541,7 +3541,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3584,7 +3584,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }

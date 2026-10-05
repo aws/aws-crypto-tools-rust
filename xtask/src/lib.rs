@@ -1365,13 +1365,13 @@ impl {st} {{
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {{
+    pub fn is_retryable(&self) -> bool {{
         self.data.retry.is_some()
     }}
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {{
+    pub fn retry_kind(&self) -> Option<RetryKind> {{
         self.data.retry
     }}
 "
@@ -1383,7 +1383,7 @@ impl {st} {{
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<Service> {
         self.data.remote.service
     }
 
@@ -1391,7 +1391,7 @@ impl {st} {{
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1445,7 +1445,7 @@ impl {st} {{
                 r"
     /// Why the request conflicts, when known.
     #[must_use]
-    pub const fn reason(&self) -> Option<{r}> {{
+    pub fn reason(&self) -> Option<{r}> {{
         self.data.reason
     }}
 "
@@ -1663,7 +1663,7 @@ pub mod builders {{
         }}
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {{
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {{
             self.retry = Some(retry);
             self
         }}
@@ -1674,7 +1674,7 @@ pub mod builders {{
                 s.push_str(
                     r"
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
@@ -1704,7 +1704,7 @@ pub mod builders {{
                     s,
                     r"
         /// Why the request conflicts.
-        pub const fn reason(mut self, reason: {r}) -> Self {{
+        pub fn reason(mut self, reason: {r}) -> Self {{
             self.reason = Some(reason);
             self
         }}

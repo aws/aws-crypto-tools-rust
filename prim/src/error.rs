@@ -185,7 +185,11 @@ pub struct Cache {}
 impl Cache {
     /// The cryptographic materials cache.
     #[must_use]
-    pub const fn new() -> Self {
+    #[expect(
+        clippy::missing_const_for_fn,
+        reason = "not const, so later releases can add fields that need a runtime constructor"
+    )]
+    pub fn new() -> Self {
         Self {}
     }
 }
