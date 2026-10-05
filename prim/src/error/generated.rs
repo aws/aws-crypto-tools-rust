@@ -244,7 +244,8 @@ fn as_display<T: fmt::Display>(e: &T) -> &dyn fmt::Display {
 fn tried<'a>(resources: impl Iterator<Item = Option<&'a Resource>>) -> Vec<&'a str> {
     resources
         .filter_map(|r| match r {
-            Some(Resource::Keyring(name) | Resource::Cmm(name)) => Some(name.as_str()),
+            Some(Resource::Keyring(keyring)) => Some(keyring.name()),
+            Some(Resource::Cmm(cmm)) => Some(cmm.name()),
             _ => None,
         })
         .collect()

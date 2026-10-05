@@ -8,8 +8,9 @@ use std::io::Error as IoError;
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::error::{
-    AccessDeniedError, Collection, CryptographicError, ProvideErrorKind, ProvideErrorMetadata,
-    RequestId, Resource, RetryErrorKind, RetryKind, Service, ServiceError, ValidationError,
+    AccessDeniedError, BranchKey, Collection, CryptographicError, KeyringResource, KmsKey,
+    ProvideErrorKind, ProvideErrorMetadata, RequestId, Resource, RetryErrorKind, RetryKind,
+    Service, ServiceError, ValidationError,
 };
 
 #[test]
@@ -41,14 +42,14 @@ fn a_built_remote_error_names_its_service_and_resource() {
     let err: Error = AccessDeniedError::builder()
         .message("denied")
         .service(Service::Kms)
-        .resource(Resource::KmsKey("arn".into()))
+        .resource(Resource::KmsKey(KmsKey::new("arn")))
         .build()
         .into();
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
     assert_eq!(e.service(), Some(Service::Kms));
-    assert_eq!(e.resource(), Some(&Resource::KmsKey("arn".into())));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new("arn"))));
     assert_eq!(e.code(), None);
     assert_eq!(e.request_id(), None);
 }
@@ -99,7 +100,7 @@ fn builders_set_every_field_in_any_order() {
     let built = ConflictError::builder()
         .reason(ConflictReason::AlreadyExists)
         .request_id("r")
-        .resource(Resource::BranchKey("b".into()))
+        .resource(Resource::BranchKey(BranchKey::new("b")))
         .retry_kind(RetryKind::Transient)
         .code("c")
         .source(IoError::other("cause"))
@@ -108,7 +109,10 @@ fn builders_set_every_field_in_any_order() {
         .build();
     assert_eq!(built.message(), "m");
     assert_eq!(built.service(), Some(Service::DynamoDb));
-    assert_eq!(built.resource(), Some(&Resource::BranchKey("b".into())));
+    assert_eq!(
+        built.resource(),
+        Some(&Resource::BranchKey(BranchKey::new("b")))
+    );
     assert_eq!(built.code(), Some("c"));
     assert_eq!(built.request_id(), Some("r"));
     assert_eq!(built.reason(), Some(ConflictReason::AlreadyExists));
@@ -130,7 +134,7 @@ fn denied(request_id: &str) -> Error {
     AccessDeniedError::builder()
         .message("AWS KMS Decrypt failed")
         .service(Service::Kms)
-        .resource(Resource::KmsKey("arn".into()))
+        .resource(Resource::KmsKey(KmsKey::new("arn")))
         .code("AccessDeniedException")
         .request_id(request_id)
         .build()
@@ -151,7 +155,7 @@ fn all_failed_keeps_the_details_every_error_shares() {
         panic!("expected AccessDenied, got {err:?}");
     };
     assert_eq!(e.service(), Some(Service::Kms));
-    assert_eq!(e.resource(), Some(&Resource::KmsKey("arn".into())));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new("arn"))));
     assert_eq!(e.code(), Some("AccessDeniedException"));
     // The request IDs differ, so the aggregate has none.
     assert_eq!(e.request_id(), None);
@@ -271,7 +275,7 @@ fn alternate_display_drops_what_each_level_repeats() {
     let inner: Error = ServiceError::builder()
         .message("AWS KMS Decrypt failed")
         .service(Service::Kms)
-        .resource(Resource::KmsKey("inner-arn".into()))
+        .resource(Resource::KmsKey(KmsKey::new("inner-arn")))
         .code("KMSInvalidStateException")
         .build()
         .into();
@@ -306,13 +310,13 @@ fn a_collection_prints_each_collected_error() {
             Error::from(
                 aws_crypto_mpl::error::NoMatchingDataKeyError::builder()
                     .message("a")
-                    .resource(Resource::Keyring("child-1".into()))
+                    .resource(Resource::Keyring(KeyringResource::new("child-1")))
                     .build(),
             ),
             Error::from(
                 aws_crypto_mpl::error::NoMatchingDataKeyError::builder()
                     .message("b")
-                    .resource(Resource::Keyring("child-2".into()))
+                    .resource(Resource::Keyring(KeyringResource::new("child-2")))
                     .build(),
             ),
         ],

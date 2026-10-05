@@ -624,7 +624,8 @@ fn as_display<T: fmt::Display>(e: &T) -> &dyn fmt::Display {{
 fn tried<'a>(resources: impl Iterator<Item = Option<&'a Resource>>) -> Vec<&'a str> {{
     resources
         .filter_map(|r| match r {{
-            Some(Resource::Keyring(name) | Resource::Cmm(name)) => Some(name.as_str()),
+            Some(Resource::Keyring(keyring)) => Some(keyring.name()),
+            Some(Resource::Cmm(cmm)) => Some(cmm.name()),
             _ => None,
         }})
         .collect()
@@ -1484,8 +1485,13 @@ impl From<{st}> for Error {{
     }
 
     fn tests(&self) -> String {
-        let mut s = String::from(
-            "\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    fn cause() -> std::io::Error {\n        std::io::Error::other(\"the cause\")\n    }\n",
+        let branch_key_use = if self.variants().iter().any(|v| v.remote) {
+            format!("    use {}::BranchKey;\n", self.lib.shared)
+        } else {
+            String::new()
+        };
+        let mut s = format!(
+            "\n#[cfg(test)]\nmod tests {{\n    use super::*;\n{branch_key_use}\n    fn cause() -> std::io::Error {{\n        std::io::Error::other(\"the cause\")\n    }}\n",
         );
         for v in self.variants() {
             let n = &v.name;
@@ -1496,7 +1502,7 @@ impl From<{st}> for Error {{
             let mut check_enum = String::new();
             if v.remote {
                 // `resource` before `service`: the builder setters work in any order.
-                set.push_str(".resource(Resource::BranchKey(\"bk\".into())).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
+                set.push_str(".resource(Resource::BranchKey(BranchKey::new(\"bk\"))).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
                 for target in ["s", "e"] {
                     let out = if target == "s" {
                         &mut check_struct
@@ -1505,7 +1511,7 @@ impl From<{st}> for Error {{
                     };
                     let _ = write!(
                         out,
-                        "        assert_eq!({target}.service(), Some(Service::DynamoDb));\n        assert_eq!({target}.resource(), Some(&Resource::BranchKey(\"bk\".into())));\n        assert_eq!({target}.code(), Some(\"SomeCode\"));\n        assert_eq!({target}.request_id(), Some(\"req-1\"));\n"
+                        "        assert_eq!({target}.service(), Some(Service::DynamoDb));\n        assert_eq!({target}.resource(), Some(&Resource::BranchKey(BranchKey::new(\"bk\"))));\n        assert_eq!({target}.code(), Some(\"SomeCode\"));\n        assert_eq!({target}.request_id(), Some(\"req-1\"));\n"
                     );
                 }
             } else {

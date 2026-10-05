@@ -66,19 +66,19 @@
 //!     Err(e) if e.is_retryable() => backoff(e.retry_kind()),
 //!     Err(Error::AccessDenied(e)) if e.is_credentials() => refresh_credentials(),
 //!     Err(Error::AccessDenied(e)) => match (e.service(), e.resource()) {
-//!         (Some(Service::Kms), Some(Resource::KmsKey(arn))) => grant_kms_decrypt(arn),
-//!         (Some(Service::DynamoDb), Some(Resource::DynamoDbTable(table))) => grant_ddb_access(table),
+//!         (Some(Service::Kms), Some(Resource::KmsKey(key))) => grant_kms_decrypt(key.arn()),
+//!         (Some(Service::DynamoDb), Some(Resource::DynamoDbTable(table))) => grant_ddb_access(table.name()),
 //!         _ => log::error!("{e}"),
 //!     },
 //!     Err(Error::ResourceNotFound(e)) => match e.resource() {
-//!         Some(Resource::BranchKey(id)) => provision_branch_key(id),
-//!         Some(Resource::DynamoDbTable(table)) => fix_key_store_table(table),
-//!         Some(Resource::KmsKey(arn)) => fix_kms_key(arn),
+//!         Some(Resource::BranchKey(branch_key)) => provision_branch_key(branch_key.id()),
+//!         Some(Resource::DynamoDbTable(table)) => fix_key_store_table(table.name()),
+//!         Some(Resource::KmsKey(key)) => fix_kms_key(key.arn()),
 //!         _ => log::error!("{e}"),
 //!     },
 //!     Err(Error::InvalidMaterials(e)) => match e.resource() {
-//!         Some(Resource::BranchKey(id)) => alert_corrupt_branch_key(id),
-//!         Some(Resource::Keyring(name)) => report_keyring_bug(name, format!("{e:#}")),
+//!         Some(Resource::BranchKey(branch_key)) => alert_corrupt_branch_key(branch_key.id()),
+//!         Some(Resource::Keyring(keyring)) => report_keyring_bug(keyring.name(), format!("{e:#}")),
 //!         _ => log::error!("{e:#}"),
 //!     },
 //!     Err(Error::NoMatchingDataKey(e)) => try_another_keyring(e.resource()),
@@ -104,7 +104,7 @@
 //! if let Err(Error::Throttling(e)) = aws_esdk::encrypt(&input).await {
 //!     match (e.service(), e.resource()) {
 //!         (Some(service), _) => record_throttle(service.as_str()),
-//!         (None, Some(Resource::Cache)) => record_throttle("materials-cache"),
+//!         (None, Some(Resource::Cache(_))) => record_throttle("materials-cache"),
 //!         _ => record_throttle("other"),
 //!     }
 //! }
@@ -134,7 +134,7 @@
 //!     for attempt in e.failures() {
 //!         match attempt {
 //!             Error::AccessDenied(a) => match a.resource() {
-//!                 Some(Resource::KmsKey(arn)) => grant_kms_decrypt(arn),
+//!                 Some(Resource::KmsKey(key)) => grant_kms_decrypt(key.arn()),
 //!                 _ => {}
 //!             },
 //!             Error::Throttling(_) => backoff(),
@@ -151,13 +151,13 @@
 //! the errors this crate returns, for example from a fake keyring or CMM:
 //!
 //! ```
-//! use aws_esdk::error::{AccessDeniedError, Error, Resource, Service};
+//! use aws_esdk::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
 //!
 //! let err = Error::from(
 //!     AccessDeniedError::builder()
 //!         .message("AWS KMS Decrypt failed")
 //!         .service(Service::Kms)
-//!         .resource(Resource::KmsKey("arn:aws:kms:us-west-2:111122223333:key/1234abcd".into()))
+//!         .resource(Resource::KmsKey(KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/1234abcd")))
 //!         .code("ExpiredTokenException")
 //!         .build(),
 //! );
@@ -171,7 +171,10 @@ mod generated;
 
 pub use generated::*;
 
-pub use aws_mpl_primitives::error::{Collection, ConflictReason, Resource, RetryKind, Service};
+pub use aws_mpl_primitives::error::{
+    BranchKey, Cache, CmmResource, Collection, ConflictReason, DynamoDbTable, KeyringResource,
+    KmsKey, Resource, RetryKind, Service,
+};
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
-use crate::error::{Error, Resource, val_err};
+use crate::error::{CmmResource, Error, KeyringResource, Resource, val_err};
 use crate::error::{Kind, err};
 use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
@@ -19,8 +19,8 @@ impl MaterialSource {
     /// The caller's keyring or CMM, as errors about its materials name it.
     pub(crate) fn resource(&self) -> Resource {
         match self {
-            Self::Cmm(cmm) => Resource::Cmm(cmm.name().to_owned()),
-            Self::Keyring(keyring) => Resource::Keyring(keyring.name().to_owned()),
+            Self::Cmm(cmm) => Resource::Cmm(CmmResource::new(cmm.name())),
+            Self::Keyring(keyring) => Resource::Keyring(KeyringResource::new(keyring.name())),
         }
     }
 }
