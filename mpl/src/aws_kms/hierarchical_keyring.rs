@@ -10,7 +10,7 @@
 //! [`super::cache_entry_identifier`].
 
 use crate::Error;
-use crate::error::{Kind, Resource};
+use crate::error::{Cache, Kind, Resource};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -675,7 +675,7 @@ impl HierarchicalKeyring {
 /// Name the branch key in a cache throttling error,
 /// which names only the cache because the cache's keys are opaque.
 fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
-    if e.is_throttling() && e.resource() == Some(&Resource::Cache) {
+    if e.is_throttling() && e.resource() == Some(&Resource::Cache(Cache::new())) {
         e.set_message(format!(
             "timed out waiting for another caller to fetch branch key {branch_key_id}"
         ));

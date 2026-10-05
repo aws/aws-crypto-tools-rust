@@ -14,7 +14,7 @@
 //! client or the record.
 
 use crate::Error;
-use crate::error::{Kind, Resource, Service};
+use crate::error::{BranchKey, Kind, KmsKey, Resource, Service};
 use std::collections::BTreeMap;
 
 use aws_sdk_kms::Client as KmsClient;
@@ -131,7 +131,9 @@ fn reject_alias_arn(arn: &str, branch_key_id: &str) -> Result<(), Error> {
 fn malformed_record(branch_key_id: &str, message: impl Into<String>) -> Error {
     Error::new(Kind::InvalidMaterials, message).about(
         Some(Service::DynamoDb),
-        Some(Resource::BranchKey(branch_key_id.to_owned())),
+        Some(Resource::BranchKey(BranchKey::new(
+            branch_key_id.to_owned(),
+        ))),
     )
 }
 
@@ -196,7 +198,7 @@ pub(crate) async fn decrypt_branch_key(
         .ok_or_else(|| {
             Error::new(Kind::Service, "KMS Decrypt response is missing Plaintext").about(
                 Some(Service::Kms),
-                Some(Resource::KmsKey(resolved_key_id.clone())),
+                Some(Resource::KmsKey(KmsKey::new(resolved_key_id.clone()))),
             )
         })?
         .into_inner();
@@ -210,7 +212,7 @@ where
     Error::from_sdk(
         Service::Kms,
         &format!("AWS KMS {operation}"),
-        Some(Resource::KmsKey(key_arn.to_owned())),
+        Some(Resource::KmsKey(KmsKey::new(key_arn.to_owned()))),
         err,
     )
 }

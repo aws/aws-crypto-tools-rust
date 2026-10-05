@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use aws_crypto_mpl::error::{Resource, Service};
+use aws_crypto_mpl::error::{BranchKey, Resource, Service};
 
 use aws_crypto_mpl::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
@@ -360,6 +360,9 @@ fn assert_malformed(err: &aws_crypto_mpl::Error) {
         panic!("expected InvalidMaterials, got {err:?}");
     };
     assert_eq!(e.service(), Some(Service::DynamoDb));
-    assert_eq!(e.resource(), Some(&Resource::BranchKey("test-id".into())));
+    assert_eq!(
+        e.resource(),
+        Some(&Resource::BranchKey(BranchKey::new("test-id")))
+    );
     assert_eq!(e.code(), None);
 }

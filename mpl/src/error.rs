@@ -83,7 +83,7 @@
 //!     if let Error::Throttling(e) = err {
 //!         match (e.service(), e.resource()) {
 //!             (Some(service), _) => record_throttle(service.as_str()),
-//!             (None, Some(Resource::Cache)) => record_throttle("materials-cache"),
+//!             (None, Some(Resource::Cache(_))) => record_throttle("materials-cache"),
 //!             _ => record_throttle("other"),
 //!         }
 //!     }
@@ -100,13 +100,13 @@
 //! the errors this crate returns, for example from a fake key store:
 //!
 //! ```
-//! use aws_crypto_mpl::error::{ConflictError, ConflictReason, Error, Resource, Service};
+//! use aws_crypto_mpl::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
 //!
 //! let err = Error::from(
 //!     ConflictError::builder()
 //!         .message("branch key my-branch-key was rotated concurrently")
 //!         .service(Service::DynamoDb)
-//!         .resource(Resource::BranchKey("my-branch-key".into()))
+//!         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
 //!         .reason(ConflictReason::ConcurrentModification)
 //!         .build(),
 //! );
@@ -125,7 +125,10 @@ mod generated;
 
 pub use generated::*;
 
-pub use aws_mpl_primitives::error::{Collection, ConflictReason, Resource, RetryKind, Service};
+pub use aws_mpl_primitives::error::{
+    BranchKey, Cache, CmmResource, Collection, ConflictReason, DynamoDbTable, KeyringResource,
+    KmsKey, Resource, RetryKind, Service,
+};
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
@@ -378,7 +381,7 @@ mod tests {
         Error::from_sdk(
             Service::Kms,
             "AWS KMS Decrypt",
-            Some(Resource::KmsKey("arn".into())),
+            Some(Resource::KmsKey(KmsKey::new("arn"))),
             err,
         )
     }
@@ -428,7 +431,7 @@ mod tests {
             assert_eq!(err.code(), Some(code));
             assert_eq!(ProvideErrorMetadata::code(&err), Some(code));
             assert_eq!(err.service(), Some(Service::Kms));
-            assert_eq!(err.resource(), Some(&Resource::KmsKey("arn".into())));
+            assert_eq!(err.resource(), Some(&Resource::KmsKey(KmsKey::new("arn"))));
             assert!(
                 std::error::Error::source(&err).is_some(),
                 "{code}: SDK error is the source"
