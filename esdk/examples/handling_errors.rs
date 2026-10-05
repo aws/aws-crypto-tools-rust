@@ -89,24 +89,28 @@ fn report(err: &Error) {
     match err {
         // The error names the missing resource, so there is no need to parse the message.
         Error::ResourceNotFound(e) => match e.resource() {
-            Some(Resource::BranchKey(id)) => {
+            Some(Resource::BranchKey(branch_key)) => {
+                let id = branch_key.id();
                 println!(
                     "branch key {id} does not exist in the key store; create it or fix the ID"
                 );
             }
             Some(Resource::DynamoDbTable(table)) => {
+                let table = table.name();
                 println!("key store table {table} does not exist; check the table name");
             }
-            Some(Resource::KmsKey(arn)) => println!("KMS key {arn} does not exist"),
+            Some(Resource::KmsKey(key)) => println!("KMS key {} does not exist", key.arn()),
             _ => println!("an AWS resource does not exist: {}", e.message()),
         },
         // IAM usually allows only the key store's own table,
         // so a request for a table that does not exist is often denied before DynamoDB looks for it.
         Error::AccessDenied(e) => match (e.service(), e.resource()) {
-            (Some(Service::Kms), Some(Resource::KmsKey(arn))) => {
+            (Some(Service::Kms), Some(Resource::KmsKey(key))) => {
+                let arn = key.arn();
                 println!("this role may not use KMS key {arn}; check its IAM policy");
             }
             (Some(Service::DynamoDb), Some(Resource::DynamoDbTable(table))) => {
+                let table = table.name();
                 println!("this role may not read table {table}; check its IAM policy");
             }
             _ => println!("access denied; check the IAM policy"),
