@@ -191,11 +191,11 @@ impl Error {
     /// ```
     #[track_caller]
     #[must_use]
-    pub fn all_failed(message: impl Into<String>, errors: Vec<Self>) -> Self {
+    pub fn all_failed(message: impl Into<String>, errors: impl IntoIterator<Item = Self>) -> Self {
         Self::collect_failures(
             Collection::AllFailed,
             message,
-            errors,
+            errors.into_iter().collect(),
             |errors| match errors.iter().find(|e| e.is_retryable()) {
                 Some(retryable) => (retryable.kind(), retryable.retry_kind()),
                 None => (Self::shared_or_priority_kind(errors.iter()), None),
@@ -221,7 +221,7 @@ impl Error {
     ///
     /// let err = Error::any_failed(
     ///     "two keyrings could not wrap the data key",
-    ///     vec![
+    ///     [
     ///         Error::validation("the first keyring is misconfigured"),
     ///         Error::internal("the second keyring hit a bug"),
     ///     ],
@@ -231,20 +231,25 @@ impl Error {
     /// ```
     #[track_caller]
     #[must_use]
-    pub fn any_failed(message: impl Into<String>, errors: Vec<Self>) -> Self {
-        Self::collect_failures(Collection::AnyFailed, message, errors, |errors| {
-            if errors.iter().any(|e| !e.is_retryable()) {
-                let permanent = errors.iter().filter(|e| !e.is_retryable());
-                (Self::shared_or_priority_kind(permanent), None)
-            } else {
-                let kind = Self::shared_or_priority_kind(errors.iter());
-                let retry = errors
-                    .iter()
-                    .find(|e| e.kind() == kind)
-                    .and_then(Self::retry_kind);
-                (kind, retry)
-            }
-        })
+    pub fn any_failed(message: impl Into<String>, errors: impl IntoIterator<Item = Self>) -> Self {
+        Self::collect_failures(
+            Collection::AnyFailed,
+            message,
+            errors.into_iter().collect(),
+            |errors| {
+                if errors.iter().any(|e| !e.is_retryable()) {
+                    let permanent = errors.iter().filter(|e| !e.is_retryable());
+                    (Self::shared_or_priority_kind(permanent), None)
+                } else {
+                    let kind = Self::shared_or_priority_kind(errors.iter());
+                    let retry = errors
+                        .iter()
+                        .find(|e| e.kind() == kind)
+                        .and_then(Self::retry_kind);
+                    (kind, retry)
+                }
+            },
+        )
     }
 
     #[track_caller]
