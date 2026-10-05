@@ -60,16 +60,16 @@ or a branch key record with a missing attribute or a key of the wrong length.
 Usually a bug in a custom keyring or CMM, or a corrupt key store record;
 retrying cannot succeed."""
 example = """
-use {crate}::error::{Error, InvalidMaterialsError, Resource};
+use {crate}::error::{BranchKey, Error, InvalidMaterialsError, Resource};
 
 let err = Error::from(
     InvalidMaterialsError::builder()
         .message("branch key record has a 16 byte key, expected 32")
-        .resource(Resource::BranchKey("my-branch-key".into()))
+        .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
         .build(),
 );
 if let Error::InvalidMaterials(e) = &err {
-    assert_eq!(e.resource(), Some(&Resource::BranchKey("my-branch-key".into())));
+    assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new("my-branch-key"))));
 }
 """
 
@@ -104,16 +104,16 @@ for example when decrypting with a keyring that did not encrypt the message.
 `resource()` names the keyring or CMM that was used.
 Decrypt with a keyring that has one of the message's keys."""
 example = """
-use {crate}::error::{Error, NoMatchingDataKeyError, Resource};
+use {crate}::error::{Error, KeyringResource, NoMatchingDataKeyError, Resource};
 
 let err = Error::from(
     NoMatchingDataKeyError::builder()
         .message("encrypted data key 0 did not match the keyring")
-        .resource(Resource::Keyring("my-namespace/my-key".into()))
+        .resource(Resource::Keyring(KeyringResource::new("my-namespace/my-key")))
         .build(),
 );
 if let Error::NoMatchingDataKey(e) = &err {
-    assert_eq!(e.resource(), Some(&Resource::Keyring("my-namespace/my-key".into())));
+    assert_eq!(e.resource(), Some(&Resource::Keyring(KeyringResource::new("my-namespace/my-key"))));
 }
 """
 
@@ -155,14 +155,14 @@ AWS KMS or DynamoDB denied access.
 `is_credentials()` says whether the credentials are expired or invalid;
 otherwise fix the permissions for `service()` on `resource()`."""
 example = """
-use {crate}::error::{AccessDeniedError, Error, Resource, Service};
+use {crate}::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
 
 let arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd";
 let err = Error::from(
     AccessDeniedError::builder()
         .message("AWS KMS Decrypt failed")
         .service(Service::Kms)
-        .resource(Resource::KmsKey(arn.into()))
+        .resource(Resource::KmsKey(KmsKey::new(arn)))
         .code("AccessDeniedException")
         .request_id("6f1c2e9a")
         .build(),
@@ -170,7 +170,7 @@ let err = Error::from(
 if let Error::AccessDenied(e) = &err {
     assert!(!e.is_credentials());
     assert_eq!(e.service(), Some(Service::Kms));
-    assert_eq!(e.resource(), Some(&Resource::KmsKey(arn.into())));
+    assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(arn))));
     assert_eq!(e.request_id(), Some("6f1c2e9a"));
 }
 """
@@ -185,17 +185,17 @@ A KMS key, DynamoDB table, or branch key does not exist.
 
 Fix the configuration that names `resource()`."""
 example = """
-use {crate}::error::{Error, Resource, ResourceNotFoundError, Service};
+use {crate}::error::{BranchKey, Error, Resource, ResourceNotFoundError, Service};
 
 let err = Error::from(
     ResourceNotFoundError::builder()
         .message("branch key my-branch-key does not exist")
         .service(Service::DynamoDb)
-        .resource(Resource::BranchKey("my-branch-key".into()))
+        .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
         .build(),
 );
 if let Error::ResourceNotFound(e) = &err {
-    assert_eq!(e.resource(), Some(&Resource::BranchKey("my-branch-key".into())));
+    assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new("my-branch-key"))));
 }
 """
 
@@ -213,18 +213,18 @@ AWS KMS, DynamoDB, or the materials cache ([`Resource::Cache`](crate::error::Res
 with no `service()`).
 Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Throttling)."""
 example = """
-use {crate}::error::{Error, Resource, RetryKind, ThrottlingError};
+use {crate}::error::{Cache, Error, Resource, RetryKind, ThrottlingError};
 
 let err = Error::from(
     ThrottlingError::builder()
         .message("timed out waiting for another caller to fetch branch key my-branch-key")
-        .resource(Resource::Cache)
+        .resource(Resource::Cache(Cache::new()))
         .build(),
 );
 assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
 if let Error::Throttling(e) = &err {
     assert_eq!(e.service(), None);
-    assert_eq!(e.resource(), Some(&Resource::Cache));
+    assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
 }
 """
 
@@ -244,13 +244,13 @@ or rotating a branch key that another caller rotated at the same time.
 Re-read the resource before acting; retrying the same call unchanged is not safe.
 Not retryable."""
 example = """
-use {crate}::error::{ConflictError, ConflictReason, Error, Resource, Service};
+use {crate}::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
 
 let err = Error::from(
     ConflictError::builder()
         .message("branch key my-branch-key was rotated concurrently")
         .service(Service::DynamoDb)
-        .resource(Resource::BranchKey("my-branch-key".into()))
+        .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
         .reason(ConflictReason::ConcurrentModification)
         .build(),
 );

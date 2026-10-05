@@ -334,7 +334,8 @@ fn as_display<T: fmt::Display>(e: &T) -> &dyn fmt::Display {
 fn tried<'a>(resources: impl Iterator<Item = Option<&'a Resource>>) -> Vec<&'a str> {
     resources
         .filter_map(|r| match r {
-            Some(Resource::Keyring(name) | Resource::Cmm(name)) => Some(name.as_str()),
+            Some(Resource::Keyring(keyring)) => Some(keyring.name()),
+            Some(Resource::Cmm(cmm)) => Some(cmm.name()),
             _ => None,
         })
         .collect()
@@ -1187,16 +1188,16 @@ impl From<ValidationError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, InvalidMaterialsError, Resource};
+/// use aws_crypto_mpl::error::{BranchKey, Error, InvalidMaterialsError, Resource};
 ///
 /// let err = Error::from(
 ///     InvalidMaterialsError::builder()
 ///         .message("branch key record has a 16 byte key, expected 32")
-///         .resource(Resource::BranchKey("my-branch-key".into()))
+///         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
 ///         .build(),
 /// );
 /// if let Error::InvalidMaterials(e) = &err {
-///     assert_eq!(e.resource(), Some(&Resource::BranchKey("my-branch-key".into())));
+///     assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new("my-branch-key"))));
 /// }
 /// ```
 #[derive(Clone)]
@@ -1403,16 +1404,16 @@ impl From<EncryptionContextMismatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, NoMatchingDataKeyError, Resource};
+/// use aws_crypto_mpl::error::{Error, KeyringResource, NoMatchingDataKeyError, Resource};
 ///
 /// let err = Error::from(
 ///     NoMatchingDataKeyError::builder()
 ///         .message("encrypted data key 0 did not match the keyring")
-///         .resource(Resource::Keyring("my-namespace/my-key".into()))
+///         .resource(Resource::Keyring(KeyringResource::new("my-namespace/my-key")))
 ///         .build(),
 /// );
 /// if let Error::NoMatchingDataKey(e) = &err {
-///     assert_eq!(e.resource(), Some(&Resource::Keyring("my-namespace/my-key".into())));
+///     assert_eq!(e.resource(), Some(&Resource::Keyring(KeyringResource::new("my-namespace/my-key"))));
 /// }
 /// ```
 #[derive(Clone)]
@@ -1618,14 +1619,14 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{AccessDeniedError, Error, Resource, Service};
+/// use aws_crypto_mpl::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
 ///
 /// let arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd";
 /// let err = Error::from(
 ///     AccessDeniedError::builder()
 ///         .message("AWS KMS Decrypt failed")
 ///         .service(Service::Kms)
-///         .resource(Resource::KmsKey(arn.into()))
+///         .resource(Resource::KmsKey(KmsKey::new(arn)))
 ///         .code("AccessDeniedException")
 ///         .request_id("6f1c2e9a")
 ///         .build(),
@@ -1633,7 +1634,7 @@ impl From<CryptographicError> for Error {
 /// if let Error::AccessDenied(e) = &err {
 ///     assert!(!e.is_credentials());
 ///     assert_eq!(e.service(), Some(Service::Kms));
-///     assert_eq!(e.resource(), Some(&Resource::KmsKey(arn.into())));
+///     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(arn))));
 ///     assert_eq!(e.request_id(), Some("6f1c2e9a"));
 /// }
 /// ```
@@ -1768,17 +1769,17 @@ impl From<AccessDeniedError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, Resource, ResourceNotFoundError, Service};
+/// use aws_crypto_mpl::error::{BranchKey, Error, Resource, ResourceNotFoundError, Service};
 ///
 /// let err = Error::from(
 ///     ResourceNotFoundError::builder()
 ///         .message("branch key my-branch-key does not exist")
 ///         .service(Service::DynamoDb)
-///         .resource(Resource::BranchKey("my-branch-key".into()))
+///         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
 ///         .build(),
 /// );
 /// if let Error::ResourceNotFound(e) = &err {
-///     assert_eq!(e.resource(), Some(&Resource::BranchKey("my-branch-key".into())));
+///     assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new("my-branch-key"))));
 /// }
 /// ```
 #[derive(Clone)]
@@ -1897,18 +1898,18 @@ impl From<ResourceNotFoundError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{Error, Resource, RetryKind, ThrottlingError};
+/// use aws_crypto_mpl::error::{Cache, Error, Resource, RetryKind, ThrottlingError};
 ///
 /// let err = Error::from(
 ///     ThrottlingError::builder()
 ///         .message("timed out waiting for another caller to fetch branch key my-branch-key")
-///         .resource(Resource::Cache)
+///         .resource(Resource::Cache(Cache::new()))
 ///         .build(),
 /// );
 /// assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
 /// if let Error::Throttling(e) = &err {
 ///     assert_eq!(e.service(), None);
-///     assert_eq!(e.resource(), Some(&Resource::Cache));
+///     assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
 /// }
 /// ```
 #[derive(Clone)]
@@ -2028,13 +2029,13 @@ impl From<ThrottlingError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_crypto_mpl::error::{ConflictError, ConflictReason, Error, Resource, Service};
+/// use aws_crypto_mpl::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
 ///
 /// let err = Error::from(
 ///     ConflictError::builder()
 ///         .message("branch key my-branch-key was rotated concurrently")
 ///         .service(Service::DynamoDb)
-///         .resource(Resource::BranchKey("my-branch-key".into()))
+///         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
 ///         .reason(ConflictReason::ConcurrentModification)
 ///         .build(),
 /// );
@@ -3254,6 +3255,7 @@ pub mod builders {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_mpl_primitives::error::BranchKey;
 
     fn cause() -> std::io::Error {
         std::io::Error::other("the cause")
@@ -3307,7 +3309,7 @@ mod tests {
     #[test]
     fn is_invalid_materials_builder_and_accessors() {
         let s = InvalidMaterialsError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3319,7 +3321,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(std::error::Error::source(&s).is_some());
@@ -3336,7 +3341,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3411,7 +3419,7 @@ mod tests {
     #[test]
     fn is_no_matching_data_key_builder_and_accessors() {
         let s = NoMatchingDataKeyError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3423,7 +3431,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(std::error::Error::source(&s).is_some());
@@ -3440,7 +3451,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3515,7 +3529,7 @@ mod tests {
     #[test]
     fn is_access_denied_builder_and_accessors() {
         let s = AccessDeniedError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3527,7 +3541,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(!s.is_credentials());
@@ -3551,7 +3568,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3581,7 +3601,7 @@ mod tests {
     #[test]
     fn is_resource_not_found_builder_and_accessors() {
         let s = ResourceNotFoundError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3593,7 +3613,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(std::error::Error::source(&s).is_some());
@@ -3610,7 +3633,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3640,7 +3666,7 @@ mod tests {
     #[test]
     fn is_throttling_builder_and_accessors() {
         let s = ThrottlingError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3652,7 +3678,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(std::error::Error::source(&s).is_some());
@@ -3669,7 +3698,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3699,7 +3731,7 @@ mod tests {
     #[test]
     fn is_conflict_builder_and_accessors() {
         let s = ConflictError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3712,7 +3744,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert_eq!(s.reason(), Some(ConflictReason::ConcurrentModification));
@@ -3730,7 +3765,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3760,7 +3798,7 @@ mod tests {
     #[test]
     fn is_service_builder_and_accessors() {
         let s = ServiceError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3772,7 +3810,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(std::error::Error::source(&s).is_some());
@@ -3789,7 +3830,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(
@@ -3819,7 +3863,7 @@ mod tests {
     #[test]
     fn is_dispatch_builder_and_accessors() {
         let s = DispatchError::builder()
-            .resource(Resource::BranchKey("bk".into()))
+            .resource(Resource::BranchKey(BranchKey::new("bk")))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3831,7 +3875,10 @@ mod tests {
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
         assert_eq!(s.service(), Some(Service::DynamoDb));
-        assert_eq!(s.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            s.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
         assert!(std::error::Error::source(&s).is_some());
@@ -3848,7 +3895,10 @@ mod tests {
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
         assert_eq!(e.service(), Some(Service::DynamoDb));
-        assert_eq!(e.resource(), Some(&Resource::BranchKey("bk".into())));
+        assert_eq!(
+            e.resource(),
+            Some(&Resource::BranchKey(BranchKey::new("bk")))
+        );
         assert_eq!(e.code(), Some("SomeCode"));
         assert_eq!(e.request_id(), Some("req-1"));
         assert_eq!(

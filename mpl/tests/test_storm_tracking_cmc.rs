@@ -11,7 +11,7 @@
 #![cfg(feature = "test-utils")]
 
 use aws_crypto_mpl::Error;
-use aws_crypto_mpl::error::{Resource, RetryKind};
+use aws_crypto_mpl::error::{Cache, Resource, RetryKind};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -745,7 +745,7 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
     };
     assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
     assert_eq!(e.service(), None);
-    assert_eq!(e.resource(), Some(&Resource::Cache));
+    assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
     assert!(err.is_retryable());
 }
 
@@ -885,7 +885,7 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
     };
     assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
     assert_eq!(e.service(), None);
-    assert_eq!(e.resource(), Some(&Resource::Cache));
+    assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
     assert!(err.is_retryable());
 }
 

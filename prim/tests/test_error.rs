@@ -6,7 +6,8 @@
 use std::error::Error as _;
 
 use aws_mpl_primitives::error::{
-    ConflictReason, CryptographicError, InternalError, Resource, RetryKind, Service,
+    BranchKey, Cache, CmmResource, ConflictReason, CryptographicError, DynamoDbTable,
+    InternalError, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
 use aws_mpl_primitives::{DigestAlg, Error, hkdf};
 
@@ -83,23 +84,23 @@ fn service_and_resource_display() {
     assert_eq!(Service::DynamoDb.as_str(), "dynamodb");
     let cases = [
         (
-            Resource::KmsKey("arn:aws:kms:k".into()),
+            Resource::KmsKey(KmsKey::new("arn:aws:kms:k")),
             "KMS key arn:aws:kms:k",
         ),
         (
-            Resource::DynamoDbTable("KeyStoreTable".into()),
+            Resource::DynamoDbTable(DynamoDbTable::new("KeyStoreTable")),
             "table KeyStoreTable",
         ),
         (
-            Resource::BranchKey("my-branch-key".into()),
+            Resource::BranchKey(BranchKey::new("my-branch-key")),
             "branch key my-branch-key",
         ),
-        (Resource::Cache, "materials cache"),
+        (Resource::Cache(Cache::new()), "materials cache"),
         (
-            Resource::Keyring("my-namespace/my-key".into()),
+            Resource::Keyring(KeyringResource::new("my-namespace/my-key")),
             "keyring my-namespace/my-key",
         ),
-        (Resource::Cmm("default".into()), "CMM default"),
+        (Resource::Cmm(CmmResource::new("default")), "CMM default"),
     ];
     for (resource, text) in cases {
         assert_eq!(resource.to_string(), text);

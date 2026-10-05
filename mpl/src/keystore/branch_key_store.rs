@@ -9,7 +9,7 @@
 //! parsed from the configured KMS ARN.
 
 use crate::Error;
-use crate::error::{ConflictReason, Kind, Resource, RetryKind, Service};
+use crate::error::{BranchKey, ConflictReason, DynamoDbTable, Kind, Resource, RetryKind, Service};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -171,7 +171,9 @@ impl BranchKeyStore {
             )
             .about(
                 Some(Service::DynamoDb),
-                Some(Resource::BranchKey(branch_key_id.to_string())),
+                Some(Resource::BranchKey(BranchKey::new(
+                    branch_key_id.to_string(),
+                ))),
             )
         })?;
 
@@ -386,7 +388,9 @@ impl Keystore for BranchKeyStore {
                     )
                     .about(
                         Some(Service::DynamoDb),
-                        Some(Resource::DynamoDbTable(table_name.clone())),
+                        Some(Resource::DynamoDbTable(DynamoDbTable::new(
+                            table_name.clone(),
+                        ))),
                     )
                 })?;
                 if !table_has_expected_schema(table) {
@@ -427,7 +431,9 @@ impl Keystore for BranchKeyStore {
                     )
                     .about(
                         Some(Service::DynamoDb),
-                        Some(Resource::DynamoDbTable(table_name.clone())),
+                        Some(Resource::DynamoDbTable(DynamoDbTable::new(
+                            table_name.clone(),
+                        ))),
                     )
                 })?;
                 table_arn(table, table_name)
@@ -840,7 +846,9 @@ fn table_arn(table: &TableDescription, table_name: &str) -> Result<String, Error
         )
         .about(
             Some(Service::DynamoDb),
-            Some(Resource::DynamoDbTable(table_name.to_owned())),
+            Some(Resource::DynamoDbTable(DynamoDbTable::new(
+                table_name.to_owned(),
+            ))),
         )
     })
 }
@@ -861,7 +869,9 @@ where
     Error::from_sdk(
         Service::DynamoDb,
         &format!("DynamoDB {operation}"),
-        Some(Resource::DynamoDbTable(table_name.to_owned())),
+        Some(Resource::DynamoDbTable(DynamoDbTable::new(
+            table_name.to_owned(),
+        ))),
         err,
     )
 }
@@ -900,7 +910,9 @@ fn map_transact_write_error(
         let meta = ProvideErrorMetadata::meta(&sdk).clone();
         let mut conflict = Error::with_cause(Kind::Conflict, conflict_message, sdk).about(
             Some(Service::DynamoDb),
-            Some(Resource::BranchKey(branch_key_id.to_owned())),
+            Some(Resource::BranchKey(BranchKey::new(
+                branch_key_id.to_owned(),
+            ))),
         );
         conflict.set_sdk(code, request_id, Some(meta));
         conflict.set_reason(reason);
@@ -917,7 +929,9 @@ fn map_transact_write_error(
 fn malformed_record(branch_key_id: &str, message: impl Into<String>) -> Error {
     Error::new(Kind::InvalidMaterials, message).about(
         Some(Service::DynamoDb),
-        Some(Resource::BranchKey(branch_key_id.to_owned())),
+        Some(Resource::BranchKey(BranchKey::new(
+            branch_key_id.to_owned(),
+        ))),
     )
 }
 
