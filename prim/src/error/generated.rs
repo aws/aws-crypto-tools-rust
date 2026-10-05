@@ -105,7 +105,7 @@ impl ErrorData {
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {
             if rest.iter().all(|e| e.service() == first.service()) {
-                remote.service = first.service();
+                remote.service = first.service().cloned();
             }
             if rest.iter().all(|e| e.resource() == first.resource()) {
                 remote.resource = first.resource().cloned();
@@ -124,7 +124,7 @@ impl ErrorData {
         let r = &self.remote;
         let details = if remote {
             details(
-                r.service,
+                r.service.as_ref(),
                 r.resource.as_ref(),
                 r.code.as_deref(),
                 r.request_id.as_deref(),
@@ -215,7 +215,7 @@ struct Level<'a> {
 
 /// The details `Display` prints after the message, in order.
 fn details(
-    service: Option<Service>,
+    service: Option<&Service>,
     resource: Option<&Resource>,
     code: Option<&str>,
     request_id: Option<&str>,
@@ -513,7 +513,7 @@ impl Error {
     ///
     /// `None` for an error that is not about an AWS call.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<&Service> {
         match self {
             _ => None,
         }
@@ -598,7 +598,7 @@ impl Error {
             name: self.name(),
             message: data.message.clone(),
             retry: data.retry,
-            service: data.remote.service,
+            service: data.remote.service.clone(),
             resource: data.remote.resource.clone(),
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),

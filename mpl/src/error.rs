@@ -56,14 +56,14 @@
 //!
 //! match store.version_key("my-branch-key".into()).await {
 //!     // Another caller rotated the branch key first; it has a new version already.
-//!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::ConcurrentModification) => Ok(()),
+//!     Err(Error::Conflict(e)) if e.reason() == Some(&ConflictReason::ConcurrentModification) => Ok(()),
 //!     other => other,
 //! }?;
 //!
 //! match store.create_key(Some("my-branch-key".into()), Some(Default::default())).await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.
-//!     Err(Error::Conflict(e)) if e.reason() == Some(ConflictReason::AlreadyExists) => {}
+//!     Err(Error::Conflict(e)) if e.reason() == Some(&ConflictReason::AlreadyExists) => {}
 //!     Err(e) => return Err(e),
 //! }
 //! # Ok(())
@@ -435,7 +435,7 @@ mod tests {
             assert_eq!(err.retry_kind(), retry, "{code}");
             assert_eq!(err.code(), Some(code));
             assert_eq!(ProvideErrorMetadata::code(&err), Some(code));
-            assert_eq!(err.service(), Some(Service::Kms));
+            assert_eq!(err.service(), Some(&Service::Kms));
             assert_eq!(err.resource(), Some(&Resource::KmsKey(KmsKey::new("arn"))));
             assert!(
                 std::error::Error::source(&err).is_some(),
@@ -462,7 +462,7 @@ mod tests {
         assert!(err.is_dispatch());
         assert_eq!(err.retry_kind(), Some(RetryKind::Transient));
         assert_eq!(err.code(), None);
-        assert_eq!(err.service(), Some(Service::Kms));
+        assert_eq!(err.service(), Some(&Service::Kms));
     }
 
     #[test]

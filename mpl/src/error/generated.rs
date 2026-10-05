@@ -190,7 +190,7 @@ impl ErrorData {
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {
             if rest.iter().all(|e| e.service() == first.service()) {
-                remote.service = first.service();
+                remote.service = first.service().cloned();
             }
             if rest.iter().all(|e| e.resource() == first.resource()) {
                 remote.resource = first.resource().cloned();
@@ -209,7 +209,7 @@ impl ErrorData {
         let r = &self.remote;
         let details = if remote {
             details(
-                r.service,
+                r.service.as_ref(),
                 r.resource.as_ref(),
                 r.code.as_deref(),
                 r.request_id.as_deref(),
@@ -305,7 +305,7 @@ struct Level<'a> {
 
 /// The details `Display` prints after the message, in order.
 fn details(
-    service: Option<Service>,
+    service: Option<&Service>,
     resource: Option<&Resource>,
     code: Option<&str>,
     request_id: Option<&str>,
@@ -555,7 +555,7 @@ impl Error {
         let mut data = ErrorData::new(message.into());
         data.retry = inner.data().retry;
         data.remote = inner.data().remote.clone();
-        data.reason = inner.data().reason;
+        data.reason.clone_from(&inner.data().reason);
         data.meta.clone_from(&inner.data().meta);
         data.source = Some(Arc::new(inner));
         Self::from_data(kind, data)
@@ -579,7 +579,7 @@ impl Error {
         data.remote = ErrorData::shared_remote(&collected);
         if let Some((first, rest)) = collected.split_first() {
             if rest.iter().all(|e| e.data().reason == first.data().reason) {
-                data.reason = first.data().reason;
+                data.reason.clone_from(&first.data().reason);
             }
             if rest.iter().all(|e| e.data().meta == first.data().meta) {
                 data.meta.clone_from(&first.data().meta);
@@ -696,7 +696,7 @@ impl Error {
     ///
     /// `None` for an error that is not about an AWS call.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<&Service> {
         match self {
             Self::InvalidMaterials(e) => e.service(),
             Self::NoMatchingDataKey(e) => e.service(),
@@ -822,11 +822,11 @@ impl Error {
             name: self.name(),
             message: data.message.clone(),
             retry: data.retry,
-            service: data.remote.service,
+            service: data.remote.service.clone(),
             resource: data.remote.resource.clone(),
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),
-            reason: data.reason,
+            reason: data.reason.clone(),
             meta: data.meta.clone(),
             collection: data.collection,
             collected: data.collected.clone(),
@@ -1021,7 +1021,7 @@ impl Error {
         let mut data = ErrorData::new(message.into());
         data.retry = inner.retry_kind();
         data.remote = Remote {
-            service: inner.service(),
+            service: inner.service().cloned(),
             resource: inner.resource().cloned(),
             code: inner.code().map(str::to_owned),
             request_id: inner.request_id().map(str::to_owned),
@@ -1253,8 +1253,8 @@ impl InvalidMaterialsError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -1469,8 +1469,8 @@ impl NoMatchingDataKeyError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -1633,7 +1633,7 @@ impl From<CryptographicError> for Error {
 /// );
 /// if let Error::AccessDenied(e) = &err {
 ///     assert!(!e.is_credentials());
-///     assert_eq!(e.service(), Some(Service::Kms));
+///     assert_eq!(e.service(), Some(&Service::Kms));
 ///     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(arn))));
 ///     assert_eq!(e.request_id(), Some("6f1c2e9a"));
 /// }
@@ -1691,8 +1691,8 @@ impl AccessDeniedError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -1835,8 +1835,8 @@ impl ResourceNotFoundError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -1965,8 +1965,8 @@ impl ThrottlingError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -2040,7 +2040,7 @@ impl From<ThrottlingError> for Error {
 ///         .build(),
 /// );
 /// if let Error::Conflict(e) = &err {
-///     assert_eq!(e.reason(), Some(ConflictReason::ConcurrentModification));
+///     assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
 /// }
 /// ```
 #[derive(Clone)]
@@ -2096,8 +2096,8 @@ impl ConflictError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -2126,8 +2126,8 @@ impl ConflictError {
 
     /// Why the request conflicts, when known.
     #[must_use]
-    pub fn reason(&self) -> Option<ConflictReason> {
-        self.data.reason
+    pub fn reason(&self) -> Option<&ConflictReason> {
+        self.data.reason.as_ref()
     }
 }
 
@@ -2232,8 +2232,8 @@ impl ServiceError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -2360,8 +2360,8 @@ impl DispatchError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
@@ -3346,7 +3346,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3366,7 +3366,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3456,7 +3456,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3476,7 +3476,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3566,7 +3566,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3593,7 +3593,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3638,7 +3638,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3658,7 +3658,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3703,7 +3703,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3723,7 +3723,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3769,14 +3769,14 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
         );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
-        assert_eq!(s.reason(), Some(ConflictReason::ConcurrentModification));
+        assert_eq!(s.reason(), Some(&ConflictReason::ConcurrentModification));
         assert!(std::error::Error::source(&s).is_some());
         assert_eq!(
             s.to_string(),
@@ -3790,7 +3790,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3835,7 +3835,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3855,7 +3855,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3900,7 +3900,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3920,7 +3920,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))

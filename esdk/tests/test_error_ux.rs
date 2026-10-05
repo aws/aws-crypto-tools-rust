@@ -71,7 +71,7 @@ async fn kms_access_denied_while_decrypting_a_branch_key() {
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(KEY_ARN))));
     assert_eq!(e.code(), Some("AccessDeniedException"));
     assert_eq!(e.request_id(), Some("6f1c2e9a"));
@@ -127,7 +127,7 @@ async fn expired_credentials_on_dynamodb_get_item() {
         panic!("expected AccessDenied, got {err:?}");
     };
     assert!(e.is_credentials());
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::DynamoDbTable(DynamoDbTable::new(TABLE)))
@@ -145,7 +145,7 @@ async fn a_missing_branch_key_record_names_the_branch_key() {
     let Error::ResourceNotFound(e) = &err else {
         panic!("expected ResourceNotFound, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
@@ -170,7 +170,7 @@ async fn a_corrupt_branch_key_record_is_invalid_materials_about_the_branch_key()
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
     );
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(e.code(), None);
     assert!(!err.is_retryable());
 }
@@ -186,7 +186,7 @@ async fn kms_throttling_is_throttling_about_the_kms_key() {
         panic!("expected Throttling, got {err:?}");
     };
     assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(KEY_ARN))));
     assert_eq!(e.code(), Some("ThrottlingException"));
 }
@@ -302,8 +302,8 @@ async fn version_key_condition_failure_is_a_concurrent_modification_conflict() {
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
         panic!("expected Conflict, got {err:?}");
     };
-    assert_eq!(e.reason(), Some(ConflictReason::ConcurrentModification));
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
@@ -344,7 +344,7 @@ async fn create_key_condition_failure_is_an_already_exists_conflict() {
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
         panic!("expected Conflict, got {err:?}");
     };
-    assert_eq!(e.reason(), Some(ConflictReason::AlreadyExists));
+    assert_eq!(e.reason(), Some(&ConflictReason::AlreadyExists));
     assert_eq!(
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
@@ -431,7 +431,7 @@ async fn dynamodb_access_denied_names_the_table() {
         panic!("expected AccessDenied, got {err:?}");
     };
     assert!(!e.is_credentials());
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::DynamoDbTable(DynamoDbTable::new(TABLE)))
@@ -450,7 +450,7 @@ async fn a_missing_kms_key_names_the_kms_key() {
     let Error::ResourceNotFound(e) = &err else {
         panic!("expected ResourceNotFound, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(KEY_ARN))));
     assert_eq!(e.code(), Some("NotFoundException"));
 }
@@ -465,7 +465,7 @@ async fn a_missing_table_names_the_table() {
     let Error::ResourceNotFound(e) = &err else {
         panic!("expected ResourceNotFound, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::DynamoDbTable(DynamoDbTable::new(TABLE)))
@@ -494,7 +494,7 @@ async fn encrypt_kms_access_denied_names_the_kms_key() {
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(KEY_ARN))));
     assert_eq!(e.request_id(), Some("6f1c2e9a"));
     assert!(
@@ -548,7 +548,7 @@ async fn create_key_kms_access_denied_names_the_kms_key() {
     let aws_crypto_mpl::Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(KEY_ARN))));
     assert_eq!(e.request_id(), Some("gdk-denied"));
 }
@@ -735,7 +735,7 @@ async fn a_discovery_key_store_names_the_kms_key_from_the_record() {
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(
         e.resource(),
         Some(&Resource::KmsKey(KmsKey::new(RECORD_KEY_ARN)))

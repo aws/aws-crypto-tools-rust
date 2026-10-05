@@ -21,7 +21,7 @@ pub use generated::*;
 /// assert_eq!(Service::Kms.to_string(), "AWS KMS");
 /// assert_eq!(Service::DynamoDb.as_str(), "dynamodb");
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Service {
     /// AWS Key Management Service.
@@ -33,7 +33,7 @@ pub enum Service {
 impl Service {
     /// A short, stable identifier: `"kms"` or `"dynamodb"`.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Kms => "kms",
             Self::DynamoDb => "dynamodb",
@@ -312,7 +312,7 @@ pub enum Collection {
 
 /// Why a request conflicts with the current state of a resource.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ConflictReason {
     /// The resource already exists,
     /// for example `create_key` with a branch key ID that is in use.
