@@ -9,6 +9,8 @@ on:
       - "prim/**"
       - ".github/workflows/prim-test-server.yml"
   push:
+    branches:
+      - main
     paths:
       - "prim-test-server/**"
       - "prim/**"
@@ -58,115 +60,17 @@ jobs:
       - name: Test
         run: cargo test --verbose
 
-  # The complete cross-language run: `make test-server` clones commons (at the
-  # branch in prim-test-server/server-config.json) and the shared orchestrator
-  # builds + launches every configured Primitives Language_Server (this working
-  # tree is the live Rust server; java/net/python/go/rust-dafny come from the
-  # MPL repo), runs the commons Tests over the full pairwise matrix, and tears
-  # down. The tests are offline, so no AWS credentials are needed.
+  # The cross-language TestServer run, from the shared commons workflow. This
+  # checkout supplies the rust server; every other server comes from its
+  # configured branch. Only the pairs involving rust run; the full matrix runs in commons.
   test-server:
-    name: Cross-language TestServer run
-    runs-on: ubuntu-latest
-    env:
-      GRADLE_OPTS: -Dorg.gradle.daemon=false
-      # Cold builds of six servers (two cargo release builds among them) exceed
-      # the orchestrator's 180s default server-readiness window.
-      TESTSERVER_READY_TIMEOUT_SECONDS: "1800"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Set up JDK 21 (Temurin) — the commons orchestrator + Java server
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Set up Python 3.11 (Python Language_Server)
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Set up .NET (.NET Language_Server)
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: |
-            6.0.x
-            8.0.x
-
-      - name: Set up Go (Go Language_Server + aws-lc-sys native builds)
-        uses: actions/setup-go@v5
-        with:
-          go-version: "stable"
-          cache: false
-
-      - name: Set up the Rust toolchain (Rust Language_Server builds)
-        run: |
-          set -euo pipefail
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          cargo --version
-
-      - name: Restore build caches (Gradle/Cargo/NuGet/Go)
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.nuget/packages
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-prim-ts-build-${{ github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-prim-ts-build-
-
-      - name: Authenticate the git@github.com clones (commons, MPL)
-        env:
-          PAT: ${{ secrets.COMMONS_REPO_PAT }}
-        run: |
-          test -n "$PAT" || { echo "::error::COMMONS_REPO_PAT is empty/unset in this repo"; exit 1; }
-          git config --global url."https://x-access-token:${PAT}@github.com/".insteadOf "git@github.com:"
-
-      - name: Run the orchestrated TestServer
-        working-directory: prim-test-server
-        run: make test-server
-
-      - name: Publish test results to the run summary
-        if: always()
-        run: |
-          clone=prim-test-server/.commons-clone
-          if [ -f "$clone/test-server-common/tools/ci_summary.py" ]; then
-            python3 "$clone/test-server-common/tools/ci_summary.py" \
-              "$clone/primitives/test-server/tests/build/test-results" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload test reports + Resolution_Record
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prim-test-server-reports
-          path: |
-            prim-test-server/.commons-clone/test-server-common/orchestrator/build/resolution-record.json
-            prim-test-server/.commons-clone/test-server-common/orchestrator/build/launch/*/*.log
-            prim-test-server/.commons-clone/primitives/test-server/build/launch/*/*.log
-            prim-test-server/.commons-clone/primitives/test-server/build/launch/*/*/*.log
-            prim-test-server/.commons-clone/primitives/test-server/tests/build/reports/tests
-            prim-test-server/.commons-clone/primitives/test-server/tests/build/test-results
-          if-no-files-found: ignore
-
-      - name: Save build caches
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.nuget/packages
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-prim-ts-build-${{ github.run_id }}
+    name: TestServer
+    permissions:
+      contents: read
+      actions: read
+    uses: aws/aws-crypto-tools-commons/.github/workflows/primitives-test-server-reusable.yml@main
+    with:
+      focus: rust
+      checkout-languages: rust
+    secrets:
+      repo-pat: ${{ secrets.COMMONS_REPO_PAT }}
