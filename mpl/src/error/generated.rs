@@ -2591,9 +2591,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -2705,9 +2706,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -2819,9 +2821,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -2888,9 +2891,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -2957,9 +2961,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3027,9 +3032,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3103,9 +3109,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3172,9 +3179,10 @@ pub mod builders {
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3309,7 +3317,7 @@ mod tests {
     #[test]
     fn is_invalid_materials_builder_and_accessors() {
         let s = InvalidMaterialsError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3419,7 +3427,7 @@ mod tests {
     #[test]
     fn is_no_matching_data_key_builder_and_accessors() {
         let s = NoMatchingDataKeyError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3529,7 +3537,7 @@ mod tests {
     #[test]
     fn is_access_denied_builder_and_accessors() {
         let s = AccessDeniedError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3601,7 +3609,7 @@ mod tests {
     #[test]
     fn is_resource_not_found_builder_and_accessors() {
         let s = ResourceNotFoundError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3666,7 +3674,7 @@ mod tests {
     #[test]
     fn is_throttling_builder_and_accessors() {
         let s = ThrottlingError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3731,7 +3739,7 @@ mod tests {
     #[test]
     fn is_conflict_builder_and_accessors() {
         let s = ConflictError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3798,7 +3806,7 @@ mod tests {
     #[test]
     fn is_service_builder_and_accessors() {
         let s = ServiceError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3863,7 +3871,7 @@ mod tests {
     #[test]
     fn is_dispatch_builder_and_accessors() {
         let s = DispatchError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")

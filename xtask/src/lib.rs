@@ -1502,7 +1502,7 @@ impl From<{st}> for Error {{
             let mut check_enum = String::new();
             if v.remote {
                 // `resource` before `service`: the builder setters work in any order.
-                set.push_str(".resource(Resource::BranchKey(BranchKey::new(\"bk\"))).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
+                set.push_str(".resource(BranchKey::new(\"bk\")).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
                 for target in ["s", "e"] {
                     let out = if target == "s" {
                         &mut check_struct
@@ -1679,9 +1679,10 @@ pub mod builders {{
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
