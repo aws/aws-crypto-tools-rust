@@ -433,10 +433,12 @@ fn classify_core_error_maps_each_variant_to_the_same_name() {
     }
 }
 
-/// The `kind=K<US>retry=R` prefix the facade decodes.
+/// The `kind=K<US>retryable=Y<US>retry=R` prefix the facade decodes.
 fn err_prefix(kind: ffi::ShimErrorKind, retry: &str) -> String {
+    let sep = ERROR_FIELD_SEPARATOR;
+    let retryable = u8::from(!retry.is_empty());
     format!(
-        "kind={}{ERROR_FIELD_SEPARATOR}retry={retry}{ERROR_FIELD_SEPARATOR}",
+        "kind={}{sep}retryable={retryable}{sep}retry={retry}{sep}",
         kind.repr
     )
 }
@@ -815,7 +817,7 @@ fn create_storm_tracking_cmc_passes_each_option_to_the_core() {
             .expect("storm-tracking cache should build");
     assert_eq!(cache.entry_capacity(), 10);
     assert_eq!(cache.entry_pruning_tail_size(), 1);
-    assert_eq!(cache.grace_period(), Duration::from_secs(10));
+    assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
     assert_eq!(cache.grace_interval(), Duration::from_millis(500));
     assert_eq!(cache.fan_out(), 20);
     assert_eq!(cache.inflight_ttl(), Duration::from_millis(2250));

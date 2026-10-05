@@ -204,7 +204,7 @@ impl ErrorData {
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {
             if rest.iter().all(|e| e.service() == first.service()) {
-                remote.service = first.service();
+                remote.service = first.service().cloned();
             }
             if rest.iter().all(|e| e.resource() == first.resource()) {
                 remote.resource = first.resource().cloned();
@@ -223,7 +223,7 @@ impl ErrorData {
         let r = &self.remote;
         let details = if remote {
             details(
-                r.service,
+                r.service.as_ref(),
                 r.resource.as_ref(),
                 r.code.as_deref(),
                 r.request_id.as_deref(),
@@ -319,7 +319,7 @@ struct Level<'a> {
 
 /// The details `Display` prints after the message, in order.
 fn details(
-    service: Option<Service>,
+    service: Option<&Service>,
     resource: Option<&Resource>,
     code: Option<&str>,
     request_id: Option<&str>,
@@ -578,7 +578,7 @@ impl Error {
         let mut data = ErrorData::new(message.into());
         data.retry = inner.data().retry;
         data.remote = inner.data().remote.clone();
-        data.reason = inner.data().reason;
+        data.reason.clone_from(&inner.data().reason);
         data.meta.clone_from(&inner.data().meta);
         data.source = Some(Arc::new(inner));
         Self::from_data(kind, data)
@@ -602,7 +602,7 @@ impl Error {
         data.remote = ErrorData::shared_remote(&collected);
         if let Some((first, rest)) = collected.split_first() {
             if rest.iter().all(|e| e.data().reason == first.data().reason) {
-                data.reason = first.data().reason;
+                data.reason.clone_from(&first.data().reason);
             }
             if rest.iter().all(|e| e.data().meta == first.data().meta) {
                 data.meta.clone_from(&first.data().meta);
@@ -723,7 +723,7 @@ impl Error {
     ///
     /// `None` for an error that is not about an AWS call.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {
+    pub fn service(&self) -> Option<&Service> {
         match self {
             Self::InvalidMaterials(e) => e.service(),
             Self::NoMatchingDataKey(e) => e.service(),
@@ -858,11 +858,11 @@ impl Error {
             name: self.name(),
             message: data.message.clone(),
             retry: data.retry,
-            service: data.remote.service,
+            service: data.remote.service.clone(),
             resource: data.remote.resource.clone(),
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),
-            reason: data.reason,
+            reason: data.reason.clone(),
             meta: data.meta.clone(),
             collection: data.collection,
             collected: data.collected.clone(),
@@ -1034,13 +1034,13 @@ impl Error {
         let mut data = ErrorData::new(message.into());
         data.retry = inner.retry_kind();
         data.remote = Remote {
-            service: inner.service(),
+            service: inner.service().cloned(),
             resource: inner.resource().cloned(),
             code: inner.code().map(str::to_owned),
             request_id: inner.request_id().map(str::to_owned),
         };
         data.reason = match &inner {
-            aws_crypto_mpl::error::Error::Conflict(e) => e.reason(),
+            aws_crypto_mpl::error::Error::Conflict(e) => e.reason().cloned(),
             _ => None,
         };
         let meta = ProvideErrorMetadata::meta(&inner);
@@ -1112,7 +1112,7 @@ impl Error {
         let mut data = ErrorData::new(message.into());
         data.retry = inner.retry_kind();
         data.remote = Remote {
-            service: inner.service(),
+            service: inner.service().cloned(),
             resource: inner.resource().cloned(),
             code: inner.code().map(str::to_owned),
             request_id: inner.request_id().map(str::to_owned),
@@ -1233,13 +1233,13 @@ impl ValidationError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -1330,13 +1330,13 @@ impl InvalidMaterialsError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1344,15 +1344,15 @@ impl InvalidMaterialsError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1451,13 +1451,13 @@ impl EncryptionContextMismatchError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -1546,13 +1546,13 @@ impl NoMatchingDataKeyError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1560,15 +1560,15 @@ impl NoMatchingDataKeyError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1667,13 +1667,13 @@ impl CryptographicError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -1724,7 +1724,7 @@ impl From<CryptographicError> for Error {
 /// );
 /// if let Error::AccessDenied(e) = &err {
 ///     assert!(!e.is_credentials());
-///     assert_eq!(e.service(), Some(Service::Kms));
+///     assert_eq!(e.service(), Some(&Service::Kms));
 ///     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(arn))));
 ///     assert_eq!(e.request_id(), Some("6f1c2e9a"));
 /// }
@@ -1768,13 +1768,13 @@ impl AccessDeniedError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1782,15 +1782,15 @@ impl AccessDeniedError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1912,13 +1912,13 @@ impl ResourceNotFoundError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -1926,15 +1926,15 @@ impl ResourceNotFoundError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2042,13 +2042,13 @@ impl ThrottlingError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2056,15 +2056,15 @@ impl ThrottlingError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2131,7 +2131,7 @@ impl From<ThrottlingError> for Error {
 ///         .build(),
 /// );
 /// if let Error::Conflict(e) = &err {
-///     assert_eq!(e.reason(), Some(ConflictReason::ConcurrentModification));
+///     assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
 /// }
 /// ```
 #[derive(Clone)]
@@ -2173,13 +2173,13 @@ impl ConflictError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2187,15 +2187,15 @@ impl ConflictError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2217,8 +2217,8 @@ impl ConflictError {
 
     /// Why the request conflicts, when known.
     #[must_use]
-    pub const fn reason(&self) -> Option<ConflictReason> {
-        self.data.reason
+    pub fn reason(&self) -> Option<&ConflictReason> {
+        self.data.reason.as_ref()
     }
 }
 
@@ -2309,13 +2309,13 @@ impl ServiceError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2323,15 +2323,15 @@ impl ServiceError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2437,13 +2437,13 @@ impl DispatchError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 
@@ -2451,15 +2451,15 @@ impl DispatchError {
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -2556,13 +2556,13 @@ impl SerializationError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -2644,13 +2644,13 @@ impl IoError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -2731,13 +2731,13 @@ impl InternalError {
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         self.data.retry.is_some()
     }
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {
+    pub fn retry_kind(&self) -> Option<RetryKind> {
         self.data.retry
     }
 }
@@ -2801,7 +2801,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -2846,20 +2846,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -2915,7 +2916,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -2960,20 +2961,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3029,7 +3031,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3074,20 +3076,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3143,20 +3146,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3212,20 +3216,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3282,20 +3287,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3312,7 +3318,7 @@ pub mod builders {
         }
 
         /// Why the request conflicts.
-        pub const fn reason(mut self, reason: ConflictReason) -> Self {
+        pub fn reason(mut self, reason: ConflictReason) -> Self {
             self.reason = Some(reason);
             self
         }
@@ -3358,20 +3364,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3427,20 +3434,21 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -3496,7 +3504,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3541,7 +3549,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3584,7 +3592,7 @@ pub mod builders {
         }
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
@@ -3605,6 +3613,26 @@ pub mod builders {
         }
     }
 }
+
+// Fails to compile if `Error` or a variant struct is not `Send + Sync + 'static`.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync + 'static>() {}
+    assert_send_sync::<Error>();
+    assert_send_sync::<ValidationError>();
+    assert_send_sync::<InvalidMaterialsError>();
+    assert_send_sync::<EncryptionContextMismatchError>();
+    assert_send_sync::<NoMatchingDataKeyError>();
+    assert_send_sync::<CryptographicError>();
+    assert_send_sync::<AccessDeniedError>();
+    assert_send_sync::<ResourceNotFoundError>();
+    assert_send_sync::<ThrottlingError>();
+    assert_send_sync::<ConflictError>();
+    assert_send_sync::<ServiceError>();
+    assert_send_sync::<DispatchError>();
+    assert_send_sync::<SerializationError>();
+    assert_send_sync::<IoError>();
+    assert_send_sync::<InternalError>();
+};
 
 #[cfg(test)]
 mod tests {
@@ -3663,7 +3691,7 @@ mod tests {
     #[test]
     fn is_invalid_materials_builder_and_accessors() {
         let s = InvalidMaterialsError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3674,7 +3702,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3694,7 +3722,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3773,7 +3801,7 @@ mod tests {
     #[test]
     fn is_no_matching_data_key_builder_and_accessors() {
         let s = NoMatchingDataKeyError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3784,7 +3812,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3804,7 +3832,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3883,7 +3911,7 @@ mod tests {
     #[test]
     fn is_access_denied_builder_and_accessors() {
         let s = AccessDeniedError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3894,7 +3922,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3921,7 +3949,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3955,7 +3983,7 @@ mod tests {
     #[test]
     fn is_resource_not_found_builder_and_accessors() {
         let s = ResourceNotFoundError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -3966,7 +3994,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -3986,7 +4014,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4020,7 +4048,7 @@ mod tests {
     #[test]
     fn is_throttling_builder_and_accessors() {
         let s = ThrottlingError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -4031,7 +4059,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4051,7 +4079,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4085,7 +4113,7 @@ mod tests {
     #[test]
     fn is_conflict_builder_and_accessors() {
         let s = ConflictError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -4097,14 +4125,14 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
         );
         assert_eq!(s.code(), Some("SomeCode"));
         assert_eq!(s.request_id(), Some("req-1"));
-        assert_eq!(s.reason(), Some(ConflictReason::ConcurrentModification));
+        assert_eq!(s.reason(), Some(&ConflictReason::ConcurrentModification));
         assert!(std::error::Error::source(&s).is_some());
         assert_eq!(
             s.to_string(),
@@ -4118,7 +4146,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4152,7 +4180,7 @@ mod tests {
     #[test]
     fn is_service_builder_and_accessors() {
         let s = ServiceError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -4163,7 +4191,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4183,7 +4211,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4217,7 +4245,7 @@ mod tests {
     #[test]
     fn is_dispatch_builder_and_accessors() {
         let s = DispatchError::builder()
-            .resource(Resource::BranchKey(BranchKey::new("bk")))
+            .resource(BranchKey::new("bk"))
             .service(Service::DynamoDb)
             .code("SomeCode")
             .request_id("req-1")
@@ -4228,7 +4256,7 @@ mod tests {
         assert_eq!(s.message(), "what went wrong");
         assert!(s.is_retryable());
         assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(s.service(), Some(Service::DynamoDb));
+        assert_eq!(s.service(), Some(&Service::DynamoDb));
         assert_eq!(
             s.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))
@@ -4248,7 +4276,7 @@ mod tests {
         assert_eq!(e.message(), "what went wrong");
         assert!(e.is_retryable());
         assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), Some(Service::DynamoDb));
+        assert_eq!(e.service(), Some(&Service::DynamoDb));
         assert_eq!(
             e.resource(),
             Some(&Resource::BranchKey(BranchKey::new("bk")))

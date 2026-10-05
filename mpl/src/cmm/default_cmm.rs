@@ -6,6 +6,7 @@
 
 use crate::Error;
 use crate::error::Kind;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
@@ -71,8 +72,8 @@ impl DefaultCmm {
 
 #[async_trait]
 impl Cmm for DefaultCmm {
-    fn name(&self) -> &str {
-        "default"
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("default")
     }
 
     async fn get_encryption_materials(

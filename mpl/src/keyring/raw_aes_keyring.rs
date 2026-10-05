@@ -5,6 +5,7 @@
 
 use crate::Error;
 use crate::error::Kind;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -318,8 +319,8 @@ impl RawAesKeyringBuilder {
 #[async_trait]
 impl Keyring for RawAesKeyring {
     /// `{key_namespace}/{key_name}`.
-    fn name(&self) -> &str {
-        &self.inner.name
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.inner.name)
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {

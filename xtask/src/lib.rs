@@ -308,7 +308,20 @@ impl Gen<'_> {
             s.push_str(&self.strukt(v));
         }
         s.push_str(&self.builders());
+        s.push_str(&self.thread_safety());
         s.push_str(&self.tests());
+        s
+    }
+
+    fn thread_safety(&self) -> String {
+        let mut s = String::from(
+            "\n// Fails to compile if `Error` or a variant struct is not `Send + Sync + 'static`.\n\
+             const _: () = {\n    const fn assert_send_sync<T: Send + Sync + 'static>() {}\n    assert_send_sync::<Error>();\n",
+        );
+        for v in self.variants() {
+            let _ = writeln!(s, "    assert_send_sync::<{}>();", v.strukt);
+        }
+        s.push_str("};\n");
         s
     }
 
@@ -455,7 +468,7 @@ impl ErrorData {{
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {{
             if rest.iter().all(|e| e.service() == first.service()) {{
-                remote.service = first.service();
+                remote.service = first.service().cloned();
             }}
             if rest.iter().all(|e| e.resource() == first.resource()) {{
                 remote.resource = first.resource().cloned();
@@ -474,7 +487,7 @@ impl ErrorData {{
         let r = &self.remote;
         let details = if remote {{
             details(
-                r.service,
+                r.service.as_ref(),
                 r.resource.as_ref(),
                 r.code.as_deref(),
                 r.request_id.as_deref(),
@@ -595,7 +608,7 @@ struct Level<'a> {{
 
 /// The details `Display` prints after the message, in order.
 fn details(
-    service: Option<Service>,
+    service: Option<&Service>,
     resource: Option<&Resource>,
     code: Option<&str>,
     request_id: Option<&str>,
@@ -800,7 +813,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
             );
         }
         let reason_copy = if self.reason_type().is_some() {
-            "            if rest.iter().all(|e| e.data().reason == first.data().reason) {\n                data.reason = first.data().reason;\n            }\n"
+            "            if rest.iter().all(|e| e.data().reason == first.data().reason) {\n                data.reason.clone_from(&first.data().reason);\n            }\n"
         } else {
             ""
         };
@@ -819,7 +832,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
         let wrap_extra = {
             let mut s = String::new();
             if self.reason_type().is_some() {
-                s.push_str("        data.reason = inner.data().reason;\n");
+                s.push_str("        data.reason.clone_from(&inner.data().reason);\n");
             }
             if self.lib.sdk {
                 s.push_str("        data.meta.clone_from(&inner.data().meta);\n");
@@ -855,7 +868,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
             );
         }
         let parts_reason = if self.reason_type().is_some() {
-            "            reason: data.reason,\n"
+            "            reason: data.reason.clone(),\n"
         } else {
             ""
         };
@@ -1006,7 +1019,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
     ///
     /// `None` for an error that is not about an AWS call.
     #[must_use]
-    pub fn service(&self) -> Option<Service> {{
+    pub fn service(&self) -> Option<&Service> {{
         {service}
     }}
 
@@ -1083,7 +1096,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
             name: self.name(),
             message: data.message.clone(),
             retry: data.retry,
-            service: data.remote.service,
+            service: data.remote.service.clone(),
             resource: data.remote.resource.clone(),
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),
@@ -1208,7 +1221,7 @@ impl std::error::Error for Error {{
             });
             let reason = if self.reason_type().is_some() && source_has_reason {
                 format!(
-                    "        data.reason = match &inner {{\n            {path}::Conflict(e) => e.reason(),\n            _ => None,\n        }};\n"
+                    "        data.reason = match &inner {{\n            {path}::Conflict(e) => e.reason().cloned(),\n            _ => None,\n        }};\n"
                 )
             } else {
                 String::new()
@@ -1235,7 +1248,7 @@ impl std::error::Error for Error {{
         let mut data = ErrorData::new(message.into());
         data.retry = inner.retry_kind();
         data.remote = Remote {{
-            service: inner.service(),
+            service: inner.service().cloned(),
             resource: inner.resource().cloned(),
             code: inner.code().map(str::to_owned),
             request_id: inner.request_id().map(str::to_owned),
@@ -1365,13 +1378,13 @@ impl {st} {{
 
     /// Whether the same call might succeed if made again later.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {{
+    pub fn is_retryable(&self) -> bool {{
         self.data.retry.is_some()
     }}
 
     /// How to back off before retrying, or `None` when the error is not retryable.
     #[must_use]
-    pub const fn retry_kind(&self) -> Option<RetryKind> {{
+    pub fn retry_kind(&self) -> Option<RetryKind> {{
         self.data.retry
     }}
 "
@@ -1383,15 +1396,15 @@ impl {st} {{
     ///
     /// `None` when no AWS service was involved, as for the materials cache.
     #[must_use]
-    pub const fn service(&self) -> Option<Service> {
-        self.data.remote.service
+    pub fn service(&self) -> Option<&Service> {
+        self.data.remote.service.as_ref()
     }
 
     /// The resource you need to act on.
     ///
     /// Other resources involved are named in the message.
     #[must_use]
-    pub const fn resource(&self) -> Option<&Resource> {
+    pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
@@ -1445,8 +1458,8 @@ impl {st} {{
                 r"
     /// Why the request conflicts, when known.
     #[must_use]
-    pub const fn reason(&self) -> Option<{r}> {{
-        self.data.reason
+    pub fn reason(&self) -> Option<&{r}> {{
+        self.data.reason.as_ref()
     }}
 "
             );
@@ -1502,7 +1515,7 @@ impl From<{st}> for Error {{
             let mut check_enum = String::new();
             if v.remote {
                 // `resource` before `service`: the builder setters work in any order.
-                set.push_str(".resource(Resource::BranchKey(BranchKey::new(\"bk\"))).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
+                set.push_str(".resource(BranchKey::new(\"bk\")).service(Service::DynamoDb).code(\"SomeCode\").request_id(\"req-1\")");
                 for target in ["s", "e"] {
                     let out = if target == "s" {
                         &mut check_struct
@@ -1511,7 +1524,7 @@ impl From<{st}> for Error {{
                     };
                     let _ = write!(
                         out,
-                        "        assert_eq!({target}.service(), Some(Service::DynamoDb));\n        assert_eq!({target}.resource(), Some(&Resource::BranchKey(BranchKey::new(\"bk\"))));\n        assert_eq!({target}.code(), Some(\"SomeCode\"));\n        assert_eq!({target}.request_id(), Some(\"req-1\"));\n"
+                        "        assert_eq!({target}.service(), Some(&Service::DynamoDb));\n        assert_eq!({target}.resource(), Some(&Resource::BranchKey(BranchKey::new(\"bk\"))));\n        assert_eq!({target}.code(), Some(\"SomeCode\"));\n        assert_eq!({target}.request_id(), Some(\"req-1\"));\n"
                     );
                 }
             } else {
@@ -1519,7 +1532,7 @@ impl From<{st}> for Error {{
             }
             if let (Some(_), Some(x)) = (&v.reason, &v.reason_example) {
                 let _ = write!(set, ".reason({x})");
-                let _ = writeln!(check_struct, "        assert_eq!(s.reason(), Some({x}));");
+                let _ = writeln!(check_struct, "        assert_eq!(s.reason(), Some(&{x}));");
             }
             if !v.credentials_codes.is_empty() {
                 let c = &v.credentials_codes[0];
@@ -1663,7 +1676,7 @@ pub mod builders {{
         }}
 
         /// Mark the error retryable, and say how to back off.
-        pub const fn retry_kind(mut self, retry: RetryKind) -> Self {{
+        pub fn retry_kind(mut self, retry: RetryKind) -> Self {{
             self.retry = Some(retry);
             self
         }}
@@ -1674,14 +1687,15 @@ pub mod builders {{
                 s.push_str(
                     r"
         /// The AWS service the failed call went to.
-        pub const fn service(mut self, service: Service) -> Self {
+        pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on.
-        pub fn resource(mut self, resource: Resource) -> Self {
-            self.remote.resource = Some(resource);
+        /// The resource the caller needs to act on,
+        /// as a [`Resource`] or one of its variants' structs.
+        pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
+            self.remote.resource = Some(resource.into());
             self
         }
 
@@ -1704,7 +1718,7 @@ pub mod builders {{
                     s,
                     r"
         /// Why the request conflicts.
-        pub const fn reason(mut self, reason: {r}) -> Self {{
+        pub fn reason(mut self, reason: {r}) -> Self {{
             self.reason = Some(reason);
             self
         }}

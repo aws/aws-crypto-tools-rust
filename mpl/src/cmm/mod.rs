@@ -15,6 +15,8 @@ pub mod default_cmm;
 mod types;
 
 use crate::Error;
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
@@ -32,9 +34,10 @@ pub trait Cmm: Send + Sync {
     /// The ESDK reports a failure of a caller's CMM with
     /// `resource()` set to [`Resource::Cmm`](crate::error::Resource::Cmm) and this name.
     /// It should be stable and short, and must not contain secrets.
+    /// Return `Cow::Owned` for a name built at runtime.
     /// The default is the type's name.
-    fn name(&self) -> &str {
-        std::any::type_name::<Self>()
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(std::any::type_name::<Self>())
     }
 
     /// Assemble encryption materials for an encrypt request. Mirrors the
@@ -65,7 +68,7 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Cmm for SharedCmm {
-    fn name(&self) -> &str {
+    fn name(&self) -> Cow<'_, str> {
         self.0.name()
     }
 

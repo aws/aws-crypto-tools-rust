@@ -1,10 +1,6 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// TODO: give `Cmc`'s operations an input and an output type, as the other
-// customer-implementable traits have, for consistency with the Dafny MPL and
-// the Smithy model it is generated from.
-
 pub mod aws_kms;
 mod builder;
 pub mod cmc;

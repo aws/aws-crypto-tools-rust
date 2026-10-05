@@ -125,7 +125,7 @@ async fn integ_invalid_credentials_are_credentials() {
         panic!("expected AccessDenied, got {err:?}");
     };
     assert!(e.is_credentials(), "{err:?}");
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::DynamoDbTable(DynamoDbTable::new(TABLE)))
@@ -140,7 +140,7 @@ async fn integ_a_missing_branch_key_names_the_branch_key() {
     let Error::ResourceNotFound(e) = &err else {
         panic!("expected ResourceNotFound, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new(id))));
 }
 
@@ -155,7 +155,7 @@ async fn integ_a_missing_table_names_the_table() {
         Error::AccessDenied(e) if !e.is_credentials() => (e.service(), e.resource()),
         _ => panic!("expected ResourceNotFound or AccessDenied, got {err:?}"),
     };
-    assert_eq!(service, Some(Service::DynamoDb));
+    assert_eq!(service, Some(&Service::DynamoDb));
     assert_eq!(
         resource,
         Some(&Resource::DynamoDbTable(DynamoDbTable::new(table)))
@@ -180,7 +180,7 @@ async fn integ_create_key_with_a_missing_kms_key_names_the_kms_key() {
         }
         _ => panic!("expected ResourceNotFound or AccessDenied, got {err:?}"),
     };
-    assert_eq!(service, Some(Service::Kms));
+    assert_eq!(service, Some(&Service::Kms));
     assert_eq!(
         resource,
         Some(&Resource::KmsKey(KmsKey::new(MISSING_KMS_KEY_ARN)))
@@ -200,7 +200,7 @@ async fn integ_create_key_with_another_accounts_kms_key_is_access_denied() {
         panic!("expected AccessDenied, got {err:?}");
     };
     assert!(!e.is_credentials());
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(
         e.resource(),
         Some(&Resource::KmsKey(KmsKey::new(OTHER_ACCOUNT_KMS_KEY_ARN)))
@@ -222,8 +222,8 @@ async fn integ_create_key_with_an_existing_id_is_an_already_exists_conflict() {
     let aws_crypto_mpl::Error::Conflict(e) = &err else {
         panic!("expected Conflict, got {err:?}");
     };
-    assert_eq!(e.reason(), Some(ConflictReason::AlreadyExists));
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.reason(), Some(&ConflictReason::AlreadyExists));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
@@ -253,7 +253,7 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
         .await
         .expect("the key store configuration is valid");
     let err = encrypt_error(key_store, EAST_BRANCH_KEY_ID).await;
-    assert_eq!(err.service(), Some(Service::Kms), "{err:?}");
+    assert_eq!(err.service(), Some(&Service::Kms), "{err:?}");
     assert_eq!(
         err.resource(),
         Some(&Resource::KmsKey(KmsKey::new(EAST_MRK_ARN))),

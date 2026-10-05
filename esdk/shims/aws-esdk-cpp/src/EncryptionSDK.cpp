@@ -96,6 +96,7 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         return std::nullopt;
     }
     ErrorDetails details;
+    details.retryable = fields["retryable"] == "1";
     const auto retry = fields["retry"];
     if (retry == "transient") {
         details.retry_kind = RetryKind::Transient;
@@ -126,6 +127,8 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         details.resource = Resource{ResourceType::Keyring, resource};
     } else if (resource_type == "cmm") {
         details.resource = Resource{ResourceType::Cmm, resource};
+    } else if (!resource_type.empty()) {
+        details.resource = Resource{ResourceType::Unknown, resource};
     }
     details.code = non_empty(fields["code"]);
     details.request_id = non_empty(fields["request_id"]);
@@ -181,7 +184,7 @@ std::optional<ShimError> decode_shim_error(std::string_view what) {
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.
-        default: throw AwsEncryptionSdkException(m);
+        default: throw AwsEncryptionSdkException(std::nullopt, std::move(d), m);
     }
 }
 

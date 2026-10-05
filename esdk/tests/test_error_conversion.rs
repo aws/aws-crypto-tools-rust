@@ -64,14 +64,14 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
     let Error::Conflict(e) = Error::from(mpl::Error::from(inner)) else {
         panic!("expected Conflict");
     };
-    assert_eq!(e.service(), Some(Service::DynamoDb));
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
         Some(&Resource::BranchKey(BranchKey::new("my-branch-key")))
     );
     assert_eq!(e.code(), Some("TransactionCanceledException"));
     assert_eq!(e.request_id(), Some("Q2N0"));
-    assert_eq!(e.reason(), Some(ConflictReason::ConcurrentModification));
+    assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
     assert!(!e.is_retryable());
 
     let throttled = Error::from(mpl::Error::from(

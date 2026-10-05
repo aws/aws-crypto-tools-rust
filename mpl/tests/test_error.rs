@@ -48,7 +48,7 @@ fn a_built_remote_error_names_its_service_and_resource() {
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new("arn"))));
     assert_eq!(e.code(), None);
     assert_eq!(e.request_id(), None);
@@ -108,14 +108,14 @@ fn builders_set_every_field_in_any_order() {
         .message("m")
         .build();
     assert_eq!(built.message(), "m");
-    assert_eq!(built.service(), Some(Service::DynamoDb));
+    assert_eq!(built.service(), Some(&Service::DynamoDb));
     assert_eq!(
         built.resource(),
         Some(&Resource::BranchKey(BranchKey::new("b")))
     );
     assert_eq!(built.code(), Some("c"));
     assert_eq!(built.request_id(), Some("r"));
-    assert_eq!(built.reason(), Some(ConflictReason::AlreadyExists));
+    assert_eq!(built.reason(), Some(&ConflictReason::AlreadyExists));
     assert_eq!(built.retry_kind(), Some(RetryKind::Transient));
     assert_eq!(built.source().expect("the cause").to_string(), "cause");
 }
@@ -154,7 +154,7 @@ fn all_failed_keeps_the_details_every_error_shares() {
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };
-    assert_eq!(e.service(), Some(Service::Kms));
+    assert_eq!(e.service(), Some(&Service::Kms));
     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new("arn"))));
     assert_eq!(e.code(), Some("AccessDeniedException"));
     // The request IDs differ, so the aggregate has none.

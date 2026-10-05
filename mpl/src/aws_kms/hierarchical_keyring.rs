@@ -12,6 +12,7 @@
 use crate::Error;
 use crate::builder::required;
 use crate::error::{Cache, Kind, Resource};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -20,7 +21,9 @@ use async_trait::async_trait;
 use crate::Keyring;
 use crate::aws_kms::branch_key_wrap;
 use crate::aws_kms::cache_entry_identifier;
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, DefaultCmc, SharedCmc, UsageMetadata};
+use crate::cmc::{
+    CacheEntry, CachedMaterials, Cmc, DefaultCmc, GetCacheEntryInput, PutCacheEntryInput, SharedCmc,
+};
 use crate::key_store::KeyStoreClient;
 use crate::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use crate::shared::IntoShared;
@@ -459,8 +462,8 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
     /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
-    fn name(&self) -> &str {
-        self.inner.branch_key_id.as_deref().unwrap_or("supplier")
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
@@ -483,9 +486,10 @@ impl Keyring for HierarchicalKeyring {
         let cached = self
             .inner
             .cache
-            .get_cache_entry(&cache_id)
+            .get_cache_entry(GetCacheEntryInput::builder().identifier(cache_id).build()?)
             .await
-            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?;
+            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?
+            .into_entry();
 
         let ciphertext = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -503,13 +507,20 @@ impl Keyring for HierarchicalKeyring {
                     .branch_key_materials;
 
                 let now = SystemTime::now();
-                let entry = CacheEntry::new(
-                    CachedMaterials::BranchKey(bkm.clone()),
-                    now,
-                    now + self.inner.ttl,
-                    UsageMetadata::default(),
-                );
-                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
+                let entry = CacheEntry::builder()
+                    .materials(CachedMaterials::BranchKey(bkm.clone()))
+                    .creation_time(now)
+                    .expiry_time(now + self.inner.ttl)
+                    .build()?;
+                self.inner
+                    .cache
+                    .put_cache_entry(
+                        PutCacheEntryInput::builder()
+                            .identifier(cache_id)
+                            .entry(entry)
+                            .build()?,
+                    )
+                    .await?;
 
                 branch_key_wrap::wrap(
                     &bkm,
@@ -702,9 +713,10 @@ impl HierarchicalKeyring {
         let cached = self
             .inner
             .cache
-            .get_cache_entry(&cache_id)
+            .get_cache_entry(GetCacheEntryInput::builder().identifier(cache_id).build()?)
             .await
-            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?;
+            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?
+            .into_entry();
 
         let bkm = match cached {
             Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
@@ -722,13 +734,20 @@ impl HierarchicalKeyring {
                     .branch_key_materials;
 
                 let now = SystemTime::now();
-                let entry = CacheEntry::new(
-                    CachedMaterials::BranchKey(bkm.clone()),
-                    now,
-                    now + self.inner.ttl,
-                    UsageMetadata::default(),
-                );
-                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
+                let entry = CacheEntry::builder()
+                    .materials(CachedMaterials::BranchKey(bkm.clone()))
+                    .creation_time(now)
+                    .expiry_time(now + self.inner.ttl)
+                    .build()?;
+                self.inner
+                    .cache
+                    .put_cache_entry(
+                        PutCacheEntryInput::builder()
+                            .identifier(cache_id)
+                            .entry(entry)
+                            .build()?,
+                    )
+                    .await?;
                 bkm
             }
         };
@@ -767,7 +786,7 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, E
 fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
     let now = SystemTime::now();
     let elapsed = now
-        .duration_since(entry.creation_time)
+        .duration_since(entry.creation_time())
         .unwrap_or(Duration::ZERO);
     elapsed <= ttl
 }
@@ -776,7 +795,7 @@ fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
 /// entry, failing if the entry holds non-branch-key materials (which
 /// would indicate a cache identifier collision).
 fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Error> {
-    match &entry.materials {
+    match entry.materials() {
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
         _ => Err(Error::new(
             Kind::Validation,

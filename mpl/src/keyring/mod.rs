@@ -47,6 +47,8 @@
 //! when your materials are rejected or no data key matched.
 
 use crate::Error;
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 
 pub mod raw_aes_keyring;
@@ -66,9 +68,10 @@ pub trait Keyring: Send + Sync {
     /// The ESDK reports a failure of a caller's keyring with
     /// `resource()` set to [`Resource::Keyring`](crate::error::Resource::Keyring) and this name.
     /// It should be stable and short, and must not contain secrets.
+    /// Return `Cow::Owned` for a name built at runtime.
     /// The default is the type's name.
-    fn name(&self) -> &str {
-        std::any::type_name::<Self>()
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(std::any::type_name::<Self>())
     }
 
     /// Add a data key to the input's encryption materials,
@@ -95,7 +98,7 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Keyring for SharedKeyring {
-    fn name(&self) -> &str {
+    fn name(&self) -> Cow<'_, str> {
         self.0.name()
     }
 

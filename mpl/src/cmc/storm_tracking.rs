@@ -40,7 +40,10 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 
 use super::local::{CACHE_PRUNING_TAIL_SIZE, Clock};
-use super::{CacheEntry, Cmc, LocalCmc};
+use super::{
+    CacheEntry, Cmc, DeleteCacheEntryInput, DeleteCacheEntryOutput, GetCacheEntryInput,
+    GetCacheEntryOutput, LocalCmc, PutCacheEntryInput, PutCacheEntryOutput,
+};
 
 /// Per-key inflight tracking state, held under a `Mutex`.
 struct StormTrackingState {
@@ -150,11 +153,6 @@ impl StormTrackingCmc {
     /// entries to evict.
     pub fn entry_pruning_tail_size(&self) -> usize {
         self.inner.local.entry_pruning_tail_size()
-    }
-
-    /// Window before expiry during which the cache attempts a refresh.
-    pub fn grace_period(&self) -> Duration {
-        self.inner.grace_period
     }
 
     /// Time after which an inflight refresh is no longer considered
@@ -278,7 +276,7 @@ impl StormTrackingCmc {
                     return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
                 }
 
-                if !within_grace_period(entry.expiry_time, now, self.inner.grace_period) {
+                if !within_grace_period(entry.expiry_time(), now, self.inner.grace_period) {
                     return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
                 }
 
@@ -365,7 +363,7 @@ impl StormTrackingCmc {
         loop {
             tokio::time::sleep(self.inner.sleep).await;
 
-            if let Some(hit) = self.inner.local.get_cache_entry(cache_id).await? {
+            if let Some(hit) = self.inner.local.get_fresh(cache_id)? {
                 return Ok(Some(hit));
             }
 
@@ -613,7 +611,11 @@ fn invalid(message: impl Into<String>) -> Error {
 /// at `expiry`.
 ///
 /// Spec formula: `(expiry - gracePeriod) <= now`
-pub fn within_grace_period(expiry: SystemTime, now: SystemTime, grace_period: Duration) -> bool {
+pub(crate) fn within_grace_period(
+    expiry: SystemTime,
+    now: SystemTime,
+    grace_period: Duration,
+) -> bool {
     expiry
         .checked_sub(grace_period)
         .is_none_or(|threshold| threshold <= now)
@@ -623,7 +625,7 @@ pub fn within_grace_period(expiry: SystemTime, now: SystemTime, grace_period: Du
 /// that was first marked at `inflight`.
 ///
 /// Spec formula: `now < (inflight + graceInterval)`
-pub fn within_grace_interval(
+pub(crate) fn within_grace_interval(
     inflight: SystemTime,
     now: SystemTime,
     grace_interval: Duration,
@@ -631,25 +633,58 @@ pub fn within_grace_interval(
     now < inflight + grace_interval
 }
 
+/// Storm-tracking internals reachable from integration tests.
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub mod __test_internals {
+    use std::time::{Duration, SystemTime};
+
+    /// See `within_grace_period`.
+    pub fn within_grace_period(
+        expiry: SystemTime,
+        now: SystemTime,
+        grace_period: Duration,
+    ) -> bool {
+        super::within_grace_period(expiry, now, grace_period)
+    }
+
+    /// See `within_grace_interval`.
+    pub fn within_grace_interval(
+        inflight: SystemTime,
+        now: SystemTime,
+        grace_interval: Duration,
+    ) -> bool {
+        super::within_grace_interval(inflight, now, grace_interval)
+    }
+}
+
 #[async_trait]
 impl Cmc for StormTrackingCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
+    async fn put_cache_entry(
+        &self,
+        input: PutCacheEntryInput,
+    ) -> Result<PutCacheEntryOutput, Error> {
+        let cache_id = input.identifier().to_vec();
         // Write to the inner cache FIRST, then clear inflight. Reversing
         // this order opens a race window where a blocked getter can
         // observe `cache miss + not inflight` between the two operations
         // and start a redundant refresh — defeating storm-tracking
         // coalescing. It also preserves inflight state if the inner put
         // fails, so a failed refresh doesn't lose the leader signal.
-        self.inner.local.put_cache_entry(cache_id, entry).await?;
+        self.inner.local.put_cache_entry(input).await?;
 
         let now = (self.inner.now)();
-        let mut state = self.state_locked(now, cache_id)?;
-        state.inflight.remove(cache_id);
-        Ok(())
+        let mut state = self.state_locked(now, &cache_id)?;
+        state.inflight.remove(&cache_id);
+        Ok(PutCacheEntryOutput::default())
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
-        let cached = self.inner.local.get_cache_entry(cache_id).await?;
+    async fn get_cache_entry(
+        &self,
+        input: GetCacheEntryInput,
+    ) -> Result<GetCacheEntryOutput, Error> {
+        let cache_id = input.identifier();
+        let cached = self.inner.local.get_fresh(cache_id)?;
         let now = (self.inner.now)();
 
         // Classify with the lock held; drop the lock before any await.
@@ -658,14 +693,18 @@ impl Cmc for StormTrackingCmc {
             self.classify_and_mark(&mut state, cache_id, &cached, now)?
         };
 
-        match decision {
-            GetDecision::Ready(opt) => Ok(opt),
-            GetDecision::Wait { deadline } => self.wait_for_leader(cache_id, deadline).await,
-        }
+        let entry = match decision {
+            GetDecision::Ready(opt) => opt,
+            GetDecision::Wait { deadline } => self.wait_for_leader(cache_id, deadline).await?,
+        };
+        GetCacheEntryOutput::builder().set_entry(entry).build()
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
-        self.inner.local.delete_cache_entry(cache_id).await
+    async fn delete_cache_entry(
+        &self,
+        input: DeleteCacheEntryInput,
+    ) -> Result<DeleteCacheEntryOutput, Error> {
+        self.inner.local.delete_cache_entry(input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {
