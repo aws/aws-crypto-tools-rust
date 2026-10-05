@@ -13,7 +13,7 @@ use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::{CacheType, DefaultCache};
 use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::{BranchKeyStore, HierarchicalKeyring, Keystore, KmsConfiguration};
-use aws_esdk::error::{Error, Resource, Service};
+use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
 use aws_esdk::{EncryptInput, encrypt};
 
 const TABLE: &str = "KeyStoreDdbTable";
@@ -119,7 +119,10 @@ async fn integ_invalid_credentials_are_credentials() {
     };
     assert!(e.is_credentials(), "{err:?}");
     assert_eq!(e.service(), Some(Service::DynamoDb));
-    assert_eq!(e.resource(), Some(&Resource::DynamoDbTable(TABLE.into())));
+    assert_eq!(
+        e.resource(),
+        Some(&Resource::DynamoDbTable(DynamoDbTable::new(TABLE)))
+    );
     assert!(e.request_id().is_some());
 }
 
@@ -131,7 +134,7 @@ async fn integ_a_missing_branch_key_names_the_branch_key() {
         panic!("expected ResourceNotFound, got {err:?}");
     };
     assert_eq!(e.service(), Some(Service::DynamoDb));
-    assert_eq!(e.resource(), Some(&Resource::BranchKey(id)));
+    assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new(id))));
 }
 
 #[tokio::test]
@@ -146,7 +149,10 @@ async fn integ_a_missing_table_names_the_table() {
         _ => panic!("expected ResourceNotFound or AccessDenied, got {err:?}"),
     };
     assert_eq!(service, Some(Service::DynamoDb));
-    assert_eq!(resource, Some(&Resource::DynamoDbTable(table)));
+    assert_eq!(
+        resource,
+        Some(&Resource::DynamoDbTable(DynamoDbTable::new(table)))
+    );
     assert!(err.request_id().is_some());
 }
 
@@ -169,7 +175,7 @@ async fn integ_create_key_with_a_missing_kms_key_names_the_kms_key() {
     assert_eq!(service, Some(Service::Kms));
     assert_eq!(
         resource,
-        Some(&Resource::KmsKey(MISSING_KMS_KEY_ARN.into()))
+        Some(&Resource::KmsKey(KmsKey::new(MISSING_KMS_KEY_ARN)))
     );
     assert!(err.request_id().is_some());
 }
@@ -188,7 +194,7 @@ async fn integ_create_key_with_another_accounts_kms_key_is_access_denied() {
     assert_eq!(e.service(), Some(Service::Kms));
     assert_eq!(
         e.resource(),
-        Some(&Resource::KmsKey(OTHER_ACCOUNT_KMS_KEY_ARN.into()))
+        Some(&Resource::KmsKey(KmsKey::new(OTHER_ACCOUNT_KMS_KEY_ARN)))
     );
     assert_eq!(e.code(), Some("AccessDeniedException"));
     assert!(e.request_id().is_some());
@@ -211,7 +217,7 @@ async fn integ_create_key_with_an_existing_id_is_an_already_exists_conflict() {
     assert_eq!(e.service(), Some(Service::DynamoDb));
     assert_eq!(
         e.resource(),
-        Some(&Resource::BranchKey(BRANCH_KEY_ID.into()))
+        Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
     );
     assert_eq!(e.code(), Some("TransactionCanceledException"));
     assert!(e.request_id().is_some());
@@ -241,7 +247,7 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
     assert_eq!(err.service(), Some(Service::Kms), "{err:?}");
     assert_eq!(
         err.resource(),
-        Some(&Resource::KmsKey(EAST_MRK_ARN.into())),
+        Some(&Resource::KmsKey(KmsKey::new(EAST_MRK_ARN))),
         "{err:?}"
     );
     assert!(err.code().is_some(), "{err:?}");

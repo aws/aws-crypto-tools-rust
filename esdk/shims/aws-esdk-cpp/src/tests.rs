@@ -478,12 +478,12 @@ fn core_err_encodes_an_mpl_errors_kind_and_retry_kind() {
 #[test]
 fn core_err_encodes_the_aws_call() {
     use aws_crypto_mpl::Error as MplError;
-    use aws_crypto_mpl::error::{AccessDeniedError, Resource, Service};
+    use aws_crypto_mpl::error::{AccessDeniedError, KmsKey, Resource, Service};
     let err = core_err(MplError::from(
         AccessDeniedError::builder()
             .message("denied")
             .service(Service::Kms)
-            .resource(Resource::KmsKey("arn:aws:kms:k".into()))
+            .resource(Resource::KmsKey(KmsKey::new("arn:aws:kms:k")))
             .build(),
     ));
     let sep = ERROR_FIELD_SEPARATOR;
@@ -549,16 +549,21 @@ fn shim_err_has_no_backtrace() {
 #[test]
 fn core_err_encodes_the_new_resources_reason_credentials_and_name() {
     use aws_esdk::error::{
-        AccessDeniedError, ConflictError, ConflictReason, Resource, Service, ThrottlingError,
+        AccessDeniedError, Cache, CmmResource, ConflictError, ConflictReason, KeyringResource,
+        Resource, Service, ThrottlingError,
     };
-    let throttled = core_err(ThrottlingError::builder().resource(Resource::Cache).build());
+    let throttled = core_err(
+        ThrottlingError::builder()
+            .resource(Resource::Cache(Cache::new()))
+            .build(),
+    );
     assert_eq!(header_field(&throttled, "resource_type"), "cache");
     assert_eq!(header_field(&throttled, "service"), "");
     assert_eq!(header_field(&throttled, "name"), "Throttling");
 
     let keyring = core_err(
         aws_esdk::error::NoMatchingDataKeyError::builder()
-            .resource(Resource::Keyring("ns/name".into()))
+            .resource(Resource::Keyring(KeyringResource::new("ns/name")))
             .build(),
     );
     assert_eq!(header_field(&keyring, "resource_type"), "keyring");
@@ -566,7 +571,7 @@ fn core_err_encodes_the_new_resources_reason_credentials_and_name() {
 
     let cmm = core_err(
         aws_esdk::error::InvalidMaterialsError::builder()
-            .resource(Resource::Cmm("default".into()))
+            .resource(Resource::Cmm(CmmResource::new("default")))
             .build(),
     );
     assert_eq!(header_field(&cmm, "resource_type"), "cmm");

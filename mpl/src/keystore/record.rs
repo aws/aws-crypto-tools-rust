@@ -4,7 +4,7 @@
 //! Record format parsing and materials reconstruction for the branch key store.
 
 use crate::Error;
-use crate::error::{Kind, Resource, Service};
+use crate::error::{BranchKey, Kind, Resource, Service};
 use std::collections::BTreeMap;
 
 use crate::keystore::attributes::{
@@ -180,6 +180,6 @@ fn malformed(authenticated_ec: &BTreeMap<String, String>, message: impl Into<Str
         Some(Service::DynamoDb),
         authenticated_ec
             .get(ATTR_BRANCH_KEY_ID)
-            .map(|id| Resource::BranchKey(id.clone())),
+            .map(|id| Resource::BranchKey(BranchKey::new(id.clone()))),
     )
 }

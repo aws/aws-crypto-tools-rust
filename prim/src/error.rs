@@ -57,39 +57,202 @@ impl fmt::Display for Service {
 /// An error's `resource()` is the resource you need to act on.
 /// Other resources involved are named in the message.
 ///
-/// ```
-/// use aws_mpl_primitives::error::Resource;
+/// Each variant carries a struct with private fields, read through accessors,
+/// so a later release can add detail about a resource without breaking callers.
 ///
-/// assert_eq!(Resource::BranchKey("my-branch-key".into()).to_string(), "branch key my-branch-key");
-/// assert_eq!(Resource::Cache.to_string(), "materials cache");
+/// ```
+/// use aws_mpl_primitives::error::{BranchKey, Cache, Resource};
+///
+/// assert_eq!(Resource::BranchKey(BranchKey::new("my-branch-key")).to_string(), "branch key my-branch-key");
+/// assert_eq!(Resource::Cache(Cache::new()).to_string(), "materials cache");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Resource {
     /// A KMS key, by ARN.
-    KmsKey(String),
+    KmsKey(KmsKey),
     /// A `DynamoDB` table, by name.
-    DynamoDbTable(String),
+    DynamoDbTable(DynamoDbTable),
     /// A hierarchical keyring branch key, by ID.
-    BranchKey(String),
+    BranchKey(BranchKey),
     /// A cryptographic materials cache.
-    Cache,
+    Cache(Cache),
     /// A keyring, by its `name()`.
-    Keyring(String),
+    Keyring(KeyringResource),
     /// A CMM, by its `name()`.
-    Cmm(String),
+    Cmm(CmmResource),
 }
 
 impl fmt::Display for Resource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::KmsKey(arn) => write!(f, "KMS key {arn}"),
-            Self::DynamoDbTable(name) => write!(f, "table {name}"),
-            Self::BranchKey(id) => write!(f, "branch key {id}"),
-            Self::Cache => f.write_str("materials cache"),
-            Self::Keyring(name) => write!(f, "keyring {name}"),
-            Self::Cmm(name) => write!(f, "CMM {name}"),
+            Self::KmsKey(key) => write!(f, "KMS key {}", key.arn()),
+            Self::DynamoDbTable(table) => write!(f, "table {}", table.name()),
+            Self::BranchKey(branch_key) => write!(f, "branch key {}", branch_key.id()),
+            Self::Cache(_) => f.write_str("materials cache"),
+            Self::Keyring(keyring) => write!(f, "keyring {}", keyring.name()),
+            Self::Cmm(cmm) => write!(f, "CMM {}", cmm.name()),
         }
+    }
+}
+
+/// A KMS key, by ARN.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct KmsKey {
+    arn: String,
+}
+
+impl KmsKey {
+    /// A KMS key identified by `arn`.
+    #[must_use]
+    pub fn new(arn: impl Into<String>) -> Self {
+        Self { arn: arn.into() }
+    }
+
+    /// The KMS key's ARN.
+    #[must_use]
+    pub fn arn(&self) -> &str {
+        &self.arn
+    }
+}
+
+impl From<KmsKey> for Resource {
+    fn from(key: KmsKey) -> Self {
+        Self::KmsKey(key)
+    }
+}
+
+/// A `DynamoDB` table, by name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct DynamoDbTable {
+    name: String,
+}
+
+impl DynamoDbTable {
+    /// A `DynamoDB` table identified by `name`.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The table's name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl From<DynamoDbTable> for Resource {
+    fn from(table: DynamoDbTable) -> Self {
+        Self::DynamoDbTable(table)
+    }
+}
+
+/// A hierarchical keyring branch key, by ID.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct BranchKey {
+    id: String,
+}
+
+impl BranchKey {
+    /// A branch key identified by `id`.
+    #[must_use]
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
+    }
+
+    /// The branch key's ID.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl From<BranchKey> for Resource {
+    fn from(branch_key: BranchKey) -> Self {
+        Self::BranchKey(branch_key)
+    }
+}
+
+/// A cryptographic materials cache.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct Cache {}
+
+impl Cache {
+    /// The cryptographic materials cache.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<Cache> for Resource {
+    fn from(cache: Cache) -> Self {
+        Self::Cache(cache)
+    }
+}
+
+/// A keyring, by its `name()`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct KeyringResource {
+    name: String,
+}
+
+impl KeyringResource {
+    /// A keyring identified by `name`.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The keyring's name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl From<KeyringResource> for Resource {
+    fn from(keyring: KeyringResource) -> Self {
+        Self::Keyring(keyring)
+    }
+}
+
+/// A CMM, by its `name()`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct CmmResource {
+    name: String,
+}
+
+impl CmmResource {
+    /// A CMM identified by `name`.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The CMM's name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl From<CmmResource> for Resource {
+    fn from(cmm: CmmResource) -> Self {
+        Self::Cmm(cmm)
     }
 }
 

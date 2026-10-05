@@ -8,7 +8,7 @@
 //! `Keyring` impl in [`super::hierarchical_keyring`].
 
 use crate::Error;
-use crate::error::{Kind, Resource, Service};
+use crate::error::{BranchKey, Kind, Resource, Service};
 use aws_mpl_primitives::{
     AesGcm, DigestAlg, aes_decrypt, aes_encrypt, generate_random_bytes, kbkdf_ctr_hmac,
 };
@@ -91,7 +91,9 @@ fn uuid_str_to_16_bytes(s: &str, branch_key_id: &str) -> Result<[u8; VERSION_LEN
     let malformed = |message: String| {
         Error::new(Kind::InvalidMaterials, message).about(
             Some(Service::DynamoDb),
-            Some(Resource::BranchKey(branch_key_id.to_owned())),
+            Some(Resource::BranchKey(BranchKey::new(
+                branch_key_id.to_owned(),
+            ))),
         )
     };
     if s.len() != 36 {

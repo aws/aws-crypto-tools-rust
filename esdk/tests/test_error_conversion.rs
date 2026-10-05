@@ -4,7 +4,7 @@
 //! An MPL error keeps its variant, retry kind, and details when it becomes an ESDK error.
 
 use aws_crypto_mpl::error as mpl;
-use aws_esdk::error::{ConflictReason, Error, Resource, RetryKind, Service};
+use aws_esdk::error::{BranchKey, Cache, ConflictReason, Error, Resource, RetryKind, Service};
 
 fn every_mpl_variant() -> Vec<mpl::Error> {
     vec![
@@ -58,7 +58,7 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
         .request_id("Q2N0")
         .reason(ConflictReason::ConcurrentModification)
         .code("TransactionCanceledException")
-        .resource(Resource::BranchKey("my-branch-key".into()))
+        .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
         .service(Service::DynamoDb)
         .build();
     let Error::Conflict(e) = Error::from(mpl::Error::from(inner)) else {
@@ -67,7 +67,7 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
     assert_eq!(e.service(), Some(Service::DynamoDb));
     assert_eq!(
         e.resource(),
-        Some(&Resource::BranchKey("my-branch-key".into()))
+        Some(&Resource::BranchKey(BranchKey::new("my-branch-key")))
     );
     assert_eq!(e.code(), Some("TransactionCanceledException"));
     assert_eq!(e.request_id(), Some("Q2N0"));
@@ -76,10 +76,10 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
 
     let throttled = Error::from(mpl::Error::from(
         mpl::ThrottlingError::builder()
-            .resource(Resource::Cache)
+            .resource(Resource::Cache(Cache::new()))
             .build(),
     ));
     assert_eq!(throttled.retry_kind(), Some(RetryKind::Throttling));
     assert_eq!(throttled.service(), None);
-    assert_eq!(throttled.resource(), Some(&Resource::Cache));
+    assert_eq!(throttled.resource(), Some(&Resource::Cache(Cache::new())));
 }

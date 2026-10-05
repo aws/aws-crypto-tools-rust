@@ -559,12 +559,12 @@ fn encode_err(
         .and_then(aws_esdk::Error::service)
         .map_or("", Service::as_str);
     let (resource_type, resource) = match err.and_then(aws_esdk::Error::resource) {
-        Some(Resource::KmsKey(n)) => ("kms_key", clean(n)),
-        Some(Resource::DynamoDbTable(n)) => ("dynamodb_table", clean(n)),
-        Some(Resource::BranchKey(n)) => ("branch_key", clean(n)),
-        Some(Resource::Cache) => ("cache", String::new()),
-        Some(Resource::Keyring(n)) => ("keyring", clean(n)),
-        Some(Resource::Cmm(n)) => ("cmm", clean(n)),
+        Some(Resource::KmsKey(key)) => ("kms_key", clean(key.arn())),
+        Some(Resource::DynamoDbTable(table)) => ("dynamodb_table", clean(table.name())),
+        Some(Resource::BranchKey(branch_key)) => ("branch_key", clean(branch_key.id())),
+        Some(Resource::Cache(_)) => ("cache", String::new()),
+        Some(Resource::Keyring(keyring)) => ("keyring", clean(keyring.name())),
+        Some(Resource::Cmm(cmm)) => ("cmm", clean(cmm.name())),
         _ => ("", String::new()),
     };
     let code = err

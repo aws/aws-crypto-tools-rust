@@ -91,7 +91,10 @@ fn inflight_ttl_exceeded() -> Error {
         Kind::Throttling,
         "timed out waiting for another caller to fill the cache entry",
     )
-    .about(None, Some(crate::error::Resource::Cache))
+    .about(
+        None,
+        Some(crate::error::Resource::Cache(crate::error::Cache::new())),
+    )
 }
 
 impl StormTrackingCmc {
