@@ -64,12 +64,8 @@ struct LocalCmcInner {
     now: Clock,
 }
 
-/// Number of least-recently-used entries a cache scans per `get`,
-/// evicting any that are TTL-expired, when the builder leaves it unset.
-///
-/// Every path in the Dafny implementation uses 1: `LocalCMC`'s constructor default,
-/// `StormTracker.DefaultStorm()`, and each `entryPruningTailSize.UnwrapOr(1)`
-/// at the create-cache switch.
+/// Default number of least-recently-used entries each get checks for expired entries to evict.
+/// Matches the Dafny MPL, which uses 1 on every construction path.
 pub(crate) const CACHE_PRUNING_TAIL_SIZE: usize = 1;
 
 /// The clock a cache reads the current time from.
@@ -82,8 +78,8 @@ impl LocalCmc {
         LocalCmcBuilder::default()
     }
 
-    /// Constructor that accepts an arbitrary clock, shared with
-    /// `StormTrackingCmc` so its inner `LocalCmc` reads the same clock.
+    /// Construct with the given clock.
+    /// `StormTrackingCmc` passes its own clock, so both caches read the same time.
     pub(crate) fn with_clock(
         entry_capacity: usize,
         entry_pruning_tail_size: usize,
@@ -129,8 +125,8 @@ impl LocalCmc {
         Ok(self.len()? == 0)
     }
 
-    /// Look up a fresh entry, pruning the tail and evicting the entry if it
-    /// has TTL-expired.
+    /// Return the entry if it has not expired, evicting it if it has.
+    /// Prunes the tail first.
     pub(crate) fn get_fresh(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
         let mut inner = self
             .inner
@@ -144,15 +140,13 @@ impl LocalCmc {
         self.prune_tail(cache);
 
         let now = (self.inner.now)();
-        // Peek first (no LRU promotion) so a TTL-expired entry is not
-        // promoted before being evicted.
+        // Peek, so checking an expired entry does not promote it.
         let is_fresh = cache.peek(cache_id).map(|entry| entry.expiry_time() > now);
         match is_fresh {
-            // Fresh: promote to MRU via `get` and hand back an Arc clone.
+            // Fresh: `get` promotes it to most recently used.
             Some(true) => Ok(cache.get(cache_id).cloned()),
-            // Expired: evict and report a miss. The prune step above may
-            // have already removed this entry if it was in the tail
-            // window; if so, `pop` is a no-op.
+            // Expired: evict it.
+            // `pop` does nothing if the prune above already removed it.
             Some(false) => {
                 cache.pop(cache_id);
                 Ok(None)
@@ -207,8 +201,8 @@ impl std::fmt::Debug for LocalCmcBuilder {
 impl LocalCmcBuilder {
     /// Set the maximum number of entries. Required.
     ///
-    /// A capacity of `0` yields a no-store cache: `put` is a silent no-op
-    /// and `get` always returns `None`.
+    /// With a capacity of 0 the cache stores nothing:
+    /// `put` does nothing and `get` returns `None`.
     #[must_use]
     pub const fn entry_capacity(mut self, n: usize) -> Self {
         self.entry_capacity = Some(n);
@@ -222,8 +216,8 @@ impl LocalCmcBuilder {
         self
     }
 
-    /// Set the number of least-recently-used entries each get checks for
-    /// expired entries to evict. Defaults to 1.
+    /// Set how many least-recently-used entries each get checks for expired entries to evict.
+    /// Defaults to 1.
     #[must_use]
     pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
@@ -238,8 +232,8 @@ impl LocalCmcBuilder {
         self
     }
 
-    /// Replace the cache's clock, so tests can fast-forward past entry TTLs
-    /// without sleeping. Defaults to `SystemTime::now`.
+    /// Replace the cache's clock, so tests can advance time without sleeping.
+    /// Defaults to `SystemTime::now`.
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     #[must_use]
@@ -255,8 +249,8 @@ impl LocalCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`Validation`](crate::Error::Validation)
-    /// error if `entry_capacity` is unset.
+    /// Returns a validation error ([`Error::is_validation`])
+    /// if `entry_capacity` is unset.
     pub fn build(self) -> Result<LocalCmc, Error> {
         let Some(entry_capacity) = self.entry_capacity else {
             return Err(Error::new(

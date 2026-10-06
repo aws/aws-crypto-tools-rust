@@ -16,7 +16,7 @@ use aws_crypto_mpl::structures::{
 };
 
 impl MaterialSource {
-    /// The caller's keyring or CMM, as errors about its materials name it.
+    /// The caller's keyring or CMM, as a `Resource` for errors about its materials.
     pub(crate) fn resource(&self) -> Resource {
         match self {
             Self::Cmm(cmm) => Resource::Cmm(CmmResource::new(cmm.name())),
@@ -69,9 +69,9 @@ pub(crate) async fn get_decryption_materials(
     //# from the message header.
     let encryption_context = header_body.encryption_context().clone();
 
-    // A conformant message carries the signing public key in its encryption context
+    // A well-formed message carries the signing public key in its encryption context
     // exactly when its suite signs.
-    // The CMM rejects a request that breaks this, but as bad input; here it is a malformed message.
+    // The CMM also rejects a mismatch, but as bad input; on decrypt it means the message is malformed.
     let has_public_key = encryption_context.contains_key("aws-crypto-public-key");
     if has_public_key != algorithm_suite_id.has_asymmetric_signing() {
         return Err(err(

@@ -3,10 +3,9 @@
 
 //! Integration tests for `StormTrackingCmc`.
 //!
-//! Gated behind the `test-utils` feature because these tests rely on
+//! Gated behind the `test-utils` feature, which compiles in what these tests rely on:
 //! the `StormTrackingCmcBuilder::clock` setter and the `#[doc(hidden)]` inflight-map
-//! test hooks (`inner`, `peek_inflight`, `inflight_count`, `mark_inflight`),
-//! all of which are only compiled in when `test-utils` is enabled.
+//! hooks (`inner`, `peek_inflight`, `inflight_count`, `mark_inflight`).
 
 #![cfg(feature = "test-utils")]
 
@@ -850,7 +849,7 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
 // What: when a waiter is in `BlockMissInflight` and its per-waiter
 // deadline (`enter_time + inflight_ttl`) elapses without the entry
 // appearing or a leader slot opening, the wait loop must return
-// an `Internal` error.
+// a retryable `Throttling` error about the cache.
 //
 // Why: the initial classifier's `elapsed > inflight_ttl` check only
 // fires when `get_cache_entry` is called AFTER the map-level TTL has

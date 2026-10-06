@@ -3,8 +3,8 @@
 
 //! Helpers for inspecting the `source()` chain of an MPL error.
 //!
-//! An AWS SDK error from inside the key store stays in the chain,
-//! so it is reachable from the [`Error`](crate::Error) a keyring returns.
+//! When the key store fails, its AWS SDK error stays in the chain
+//! of the [`Error`](crate::Error) the keyring returns.
 
 use std::error::Error;
 
@@ -53,7 +53,7 @@ where
 /// without knowing which AWS operation failed.
 ///
 /// `None` when the chain holds no SDK service error.
-/// A missing-credentials or connection failure has no code;
+/// A failure from missing credentials or a lost connection has no code;
 /// it is a [`Dispatch`](crate::Error::Dispatch) error.
 /// [`Error::code`](crate::Error::code) answers the same question without searching.
 pub fn aws_service_error_code<'a>(err: &'a (dyn Error + 'static)) -> Option<&'a str> {

@@ -672,8 +672,8 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let (sd_start, sd_end) = get("Algorithm Suite Data");
     assert_eq!(sd_end - sd_start, 32, "V2 Algorithm Suite Data is 32 bytes");
 
-    // Tampering the V2 auth tag byte, immediately after Algorithm Suite Data, must fail decrypt with Cryptographic.
-    // That shows decrypt read the auth tag from the wire and used it to verify the header.
+    // Flip the first header auth tag byte, right after Algorithm Suite Data.
+    // A Cryptographic error shows decrypt verified the header with the tag it read.
     let auth_tag_offset = sd_end;
     let auth_tag_end = auth_tag_offset + 16;
     assert!(

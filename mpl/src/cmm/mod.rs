@@ -9,7 +9,7 @@
 //! to return a boxed future.
 //!
 //! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
-//! for which error to return.
+//! for which error variant to return.
 
 pub mod default_cmm;
 mod types;
@@ -31,9 +31,9 @@ pub use types::{
 pub trait Cmm: Send + Sync {
     /// A short name for this CMM, which errors show.
     ///
-    /// The ESDK reports a failure of a caller's CMM with
-    /// `resource()` set to [`Resource::Cmm`](crate::error::Resource::Cmm) and this name.
-    /// It should be stable and short, and must not contain secrets.
+    /// When the ESDK attributes an error to this CMM, it sets `resource()` to
+    /// [`Resource::Cmm`](crate::error::Resource::Cmm) with this name.
+    /// Keep it stable and short, and never put secrets in it.
     /// Return `Cow::Owned` for a name built at runtime.
     /// The default is the type's name.
     fn name(&self) -> Cow<'_, str> {

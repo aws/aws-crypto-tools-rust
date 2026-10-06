@@ -987,7 +987,7 @@ async fn test_regular_frame_seq_num_out_of_order_rejected() {
     //= type=test
     //# Subsequent frames MUST be in order and MUST contain an increment of 1 from the previous frame.
     // Tamper the second regular frame's seq num so it is not previous + 1.
-    // body_decrypt.rs's `seq_num != expected_frame` check must reject it with a Serialization error.
+    // Decrypt must reject it with a Serialization error.
     // Use 25 bytes / frame_length=10 → 2 regular + 1 final, so we have a frame[1] to tamper.
     let pt = vec![0xDDu8; 25];
     let keyring = test_keyring().await;

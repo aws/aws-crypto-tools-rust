@@ -39,7 +39,7 @@ doc = """
 An input or configuration value is invalid,
 for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
 
-Fix the input; the same call cannot succeed."""
+Fix the input; retrying cannot succeed."""
 example = """
 use {crate}::error::{Error, ValidationError};
 
@@ -58,9 +58,9 @@ A keyring, CMM, or key store returned materials that are inconsistent or malform
 for example no plaintext data key after encryption, a signing key for a suite that does not sign,
 or a branch key record with a missing attribute or a key of the wrong length.
 
-`resource()` names the branch key, keyring, or CMM.
 Usually a bug in a custom keyring or CMM, or a corrupt key store record;
-retrying cannot succeed."""
+retrying cannot succeed.
+`resource()` names the branch key, keyring, or CMM."""
 example = """
 use {crate}::error::{BranchKey, Error, InvalidMaterialsError, Resource};
 
@@ -104,9 +104,9 @@ doc = """
 None of the configured keys wrapped any of the message's encrypted data keys,
 for example when decrypting with a keyring that did not encrypt the message.
 
-`resource()` names the keyring or CMM that was used,
-and `encrypted_data_keys()` lists the message's encrypted data keys by key provider.
-Decrypt with a keyring that has one of the message's keys."""
+Decrypt with a keyring that has one of the message's keys.
+`encrypted_data_keys()` lists the message's encrypted data keys by key provider,
+and `resource()` names the keyring or CMM that was used."""
 example = """
 use {crate}::error::{DataKeyInfo, Error, KeyringResource, NoMatchingDataKeyError, Resource};
 
@@ -137,7 +137,7 @@ doc = """
 A cryptographic check failed,
 for example an AES-GCM authentication tag or a message signature did not verify.
 
-The message is corrupt or modified, or is being decrypted with the wrong key;
+The message is corrupt or modified, or you are decrypting it with the wrong key;
 retrying cannot succeed."""
 example = """
 use {crate}::error::{CryptographicError, Error};
@@ -163,8 +163,8 @@ credentials_codes = [
 doc = """
 AWS KMS or DynamoDB denied access.
 
-`is_credentials()` says whether the credentials are expired or invalid;
-otherwise fix the permissions for `service()` on `resource()`."""
+If `is_credentials()` is true, the credentials are expired or invalid.
+Otherwise fix the permissions for `service()` on `resource()`."""
 example = """
 use {crate}::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
 
@@ -219,10 +219,9 @@ default_retry = "Throttling"
 doc = """
 A service or resource throttled the request.
 
-`service()` and `resource()` say what was throttled:
-AWS KMS, DynamoDB, or the materials cache ([`Resource::Cache`](crate::error::Resource::Cache),
-with no `service()`).
-Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Throttling)."""
+Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Throttling).
+`service()` and `resource()` say what was throttled: AWS KMS, DynamoDB, or the materials cache,
+which is [`Resource::Cache`](crate::error::Resource::Cache) with no `service()`."""
 example = """
 use {crate}::error::{Cache, Error, Resource, RetryKind, ThrottlingError};
 
@@ -251,9 +250,8 @@ The request conflicts with the current state of `resource()`,
 for example creating a branch key whose ID already exists,
 or rotating a branch key that another caller rotated at the same time.
 
-`reason()` says which.
-Re-read the resource before acting; retrying the same call unchanged is not safe.
-Not retryable."""
+Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
+`reason()` says which conflict occurred."""
 example = """
 use {crate}::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
 
@@ -279,8 +277,8 @@ doc = """
 AWS KMS or DynamoDB rejected or failed the request for any other reason,
 for example an internal service error or a KMS `IncorrectKeyException`.
 
-`code()` is the service's error code.
-A server-side failure is retryable."""
+A server-side failure is retryable.
+`code()` is the service's error code."""
 example = """
 use {crate}::error::{Error, RetryKind, Service, ServiceError};
 
@@ -347,7 +345,7 @@ struct = "IoError"
 predicate = "is_io"
 remote = false
 doc = """
-A caller-supplied reader or writer failed while streaming,
+A reader or writer you passed failed while streaming,
 for example a closed connection or a full disk.
 
 The [`source`](std::error::Error::source) is the [`std::io::Error`]."""
@@ -367,7 +365,8 @@ remote = false
 doc = """
 An internal invariant was violated, for example a poisoned lock.
 
-A bug; report it. Never retryable."""
+A bug in this library; report it.
+Never retryable."""
 example = """
 use {crate}::error::{Error, InternalError};
 
@@ -390,9 +389,10 @@ An error from a cryptographic primitive.
 Match on the variant to decide what to do.
 Later releases can add variants, so a `match` needs a catch-all arm.
 
-Messages are for people, not code; their text can change in any release.
+Messages are for people and logs: their text can change in any release, even a patch release.
 Decide from the variant and its accessors, never from the message.
-A minor or patch release can also turn a failure that reaches you as `Internal` into a specific variant."""
+
+A minor or patch release can also turn an `Internal` error into a specific variant."""
 
 [[library]]
 name = "mpl"
@@ -418,23 +418,28 @@ variants = [
 doc = """
 An error from a keyring, CMM, key store, or cache.
 
-Check [`is_retryable`](Self::is_retryable) first, then match on the variant.
-Later releases can add variants, so a `match` needs a catch-all arm.
+To handle it:
+1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
+2. Otherwise match on the variant; each variant's docs say what to do.
+   Later releases can add variants, so a `match` needs a catch-all arm.
+
 See the [module docs](crate::error) for examples.
 
-Messages are for people, not code; their text can change in any release.
-Decide from the variant and its accessors, never from the message.
-That includes minor and patch releases. A minor or patch release can also turn a failure that
-reaches you as `Internal`, or as anything other than this `Error`, into a specific variant,
-and change which variant a collection of failures gets.
-See "What a minor or patch release can change" in the [module docs](crate::error).
-
-Use `is_retryable()` to decide whether to retry and `retry_kind()` for how to back off.
+For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
+so retry only at a higher level, with your own backoff.
+Nothing retries materials-cache throttling for you.
 Match `Error::Throttling` only to learn what was throttled.
-`ProvideErrorKind` exists so SDK retry code can read these errors.
-For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
-according to its `RetryConfig`, so retry only at a higher level with your own backoff.
-Materials-cache throttling is not retried internally."""
+
+Messages are for people and logs: their text can change in any release, even a patch release.
+Decide from the variant and its accessors, never from the message.
+
+A minor or patch release can also change which variant a failure gets:
+- A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
+- A collection of failures can get a different variant.
+
+See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
+
+`Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
 
 [[library.from]]
 library = "prim"
@@ -466,25 +471,30 @@ variants = [
 doc = """
 An error from the AWS Encryption SDK.
 
-Check [`is_retryable`](Self::is_retryable) first, then match on the variant.
-An error from a keyring, CMM, key store, or cache keeps its variant:
-each [`aws_crypto_mpl::Error`] variant has one here with the same name.
-Later releases can add variants, so a `match` needs a catch-all arm.
+To handle it:
+1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
+2. Otherwise match on the variant; each variant's docs say what to do.
+   An error from a keyring, CMM, key store, or cache keeps its variant:
+   each [`aws_crypto_mpl::Error`] variant has one here with the same name.
+   Later releases can add variants, so a `match` needs a catch-all arm.
+
 See the [module docs](crate::error) for examples.
 
-Messages are for people, not code; their text can change in any release.
-Decide from the variant and its accessors, never from the message.
-That includes minor and patch releases. A minor or patch release can also turn a failure that
-reaches you as `Internal`, or as anything other than this `Error`, into a specific variant,
-and change which variant a collection of failures gets.
-See "What a minor or patch release can change" in the [module docs](crate::error).
-
-Use `is_retryable()` to decide whether to retry and `retry_kind()` for how to back off.
+For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
+so retry only at a higher level, with your own backoff.
+Nothing retries materials-cache throttling for you.
 Match `Error::Throttling` only to learn what was throttled.
-`ProvideErrorKind` exists so SDK retry code can read these errors.
-For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
-according to its `RetryConfig`, so retry only at a higher level with your own backoff.
-Materials-cache throttling is not retried internally."""
+
+Messages are for people and logs: their text can change in any release, even a patch release.
+Decide from the variant and its accessors, never from the message.
+
+A minor or patch release can also change which variant a failure gets:
+- A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
+- A collection of failures can get a different variant.
+
+See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
+
+`Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
 
 [[library.from]]
 library = "mpl"

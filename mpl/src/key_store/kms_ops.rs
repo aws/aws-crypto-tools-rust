@@ -127,7 +127,7 @@ fn reject_alias_arn(arn: &str, branch_key_id: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// An error for a malformed branch key record.
+/// An `InvalidMaterials` error naming the branch key, for a malformed branch key record.
 fn malformed_record(branch_key_id: &str, message: impl Into<String>) -> Error {
     Error::new(Kind::InvalidMaterials, message).about(
         Some(Service::DynamoDb),

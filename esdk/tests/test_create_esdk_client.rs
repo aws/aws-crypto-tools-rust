@@ -611,8 +611,7 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         .encrypt(&enc_input)
         .await
         .expect_err("ForbidEncryptAllowDecrypt + committing V2 suite must fail encrypt");
-    // The ESDK checks the algorithm suite against the commitment policy before calling the MPL,
-    // and returns a Validation error for the conflict.
+    // The ESDK rejects the suite before calling the MPL, with a Validation error.
     assert!(
         err.is_validation(),
         "expected Validation error, got {:?}: {}",

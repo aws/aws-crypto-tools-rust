@@ -175,8 +175,8 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         })
 }
 
-/// An error for a branch key record that is malformed,
-/// naming the branch key, and its version, when the record has them.
+/// An `InvalidMaterials` error for a malformed branch key record.
+/// It names the branch key and its version when the record has them.
 fn malformed(authenticated_ec: &BTreeMap<String, String>, message: impl Into<String>) -> Error {
     let version = authenticated_ec
         .get(ATTR_TYPE)

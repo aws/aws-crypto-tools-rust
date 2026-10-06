@@ -165,10 +165,8 @@ impl UsageMetadataBuilder {
 
 /// A single entry in a Cryptographic Materials Cache.
 ///
-/// `CacheEntry` is the data type every concrete CMC stores per cache
-/// identifier. It holds the four pieces of state that the CMC
-/// spec's `#cache-entry` section enumerates: the materials, the creation
-/// time, the expiry time (TTL), and the usage metadata.
+/// A CMC stores one `CacheEntry` per cache identifier.
+/// Its fields are the state the CMC spec's `#cache-entry` section lists.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct CacheEntry {
@@ -197,8 +195,8 @@ impl CacheEntry {
         self.creation_time
     }
 
-    /// Time-to-live (TTL): the wall-clock instant after which the entry is
-    /// TTL-expired and MUST NOT be returned to any caller.
+    /// Wall-clock time the entry expires.
+    /// A cache MUST NOT return the entry at or after this time.
     #[must_use]
     pub const fn expiry_time(&self) -> SystemTime {
         self.expiry_time
@@ -283,7 +281,7 @@ impl CacheEntryBuilder {
     /// # Errors
     ///
     /// Returns a validation error ([`Error::is_validation`])
-    /// error if `materials`, `creation_time`, or `expiry_time` is unset.
+    /// if `materials`, `creation_time`, or `expiry_time` is unset.
     pub fn build(self) -> Result<CacheEntry, Error> {
         Ok(CacheEntry {
             materials: required(self.materials, "materials")?,

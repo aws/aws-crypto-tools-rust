@@ -89,7 +89,7 @@ impl PutCacheEntryInputBuilder {
     /// # Errors
     ///
     /// Returns a validation error ([`Error::is_validation`])
-    /// error if `identifier` or `entry` is unset.
+    /// if `identifier` or `entry` is unset.
     pub fn build(self) -> Result<PutCacheEntryInput, Error> {
         Ok(PutCacheEntryInput {
             identifier: required(self.identifier, "identifier")?,
@@ -179,7 +179,7 @@ impl GetCacheEntryInputBuilder {
     /// # Errors
     ///
     /// Returns a validation error ([`Error::is_validation`])
-    /// error if `identifier` is unset.
+    /// if `identifier` is unset.
     pub fn build(self) -> Result<GetCacheEntryInput, Error> {
         Ok(GetCacheEntryInput {
             identifier: required(self.identifier, "identifier")?,
@@ -298,7 +298,7 @@ impl DeleteCacheEntryInputBuilder {
     /// # Errors
     ///
     /// Returns a validation error ([`Error::is_validation`])
-    /// error if `identifier` is unset.
+    /// if `identifier` is unset.
     pub fn build(self) -> Result<DeleteCacheEntryInput, Error> {
         Ok(DeleteCacheEntryInput {
             identifier: required(self.identifier, "identifier")?,

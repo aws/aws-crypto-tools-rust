@@ -432,7 +432,7 @@ impl Keyring for RawAesKeyring {
         // materials; reaching this line means no decryption succeeded, so the
         // input `materials` is dropped unmodified.
 
-        // Nothing here was this keyring's.
+        // No EDK belonged to this keyring.
         if !attempted_decryption {
             return Err(if collected_errors.is_empty() {
                 Error::new(
@@ -447,7 +447,7 @@ impl Keyring for RawAesKeyring {
             });
         }
 
-        // At least one EDK was this keyring's and decryption still failed.
+        // At least one EDK belonged to this keyring, and none decrypted.
         //
         //   "If no decryption succeeds, the keyring MUST fail"
         //

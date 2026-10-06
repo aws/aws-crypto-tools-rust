@@ -69,12 +69,12 @@ impl DecryptMode {
 /// # Errors
 ///
 /// Returns an [`Error`](crate::Error), one of:
-/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the parsed algorithm suite is barred by the commitment policy, or the message is multi-frame and signed (decrypt it with [`decrypt`](crate::decrypt) instead).
+/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`decrypt`](crate::decrypt) instead).
 /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
 /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
-/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): no configured key wraps any of the message's encrypted data keys.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
 /// - [`Cryptographic`](crate::Error::Cryptographic): the header tag, a frame tag, the key commitment, or the signature does not verify.
-/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies access, through the hierarchical keyring.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
 /// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
 /// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
 /// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
@@ -84,7 +84,10 @@ impl DecryptMode {
 /// - [`Io`](crate::Error::Io): the supplied ciphertext reader or plaintext writer fails.
 /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 ///
-/// The materials variants come from the supplied keyring or CMM, and a custom one may return any variant. The built-in raw AES keyring returns [`Validation`](crate::Error::Validation), [`InvalidMaterials`](crate::Error::InvalidMaterials), or [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey); the hierarchical keyring also returns the AWS KMS and `DynamoDB` variants above, and [`InvalidMaterials`](crate::Error::InvalidMaterials) for a corrupt branch key record.
+/// Errors from the keyring or CMM you supply keep their variant, and a custom one may return any variant.
+/// The built-in raw AES keyring returns [`Validation`](crate::Error::Validation), [`InvalidMaterials`](crate::Error::InvalidMaterials), or [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey).
+/// The hierarchical keyring returns those and the AWS KMS and `DynamoDB` variants above;
+/// a corrupt branch key record is [`InvalidMaterials`](crate::Error::InvalidMaterials).
 pub async fn decrypt_stream(
     //= spec/client-apis/decrypt.md#encrypted-message
     //= type=implication
@@ -135,12 +138,12 @@ pub async fn decrypt_stream(
 /// # Errors
 ///
 /// Returns an [`Error`](crate::Error), one of:
-/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, or the parsed algorithm suite is barred by the commitment policy.
+/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, or the commitment policy does not allow the message's algorithm suite.
 /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
 /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
-/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): no configured key wraps any of the message's encrypted data keys.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
 /// - [`Cryptographic`](crate::Error::Cryptographic): the header tag, a frame tag, the key commitment, or the signature does not verify.
-/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies access, through the hierarchical keyring.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
 /// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
 /// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
 /// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
@@ -149,7 +152,10 @@ pub async fn decrypt_stream(
 /// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
 /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 ///
-/// The materials variants come from the supplied keyring or CMM, and a custom one may return any variant. The built-in raw AES keyring returns [`Validation`](crate::Error::Validation), [`InvalidMaterials`](crate::Error::InvalidMaterials), or [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey); the hierarchical keyring also returns the AWS KMS and `DynamoDB` variants above, and [`InvalidMaterials`](crate::Error::InvalidMaterials) for a corrupt branch key record.
+/// Errors from the keyring or CMM you supply keep their variant, and a custom one may return any variant.
+/// The built-in raw AES keyring returns [`Validation`](crate::Error::Validation), [`InvalidMaterials`](crate::Error::InvalidMaterials), or [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey).
+/// The hierarchical keyring returns those and the AWS KMS and `DynamoDB` variants above;
+/// a corrupt branch key record is [`InvalidMaterials`](crate::Error::InvalidMaterials).
 pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 

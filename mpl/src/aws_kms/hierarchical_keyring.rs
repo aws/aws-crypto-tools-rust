@@ -210,8 +210,8 @@ struct HierarchicalKeyringInner {
     /// [`HierarchicalKeyringBuilder::build`] reads it once from the key store's `get_key_store_info`.
     logical_key_store_name: String,
 
-    /// Cryptographic-materials cache for branch-key materials: the caller's
-    /// cache, or a keyring-local `DefaultCmc` built when none is set.
+    /// The cache for branch key materials:
+    /// the caller's, or a `DefaultCmc` the builder creates when none is set.
     cache: SharedCmc,
 }
 
@@ -319,11 +319,11 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// The cache for branch key materials.
-    /// Pass clones of one cache to several keyrings to share it.
+    /// Pass clones of one cache to several keyrings to share its entries.
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
     ///
-    /// When the cache has a [grace period](Cmc::grace_period),
-    /// it must be less than the [TTL](Self::ttl).
+    /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
+    /// The default cache's grace period is 10 seconds.
     #[must_use]
     pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
         self.cache = Some(cache.into_shared());
@@ -343,9 +343,10 @@ impl HierarchicalKeyringBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
-    /// - [`Cryptographic`](crate::Error::Cryptographic): obtaining entropy for the default partition id failed.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
-    /// Any error the configured key store returns while reporting its info is propagated with its variant unchanged; the built-in [`BranchKeyStore`](crate::BranchKeyStore) returns none.
+    /// If the key store's [`get_key_store_info`](crate::Keystore::get_key_store_info) fails, returns that error unchanged.
+    /// The built-in [`BranchKeyStore`](crate::BranchKeyStore) does not fail it.
     pub fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
@@ -604,7 +605,7 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        // With exactly one candidate, its error is the one returned.
+        // With one candidate, `all_failed` returns that candidate's error itself.
         Err(Error::all_failed(
             "failed to decrypt any encrypted data key",
             collected_errors,
@@ -767,8 +768,8 @@ impl HierarchicalKeyring {
     }
 }
 
-/// Name the branch key in a cache throttling error,
-/// which names only the cache because the cache's keys are opaque.
+/// Name the branch key in the message of a cache throttling error.
+/// The cache names only itself, because its keys are opaque.
 fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
     if e.is_throttling() && e.resource() == Some(&Resource::Cache(Cache::new())) {
         e.set_message(format!(

@@ -25,8 +25,8 @@ pub use aws_kms::hierarchical_keyring::{
 
 // Both SDK clients appear in `BranchKeyStoreBuilder`'s public signature,
 // and a key store `Error` carries their SDK errors as its source.
-// Downcasting to one needs the exact crate version this crate uses,
-// which a consumer's own dependency might not resolve to.
+// Downcasting that source needs the exact SDK version this crate uses,
+// which the consumer's own dependency might not resolve to.
 pub use aws_sdk_dynamodb;
 pub use aws_sdk_kms;
 

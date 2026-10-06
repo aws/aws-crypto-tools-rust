@@ -113,9 +113,8 @@ async fn build_key_store() -> BranchKeyStore {
 /// Long enough that no test races an expiry.
 const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
-/// Build a keyring over `key_store` for `branch_key_id`, with a keyring-local
-/// `LocalCmc`. Every test varies only these three things, so they share one
-/// fixture.
+/// Build a keyring over `key_store` for `branch_key_id`, with its own `LocalCmc`.
+/// Every test varies only these three things, so they share one fixture.
 fn keyring_for(
     key_store: impl KeyStore + 'static,
     branch_key_id: &str,
@@ -321,9 +320,8 @@ async fn build_key_store_with_kms_and_logical_name(
 /// key store a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
-/// Asserts the source chain holds the `SdkError<DecryptError>`.
-/// Reaching the SDK error proves the call actually got to KMS, which is the property these tests need:
-/// it means the DDB record was read, so `hk2` went to the key store instead of
+/// Asserts the source chain holds the `SdkError<DecryptError>`, which proves the call reached KMS.
+/// That means the DDB record was read, so `hk2` went to the key store instead of
 /// being served from the shared cache, and a cache miss is what is under test.
 /// A bare `is_err()` would also be satisfied by a missing record or an
 /// unreachable table.
@@ -441,9 +439,9 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
 //
 // These four tests mirror the Dafny `TestSharedCache*` suites. They each
 // build two `HierarchicalKeyring`s (HK1, HK2) that share a single
-// `LocalCmc` by holding clones of one `SharedCmc`. HK1's key store uses a us-west-2 KMS
-// client; HK2's key store uses a us-east-2 KMS client. KEY_ARN is in
-// us-west-2, so any KMS Decrypt issued by HK2's key store fails.
+// `LocalCmc` through clones of one `SharedCmc`.
+// HK1's key store uses a us-west-2 KMS client; HK2's key store uses a us-east-2 KMS client.
+// KEY_ARN is in us-west-2, so any KMS Decrypt issued by HK2's key store fails.
 //
 // The four tests differ only in (partition_id, logical_key_store_name)
 // configuration and observe whether HK1's cache entry is reachable from
@@ -457,7 +455,7 @@ fn shared_cache_materials() -> EncryptionMaterials {
     fresh_materials()
 }
 
-/// Build a fresh `LocalCmc` whose clones HK1 and HK2 share.
+/// A `SharedCmc` over a fresh `LocalCmc`, for HK1 and HK2 to share.
 fn shared_cache() -> SharedCmc {
     SharedCmc::new(
         LocalCmc::builder()

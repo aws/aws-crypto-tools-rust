@@ -425,12 +425,10 @@ fn build_with_branch_key_id_supplier_succeeds() {
     assert!(keyring.branch_key_id_supplier().is_some());
 }
 
-// ─── Cache wiring tests: which Cmc the keyring stores ───────────────────────
+// Cache wiring tests
 //
-// Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to the
-// cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
-// and is deliberately not re-derived through the keyring. These tests check
-// only which cache the keyring stores and the grace-period bound it enforces.
+// These check only which cache the keyring stores and the grace period bound it enforces.
+// Cache behavior is tested in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`.
 
 #[test]
 fn build_without_cache_uses_default_cmc() {
@@ -1155,8 +1153,7 @@ fn wrap_two_calls_produce_distinct_ciphertexts() {
 
 #[test]
 fn unwrap_too_short_ciphertext_returns_error() {
-    // A ciphertext shorter than the fixed 60-byte overhead cannot hold the salt+iv+version+tag layout,
-    // so unwrap fails with Cryptographic.
+    // Shorter than the 60-byte salt, IV, version, and tag overhead, so unwrap fails with Cryptographic.
     let materials = fixture_materials_empty_ec();
     let too_short = vec![0u8; 32];
 
@@ -1390,8 +1387,7 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
         .unwrap()
 }
 
-/// Build a keyring over a [`FakeKeyStore`] with a static branch key id and a
-/// keyring-local `LocalCmc`.
+/// Build a keyring over a [`FakeKeyStore`] with a static branch key id and its own `LocalCmc`.
 fn build_keyring(key_store: FakeKeyStore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(key_store)
@@ -1602,7 +1598,7 @@ mod onencrypt {
         };
         assert!(err.is_resource_not_found(), "{:?}", err);
 
-        // The key store's error is returned as is, and its cause stays reachable.
+        // The key store's error comes back unchanged, and its cause stays reachable.
         // In production that cause is the AWS SDK error.
         assert_eq!(
             err.find_source::<IoError>()
@@ -1999,8 +1995,7 @@ mod ondecrypt {
             )
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
-        // Exactly one candidate EDK failed, so its error is returned as is,
-        // not as a collection of one.
+        // One candidate EDK, so its error comes back unchanged, not as a collection of one.
         assert!(err.is_cryptographic(), "{:?}", err);
         assert!(err.collected().is_empty());
     }
@@ -2157,8 +2152,8 @@ mod ondecrypt {
                     .unwrap(),
             )
             .await
+            // One candidate EDK, so the key store's error comes back unchanged.
             .expect_err("on_decrypt must fail when key store.get_branch_key_version fails");
-        // One candidate EDK, so the key store's error is returned as is.
         assert!(err.is_resource_not_found(), "{:?}", err);
         assert!(err.collected().is_empty());
         assert_eq!(err.message(), "no such branch key version");
