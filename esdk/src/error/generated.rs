@@ -48,7 +48,7 @@ type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 ///
 /// A minor or patch release can also change which variant a failure gets:
 /// - A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
-/// - A collection of failures can get a different variant.
+/// - A collection of `failures()` that resolves to one variant can resolve to a different variant.
 ///
 /// See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
 ///

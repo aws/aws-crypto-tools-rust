@@ -34,7 +34,7 @@
 //! **Messages are for people.**
 //! [`message`](Error::message) and `Display` are for people and logs:
 //! their text can change in any release, even a patch release.
-//! Decide from the variant and its accessors, never from the message.
+//! Handle errors in your application from the variant and its accessors, never from the error message.
 //!
 //! ## What a minor or patch release can change
 //!
@@ -42,14 +42,11 @@
 //! Code that depends on any of the following can break in one:
 //!
 //! - **Message text.** Any message, and anything `{}`, `{:#}`, or `{:?}` prints, can change.
-//!   Decide from the variant and its accessors, never from the message.
-//! - **Failures without a specific variant.** An ESDK operation returns only [`Error`],
-//!   never an `aws_crypto_mpl::Error` or any other type.
-//!   A failure that reaches you without a specific variant is a bug:
-//!   a panic, an [`Internal`](Error::Internal) error,
-//!   or a failure you can recognize only by a type in its source chain.
-//!   A minor or patch release can turn it into a specific variant,
-//!   so handle it in the catch-all arm, not by matching on it.
+//!   Do not attempt to parse an error message string in your error handling logic.
+//!   Always inspect the fields of the error structure itself.
+//! - **Failures without a specific variant.** An ESDK operation should only ever return [`Error`].
+//!   Any non-[`Error`] (or an [`Internal`](Error::Internal) error) is a bug.
+//!   A minor or patch release can turn these into an [`Error`] variant.
 //! - **The shape of the source chain.** Levels can be added or removed.
 //!   Reach a source with [`find_source`](Error::find_source),
 //!   not by calling `source()` a fixed number of times.
@@ -72,55 +69,8 @@
 //! Name that type through the AWS SDK crates [`aws_crypto_mpl`] re-exports:
 //! `find_source` matches the exact type, and a different version of an SDK crate defines different types.
 //!
-//! This example handles each variant of a decrypt error:
-//!
-//! ```no_run
-//! # mod log { macro_rules! error { ($($t:tt)*) => { eprintln!($($t)*) } } pub(crate) use error; }
-//! # fn use_plaintext(_: Vec<u8>) {}
-//! # fn backoff(_: Option<aws_esdk::error::RetryKind>) {}
-//! # fn refresh_credentials() {}
-//! # fn grant_kms_decrypt(_: &str) {}
-//! # fn grant_ddb_access(_: &str) {}
-//! # fn provision_branch_key(_: &str) {}
-//! # fn fix_key_store_table(_: &str) {}
-//! # fn fix_kms_key(_: &str) {}
-//! # fn alert_corrupt_branch_key(_: &str) {}
-//! # fn report_keyring_bug(_: &str, _: String) {}
-//! # fn try_another_keyring(_: Option<&aws_esdk::error::Resource>) {}
-//! # fn reject(_: &str) {}
-//! # fn fix_input(_: &str) {}
-//! # async fn example(input: aws_esdk::DecryptInput<'_>) {
-//! use aws_esdk::error::{Error, Resource, Service};
-//!
-//! match aws_esdk::decrypt(&input).await {
-//!     Ok(out) => use_plaintext(out.plaintext),
-//!     Err(e) if e.is_retryable() => backoff(e.retry_kind()),
-//!     Err(Error::AccessDenied(e)) if e.is_credentials() => refresh_credentials(),
-//!     Err(Error::AccessDenied(e)) => match (e.service(), e.resource()) {
-//!         (Some(Service::Kms), Some(Resource::KmsKey(key))) => grant_kms_decrypt(key.arn()),
-//!         (Some(Service::DynamoDb), Some(Resource::DynamoDbTable(table))) => grant_ddb_access(table.name()),
-//!         _ => log::error!("{e}"),
-//!     },
-//!     Err(Error::ResourceNotFound(e)) => match e.resource() {
-//!         Some(Resource::BranchKey(branch_key)) => provision_branch_key(branch_key.id()),
-//!         Some(Resource::DynamoDbTable(table)) => fix_key_store_table(table.name()),
-//!         Some(Resource::KmsKey(key)) => fix_kms_key(key.arn()),
-//!         _ => log::error!("{e}"),
-//!     },
-//!     Err(Error::InvalidMaterials(e)) => match e.resource() {
-//!         Some(Resource::BranchKey(branch_key)) => alert_corrupt_branch_key(branch_key.id()),
-//!         Some(Resource::Keyring(keyring)) => report_keyring_bug(keyring.name(), format!("{e:#}")),
-//!         _ => log::error!("{e:#}"),
-//!     },
-//!     Err(Error::NoMatchingDataKey(e)) => try_another_keyring(e.resource()),
-//!     Err(Error::EncryptionContextMismatch(e)) => reject(&format!("{e:#}")),
-//!     Err(Error::Cryptographic(_) | Error::Serialization(_)) => reject("bad message"),
-//!     Err(Error::Service(e)) => log::error!("{e}"),
-//!     Err(Error::Validation(e)) => fix_input(e.message()),
-//!     Err(e) => log::error!("decrypt failed: {e:#}"),   // Internal, and variants added later
-//! }
-//! # }
-//! ```
+//! For complete error handling with the hierarchical keyring,
+//! see the [`handling_errors`](https://github.com/aws/aws-crypto-tools-rust/blob/main/esdk/examples/handling_errors.rs) example.
 //!
 //! ## Throttling
 //!
@@ -134,12 +84,17 @@
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
 //! # async fn example(input: aws_esdk::EncryptInput<'_>) {
-//! use aws_esdk::error::{Error, Resource};
+//! use aws_esdk::error::{Error, Resource, Service};
 //!
 //! if let Err(Error::Throttling(e)) = aws_esdk::encrypt(&input).await {
-//!     match (e.service(), e.resource()) {
-//!         (Some(service), _) => record_throttle(service.as_str()),
-//!         (None, Some(Resource::Cache(_))) => record_throttle("materials-cache"),
+//!     match e.service() {
+//!         Some(Service::Kms) => record_throttle("kms"),
+//!         Some(Service::DynamoDb) => record_throttle("dynamodb"),
+//!         // The materials cache is not an AWS service.
+//!         None => match e.resource() {
+//!             Some(Resource::Cache(_)) => record_throttle("materials-cache"),
+//!             _ => record_throttle("other"),
+//!         },
 //!         _ => record_throttle("other"),
 //!     }
 //! }
@@ -157,20 +112,21 @@
 //! An error with no collection yields itself.
 //!
 //! ```no_run
-//! # fn grant_kms_decrypt(_: &str) {}
-//! # fn backoff() {}
 //! # async fn example(input: aws_esdk::DecryptInput<'_>) {
-//! use aws_esdk::error::{Error, Resource};
+//! use aws_esdk::error::{Error, Resource, Service};
 //!
 //! if let Err(e) = aws_esdk::decrypt(&input).await {
 //!     for attempt in e.failures() {
 //!         match attempt {
-//!             Error::AccessDenied(a) => match a.resource() {
-//!                 Some(Resource::KmsKey(key)) => grant_kms_decrypt(key.arn()),
-//!                 _ => {}
+//!             Error::AccessDenied(a) => match a.service() {
+//!                 Some(Service::Kms) => match a.resource() {
+//!                     Some(Resource::KmsKey(key)) => { /* handle AWS KMS denying the KMS key `key.arn()` */ }
+//!                     _ => { /* handle AWS KMS denying any other resource */ }
+//!                 },
+//!                 _ => { /* handle any other service denying access */ }
 //!             },
-//!             Error::Throttling(_) => backoff(),
-//!             _ => {}
+//!             Error::Throttling(_) => { /* handle this attempt being throttled */ }
+//!             _ => { /* handle any other failure of this attempt */ }
 //!         }
 //!     }
 //! }

@@ -83,11 +83,6 @@ impl DecryptMode {
 /// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
 /// - [`Io`](crate::Error::Io): the supplied ciphertext reader or plaintext writer fails.
 /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-///
-/// Errors from the keyring or CMM you supply keep their variant, and a custom one may return any variant.
-/// The built-in raw AES keyring returns [`Validation`](crate::Error::Validation), [`InvalidMaterials`](crate::Error::InvalidMaterials), or [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey).
-/// The hierarchical keyring returns those and the AWS KMS and `DynamoDB` variants above;
-/// a corrupt branch key record is [`InvalidMaterials`](crate::Error::InvalidMaterials).
 pub async fn decrypt_stream(
     //= spec/client-apis/decrypt.md#encrypted-message
     //= type=implication
@@ -151,11 +146,6 @@ pub async fn decrypt_stream(
 /// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
 /// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
 /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-///
-/// Errors from the keyring or CMM you supply keep their variant, and a custom one may return any variant.
-/// The built-in raw AES keyring returns [`Validation`](crate::Error::Validation), [`InvalidMaterials`](crate::Error::InvalidMaterials), or [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey).
-/// The hierarchical keyring returns those and the AWS KMS and `DynamoDB` variants above;
-/// a corrupt branch key record is [`InvalidMaterials`](crate::Error::InvalidMaterials).
 pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
