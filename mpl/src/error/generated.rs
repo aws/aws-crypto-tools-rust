@@ -33,6 +33,10 @@ type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 ///
 /// Messages are for people, not code; their text can change in any release.
 /// Decide from the variant and its accessors, never from the message.
+/// That includes minor and patch releases. A minor or patch release can also turn a failure that
+/// reaches you as `Internal`, or as anything other than this `Error`, into a specific variant,
+/// and change which variant a collection of failures gets.
+/// See "What a minor or patch release can change" in the [module docs](crate::error).
 ///
 /// Use `is_retryable()` to decide whether to retry and `retry_kind()` for how to back off.
 /// Match `Error::Throttling` only to learn what was throttled.
