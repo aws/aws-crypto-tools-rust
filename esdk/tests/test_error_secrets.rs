@@ -186,7 +186,7 @@ async fn kms_failures_contain_no_branch_key_bytes() {
     assert_no_secrets(&err);
 }
 
-/// Decrypt a message under the fake's branch key with a hierarchical keyring backed by `fake`.
+/// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
 async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
     let input = EncryptInput::builder()
         .plaintext(PLAINTEXT.as_bytes())

@@ -9,12 +9,11 @@
 //!
 //! # Errors for keyring and CMM authors
 //!
-//! A custom [`Keyring`] or [`Cmm`](crate::Cmm) returns [`Error`],
-//! and the AWS Encryption SDK passes the variant on to its caller,
-//! so pick the variant that tells the caller what to do:
+//! The AWS Encryption SDK passes the [`Error`] variant your [`Keyring`] or [`Cmm`](crate::Cmm) returns
+//! on to its caller, so pick the variant that tells the caller what to do:
 //!
-//! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to
-//!   this keyring, judged by its key provider ID and key provider info, before trying to decrypt.
+//! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to this keyring.
+//!   Decide this from each key's provider ID and provider info, before trying to decrypt.
 //!   Pass the encrypted data keys to [`with_encrypted_data_keys`](Error::with_encrypted_data_keys)
 //!   so the caller can see which key providers the message has.
 //! - **[`Cryptographic`](Error::Cryptographic)** when an encrypted data key belongs to this keyring
@@ -23,8 +22,8 @@
 //!   for example they already hold a plaintext data key.
 //! - **[`Validation`](Error::Validation)** when the keyring's own configuration is invalid.
 //!
-//! Construct them with the short constructors, and keep the underlying error with
-//! [`with_source`](Error::with_source):
+//! Each variant above has a constructor of the same name, such as [`Error::cryptographic`].
+//! Attach the underlying error with [`with_source`](Error::with_source):
 //!
 //! ```
 //! use aws_crypto_mpl::Error;
@@ -41,19 +40,21 @@
 //! assert!(err.is_no_matching_data_key());
 //! ```
 //!
-//! When you try several encrypted data keys and each fails, return them together with
-//! [`Error::all_failed`]: any one succeeding would have been enough,
-//! so it is retryable if any attempt is.
-//! When several steps your keyring needed fail, return them with [`Error::any_failed`]:
-//! one permanent failure makes the whole operation not retryable.
-//! Both pick the variant and keep the details every failure shares,
-//! and with one failure return that failure.
+//! To report several failures as one error:
+//!
+//! - [`Error::all_failed`] when you tried several encrypted data keys and each failed.
+//!   Any one succeeding would have been enough, so the result is retryable if any attempt is.
+//! - [`Error::any_failed`] when several steps your keyring needed failed.
+//!   One permanent failure makes the result not retryable.
+//!
+//! Both pick the variant and keep the details every failure shares.
+//! Given a single failure, both return it unchanged.
 //!
 //! Implement [`name`](Keyring::name): errors about your keyring show it.
-//! You do not need to set `resource()` to your keyring:
-//! the AWS Encryption SDK sets it to [`Resource::Keyring`](crate::error::Resource::Keyring)
-//! or [`Resource::Cmm`](crate::error::Resource::Cmm) and your name
-//! when your materials are rejected or no data key matched.
+//! You do not need to set `resource()` to your keyring.
+//! When your error is `InvalidMaterials` or `NoMatchingDataKey` and names no resource,
+//! the AWS Encryption SDK sets `resource()` to [`Resource::Keyring`](crate::error::Resource::Keyring)
+//! or [`Resource::Cmm`](crate::error::Resource::Cmm) with your name.
 
 use crate::Error;
 use std::borrow::Cow;
@@ -74,24 +75,25 @@ pub use types::{
 pub trait Keyring: Send + Sync {
     /// A short name for this keyring, which errors show.
     ///
-    /// The ESDK reports a failure of a caller's keyring with
-    /// `resource()` set to [`Resource::Keyring`](crate::error::Resource::Keyring) and this name.
-    /// It should be stable and short, and must not contain secrets.
+    /// When the ESDK attributes an error to this keyring, it sets `resource()` to
+    /// [`Resource::Keyring`](crate::error::Resource::Keyring) with this name.
+    /// Keep it stable and short, and never put secrets in it.
     /// Return `Cow::Owned` for a name built at runtime.
     /// The default is the type's name.
     fn name(&self) -> Cow<'_, str> {
         Cow::Borrowed(std::any::type_name::<Self>())
     }
 
-    /// Add a data key to the input's encryption materials,
-    /// generating the plaintext data key if they have none, and return them. See the
-    /// [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
+    /// Add a data key to the input's encryption materials and return them.
+    /// When the materials have no plaintext data key, generate one.
+    /// See the [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
     /// section of the keyring interface specification.
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error>;
 
     /// Decrypt one of the input's encrypted data keys,
-    /// add its plaintext data key to the input's decryption materials, and return them. See the
-    /// [OnDecrypt](../../../spec/framework/keyring-interface.md#ondecrypt)
+    /// add its plaintext data key to the input's decryption materials,
+    /// and return them.
+    /// See the [OnDecrypt](../../../spec/framework/keyring-interface.md#ondecrypt)
     /// section of the keyring interface specification.
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error>;
 }

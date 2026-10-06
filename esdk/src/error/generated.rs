@@ -29,40 +29,45 @@ type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
 /// An error from the AWS Encryption SDK.
 ///
-/// Check [`is_retryable`](Self::is_retryable) first, then match on the variant.
-/// An error from a keyring, CMM, key store, or cache keeps its variant:
-/// each [`aws_crypto_mpl::Error`] variant has one here with the same name.
-/// Later releases can add variants, so a `match` needs a catch-all arm.
+/// To handle it:
+/// 1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
+/// 2. Otherwise match on the variant; each variant's docs say what to do.
+///    An error from a keyring, CMM, key store, or cache keeps its variant:
+///    each [`aws_crypto_mpl::Error`] variant has one here with the same name.
+///    Later releases can add variants, so a `match` needs a catch-all arm.
+///
 /// See the [module docs](crate::error) for examples.
 ///
-/// Messages are for people, not code; their text can change in any release.
-/// Decide from the variant and its accessors, never from the message.
-/// That includes minor and patch releases. A minor or patch release can also turn a failure that
-/// reaches you as `Internal`, or as anything other than this `Error`, into a specific variant,
-/// and change which variant a collection of failures gets.
-/// See "What a minor or patch release can change" in the [module docs](crate::error).
-///
-/// Use `is_retryable()` to decide whether to retry and `retry_kind()` for how to back off.
+/// For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
+/// so retry only at a higher level, with your own backoff.
+/// Nothing retries materials-cache throttling for you.
 /// Match `Error::Throttling` only to learn what was throttled.
-/// `ProvideErrorKind` exists so SDK retry code can read these errors.
-/// For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
-/// according to its `RetryConfig`, so retry only at a higher level with your own backoff.
-/// Materials-cache throttling is not retried internally.
+///
+/// Messages are for people and logs: their text can change in any release, even a patch release.
+/// Decide from the variant and its accessors, never from the message.
+///
+/// A minor or patch release can also change which variant a failure gets:
+/// - A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
+/// - A collection of failures can get a different variant.
+///
+/// See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
+///
+/// `Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
     /// An input or configuration value is invalid,
     /// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
     ///
-    /// Fix the input; the same call cannot succeed.
+    /// Fix the input; retrying cannot succeed.
     Validation(ValidationError),
     /// A keyring, CMM, or key store returned materials that are inconsistent or malformed,
     /// for example no plaintext data key after encryption, a signing key for a suite that does not sign,
     /// or a branch key record with a missing attribute or a key of the wrong length.
     ///
-    /// `resource()` names the branch key, keyring, or CMM.
     /// Usually a bug in a custom keyring or CMM, or a corrupt key store record;
     /// retrying cannot succeed.
+    /// `resource()` names the branch key, keyring, or CMM.
     InvalidMaterials(InvalidMaterialsError),
     /// An encryption context does not match,
     /// for example a required key is missing, or a value passed to decrypt differs from the message's.
@@ -72,20 +77,20 @@ pub enum Error {
     /// None of the configured keys wrapped any of the message's encrypted data keys,
     /// for example when decrypting with a keyring that did not encrypt the message.
     ///
-    /// `resource()` names the keyring or CMM that was used,
-    /// and `encrypted_data_keys()` lists the message's encrypted data keys by key provider.
     /// Decrypt with a keyring that has one of the message's keys.
+    /// `encrypted_data_keys()` lists the message's encrypted data keys by key provider,
+    /// and `resource()` names the keyring or CMM that was used.
     NoMatchingDataKey(NoMatchingDataKeyError),
     /// A cryptographic check failed,
     /// for example an AES-GCM authentication tag or a message signature did not verify.
     ///
-    /// The message is corrupt or modified, or is being decrypted with the wrong key;
+    /// The message is corrupt or modified, or you are decrypting it with the wrong key;
     /// retrying cannot succeed.
     Cryptographic(CryptographicError),
     /// AWS KMS or DynamoDB denied access.
     ///
-    /// `is_credentials()` says whether the credentials are expired or invalid;
-    /// otherwise fix the permissions for `service()` on `resource()`.
+    /// If `is_credentials()` is true, the credentials are expired or invalid.
+    /// Otherwise fix the permissions for `service()` on `resource()`.
     AccessDenied(AccessDeniedError),
     /// A KMS key, DynamoDB table, or branch key does not exist.
     ///
@@ -93,24 +98,22 @@ pub enum Error {
     ResourceNotFound(ResourceNotFoundError),
     /// A service or resource throttled the request.
     ///
-    /// `service()` and `resource()` say what was throttled:
-    /// AWS KMS, DynamoDB, or the materials cache ([`Resource::Cache`](crate::error::Resource::Cache),
-    /// with no `service()`).
     /// Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Throttling).
+    /// `service()` and `resource()` say what was throttled: AWS KMS, DynamoDB, or the materials cache,
+    /// which is [`Resource::Cache`](crate::error::Resource::Cache) with no `service()`.
     Throttling(ThrottlingError),
     /// The request conflicts with the current state of `resource()`,
     /// for example creating a branch key whose ID already exists,
     /// or rotating a branch key that another caller rotated at the same time.
     ///
-    /// `reason()` says which.
-    /// Re-read the resource before acting; retrying the same call unchanged is not safe.
-    /// Not retryable.
+    /// Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
+    /// `reason()` says which conflict occurred.
     Conflict(ConflictError),
     /// AWS KMS or DynamoDB rejected or failed the request for any other reason,
     /// for example an internal service error or a KMS `IncorrectKeyException`.
     ///
-    /// `code()` is the service's error code.
     /// A server-side failure is retryable.
+    /// `code()` is the service's error code.
     Service(ServiceError),
     /// A request to AWS KMS or DynamoDB was not sent, or its response did not arrive,
     /// for example because of a network error, a timeout, or missing credentials or region.
@@ -122,14 +125,15 @@ pub enum Error {
     ///
     /// Treat the message as corrupt; retrying cannot succeed.
     Serialization(SerializationError),
-    /// A caller-supplied reader or writer failed while streaming,
+    /// A reader or writer you passed failed while streaming,
     /// for example a closed connection or a full disk.
     ///
     /// The [`source`](std::error::Error::source) is the [`std::io::Error`].
     Io(IoError),
     /// An internal invariant was violated, for example a poisoned lock.
     ///
-    /// A bug; report it. Never retryable.
+    /// A bug in this library; report it.
+    /// Never retryable.
     Internal(InternalError),
 }
 
@@ -208,7 +212,7 @@ impl ErrorData {
         })
     }
 
-    /// The fields of a collection that every collected error shares.
+    /// The details every collected error shares.
     fn shared_remote(collected: &[Error]) -> Remote {
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {
@@ -419,10 +423,11 @@ fn level_of<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<Level<'a>> {
     None
 }
 
-/// Another library's error, shown in `Debug` as its `Display` chain.
+/// Another library's error, which `Debug` shows as its `Display` chain.
 ///
-/// An AWS SDK error's `Debug` includes the raw HTTP response, whose body can hold a
-/// plaintext key or item attribute values; its `Display` chain does not.
+/// An AWS SDK error's `Debug` includes the raw HTTP response,
+/// whose body can hold a plaintext key or item attribute values.
+/// Its `Display` chain holds neither.
 struct SourceText<'a>(&'a (dyn std::error::Error + 'static));
 
 impl fmt::Debug for SourceText<'_> {
@@ -596,7 +601,7 @@ impl Error {
         )
     }
 
-    /// Construct an error of `kind`.
+    /// An error of `kind` with `message`.
     #[track_caller]
     pub(crate) fn new(kind: Kind, message: impl Into<String>) -> Self {
         Self::from_data(kind, ErrorData::new(message.into()))
@@ -628,8 +633,8 @@ impl Error {
         Self::from_data(kind, data)
     }
 
-    /// Construct an error of `kind` that collects two or more failures,
-    /// keeping each detail they all share.
+    /// An error of `kind` that collects two or more failures
+    /// and keeps each detail they all share.
     #[track_caller]
     pub(crate) fn collect(
         kind: Kind,
@@ -691,7 +696,7 @@ impl Error {
         self.data_mut().retry = retry;
     }
 
-    /// Name what this error is about.
+    /// Set the service and resource this error is about.
     #[must_use]
     pub(crate) fn about(mut self, service: Option<Service>, resource: Option<Resource>) -> Self {
         let remote = &mut self.data_mut().remote;
@@ -705,12 +710,12 @@ impl Error {
         self.data_mut().message = message.into();
     }
 
-    /// Name the resource this error is about, keeping its service.
+    /// Replace the resource this error is about, keeping its service.
     pub(crate) fn set_resource(&mut self, resource: Option<Resource>) {
         self.data_mut().remote.resource = resource;
     }
 
-    /// Record what the AWS service said about a failed call.
+    /// Set the error code, request ID, and metadata the AWS service returned.
     pub(crate) fn set_sdk(
         &mut self,
         code: Option<String>,
@@ -723,22 +728,23 @@ impl Error {
         data.meta = meta;
     }
 
-    /// Say why the request conflicts.
+    /// Set why the request conflicts.
     pub(crate) fn set_reason(&mut self, reason: ConflictReason) {
         self.data_mut().reason = Some(reason);
     }
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data().message
     }
 
-    /// The variant's name, for example `"Throttling"`.
+    /// The variant's name, such as `"Throttling"`.
     ///
-    /// Stable across releases, for metrics and logs.
+    /// The name does not change across releases, so metrics and logs can use it.
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
@@ -771,9 +777,8 @@ impl Error {
         self.data().retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` for an error that is not about an AWS call.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         match self {
@@ -789,10 +794,9 @@ impl Error {
         }
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
-    /// `None` when the error is not about a resource.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         match self {
@@ -808,9 +812,8 @@ impl Error {
         }
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         match self {
@@ -826,9 +829,8 @@ impl Error {
         }
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         match self {
@@ -844,12 +846,11 @@ impl Error {
         }
     }
 
-    /// The failures this error collects, at this level only.
+    /// The failures this error collects itself,
+    /// such as one per encrypted data key a keyring tried.
     ///
-    /// Non-empty for an error built by a collecting constructor,
-    /// such as a keyring's error for every encrypted data key it tried.
-    /// Empty for every other error, including one whose *source* is a collection:
-    /// use [`failures`](Self::failures) to see every failure behind an error.
+    /// Empty when this error collects none, even if an error in its source chain does.
+    /// To see every failure behind an error, use [`failures`](Self::failures).
     #[must_use]
     pub fn collected(&self) -> &[Self] {
         &self.data().collected
@@ -863,9 +864,9 @@ impl Error {
 
     /// Every failure behind this error, at any depth, as this crate's `Error`.
     ///
-    /// A collected error's own collected errors are included in its place,
-    /// and a collection found in the source chain is used when this error collects nothing.
-    /// A single failure yields itself.
+    /// Each collected error is replaced by its own failures, so nested collections are flattened.
+    /// When this error collects nothing, it uses the first collection in its source chain.
+    /// An error with no collection anywhere in its source chain yields itself.
     #[must_use]
     pub fn failures(&self) -> Vec<Self> {
         if !self.collected().is_empty() {
@@ -926,7 +927,7 @@ impl Error {
 
     /// The backtrace captured when this error was created.
     ///
-    /// Disabled unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
+    /// Captured only when `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
     #[allow(clippy::must_use_candidate)] // clippy releases disagree on whether `&Backtrace` is already must_use
     pub fn backtrace(&self) -> &Backtrace {
         &self.data().backtrace
@@ -1060,7 +1061,7 @@ impl Error {
     ///
     /// `message` says what this library was doing.
     /// The variant is the one with the same name, or the fallback in `errors.toml`.
-    /// The retry kind, details, and `inner` itself, as the source, are kept.
+    /// Keeps the retry kind and details, and keeps `inner` as the source.
     #[track_caller]
     pub(crate) fn from_mpl(
         message: impl Into<String>,
@@ -1111,8 +1112,8 @@ impl Error {
 
     /// The same failure as `inner`, as this library's error.
     ///
-    /// Every field is kept: the variant by name (or the fallback in `errors.toml`),
-    /// the message, retry kind, details, collected errors, and the same source and backtrace.
+    /// Keeps every field: the variant by name (or the fallback in `errors.toml`),
+    /// the message, retry kind, details, collected errors, source, and backtrace.
     pub(crate) fn from_mpl_parts(inner: &aws_crypto_mpl::error::Error) -> Self {
         let parts = inner.__parts();
         let kind = match parts.name {
@@ -1158,7 +1159,7 @@ impl Error {
     ///
     /// `message` says what this library was doing.
     /// The variant is the one with the same name, or the fallback in `errors.toml`.
-    /// The retry kind, details, and `inner` itself, as the source, are kept.
+    /// Keeps the retry kind and details, and keeps `inner` as the source.
     #[track_caller]
     pub(crate) fn from_prim(
         message: impl Into<String>,
@@ -1184,8 +1185,8 @@ impl Error {
 
     /// The same failure as `inner`, as this library's error.
     ///
-    /// Every field is kept: the variant by name (or the fallback in `errors.toml`),
-    /// the message, retry kind, details, collected errors, and the same source and backtrace.
+    /// Keeps every field: the variant by name (or the fallback in `errors.toml`),
+    /// the message, retry kind, details, collected errors, source, and backtrace.
     pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::error::Error) -> Self {
         let parts = inner.__parts();
         let kind = match parts.name {
@@ -1212,7 +1213,7 @@ impl Error {
 }
 
 impl ProvideErrorMetadata for Error {
-    /// The AWS service's own error metadata; empty unless an AWS service answered.
+    /// The AWS service's own error metadata, or empty metadata when no AWS service answered.
     fn meta(&self) -> &ErrorMetadata {
         static EMPTY: std::sync::LazyLock<ErrorMetadata> =
             std::sync::LazyLock::new(ErrorMetadata::default);
@@ -1244,7 +1245,7 @@ impl RequestId for Error {
 /// An input or configuration value is invalid,
 /// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
 ///
-/// Fix the input; the same call cannot succeed.
+/// Fix the input; retrying cannot succeed.
 ///
 /// # Example
 ///
@@ -1261,7 +1262,7 @@ pub struct ValidationError {
 }
 
 impl ValidationError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1286,7 +1287,8 @@ impl ValidationError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1333,9 +1335,9 @@ impl From<ValidationError> for Error {
 /// for example no plaintext data key after encryption, a signing key for a suite that does not sign,
 /// or a branch key record with a missing attribute or a key of the wrong length.
 ///
-/// `resource()` names the branch key, keyring, or CMM.
 /// Usually a bug in a custom keyring or CMM, or a corrupt key store record;
 /// retrying cannot succeed.
+/// `resource()` names the branch key, keyring, or CMM.
 ///
 /// # Example
 ///
@@ -1358,7 +1360,7 @@ pub struct InvalidMaterialsError {
 }
 
 impl InvalidMaterialsError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1383,7 +1385,8 @@ impl InvalidMaterialsError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1401,33 +1404,30 @@ impl InvalidMaterialsError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
@@ -1479,7 +1479,7 @@ pub struct EncryptionContextMismatchError {
 }
 
 impl EncryptionContextMismatchError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1504,7 +1504,8 @@ impl EncryptionContextMismatchError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1550,9 +1551,9 @@ impl From<EncryptionContextMismatchError> for Error {
 /// None of the configured keys wrapped any of the message's encrypted data keys,
 /// for example when decrypting with a keyring that did not encrypt the message.
 ///
-/// `resource()` names the keyring or CMM that was used,
-/// and `encrypted_data_keys()` lists the message's encrypted data keys by key provider.
 /// Decrypt with a keyring that has one of the message's keys.
+/// `encrypted_data_keys()` lists the message's encrypted data keys by key provider,
+/// and `resource()` names the keyring or CMM that was used.
 ///
 /// # Example
 ///
@@ -1582,7 +1583,7 @@ pub struct NoMatchingDataKeyError {
 }
 
 impl NoMatchingDataKeyError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1607,7 +1608,8 @@ impl NoMatchingDataKeyError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1625,41 +1627,38 @@ impl NoMatchingDataKeyError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
     }
 
-    /// The message's encrypted data keys, by key provider; empty when unknown.
+    /// The message's encrypted data keys, by key provider, or empty when unknown.
     ///
-    /// Never the wrapped keys themselves.
+    /// Holds each key's provider ID and info, never the wrapped key.
     #[must_use]
     pub fn encrypted_data_keys(&self) -> &[DataKeyInfo] {
         &self.data.data_keys
@@ -1693,7 +1692,7 @@ impl From<NoMatchingDataKeyError> for Error {
 /// A cryptographic check failed,
 /// for example an AES-GCM authentication tag or a message signature did not verify.
 ///
-/// The message is corrupt or modified, or is being decrypted with the wrong key;
+/// The message is corrupt or modified, or you are decrypting it with the wrong key;
 /// retrying cannot succeed.
 ///
 /// # Example
@@ -1711,7 +1710,7 @@ pub struct CryptographicError {
 }
 
 impl CryptographicError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1736,7 +1735,8 @@ impl CryptographicError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1781,8 +1781,8 @@ impl From<CryptographicError> for Error {
 
 /// AWS KMS or DynamoDB denied access.
 ///
-/// `is_credentials()` says whether the credentials are expired or invalid;
-/// otherwise fix the permissions for `service()` on `resource()`.
+/// If `is_credentials()` is true, the credentials are expired or invalid.
+/// Otherwise fix the permissions for `service()` on `resource()`.
 ///
 /// # Example
 ///
@@ -1812,7 +1812,7 @@ pub struct AccessDeniedError {
 }
 
 impl AccessDeniedError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1837,7 +1837,8 @@ impl AccessDeniedError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1855,33 +1856,30 @@ impl AccessDeniedError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
@@ -1956,7 +1954,7 @@ pub struct ResourceNotFoundError {
 }
 
 impl ResourceNotFoundError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -1981,7 +1979,8 @@ impl ResourceNotFoundError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -1999,33 +1998,30 @@ impl ResourceNotFoundError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
@@ -2058,10 +2054,9 @@ impl From<ResourceNotFoundError> for Error {
 
 /// A service or resource throttled the request.
 ///
-/// `service()` and `resource()` say what was throttled:
-/// AWS KMS, DynamoDB, or the materials cache ([`Resource::Cache`](crate::error::Resource::Cache),
-/// with no `service()`).
 /// Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Throttling).
+/// `service()` and `resource()` say what was throttled: AWS KMS, DynamoDB, or the materials cache,
+/// which is [`Resource::Cache`](crate::error::Resource::Cache) with no `service()`.
 ///
 /// # Example
 ///
@@ -2086,7 +2081,7 @@ pub struct ThrottlingError {
 }
 
 impl ThrottlingError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2111,7 +2106,8 @@ impl ThrottlingError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2129,33 +2125,30 @@ impl ThrottlingError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
@@ -2190,9 +2183,8 @@ impl From<ThrottlingError> for Error {
 /// for example creating a branch key whose ID already exists,
 /// or rotating a branch key that another caller rotated at the same time.
 ///
-/// `reason()` says which.
-/// Re-read the resource before acting; retrying the same call unchanged is not safe.
-/// Not retryable.
+/// Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
+/// `reason()` says which conflict occurred.
 ///
 /// # Example
 ///
@@ -2217,7 +2209,7 @@ pub struct ConflictError {
 }
 
 impl ConflictError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2242,7 +2234,8 @@ impl ConflictError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2260,39 +2253,36 @@ impl ConflictError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
     }
 
-    /// Why the request conflicts, when known.
+    /// Why the request conflicts, or `None` when unknown.
     #[must_use]
     pub fn reason(&self) -> Option<&ConflictReason> {
         self.data.reason.as_ref()
@@ -2326,8 +2316,8 @@ impl From<ConflictError> for Error {
 /// AWS KMS or DynamoDB rejected or failed the request for any other reason,
 /// for example an internal service error or a KMS `IncorrectKeyException`.
 ///
-/// `code()` is the service's error code.
 /// A server-side failure is retryable.
+/// `code()` is the service's error code.
 ///
 /// # Example
 ///
@@ -2353,7 +2343,7 @@ pub struct ServiceError {
 }
 
 impl ServiceError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2378,7 +2368,8 @@ impl ServiceError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2396,33 +2387,30 @@ impl ServiceError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
@@ -2481,7 +2469,7 @@ pub struct DispatchError {
 }
 
 impl DispatchError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2506,7 +2494,8 @@ impl DispatchError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2524,33 +2513,30 @@ impl DispatchError {
         self.data.retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` when no AWS service was involved, as for the materials cache.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         self.data.remote.service.as_ref()
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         self.data.remote.resource.as_ref()
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         self.data.remote.code.as_deref()
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
@@ -2600,7 +2586,7 @@ pub struct SerializationError {
 }
 
 impl SerializationError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2625,7 +2611,8 @@ impl SerializationError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2668,7 +2655,7 @@ impl From<SerializationError> for Error {
     }
 }
 
-/// A caller-supplied reader or writer failed while streaming,
+/// A reader or writer you passed failed while streaming,
 /// for example a closed connection or a full disk.
 ///
 /// The [`source`](std::error::Error::source) is the [`std::io::Error`].
@@ -2688,7 +2675,7 @@ pub struct IoError {
 }
 
 impl IoError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2713,7 +2700,8 @@ impl IoError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2758,7 +2746,8 @@ impl From<IoError> for Error {
 
 /// An internal invariant was violated, for example a poisoned lock.
 ///
-/// A bug; report it. Never retryable.
+/// A bug in this library; report it.
+/// Never retryable.
 ///
 /// # Example
 ///
@@ -2775,7 +2764,7 @@ pub struct InternalError {
 }
 
 impl InternalError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -2800,7 +2789,8 @@ impl InternalError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -2843,8 +2833,8 @@ impl From<InternalError> for Error {
     }
 }
 
-/// Builders for the error structs, for example
-/// [`ValidationErrorBuilder`](builders::ValidationErrorBuilder) from `ValidationError::builder()`.
+/// Builders for the error structs, such as the
+/// [`ValidationErrorBuilder`](builders::ValidationErrorBuilder) that `ValidationError::builder()` returns.
 ///
 /// Use them to construct the errors this library returns, for example in tests.
 pub mod builders {
@@ -2866,19 +2856,21 @@ pub mod builders {
     }
 
     impl ValidationErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
@@ -2911,44 +2903,46 @@ pub mod builders {
     }
 
     impl InvalidMaterialsErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
@@ -2981,19 +2975,21 @@ pub mod builders {
     }
 
     impl EncryptionContextMismatchErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
@@ -3027,50 +3023,52 @@ pub mod builders {
     }
 
     impl NoMatchingDataKeyErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
         }
 
-        /// The message's encrypted data keys, by key provider.
+        /// Set the message's encrypted data keys, by key provider.
         pub fn encrypted_data_keys(mut self, keys: impl IntoIterator<Item = DataKeyInfo>) -> Self {
             self.data_keys = keys.into_iter().collect();
             self
@@ -3104,19 +3102,21 @@ pub mod builders {
     }
 
     impl CryptographicErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
@@ -3149,44 +3149,46 @@ pub mod builders {
     }
 
     impl AccessDeniedErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
@@ -3219,44 +3221,46 @@ pub mod builders {
     }
 
     impl ResourceNotFoundErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
@@ -3289,44 +3293,46 @@ pub mod builders {
     }
 
     impl ThrottlingErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is retryable with [`RetryKind::Throttling`].
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
@@ -3360,50 +3366,52 @@ pub mod builders {
     }
 
     impl ConflictErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
         }
 
-        /// Why the request conflicts.
+        /// Set why the request conflicts.
         pub fn reason(mut self, reason: ConflictReason) -> Self {
             self.reason = Some(reason);
             self
@@ -3437,44 +3445,46 @@ pub mod builders {
     }
 
     impl ServiceErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
@@ -3507,44 +3517,46 @@ pub mod builders {
     }
 
     impl DispatchErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
         }
 
-        /// The AWS service the failed call went to.
+        /// Set the AWS service the failed call went to.
         pub fn service(mut self, service: Service) -> Self {
             self.remote.service = Some(service);
             self
         }
 
-        /// The resource the caller needs to act on,
+        /// Set the resource the caller needs to act on,
         /// as a [`Resource`] or one of its variants' structs.
         pub fn resource(mut self, resource: impl Into<Resource>) -> Self {
             self.remote.resource = Some(resource.into());
             self
         }
 
-        /// The AWS service's error code.
+        /// Set the AWS service's error code.
         pub fn code(mut self, code: impl Into<String>) -> Self {
             self.remote.code = Some(code.into());
             self
         }
 
-        /// The AWS request ID.
+        /// Set the AWS request ID.
         pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
             self.remote.request_id = Some(request_id.into());
             self
@@ -3577,19 +3589,21 @@ pub mod builders {
     }
 
     impl SerializationErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
@@ -3622,19 +3636,21 @@ pub mod builders {
     }
 
     impl IoErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
@@ -3665,19 +3681,21 @@ pub mod builders {
     }
 
     impl InternalErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self

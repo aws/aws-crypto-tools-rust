@@ -104,7 +104,7 @@ impl GetKeyStoreInfoOutputBuilder {
         self
     }
 
-    /// Set or clear the key store id from an `Option`.
+    /// Set or clear the key store identifier from an `Option`.
     /// To set a value, use [`Self::key_store_id`].
     #[must_use]
     pub fn set_key_store_id(mut self, key_store_id: Option<String>) -> Self {
@@ -120,7 +120,7 @@ impl GetKeyStoreInfoOutputBuilder {
         self
     }
 
-    /// Set or clear the key store name from an `Option`.
+    /// Set or clear the DynamoDB table name from an `Option`.
     /// To set a value, use [`Self::key_store_name`].
     #[must_use]
     pub fn set_key_store_name(mut self, key_store_name: Option<String>) -> Self {
@@ -171,7 +171,7 @@ impl GetKeyStoreInfoOutputBuilder {
         self
     }
 
-    /// Set or clear the kms configuration from an `Option`.
+    /// Set or clear the KMS configuration from an `Option`.
     /// To set a value, use [`Self::kms_configuration`].
     #[must_use]
     pub fn set_kms_configuration(mut self, kms_configuration: Option<KmsConfiguration>) -> Self {
@@ -268,7 +268,7 @@ impl CreateKeyStoreOutputBuilder {
         self
     }
 
-    /// Set or clear the table arn from an `Option`.
+    /// Set or clear the table ARN from an `Option`.
     /// To set a value, use [`Self::table_arn`].
     #[must_use]
     pub fn set_table_arn(mut self, table_arn: Option<String>) -> Self {
@@ -303,13 +303,15 @@ impl CreateKeyInput {
         CreateKeyInputBuilder::default()
     }
 
-    /// The identifier for the new branch key. When unset, the key store generates one.
+    /// The identifier for the new branch key.
+    /// When unset, the key store generates one.
     #[must_use]
     pub fn branch_key_id(&self) -> Option<&str> {
         self.branch_key_id.as_deref()
     }
 
-    /// The custom encryption context for the new branch key. Required when `branch_key_id` is set.
+    /// The custom encryption context for the new branch key.
+    /// Required when `branch_key_id` is set.
     #[must_use]
     pub fn encryption_context(&self) -> Option<&EncryptionContext> {
         self.encryption_context.as_ref()
@@ -324,14 +326,15 @@ pub struct CreateKeyInputBuilder {
 }
 
 impl CreateKeyInputBuilder {
-    /// Set the identifier for the new branch key. When unset, the key store generates one.
+    /// Set the identifier for the new branch key.
+    /// When unset, the key store generates one.
     #[must_use]
     pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
         self.branch_key_id = Some(branch_key_id.into());
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -339,13 +342,14 @@ impl CreateKeyInputBuilder {
         self
     }
 
-    /// The branch key id, if set.
+    /// The branch key identifier, if set.
     #[must_use]
     pub const fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
     }
 
-    /// Set the custom encryption context for the new branch key. Required when `branch_key_id` is set.
+    /// Set the custom encryption context for the new branch key.
+    /// Required when `branch_key_id` is set.
     #[must_use]
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
         self.encryption_context = Some(encryption_context.into());
@@ -399,7 +403,7 @@ impl CreateKeyOutput {
         &self.branch_key_id
     }
 
-    /// The branch key id, consuming the output.
+    /// The branch key identifier, consuming the output.
     #[must_use]
     pub fn into_branch_key_id(self) -> String {
         self.branch_key_id
@@ -421,7 +425,7 @@ impl CreateKeyOutputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -477,7 +481,7 @@ impl VersionKeyInputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -485,7 +489,7 @@ impl VersionKeyInputBuilder {
         self
     }
 
-    /// The branch key id, if set.
+    /// The branch key identifier, if set.
     #[must_use]
     pub const fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
@@ -567,7 +571,7 @@ impl GetActiveBranchKeyInputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -575,7 +579,7 @@ impl GetActiveBranchKeyInputBuilder {
         self
     }
 
-    /// The branch key id, if set.
+    /// The branch key identifier, if set.
     #[must_use]
     pub const fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
@@ -705,7 +709,7 @@ impl GetBranchKeyVersionInputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -713,7 +717,7 @@ impl GetBranchKeyVersionInputBuilder {
         self
     }
 
-    /// The branch key id, if set.
+    /// The branch key identifier, if set.
     #[must_use]
     pub const fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id
@@ -858,7 +862,7 @@ impl GetBeaconKeyInputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -866,7 +870,7 @@ impl GetBeaconKeyInputBuilder {
         self
     }
 
-    /// The branch key id, if set.
+    /// The branch key identifier, if set.
     #[must_use]
     pub const fn get_branch_key_id(&self) -> &Option<String> {
         &self.branch_key_id

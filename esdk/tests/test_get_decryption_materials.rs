@@ -120,8 +120,7 @@ async fn test_pre_cmm_commitment_policy_check() {
     let err = decrypt(&invalid_input)
         .await
         .expect_err("policy that requires committing must reject non-committing suite");
-    // The parsed-suite-vs-commitment-policy check runs pre-CMM in decrypt.rs and
-    // yields a Validation error.
+    // Decrypt rejects the parsed suite before calling the CMM, with a Validation error.
     assert!(
         err.is_validation(),
         "expected pre-CMM Validation error, got: {:?}",

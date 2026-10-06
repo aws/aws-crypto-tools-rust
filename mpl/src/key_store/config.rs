@@ -13,8 +13,8 @@ pub enum KmsConfiguration {
     KmsMrKeyArn(String),
     /// Discovery configuration; KMS Key ARN is read from each DDB record.
     Discovery(Discovery),
-    /// MRDiscovery configuration; KMS Key ARN is read from each DDB record,
-    /// with an MRK ARN's region replaced by the configured region.
+    /// MRDiscovery configuration; KMS Key ARN is read from each DDB record.
+    /// The key store replaces the region of an MRK ARN with the configured region.
     MrDiscovery(MrDiscovery),
 }
 

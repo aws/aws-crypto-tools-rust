@@ -320,7 +320,8 @@ mod ffi {
         kms_client: *const MplKmsClient,
     }
 
-    /// Storm-tracking cache settings. An unset field keeps the core ESDK's default.
+    /// Storm-tracking cache settings.
+    /// An unset field keeps the core ESDK's default.
     struct StormTrackingCmcOptions {
         entry_capacity: OptU32,
         entry_pruning_tail_size: OptU32,
@@ -343,7 +344,7 @@ mod ffi {
         branch_key_id: String,
         key_store: *const KeyStore,
         ttl: Duration,
-        /// Null defers to the core ESDK's default cache.
+        /// Null when unset; the keyring then builds its own default cache.
         cache: *const CryptographicMaterialsCache,
         partition_id: OptString,
     }
@@ -535,7 +536,7 @@ fn encode_err(
     //   - F: the byte length of `full`, the Rust `{:#}` text; the rest is the Rust backtrace,
     //     empty unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` enabled its capture
     //   - US, RS: ERROR_FIELD_SEPARATOR, ERROR_HEADER_END
-    // A header value holding either separator is sent empty, so the header always parses.
+    // A header value that holds either separator goes out empty, so the header always parses.
     let clean = |v: &str| {
         if v.contains([ERROR_FIELD_SEPARATOR, ERROR_HEADER_END]) {
             String::new()
@@ -1318,7 +1319,6 @@ fn create_hierarchical_keyring(
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
     //
-    // A null handle means "not supplied", so the core builds its own default cache.
     // SAFETY: a non-null handle is a valid cache borrowed for this call.
     let cache = unsafe { input.cache.as_ref() }.map(|c| c.inner.clone());
 

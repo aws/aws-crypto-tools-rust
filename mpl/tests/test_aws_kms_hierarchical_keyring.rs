@@ -93,12 +93,10 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 
 /// A real [`BranchKeyStore`] that is never consulted.
 ///
-/// The type is the one callers actually pass to the keyring, but it points at
-/// a table and KMS key that do not exist, so any key store call would fail.
-/// That is safe here because no test using this helper makes one:
-/// `HierarchicalKeyringBuilder::build` reads only the key store's local configuration,
-/// and the key store first reaches KMS or DynamoDB inside OnEncrypt / OnDecrypt.
-/// Tests that exercise those operations use the `FakeKeyStore` doubles in `mod onencrypt` / `mod ondecrypt` instead.
+/// The type is the one callers actually pass to the keyring,
+/// but it points at a table and KMS key that do not exist, so any key store call would fail.
+/// No test using it makes one: building the keyring reads only the key store's configuration.
+/// Tests that run OnEncrypt / OnDecrypt use the `FakeKeyStore` doubles in `mod onencrypt` / `mod ondecrypt`.
 fn key_store_never_consulted() -> BranchKeyStore {
     let (kms, ddb) = dummy_clients();
     build_without_io(
@@ -427,12 +425,10 @@ fn build_with_branch_key_id_supplier_succeeds() {
     assert!(keyring.branch_key_id_supplier().is_some());
 }
 
-// ─── Cache wiring tests: which Cmc the keyring stores ───────────────────────
+// Cache wiring tests
 //
-// Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to the
-// cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
-// and is deliberately not re-derived through the keyring. These tests check
-// only which cache the keyring stores and the grace-period bound it enforces.
+// These check only which cache the keyring stores and the grace period bound it enforces.
+// Cache behavior is tested in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`.
 
 #[test]
 fn build_without_cache_uses_default_cmc() {
@@ -1157,8 +1153,7 @@ fn wrap_two_calls_produce_distinct_ciphertexts() {
 
 #[test]
 fn unwrap_too_short_ciphertext_returns_error() {
-    // A ciphertext shorter than the fixed 60-byte overhead cannot hold the salt+iv+version+tag layout,
-    // so unwrap fails with Cryptographic.
+    // Shorter than the 60-byte salt, IV, version, and tag overhead, so unwrap fails with Cryptographic.
     let materials = fixture_materials_empty_ec();
     let too_short = vec![0u8; 32];
 
@@ -1251,7 +1246,7 @@ fn wrap_fails_when_encryption_context_value_too_large() {
 //
 // The `FAKE_*` fixtures here are placeholders for exercising the keyring's own
 // logic. They are deliberately distinct from the `FIXTURE_*` constants above,
-// which carry the real integration-key store values used by the
+// which carry the real integration key store values used by the
 // cache-identifier and wrap / unwrap tests.
 
 const FAKE_BRANCH_KEY: [u8; 32] = [
@@ -1392,8 +1387,7 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
         .unwrap()
 }
 
-/// Build a keyring over a [`FakeKeyStore`] with a static branch key id and a
-/// keyring-local `LocalCmc`.
+/// Build a keyring over a [`FakeKeyStore`] with a static branch key id and its own `LocalCmc`.
 fn build_keyring(key_store: FakeKeyStore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(key_store)
@@ -1604,7 +1598,7 @@ mod onencrypt {
         };
         assert!(err.is_resource_not_found(), "{:?}", err);
 
-        // The key store's error is returned as is, and its cause stays reachable.
+        // The key store's error comes back unchanged, and its cause stays reachable.
         // In production that cause is the AWS SDK error.
         assert_eq!(
             err.find_source::<IoError>()
@@ -2001,8 +1995,7 @@ mod ondecrypt {
             )
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
-        // Exactly one candidate EDK failed, so its error is returned as is,
-        // not as a collection of one.
+        // One candidate EDK, so its error comes back unchanged, not as a collection of one.
         assert!(err.is_cryptographic(), "{:?}", err);
         assert!(err.collected().is_empty());
     }
@@ -2133,8 +2126,7 @@ mod ondecrypt {
         }
 
         // Build a real EDK first, then swap in a key store whose
-        // get_branch_key_version returns an error so the on_decrypt
-        // key store-fallthrough path lights up.
+        // get_branch_key_version fails.
         let priming_keyring = build_keyring(
             FakeKeyStore::new(fake_branch_key_materials()),
             FAKE_BRANCH_KEY_ID,
@@ -2160,8 +2152,8 @@ mod ondecrypt {
                     .unwrap(),
             )
             .await
+            // One candidate EDK, so the key store's error comes back unchanged.
             .expect_err("on_decrypt must fail when key store.get_branch_key_version fails");
-        // One candidate EDK, so the key store's error is returned as is.
         assert!(err.is_resource_not_found(), "{:?}", err);
         assert!(err.collected().is_empty());
         assert_eq!(err.message(), "no such branch key version");

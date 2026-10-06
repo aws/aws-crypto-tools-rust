@@ -44,14 +44,16 @@ generated `src/error/generated.rs` files; CI runs `cargo xtask gen-errors --chec
 An error's message, details, and `Debug` output reach logs, so they follow these rules:
 
 - **Never include:** plaintext, data keys, branch key bytes, private keys, ciphertext bytes,
-  or DynamoDB attribute values. Name an attribute and its type, not its value.
+  or DynamoDB attribute values.
+  Name an attribute and its type, not its value.
 - **Encryption context:** keys may appear; values may not.
 - **Allowed:** ARNs, table names, branch key IDs and versions, keyring and CMM names,
   key provider IDs and key provider info, error codes, and request IDs.
 
-An error's `Debug` shows another library's error, such as an AWS SDK error, as its `Display` chain.
-The AWS SDK error's own `Debug` includes the raw HTTP response, whose body can hold a plaintext
-key or item attribute values; it stays reachable through `source()` and `find_source`.
+An AWS SDK error's own `Debug` includes the raw HTTP response,
+whose body can hold a plaintext key or item attribute values.
+So an error's `Debug` shows another library's error, such as an AWS SDK error, by its `Display` chain, not its `Debug`.
+The AWS SDK error itself stays reachable through `source()` and `find_source`.
 
 `esdk/tests/test_error_secrets.rs` checks failing operations against these rules.
 

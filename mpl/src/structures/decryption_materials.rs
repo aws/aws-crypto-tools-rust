@@ -26,8 +26,8 @@ pub struct DecryptionMaterials {
 impl DecryptionMaterials {
     /// Start a builder for `DecryptionMaterials`.
     ///
-    /// A CMM builds the initial materials. A keyring changes them only through
-    /// [`add_data_key`](Self::add_data_key).
+    /// A CMM builds the initial materials.
+    /// A keyring changes them only through [`add_data_key`](Self::add_data_key).
     #[must_use]
     pub fn builder() -> DecryptionMaterialsBuilder {
         DecryptionMaterialsBuilder::default()
@@ -37,9 +37,8 @@ impl DecryptionMaterials {
     ///
     /// # Errors
     ///
-    /// Returns an [`InvalidMaterials`](crate::Error::InvalidMaterials)
-    /// error if these materials already have a plaintext data key, or if
-    /// `plaintext_data_key` is not the algorithm suite's encryption key length.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): these materials already have a plaintext data key,
+    ///   or `plaintext_data_key` is not the algorithm suite's encryption key length.
     pub fn add_data_key(mut self, plaintext_data_key: PlaintextDataKey) -> Result<Self, Error> {
         if self.plaintext_data_key.is_some() {
             return Err(Error::new(
@@ -112,8 +111,8 @@ impl DecryptionMaterials {
 
 /// Builder for [`DecryptionMaterials`].
 ///
-/// `algorithm_suite_id` is required. The encryption context and required
-/// encryption context keys default to empty.
+/// `algorithm_suite_id` is required.
+/// The encryption context and required encryption context keys default to empty.
 #[derive(Debug, Default)]
 pub struct DecryptionMaterialsBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -125,7 +124,8 @@ pub struct DecryptionMaterialsBuilder {
 }
 
 impl DecryptionMaterialsBuilder {
-    /// Set the algorithm suite. Required.
+    /// Set the algorithm suite.
+    /// Required.
     #[must_use]
     pub const fn algorithm_suite_id(mut self, algorithm_suite_id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(algorithm_suite_id);
@@ -156,7 +156,8 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
-    /// Set the plaintext data key from an `Option`. `None` leaves it unset.
+    /// Set or clear the plaintext data key from an `Option`.
+    /// To set a value, use [`Self::plaintext_data_key`].
     #[must_use]
     pub fn set_plaintext_data_key(mut self, plaintext_data_key: Option<PlaintextDataKey>) -> Self {
         self.plaintext_data_key = plaintext_data_key;
@@ -170,7 +171,8 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
-    /// Set the verification key from an `Option`. `None` leaves it unset.
+    /// Set or clear the verification key from an `Option`.
+    /// To set a value, use [`Self::verification_key`].
     #[must_use]
     pub fn set_verification_key(mut self, verification_key: Option<VerificationKey>) -> Self {
         self.verification_key = verification_key;
@@ -184,7 +186,8 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
-    /// Set the symmetric signing key from an `Option`. `None` leaves it unset.
+    /// Set or clear the symmetric signing key from an `Option`.
+    /// To set a value, use [`Self::symmetric_signing_key`].
     #[must_use]
     pub fn set_symmetric_signing_key(
         mut self,
@@ -194,16 +197,13 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
-    /// Build the `DecryptionMaterials`, enforcing all spec invariants.
+    /// Build the `DecryptionMaterials`.
     ///
     /// # Errors
     ///
-    /// Returns a [`Validation`](crate::Error::Validation) error if no
-    /// algorithm suite was set, an
-    /// [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch)
-    /// error if a required encryption context key is missing, or an
-    /// [`InvalidMaterials`](crate::Error::InvalidMaterials) error if the fields
-    /// violate another spec invariant.
+    /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id` is unset.
+    /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): a required encryption context key is not in the encryption context.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the verification key or symmetric signing key does not suit the algorithm suite.
     pub fn build(self) -> Result<DecryptionMaterials, Error> {
         let Some(algorithm_suite_id) = self.algorithm_suite_id else {
             return Err(Error::new(

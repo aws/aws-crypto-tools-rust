@@ -3,11 +3,10 @@
 
 //! AWS KMS Hierarchical Keyring.
 //!
-//! Provides the keyring's construction and configuration surface, its
-//! OnEncrypt and OnDecrypt operations, and the key store- / cache-fallthrough
-//! they share. The pure-crypto wrap and unwrap operations live in
-//! [`super::branch_key_wrap`] and the cache identifier formulas in
-//! [`super::cache_entry_identifier`].
+//! The keyring's builder, its OnEncrypt and OnDecrypt operations,
+//! and the branch key lookup they share: the cache first, then the key store.
+//! The pure-crypto wrap and unwrap operations live in [`super::branch_key_wrap`]
+//! and the cache identifier formulas in [`super::cache_entry_identifier`].
 
 use crate::Error;
 use crate::builder::required;
@@ -46,7 +45,7 @@ impl GetBranchKeyIdInput {
         GetBranchKeyIdInputBuilder::default()
     }
 
-    /// The encryption context of the encryption or decryption.
+    /// The encryption context of the message being encrypted or decrypted.
     #[must_use]
     pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
@@ -60,7 +59,7 @@ pub struct GetBranchKeyIdInputBuilder {
 }
 
 impl GetBranchKeyIdInputBuilder {
-    /// Set the encryption context of the encryption or decryption.
+    /// Set the encryption context of the message being encrypted or decrypted.
     /// Required.
     #[must_use]
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
@@ -108,7 +107,7 @@ impl GetBranchKeyIdOutput {
         &self.branch_key_id
     }
 
-    /// The branch key id, consuming the output.
+    /// The branch key identifier, consuming the output.
     #[must_use]
     pub fn into_branch_key_id(self) -> String {
         self.branch_key_id
@@ -130,7 +129,7 @@ impl GetBranchKeyIdOutputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -208,12 +207,11 @@ struct HierarchicalKeyringInner {
     partition_id_bytes: Vec<u8>,
 
     /// The key store's logical name, which the cache identifier formulas bind.
-    /// Not a construction parameter: it is read from the key store's own
-    /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
+    /// [`HierarchicalKeyringBuilder::build`] reads it once from the key store's `get_key_store_info`.
     logical_key_store_name: String,
 
-    /// Cryptographic-materials cache for branch-key materials: the caller's
-    /// cache, or a keyring-local `DefaultCmc` built when none is set.
+    /// The cache for branch key materials:
+    /// the caller's, or a `DefaultCmc` the builder creates when none is set.
     cache: SharedCmc,
 }
 
@@ -286,9 +284,10 @@ impl std::fmt::Debug for HierarchicalKeyringBuilder {
 }
 
 impl HierarchicalKeyringBuilder {
-    /// The key store. Required.
+    /// The key store.
+    /// Required.
     ///
-    /// Pass a [`KeyStoreClient`], or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
+    /// Pass a [`KeyStoreClient`] or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
     #[must_use]
     pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
         self.key_store = Some(key_store.into());
@@ -320,11 +319,11 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// The cache for branch key materials.
-    /// Pass clones of one cache to several keyrings to share it.
+    /// Pass clones of one cache to several keyrings to share its entries.
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
     ///
-    /// When the cache has a [grace period](Cmc::grace_period),
-    /// it must be less than the [TTL](Self::ttl).
+    /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
+    /// The default cache's grace period is 10 seconds.
     #[must_use]
     pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
         self.cache = Some(cache.into_shared());
@@ -344,9 +343,10 @@ impl HierarchicalKeyringBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
-    /// - [`Cryptographic`](crate::Error::Cryptographic): obtaining entropy for the default partition id failed.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
-    /// Any error the configured key store returns while reporting its info is propagated with its variant unchanged; the built-in [`BranchKeyStore`](crate::BranchKeyStore) returns none.
+    /// If the key store's [`get_key_store_info`](crate::Keystore::get_key_store_info) fails, returns that error unchanged.
+    /// The built-in [`BranchKeyStore`](crate::BranchKeyStore) does not fail it.
     pub fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
@@ -587,9 +587,8 @@ impl Keyring for HierarchicalKeyring {
         // successfully decrypted, so the input `materials` parameter (owned
         // but never mutated) is dropped without modification.
 
-        // Nothing was attempted: every supplied EDK was filtered out before
-        // the key store was consulted, so this is not an aggregate of failures
-        // but a distinct one — no encrypted data key matched this keyring.
+        // Every EDK was filtered out before the key store was called,
+        // so the error is that no encrypted data key matched, not an aggregate of failures.
         if collected_errors.is_empty() {
             return Err(
                 Error::new(Kind::NoMatchingDataKey, "no encrypted data key matched")
@@ -606,7 +605,7 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        // With exactly one candidate, its error is the one returned.
+        // With one candidate, `all_failed` returns that candidate's error itself.
         Err(Error::all_failed(
             "failed to decrypt any encrypted data key",
             collected_errors,
@@ -665,11 +664,12 @@ impl HierarchicalKeyring {
         Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
     }
 
-    /// Run the OnDecrypt steps for a single (already-filtered) EDK:
-    /// parse the version, compute the cache identifier, do the cache
-    /// and key store fallthrough to obtain branch-key materials, and
-    /// unwrap the EDK ciphertext. Returns the recovered plaintext
-    /// data-key bytes on success.
+    /// Run the OnDecrypt steps for one EDK that passed filtering:
+    /// parse the version,
+    /// compute the cache identifier,
+    /// get the branch key materials from the cache or else the key store,
+    /// and unwrap the EDK ciphertext.
+    /// Returns the recovered plaintext data key bytes.
     ///
     /// The caller (`on_decrypt`) is responsible for filtering the EDK
     /// list and for collecting per-EDK errors into the final error.
@@ -768,8 +768,8 @@ impl HierarchicalKeyring {
     }
 }
 
-/// Name the branch key in a cache throttling error,
-/// which names only the cache because the cache's keys are opaque.
+/// Name the branch key in the message of a cache throttling error.
+/// The cache names only itself, because its keys are opaque.
 fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
     if e.is_throttling() && e.resource() == Some(&Resource::Cache(Cache::new())) {
         e.set_message(format!(

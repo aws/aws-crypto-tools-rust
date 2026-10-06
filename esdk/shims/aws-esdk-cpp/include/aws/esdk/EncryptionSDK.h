@@ -87,27 +87,29 @@ inline namespace abi_v1 {
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
 //
-/// What went wrong, as a caller would act on it.
-/// The same kinds, under the same names, as ESDK Rust's `Error` variants.
-/// Each kind's exception class says when it occurs and what to do.
+/// The kind of an AwsEncryptionSdkException, which kind() returns.
+/// Each kind has an exception class of the same name, such as ThrottlingException,
+/// whose docs say when it occurs and what to do.
+/// The kinds match the ESDK Rust `Error` variants of the same names.
 ///
-/// Check retryable() first:
-/// a retryable error might succeed if the same call is made again later.
-/// Then decide from the exception type.
-/// what() is the Rust error's message and details; full_message() adds its causes, for logs.
+/// To handle an error:
+/// 1. Check retryable().
+///    A retryable error might succeed if the same call is made again later.
+/// 2. Otherwise decide from the exception type or kind().
+///    Later releases can add kinds, so code that switches on the kind needs a default case.
 ///
-/// Later releases can add kinds, so code that switches on the kind needs a default case.
+/// Log full_message(): what() holds the message and details, and full_message() adds the causes.
 ///
-/// Messages are for people, not code.
-/// Their text can change in any release, including a minor or patch release.
-/// Decide from the exception type and its fields, never from what().
+/// Messages are for people and logs: their text can change in any release, even a patch release.
+/// Decide from the exception type and its accessors, never from what().
 ///
 /// What a minor or patch release can change:
-/// - what(), full_message(), and every other message;
-/// - an exception that is not an AwsEncryptionSdkException, or an InternalException,
-///   which is a bug and can become a specific exception type;
-/// - which exception type a collection of several failures becomes;
-/// - new kinds and enum values, so every switch needs a default case.
+/// - Message text: what(), full_message(), and every other message.
+/// - Failures without a specific exception type.
+///   An exception that is not an AwsEncryptionSdkException, or an InternalException, is a bug,
+///   and a minor or patch release can turn it into a specific exception type.
+/// - Which exception type a collection of several failures becomes.
+/// - New kinds and enum values, so every switch needs a default case.
 enum class ErrorKind : std::uint8_t {
     Validation = 0,
     Serialization = 1,
@@ -126,13 +128,13 @@ enum class ErrorKind : std::uint8_t {
 };
 
 /// Why an error might succeed if the same call is made again later.
-/// The same values as the AWS SDK's retry classification.
+/// The values match the AWS SDK's retry classification.
 ///
 /// Later releases can add values, so code that switches on the value needs a default case.
 enum class RetryKind : std::uint8_t {
     /// A connection-level failure, such as a timeout.
     Transient = 0,
-    /// The service throttled the request.
+    /// A service or resource throttled the request.
     Throttling = 1,
     /// The service failed on its side.
     Server = 2,
@@ -148,8 +150,8 @@ enum class Service : std::uint8_t {
     DynamoDb = 1,
 };
 
-/// What kind of resource an error is about.
-/// Not limited to AWS resources: a keyring, a CMM, or the materials cache can be one.
+/// The kind of resource an error is about, which Resource::type() returns.
+/// A resource need not be an AWS resource: a keyring, a CMM, or the materials cache can be one.
 ///
 /// Later releases can add values, so code that switches on the value needs a default case.
 enum class ResourceType : std::uint8_t {
@@ -169,7 +171,8 @@ enum class ResourceType : std::uint8_t {
     Unknown = 255,
 };
 
-/// The resource you need to act on. Other resources involved are named in the message.
+/// The resource you need to act on.
+/// The message names any other resources involved.
 class Resource {
 public:
     Resource(ResourceType type, std::string name) : type_(type), name_(std::move(name)) {}
@@ -219,37 +222,39 @@ namespace detail {
 [[noreturn]] void throw_shim_exception(const std::string& what);
 }  // namespace detail
 
-/// Base exception for every failure this library reports.
-/// Catching this type catches everything the shim can throw.
+/// The base class of every exception this library throws; catch it to handle every failure.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
     explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg), message_(msg) {}
-    /// What went wrong.
-    /// Empty when ESDK Rust reports a kind this library does not know yet.
+    /// This exception's kind, or empty when ESDK Rust reports a kind this library does not know yet.
     std::optional<ErrorKind> kind() const noexcept { return kind_; }
-    /// Whether the same call might succeed if retried.
+    /// Whether the same call might succeed if made again later.
     bool retryable() const noexcept { return details_.retryable; }
-    /// Why the same call might succeed if retried;
-    /// empty if it cannot, or if the reason is one this library does not know yet.
+    /// Why the same call might succeed if made again later,
+    /// or empty when it cannot or the reason is one this library does not know yet.
     std::optional<RetryKind> retry_kind() const noexcept { return details_.retry_kind; }
-    /// The AWS service the failed call went to; empty when no AWS service was involved.
+    /// The AWS service the failed call went to,
+    /// or empty when no AWS service was involved, such as for the materials cache.
     std::optional<Service> service() const noexcept { return details_.service; }
-    /// The resource you need to act on; other resources involved are named in the message.
+    /// The resource you need to act on, or empty when the error is not about a resource.
+    /// The message names any other resources involved.
     std::optional<Resource> resource() const { return details_.resource; }
-    /// The AWS service's error code, such as "AccessDeniedException"; empty unless a service answered.
+    /// The AWS service's error code, such as "AccessDeniedException",
+    /// or empty when no AWS service answered.
     std::optional<std::string> code() const { return details_.code; }
-    /// The AWS request ID, which AWS Support asks for; empty unless a service answered.
+    /// The AWS request ID, which AWS Support asks for, or empty when no AWS service answered.
     std::optional<std::string> request_id() const { return details_.request_id; }
-    /// The Rust variant name, such as "Throttling". Stable across releases, for metrics and logs.
-    /// Empty for an exception this library raised without a Rust error.
+    /// The ESDK Rust variant name, such as "Throttling",
+    /// or empty for an exception this library raised without a Rust error.
+    /// The name does not change across releases, so metrics and logs can use it.
     const std::string& name() const noexcept { return details_.name; }
-    /// The message with every cause, for logs. Equal to what() when there is no cause.
+    /// The message with every cause, for logs; equal to what() when there is no cause.
     const std::string& full_message() const noexcept {
         return details_.full_message.empty() ? message_ : details_.full_message;
     }
     /// Where in ESDK Rust the error was created, for bug reports.
-    /// Empty unless the process set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`
-    /// before the error occurred, and for an exception this library raised without a Rust error.
+    /// Empty unless the process set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1` before the error occurred.
+    /// Also empty for an exception this library raised without a Rust error.
     const std::string& backtrace() const noexcept { return details_.backtrace; }
 
 protected:
@@ -276,7 +281,7 @@ private:
 /// An input or configuration value is invalid,
 /// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
 ///
-/// Fix the input; the same call cannot succeed.
+/// Fix the input; retrying cannot succeed.
 class ValidationException : public AwsEncryptionSdkException {
 public:
     explicit ValidationException(const std::string& msg, ErrorDetails details = {})
@@ -296,7 +301,7 @@ public:
 /// A cryptographic check failed,
 /// for example an AES-GCM authentication tag or a message signature did not verify.
 ///
-/// The message is corrupt or modified, or is being decrypted with the wrong key;
+/// The message is corrupt or modified, or you are decrypting it with the wrong key;
 /// retrying cannot succeed.
 class CryptographicException : public AwsEncryptionSdkException {
 public:
@@ -308,9 +313,9 @@ public:
 /// for example no plaintext data key after encryption, a signing key for a suite that does not sign,
 /// or a branch key record with a missing attribute or a key of the wrong length.
 ///
-/// resource() names the branch key, keyring, or CMM.
 /// Usually a bug in a custom keyring or CMM, or a corrupt key store record;
 /// retrying cannot succeed.
+/// resource() names the branch key, keyring, or CMM.
 class InvalidMaterialsException : public AwsEncryptionSdkException {
 public:
     explicit InvalidMaterialsException(const std::string& msg, ErrorDetails details = {})
@@ -330,8 +335,8 @@ public:
 /// None of the configured keys wrapped any of the message's encrypted data keys,
 /// for example when decrypting with a keyring that did not encrypt the message.
 ///
-/// resource() names the keyring or CMM that was used.
 /// Decrypt with a keyring that has one of the message's keys.
+/// resource() names the keyring or CMM that was used.
 class NoMatchingDataKeyException : public AwsEncryptionSdkException {
 public:
     explicit NoMatchingDataKeyException(const std::string& msg, ErrorDetails details = {})
@@ -340,8 +345,8 @@ public:
 
 /// AWS KMS or DynamoDB denied access.
 ///
-/// is_credentials() says whether the credentials are expired or invalid;
-/// otherwise fix the permissions for service() on resource().
+/// If is_credentials() is true, the credentials are expired or invalid.
+/// Otherwise fix the permissions for service() on resource().
 class AccessDeniedException : public AwsEncryptionSdkException {
 public:
     explicit AccessDeniedException(const std::string& msg, ErrorDetails details = {})
@@ -352,7 +357,7 @@ public:
 
 /// A KMS key, DynamoDB table, or branch key does not exist.
 ///
-/// Fix the configuration that names the resource().
+/// Fix the configuration that names resource().
 class ResourceNotFoundException : public AwsEncryptionSdkException {
 public:
     explicit ResourceNotFoundException(const std::string& msg, ErrorDetails details = {})
@@ -361,9 +366,9 @@ public:
 
 /// A service or resource throttled the request.
 ///
-/// service() and resource() say what was throttled:
-/// AWS KMS, DynamoDB, or the materials cache (ResourceType::Cache, with no service()).
 /// Always retryable, with RetryKind::Throttling.
+/// service() and resource() say what was throttled: AWS KMS, DynamoDB, or the materials cache,
+/// which is ResourceType::Cache with no service().
 class ThrottlingException : public AwsEncryptionSdkException {
 public:
     explicit ThrottlingException(const std::string& msg, ErrorDetails details = {})
@@ -374,9 +379,8 @@ public:
 /// for example creating a branch key whose ID already exists,
 /// or rotating a branch key that another caller rotated at the same time.
 ///
-/// reason() says which.
-/// Re-read the resource before acting; retrying the same call unchanged is not safe.
-/// Not retryable.
+/// Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
+/// reason() says which conflict occurred.
 class ConflictException : public AwsEncryptionSdkException {
 public:
     explicit ConflictException(const std::string& msg, ErrorDetails details = {})
@@ -388,8 +392,8 @@ public:
 /// AWS KMS or DynamoDB rejected or failed the request for any other reason,
 /// for example an internal service error or a KMS IncorrectKeyException.
 ///
-/// code() is the service's error code.
 /// A server-side failure is retryable.
+/// code() is the service's error code.
 class ServiceException : public AwsEncryptionSdkException {
 public:
     explicit ServiceException(const std::string& msg, ErrorDetails details = {})
@@ -408,14 +412,15 @@ public:
 
 /// An internal invariant was violated, for example a poisoned lock.
 ///
-/// A bug; report it. Never retryable.
+/// A bug in this library; report it.
+/// Never retryable.
 class InternalException : public AwsEncryptionSdkException {
 public:
     explicit InternalException(const std::string& msg, ErrorDetails details = {})
         : AwsEncryptionSdkException(ErrorKind::Internal, std::move(details), msg) {}
 };
 
-/// A caller-supplied stream failed while streaming,
+/// A stream you passed failed while streaming,
 /// for example a closed connection or a full disk.
 class IoException : public AwsEncryptionSdkException {
 public:
@@ -586,9 +591,8 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-/// Base cryptographic materials cache type.
-/// Copies share the underlying cache: give several keyrings copies of one cache
-/// and they read and write the same entries.
+/// Base class of the cryptographic materials caches below.
+/// A copy refers to the same cache, so keyrings given copies of one cache share its entries.
 class CryptographicMaterialsCache {
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
     friend class HierarchicalKeyring;
@@ -599,7 +603,7 @@ protected:
         : impl_(std::move(impl)) {}
 };
 
-/// Optional storm tracking cache parameters.
+/// Optional StormTrackingCmc parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class StormTrackingCmcOptions {
     std::optional<std::uint32_t> entry_capacity_;
@@ -623,15 +627,15 @@ public:
         grace_period_ = detail::to_nanoseconds(d);
         return *this;
     }
-    /// Time other requests wait before another one may try refreshing. Defaults to 1 second.
+    /// Time one request has to refresh an entry before another request may try. Defaults to 1 second.
     template <class Rep, class Period>
     StormTrackingCmcOptions& with_grace_interval(std::chrono::duration<Rep, Period> d) {
         grace_interval_ = detail::to_nanoseconds(d);
         return *this;
     }
-    /// Maximum number of entries being refreshed at the same time. Defaults to 20.
+    /// Maximum number of refreshes in flight at once. Defaults to 20.
     StormTrackingCmcOptions& with_fan_out(std::uint32_t n) { fan_out_ = n; return *this; }
-    /// Time a refresh may run before another request may retry it. Defaults to 10 seconds.
+    /// Time a request waits for another request's refresh before failing. Defaults to 10 seconds.
     template <class Rep, class Period>
     StormTrackingCmcOptions& with_inflight_ttl(std::chrono::duration<Rep, Period> d) {
         inflight_ttl_ = detail::to_nanoseconds(d);
@@ -645,8 +649,8 @@ public:
     }
 };
 
-/// The best choice for most situations: a StormTrackingCmc with default options
-/// and the given entry capacity.
+/// The best choice for most situations:
+/// a StormTrackingCmc with default options and the given entry capacity.
 class DefaultCmc : public CryptographicMaterialsCache {
 public:
     /// Creates the default cache.
@@ -654,17 +658,16 @@ public:
     explicit DefaultCmc(std::uint32_t entry_capacity);
 };
 
-/// A cache safe for multi-threaded use that also limits redundant and
-/// overly parallel backend calls.
-/// For a cache with sensible defaults, use DefaultCmc instead.
+/// A cache safe for multi-threaded use that limits redundant and concurrent backend calls.
+/// Use it over DefaultCmc to change the storm tracking parameters.
 class StormTrackingCmc : public CryptographicMaterialsCache {
 public:
     /// Creates a storm tracking cache.
-    /// \param options Optional storm tracking parameters.
+    /// \param options Parameters to change; unset ones keep their defaults.
     explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
 };
 
-/// A single-threaded-style LRU cache with no storm protection.
+/// An LRU cache with no storm tracking.
 class LocalCmc : public CryptographicMaterialsCache {
 public:
     /// Creates a local cache.
@@ -681,9 +684,10 @@ class HierarchicalKeyringOptions {
 
 public:
     /// The cache for this Hierarchical Keyring.
-    /// Give several Hierarchical Keyrings (or other Cryptographic Material Providers) copies of
-    /// one cache to share it; pass a cache to only this keyring to keep it private.
-    /// If not set, a DefaultCmc with entry_capacity = 1000 is created for only this keyring.
+    /// Give several keyrings copies of one cache to share its entries.
+    /// If not set, the keyring creates its own DefaultCmc with an entry capacity of 1000.
+    /// The cache's grace period, if it has one, must be less than the keyring's TTL;
+    /// DefaultCmc's is 10 seconds.
     HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
         cache_ = cache;
         return *this;

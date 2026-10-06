@@ -27,21 +27,23 @@ type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 /// Match on the variant to decide what to do.
 /// Later releases can add variants, so a `match` needs a catch-all arm.
 ///
-/// Messages are for people, not code; their text can change in any release.
+/// Messages are for people and logs: their text can change in any release, even a patch release.
 /// Decide from the variant and its accessors, never from the message.
-/// A minor or patch release can also turn a failure that reaches you as `Internal` into a specific variant.
+///
+/// A minor or patch release can also turn an `Internal` error into a specific variant.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
     /// A cryptographic check failed,
     /// for example an AES-GCM authentication tag or a message signature did not verify.
     ///
-    /// The message is corrupt or modified, or is being decrypted with the wrong key;
+    /// The message is corrupt or modified, or you are decrypting it with the wrong key;
     /// retrying cannot succeed.
     Cryptographic(CryptographicError),
     /// An internal invariant was violated, for example a poisoned lock.
     ///
-    /// A bug; report it. Never retryable.
+    /// A bug in this library; report it.
+    /// Never retryable.
     Internal(InternalError),
 }
 
@@ -101,7 +103,7 @@ impl ErrorData {
         })
     }
 
-    /// The fields of a collection that every collected error shares.
+    /// The details every collected error shares.
     fn shared_remote(collected: &[Error]) -> Remote {
         let mut remote = Remote::default();
         if let Some((first, rest)) = collected.split_first() {
@@ -278,10 +280,11 @@ fn level_of<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<Level<'a>> {
     None
 }
 
-/// Another library's error, shown in `Debug` as its `Display` chain.
+/// Another library's error, which `Debug` shows as its `Display` chain.
 ///
-/// An AWS SDK error's `Debug` includes the raw HTTP response, whose body can hold a
-/// plaintext key or item attribute values; its `Display` chain does not.
+/// An AWS SDK error's `Debug` includes the raw HTTP response,
+/// whose body can hold a plaintext key or item attribute values.
+/// Its `Display` chain holds neither.
 struct SourceText<'a>(&'a (dyn std::error::Error + 'static));
 
 impl fmt::Debug for SourceText<'_> {
@@ -407,7 +410,7 @@ impl Error {
         false
     }
 
-    /// Construct an error of `kind`.
+    /// An error of `kind` with `message`.
     #[track_caller]
     pub(crate) fn new(kind: Kind, message: impl Into<String>) -> Self {
         Self::from_data(kind, ErrorData::new(message.into()))
@@ -436,8 +439,8 @@ impl Error {
         Self::from_data(kind, data)
     }
 
-    /// Construct an error of `kind` that collects two or more failures,
-    /// keeping each detail they all share.
+    /// An error of `kind` that collects two or more failures
+    /// and keeps each detail they all share.
     #[track_caller]
     pub(crate) fn collect(
         kind: Kind,
@@ -471,7 +474,7 @@ impl Error {
         self.data_mut().retry = retry;
     }
 
-    /// Name what this error is about.
+    /// Set the service and resource this error is about.
     #[must_use]
     pub(crate) fn about(mut self, service: Option<Service>, resource: Option<Resource>) -> Self {
         let remote = &mut self.data_mut().remote;
@@ -485,22 +488,23 @@ impl Error {
         self.data_mut().message = message.into();
     }
 
-    /// Name the resource this error is about, keeping its service.
+    /// Replace the resource this error is about, keeping its service.
     pub(crate) fn set_resource(&mut self, resource: Option<Resource>) {
         self.data_mut().remote.resource = resource;
     }
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data().message
     }
 
-    /// The variant's name, for example `"Throttling"`.
+    /// The variant's name, such as `"Throttling"`.
     ///
-    /// Stable across releases, for metrics and logs.
+    /// The name does not change across releases, so metrics and logs can use it.
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
@@ -521,9 +525,8 @@ impl Error {
         self.data().retry
     }
 
-    /// The AWS service the failed call went to.
-    ///
-    /// `None` for an error that is not about an AWS call.
+    /// The AWS service the failed call went to,
+    /// or `None` when no AWS service was involved, such as for the materials cache.
     #[must_use]
     pub fn service(&self) -> Option<&Service> {
         match self {
@@ -531,10 +534,9 @@ impl Error {
         }
     }
 
-    /// The resource you need to act on.
+    /// The resource you need to act on, or `None` when the error is not about a resource.
     ///
-    /// Other resources involved are named in the message.
-    /// `None` when the error is not about a resource.
+    /// The message names any other resources involved.
     #[must_use]
     pub fn resource(&self) -> Option<&Resource> {
         match self {
@@ -542,9 +544,8 @@ impl Error {
         }
     }
 
-    /// The AWS service's error code, such as `"AccessDeniedException"`.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS service's error code, such as `"AccessDeniedException"`,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn code(&self) -> Option<&str> {
         match self {
@@ -552,9 +553,8 @@ impl Error {
         }
     }
 
-    /// The AWS request ID, which AWS Support asks for.
-    ///
-    /// `None` unless an AWS service answered.
+    /// The AWS request ID, which AWS Support asks for,
+    /// or `None` when no AWS service answered.
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         match self {
@@ -562,12 +562,11 @@ impl Error {
         }
     }
 
-    /// The failures this error collects, at this level only.
+    /// The failures this error collects itself,
+    /// such as one per encrypted data key a keyring tried.
     ///
-    /// Non-empty for an error built by a collecting constructor,
-    /// such as a keyring's error for every encrypted data key it tried.
-    /// Empty for every other error, including one whose *source* is a collection:
-    /// use [`failures`](Self::failures) to see every failure behind an error.
+    /// Empty when this error collects none, even if an error in its source chain does.
+    /// To see every failure behind an error, use [`failures`](Self::failures).
     #[must_use]
     pub fn collected(&self) -> &[Self] {
         &self.data().collected
@@ -581,9 +580,9 @@ impl Error {
 
     /// Every failure behind this error, at any depth, as this crate's `Error`.
     ///
-    /// A collected error's own collected errors are included in its place,
-    /// and a collection found in the source chain is used when this error collects nothing.
-    /// A single failure yields itself.
+    /// Each collected error is replaced by its own failures, so nested collections are flattened.
+    /// When this error collects nothing, it uses the first collection in its source chain.
+    /// An error with no collection anywhere in its source chain yields itself.
     #[must_use]
     pub fn failures(&self) -> Vec<Self> {
         if !self.collected().is_empty() {
@@ -623,7 +622,7 @@ impl Error {
 
     /// The backtrace captured when this error was created.
     ///
-    /// Disabled unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
+    /// Captured only when `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` is set.
     #[allow(clippy::must_use_candidate)] // clippy releases disagree on whether `&Backtrace` is already must_use
     pub fn backtrace(&self) -> &Backtrace {
         &self.data().backtrace
@@ -683,7 +682,7 @@ impl std::error::Error for Error {
 /// A cryptographic check failed,
 /// for example an AES-GCM authentication tag or a message signature did not verify.
 ///
-/// The message is corrupt or modified, or is being decrypted with the wrong key;
+/// The message is corrupt or modified, or you are decrypting it with the wrong key;
 /// retrying cannot succeed.
 ///
 /// # Example
@@ -701,7 +700,7 @@ pub struct CryptographicError {
 }
 
 impl CryptographicError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -726,7 +725,8 @@ impl CryptographicError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -771,7 +771,8 @@ impl From<CryptographicError> for Error {
 
 /// An internal invariant was violated, for example a poisoned lock.
 ///
-/// A bug; report it. Never retryable.
+/// A bug in this library; report it.
+/// Never retryable.
 ///
 /// # Example
 ///
@@ -788,7 +789,7 @@ pub struct InternalError {
 }
 
 impl InternalError {
-    /// Construct this error with `message`.
+    /// This error with `message`.
     #[track_caller]
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
@@ -813,7 +814,8 @@ impl InternalError {
 
     /// This error's message, without its sources.
     ///
-    /// For people and logs: the text can change in any release.
+    /// For people and logs: the text can change in any release, even a patch release.
+    /// Decide from the variant and its accessors, never from the message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.data.message
@@ -856,8 +858,8 @@ impl From<InternalError> for Error {
     }
 }
 
-/// Builders for the error structs, for example
-/// [`CryptographicErrorBuilder`](builders::CryptographicErrorBuilder) from `CryptographicError::builder()`.
+/// Builders for the error structs, such as the
+/// [`CryptographicErrorBuilder`](builders::CryptographicErrorBuilder) that `CryptographicError::builder()` returns.
 ///
 /// Use them to construct the errors this library returns, for example in tests.
 pub mod builders {
@@ -876,19 +878,21 @@ pub mod builders {
     }
 
     impl CryptographicErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self
@@ -921,19 +925,21 @@ pub mod builders {
     }
 
     impl InternalErrorBuilder {
-        /// What went wrong, for people and logs.
+        /// Set the message: what went wrong, for people and logs.
         pub fn message(mut self, message: impl Into<String>) -> Self {
             self.message = message.into();
             self
         }
 
-        /// The error that caused this one, which [`source`](std::error::Error::source) returns.
+        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
         pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
             self.source = Some(Arc::new(source));
             self
         }
 
-        /// Mark the error retryable, and say how to back off.
+        /// Make the error retryable, with `retry` saying how to back off.
+        ///
+        /// Without it, the error is not retryable.
         pub fn retry_kind(mut self, retry: RetryKind) -> Self {
             self.retry = Some(retry);
             self

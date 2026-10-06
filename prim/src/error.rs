@@ -3,12 +3,10 @@
 
 //! The error type every function in this crate returns,
 //! and the types every AWS Crypto Tools library's errors share.
-//!
-//! [`Error`] and its variant structs are generated from `errors.toml`
-//! at the repository root by `cargo xtask gen-errors`.
 
 use std::fmt;
 
+// `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
 mod generated;
 
 pub use generated::*;
@@ -50,14 +48,12 @@ impl fmt::Display for Service {
     }
 }
 
-/// The resource an error is about.
+/// The resource you need to act on, which an error's `resource()` returns.
 ///
-/// Not limited to AWS resources: a keyring, a CMM, or the materials cache can be one.
+/// The message names any other resources involved.
+/// A resource need not be an AWS resource: a keyring, a CMM, or the materials cache can be one.
 ///
-/// An error's `resource()` is the resource you need to act on.
-/// Other resources involved are named in the message.
-///
-/// Each variant carries a struct with private fields, read through accessors,
+/// Each variant holds a struct with private fields, read through accessors,
 /// so a later release can add detail about a resource without breaking callers.
 ///
 /// ```
@@ -117,7 +113,7 @@ pub struct KmsKey {
 impl KmsKey {
     /// A KMS key identified by `arn`.
     ///
-    /// `region()` and `account()` are read from `arn` when it is a KMS ARN.
+    /// When `arn` is a KMS ARN, `region()` and `account()` return its region and account.
     #[must_use]
     pub fn new(arn: impl Into<String>) -> Self {
         let arn = arn.into();
@@ -138,13 +134,13 @@ impl KmsKey {
         &self.arn
     }
 
-    /// The ARN's region; `None` unless [`arn`](Self::arn) is a KMS ARN.
+    /// The ARN's region, or `None` when [`arn`](Self::arn) is not a KMS ARN.
     #[must_use]
     pub fn region(&self) -> Option<&str> {
         self.region.as_deref()
     }
 
-    /// The ARN's AWS account ID; `None` unless [`arn`](Self::arn) is a KMS ARN.
+    /// The ARN's AWS account ID, or `None` when [`arn`](Self::arn) is not a KMS ARN.
     #[must_use]
     pub fn account(&self) -> Option<&str> {
         self.account.as_deref()
@@ -245,7 +241,7 @@ impl BranchKey {
         &self.id
     }
 
-    /// The branch key version, when the failing call was about one.
+    /// The branch key version the failing call was about, or `None` when it was not about one.
     #[must_use]
     pub fn version(&self) -> Option<&str> {
         self.version.as_deref()
@@ -343,7 +339,7 @@ impl From<CmmResource> for Resource {
 
 /// An encrypted data key in a message, by its key provider.
 ///
-/// Never holds the wrapped key itself.
+/// Holds the key's provider ID and info, never the wrapped key.
 ///
 /// ```
 /// use aws_mpl_primitives::error::DataKeyInfo;
@@ -401,8 +397,8 @@ impl fmt::Debug for KeyProviderInfo {
 
 /// How to back off before retrying an error that might succeed later.
 ///
-/// Mirrors `aws_smithy_types::retry::ErrorKind`,
-/// which the libraries that use the AWS SDK return from `ProvideErrorKind::retryable_error_kind`.
+/// Each value matches one `aws_smithy_types::retry::ErrorKind`, such as `Transient` and `TransientError`.
+/// An error from a library that uses the AWS SDK returns that `ErrorKind` from `ProvideErrorKind::retryable_error_kind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RetryKind {
@@ -439,12 +435,12 @@ impl fmt::Display for RetryKind {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Collection {
-    /// Each collected error is one attempt at the same goal, and every attempt failed;
-    /// any one succeeding would have been enough,
+    /// The collected errors are attempts at one goal, and every attempt failed.
+    /// Any one attempt succeeding would have been enough,
     /// for example a keyring trying each encrypted data key.
     /// Retrying can help if any attempt could succeed later.
     AllFailed,
-    /// Each collected error is a step the operation needed, and any one failing was enough to fail it.
+    /// The collected errors are steps the operation needed, and any one failing was enough to fail it.
     /// Retrying cannot help if any step can never succeed.
     AnyFailed,
 }

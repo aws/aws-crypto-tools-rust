@@ -47,7 +47,8 @@ pub trait Cmc: Send + Sync {
     ) -> Result<PutCacheEntryOutput, Error>;
 
     /// Retrieve the cache entry for the supplied cache identifier.
-    /// The output's entry is `None` on a cache miss. Mirrors the `Get Cache Entry` behavior of the
+    /// The output's entry is `None` on a cache miss.
+    /// Mirrors the `Get Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
     //
     async fn get_cache_entry(
@@ -64,8 +65,10 @@ pub trait Cmc: Send + Sync {
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error>;
 
-    /// The storm-tracking grace period, for a cache that refreshes entries
-    /// this long before they expire. `None` for a cache without one.
+    /// How long before an entry expires the cache sends one caller to refresh it.
+    /// Return `None`, the default, if the cache does not refresh early.
+    ///
+    /// A hierarchical keyring requires this to be less than its TTL.
     fn grace_period(&self) -> Option<Duration> {
         None
     }
