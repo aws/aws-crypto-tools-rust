@@ -70,10 +70,10 @@ void report(const std::exception_ptr& failure) {
     } catch (const Aws::Esdk::ResourceNotFoundException& e) {
         // The exception names the missing resource, so there is no need to parse what().
         const auto& r = e.resource();
-        if (r && r->type == Aws::Esdk::ResourceType::BranchKey) {
-            std::cout << "branch key " << r->name << " does not exist in the key store\n";
-        } else if (r && r->type == Aws::Esdk::ResourceType::DynamoDbTable) {
-            std::cout << "key store table " << r->name << " does not exist\n";
+        if (r && r->type() == Aws::Esdk::ResourceType::BranchKey) {
+            std::cout << "branch key " << r->name() << " does not exist in the key store\n";
+        } else if (r && r->type() == Aws::Esdk::ResourceType::DynamoDbTable) {
+            std::cout << "key store table " << r->name() << " does not exist\n";
         } else {
             std::cout << "an AWS resource does not exist\n";
         }
@@ -81,7 +81,7 @@ void report(const std::exception_ptr& failure) {
         // IAM usually allows only the key store's own table,
         // so a request for a table that does not exist is often denied before DynamoDB looks for it.
         const auto& r = e.resource();
-        std::cout << "access denied on " << (r ? r->name : std::string("an AWS resource"))
+        std::cout << "access denied on " << (r ? r->name() : std::string("an AWS resource"))
                   << "; check the IAM policy\n";
     } catch (const Aws::Esdk::ServiceException& e) {
         // Any other answer from AWS; code() is the service's own error code.

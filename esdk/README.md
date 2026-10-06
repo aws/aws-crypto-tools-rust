@@ -27,8 +27,8 @@ Building from source needs:
   to `aws-lc-fips-sys`, which builds the FIPS module from source with CMake and
   Go. The default (non-FIPS) build does not need Go.
 - AWS credentials, a KMS key, and a DynamoDB table for the hierarchical-keyring
-  paths only (see [Examples](#examples)). The raw-AES, streaming, custom-keyring,
-  and required-encryption-context paths run offline.
+  paths only (see [Examples](#examples)). The raw-AES, streaming, and custom-keyring
+  paths run offline.
 
 ## Quickstart
 
@@ -84,10 +84,10 @@ each input. To set them once and reuse them, build an `Esdk` client and call its
 methods instead:
 
 ```rust
-use aws_esdk::{Esdk, EsdkCommitmentPolicy};
+use aws_esdk::{CommitmentPolicy, Esdk};
 
 let esdk = Esdk::builder()
-    .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+    .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
     .build();
 let encrypted = esdk.encrypt(&input).await?;
 ```
