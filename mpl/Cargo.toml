@@ -7,7 +7,7 @@ description = "aws-cryptographic-material-providers-library is a low level libra
 authors = ["AWS-CryptoTools"]
 
 [dependencies]
-async-trait = "=0.1.92"
+async-trait = "=0.1.83"
 aws-config = "=1.10.1"
 aws-mpl-primitives = { path = "../prim" }
 aws-sdk-dynamodb = "=1.119.0"
@@ -21,10 +21,6 @@ uuid = { version = "=1.23.3", features = ["v4"] }
 [features]
 default = []
 test-utils = []
-
-[[example]]
-name = "aws_kms_hierarchical"
-path = "examples/aws_kms_hierarchical/main.rs"
 
 [dev-dependencies]
 # Used only by tests, as an implementation-independent digest oracle for the
