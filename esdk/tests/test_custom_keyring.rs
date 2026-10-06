@@ -244,3 +244,87 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
         err
     );
 }
+
+/// Returns a plaintext data key half the suite's length.
+#[derive(Clone, Debug)]
+struct ShortDataKeyKeyring;
+
+#[async_trait::async_trait]
+impl Keyring for ShortDataKeyKeyring {
+    fn name(&self) -> std::borrow::Cow<'_, str> {
+        "short".into()
+    }
+
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
+        let m = input.into_materials();
+        let short = m.algorithm_suite().encryption_key_length() / 2;
+        let edk = EncryptedDataKey::builder()
+            .key_provider_id(PROVIDER_ID)
+            .key_provider_info(b"")
+            .ciphertext(vec![0; 8])
+            .build()?;
+        let materials = EncryptionMaterials::builder()
+            .algorithm_suite_id(m.algorithm_suite_id())
+            .encryption_context(m.encryption_context().clone())
+            .encrypted_data_keys(vec![edk])
+            .plaintext_data_key(PlaintextDataKey::new(vec![0; short]))
+            .set_signing_key(m.signing_key().cloned())
+            .build()?;
+        OnEncryptOutput::builder().materials(materials).build()
+    }
+
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, MplError> {
+        let m = input.into_materials();
+        let short = m.algorithm_suite().encryption_key_length() / 2;
+        let materials = DecryptionMaterials::builder()
+            .algorithm_suite_id(m.algorithm_suite_id())
+            .encryption_context(m.encryption_context().clone())
+            .plaintext_data_key(PlaintextDataKey::new(vec![0; short]))
+            .set_verification_key(m.verification_key().cloned())
+            .build()?;
+        OnDecryptOutput::builder().materials(materials).build()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
+    let err = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"short key")
+            .keyring(ShortDataKeyKeyring)
+            .build()
+            .unwrap(),
+    )
+    .await
+    .expect_err("a short plaintext data key must fail");
+    assert!(err.is_invalid_materials(), "{err:?}");
+    assert_eq!(
+        err.resource(),
+        Some(&aws_esdk::error::Resource::Keyring(
+            aws_esdk::error::KeyringResource::new("short")
+        ))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_decrypt_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"short key")
+            .keyring(LocalKekKeyring { kek: [7u8; 32] })
+            .build()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let err = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(ShortDataKeyKeyring)
+            .build()
+            .unwrap(),
+    )
+    .await
+    .expect_err("a short plaintext data key must fail");
+    assert!(err.is_invalid_materials(), "{err:?}");
+}

@@ -136,10 +136,20 @@ pub(crate) async fn get_decryption_materials(
         ));
     }
 
-    if materials.plaintext_data_key().is_none() {
+    let Some(plaintext_data_key) = materials.plaintext_data_key() else {
         return Err(err(
             Kind::InvalidMaterials,
             "decryption materials are missing a plaintext data key",
+        ));
+    };
+    let expected_len = materials.algorithm_suite().encryption_key_length();
+    if plaintext_data_key.len() != expected_len {
+        return Err(err(
+            Kind::InvalidMaterials,
+            format!(
+                "decryption materials have a {}-byte plaintext data key, expected {expected_len} for the algorithm suite",
+                plaintext_data_key.len()
+            ),
         ));
     }
 
@@ -217,10 +227,20 @@ pub(crate) async fn get_encryption_materials(
         ));
     }
 
-    if materials.plaintext_data_key().is_none() {
+    let Some(plaintext_data_key) = materials.plaintext_data_key() else {
         return Err(err(
             Kind::InvalidMaterials,
             "encryption materials are missing a plaintext data key",
+        ));
+    };
+    let expected_len = materials.algorithm_suite().encryption_key_length();
+    if plaintext_data_key.len() != expected_len {
+        return Err(err(
+            Kind::InvalidMaterials,
+            format!(
+                "encryption materials have a {}-byte plaintext data key, expected {expected_len} for the algorithm suite",
+                plaintext_data_key.len()
+            ),
         ));
     }
 
