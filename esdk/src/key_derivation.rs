@@ -313,7 +313,7 @@ pub fn derive_keys(
     plaintext_data_key: &[u8],
     suite: &AlgorithmSuite,
 ) -> Result<ExpandedKeyMaterial, Error> {
-    debug_assert!(!message_id.is_empty());
+    debug_assert_ne!(message_id.len(), 0);
     debug_assert_eq!(
         usize::from(get_encrypt_key_length(suite)),
         plaintext_data_key.len()
