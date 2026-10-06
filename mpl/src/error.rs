@@ -34,7 +34,7 @@
 //! **Messages are for people.**
 //! [`message`](Error::message) and `Display` are for people and logs:
 //! their text can change in any release, even a patch release.
-//! Decide from the variant and its accessors, never from the message.
+//! Handle errors in your application from the variant and its accessors, never from the error message.
 //!
 //! ## What a minor or patch release can change
 //!
@@ -42,13 +42,11 @@
 //! Code that depends on any of the following can break in one:
 //!
 //! - **Message text.** Any message, and anything `{}`, `{:#}`, or `{:?}` prints, can change.
-//!   Decide from the variant and its accessors, never from the message.
-//! - **Failures without a specific variant.** An MPL operation returns only [`Error`], never any other type.
-//!   A failure that reaches you without a specific variant is a bug:
-//!   a panic, an [`Internal`](Error::Internal) error,
-//!   or a failure you can recognize only by a type in its source chain.
-//!   A minor or patch release can turn it into a specific variant,
-//!   so handle it in the catch-all arm, not by matching on it.
+//!   Do not attempt to parse an error message string in your error handling logic.
+//!   Always inspect the fields of the error structure itself.
+//! - **Failures without a specific variant.** An MPL operation should only ever return [`Error`].
+//!   Any non-[`Error`] (or an [`Internal`](Error::Internal) error) is a bug.
+//!   A minor or patch release can turn these into an [`Error`] variant.
 //! - **The shape of the source chain.** Levels can be added or removed.
 //!   Reach a source with [`find_source`](Error::find_source),
 //!   not by calling `source()` a fixed number of times.
@@ -108,13 +106,18 @@
 //!
 //! ```
 //! # fn record_throttle(_: &str) {}
-//! use aws_crypto_mpl::error::{Error, Resource};
+//! use aws_crypto_mpl::error::{Error, Resource, Service};
 //!
 //! fn record(err: &Error) {
 //!     if let Error::Throttling(e) = err {
-//!         match (e.service(), e.resource()) {
-//!             (Some(service), _) => record_throttle(service.as_str()),
-//!             (None, Some(Resource::Cache(_))) => record_throttle("materials-cache"),
+//!         match e.service() {
+//!             Some(Service::Kms) => record_throttle("kms"),
+//!             Some(Service::DynamoDb) => record_throttle("dynamodb"),
+//!             // The materials cache is not an AWS service.
+//!             None => match e.resource() {
+//!                 Some(Resource::Cache(_)) => record_throttle("materials-cache"),
+//!                 _ => record_throttle("other"),
+//!             },
 //!             _ => record_throttle("other"),
 //!         }
 //!     }
