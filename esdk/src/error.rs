@@ -31,6 +31,28 @@
 //! and their text can change in any release.
 //! Decide from the variant and its accessors, never from the message.
 //!
+//! ## What a minor or patch release can change
+//!
+//! Error handling that follows these rules keeps working across minor and patch releases.
+//! Code that depends on any of the following can break in one:
+//!
+//! - **Message text.** Any message, and what `{}`, `{:#}` and `{:?}` print, can change.
+//!   Decide from the variant and its accessors, never from the text.
+//! - **Errors that are not this library's own.** An ESDK operation returns only [`Error`], never an `aws_crypto_mpl::Error` or any other type.
+//!   A failure that reaches you any other way is a bug:
+//!   a panic, an [`Internal`](Error::Internal) error,
+//!   or a failure you can only recognize by a type in its source chain.
+//!   A minor or patch release can turn it into a specific variant,
+//!   so handle it in the catch-all arm rather than matching on it.
+//! - **The shape of the source chain.** Levels can be added or removed.
+//!   Reach a source with [`find_source`](Error::find_source),
+//!   not by calling `source()` a fixed number of times.
+//! - **Which variant a collection of failures gets.** When several failures resolve to one error,
+//!   the priority order between variants, and whose retry kind is kept, can change.
+//!   To act on each failure, use [`failures`](Error::failures).
+//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`
+//!   and `Collection` are `#[non_exhaustive]`, so every `match` needs a catch-all arm.
+//!
 //! **`{}` and `{:#}`.**
 //! `{}` prints this error: `Variant: message (details)`,
 //! for example `AccessDenied: decrypt could not get decryption materials (AWS KMS, KMS key arn:..., AccessDeniedException, request 6f1c2e9a)`.

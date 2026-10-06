@@ -100,6 +100,13 @@ namespace Esdk {
 /// Messages are for people, not code.
 /// Their text can change in any release, including a minor or patch release.
 /// Decide from the exception type and its fields, never from what().
+///
+/// What a minor or patch release can change:
+/// - what(), full_message(), and every other message;
+/// - an exception that is not an AwsEncryptionSdkException, or an InternalException,
+///   which is a bug and can become a specific exception type;
+/// - which exception type a collection of several failures becomes;
+/// - new kinds and enum values, so every switch needs a default case.
 enum class ErrorKind : std::uint8_t {
     Validation = 0,
     Serialization = 1,

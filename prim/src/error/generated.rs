@@ -29,6 +29,7 @@ type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 ///
 /// Messages are for people, not code; their text can change in any release.
 /// Decide from the variant and its accessors, never from the message.
+/// A minor or patch release can also turn a failure that reaches you as `Internal` into a specific variant.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
