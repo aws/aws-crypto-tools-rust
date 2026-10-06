@@ -113,6 +113,73 @@ fn service_and_resource_display() {
 }
 
 #[test]
+fn each_resource_payload_converts_into_its_variant() {
+    let key = Resource::from(KmsKey::new("arn:aws:kms:k"));
+    assert!(matches!(&key, Resource::KmsKey(k) if k.arn() == "arn:aws:kms:k"));
+    let table = Resource::from(DynamoDbTable::new("KeyStoreTable"));
+    assert!(matches!(&table, Resource::DynamoDbTable(t) if t.name() == "KeyStoreTable"));
+    let branch_key = Resource::from(BranchKey::new("my-branch-key"));
+    assert!(matches!(&branch_key, Resource::BranchKey(b) if b.id() == "my-branch-key"));
+    assert!(matches!(
+        Resource::from(Cache::default()),
+        Resource::Cache(_)
+    ));
+    let keyring = Resource::from(KeyringResource::new("ns/key"));
+    assert!(matches!(&keyring, Resource::Keyring(k) if k.name() == "ns/key"));
+    let cmm = Resource::from(CmmResource::new("default"));
+    assert!(matches!(&cmm, Resource::Cmm(c) if c.name() == "default"));
+}
+
+#[test]
+fn retry_kinds_print_their_names() {
+    let cases = [
+        (RetryKind::Transient, "transient"),
+        (RetryKind::Throttling, "throttling"),
+        (RetryKind::Server, "server"),
+        (RetryKind::Client, "client"),
+    ];
+    for (kind, text) in cases {
+        assert_eq!(kind.as_str(), text);
+        assert_eq!(kind.to_string(), text);
+    }
+}
+
+#[test]
+fn with_source_on_the_error_sets_the_source() {
+    let err = Error::from(InternalError::new("outer")).with_source(std::io::Error::other("io"));
+    assert_eq!(err.source().unwrap().to_string(), "io");
+    assert_eq!(format!("{err:#}"), "Internal: outer: io");
+}
+
+#[test]
+fn a_single_error_is_its_own_only_failure() {
+    let err = Error::from(InternalError::new("outer").with_source(make_error()));
+    assert_eq!(err.collection(), None);
+    assert!(err.collected().is_empty());
+    let failures = err.failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].name(), "Internal");
+    assert_eq!(failures[0].message(), "outer");
+}
+
+#[test]
+fn debug_shows_the_variant_message_and_source() {
+    let err = Error::from(InternalError::new("outer").with_source(std::io::Error::other("io")));
+    let debug = format!("{err:?}");
+    assert!(debug.starts_with("Internal(InternalError {"), "{debug}");
+    assert!(debug.contains("message: \"outer\""), "{debug}");
+    assert!(debug.contains("source:"), "{debug}");
+}
+
+#[test]
+fn a_clone_keeps_the_source_chain() {
+    let err = Error::from(InternalError::new("outer").with_source(std::io::Error::other("io")));
+    let clone = err.clone();
+    assert_eq!(format!("{clone:#}"), format!("{err:#}"));
+    assert!(clone.find_source::<std::io::Error>().is_some());
+}
+
+#[test]
 fn errors_are_send_sync_and_static() {
     fn check<T: Send + Sync + 'static>() {}
     check::<Error>();
