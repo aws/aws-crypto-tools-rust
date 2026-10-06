@@ -161,10 +161,10 @@ pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,
     KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
+pub use aws_sdk_kms::operation::RequestId;
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
-pub use aws_types::request_id::RequestId;
 
 #[track_caller]
 pub(crate) fn val_err(msg: impl Into<String>) -> Error {
