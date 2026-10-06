@@ -4,36 +4,36 @@
 //!
 //! # Handling errors
 //!
-//! Every operation returns [`Error`], one `#[non_exhaustive]` enum
-//! with one struct per variant, like an AWS SDK for Rust service error.
+//! Every operation returns [`Error`]:
+//! a `#[non_exhaustive]` enum with one struct per variant, like an AWS SDK for Rust service error.
 //!
 //! **Decide in two steps.**
-//! First check [`is_retryable`](Error::is_retryable):
-//! a retryable error might succeed if the same call is made again later,
-//! and [`retry_kind`](Error::retry_kind) says how to back off.
-//! Otherwise match on the variant; each variant's docs say what to do.
-//! Later releases can add variants, so a `match` needs a catch-all arm.
+//! 1. Check [`is_retryable`](Error::is_retryable).
+//!    A retryable error might succeed if the same call is made again later,
+//!    and [`retry_kind`](Error::retry_kind) says how to back off.
+//! 2. Otherwise match on the variant; each variant's docs say what to do.
+//!    Later releases can add variants, so a `match` needs a catch-all arm.
 //!
 //! **Read the details from accessors.**
-//! [`service`](Error::service) is the AWS service a failed call went to,
-//! [`code`](Error::code) is that service's error code,
-//! and [`request_id`](Error::request_id) is the ID AWS Support asks for.
-//! [`resource`](Error::resource) is the resource you need to act on.
-//! Other resources involved are named in the message:
-//! when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
-//! because the fix is a KMS permission, and the message names the branch key.
-//! A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account)
-//! of its ARN, and a [`BranchKey`] the [`version`](BranchKey::version) the failing call was about.
-//! A [`NoMatchingDataKey`](Error::NoMatchingDataKey) error's
-//! [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys) lists the message's
-//! encrypted data keys by key provider, so you can tell which keyring would decrypt it.
-//! When a keyring or CMM you passed returns bad materials or none, `resource()` is
-//! [`Resource::Keyring`] or [`Resource::Cmm`] with its name, unless it names
-//! something more specific, such as a corrupt branch key.
+//! - [`resource`](Error::resource): the resource you need to act on.
+//!   The message names any other resources involved.
+//!   For example, when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
+//!   because the fix is a KMS permission, and the message names the branch key.
+//!   When a keyring or CMM you passed returns bad materials or none,
+//!   `resource()` is [`Resource::Keyring`] or [`Resource::Cmm`] with its name,
+//!   unless it names something more specific, such as a corrupt branch key.
+//!   A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account) of its ARN,
+//!   and a [`BranchKey`] has the [`version`](BranchKey::version) the failing call was about.
+//! - [`service`](Error::service): the AWS service the failed call went to.
+//! - [`code`](Error::code): that service's error code.
+//! - [`request_id`](Error::request_id): the ID AWS Support asks for.
+//! - [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys),
+//!   on a [`NoMatchingDataKey`](Error::NoMatchingDataKey) error:
+//!   the message's encrypted data keys by key provider, so you can tell which keyring would decrypt it.
 //!
 //! **Messages are for people.**
-//! [`message`](Error::message) and `Display` are for people and logs,
-//! and their text can change in any release.
+//! [`message`](Error::message) and `Display` are for people and logs:
+//! their text can change in any release, even a patch release.
 //! Decide from the variant and its accessors, never from the message.
 //!
 //! ## What a minor or patch release can change
@@ -41,34 +41,38 @@
 //! Error handling that follows these rules keeps working across minor and patch releases.
 //! Code that depends on any of the following can break in one:
 //!
-//! - **Message text.** Any message, and what `{}`, `{:#}` and `{:?}` print, can change.
-//!   Decide from the variant and its accessors, never from the text.
-//! - **Errors that are not this library's own.** An ESDK operation returns only [`Error`], never an `aws_crypto_mpl::Error` or any other type.
-//!   A failure that reaches you any other way is a bug:
+//! - **Message text.** Any message, and anything `{}`, `{:#}`, or `{:?}` prints, can change.
+//!   Decide from the variant and its accessors, never from the message.
+//! - **Failures without a specific variant.** An ESDK operation returns only [`Error`],
+//!   never an `aws_crypto_mpl::Error` or any other type.
+//!   A failure that reaches you without a specific variant is a bug:
 //!   a panic, an [`Internal`](Error::Internal) error,
-//!   or a failure you can only recognize by a type in its source chain.
+//!   or a failure you can recognize only by a type in its source chain.
 //!   A minor or patch release can turn it into a specific variant,
-//!   so handle it in the catch-all arm rather than matching on it.
+//!   so handle it in the catch-all arm, not by matching on it.
 //! - **The shape of the source chain.** Levels can be added or removed.
 //!   Reach a source with [`find_source`](Error::find_source),
 //!   not by calling `source()` a fixed number of times.
 //! - **Which variant a collection of failures gets.** When several failures resolve to one error,
-//!   the priority order between variants, and whose retry kind is kept, can change.
+//!   the priority between variants, and whose retry kind is kept, can change.
 //!   To act on each failure, use [`failures`](Error::failures).
-//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`
+//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`,
 //!   and `Collection` are `#[non_exhaustive]`, so every `match` needs a catch-all arm.
 //!
-//! **`{}` and `{:#}`.**
-//! `{}` prints this error: `Variant: message (details)`,
-//! for example `AccessDenied: decrypt could not get decryption materials (AWS KMS, KMS key arn:..., AccessDeniedException, request 6f1c2e9a)`.
-//! `{:#}` adds each error in the source chain, without repeating what the previous one said,
-//! for example `...: AWS KMS Decrypt of branch key my-branch-key failed: service error: ...`.
+//! **Logging.**
 //! Log `{:#}`.
+//! `{}` prints this error as `Variant: message (details)`, for example
+//! `AccessDenied: decrypt could not get decryption materials (AWS KMS, KMS key arn:..., AccessDeniedException, request 6f1c2e9a)`.
+//! `{:#}` adds each error in the source chain, leaving out what the previous one already said, for example
+//! `...: AWS KMS Decrypt of branch key my-branch-key failed: service error: ...`.
 //!
 //! **Reaching the AWS SDK error.**
-//! The error from AWS KMS or `DynamoDB` stays in the source chain.
-//! [`find_source`](Error::find_source) returns it by type;
-//! use the SDK crates [`aws_crypto_mpl`] re-exports, so the versions match.
+//! The error from AWS KMS or `DynamoDB` stays in the source chain,
+//! and [`find_source`](Error::find_source) returns it by type.
+//! Name that type through the AWS SDK crates [`aws_crypto_mpl`] re-exports:
+//! `find_source` matches the exact type, and a different version of an SDK crate defines different types.
+//!
+//! This example handles each variant of a decrypt error:
 //!
 //! ```no_run
 //! # mod log { macro_rules! error { ($($t:tt)*) => { eprintln!($($t)*) } } pub(crate) use error; }
@@ -121,7 +125,11 @@
 //! ## Throttling
 //!
 //! A [`Throttling`](Error::Throttling) error is always retryable.
-//! Match it only to learn what was throttled, for example to record it:
+//! For errors from AWS KMS or `DynamoDB`, the AWS SDK client has already retried according to its `RetryConfig`,
+//! so retry only at a higher level, with your own backoff.
+//! Nothing retries materials-cache throttling for you.
+//!
+//! Match `Throttling` only to learn what was throttled, for example to record it:
 //!
 //! ```no_run
 //! # fn record_throttle(_: &str) {}
@@ -138,18 +146,15 @@
 //! # }
 //! ```
 //!
-//! For errors from AWS KMS or `DynamoDB`, the AWS SDK client has already retried
-//! according to its `RetryConfig`, so retry only at a higher level with your own backoff.
-//! Materials-cache throttling is not retried internally.
-//!
 //! ## Seeing every failure
 //!
-//! A keyring that tries several encrypted data keys, and fails on every one,
-//! returns one error that collects each attempt's failure.
-//! The ESDK error's [`collected`](Error::collected) is empty: the keyring's error is its
-//! [`source`](std::error::Error::source), and that error holds the attempts.
-//! [`failures`](Error::failures) returns every failure behind an error,
-//! at any depth, as this crate's [`Error`]; a single failure yields itself:
+//! When a keyring fails on every encrypted data key it tries,
+//! its error collects one failure per attempt.
+//! The ESDK error keeps that error as its [`source`](std::error::Error::source),
+//! so the ESDK error's own [`collected`](Error::collected) is empty.
+//! To act on each attempt, use [`failures`](Error::failures):
+//! it returns every failure behind an error, at any depth, as this crate's [`Error`].
+//! An error with no collection yields itself.
 //!
 //! ```no_run
 //! # fn grant_kms_decrypt(_: &str) {}
@@ -174,8 +179,8 @@
 //!
 //! ## Testing your error handling
 //!
-//! Every variant struct has `new` and a [builder](builders), so you can construct
-//! the errors this crate returns, for example from a fake keyring or CMM:
+//! Every variant struct has `new` and a [builder](builders),
+//! so you can construct the errors this crate returns, for example from a fake keyring or CMM:
 //!
 //! ```
 //! use aws_esdk::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
@@ -190,10 +195,8 @@
 //! );
 //! assert!(matches!(&err, Error::AccessDenied(e) if e.is_credentials()));
 //! ```
-//!
-//! [`Error`] and its variant structs are generated from `errors.toml`
-//! at the repository root by `cargo xtask gen-errors`.
 
+// `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
 mod generated;
 
 pub use generated::*;

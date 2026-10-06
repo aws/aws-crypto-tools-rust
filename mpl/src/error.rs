@@ -5,35 +5,35 @@
 //!
 //! # Handling errors
 //!
-//! Every keyring, CMM, key store, and cache operation returns [`Error`],
-//! one `#[non_exhaustive]` enum with one struct per variant,
-//! like an AWS SDK for Rust service error.
-//! The AWS Encryption SDK keeps each variant under the same name.
+//! Every keyring, CMM, key store, and cache operation returns [`Error`]:
+//! a `#[non_exhaustive]` enum with one struct per variant, like an AWS SDK for Rust service error.
+//! When one of these errors reaches you through the AWS Encryption SDK,
+//! it has the ESDK variant of the same name.
 //!
 //! **Decide in two steps.**
-//! First check [`is_retryable`](Error::is_retryable):
-//! a retryable error might succeed if the same call is made again later,
-//! and [`retry_kind`](Error::retry_kind) says how to back off.
-//! Otherwise match on the variant; each variant's docs say what to do.
-//! Later releases can add variants, so a `match` needs a catch-all arm.
+//! 1. Check [`is_retryable`](Error::is_retryable).
+//!    A retryable error might succeed if the same call is made again later,
+//!    and [`retry_kind`](Error::retry_kind) says how to back off.
+//! 2. Otherwise match on the variant; each variant's docs say what to do.
+//!    Later releases can add variants, so a `match` needs a catch-all arm.
 //!
 //! **Read the details from accessors.**
-//! [`service`](Error::service) is the AWS service a failed call went to,
-//! [`code`](Error::code) is that service's error code,
-//! and [`request_id`](Error::request_id) is the ID AWS Support asks for.
-//! [`resource`](Error::resource) is the resource you need to act on.
-//! Other resources involved are named in the message:
-//! when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
-//! because the fix is a KMS permission, and the message names the branch key.
-//! A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account)
-//! of its ARN, and a [`BranchKey`] the [`version`](BranchKey::version) the failing call was about.
-//! A [`NoMatchingDataKey`](Error::NoMatchingDataKey) error's
-//! [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys) lists the message's
-//! encrypted data keys by key provider, so you can tell which keyring would decrypt it.
+//! - [`resource`](Error::resource): the resource you need to act on.
+//!   The message names any other resources involved.
+//!   For example, when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
+//!   because the fix is a KMS permission, and the message names the branch key.
+//!   A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account) of its ARN,
+//!   and a [`BranchKey`] has the [`version`](BranchKey::version) the failing call was about.
+//! - [`service`](Error::service): the AWS service the failed call went to.
+//! - [`code`](Error::code): that service's error code.
+//! - [`request_id`](Error::request_id): the ID AWS Support asks for.
+//! - [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys),
+//!   on a [`NoMatchingDataKey`](Error::NoMatchingDataKey) error:
+//!   the message's encrypted data keys by key provider, so you can tell which keyring would decrypt it.
 //!
 //! **Messages are for people.**
-//! [`message`](Error::message) and `Display` are for people and logs,
-//! and their text can change in any release.
+//! [`message`](Error::message) and `Display` are for people and logs:
+//! their text can change in any release, even a patch release.
 //! Decide from the variant and its accessors, never from the message.
 //!
 //! ## What a minor or patch release can change
@@ -41,39 +41,39 @@
 //! Error handling that follows these rules keeps working across minor and patch releases.
 //! Code that depends on any of the following can break in one:
 //!
-//! - **Message text.** Any message, and what `{}`, `{:#}` and `{:?}` print, can change.
-//!   Decide from the variant and its accessors, never from the text.
-//! - **Errors that are not this library's own.** An MPL operation returns only [`Error`], never any other type.
-//!   A failure that reaches you any other way is a bug:
+//! - **Message text.** Any message, and anything `{}`, `{:#}`, or `{:?}` prints, can change.
+//!   Decide from the variant and its accessors, never from the message.
+//! - **Failures without a specific variant.** An MPL operation returns only [`Error`], never any other type.
+//!   A failure that reaches you without a specific variant is a bug:
 //!   a panic, an [`Internal`](Error::Internal) error,
-//!   or a failure you can only recognize by a type in its source chain.
+//!   or a failure you can recognize only by a type in its source chain.
 //!   A minor or patch release can turn it into a specific variant,
-//!   so handle it in the catch-all arm rather than matching on it.
+//!   so handle it in the catch-all arm, not by matching on it.
 //! - **The shape of the source chain.** Levels can be added or removed.
 //!   Reach a source with [`find_source`](Error::find_source),
 //!   not by calling `source()` a fixed number of times.
 //! - **Which variant a collection of failures gets.** When several failures resolve to one error,
-//!   the priority order between variants, and whose retry kind is kept, can change.
+//!   the priority between variants, and whose retry kind is kept, can change.
 //!   To act on each failure, use [`failures`](Error::failures).
-//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`
+//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`,
 //!   and `Collection` are `#[non_exhaustive]`, so every `match` needs a catch-all arm.
 //!
-//! **`{}` and `{:#}`.**
-//! `{}` prints this error: `Variant: message (details)`.
-//! `{:#}` adds each error in the source chain, without repeating what the previous one said.
+//! **Logging.**
 //! Log `{:#}`.
-//! [`DisplayErrorContext`] prints the chain of an error that is not one of these.
+//! `{}` prints this error as `Variant: message (details)`;
+//! `{:#}` adds each error in the source chain, leaving out what the previous one already said.
+//! [`DisplayErrorContext`] prints the chain of any other error type, such as an AWS SDK error.
 //!
 //! **Reaching the AWS SDK error.**
-//! The error from AWS KMS or DynamoDB stays in the source chain.
-//! [`find_source`](Error::find_source) returns it by type;
-//! use the re-exported `aws_crypto_mpl::aws_sdk_kms` and
-//! `aws_crypto_mpl::aws_sdk_dynamodb`, so the versions match.
+//! The error from AWS KMS or DynamoDB stays in the source chain,
+//! and [`find_source`](Error::find_source) returns it by type.
+//! Name that type through the re-exported `aws_crypto_mpl::aws_sdk_kms` and `aws_crypto_mpl::aws_sdk_dynamodb`:
+//! `find_source` matches the exact type, and a different version of an SDK crate defines different types.
 //!
 //! ## Key store conflicts
 //!
 //! `create_key` and `version_key` write conditionally.
-//! When the condition fails, the error is [`Conflict`](Error::Conflict),
+//! When the condition fails, they return [`Conflict`](Error::Conflict),
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
@@ -100,7 +100,11 @@
 //! ## Throttling
 //!
 //! A [`Throttling`](Error::Throttling) error is always retryable.
-//! Match it only to learn what was throttled, for example to record it:
+//! For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
+//! so retry only at a higher level, with your own backoff.
+//! Nothing retries materials-cache throttling for you.
+//!
+//! Match `Throttling` only to learn what was throttled, for example to record it:
 //!
 //! ```
 //! # fn record_throttle(_: &str) {}
@@ -117,14 +121,10 @@
 //! }
 //! ```
 //!
-//! For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried
-//! according to its `RetryConfig`, so retry only at a higher level with your own backoff.
-//! Materials-cache throttling is not retried internally.
-//!
 //! ## Testing your error handling
 //!
-//! Every variant struct has `new` and a [builder](builders), so you can construct
-//! the errors this crate returns, for example from a fake key store:
+//! Every variant struct has `new` and a [builder](builders),
+//! so you can construct the errors this crate returns, for example from a fake key store:
 //!
 //! ```
 //! use aws_crypto_mpl::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
@@ -141,13 +141,11 @@
 //! ```
 //!
 //! Keyring and CMM authors: see [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors).
-//!
-//! [`Error`] and its variant structs are generated from `errors.toml`
-//! at the repository root by `cargo xtask gen-errors`.
 
 use aws_sdk_kms::config::http::HttpResponse;
 use aws_sdk_kms::error::SdkError;
 
+// `cargo xtask gen-errors` writes `generated.rs` from `errors.toml` at the repository root.
 mod generated;
 
 pub use generated::*;
@@ -164,7 +162,7 @@ pub use aws_types::request_id::RequestId;
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
     ///
-    /// The message is "`operation` failed", and the SDK error becomes the source.
+    /// The message is "`operation` failed", and the source is the SDK error.
     #[track_caller]
     pub(crate) fn from_sdk<E>(
         service: Service,
@@ -198,20 +196,24 @@ impl Error {
         self
     }
 
-    /// An error for several attempts at the same goal, every one of which failed,
-    /// such as a keyring's attempt to decrypt each encrypted data key.
+    /// An error for several attempts at one goal that all failed,
+    /// such as a keyring trying to decrypt each encrypted data key.
     /// Any one attempt succeeding would have been enough.
     ///
     /// With exactly one error, returns it unchanged.
-    /// Otherwise [`collected`](Self::collected) holds every error and
-    /// [`collection`](Self::collection) is [`Collection::AllFailed`].
-    /// If any attempt is retryable, the result takes the first retryable attempt's variant and retry kind,
-    /// since retrying could make that attempt succeed.
-    /// Otherwise the variant is the one every attempt shares or, for a mix,
-    /// the first present of `AccessDenied`, `ResourceNotFound`, `Throttling`, `Dispatch`,
-    /// `Service`, `InvalidMaterials`, `EncryptionContextMismatch`, `Cryptographic`,
-    /// and `NoMatchingDataKey`, and the result is not retryable.
-    /// Each detail every attempt shares, such as `resource()`, is kept.
+    /// Otherwise [`collected`](Self::collected) holds every error,
+    /// [`collection`](Self::collection) is [`Collection::AllFailed`],
+    /// and the result keeps each detail every attempt shares, such as `resource()`.
+    ///
+    /// The result's variant and retry kind:
+    /// - If any attempt is retryable, the first retryable attempt's,
+    ///   since retrying could make that attempt succeed.
+    /// - Otherwise not retryable, with the variant every attempt shares or, for a mix,
+    ///   the first present of `AccessDenied`, `ResourceNotFound`, `Throttling`, `Dispatch`,
+    ///   `Service`, `InvalidMaterials`, `EncryptionContextMismatch`, `Cryptographic`, and `NoMatchingDataKey`.
+    ///
+    /// This rule can change in a minor or patch release.
+    /// To act on each failure, use [`failures`](Self::failures).
     ///
     /// ```
     /// use aws_crypto_mpl::Error;
@@ -228,8 +230,6 @@ impl Error {
     /// assert_eq!(err.collection(), Some(Collection::AllFailed));
     /// assert_eq!(err.collected().len(), 2);
     /// ```
-    /// The rule that picks the variant and retry kind can change in a minor or patch release;
-    /// callers that act on each failure use [`failures`](Self::failures).
     #[track_caller]
     #[must_use]
     pub fn all_failed(message: impl Into<String>, errors: impl IntoIterator<Item = Self>) -> Self {
@@ -244,17 +244,22 @@ impl Error {
         )
     }
 
-    /// An error for several steps an operation needed, where any one failing was enough to fail it,
-    /// and `errors` are the steps that failed.
+    /// An error for an operation that needed several steps to succeed;
+    /// `errors` are the steps that failed, and any one failing was enough to fail it.
     ///
     /// With exactly one error, returns it unchanged.
-    /// Otherwise [`collected`](Self::collected) holds every error and
-    /// [`collection`](Self::collection) is [`Collection::AnyFailed`].
-    /// If any step is not retryable, the result is not retryable and takes the variant of the
-    /// non-retryable steps, chosen as for [`all_failed`](Self::all_failed), since retrying cannot make
-    /// that step succeed.
-    /// Otherwise the variant is chosen the same way among every step, with that step's retry kind.
-    /// Each detail every step shares is kept.
+    /// Otherwise [`collected`](Self::collected) holds every error,
+    /// [`collection`](Self::collection) is [`Collection::AnyFailed`],
+    /// and the result keeps each detail every step shares.
+    ///
+    /// The result's variant and retry kind:
+    /// - If any step is not retryable, neither is the result, since retrying cannot make that step succeed.
+    ///   The variant is chosen among the non-retryable steps as for [`all_failed`](Self::all_failed).
+    /// - Otherwise the variant is chosen the same way among every step,
+    ///   with the retry kind of the first step that has that variant.
+    ///
+    /// This rule can change in a minor or patch release.
+    /// To act on each failure, use [`failures`](Self::failures).
     ///
     /// ```
     /// use aws_crypto_mpl::Error;
@@ -270,8 +275,6 @@ impl Error {
     /// assert!(err.is_validation());
     /// assert_eq!(err.collection(), Some(Collection::AnyFailed));
     /// ```
-    /// The rule that picks the variant and retry kind can change in a minor or patch release;
-    /// callers that act on each failure use [`failures`](Self::failures).
     #[track_caller]
     #[must_use]
     pub fn any_failed(message: impl Into<String>, errors: impl IntoIterator<Item = Self>) -> Self {
@@ -335,7 +338,8 @@ impl Error {
 }
 
 /// Which variant a collection of mixed errors gets: the first present.
-/// Documented as changeable in a minor or patch release.
+/// The `Error::all_failed` docs list this order; keep them in sync.
+/// Those docs say the order can change in a minor or patch release.
 const AGGREGATE_PRIORITY: &[Kind] = &[
     Kind::AccessDenied,
     Kind::ResourceNotFound,
