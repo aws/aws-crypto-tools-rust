@@ -81,8 +81,9 @@ pub fn compute_aad(
 /// Parse a UUID in canonical hyphenated form (8-4-4-4-12) into its 16 raw
 /// bytes.
 ///
-/// This parse is the validation gate on the branch-key-version string,
-/// so a malformed string, such as one from a corrupted keystore record, returns an error.
+/// This parse is the validation gate on the branch-key-version string.
+/// A malformed string, such as one from a corrupted keystore record,
+/// returns an `InvalidMaterials` error naming the branch key.
 ///
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also
 /// accepts the 32-character simple form as well as braced and URN forms,

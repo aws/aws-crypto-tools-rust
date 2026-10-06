@@ -210,7 +210,7 @@ async fn test_on_decrypt_key_name_mismatch() {
         .await;
 
     let err = result.expect_err("a key name mismatch must not decrypt");
-    // One EDK, so its rejection is the error, not a collection of one.
+    // One EDK, so its error comes back unchanged, not as a collection of one.
     assert!(err.is_no_matching_data_key(), "{:?}", err);
     assert!(err.collected().is_empty());
     assert_eq!(

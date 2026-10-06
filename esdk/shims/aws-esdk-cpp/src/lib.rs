@@ -550,7 +550,7 @@ fn encode_err(
     //   - F: the byte length of `full`, the Rust `{:#}` text; the rest is the Rust backtrace,
     //     empty unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` enabled its capture
     //   - US, RS: ERROR_FIELD_SEPARATOR, ERROR_HEADER_END
-    // A header value holding either separator is sent empty, so the header always parses.
+    // A header value that holds either separator goes out empty, so the header always parses.
     let clean = |v: &str| {
         if v.contains([ERROR_FIELD_SEPARATOR, ERROR_HEADER_END]) {
             String::new()

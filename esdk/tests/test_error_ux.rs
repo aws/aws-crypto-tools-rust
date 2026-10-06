@@ -43,8 +43,7 @@ async fn decrypt_with(
     decrypt(&input).await.map(|out| out.plaintext)
 }
 
-/// A message encrypted under the fake's branch key, and the error from decrypting it
-/// against `fake`.
+/// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
 async fn hierarchical_decrypt_error(fake: FakeAws) -> Error {
     let ciphertext = encrypt_with(FakeAws::ok().keyring().await).await;
     decrypt_with(&ciphertext, fake.keyring().await)
@@ -617,7 +616,7 @@ impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Key
 
 #[tokio::test]
 async fn failures_lists_every_attempt_behind_a_keyring_error() {
-    // Encrypted data key 0 is another keyring's; data key 1 is this keyring's name but a different key.
+    // EDK 0 is another keyring's; EDK 1 has this keyring's name but a different key.
     let other = RawAesKeyring::new("other", "key", vec![1; 32], AesGcm::Aes256Gcm).unwrap();
     let same_name_other_key =
         RawAesKeyring::new("ns", "key", vec![2; 32], AesGcm::Aes256Gcm).unwrap();

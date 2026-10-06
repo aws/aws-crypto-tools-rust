@@ -84,8 +84,8 @@ struct StormTrackingCmcInner {
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
-/// Another caller held the in-flight slot for this key past `inflight_ttl`.
-/// Contention, not a fault: the next attempt usually finds the entry filled.
+/// The error when another caller holds the in-flight slot for this key past `inflight_ttl`.
+/// This is contention, not a fault: the next attempt usually finds the entry filled.
 fn inflight_ttl_exceeded() -> Error {
     Error::new(
         Kind::Throttling,
@@ -233,7 +233,7 @@ impl StormTrackingCmc {
     /// All non-observability state-touching paths use this helper so
     /// pruning stays uniform across the classifier, the wait loop, and
     /// `put_cache_entry`.
-    /// A poisoned mutex returns an `Internal` error.
+    /// Returns an `Internal` error if the mutex is poisoned.
     fn state_locked(
         &self,
         now: SystemTime,
