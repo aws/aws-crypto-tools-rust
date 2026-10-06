@@ -143,8 +143,7 @@ jobs:
     with:
       project: esdk
 
-  # The generated error types must match errors.toml.
-  # Cheap and repo-wide, so it runs on every PR.
+  # Check that the generated error types files match the errors.toml definitions.
   gen-errors:
     name: Generated error types are current
     runs-on: ubuntu-22.04

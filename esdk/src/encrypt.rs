@@ -74,11 +74,6 @@ struct EncryptionMaterialsResult {
 /// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
 /// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
 /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-///
-/// Errors from the keyring or CMM you supply keep their variant, and a custom one may return any variant.
-/// The built-in raw AES keyring returns [`Validation`](crate::Error::Validation) or [`InvalidMaterials`](crate::Error::InvalidMaterials).
-/// The hierarchical keyring returns those and the AWS KMS and `DynamoDB` variants above;
-/// a corrupt branch key record is [`InvalidMaterials`](crate::Error::InvalidMaterials).
 //= spec/client-apis/client.md#encrypt
 //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
 //# that adheres to [encrypt](./encrypt.md).
@@ -138,11 +133,6 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 /// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
 /// - [`Io`](crate::Error::Io): the supplied plaintext reader or ciphertext writer fails.
 /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-///
-/// Errors from the keyring or CMM you supply keep their variant, and a custom one may return any variant.
-/// The built-in raw AES keyring returns [`Validation`](crate::Error::Validation) or [`InvalidMaterials`](crate::Error::InvalidMaterials).
-/// The hierarchical keyring returns those and the AWS KMS and `DynamoDB` variants above;
-/// a corrupt branch key record is [`InvalidMaterials`](crate::Error::InvalidMaterials).
 //= spec/client-apis/streaming.md#overview
 //# The AWS Encryption SDK MAY provide APIs that enable streamed [encryption](encrypt.md)
 //# and [decryption](decrypt.md).
