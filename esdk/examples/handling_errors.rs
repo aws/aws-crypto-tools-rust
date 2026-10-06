@@ -4,18 +4,15 @@
 //! Handles the errors that the hierarchical keyring and its key store return.
 //!
 //! Every operation returns one `aws_esdk::Error`.
-//! You handle it by asking up to four questions, in order,
-//! and you stop at whichever level of detail your application needs:
+//! The error carries everything you might decide on as a field:
+//! whether a retry can help (`is_retryable()`), the kind of failure (the variant),
+//! the AWS service involved (`service()`), and the resource to act on (`resource()`).
+//! Use as much or as little of that as your application needs;
+//! the arms below are one way to handle these errors, not the only one.
+//! Decide from the fields, never from the message:
+//! messages are for people and logs, and their text can change in any release.
 //!
-//! 1. Can a retry help? `is_retryable()` answers this for every error.
-//! 2. What kind of failure is it? The variant: `AccessDenied`, `ResourceNotFound`, and so on.
-//! 3. Which service failed? `service()`: AWS KMS, DynamoDB, or none for a local failure.
-//! 4. Which resource do you need to act on? `resource()`: a KMS key, a table, a branch key.
-//!
-//! Each answer is a field on the error, so you never parse the message.
-//! Messages are for people and logs, and their text can change in any release.
-//!
-//! The encrypt call below walks through all four questions.
+//! The encrypt call shows handling from coarse to fine.
 //! The decrypt call shows the failures only decrypt has, and how to see every failure
 //! when the keyring tried more than one encrypted data key.
 //! The key store call shows a key store error with a reason.
@@ -59,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .branch_key_id(BRANCH_KEY_ID)
         .build()?;
 
-    // ---- Encrypt: the four questions, from coarse to fine ----
+    // ---- Encrypt: from coarse to fine ----
     //
     // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
     // so encrypt can fail in either service.
@@ -71,29 +68,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(output) => output,
         Err(e) => {
             match &e {
-                // Question 1: can a retry help?
-                // This arm catches throttling, timeouts, connection failures and AWS server errors,
-                // whatever their variant, so you can write your retry logic once.
+                // Checking `is_retryable()` before the variant catches throttling, timeouts,
+                // connection failures and AWS server errors in one arm, whatever their variant.
                 // The AWS SDK clients already retried these with their own backoff,
                 // so retry at a higher level; `e.retry_kind()` says how to back off.
                 _ if e.is_retryable() => {
                     eprintln!("retry later ({:?}): {e}", e.retry_kind());
                 }
 
-                // Question 2: what kind of failure is it?
-                // Many applications stop here and handle each variant the same way,
-                // for example `Error::AccessDenied(_) => alert_on_call()`.
+                // The variant says what kind of failure it is.
+                // Many applications stop here and handle each variant the same way, for example `Error::AccessDenied(_) => alert_on_call()`.
                 // `is_credentials()` refines one variant further:
                 // AWS rejected the credentials themselves, not a permission on a resource.
                 Error::AccessDenied(denied) if denied.is_credentials() => {
                     eprintln!("the AWS credentials are expired or invalid");
                 }
 
-                // Question 3: which service denied access?
+                // `service()` says which service denied access.
                 // The fix differs per service: a KMS key policy or grant, or an IAM policy on the table.
                 Error::AccessDenied(denied) => match denied.service() {
                     Some(Service::Kms) => match denied.resource() {
-                        // Question 4: which resource do you need to act on?
+                        // `resource()` is the resource to act on.
                         // `key` is the KMS key this error carries, bound by the pattern;
                         // read its details through accessors.
                         Some(Resource::KmsKey(key)) => {

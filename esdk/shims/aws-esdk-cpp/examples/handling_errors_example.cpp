@@ -1,16 +1,13 @@
 // Handles the exceptions that the hierarchical keyring throws.
 //
 // Every failure is an AwsEncryptionSdkException, or a subclass for its kind.
-// You handle it by asking up to four questions, in order,
-// and you stop at whichever level of detail your application needs:
-//
-// 1. Can a retry help? retryable() answers this for every exception.
-// 2. What kind of failure is it? The exception type: AccessDeniedException, ResourceNotFoundException, ...
-// 3. Which service failed? service(): AWS KMS, DynamoDB, or empty for a local failure.
-// 4. Which resource do you need to act on? resource(): a KMS key, a table, a branch key.
-//
-// Each answer is a field on the exception, so you never parse what().
-// Messages are for people and logs, and their text can change in any release.
+// The exception carries everything you might decide on as a field:
+// whether a retry can help (retryable()), the kind of failure (the exception type),
+// the AWS service involved (service()), and the resource to act on (resource()).
+// Use as much or as little of that as your application needs;
+// the handlers below are one way to handle these exceptions, not the only one.
+// Decide from the fields, never from what():
+// messages are for people and logs, and their text can change in any release.
 //
 // Requires AWS credentials and the key store in basic_hierarchical_keyring_example.cpp.
 
@@ -40,7 +37,7 @@ int main() {
         auto keyring = Aws::Esdk::HierarchicalKeyring(keystore, kBranchKeyId, 600s);
         Aws::Esdk::EncryptionSDK esdk;
 
-        // ---- Encrypt: the four questions, from coarse to fine ----
+        // ---- Encrypt: from coarse to fine ----
         //
         // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
         // so encrypt can fail in either service.
@@ -50,7 +47,6 @@ int main() {
             // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
             encrypted = esdk.encrypt(plaintext, keyring);
         } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
-            // Question 1: can a retry help?
             // Checking retryable() before the type catches throttling, timeouts, connection failures
             // and AWS server errors in one place, whatever their type.
             // The AWS SDK clients already retried these, so retry at a higher level;
@@ -60,7 +56,7 @@ int main() {
                 return 1;
             }
 
-            // Question 2: what kind of failure is it?
+            // The exception type says what kind of failure it is.
             // Many applications stop here and handle each exception type the same way.
             // Rethrowing lets the typed catch clauses below pick the type.
             try {
@@ -72,7 +68,7 @@ int main() {
                     std::cerr << "the AWS credentials are expired or invalid\n";
                     return 1;
                 }
-                // Question 3: which service denied access?
+                // service() says which service denied access.
                 // The fix differs per service: a KMS key policy or grant, or an IAM policy on the table.
                 // service() is empty for a failure with no AWS service, so check it first.
                 const auto service = denied.service();
@@ -84,7 +80,7 @@ int main() {
                 }
                 switch (*service) {
                 case Aws::Esdk::Service::Kms:
-                    // Question 4: which resource do you need to act on?
+                    // resource() is the resource to act on.
                     // resource() is a copy of the resource this exception carries.
                     switch (resource_type) {
                     case Aws::Esdk::ResourceType::KmsKey:
