@@ -26,9 +26,7 @@
 #include <span>
 #endif
 
-// Bump abi_v1 when any exported class's layout changes, so mismatched builds fail to link.
 namespace Aws::Esdk {
-inline namespace abi_v1 {
 
 // File-wide invariants.
 // Each requirement below holds for every type and operation in this facade.
@@ -1111,5 +1109,4 @@ public:
 #endif
 };
 
-}  // inline namespace abi_v1
 }  // namespace Aws::Esdk

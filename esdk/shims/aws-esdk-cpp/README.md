@@ -51,6 +51,10 @@ target_link_libraries(my_app PRIVATE AWS::esdk)
 
 See [`CMakeLists.txt`](CMakeLists.txt) for how the target is assembled.
 
+Build the library from source together with your application, as `add_subdirectory` does.
+Releases keep source compatibility, not binary compatibility:
+after upgrading, rebuild everything that includes `EncryptionSDK.h`.
+
 ## Quick example
 
 A one-shot encrypt/decrypt round trip with a Raw AES keyring:
