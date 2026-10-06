@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "=1.0.99"
-async-trait = "=0.1.83"
+async-trait = "=0.1.92"
 aws-crypto-mpl = { path = "../mpl" }
 base64 = "=0.22.1"
 clap = { version = "=4.5.20", features = ["derive"] }
