@@ -1172,12 +1172,6 @@ impl RequestId for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Validation: the TTL must be greater than zero
-/// ```
 #[derive(Clone)]
 pub struct ValidationError {
     data: Box<ErrorData>,
@@ -1278,12 +1272,6 @@ impl From<ValidationError> for Error {
 ///         _ => {}
 ///     }
 /// }
-/// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// InvalidMaterials: branch key must be 32 bytes, got 16 (Amazon DynamoDB, branch key my-branch-key)
 /// ```
 #[derive(Clone)]
 pub struct InvalidMaterialsError {
@@ -1407,12 +1395,6 @@ impl From<InvalidMaterialsError> for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// EncryptionContextMismatch: the value for encryption context key 'tenant' differs from the message's
-/// ```
 #[derive(Clone)]
 pub struct EncryptionContextMismatchError {
     data: Box<ErrorData>,
@@ -1511,12 +1493,6 @@ impl From<EncryptionContextMismatchError> for Error {
 ///         _ => {}
 ///     }
 /// }
-/// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// NoMatchingDataKey: decrypt could not get decryption materials (keyring my-namespace/my-key; message has: other-namespace)
 /// ```
 #[derive(Clone)]
 pub struct NoMatchingDataKeyError {
@@ -1649,12 +1625,6 @@ impl From<NoMatchingDataKeyError> for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Cryptographic: authentication tag did not match
-/// ```
 #[derive(Clone)]
 pub struct CryptographicError {
     data: Box<ErrorData>,
@@ -1759,12 +1729,6 @@ impl From<CryptographicError> for Error {
 ///         _ => {}
 ///     }
 /// }
-/// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// AccessDenied: AWS KMS Decrypt failed (AWS KMS, KMS key arn:aws:kms:us-west-2:111122223333:key/1234abcd, AccessDeniedException, request 6f1c2e9a)
 /// ```
 #[derive(Clone)]
 pub struct AccessDeniedError {
@@ -1916,12 +1880,6 @@ impl From<AccessDeniedError> for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// ResourceNotFound: no key store record for branch key my-branch-key (Amazon DynamoDB, branch key my-branch-key)
-/// ```
 #[derive(Clone)]
 pub struct ResourceNotFoundError {
     data: Box<ErrorData>,
@@ -2055,12 +2013,6 @@ impl From<ResourceNotFoundError> for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Throttling: timed out waiting for another caller to fetch branch key my-branch-key (materials cache)
-/// ```
 #[derive(Clone)]
 pub struct ThrottlingError {
     data: Box<ErrorData>,
@@ -2189,12 +2141,6 @@ impl From<ThrottlingError> for Error {
 ///         _ => {}
 ///     }
 /// }
-/// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Conflict: branch key my-branch-key was rotated concurrently (Amazon DynamoDB, branch key my-branch-key)
 /// ```
 #[derive(Clone)]
 pub struct ConflictError {
@@ -2327,12 +2273,6 @@ impl From<ConflictError> for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Service: AWS KMS Decrypt failed (AWS KMS, KMSInternalException)
-/// ```
 #[derive(Clone)]
 pub struct ServiceError {
     data: Box<ErrorData>,
@@ -2457,12 +2397,6 @@ impl From<ServiceError> for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Dispatch: AWS KMS Decrypt failed (AWS KMS)
-/// ```
 #[derive(Clone)]
 pub struct DispatchError {
     data: Box<ErrorData>,
@@ -2584,12 +2518,6 @@ impl From<DispatchError> for Error {
 ///         _ => {}
 ///     }
 /// }
-/// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Internal: cache lock poisoned
 /// ```
 #[derive(Clone)]
 pub struct InternalError {

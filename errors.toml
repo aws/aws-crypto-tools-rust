@@ -11,7 +11,6 @@
 #   remote     whether the struct has `service()`, `resource()`, `code()`, and `request_id()`
 #   doc        the docs on the variant and its struct
 #   example    a doctest for the struct's docs: a function that handles the error; `{crate}` becomes the crate name
-#   prints     what `{}` prints for such an error, shown below the example
 #   default_retry          the retry kind a new error of this variant has
 #   credentials_codes      error codes for which `is_credentials()` is true
 #   reason                 the type `reason()` returns
@@ -52,7 +51,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Validation: the TTL must be greater than zero"
 
 [[variant]]
 name = "InvalidMaterials"
@@ -83,7 +81,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "InvalidMaterials: branch key must be 32 bytes, got 16 (Amazon DynamoDB, branch key my-branch-key)"
 
 [[variant]]
 name = "EncryptionContextMismatch"
@@ -106,7 +103,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "EncryptionContextMismatch: the value for encryption context key 'tenant' differs from the message's"
 
 [[variant]]
 name = "NoMatchingDataKey"
@@ -136,7 +132,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "NoMatchingDataKey: decrypt could not get decryption materials (keyring my-namespace/my-key; message has: other-namespace)"
 
 [[variant]]
 name = "Cryptographic"
@@ -160,7 +155,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Cryptographic: authentication tag did not match"
 
 [[variant]]
 name = "AccessDenied"
@@ -203,7 +197,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "AccessDenied: AWS KMS Decrypt failed (AWS KMS, KMS key arn:aws:kms:us-west-2:111122223333:key/1234abcd, AccessDeniedException, request 6f1c2e9a)"
 
 [[variant]]
 name = "ResourceNotFound"
@@ -236,7 +229,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "ResourceNotFound: no key store record for branch key my-branch-key (Amazon DynamoDB, branch key my-branch-key)"
 
 [[variant]]
 name = "Throttling"
@@ -271,7 +263,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Throttling: timed out waiting for another caller to fetch branch key my-branch-key (materials cache)"
 
 [[variant]]
 name = "Conflict"
@@ -303,7 +294,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Conflict: branch key my-branch-key was rotated concurrently (Amazon DynamoDB, branch key my-branch-key)"
 
 [[variant]]
 name = "Service"
@@ -329,7 +319,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Service: AWS KMS Decrypt failed (AWS KMS, KMSInternalException)"
 
 [[variant]]
 name = "Dispatch"
@@ -354,7 +343,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Dispatch: AWS KMS Decrypt failed (AWS KMS)"
 
 [[variant]]
 name = "Serialization"
@@ -377,7 +365,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Serialization: unsupported message version 3"
 
 [[variant]]
 name = "Io"
@@ -401,7 +388,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Io: could not write the plaintext"
 
 [[variant]]
 name = "Internal"
@@ -424,7 +410,6 @@ fn handle(err: &Error) {
     }
 }
 """
-prints = "Internal: cache lock poisoned"
 
 [[library]]
 name = "prim"
