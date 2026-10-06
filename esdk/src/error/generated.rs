@@ -21,9 +21,9 @@ use std::sync::Arc;
 use aws_mpl_primitives::error::{
     Collection, ConflictReason, DataKeyInfo, Resource, RetryKind, Service,
 };
+use aws_sdk_kms::operation::RequestId;
 use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
-use aws_types::request_id::RequestId;
 
 type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
