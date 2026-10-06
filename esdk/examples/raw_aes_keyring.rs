@@ -6,6 +6,7 @@
 //! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
+use aws_esdk::error::Error;
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
@@ -39,14 +40,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(keyring)
-            .build()?,
-    )
-    .await?;
+    let input = DecryptInput::builder()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .build()?;
+    let decrypted = match decrypt(&input).await {
+        Ok(output) => output,
+        Err(e) => {
+            match &e {
+                Error::NoMatchingDataKey(_) => {
+                    eprintln!("the message was encrypted under a different keyring");
+                }
+                Error::Cryptographic(_) | Error::Serialization(_) => {
+                    eprintln!("the message is corrupt or was tampered with");
+                }
+                _ => eprintln!("decrypt failed: {e}"),
+            }
+            return Err(e.into());
+        }
+    };
 
     assert_eq!(
         decrypted.plaintext, plaintext,

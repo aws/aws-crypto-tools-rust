@@ -11,7 +11,7 @@
 
 #include <chrono>
 #include <iostream>
-#include <vector>
+#include <string>
 #include <aws/esdk/EncryptionSDK.h>
 
 using namespace std::chrono_literals;
@@ -45,13 +45,14 @@ int main() {
         auto keyring_b = make_keyring();
 
         Aws::Esdk::EncryptionSDK esdk;
-        std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o'};
+        const std::string plaintext = "Hello";
 
         // Encrypt with A, decrypt with B: both go through the same cache.
+        // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
         auto encrypted = esdk.encrypt(plaintext, keyring_a);
         auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring_b);
 
-        if (plaintext != decrypted.plaintext) {
+        if (decrypted.plaintext.as_string_view() != plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;
         }

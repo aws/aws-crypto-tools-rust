@@ -124,8 +124,8 @@ make streaming_example
 ./streaming_example
 ```
 
-`make handling_errors_example` builds an example of retrying a hierarchical keyring decrypt
-and handling a branch key or key store table that does not exist.
+`make handling_errors_example` builds an example of handling the exceptions that a
+hierarchical keyring encrypt and decrypt throw.
 
 Examples that use the hierarchical keyring need AWS credentials, a KMS key, and a
 DynamoDB table; the rest run offline. The custom keyring has its own walkthrough

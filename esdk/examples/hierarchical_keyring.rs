@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use aws_crypto_mpl::key_store::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::error::{Error, Resource, Service};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
@@ -46,14 +47,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
-            .keyring(keyring.clone())
-            .build()?,
-    )
-    .await?;
+    let input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .build()?;
+    let encrypted = match encrypt(&input).await {
+        Ok(output) => output,
+        Err(e) => {
+            match &e {
+                Error::ResourceNotFound(not_found) => match not_found.resource() {
+                    Some(Resource::BranchKey(branch_key)) => {
+                        eprintln!("branch key {} is not in the key store", branch_key.id());
+                    }
+                    _ => eprintln!("an AWS resource does not exist: {e}"),
+                },
+                Error::AccessDenied(denied) => match denied.service() {
+                    Some(Service::Kms) => eprintln!("AWS KMS denied access: {e}"),
+                    Some(Service::DynamoDb) => eprintln!("DynamoDB denied access: {e}"),
+                    _ => eprintln!("access denied: {e}"),
+                },
+                _ => eprintln!("encrypt failed: {e}"),
+            }
+            return Err(e.into());
+        }
+    };
 
     let decrypted = decrypt(
         &DecryptInput::builder()

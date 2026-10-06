@@ -1,7 +1,7 @@
 // Your C++ code using the custom keyring.
 
 #include <iostream>
-#include <vector>
+#include <string>
 #include <aws/esdk/EncryptionSDK.h>
 
 // Declare the extern "C" constructor your Rust crate exports.
@@ -21,12 +21,13 @@ int main() {
         // Use it like any other keyring.
         Aws::Esdk::EncryptionSDK sdk;
 
-        std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+        const std::string plaintext = "Hello World";
+        // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
         auto encrypted = sdk.encrypt(plaintext, keyring);
 
         auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
 
-        if (plaintext != decrypted.plaintext) {
+        if (decrypted.plaintext.as_string_view() != plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;
         }
