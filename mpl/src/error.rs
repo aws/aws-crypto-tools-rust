@@ -31,6 +31,28 @@
 //! and their text can change in any release.
 //! Decide from the variant and its accessors, never from the message.
 //!
+//! ## What a minor or patch release can change
+//!
+//! Error handling that follows these rules keeps working across minor and patch releases.
+//! Code that depends on any of the following can break in one:
+//!
+//! - **Message text.** Any message, and what `{}`, `{:#}` and `{:?}` print, can change.
+//!   Decide from the variant and its accessors, never from the text.
+//! - **Errors that are not this library's own.** An MPL operation returns only [`Error`], never any other type.
+//!   A failure that reaches you any other way is a bug:
+//!   a panic, an [`Internal`](Error::Internal) error,
+//!   or a failure you can only recognize by a type in its source chain.
+//!   A minor or patch release can turn it into a specific variant,
+//!   so handle it in the catch-all arm rather than matching on it.
+//! - **The shape of the source chain.** Levels can be added or removed.
+//!   Reach a source with [`find_source`](Error::find_source),
+//!   not by calling `source()` a fixed number of times.
+//! - **Which variant a collection of failures gets.** When several failures resolve to one error,
+//!   the priority order between variants, and whose retry kind is kept, can change.
+//!   To act on each failure, use [`failures`](Error::failures).
+//! - **New variants and values.** `Error`, `Service`, `Resource`, `ConflictReason`, `RetryKind`
+//!   and `Collection` are `#[non_exhaustive]`, so every `match` needs a catch-all arm.
+//!
 //! **`{}` and `{:#}`.**
 //! `{}` prints this error: `Variant: message (details)`.
 //! `{:#}` adds each error in the source chain, without repeating what the previous one said.
@@ -193,6 +215,8 @@ impl Error {
     /// assert_eq!(err.collection(), Some(Collection::AllFailed));
     /// assert_eq!(err.collected().len(), 2);
     /// ```
+    /// The rule that picks the variant and retry kind can change in a minor or patch release;
+    /// callers that act on each failure use [`failures`](Self::failures).
     #[track_caller]
     #[must_use]
     pub fn all_failed(message: impl Into<String>, errors: impl IntoIterator<Item = Self>) -> Self {
@@ -233,6 +257,8 @@ impl Error {
     /// assert!(err.is_validation());
     /// assert_eq!(err.collection(), Some(Collection::AnyFailed));
     /// ```
+    /// The rule that picks the variant and retry kind can change in a minor or patch release;
+    /// callers that act on each failure use [`failures`](Self::failures).
     #[track_caller]
     #[must_use]
     pub fn any_failed(message: impl Into<String>, errors: impl IntoIterator<Item = Self>) -> Self {
@@ -296,6 +322,7 @@ impl Error {
 }
 
 /// Which variant a collection of mixed errors gets: the first present.
+/// Documented as changeable in a minor or patch release.
 const AGGREGATE_PRIORITY: &[Kind] = &[
     Kind::AccessDenied,
     Kind::ResourceNotFound,
