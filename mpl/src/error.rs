@@ -157,10 +157,10 @@ pub use aws_mpl_primitives::error::{
     BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,
     KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
+pub use aws_sdk_kms::operation::RequestId;
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind};
-pub use aws_types::request_id::RequestId;
 
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
@@ -355,8 +355,24 @@ const AGGREGATE_PRIORITY: &[Kind] = &[
     Kind::NoMatchingDataKey,
 ];
 
-// The codes the AWS SDK for Rust's retry classifier retries as throttling.
-use aws_runtime::retries::classifiers::THROTTLING_ERRORS as THROTTLING_CODES;
+/// The codes the AWS SDK for Rust's retry classifier retries as throttling.
+/// Keep in sync with `aws_runtime::retries::classifiers::THROTTLING_ERRORS`.
+const THROTTLING_CODES: &[&str] = &[
+    "Throttling",
+    "ThrottlingException",
+    "ThrottledException",
+    "RequestThrottledException",
+    "TooManyRequestsException",
+    "ProvisionedThroughputExceededException",
+    "TransactionInProgressException",
+    "RequestLimitExceeded",
+    "BandwidthLimitExceeded",
+    "LimitExceededException",
+    "RequestThrottled",
+    "SlowDown",
+    "PriorRequestNotComplete",
+    "EC2ThrottledException",
+];
 
 /// The codes the AWS SDK for Rust's retry classifier retries as transient
 /// (`aws_runtime::retries::classifiers::TRANSIENT_ERRORS`),
