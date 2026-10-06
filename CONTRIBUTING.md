@@ -46,8 +46,8 @@ An error's message, details, and `Debug` output reach logs, so they follow these
 - **Never include:** plaintext, data keys, branch key bytes, private keys, ciphertext bytes,
   or DynamoDB attribute values. Name an attribute and its type, not its value.
 - **Encryption context:** keys may appear; values may not.
-- **Allowed:** ARNs, table names, branch key IDs, keyring and CMM names, error codes,
-  and request IDs.
+- **Allowed:** ARNs, table names, branch key IDs, keyring and CMM names,
+  key provider IDs and key provider info, error codes, and request IDs.
 
 An error's `Debug` shows another library's error, such as an AWS SDK error, as its `Display` chain.
 The AWS SDK error's own `Debug` includes the raw HTTP response, whose body can hold a plaintext

@@ -108,10 +108,26 @@ async fn a_wrong_raw_aes_keyring_names_the_keyring_used() {
             "my-namespace/my-key"
         )))
     );
+    assert_eq!(e.encrypted_data_keys().len(), 1);
+    assert_eq!(
+        e.encrypted_data_keys()[0].key_provider_id(),
+        "other-namespace"
+    );
+    assert!(
+        e.encrypted_data_keys()[0]
+            .key_provider_info()
+            .starts_with(b"other-key")
+    );
     assert!(err.collected().is_empty());
     assert_eq!(
+        err.to_string(),
+        "NoMatchingDataKey: decrypt could not get decryption materials \
+         (keyring my-namespace/my-key; message has: other-namespace)"
+    );
+    assert_eq!(
         format!("{err:#}"),
-        "NoMatchingDataKey: decrypt could not get decryption materials (keyring my-namespace/my-key): \
+        "NoMatchingDataKey: decrypt could not get decryption materials \
+         (keyring my-namespace/my-key; message has: other-namespace): \
          encrypted data key 0 did not match the keyring, expected key provider id my-namespace"
     );
 }

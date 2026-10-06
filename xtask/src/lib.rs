@@ -43,6 +43,9 @@ pub struct Variant {
     /// A value of `reason`'s type, for the generated tests.
     #[serde(default)]
     pub reason_example: Option<String>,
+    /// Whether the struct has `encrypted_data_keys()`.
+    #[serde(default)]
+    pub data_keys: bool,
 }
 
 /// One `[[library]]`.
@@ -117,6 +120,9 @@ pub fn validate(spec: &Spec) -> Result<(), String> {
             return Err(format!("variant `{}` is defined twice", v.name));
         }
     }
+    if spec.variants.iter().filter(|v| v.data_keys).count() > 1 {
+        return Err("more than one variant sets `data_keys`; at most one can".to_owned());
+    }
     let mut libs = BTreeSet::new();
     for lib in &spec.libraries {
         if !libs.insert(lib.name.as_str()) {
@@ -184,6 +190,13 @@ fn source_has_reason_type(spec: &Spec, lib: &Library) -> bool {
             .iter()
             .any(|sv| &sv.name == v && sv.reason.is_some())
     })
+}
+
+/// `lib`'s variant with `encrypted_data_keys()`, if it has one.
+fn data_keys_variant<'a>(spec: &'a Spec, lib: &Library) -> Option<&'a Variant> {
+    spec.variants
+        .iter()
+        .find(|v| v.data_keys && lib.variants.contains(&v.name))
 }
 
 fn known_libraries<'a>(spec: &'a Spec, lib: &'a Library) -> Result<Vec<&'a Library>, String> {
@@ -283,6 +296,10 @@ impl Gen<'_> {
             .find_map(|v| v.reason.as_deref())
     }
 
+    fn data_keys(&self) -> Option<&Variant> {
+        data_keys_variant(self.spec, self.lib)
+    }
+
     fn library(&self, name: &str) -> &Library {
         self.spec
             .libraries
@@ -331,6 +348,11 @@ impl Gen<'_> {
             .reason_type()
             .map(|r| format!("{r}, "))
             .unwrap_or_default();
+        let data_key_info = if self.data_keys().is_some() {
+            "DataKeyInfo, "
+        } else {
+            ""
+        };
         let mut s = format!(
             r"#![allow(
     clippy::doc_markdown,
@@ -350,7 +372,7 @@ use std::backtrace::Backtrace;
 use std::fmt;
 use std::sync::Arc;
 
-use {shared}::{{{reason}Collection, Resource, RetryKind, Service}};
+use {shared}::{{{reason}Collection, {data_key_info}Resource, RetryKind, Service}};
 "
         );
         if self.lib.sdk {
@@ -397,6 +419,27 @@ use aws_types::request_id::RequestId;
         } else {
             ""
         };
+        let has_keys = self.data_keys().is_some();
+        let keys_field = if has_keys {
+            "    data_keys: Vec<DataKeyInfo>,\n"
+        } else {
+            ""
+        };
+        let keys_init = if has_keys {
+            "            data_keys: Vec::new(),\n"
+        } else {
+            ""
+        };
+        let keys_debug = if has_keys {
+            "        if !self.data_keys.is_empty() {\n            d.field(\"encrypted_data_keys\", &self.data_keys);\n        }\n"
+        } else {
+            ""
+        };
+        let level_keys = if has_keys {
+            "provider_ids(&self.data_keys)"
+        } else {
+            "Vec::new()"
+        };
         let (meta_field, meta_init) = if self.lib.sdk {
             (
                 "    meta: Option<ErrorMetadata>,\n",
@@ -430,7 +473,7 @@ struct ErrorData {{
     message: String,
     retry: Option<RetryKind>,
     remote: Remote,
-{reason_field}{meta_field}    source: Option<ArcError>,
+{reason_field}{keys_field}{meta_field}    source: Option<ArcError>,
     collection: Option<Collection>,
     collected: Vec<Error>,
     backtrace: Arc<Backtrace>,
@@ -442,7 +485,7 @@ impl ErrorData {{
             message,
             retry: None,
             remote: Remote::default(),
-{reason_init}{meta_init}            source: None,
+{reason_init}{keys_init}{meta_init}            source: None,
             collection: None,
             collected: Vec::new(),
             backtrace: Arc::new(Backtrace::capture()),
@@ -499,6 +542,7 @@ impl ErrorData {{
             name,
             message: &self.message,
             details,
+            data_keys: {level_keys},
             tried: tried(self.collected.iter().map(Error::resource)),
             collected: self.collected.iter().map(as_display).collect(),
         }}
@@ -525,7 +569,7 @@ impl ErrorData {{
                 d.field("request_id", request_id);
             }}
         }}
-{reason_debug}        if let Some(source) = &self.source {{
+{reason_debug}{keys_debug}        if let Some(source) = &self.source {{
             let source: &(dyn std::error::Error + 'static) = &**source;
             if level_of(source).is_some() {{
                 d.field("source", &source);
@@ -557,6 +601,11 @@ impl ErrorData {{
         } else {
             ""
         };
+        let data_keys = if self.data_keys().is_some() {
+            "    pub data_keys: Vec<DataKeyInfo>,\n"
+        } else {
+            ""
+        };
         format!(
             r"/// An error's fields, for a library that converts this library's errors.
 ///
@@ -572,7 +621,7 @@ pub struct ErrorParts {{
     pub resource: Option<Resource>,
     pub code: Option<String>,
     pub request_id: Option<String>,
-{reason}{meta}    pub collection: Option<Collection>,
+{reason}{data_keys}{meta}    pub collection: Option<Collection>,
     pub collected: Vec<Error>,
     pub source: Option<ArcError>,
     pub backtrace: Arc<Backtrace>,
@@ -591,22 +640,61 @@ pub struct ErrorParts {{
             } else {
                 format!("{}::error::Error", lib.crate_name)
             };
-            let _ = writeln!(
-                level_of,
-                "    if let Some(e) = e.downcast_ref::<{path}>() {{\n        return Some(level!(e));\n    }}"
-            );
+            match data_keys_variant(self.spec, lib) {
+                Some(v) => {
+                    let _ = writeln!(
+                        level_of,
+                        "    if let Some(e) = e.downcast_ref::<{path}>() {{\n        let mut level = level!(e);\n        if let {path}::{n}(e) = e {{\n            level.data_keys = provider_ids(e.encrypted_data_keys());\n        }}\n        return Some(level);\n    }}",
+                        n = v.name
+                    );
+                }
+                None => {
+                    let _ = writeln!(
+                        level_of,
+                        "    if let Some(e) = e.downcast_ref::<{path}>() {{\n        return Some(level!(e));\n    }}"
+                    );
+                }
+            }
         }
+        let provider_ids = if known
+            .iter()
+            .any(|lib| data_keys_variant(self.spec, lib).is_some())
+        {
+            format!(
+                r"/// The distinct key provider IDs of `keys`, in order.
+fn provider_ids(keys: &[{data_key_info}]) -> Vec<&str> {{
+    let mut ids: Vec<&str> = Vec::new();
+    for key in keys {{
+        if !ids.contains(&key.key_provider_id()) {{
+            ids.push(key.key_provider_id());
+        }}
+    }}
+    ids
+}}
+
+",
+                data_key_info = if self.data_keys().is_some() {
+                    "DataKeyInfo".to_owned()
+                } else {
+                    format!("{}::DataKeyInfo", self.lib.shared)
+                }
+            )
+        } else {
+            String::new()
+        };
         format!(
             r#"/// One error in a chain, as `Display` prints it.
 struct Level<'a> {{
     name: &'static str,
     message: &'a str,
     details: Vec<String>,
+    /// The key provider IDs of the message's encrypted data keys.
+    data_keys: Vec<&'a str>,
     tried: Vec<&'a str>,
     collected: Vec<&'a dyn fmt::Display>,
 }}
 
-/// The details `Display` prints after the message, in order.
+{provider_ids}/// The details `Display` prints after the message, in order.
 fn details(
     service: Option<&Service>,
     resource: Option<&Resource>,
@@ -652,6 +740,7 @@ macro_rules! level {{
             name: e.name(),
             message: e.message(),
             details: details(e.service(), e.resource(), e.code(), e.request_id()),
+            data_keys: Vec::new(),
             tried: tried(e.collected().iter().map(|c| c.resource())),
             collected: e.collected().iter().map(as_display).collect(),
         }}
@@ -694,8 +783,15 @@ fn write_level(f: &mut fmt::Formatter<'_>, level: &Level<'_>, prev: Option<&Leve
         .filter(|d| prev.is_none_or(|p| !p.details.contains(d)))
         .map(String::as_str)
         .collect();
+    let mut parts = Vec::new();
     if !details.is_empty() {{
-        write!(f, " ({{}})", details.join(", "))?;
+        parts.push(details.join(", "));
+    }}
+    if !level.data_keys.is_empty() && prev.is_none_or(|p| p.data_keys != level.data_keys) {{
+        parts.push(format!("message has: {{}}", level.data_keys.join(", ")));
+    }}
+    if !parts.is_empty() {{
+        write!(f, " ({{}})", parts.join("; "))?;
     }}
     if !level.tried.is_empty() {{
         write!(f, "; tried: {{}}", level.tried.join(", "))?;
@@ -822,17 +918,27 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
         } else {
             ""
         };
-        let shared_extra = if reason_copy.is_empty() && meta_copy.is_empty() {
+        let mut shared_extra = if reason_copy.is_empty() && meta_copy.is_empty() {
             String::new()
         } else {
             format!(
                 "        if let Some((first, rest)) = collected.split_first() {{\n{reason_copy}{meta_copy}        }}\n"
             )
         };
+        if let Some(v) = self.data_keys() {
+            let _ = write!(
+                shared_extra,
+                "        if kind == Kind::{n}\n            && let Some((first, rest)) = collected.split_first()\n            && rest.iter().all(|e| e.data().data_keys == first.data().data_keys)\n        {{\n            data.data_keys.clone_from(&first.data().data_keys);\n        }}\n",
+                n = v.name
+            );
+        }
         let wrap_extra = {
             let mut s = String::new();
             if self.reason_type().is_some() {
                 s.push_str("        data.reason.clone_from(&inner.data().reason);\n");
+            }
+            if self.data_keys().is_some() {
+                s.push_str("        data.data_keys.clone_from(&inner.data().data_keys);\n");
             }
             if self.lib.sdk {
                 s.push_str("        data.meta.clone_from(&inner.data().meta);\n");
@@ -874,6 +980,11 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
         };
         let parts_meta = if self.lib.sdk {
             "            meta: data.meta.clone(),\n"
+        } else {
+            ""
+        };
+        let parts_keys = if self.data_keys().is_some() {
+            "            data_keys: data.data_keys.clone(),\n"
         } else {
             ""
         };
@@ -1100,7 +1211,7 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
             resource: data.remote.resource.clone(),
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),
-{parts_reason}{parts_meta}            collection: data.collection,
+{parts_reason}{parts_keys}{parts_meta}            collection: data.collection,
             collected: data.collected.clone(),
             source: data.source.clone(),
             backtrace: Arc::clone(&data.backtrace),
@@ -1186,6 +1297,25 @@ impl std::error::Error for Error {{
                 n = v.name
             );
         }
+        if let Some(v) = self.data_keys() {
+            let _ = writeln!(
+                s,
+                r"    /// Name the message's encrypted data keys, which
+    /// [`{st}::encrypted_data_keys`] returns.
+    ///
+    /// Only a [`{n}`](Self::{n}) error keeps them; any other variant is returned unchanged.
+    #[must_use]
+    pub fn with_encrypted_data_keys(mut self, keys: impl IntoIterator<Item = DataKeyInfo>) -> Self {{
+        if let Self::{n}(e) = &mut self {{
+            e.data.data_keys = keys.into_iter().collect();
+        }}
+        self
+    }}
+",
+                n = v.name,
+                st = v.strukt
+            );
+        }
         s.push_str("}\n\n");
         s
     }
@@ -1212,6 +1342,20 @@ impl std::error::Error for Error {{
                 "        data.meta = parts.meta;\n"
             } else {
                 ""
+            };
+            let (keys, parts_keys) = match (self.data_keys(), data_keys_variant(self.spec, source))
+            {
+                (Some(v), Some(sv)) if v.name == sv.name => (
+                    format!(
+                        "        if kind == Kind::{n}\n            && let {path}::{n}(e) = &inner\n        {{\n            data.data_keys = e.encrypted_data_keys().to_vec();\n        }}\n",
+                        n = v.name
+                    ),
+                    format!(
+                        "        if kind == Kind::{n} {{\n            data.data_keys = parts.data_keys;\n        }}\n",
+                        n = v.name
+                    ),
+                ),
+                _ => (String::new(), String::new()),
             };
             let source_has_reason = source.variants.iter().any(|v| {
                 self.spec
@@ -1253,7 +1397,7 @@ impl std::error::Error for Error {{
             code: inner.code().map(str::to_owned),
             request_id: inner.request_id().map(str::to_owned),
         }};
-{reason}{meta}        data.source = Some(Arc::new(inner));
+{reason}{keys}{meta}        data.source = Some(Arc::new(inner));
         Self::from_data(kind, data)
     }}
 
@@ -1274,7 +1418,7 @@ impl std::error::Error for Error {{
             code: parts.code,
             request_id: parts.request_id,
         }};
-{parts_reason}{parts_meta}        data.collection = parts.collection;
+{parts_reason}{parts_keys}{parts_meta}        data.collection = parts.collection;
         data.collected = parts.collected.iter().map(Self::from_{lib}_parts).collect();
         data.source = parts.source;
         data.backtrace = parts.backtrace;
@@ -1452,6 +1596,19 @@ impl {st} {{
                 codes.join(" | ")
             );
         }
+        if v.data_keys {
+            s.push_str(
+                r"
+    /// The message's encrypted data keys, by key provider; empty when unknown.
+    ///
+    /// Never the wrapped keys themselves.
+    #[must_use]
+    pub fn encrypted_data_keys(&self) -> &[DataKeyInfo] {
+        &self.data.data_keys
+    }
+",
+            );
+        }
         if let Some(r) = &v.reason {
             let _ = write!(
                 s,
@@ -1614,6 +1771,70 @@ impl From<{st}> for Error {{
             }
             s.push_str("    }\n");
         }
+        if let Some(v) = self.data_keys() {
+            let n = &v.name;
+            let st = &v.strukt;
+            let other = self
+                .variants()
+                .into_iter()
+                .find(|o| o.name != *n)
+                .map_or("Internal", |o| o.name.as_str())
+                .to_owned();
+            let short = if self.lib.short_constructors {
+                let f = v.predicate.trim_start_matches("is_");
+                format!(
+                    "        assert_eq!(keys_of(&Error::{f}(\"m\").with_encrypted_data_keys(keys())), keys());\n        let other = Error::new(Kind::{other}, \"m\").with_encrypted_data_keys(keys());\n        assert!(other.data().data_keys.is_empty());\n"
+                )
+            } else {
+                String::new()
+            };
+            let _ = write!(
+                s,
+                r#"
+    #[test]
+    fn encrypted_data_keys_are_shown_and_kept() {{
+        fn keys() -> Vec<DataKeyInfo> {{
+            vec![
+                DataKeyInfo::new("aws-kms", b"arn:aws:kms:us-west-2:111122223333:key/k".to_vec()),
+                DataKeyInfo::new("aws-kms", b"arn:aws:kms:us-east-1:111122223333:key/k".to_vec()),
+                DataKeyInfo::new("raw", vec![0xff, 0x00]),
+            ]
+        }}
+        fn keys_of(e: &Error) -> Vec<DataKeyInfo> {{
+            match e {{
+                Error::{n}(e) => e.encrypted_data_keys().to_vec(),
+                _ => Vec::new(),
+            }}
+        }}
+        let s = {st}::builder().message("m").encrypted_data_keys(keys()).build();
+        assert_eq!(s.encrypted_data_keys(), keys().as_slice());
+        assert_eq!(s.to_string(), "{n}: m (message has: aws-kms, raw)");
+        let debug = format!("{{s:?}}");
+        assert!(debug.contains("arn:aws:kms:us-east-1:111122223333:key/k"), "{{debug}}");
+        assert!(debug.contains("0xff00"), "{{debug}}");
+        assert!({st}::new("m").encrypted_data_keys().is_empty());
+
+        let e = Error::from(s);
+        let wrapped = Error::wrap("outer", e.clone());
+        assert_eq!(keys_of(&wrapped), keys());
+        assert_eq!(format!("{{wrapped:#}}"), "{n}: outer (message has: aws-kms, raw): m");
+        assert_eq!(wrapped.__parts().data_keys, keys());
+
+        let shared = Error::collect(Kind::{n}, None, Collection::AllFailed, "all", vec![e.clone(), e.clone()]);
+        assert_eq!(keys_of(&shared), keys());
+        let mixed = Error::collect(
+            Kind::{n},
+            None,
+            Collection::AllFailed,
+            "all",
+            vec![e, Error::new(Kind::{n}, "none")],
+        );
+        assert!(keys_of(&mixed).is_empty());
+        assert_eq!(keys_of(&mixed.failures()[0]), keys());
+{short}    }}
+"#
+            );
+        }
         s.push_str("}\n");
         s
     }
@@ -1638,6 +1859,9 @@ pub mod builders {{
         if let Some(r) = reason_ty {
             let _ = writeln!(s, "    use super::{r};");
         }
+        if self.data_keys().is_some() {
+            s.push_str("    use super::DataKeyInfo;\n");
+        }
         for v in self.variants() {
             let st = &v.strukt;
             let n = &v.name;
@@ -1648,6 +1872,14 @@ pub mod builders {{
             let reason_build = match (&v.reason, reason_ty) {
                 (Some(_), _) => "        data.reason = self.reason;\n",
                 _ => "",
+            };
+            let (keys_field, keys_build) = if v.data_keys {
+                (
+                    "        data_keys: Vec<DataKeyInfo>,\n",
+                    "            data.data_keys = self.data_keys;\n",
+                )
+            } else {
+                ("", "")
             };
             let _ = write!(
                 s,
@@ -1660,7 +1892,7 @@ pub mod builders {{
         source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
-{reason_field}    }}
+{reason_field}{keys_field}    }}
 
     impl {st}Builder {{
         /// What went wrong, for people and logs.
@@ -1713,6 +1945,17 @@ pub mod builders {{
 ",
                 );
             }
+            if v.data_keys {
+                s.push_str(
+                    r"
+        /// The message's encrypted data keys, by key provider.
+        pub fn encrypted_data_keys(mut self, keys: impl IntoIterator<Item = DataKeyInfo>) -> Self {
+            self.data_keys = keys.into_iter().collect();
+            self
+        }
+",
+                );
+            }
             if let Some(r) = &v.reason {
                 let _ = write!(
                     s,
@@ -1735,7 +1978,7 @@ pub mod builders {{
             let mut data = ErrorData::new(self.message);
             data.retry = self.retry.or_else(|| ErrorData::default_retry(Kind::{n}));
             data.remote = self.remote;
-{reason_build}            data.source = self.source;
+{reason_build}{keys_build}            data.source = self.source;
             super::{st} {{ data: Box::new(data) }}
         }}
     }}

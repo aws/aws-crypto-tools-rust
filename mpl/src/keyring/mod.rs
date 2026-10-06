@@ -15,6 +15,8 @@
 //!
 //! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to
 //!   this keyring, judged by its key provider ID and key provider info, before trying to decrypt.
+//!   Pass the encrypted data keys to [`with_encrypted_data_keys`](Error::with_encrypted_data_keys)
+//!   so the caller can see which key providers the message has.
 //! - **[`Cryptographic`](Error::Cryptographic)** when an encrypted data key belongs to this keyring
 //!   but does not decrypt.
 //! - **[`InvalidMaterials`](Error::InvalidMaterials)** when the materials are inconsistent,
@@ -30,6 +32,13 @@
 //! # let io_error = std::io::Error::other("connection reset");
 //! let err = Error::cryptographic("encrypted data key 0 did not decrypt").with_source(io_error);
 //! assert!(err.is_cryptographic());
+//!
+//! # let encrypted_data_keys: Vec<aws_crypto_mpl::structures::EncryptedDataKey> = Vec::new();
+//! use aws_crypto_mpl::error::DataKeyInfo;
+//!
+//! let err = Error::no_matching_data_key("no encrypted data key belongs to this keyring")
+//!     .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from));
+//! assert!(err.is_no_matching_data_key());
 //! ```
 //!
 //! When you try several encrypted data keys and each fails, return them together with

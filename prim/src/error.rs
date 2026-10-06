@@ -260,6 +260,64 @@ impl From<CmmResource> for Resource {
     }
 }
 
+/// An encrypted data key in a message, by its key provider.
+///
+/// Never holds the wrapped key itself.
+///
+/// ```
+/// use aws_mpl_primitives::error::DataKeyInfo;
+///
+/// let key = DataKeyInfo::new("aws-kms", b"arn:aws:kms:us-west-2:111122223333:key/1234abcd".to_vec());
+/// assert_eq!(key.key_provider_id(), "aws-kms");
+/// assert_eq!(key.key_provider_info(), b"arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct DataKeyInfo {
+    key_provider_id: String,
+    key_provider_info: KeyProviderInfo,
+}
+
+impl DataKeyInfo {
+    /// An encrypted data key with key provider ID `id` and key provider info `info`.
+    #[must_use]
+    pub fn new(id: impl Into<String>, info: impl Into<Vec<u8>>) -> Self {
+        Self {
+            key_provider_id: id.into(),
+            key_provider_info: KeyProviderInfo(info.into()),
+        }
+    }
+
+    /// The key provider ID, for example `aws-kms`.
+    #[must_use]
+    pub fn key_provider_id(&self) -> &str {
+        &self.key_provider_id
+    }
+
+    /// The key provider info, for example a KMS key ARN or a branch key ID.
+    #[must_use]
+    pub fn key_provider_info(&self) -> &[u8] {
+        &self.key_provider_info.0
+    }
+}
+
+/// Key provider info, which `Debug` shows as text when it is UTF-8 and as hex otherwise.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct KeyProviderInfo(Vec<u8>);
+
+impl fmt::Debug for KeyProviderInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Ok(text) = std::str::from_utf8(&self.0) {
+            return fmt::Debug::fmt(text, f);
+        }
+        f.write_str("0x")?;
+        for byte in &self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 /// How to back off before retrying an error that might succeed later.
 ///
 /// Mirrors `aws_smithy_types::retry::ErrorKind`,

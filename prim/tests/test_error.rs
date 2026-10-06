@@ -6,7 +6,7 @@
 use std::error::Error as _;
 
 use aws_mpl_primitives::error::{
-    BranchKey, Cache, CmmResource, ConflictReason, CryptographicError, DynamoDbTable,
+    BranchKey, Cache, CmmResource, ConflictReason, CryptographicError, DataKeyInfo, DynamoDbTable,
     InternalError, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
 use aws_mpl_primitives::{DigestAlg, Error, hkdf};
@@ -128,6 +128,22 @@ fn each_resource_payload_converts_into_its_variant() {
     assert!(matches!(&keyring, Resource::Keyring(k) if k.name() == "ns/key"));
     let cmm = Resource::from(CmmResource::new("default"));
     assert!(matches!(&cmm, Resource::Cmm(c) if c.name() == "default"));
+}
+
+#[test]
+fn data_key_info_debug_shows_utf8_info_as_text_and_other_info_as_hex() {
+    let text = DataKeyInfo::new("aws-kms-hierarchy", b"my-branch-key".to_vec());
+    assert_eq!(text.key_provider_id(), "aws-kms-hierarchy");
+    assert_eq!(text.key_provider_info(), b"my-branch-key");
+    assert_eq!(
+        format!("{text:?}"),
+        r#"DataKeyInfo { key_provider_id: "aws-kms-hierarchy", key_provider_info: "my-branch-key" }"#
+    );
+    let binary = DataKeyInfo::new("raw", vec![0x00, 0xab, 0xff]);
+    assert_eq!(
+        format!("{binary:?}"),
+        r#"DataKeyInfo { key_provider_id: "raw", key_provider_info: 0x00abff }"#
+    );
 }
 
 #[test]

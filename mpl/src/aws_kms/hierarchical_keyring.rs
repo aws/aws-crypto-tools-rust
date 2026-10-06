@@ -10,7 +10,7 @@
 //! [`super::cache_entry_identifier`].
 
 use crate::Error;
-use crate::error::{Cache, Kind, Resource};
+use crate::error::{Cache, DataKeyInfo, Kind, Resource};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -535,10 +535,10 @@ impl Keyring for HierarchicalKeyring {
         // the keystore was consulted, so this is not an aggregate of failures
         // but a distinct one — no encrypted data key matched this keyring.
         if collected_errors.is_empty() {
-            return Err(Error::new(
-                Kind::NoMatchingDataKey,
-                "no encrypted data key matched",
-            ));
+            return Err(
+                Error::new(Kind::NoMatchingDataKey, "no encrypted data key matched")
+                    .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from)),
+            );
         }
 
         // At least one candidate was attempted and every one failed. The

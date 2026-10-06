@@ -1582,6 +1582,7 @@ mod onencrypt {
 mod ondecrypt {
     use super::*;
     use aws_crypto_mpl::Keyring;
+    use aws_crypto_mpl::error::DataKeyInfo;
     use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
 
     /// The 16-byte representation of `FAKE_BRANCH_KEY_VERSION`. Hard-
@@ -1824,6 +1825,20 @@ mod ondecrypt {
         assert!(
             err.collected().is_empty(),
             "a filtered-out EDK is not an attempt, so there is nothing to collect; got: {err}",
+        );
+        let Error::NoMatchingDataKey(e) = &err else {
+            unreachable!()
+        };
+        assert_eq!(
+            e.encrypted_data_keys(),
+            [DataKeyInfo::new(
+                "some-other-provider",
+                b"some-other-info".to_vec()
+            )]
+        );
+        assert_eq!(
+            err.to_string(),
+            "NoMatchingDataKey: no encrypted data key matched (message has: some-other-provider)"
         );
     }
 
