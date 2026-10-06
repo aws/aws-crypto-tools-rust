@@ -102,26 +102,21 @@ struct StormTrackingCmcInner {
     now: Clock,
 }
 
-/// Default [`StormTrackingCmcBuilder::entry_capacity`], from Dafny's
-/// `StormTracker.DefaultStorm()`.
+// The defaults match Dafny's `StormTracker.DefaultStorm()`.
+
+/// Default [`StormTrackingCmcBuilder::entry_capacity`].
 pub const DEFAULT_STORM_ENTRY_CAPACITY: usize = 1000;
-/// Default [`StormTrackingCmcBuilder::grace_period`], from Dafny's
-/// `StormTracker.DefaultStorm()`.
+/// Default [`StormTrackingCmcBuilder::grace_period`].
 pub const DEFAULT_STORM_GRACE_PERIOD: Duration = Duration::from_secs(10);
-/// Default [`StormTrackingCmcBuilder::grace_interval`], from Dafny's
-/// `StormTracker.DefaultStorm()`.
+/// Default [`StormTrackingCmcBuilder::grace_interval`].
 pub const DEFAULT_STORM_GRACE_INTERVAL: Duration = Duration::from_secs(1);
-/// Default [`StormTrackingCmcBuilder::fan_out`], from Dafny's
-/// `StormTracker.DefaultStorm()`.
+/// Default [`StormTrackingCmcBuilder::fan_out`].
 pub const DEFAULT_STORM_FAN_OUT: usize = 20;
-/// Default [`StormTrackingCmcBuilder::inflight_ttl`], from Dafny's
-/// `StormTracker.DefaultStorm()`.
-///
-/// The spec lists 20, which exceeds the default grace period
-/// and so breaks the spec's own "Inflight TTL MUST be less than or equal to the Grace Period" rule.
+/// Default [`StormTrackingCmcBuilder::inflight_ttl`].
+// Not the spec's 20 s, which would break the spec's rule
+// "Inflight TTL MUST be less than or equal to the Grace Period" with the 10 s default grace period.
 pub const DEFAULT_STORM_INFLIGHT_TTL: Duration = Duration::from_secs(10);
-/// Default [`StormTrackingCmcBuilder::sleep`], from Dafny's
-/// `StormTracker.DefaultStorm()`.
+/// Default [`StormTrackingCmcBuilder::sleep`].
 pub const DEFAULT_STORM_SLEEP: Duration = Duration::from_millis(20);
 
 /// Another caller held the in-flight slot for this key past `inflight_ttl`.
@@ -138,7 +133,7 @@ fn inflight_ttl_exceeded() -> Error {
 }
 
 impl StormTrackingCmc {
-    /// Start a builder for `StormTrackingCmc`. Every setter is optional.
+    /// Start a builder for `StormTrackingCmc`.
     #[must_use]
     pub fn builder() -> StormTrackingCmcBuilder {
         StormTrackingCmcBuilder::default()
@@ -149,29 +144,27 @@ impl StormTrackingCmc {
         self.inner.local.entry_capacity()
     }
 
-    /// Number of least-recently-used entries each get checks for expired
-    /// entries to evict.
+    /// How many least-recently-used entries each get checks for expired entries to evict.
     pub fn entry_pruning_tail_size(&self) -> usize {
         self.inner.local.entry_pruning_tail_size()
     }
 
-    /// Time after which an inflight refresh is no longer considered
-    /// inflight.
+    /// How long one caller has to refresh an entry before another caller may try.
     pub fn grace_interval(&self) -> Duration {
         self.inner.grace_interval
     }
 
-    /// Maximum number of keys that can have a refresh inflight at once.
+    /// Maximum number of refreshes in flight at once.
     pub fn fan_out(&self) -> usize {
         self.inner.fan_out
     }
 
-    /// Time a waiting request may stay inflight before it fails.
+    /// How long a caller waits for another caller's refresh before failing.
     pub fn inflight_ttl(&self) -> Duration {
         self.inner.inflight_ttl
     }
 
-    /// Time a blocked request sleeps before reexamining the cache.
+    /// How long a waiting caller sleeps between checks of the cache.
     pub fn sleep(&self) -> Duration {
         self.inner.sleep
     }
@@ -400,8 +393,7 @@ impl StormTrackingCmc {
 }
 
 /// Builder for [`StormTrackingCmc`], returned by [`StormTrackingCmc::builder`].
-/// Every setter is optional;
-/// [`build`](Self::build) applies the default documented on each setter to any value left unset.
+/// Every setter is optional; an unset value takes the default documented on its setter.
 #[derive(Clone, Default)]
 pub struct StormTrackingCmcBuilder {
     entry_capacity: Option<usize>,
@@ -436,43 +428,47 @@ impl StormTrackingCmcBuilder {
         self
     }
 
-    /// Set the number of least-recently-used entries each get checks for
-    /// expired entries to evict. Defaults to 1.
+    /// Set how many least-recently-used entries each get checks for expired entries to evict.
+    /// Defaults to 1.
     #[must_use]
     pub const fn entry_pruning_tail_size(mut self, n: usize) -> Self {
         self.entry_pruning_tail_size = Some(n);
         self
     }
 
-    /// Set the grace period. Defaults to 10 seconds.
+    /// Set how long before an entry expires the cache sends one caller to refresh it.
+    /// Defaults to 10 seconds.
     #[must_use]
     pub const fn grace_period(mut self, d: Duration) -> Self {
         self.grace_period = Some(d);
         self
     }
 
-    /// Set the grace interval. Defaults to 1 second.
+    /// Set how long one caller has to refresh an entry before another caller may try.
+    /// Defaults to 1 second.
     #[must_use]
     pub const fn grace_interval(mut self, d: Duration) -> Self {
         self.grace_interval = Some(d);
         self
     }
 
-    /// Set the fan-out. Defaults to 20. Must be at least 1.
+    /// Set the maximum number of refreshes in flight at once.
+    /// Defaults to 20. Must be at least 1.
     #[must_use]
     pub const fn fan_out(mut self, n: usize) -> Self {
         self.fan_out = Some(n);
         self
     }
 
-    /// Set the inflight TTL. Defaults to 10 seconds.
+    /// Set how long a caller waits for another caller's refresh before failing.
+    /// Defaults to 10 seconds.
     #[must_use]
     pub const fn inflight_ttl(mut self, d: Duration) -> Self {
         self.inflight_ttl = Some(d);
         self
     }
 
-    /// Set how long a blocked request sleeps before reexamining the cache.
+    /// Set how long a waiting caller sleeps between checks of the cache.
     /// Defaults to 20 milliseconds.
     #[must_use]
     pub const fn sleep(mut self, d: Duration) -> Self {
@@ -549,11 +545,11 @@ impl StormTrackingCmcBuilder {
         self
     }
 
-    /// Apply defaults, validate the settings, and construct the cache.
+    /// Construct the cache.
     ///
     /// # Errors
     ///
-    /// Returns a [`Kind::Validation`](crate::ErrorKind::Validation) error if:
+    /// Returns a validation error ([`Error::is_validation`]) if:
     /// - `fan_out`, `inflight_ttl`, or `sleep` is 0, or
     /// - `grace_interval` exceeds `inflight_ttl`.
     pub fn build(self) -> Result<StormTrackingCmc, Error> {

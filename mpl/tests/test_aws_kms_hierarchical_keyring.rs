@@ -418,12 +418,10 @@ fn build_with_branch_key_id_supplier_succeeds() {
     assert!(keyring.branch_key_id_supplier().is_some());
 }
 
-// ─── Cache wiring tests: which Cmc the keyring stores ───────────────────────
+// Cache wiring tests
 //
-// Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to the
-// cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
-// and is deliberately not re-derived through the keyring. These tests check
-// only which cache the keyring stores and the grace-period bound it enforces.
+// These check only which cache the keyring stores and the grace period bound it enforces.
+// Cache behavior is tested in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`.
 
 #[test]
 fn build_without_cache_uses_default_cmc() {
@@ -1383,8 +1381,7 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
     .unwrap()
 }
 
-/// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
-/// keyring-local `LocalCmc`.
+/// Build a keyring over a [`FakeKeystore`] with a static branch key id and its own `LocalCmc`.
 fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKeyring {
     HierarchicalKeyring::builder()
         .key_store(keystore)

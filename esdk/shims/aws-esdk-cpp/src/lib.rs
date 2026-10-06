@@ -318,7 +318,8 @@ mod ffi {
         kms_client: *const MplKmsClient,
     }
 
-    /// Storm-tracking cache settings. An unset field keeps the core ESDK's default.
+    /// Storm-tracking cache settings.
+    /// An unset field keeps the core ESDK's default.
     struct StormTrackingCmcOptions {
         entry_capacity: OptU32,
         entry_pruning_tail_size: OptU32,
@@ -341,7 +342,7 @@ mod ffi {
         branch_key_id: String,
         key_store: *const KeyStore,
         ttl: Duration,
-        /// Null defers to the core ESDK's default cache.
+        /// Null when unset; the keyring then builds its own default cache.
         cache: *const CryptographicMaterialsCache,
         partition_id: OptString,
     }
@@ -1318,7 +1319,6 @@ fn create_hierarchical_keyring(
     //# - When a cache is supplied, creating a hierarchical keyring MUST reference that
     //# exact cache, so several keyrings given the same cache share it.
     //
-    // A null handle means "not supplied", so the core builds its own default cache.
     // SAFETY: a non-null handle is a valid cache borrowed for this call.
     let cache = unsafe { input.cache.as_ref() }.map(|c| c.inner.clone());
 

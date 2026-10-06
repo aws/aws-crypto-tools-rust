@@ -110,9 +110,8 @@ async fn build_keystore() -> BranchKeyStore {
 /// Long enough that no test races an expiry.
 const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
-/// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
-/// `LocalCmc`. Every test varies only these three things, so they share one
-/// fixture.
+/// Build a keyring over `keystore` for `branch_key_id`, with its own `LocalCmc`.
+/// Every test varies only these three things, so they share one fixture.
 fn keyring_for(
     keystore: impl Keystore + 'static,
     branch_key_id: &str,
@@ -413,9 +412,9 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
 //
 // These four tests mirror the Dafny `TestSharedCache*` suites. They each
 // build two `HierarchicalKeyring`s (HK1, HK2) that share a single
-// `LocalCmc` by holding clones of one `SharedCmc`. HK1's keystore uses a us-west-2 KMS
-// client; HK2's keystore uses a us-east-2 KMS client. KEY_ARN is in
-// us-west-2, so any KMS Decrypt issued by HK2's keystore fails.
+// `LocalCmc` through clones of one `SharedCmc`.
+// HK1's keystore uses a us-west-2 KMS client; HK2's keystore uses a us-east-2 KMS client.
+// KEY_ARN is in us-west-2, so any KMS Decrypt issued by HK2's keystore fails.
 //
 // The four tests differ only in (partition_id, logical_keystore_name)
 // configuration and observe whether HK1's cache entry is reachable from
@@ -429,7 +428,7 @@ fn shared_cache_materials() -> EncryptionMaterials {
     fresh_materials()
 }
 
-/// Build a fresh `LocalCmc` whose clones HK1 and HK2 share.
+/// A `SharedCmc` over a fresh `LocalCmc`, for HK1 and HK2 to share.
 fn shared_cache() -> SharedCmc {
     SharedCmc::new(
         LocalCmc::builder()

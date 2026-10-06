@@ -763,9 +763,8 @@ fn create_hierarchical_keyring_uses_the_supplied_cache() {
     let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
     let keystore = create_keystore(&keystore_config_with_clients(&kms, &ddb)).expect("key store");
 
-    // The default cache's 10 s grace period rejects a 5 s TTL; a local cache
-    // has no grace period, so the same TTL is accepted only when the keyring
-    // is built around the supplied cache.
+    // A 5 s TTL fails with the default cache (10 s grace period)
+    // and succeeds with a local cache (no grace period).
     let mut input =
         hierarchical_keyring_input_with_ttl(&keystore, ffi::Duration { secs: 5, nanos: 0 });
     let err = expect_err(create_hierarchical_keyring(&input));

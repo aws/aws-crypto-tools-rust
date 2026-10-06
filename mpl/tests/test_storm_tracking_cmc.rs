@@ -3,10 +3,9 @@
 
 //! Integration tests for `StormTrackingCmc`.
 //!
-//! Gated behind the `test-utils` feature because these tests rely on
+//! Gated behind the `test-utils` feature, which compiles in what these tests rely on:
 //! the `StormTrackingCmcBuilder::clock` setter and the `#[doc(hidden)]` inflight-map
-//! test hooks (`inner`, `peek_inflight`, `inflight_count`, `mark_inflight`),
-//! all of which are only compiled in when `test-utils` is enabled.
+//! hooks (`inner`, `peek_inflight`, `inflight_count`, `mark_inflight`).
 
 #![cfg(feature = "test-utils")]
 

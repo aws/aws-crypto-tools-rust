@@ -586,9 +586,8 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-/// Base cryptographic materials cache type.
-/// Copies share the underlying cache: give several keyrings copies of one cache
-/// and they read and write the same entries.
+/// Base class of the cryptographic materials caches below.
+/// A copy refers to the same cache, so keyrings given copies of one cache share its entries.
 class CryptographicMaterialsCache {
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
     friend class HierarchicalKeyring;
@@ -599,7 +598,7 @@ protected:
         : impl_(std::move(impl)) {}
 };
 
-/// Optional storm tracking cache parameters.
+/// Optional StormTrackingCmc parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class StormTrackingCmcOptions {
     std::optional<std::uint32_t> entry_capacity_;
@@ -623,15 +622,15 @@ public:
         grace_period_ = detail::to_nanoseconds(d);
         return *this;
     }
-    /// Time other requests wait before another one may try refreshing. Defaults to 1 second.
+    /// Time one request has to refresh an entry before another request may try. Defaults to 1 second.
     template <class Rep, class Period>
     StormTrackingCmcOptions& with_grace_interval(std::chrono::duration<Rep, Period> d) {
         grace_interval_ = detail::to_nanoseconds(d);
         return *this;
     }
-    /// Maximum number of entries being refreshed at the same time. Defaults to 20.
+    /// Maximum number of refreshes in flight at once. Defaults to 20.
     StormTrackingCmcOptions& with_fan_out(std::uint32_t n) { fan_out_ = n; return *this; }
-    /// Time a refresh may run before another request may retry it. Defaults to 10 seconds.
+    /// Time a request waits for another request's refresh before failing. Defaults to 10 seconds.
     template <class Rep, class Period>
     StormTrackingCmcOptions& with_inflight_ttl(std::chrono::duration<Rep, Period> d) {
         inflight_ttl_ = detail::to_nanoseconds(d);
@@ -645,8 +644,8 @@ public:
     }
 };
 
-/// The best choice for most situations: a StormTrackingCmc with default options
-/// and the given entry capacity.
+/// The best choice for most situations:
+/// a StormTrackingCmc with default options and the given entry capacity.
 class DefaultCmc : public CryptographicMaterialsCache {
 public:
     /// Creates the default cache.
@@ -654,17 +653,16 @@ public:
     explicit DefaultCmc(std::uint32_t entry_capacity);
 };
 
-/// A cache safe for multi-threaded use that also limits redundant and
-/// overly parallel backend calls.
-/// For a cache with sensible defaults, use DefaultCmc instead.
+/// A cache safe for multi-threaded use that limits redundant and concurrent backend calls.
+/// Use it over DefaultCmc to change the storm tracking parameters.
 class StormTrackingCmc : public CryptographicMaterialsCache {
 public:
     /// Creates a storm tracking cache.
-    /// \param options Optional storm tracking parameters.
+    /// \param options Parameters to change; unset ones keep their defaults.
     explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
 };
 
-/// A single-threaded-style LRU cache with no storm protection.
+/// An LRU cache with no storm tracking.
 class LocalCmc : public CryptographicMaterialsCache {
 public:
     /// Creates a local cache.
@@ -681,9 +679,10 @@ class HierarchicalKeyringOptions {
 
 public:
     /// The cache for this Hierarchical Keyring.
-    /// Give several Hierarchical Keyrings (or other Cryptographic Material Providers) copies of
-    /// one cache to share it; pass a cache to only this keyring to keep it private.
-    /// If not set, a DefaultCmc with entry_capacity = 1000 is created for only this keyring.
+    /// Give several keyrings copies of one cache to share its entries.
+    /// If not set, the keyring creates its own DefaultCmc with an entry capacity of 1000.
+    /// The cache's grace period, if it has one, must be less than the keyring's TTL;
+    /// DefaultCmc's is 10 seconds.
     HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
         cache_ = cache;
         return *this;

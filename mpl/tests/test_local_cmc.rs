@@ -3,9 +3,8 @@
 
 //! Integration tests for [`aws_crypto_mpl::cmc::LocalCmc`].
 //!
-//! Gated behind the `test-utils` feature because these tests rely on
-//! the `LocalCmcBuilder::clock` setter, which is only compiled in when `test-utils`
-//! is enabled.
+//! Gated behind the `test-utils` feature, which compiles in the
+//! `LocalCmcBuilder::clock` setter these tests rely on.
 //!
 //! These tests exercise the local CMC's public `Cmc` trait surface and the
 //! LocalCmc-specific behaviors defined in
@@ -15,8 +14,8 @@
 //! include all usage metadata", and the "updating usage metadata SHOULD be
 //! atomic" SHOULD).
 //!
-//! The cache's clock is injected via `LocalCmcBuilder::clock` so TTL and
-//! pruning tests advance time deterministically without sleeping.
+//! TTL and pruning tests set the cache's clock with `LocalCmcBuilder::clock`
+//! to advance time without sleeping.
 //!
 //! ## Deterministic clock pattern
 //!
@@ -348,12 +347,8 @@ async fn test_get_drops_ttl_expired_entry() {
 
 #[tokio::test]
 async fn test_get_at_exact_expiry_returns_none() {
-    // Boundary: `frozen_now == entry.expiry_time()` exactly. The
-    // implementation uses `entry.expiry_time() <= now` (inclusive on the
-    // expired side) in BOTH the get-side TTL check and `prune_tail`, so an
-    // entry whose expiry equals "now" is TTL-expired and MUST NOT be
-    // returned. This test pins the `<=` boundary so a refactor to `<`
-    // (which would silently leak one tick of stale entries) fails loudly.
+    // Boundary: now == expiry_time().
+    // Both the get-side TTL check and `prune_tail` treat that entry as expired.
     let creation = anchor_now();
     let expiry = creation + TTL_EXPIRED_OFFSET;
     let frozen_now = expiry; // exact boundary — no offset

@@ -145,8 +145,8 @@ struct HierarchicalKeyringInner {
     /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
     logical_keystore_name: String,
 
-    /// Cryptographic-materials cache for branch-key materials: the caller's
-    /// cache, or a keyring-local `DefaultCmc` built when none is set.
+    /// The cache for branch key materials:
+    /// the caller's, or a `DefaultCmc` the builder creates when none is set.
     cache: SharedCmc,
 }
 
@@ -255,11 +255,11 @@ impl HierarchicalKeyringBuilder {
     }
 
     /// The cache for branch key materials.
-    /// Pass clones of one cache to several keyrings to share it.
+    /// Pass clones of one cache to several keyrings to share its entries.
     /// When unset, the keyring builds its own [`DefaultCmc`] with an entry capacity of 1000.
     ///
-    /// When the cache has a [grace period](Cmc::grace_period),
-    /// it must be less than the [TTL](Self::ttl).
+    /// The cache's [grace period](Cmc::grace_period), if it has one, must be less than the [TTL](Self::ttl).
+    /// The default cache's grace period is 10 seconds.
     #[must_use]
     pub fn cache(mut self, cache: impl Cmc + 'static) -> Self {
         self.cache = Some(cache.into_shared());

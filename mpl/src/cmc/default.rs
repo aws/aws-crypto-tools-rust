@@ -1,8 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The default Cryptographic Materials Cache: the cache to use when the only
-//! setting that matters is how many entries it holds.
+//! The default Cryptographic Materials Cache.
 
 use std::time::Duration;
 
@@ -17,9 +16,9 @@ use crate::error::Kind;
 
 /// The default Cryptographic Materials Cache.
 ///
+/// A [`StormTrackingCmc`] with the defaults documented on [`StormTrackingCmcBuilder`](super::StormTrackingCmcBuilder),
+/// except for the entry capacity, which you set.
 /// Construct with [`DefaultCmc::builder`].
-/// It is a [`StormTrackingCmc`] with Dafny's `StormTracker.DefaultStorm()` settings
-/// and the caller's entry capacity.
 ///
 /// A clone refers to the same cache, not a copy of it.
 #[derive(Clone, Debug)]
@@ -65,8 +64,8 @@ impl DefaultCmcBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`Kind::Validation`](crate::ErrorKind::Validation)
-    /// error if `entry_capacity` is unset.
+    /// Returns a validation error ([`Error::is_validation`])
+    /// if `entry_capacity` is unset.
     pub fn build(self) -> Result<DefaultCmc, Error> {
         let Some(entry_capacity) = self.entry_capacity else {
             return Err(Error::new(
