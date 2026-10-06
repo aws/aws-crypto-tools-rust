@@ -4564,10 +4564,11 @@ mod tests {
             "{debug}"
         );
         assert!(debug.contains("0xff00"), "{debug}");
-        assert!(
+        assert_eq!(
             NoMatchingDataKeyError::new("m")
                 .encrypted_data_keys()
-                .is_empty()
+                .to_vec(),
+            Vec::<DataKeyInfo>::new()
         );
 
         let e = Error::from(s);
@@ -4594,7 +4595,7 @@ mod tests {
             "all",
             vec![e, Error::new(Kind::NoMatchingDataKey, "none")],
         );
-        assert!(keys_of(&mixed).is_empty());
+        assert_eq!(keys_of(&mixed), Vec::<DataKeyInfo>::new());
         assert_eq!(keys_of(&mixed.failures()[0]), keys());
     }
 }
