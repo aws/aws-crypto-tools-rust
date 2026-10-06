@@ -15,6 +15,8 @@
 #   credentials_codes      error codes for which `is_credentials()` is true
 #   reason                 the type `reason()` returns
 #   reason_example         a value of that type, for the generated tests
+#   data_keys              whether the struct has `encrypted_data_keys()`, the message's
+#                          encrypted data keys as `DataKeyInfo`; at most one variant sets it
 #
 # `[[library]]`: one per crate.
 #   name                the name conversions use, as in `from_<name>`
@@ -97,24 +99,33 @@ name = "NoMatchingDataKey"
 struct = "NoMatchingDataKeyError"
 predicate = "is_no_matching_data_key"
 remote = true
+data_keys = true
 doc = """
 None of the configured keys wrapped any of the message's encrypted data keys,
 for example when decrypting with a keyring that did not encrypt the message.
 
-`resource()` names the keyring or CMM that was used.
+`resource()` names the keyring or CMM that was used,
+and `encrypted_data_keys()` lists the message's encrypted data keys by key provider.
 Decrypt with a keyring that has one of the message's keys."""
 example = """
-use {crate}::error::{Error, KeyringResource, NoMatchingDataKeyError, Resource};
+use {crate}::error::{DataKeyInfo, Error, KeyringResource, NoMatchingDataKeyError, Resource};
 
 let err = Error::from(
     NoMatchingDataKeyError::builder()
         .message("encrypted data key 0 did not match the keyring")
         .resource(Resource::Keyring(KeyringResource::new("my-namespace/my-key")))
+        .encrypted_data_keys([DataKeyInfo::new("other-namespace", b"other-key".to_vec())])
         .build(),
 );
 if let Error::NoMatchingDataKey(e) = &err {
     assert_eq!(e.resource(), Some(&Resource::Keyring(KeyringResource::new("my-namespace/my-key"))));
+    assert_eq!(e.encrypted_data_keys()[0].key_provider_id(), "other-namespace");
 }
+assert_eq!(
+    err.to_string(),
+    "NoMatchingDataKey: encrypted data key 0 did not match the keyring \\
+     (keyring my-namespace/my-key; message has: other-namespace)"
+);
 """
 
 [[variant]]

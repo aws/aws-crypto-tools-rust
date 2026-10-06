@@ -137,6 +137,7 @@ impl ErrorData {
             name,
             message: &self.message,
             details,
+            data_keys: Vec::new(),
             tried: tried(self.collected.iter().map(Error::resource)),
             collected: self.collected.iter().map(as_display).collect(),
         }
@@ -210,6 +211,8 @@ struct Level<'a> {
     name: &'static str,
     message: &'a str,
     details: Vec<String>,
+    /// The key provider IDs of the message's encrypted data keys.
+    data_keys: Vec<&'a str>,
     tried: Vec<&'a str>,
     collected: Vec<&'a dyn fmt::Display>,
 }
@@ -260,6 +263,7 @@ macro_rules! level {
             name: e.name(),
             message: e.message(),
             details: details(e.service(), e.resource(), e.code(), e.request_id()),
+            data_keys: Vec::new(),
             tried: tried(e.collected().iter().map(|c| c.resource())),
             collected: e.collected().iter().map(as_display).collect(),
         }
@@ -309,8 +313,15 @@ fn write_level(
         .filter(|d| prev.is_none_or(|p| !p.details.contains(d)))
         .map(String::as_str)
         .collect();
+    let mut parts = Vec::new();
     if !details.is_empty() {
-        write!(f, " ({})", details.join(", "))?;
+        parts.push(details.join(", "));
+    }
+    if !level.data_keys.is_empty() && prev.is_none_or(|p| p.data_keys != level.data_keys) {
+        parts.push(format!("message has: {}", level.data_keys.join(", ")));
+    }
+    if !parts.is_empty() {
+        write!(f, " ({})", parts.join("; "))?;
     }
     if !level.tried.is_empty() {
         write!(f, "; tried: {}", level.tried.join(", "))?;

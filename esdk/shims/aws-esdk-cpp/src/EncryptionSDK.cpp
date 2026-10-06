@@ -14,8 +14,8 @@
 
 namespace ffi = ::aws_esdk_ffi;
 
-namespace Aws {
-namespace Esdk {
+namespace Aws::Esdk {
+inline namespace abi_v1 {
 namespace detail {
 
 // A Rust error, decoded from the string lib.rs's encode_err builds.
@@ -724,5 +724,5 @@ StreamResult EncryptionSDK::decrypt_stream(std::istream& source, std::ostream& s
     return detail::pump_stream(stream, source, sink);
 }
 
-}  // namespace Esdk
-}  // namespace Aws
+}  // inline namespace abi_v1
+}  // namespace Aws::Esdk

@@ -97,24 +97,80 @@ impl fmt::Display for Resource {
 }
 
 /// A KMS key, by ARN.
+///
+/// ```
+/// use aws_mpl_primitives::error::KmsKey;
+///
+/// let key = KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+/// assert_eq!(key.region(), Some("us-west-2"));
+/// assert_eq!(key.account(), Some("111122223333"));
+/// assert_eq!(KmsKey::new("alias/my-alias").region(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct KmsKey {
     arn: String,
+    region: Option<String>,
+    account: Option<String>,
 }
 
 impl KmsKey {
     /// A KMS key identified by `arn`.
+    ///
+    /// `region()` and `account()` are read from `arn` when it is a KMS ARN.
     #[must_use]
     pub fn new(arn: impl Into<String>) -> Self {
-        Self { arn: arn.into() }
+        let arn = arn.into();
+        let (region, account) = match parse_kms_arn(&arn) {
+            Some((region, account)) => (Some(region.to_owned()), Some(account.to_owned())),
+            None => (None, None),
+        };
+        Self {
+            arn,
+            region,
+            account,
+        }
     }
 
-    /// The KMS key's ARN.
+    /// The KMS key's ARN, or the key ID or alias it was named by.
     #[must_use]
     pub fn arn(&self) -> &str {
         &self.arn
     }
+
+    /// The ARN's region; `None` unless [`arn`](Self::arn) is a KMS ARN.
+    #[must_use]
+    pub fn region(&self) -> Option<&str> {
+        self.region.as_deref()
+    }
+
+    /// The ARN's AWS account ID; `None` unless [`arn`](Self::arn) is a KMS ARN.
+    #[must_use]
+    pub fn account(&self) -> Option<&str> {
+        self.account.as_deref()
+    }
+}
+
+/// The region and account of `arn:<partition>:kms:<region>:<account>:<key|alias>/<name>`.
+fn parse_kms_arn(arn: &str) -> Option<(&str, &str)> {
+    let mut parts = arn.splitn(6, ':');
+    let (Some("arn"), Some(partition), Some("kms"), Some(region), Some(account), Some(resource)) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return None;
+    };
+    let (resource_type, name) = resource.split_once('/')?;
+    let valid = !partition.is_empty()
+        && !region.is_empty()
+        && !account.is_empty()
+        && matches!(resource_type, "key" | "alias")
+        && !name.is_empty();
+    valid.then_some((region, account))
 }
 
 impl From<KmsKey> for Resource {
@@ -151,23 +207,48 @@ impl From<DynamoDbTable> for Resource {
 }
 
 /// A hierarchical keyring branch key, by ID.
+///
+/// ```
+/// use aws_mpl_primitives::error::BranchKey;
+///
+/// let branch_key = BranchKey::new("my-branch-key").with_version("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13");
+/// assert_eq!(branch_key.version(), Some("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13"));
+/// assert_eq!(BranchKey::new("my-branch-key").version(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct BranchKey {
     id: String,
+    version: Option<String>,
 }
 
 impl BranchKey {
     /// A branch key identified by `id`.
     #[must_use]
     pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into() }
+        Self {
+            id: id.into(),
+            version: None,
+        }
+    }
+
+    /// The same branch key, at `version`.
+    #[must_use]
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = Some(version.into());
+        self
     }
 
     /// The branch key's ID.
     #[must_use]
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The branch key version, when the failing call was about one.
+    #[must_use]
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
 }
 
@@ -257,6 +338,64 @@ impl CmmResource {
 impl From<CmmResource> for Resource {
     fn from(cmm: CmmResource) -> Self {
         Self::Cmm(cmm)
+    }
+}
+
+/// An encrypted data key in a message, by its key provider.
+///
+/// Never holds the wrapped key itself.
+///
+/// ```
+/// use aws_mpl_primitives::error::DataKeyInfo;
+///
+/// let key = DataKeyInfo::new("aws-kms", b"arn:aws:kms:us-west-2:111122223333:key/1234abcd".to_vec());
+/// assert_eq!(key.key_provider_id(), "aws-kms");
+/// assert_eq!(key.key_provider_info(), b"arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct DataKeyInfo {
+    key_provider_id: String,
+    key_provider_info: KeyProviderInfo,
+}
+
+impl DataKeyInfo {
+    /// An encrypted data key with key provider ID `id` and key provider info `info`.
+    #[must_use]
+    pub fn new(id: impl Into<String>, info: impl Into<Vec<u8>>) -> Self {
+        Self {
+            key_provider_id: id.into(),
+            key_provider_info: KeyProviderInfo(info.into()),
+        }
+    }
+
+    /// The key provider ID, for example `aws-kms`.
+    #[must_use]
+    pub fn key_provider_id(&self) -> &str {
+        &self.key_provider_id
+    }
+
+    /// The key provider info, for example a KMS key ARN or a branch key ID.
+    #[must_use]
+    pub fn key_provider_info(&self) -> &[u8] {
+        &self.key_provider_info.0
+    }
+}
+
+/// Key provider info, which `Debug` shows as text when it is UTF-8 and as hex otherwise.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct KeyProviderInfo(Vec<u8>);
+
+impl fmt::Debug for KeyProviderInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Ok(text) = std::str::from_utf8(&self.0) {
+            return fmt::Debug::fmt(text, f);
+        }
+        f.write_str("0x")?;
+        for byte in &self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
     }
 }
 

@@ -109,3 +109,10 @@ impl EncryptedDataKeyBuilder {
         })
     }
 }
+
+impl From<&EncryptedDataKey> for crate::error::DataKeyInfo {
+    /// The key's provider ID and info, without its ciphertext.
+    fn from(edk: &EncryptedDataKey) -> Self {
+        Self::new(edk.key_provider_id.clone(), edk.key_provider_info.clone())
+    }
+}
