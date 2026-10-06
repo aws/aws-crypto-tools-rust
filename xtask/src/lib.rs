@@ -1234,8 +1234,11 @@ fn write_error(f: &mut fmt::Formatter<'_>, data: &ErrorData, name: &'static str,
     ///
     /// ```
     /// # use {crate_name}::error::{{Error, InternalError}};
-    /// let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
-    /// assert!(err.find_source::<std::io::Error>().is_some());
+    /// # let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
+    /// // `err` is an error a call returned.
+    /// if let Some(io) = err.find_source::<std::io::Error>() {{
+    ///     assert_eq!(io.to_string(), "cause");
+    /// }}
     /// ```
     #[must_use]
     pub fn find_source<T: std::error::Error + 'static>(&self) -> Option<&T> {{

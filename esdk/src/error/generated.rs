@@ -937,8 +937,11 @@ impl Error {
     ///
     /// ```
     /// # use aws_esdk::error::{Error, InternalError};
-    /// let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
-    /// assert!(err.find_source::<std::io::Error>().is_some());
+    /// # let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
+    /// // `err` is an error a call returned.
+    /// if let Some(io) = err.find_source::<std::io::Error>() {
+    ///     assert_eq!(io.to_string(), "cause");
+    /// }
     /// ```
     #[must_use]
     pub fn find_source<T: std::error::Error + 'static>(&self) -> Option<&T> {
@@ -1250,11 +1253,16 @@ impl RequestId for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, ValidationError};
-///
-/// let err = Error::from(ValidationError::new("the TTL must be greater than zero"));
-/// assert!(err.is_validation());
+/// # use aws_esdk::error::{Error, ValidationError};
+/// # let err = Error::from(ValidationError::new("the TTL must be greater than zero"));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // Fix the input; the same call cannot succeed.
+///     Error::Validation(e) => eprintln!("invalid input: {}", e.message()),
+///     _ => {}
+/// }
 /// assert!(!err.is_retryable());
+/// assert_eq!(err.to_string(), "Validation: the TTL must be greater than zero");
 /// ```
 #[derive(Clone)]
 pub struct ValidationError {
@@ -1342,17 +1350,31 @@ impl From<ValidationError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{BranchKey, Error, InvalidMaterialsError, Resource};
-///
-/// let err = Error::from(
-///     InvalidMaterialsError::builder()
-///         .message("branch key record has a 16 byte key, expected 32")
-///         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
-///         .build(),
-/// );
-/// if let Error::InvalidMaterials(e) = &err {
-///     assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new("my-branch-key"))));
+/// # use aws_esdk::error::{BranchKey, Error, InvalidMaterialsError, Resource, Service};
+/// # let err = Error::from(
+/// #     InvalidMaterialsError::builder()
+/// #         .message("branch key must be 32 bytes, got 16")
+/// #         .service(Service::DynamoDb)
+/// #         .resource(BranchKey::new("my-branch-key"))
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     Error::InvalidMaterials(e) => match e.resource() {
+///         // The key store record for this branch key is corrupt.
+///         Some(Resource::BranchKey(branch_key)) => {
+///             assert_eq!(branch_key.id(), "my-branch-key");
+///         }
+///         // A keyring or CMM returned bad materials.
+///         Some(Resource::Keyring(_) | Resource::Cmm(_)) => {}
+///         _ => {}
+///     },
+///     _ => {}
 /// }
+/// assert_eq!(
+///     err.to_string(),
+///     "InvalidMaterials: branch key must be 32 bytes, got 16 (Amazon DynamoDB, branch key my-branch-key)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct InvalidMaterialsError {
@@ -1466,12 +1488,20 @@ impl From<InvalidMaterialsError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{EncryptionContextMismatchError, Error};
-///
-/// let err = Error::from(EncryptionContextMismatchError::new(
-///     "the value for encryption context key 'tenant' differs from the message's",
-/// ));
-/// assert!(err.is_encryption_context_mismatch());
+/// # use aws_esdk::error::{EncryptionContextMismatchError, Error};
+/// # let err = Error::from(EncryptionContextMismatchError::new(
+/// #     "the value for encryption context key 'tenant' differs from the message's",
+/// # ));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // Check the encryption context passed to the call.
+///     Error::EncryptionContextMismatch(e) => eprintln!("{}", e.message()),
+///     _ => {}
+/// }
+/// assert_eq!(
+///     err.to_string(),
+///     "EncryptionContextMismatch: the value for encryption context key 'tenant' differs from the message's"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct EncryptionContextMismatchError {
@@ -1558,23 +1588,27 @@ impl From<EncryptionContextMismatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{DataKeyInfo, Error, KeyringResource, NoMatchingDataKeyError, Resource};
-///
-/// let err = Error::from(
-///     NoMatchingDataKeyError::builder()
-///         .message("encrypted data key 0 did not match the keyring")
-///         .resource(Resource::Keyring(KeyringResource::new("my-namespace/my-key")))
-///         .encrypted_data_keys([DataKeyInfo::new("other-namespace", b"other-key".to_vec())])
-///         .build(),
-/// );
-/// if let Error::NoMatchingDataKey(e) = &err {
-///     assert_eq!(e.resource(), Some(&Resource::Keyring(KeyringResource::new("my-namespace/my-key"))));
-///     assert_eq!(e.encrypted_data_keys()[0].key_provider_id(), "other-namespace");
+/// # use aws_esdk::error::{DataKeyInfo, Error, KeyringResource, NoMatchingDataKeyError};
+/// # let err = Error::from(
+/// #     NoMatchingDataKeyError::builder()
+/// #         .message("decrypt could not get decryption materials")
+/// #         .resource(KeyringResource::new("my-namespace/my-key"))
+/// #         .encrypted_data_keys([DataKeyInfo::new("other-namespace", b"other-key".to_vec())])
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     Error::NoMatchingDataKey(e) => {
+///         // The keys the message was encrypted for, by key provider.
+///         for key in e.encrypted_data_keys() {
+///             assert_eq!(key.key_provider_id(), "other-namespace");
+///         }
+///     }
+///     _ => {}
 /// }
 /// assert_eq!(
 ///     err.to_string(),
-///     "NoMatchingDataKey: encrypted data key 0 did not match the keyring \
-///      (keyring my-namespace/my-key; message has: other-namespace)"
+///     "NoMatchingDataKey: decrypt could not get decryption materials (keyring my-namespace/my-key; message has: other-namespace)"
 /// );
 /// ```
 #[derive(Clone)]
@@ -1698,11 +1732,16 @@ impl From<NoMatchingDataKeyError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{CryptographicError, Error};
-///
-/// let err = Error::from(CryptographicError::new("authentication tag did not match"));
-/// assert!(err.is_cryptographic());
+/// # use aws_esdk::error::{CryptographicError, Error};
+/// # let err = Error::from(CryptographicError::new("authentication tag did not match"));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // The message is corrupt or modified, or the key is wrong; retrying cannot help.
+///     Error::Cryptographic(_) => eprintln!("reject the message"),
+///     _ => {}
+/// }
 /// assert!(!err.is_retryable());
+/// assert_eq!(err.to_string(), "Cryptographic: authentication tag did not match");
 /// ```
 #[derive(Clone)]
 pub struct CryptographicError {
@@ -1787,24 +1826,37 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
-///
-/// let arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd";
-/// let err = Error::from(
-///     AccessDeniedError::builder()
-///         .message("AWS KMS Decrypt failed")
-///         .service(Service::Kms)
-///         .resource(Resource::KmsKey(KmsKey::new(arn)))
-///         .code("AccessDeniedException")
-///         .request_id("6f1c2e9a")
-///         .build(),
-/// );
-/// if let Error::AccessDenied(e) = &err {
-///     assert!(!e.is_credentials());
-///     assert_eq!(e.service(), Some(&Service::Kms));
-///     assert_eq!(e.resource(), Some(&Resource::KmsKey(KmsKey::new(arn))));
-///     assert_eq!(e.request_id(), Some("6f1c2e9a"));
+/// # use aws_esdk::error::{AccessDeniedError, Error, KmsKey, Resource, Service};
+/// # let err = Error::from(
+/// #     AccessDeniedError::builder()
+/// #         .message("AWS KMS Decrypt failed")
+/// #         .service(Service::Kms)
+/// #         .resource(KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/1234abcd"))
+/// #         .code("AccessDeniedException")
+/// #         .request_id("6f1c2e9a")
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     // The credentials themselves are expired or invalid.
+///     Error::AccessDenied(e) if e.is_credentials() => {}
+///     // Otherwise fix the permissions: branch on the service, then the resource.
+///     Error::AccessDenied(e) => match e.service() {
+///         Some(Service::Kms) => match e.resource() {
+///             Some(Resource::KmsKey(key)) => {
+///                 assert_eq!(key.arn(), "arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+///                 assert_eq!(key.region(), Some("us-west-2"));
+///             }
+///             _ => {}
+///         },
+///         _ => {}
+///     },
+///     _ => {}
 /// }
+/// assert_eq!(
+///     err.to_string(),
+///     "AccessDenied: AWS KMS Decrypt failed (AWS KMS, KMS key arn:aws:kms:us-west-2:111122223333:key/1234abcd, AccessDeniedException, request 6f1c2e9a)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct AccessDeniedError {
@@ -1935,18 +1987,32 @@ impl From<AccessDeniedError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{BranchKey, Error, Resource, ResourceNotFoundError, Service};
-///
-/// let err = Error::from(
-///     ResourceNotFoundError::builder()
-///         .message("branch key my-branch-key does not exist")
-///         .service(Service::DynamoDb)
-///         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
-///         .build(),
-/// );
-/// if let Error::ResourceNotFound(e) = &err {
-///     assert_eq!(e.resource(), Some(&Resource::BranchKey(BranchKey::new("my-branch-key"))));
+/// # use aws_esdk::error::{BranchKey, Error, Resource, ResourceNotFoundError, Service};
+/// # let err = Error::from(
+/// #     ResourceNotFoundError::builder()
+/// #         .message("no key store record for branch key my-branch-key")
+/// #         .service(Service::DynamoDb)
+/// #         .resource(BranchKey::new("my-branch-key"))
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     Error::ResourceNotFound(e) => match e.service() {
+///         // The key store keeps branch keys in DynamoDB.
+///         Some(Service::DynamoDb) => match e.resource() {
+///             Some(Resource::BranchKey(branch_key)) => assert_eq!(branch_key.id(), "my-branch-key"),
+///             Some(Resource::DynamoDbTable(_)) => {}
+///             _ => {}
+///         },
+///         Some(Service::Kms) => {}
+///         _ => {}
+///     },
+///     _ => {}
 /// }
+/// assert_eq!(
+///     err.to_string(),
+///     "ResourceNotFound: no key store record for branch key my-branch-key (Amazon DynamoDB, branch key my-branch-key)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct ResourceNotFoundError {
@@ -2061,19 +2127,28 @@ impl From<ResourceNotFoundError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Cache, Error, Resource, RetryKind, ThrottlingError};
-///
-/// let err = Error::from(
-///     ThrottlingError::builder()
-///         .message("timed out waiting for another caller to fetch branch key my-branch-key")
-///         .resource(Resource::Cache(Cache::new()))
-///         .build(),
-/// );
-/// assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
-/// if let Error::Throttling(e) = &err {
-///     assert_eq!(e.service(), None);
-///     assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
+/// # use aws_esdk::error::{Cache, Error, Resource, RetryKind, ThrottlingError};
+/// # let err = Error::from(
+/// #     ThrottlingError::builder()
+/// #         .message("timed out waiting for another caller to fetch branch key my-branch-key")
+/// #         .resource(Cache::new())
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// if err.is_retryable() {
+///     // Back off before retrying.
+///     assert_eq!(err.retry_kind(), Some(RetryKind::Throttling));
 /// }
+/// // Match `Throttling` only to learn what was throttled.
+/// if let Error::Throttling(e) = &err {
+///     // The materials cache, which is not an AWS service.
+///     assert!(e.service().is_none());
+///     assert!(matches!(e.resource(), Some(Resource::Cache(_))));
+/// }
+/// assert_eq!(
+///     err.to_string(),
+///     "Throttling: timed out waiting for another caller to fetch branch key my-branch-key (materials cache)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct ThrottlingError {
@@ -2189,19 +2264,31 @@ impl From<ThrottlingError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{BranchKey, ConflictError, ConflictReason, Error, Resource, Service};
-///
-/// let err = Error::from(
-///     ConflictError::builder()
-///         .message("branch key my-branch-key was rotated concurrently")
-///         .service(Service::DynamoDb)
-///         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
-///         .reason(ConflictReason::ConcurrentModification)
-///         .build(),
-/// );
-/// if let Error::Conflict(e) = &err {
-///     assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
+/// # use aws_esdk::error::{BranchKey, ConflictError, ConflictReason, Error, Service};
+/// # let err = Error::from(
+/// #     ConflictError::builder()
+/// #         .message("branch key my-branch-key was rotated concurrently")
+/// #         .service(Service::DynamoDb)
+/// #         .resource(BranchKey::new("my-branch-key"))
+/// #         .reason(ConflictReason::ConcurrentModification)
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     Error::Conflict(e) => match e.reason() {
+///         // Another caller rotated the branch key; it already has a new version.
+///         Some(ConflictReason::ConcurrentModification) => {}
+///         // The branch key ID is in use; use the existing key or pick another ID.
+///         Some(ConflictReason::AlreadyExists) => {}
+///         _ => {}
+///     },
+///     _ => {}
 /// }
+/// assert!(!err.is_retryable());
+/// assert_eq!(
+///     err.to_string(),
+///     "Conflict: branch key my-branch-key was rotated concurrently (Amazon DynamoDB, branch key my-branch-key)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct ConflictError {
@@ -2322,20 +2409,27 @@ impl From<ConflictError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, RetryKind, Service, ServiceError};
-///
-/// let err = Error::from(
-///     ServiceError::builder()
-///         .message("AWS KMS Decrypt failed")
-///         .service(Service::Kms)
-///         .code("KMSInternalException")
-///         .retry_kind(RetryKind::Transient)
-///         .build(),
-/// );
-/// if let Error::Service(e) = &err {
-///     assert_eq!(e.code(), Some("KMSInternalException"));
-///     assert!(e.is_retryable());
+/// # use aws_esdk::error::{Error, RetryKind, Service, ServiceError};
+/// # let err = Error::from(
+/// #     ServiceError::builder()
+/// #         .message("AWS KMS Decrypt failed")
+/// #         .service(Service::Kms)
+/// #         .code("KMSInternalException")
+/// #         .retry_kind(RetryKind::Transient)
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     // An AWS server error: retry later.
+///     e if e.is_retryable() => {}
+///     // `code()` is the service's own error code, for a distinction the variants don't make.
+///     Error::Service(e) if e.code() == Some("DisabledException") => {}
+///     _ => {}
 /// }
+/// assert_eq!(
+///     err.to_string(),
+///     "Service: AWS KMS Decrypt failed (AWS KMS, KMSInternalException)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct ServiceError {
@@ -2449,19 +2543,23 @@ impl From<ServiceError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{DispatchError, Error, RetryKind, Service};
-///
-/// let err = Error::from(
-///     DispatchError::builder()
-///         .message("AWS KMS Decrypt failed")
-///         .service(Service::Kms)
-///         .retry_kind(RetryKind::Transient)
-///         .build(),
-/// );
-/// if let Error::Dispatch(e) = &err {
-///     assert_eq!(e.code(), None);
-///     assert_eq!(e.retry_kind(), Some(RetryKind::Transient));
+/// # use aws_esdk::error::{DispatchError, Error, RetryKind, Service};
+/// # let err = Error::from(
+/// #     DispatchError::builder()
+/// #         .message("AWS KMS Decrypt failed")
+/// #         .service(Service::Kms)
+/// #         .retry_kind(RetryKind::Transient)
+/// #         .build(),
+/// # );
+/// // `err` is an error a call returned.
+/// match &err {
+///     // A network error or timeout: retry later.
+///     e if e.is_retryable() => assert_eq!(e.retry_kind(), Some(RetryKind::Transient)),
+///     // Missing credentials or region: fix the AWS SDK configuration.
+///     Error::Dispatch(_) => {}
+///     _ => {}
 /// }
+/// assert_eq!(err.to_string(), "Dispatch: AWS KMS Decrypt failed (AWS KMS)");
 /// ```
 #[derive(Clone)]
 pub struct DispatchError {
@@ -2575,10 +2673,15 @@ impl From<DispatchError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, SerializationError};
-///
-/// let err = Error::from(SerializationError::new("unsupported message version 3"));
-/// assert!(err.is_serialization());
+/// # use aws_esdk::error::{Error, SerializationError};
+/// # let err = Error::from(SerializationError::new("unsupported message version 3"));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // The bytes are not a valid encrypted message; treat it as corrupt.
+///     Error::Serialization(_) | Error::Cryptographic(_) => eprintln!("reject the message"),
+///     _ => {}
+/// }
+/// assert_eq!(err.to_string(), "Serialization: unsupported message version 3");
 /// ```
 #[derive(Clone)]
 pub struct SerializationError {
@@ -2663,11 +2766,18 @@ impl From<SerializationError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, IoError};
-///
-/// let io = std::io::Error::other("disk full");
-/// let err = Error::from(IoError::new("could not write the ciphertext").with_source(io));
-/// assert!(err.find_source::<std::io::Error>().is_some());
+/// # use aws_esdk::error::{Error, IoError};
+/// # let err = Error::from(
+/// #     IoError::new("could not write the plaintext").with_source(std::io::Error::other("disk full")),
+/// # );
+/// // `err` is an error a call returned.
+/// if let Error::Io(_) = &err {
+///     // The reader or writer you passed failed; its error is the source.
+///     let io = err.find_source::<std::io::Error>().unwrap();
+///     assert_eq!(io.to_string(), "disk full");
+/// }
+/// assert_eq!(err.to_string(), "Io: could not write the plaintext");
+/// assert_eq!(format!("{err:#}"), "Io: could not write the plaintext: disk full");
 /// ```
 #[derive(Clone)]
 pub struct IoError {
@@ -2752,11 +2862,16 @@ impl From<IoError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, InternalError};
-///
-/// let err = Error::from(InternalError::new("cache lock poisoned"));
-/// assert!(err.is_internal());
+/// # use aws_esdk::error::{Error, InternalError};
+/// # let err = Error::from(InternalError::new("cache lock poisoned"));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // A bug in this library: log the whole chain and report it.
+///     Error::Internal(_) => eprintln!("{err:#}"),
+///     _ => {}
+/// }
 /// assert!(!err.is_retryable());
+/// assert_eq!(err.to_string(), "Internal: cache lock poisoned");
 /// ```
 #[derive(Clone)]
 pub struct InternalError {

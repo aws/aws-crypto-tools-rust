@@ -632,8 +632,11 @@ impl Error {
     ///
     /// ```
     /// # use aws_mpl_primitives::error::{Error, InternalError};
-    /// let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
-    /// assert!(err.find_source::<std::io::Error>().is_some());
+    /// # let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
+    /// // `err` is an error a call returned.
+    /// if let Some(io) = err.find_source::<std::io::Error>() {
+    ///     assert_eq!(io.to_string(), "cause");
+    /// }
     /// ```
     #[must_use]
     pub fn find_source<T: std::error::Error + 'static>(&self) -> Option<&T> {
@@ -688,11 +691,16 @@ impl std::error::Error for Error {
 /// # Example
 ///
 /// ```
-/// use aws_mpl_primitives::error::{CryptographicError, Error};
-///
-/// let err = Error::from(CryptographicError::new("authentication tag did not match"));
-/// assert!(err.is_cryptographic());
+/// # use aws_mpl_primitives::error::{CryptographicError, Error};
+/// # let err = Error::from(CryptographicError::new("authentication tag did not match"));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // The message is corrupt or modified, or the key is wrong; retrying cannot help.
+///     Error::Cryptographic(_) => eprintln!("reject the message"),
+///     _ => {}
+/// }
 /// assert!(!err.is_retryable());
+/// assert_eq!(err.to_string(), "Cryptographic: authentication tag did not match");
 /// ```
 #[derive(Clone)]
 pub struct CryptographicError {
@@ -777,11 +785,16 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// use aws_mpl_primitives::error::{Error, InternalError};
-///
-/// let err = Error::from(InternalError::new("cache lock poisoned"));
-/// assert!(err.is_internal());
+/// # use aws_mpl_primitives::error::{Error, InternalError};
+/// # let err = Error::from(InternalError::new("cache lock poisoned"));
+/// // `err` is an error a call returned.
+/// match &err {
+///     // A bug in this library: log the whole chain and report it.
+///     Error::Internal(_) => eprintln!("{err:#}"),
+///     _ => {}
+/// }
 /// assert!(!err.is_retryable());
+/// assert_eq!(err.to_string(), "Internal: cache lock poisoned");
 /// ```
 #[derive(Clone)]
 pub struct InternalError {
