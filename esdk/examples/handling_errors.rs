@@ -3,11 +3,24 @@
 
 //! Handles the errors that the hierarchical keyring and its key store return.
 //!
-//! Each call matches on the error's variant, then on its service and resource.
-//! Decide from these, never from the message text.
+//! Every operation returns one `aws_esdk::Error`.
+//! You handle it by asking up to four questions, in order,
+//! and you stop at whichever level of detail your application needs:
+//!
+//! 1. Can a retry help? `is_retryable()` answers this for every error.
+//! 2. What kind of failure is it? The variant: `AccessDenied`, `ResourceNotFound`, and so on.
+//! 3. Which service failed? `service()`: AWS KMS, DynamoDB, or none for a local failure.
+//! 4. Which resource do you need to act on? `resource()`: a KMS key, a table, a branch key.
+//!
+//! Each answer is a field on the error, so you never parse the message.
+//! Messages are for people and logs, and their text can change in any release.
+//!
+//! The encrypt call below walks through all four questions.
+//! The decrypt call shows the failures only decrypt has, and how to see every failure
+//! when the keyring tried more than one encrypted data key.
+//! The key store call shows a key store error with a reason.
 //!
 //! Requires AWS credentials and an existing key store with a provisioned branch key.
-//! Each run creates a branch key and rotates it.
 
 use std::time::Duration;
 
@@ -46,6 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .branch_key_id(BRANCH_KEY_ID)
         .build()?;
 
+    // ---- Encrypt: the four questions, from coarse to fine ----
+    //
+    // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
+    // so encrypt can fail in either service.
     let input = EncryptInput::builder()
         .plaintext(PLAINTEXT)
         .keyring(keyring.clone())
@@ -54,29 +71,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(output) => output,
         Err(e) => {
             match &e {
-                // The AWS SDK clients already retried; e.retry_kind() says how to back off.
-                err if err.is_retryable() => eprintln!("retry later: {e}"),
+                // Question 1: can a retry help?
+                // This arm catches throttling, timeouts, connection failures and AWS server errors,
+                // whatever their variant, so you can write your retry logic once.
+                // The AWS SDK clients already retried these with their own backoff,
+                // so retry at a higher level; `e.retry_kind()` says how to back off.
+                _ if e.is_retryable() => {
+                    eprintln!("retry later ({:?}): {e}", e.retry_kind());
+                }
+
+                // Question 2: what kind of failure is it?
+                // Many applications stop here and handle each variant the same way,
+                // for example `Error::AccessDenied(_) => alert_on_call()`.
+                // `is_credentials()` refines one variant further:
+                // AWS rejected the credentials themselves, not a permission on a resource.
                 Error::AccessDenied(denied) if denied.is_credentials() => {
                     eprintln!("the AWS credentials are expired or invalid");
                 }
+
+                // Question 3: which service denied access?
+                // The fix differs per service: a KMS key policy or grant, or an IAM policy on the table.
                 Error::AccessDenied(denied) => match denied.service() {
                     Some(Service::Kms) => match denied.resource() {
+                        // Question 4: which resource do you need to act on?
+                        // `key` is the KMS key this error carries, bound by the pattern;
+                        // read its details through accessors.
                         Some(Resource::KmsKey(key)) => {
-                            eprintln!("AWS KMS denied access to the KMS key {}", key.arn());
+                            eprintln!("grant access to the KMS key {}", key.arn());
                         }
+                        // `Resource` gains new kinds in later releases,
+                        // so every match on it ends in a catch-all arm.
                         _ => eprintln!("AWS KMS denied access: {e}"),
                     },
                     Some(Service::DynamoDb) => match denied.resource() {
                         Some(Resource::DynamoDbTable(table)) => {
-                            eprintln!("DynamoDB denied access to the table {}", table.name());
+                            eprintln!("grant access to the key store table {}", table.name());
                         }
                         _ => eprintln!("DynamoDB denied access: {e}"),
                     },
+                    // `Service` also gains values in later releases.
                     _ => eprintln!("access denied: {e}"),
                 },
+
+                // A missing resource carries the resource to create or fix.
+                // The branch key is in DynamoDB, so `service()` is `DynamoDb` for both
+                // a missing branch key and a missing table;
+                // match on `resource()` directly when the service adds nothing.
                 Error::ResourceNotFound(not_found) => match not_found.resource() {
                     Some(Resource::BranchKey(branch_key)) => {
-                        eprintln!("branch key {} is not in the key store", branch_key.id());
+                        eprintln!("create the branch key {} in the key store", branch_key.id());
                     }
                     Some(Resource::DynamoDbTable(table)) => {
                         eprintln!("the key store table {} does not exist", table.name());
@@ -86,12 +129,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     _ => eprintln!("an AWS resource does not exist: {e}"),
                 },
-                _ => eprintln!("encrypt failed: {e}"),
+
+                // `Error` gains new variants in later releases,
+                // so the last arm handles every other failure, today's and future ones.
+                // `{e:#}` prints the error and every cause below it, for the log.
+                _ => eprintln!("encrypt failed: {e:#}"),
             }
             return Err(e.into());
         }
     };
 
+    // ---- Decrypt: failures only decrypt has, and every failure behind an error ----
     let input = DecryptInput::builder()
         .ciphertext(&encrypted.ciphertext)
         .keyring(keyring)
@@ -100,23 +148,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(output) => output,
         Err(e) => {
             match &e {
-                err if err.is_retryable() => eprintln!("retry later: {e}"),
+                _ if e.is_retryable() => eprintln!("retry later: {e}"),
+
+                // The branch key record in DynamoDB is malformed, for example a key of the wrong length.
+                // `resource()` names the branch key to repair.
                 Error::InvalidMaterials(invalid) => match invalid.resource() {
                     Some(Resource::BranchKey(branch_key)) => {
                         eprintln!("the record for branch key {} is malformed", branch_key.id());
                     }
                     _ => eprintln!("invalid materials: {e}"),
                 },
-                Error::NoMatchingDataKey(_) => {
-                    eprintln!("the message was encrypted under a different keyring");
+
+                // None of the message's encrypted data keys belongs to this keyring.
+                // `encrypted_data_keys()` lists which keys the message was encrypted for.
+                Error::NoMatchingDataKey(no_match) => {
+                    for key in no_match.encrypted_data_keys() {
+                        eprintln!(
+                            "the message was encrypted for key provider {}",
+                            key.key_provider_id()
+                        );
+                    }
                 }
+
+                // The message is corrupt or was modified. Retrying cannot help.
                 Error::Cryptographic(_) | Error::Serialization(_) => {
                     eprintln!("the message is corrupt or was tampered with");
                 }
-                // Each encrypted data key the keyring tried can fail differently.
+
+                // A message can have several encrypted data keys, and the keyring tries each one.
+                // When they all fail, `e` is the most actionable failure,
+                // and `failures()` returns every one of them, each a full `Error`
+                // you can match the same way as above.
                 _ => {
                     for failure in e.failures() {
-                        eprintln!("decrypt failed: {failure}");
+                        match &failure {
+                            Error::AccessDenied(denied) => match denied.resource() {
+                                Some(Resource::KmsKey(key)) => {
+                                    eprintln!("one attempt was denied the KMS key {}", key.arn());
+                                }
+                                _ => eprintln!("one attempt was denied access: {failure}"),
+                            },
+                            Error::Throttling(_) => eprintln!("one attempt was throttled"),
+                            _ => eprintln!("one attempt failed: {failure}"),
+                        }
                     }
                 }
             }
@@ -126,6 +200,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(decrypted.plaintext, PLAINTEXT);
     println!("decrypted the message");
 
+    // ---- Key store: a failure with a reason ----
+    //
+    // Key store operations return `aws_crypto_mpl::Error`, which has the same variants and accessors.
+    // A `Conflict` says why through `reason()`.
+    // Creating a branch key whose ID is already in use is `AlreadyExists`;
+    // rotating a branch key that another caller rotated at the same time is `ConcurrentModification`.
+    // This call uses the provisioned branch key's ID, so it reaches the `AlreadyExists` arm.
     let mut branch_key_context = EncryptionContext::new();
     branch_key_context.insert("purpose", "example");
     match key_store
@@ -138,8 +219,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(output) => println!("created branch key {}", output.branch_key_id()),
         Err(aws_crypto_mpl::Error::Conflict(conflict)) => match conflict.reason() {
             Some(ConflictReason::AlreadyExists) => {
-                println!("branch key {BRANCH_KEY_ID} already exists");
+                println!("branch key {BRANCH_KEY_ID} already exists; use it or pick another ID");
             }
+            // `ConflictReason` gains values in later releases.
             _ => return Err(conflict.into()),
         },
         Err(e) => return Err(e.into()),

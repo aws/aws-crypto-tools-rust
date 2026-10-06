@@ -1,7 +1,16 @@
 // Handles the exceptions that the hierarchical keyring throws.
 //
-// Each kind of failure is its own exception type; catch the ones you act on by type,
-// then decide from service() and resource(), never from what().
+// Every failure is an AwsEncryptionSdkException, or a subclass for its kind.
+// You handle it by asking up to four questions, in order,
+// and you stop at whichever level of detail your application needs:
+//
+// 1. Can a retry help? retryable() answers this for every exception.
+// 2. What kind of failure is it? The exception type: AccessDeniedException, ResourceNotFoundException, ...
+// 3. Which service failed? service(): AWS KMS, DynamoDB, or empty for a local failure.
+// 4. Which resource do you need to act on? resource(): a KMS key, a table, a branch key.
+//
+// Each answer is a field on the exception, so you never parse what().
+// Messages are for people and logs, and their text can change in any release.
 //
 // Requires AWS credentials and the key store in basic_hierarchical_keyring_example.cpp.
 
@@ -31,51 +40,82 @@ int main() {
         auto keyring = Aws::Esdk::HierarchicalKeyring(keystore, kBranchKeyId, 600s);
         Aws::Esdk::EncryptionSDK esdk;
 
+        // ---- Encrypt: the four questions, from coarse to fine ----
+        //
+        // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
+        // so encrypt can fail in either service.
         const std::string plaintext = "Hello World";
         std::optional<Aws::Esdk::EncryptResult> encrypted;
         try {
             // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
             encrypted = esdk.encrypt(plaintext, keyring);
-        } catch (const Aws::Esdk::AccessDeniedException& e) {
-            const auto resource = e.resource();
-            if (e.is_credentials()) {
-                std::cerr << "the AWS credentials are expired or invalid\n";
-            } else if (e.service() == Aws::Esdk::Service::Kms && resource &&
-                       resource->type() == Aws::Esdk::ResourceType::KmsKey) {
-                std::cerr << "AWS KMS denied access to the KMS key " << resource->name() << "\n";
-            } else if (e.service() == Aws::Esdk::Service::DynamoDb && resource &&
-                       resource->type() == Aws::Esdk::ResourceType::DynamoDbTable) {
-                std::cerr << "DynamoDB denied access to the table " << resource->name() << "\n";
-            } else {
-                std::cerr << "access denied: " << e.what() << "\n";
-            }
-            return 1;
-        } catch (const Aws::Esdk::ResourceNotFoundException& e) {
-            const auto resource = e.resource();
-            switch (resource ? resource->type() : Aws::Esdk::ResourceType::Unknown) {
-            case Aws::Esdk::ResourceType::BranchKey:
-                std::cerr << "branch key " << resource->name() << " is not in the key store\n";
-                break;
-            case Aws::Esdk::ResourceType::DynamoDbTable:
-                std::cerr << "the key store table " << resource->name() << " does not exist\n";
-                break;
-            case Aws::Esdk::ResourceType::KmsKey:
-                std::cerr << "the KMS key " << resource->name() << " does not exist\n";
-                break;
-            default:
-                std::cerr << "an AWS resource does not exist: " << e.what() << "\n";
-            }
-            return 1;
         } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
-            // The AWS SDK clients already retried; retry_kind() says how to back off.
+            // Question 1: can a retry help?
+            // Checking retryable() before the type catches throttling, timeouts, connection failures
+            // and AWS server errors in one place, whatever their type.
+            // The AWS SDK clients already retried these, so retry at a higher level;
+            // retry_kind() says how to back off.
             if (e.retryable()) {
                 std::cerr << "retry later: " << e.what() << "\n";
-            } else {
-                std::cerr << "encrypt failed: " << e.what() << "\n";
+                return 1;
+            }
+
+            // Question 2: what kind of failure is it?
+            // Many applications stop here and handle each exception type the same way.
+            // Rethrowing lets the typed catch clauses below pick the type.
+            try {
+                throw;
+            } catch (const Aws::Esdk::AccessDeniedException& denied) {
+                // is_credentials() refines one type further:
+                // AWS rejected the credentials themselves, not a permission on a resource.
+                if (denied.is_credentials()) {
+                    std::cerr << "the AWS credentials are expired or invalid\n";
+                    return 1;
+                }
+                // Question 3: which service denied access?
+                // The fix differs per service: a KMS key policy or grant, or an IAM policy on the table.
+                // Question 4: which resource do you need to act on?
+                // resource() is a copy of the resource this exception carries.
+                const auto service = denied.service();
+                const auto resource = denied.resource();
+                if (service == Aws::Esdk::Service::Kms && resource &&
+                    resource->type() == Aws::Esdk::ResourceType::KmsKey) {
+                    std::cerr << "grant access to the KMS key " << resource->name() << "\n";
+                } else if (service == Aws::Esdk::Service::DynamoDb && resource &&
+                           resource->type() == Aws::Esdk::ResourceType::DynamoDbTable) {
+                    std::cerr << "grant access to the key store table " << resource->name() << "\n";
+                } else {
+                    // Later releases add services and resource types,
+                    // so every check ends with a branch for anything else.
+                    std::cerr << "access denied: " << denied.what() << "\n";
+                }
+            } catch (const Aws::Esdk::ResourceNotFoundException& not_found) {
+                // A missing resource carries the resource to create or fix.
+                // The branch key is in DynamoDB, so the resource alone tells the cases apart.
+                const auto resource = not_found.resource();
+                switch (resource ? resource->type() : Aws::Esdk::ResourceType::Unknown) {
+                case Aws::Esdk::ResourceType::BranchKey:
+                    std::cerr << "create the branch key " << resource->name() << " in the key store\n";
+                    break;
+                case Aws::Esdk::ResourceType::DynamoDbTable:
+                    std::cerr << "the key store table " << resource->name() << " does not exist\n";
+                    break;
+                case Aws::Esdk::ResourceType::KmsKey:
+                    std::cerr << "the KMS key " << resource->name() << " does not exist\n";
+                    break;
+                default:
+                    std::cerr << "an AWS resource does not exist: " << not_found.what() << "\n";
+                }
+            } catch (const Aws::Esdk::AwsEncryptionSdkException& other) {
+                // Later releases add exception types,
+                // so the base class catches every other failure, today's and future ones.
+                // full_message() adds every cause below the error, for the log.
+                std::cerr << "encrypt failed: " << other.full_message() << "\n";
             }
             return 1;
         }
 
+        // ---- Decrypt: failures only decrypt has ----
         try {
             auto decrypted = esdk.decrypt(encrypted->ciphertext, keyring);
             if (decrypted.plaintext.as_string_view() != plaintext) {
@@ -83,6 +123,8 @@ int main() {
                 return 1;
             }
         } catch (const Aws::Esdk::InvalidMaterialsException& e) {
+            // The branch key record in DynamoDB is malformed, for example a key of the wrong length.
+            // resource() names the branch key to repair.
             const auto resource = e.resource();
             if (resource && resource->type() == Aws::Esdk::ResourceType::BranchKey) {
                 std::cerr << "the record for branch key " << resource->name() << " is malformed\n";
@@ -90,10 +132,13 @@ int main() {
                 std::cerr << "invalid materials: " << e.what() << "\n";
             }
             return 1;
-        } catch (const Aws::Esdk::NoMatchingDataKeyException&) {
-            std::cerr << "the message was encrypted under a different keyring\n";
+        } catch (const Aws::Esdk::NoMatchingDataKeyException& e) {
+            // None of the message's encrypted data keys belongs to this keyring.
+            // what() lists the key provider IDs the message was encrypted for.
+            std::cerr << "the message was encrypted under a different keyring: " << e.what() << "\n";
             return 1;
         } catch (const Aws::Esdk::CryptographicException&) {
+            // The message is corrupt or was modified. Retrying cannot help.
             std::cerr << "the message is corrupt or was tampered with\n";
             return 1;
         } catch (const Aws::Esdk::SerializationException&) {
@@ -109,6 +154,7 @@ int main() {
         }
         std::cout << "decrypted the message\n";
     } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        // Setting up the key store or keyring failed.
         std::cerr << "failed: " << e.full_message() << "\n";
         return 1;
     }
