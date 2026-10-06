@@ -2,33 +2,28 @@
 
 A native Rust implementation of the AWS Encryption SDK.
 
-The AWS Encryption SDK is a client-side encryption library that makes it easier
-to encrypt and decrypt data using industry standards and best practices. It uses
-envelope encryption: your data is protected with a data key, and that data key is
-protected by one or more wrapping keys held in a _keyring_. The encrypted data
-keys travel alongside the ciphertext, so you don't track them separately.
+The AWS Encryption SDK is a client-side encryption library.
+It uses envelope encryption: a data key encrypts your data, and one or more wrapping keys in a _keyring_ encrypt that data key.
+The encrypted data keys are stored in the encrypted message, so you don't track them separately.
 
-The two primary operations are `encrypt` and `decrypt`. Each has a streaming
-variant (`encrypt_stream` / `decrypt_stream`) for data too large to hold in
-memory. Per-call configuration lives on the `EncryptInput` / `DecryptInput`
-structs; the optional [`Esdk`](#the-esdk-client) client sets that configuration
-once and reuses it.
+The two primary operations are `encrypt` and `decrypt`.
+Each has a streaming variant (`encrypt_stream` / `decrypt_stream`) for data too large to hold in memory.
+Per-call configuration lives on the `EncryptInput` / `DecryptInput` structs.
+The optional [`Esdk`](#the-esdk-client) client holds that configuration for every call made through it.
 
 ## Prerequisites
 
-`aws-esdk` is not yet published to crates.io. For now you consume it by building
-from this repository, which also carries the in-repo crates it depends on.
+`aws-esdk` is not yet published to crates.io.
+Build it from this repository, which also holds the crates it depends on.
 
 Building from source needs:
 
 - Rust and `cargo`.
 - A C/C++ compiler and CMake, to build the default `aws-lc-sys` crypto backend.
-- Go, only if you enable the optional `fips` feature. That switches the backend
-  to `aws-lc-fips-sys`, which builds the FIPS module from source with CMake and
-  Go. The default (non-FIPS) build does not need Go.
-- AWS credentials, a KMS key, and a DynamoDB table for the hierarchical-keyring
-  paths only (see [Examples](#examples)). The raw-AES, streaming, and custom-keyring
-  paths run offline.
+- Go, only for the optional `fips` feature.
+  It switches the backend to `aws-lc-fips-sys`, which builds the FIPS module from source with CMake and Go.
+
+The examples that use the hierarchical keyring also need AWS credentials, a KMS key, and a DynamoDB table (see [Examples](#examples)).
 
 ## Quickstart
 
@@ -40,8 +35,8 @@ use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // For demonstration only: a real application must source its wrapping key
-    // from a secure store and never hardcode it.
+    // For demonstration only.
+    // A real application must load its wrapping key from a secure store, never hardcode it.
     let keyring = RawAesKeyring::builder()
         .key_namespace("my-key-namespace")
         .key_name("my-key-name")
@@ -49,8 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()?;
 
-    // The encryption context is authenticated, not encrypted, and is bound to
-    // the message.
+    // The encryption context is authenticated, not encrypted, and is bound to the message.
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "quickstart");
 
@@ -79,9 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## The `Esdk` client
 
-`encrypt` / `decrypt` take the commitment policy and encrypted-data-key cap on
-each input. To set them once and reuse them, build an `Esdk` client and call its
-methods instead:
+`encrypt` / `decrypt` read the commitment policy and the encrypted data key cap from each input.
+To set them once, build an `Esdk` client and call its methods instead:
 
 ```rust
 use aws_esdk::{CommitmentPolicy, Esdk};
@@ -92,56 +85,52 @@ let esdk = Esdk::builder()
 let encrypted = esdk.encrypt(&input).await?;
 ```
 
-Set the commitment policy and EDK cap in exactly one place — on the client or on
-the input, not both.
+Set them on the client or on the input, not both.
+The client's methods return a `Validation` error when the input sets them too.
 
 ## Streaming
 
-`encrypt_stream` / `decrypt_stream` read from any `Read` and write to any
-`Write`, processing arbitrarily large inputs in bounded memory.
+`encrypt_stream` / `decrypt_stream` read from any `Read` and write to any `Write`, so memory use stays bounded however large the input is.
 
-Streamed decrypt releases plaintext to the sink before the whole message is
-verified. It returns normally only if the message authenticates; if it errors,
-discard everything it produced. Streamed decrypt also refuses a multi-frame
-message under a signing suite — encrypt those under a non-signing suite, or
-decrypt them with the one-shot `decrypt`.
+Streamed decrypt writes plaintext to the sink before it has verified the whole message.
+It returns `Ok` only if the message authenticates.
+If it returns an error, discard everything it wrote.
+
+Streamed decrypt rejects a multi-frame message under a signing suite.
+Encrypt such messages under a non-signing suite, or decrypt them with the one-shot `decrypt`.
 
 ## Examples
 
-Runnable examples live under [`examples/`](examples/). Run one with
-`cargo run --example <name>`:
+Runnable examples live under [`examples/`](examples/).
+Run one with `cargo run --example <name>`:
 
 | Example | Needs AWS |
 |---|---|
 | `raw_aes_keyring` | no |
 | `streaming` | no |
 | `custom_keyring` | no |
-| `hierarchical_keyring` | yes — KMS + DynamoDB |
-| `shared_storm_tracking_cache` | yes — KMS + DynamoDB |
-| `handling_errors` | yes — KMS + DynamoDB |
+| `hierarchical_keyring` | KMS + DynamoDB |
+| `shared_storm_tracking_cache` | KMS + DynamoDB |
+| `handling_errors` | KMS + DynamoDB |
 
-`make examples` runs every example; the ones that need AWS also need AWS credentials.
-Add `LOCAL_ONLY=--local-only` to run only the offline examples:
-`make examples LOCAL_ONLY=--local-only`.
+`make examples` runs every example.
+`make examples LOCAL_ONLY=--local-only` runs only the ones that don't need AWS.
 
 ## Build, test, and development
 
-`aws-esdk` builds as part of this repository. From a checkout, run these in the
-`esdk/` directory:
+Run these in the `esdk/` directory:
 
 ```bash
 cargo build              # build the library
-cargo build --examples   # build every example, including hierarchical_keyring
+cargo build --examples   # build every example
 cargo test               # run the test suite
 make test                # run the test suite across feature combinations
-make examples            # run every example (LOCAL_ONLY=--local-only for offline only)
+make examples            # run every example (LOCAL_ONLY=--local-only to skip the AWS ones)
 make clippy              # lint across feature combinations
 ```
 
-The library carries [Duvet](https://github.com/awslabs/duvet) citations (the
-`//=` / `//#` comments) that tie each specification requirement to the code and
-tests satisfying it. Generate the compliance report with `make duvet`; it writes
-HTML under `.duvet/reports`.
+The library carries [Duvet](https://github.com/awslabs/duvet) citations (the `//=` / `//#` comments) that tie each specification requirement to the code and tests that satisfy it.
+`make duvet` generates the compliance report as HTML under `.duvet/reports`.
 
 ## Security
 

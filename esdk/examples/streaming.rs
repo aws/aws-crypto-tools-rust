@@ -1,16 +1,15 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Example demonstrating use of streaming APIs.
+//! Encrypts a file into a second file with `encrypt_stream`, then decrypts it into a third with `decrypt_stream`.
 //!
-//! Streamed encrypt/decrypt is for data too large to hold in memory at once.
-//! `encrypt_stream` and `decrypt_stream` read from any `Read` source and write to any `Write` sink,
-//! so you can stream a whole file (or socket) straight through.
+//! The one-shot `encrypt` and `decrypt` hold the whole message in memory.
+//! The streaming APIs read from any `Read` and write to any `Write`,
+//! so a file or socket of any size passes through in bounded memory.
 //!
-//! This example encrypts a plaintext file to a ciphertext file, then decrypts that back to a third file.
+//! The example uses a non-signing suite: streamed decrypt rejects a multi-frame signed message.
 //!
-//! A non-signing suite is used so streamed decrypt works regardless of message size;
-//! the ESDK refuses streamed decrypt of a multi-frame signed message.
+//! Runs offline.
 
 use std::fs::{self, File};
 use std::io::Write;
@@ -29,11 +28,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ciphertext_path = dir.join("ciphertext.bin");
     let decrypted_path = dir.join("decrypted.txt");
 
-    // Seed a plaintext file to encrypt. In practice this file already exists.
+    // Stands in for a file the application already has.
     let plaintext = b"the quick brown fox jumps over the lazy dog";
     File::create(&plaintext_path)?.write_all(plaintext)?;
 
-    // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
+    // For demonstration only.
+    // A real application must load its wrapping key from a secure store, never hardcode it.
     let wrapping_key = vec![0x01u8; 32];
     let keyring = RawAesKeyring::builder()
         .key_namespace("my-key-namespace")
@@ -42,13 +42,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()?;
 
-    // The encryption context is authenticated, not encrypted.
-    // It is bound to the message and must be reproducible on decrypt.
+    // The encryption context is authenticated, not encrypted, and is bound to the message.
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "streaming-example");
     encryption_context.insert("is not", "secret");
 
-    // Encrypt the plaintext file straight into the ciphertext file.
     let enc_input = EncryptStreamInput::builder()
         .encryption_context(encryption_context.clone())
         .keyring(keyring.clone())
@@ -58,19 +56,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut input = File::open(&plaintext_path)?;
         let mut output = File::create(&ciphertext_path)?;
         if let Err(e) = encrypt_stream(&mut input, &mut output, &enc_input).await {
-            // On error the ciphertext is incomplete and unusable.
-            // Don't attempt to treat it as a valid message.
-            // We choose to delete it here.
+            // On error the ciphertext file is incomplete; delete it.
             drop(output);
             let _ = fs::remove_file(&ciphertext_path);
             return Err(e.into());
         }
     }
 
-    // Decrypt the ciphertext file back into the decrypted file.
-    // Note: decrypt_stream writes plaintext to the sink before verification completes.
-    // The function returns normally only if the whole message authenticates.
-    // If the function returns an error, you MUST discard the decrypted file/output.
+    // decrypt_stream writes plaintext to `output` before it has verified the whole message.
+    // It returns Ok only if the whole message authenticates.
     let dec_input = DecryptStreamInput::builder()
         .encryption_context(encryption_context)
         .keyring(keyring)
@@ -79,15 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut input = File::open(&ciphertext_path)?;
         let mut output = File::create(&decrypted_path)?;
         if let Err(e) = decrypt_stream(&mut input, &mut output, &dec_input).await {
-            // On error the plaintext is unverified.
-            // You MUST not use it and MUST discard it.
+            // On error the plaintext written so far is unverified; delete it unused.
             drop(output);
             let _ = fs::remove_file(&decrypted_path);
             return Err(e.into());
         }
     }
 
-    // The decrypted file matches the original plaintext (demo check only).
     assert_eq!(
         fs::read(&decrypted_path)?,
         plaintext,

@@ -3,8 +3,7 @@
 
 //! Encrypts and decrypts a message with a hierarchical keyring.
 //!
-//! Requires an existing key store with a provisioned branch key.
-//! Unlike the other examples this one needs AWS credentials, a KMS key, and a DynamoDB table, and does not run offline.
+//! Requires AWS credentials and an existing key store with a provisioned branch key.
 
 use std::time::Duration;
 
@@ -14,7 +13,7 @@ use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // KMS and DynamoDB clients come from the standard AWS config chain (region and credentials).
+    // The clients take their region and credentials from the default AWS config chain.
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let kms_client = aws_sdk_kms::Client::new(&sdk_config);
     let ddb_client = aws_sdk_dynamodb::Client::new(&sdk_config);
@@ -35,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store)
-        // How long cached branch-key material may be reused.
+        // How long the keyring reuses cached branch key material.
         .ttl(Duration::from_secs(600))
         .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
         .build()?;

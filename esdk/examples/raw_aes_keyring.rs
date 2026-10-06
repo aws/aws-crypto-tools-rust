@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Encrypts and decrypts a message with a raw AES keyring.
+//!
+//! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // For demonstration only: a real application must source its wrapping key from a secure store and never hardcode it.
+    // For demonstration only.
+    // A real application must load its wrapping key from a secure store, never hardcode it.
     let wrapping_key = vec![0x01u8; 32];
 
     // The namespace and name identify this wrapping key.

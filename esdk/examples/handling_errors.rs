@@ -4,7 +4,7 @@
 //! Handles the errors a hierarchical keyring returns: retries a decrypt that can succeed later,
 //! and reports a branch key or key store table that does not exist.
 //!
-//! Requires AWS credentials and the key store in hierarchical_keyring.rs.
+//! Requires AWS credentials and an existing key store with a provisioned branch key.
 
 use std::time::Duration;
 
@@ -74,9 +74,7 @@ async fn decrypt_with_retry(input: &DecryptInput<'_>) -> Result<DecryptOutput, E
     }
 }
 
-/// The first delay before retrying `err`.
-/// The SDK's retry kind says why the call might succeed later;
-/// back off longer when the service throttled.
+/// The first delay before retrying `err`: longer when the service throttled.
 fn first_delay(err: &Error) -> Duration {
     match err.retryable_error_kind() {
         Some(RetryErrorKind::ThrottlingError) => Duration::from_secs(1),
@@ -134,7 +132,8 @@ fn report(err: &Error) {
         // Error is non-exhaustive, so a match needs a catch-all arm.
         _ => println!("failed"),
     }
-    // The whole chain, for logs. Decide from the variant and its fields, never from this text.
+    // The whole error chain, for logs.
+    // Decide what to do from the variant and its fields, never from this text.
     println!("  {}", DisplayErrorContext(err));
 }
 

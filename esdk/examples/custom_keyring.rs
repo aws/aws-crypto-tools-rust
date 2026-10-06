@@ -1,13 +1,12 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! A keyring decides how each message's data key is protected.
-//! AWS provides a set of keyrings that meet most use cases.
-//! If your use case is not covered by AWS-provided keyrings, you can implement
-//! your own by implementing the [`Keyring`] trait.
+//! Defines a custom keyring by implementing the [`Keyring`] trait.
 //!
-//! `LocalKekKeyring` wraps each data key with AES-256-GCM under a local
-//! key-encryption key (KEK); the rest of the example uses it like any other keyring.
+//! `LocalKekKeyring` wraps each message's data key with AES-256-GCM under a local key-encryption key (KEK).
+//! `encrypt` and `decrypt` then use it like any other keyring.
+//!
+//! Runs offline.
 
 use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::Keyring;
@@ -21,15 +20,15 @@ const PROVIDER_ID: &str = "custom-keyring-example";
 const WRAP_IV_LEN: usize = 12;
 const WRAP_TAG_LEN: usize = 16;
 
-/// A caller-implemented keyring. Wraps the data key with AES-256-GCM under a
-/// local KEK and stores `iv || ciphertext || tag` as the EDK ciphertext.
+/// Wraps the data key with AES-256-GCM under a local KEK.
+/// Each EDK's ciphertext is `iv || ciphertext || tag`.
 #[derive(Clone, Debug)]
 struct LocalKekKeyring {
     kek: [u8; 32],
 }
 
 impl LocalKekKeyring {
-    /// Wrap `data_key` under the KEK with a fresh IV, as this keyring's EDK.
+    /// Wraps `data_key` under the KEK with a fresh random IV.
     fn wrap(&self, data_key: &[u8]) -> Result<EncryptedDataKey, MplError> {
         let mut iv = vec![0u8; WRAP_IV_LEN];
         generate_random_bytes(&mut iv)
@@ -87,11 +86,10 @@ impl Keyring for LocalKekKeyring {
             ));
         }
 
-        // Data key length in bytes, from the algorithm suite in the materials.
         let key_len = materials.algorithm_suite().encryption_key_length();
 
-        // Unwrap the data key from the EDK this keyring produced.
         for edk in &encrypted_data_keys {
+            // Skip EDKs written by other keyrings.
             if edk.key_provider_id() != PROVIDER_ID {
                 continue;
             }
@@ -126,7 +124,8 @@ impl Keyring for LocalKekKeyring {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // For demonstration only: a real application must source its KEK from a secure store and never hardcode it.
+    // For demonstration only.
+    // A real application must load its KEK from a secure store, never hardcode it.
     let keyring = LocalKekKeyring { kek: [0x2A; 32] };
 
     let plaintext = b"Hello World";

@@ -5,14 +5,12 @@
 //!
 //! A hierarchical keyring caches branch key material so it does not call KMS on every message.
 //! By default, each keyring gets its own cache.
-//! Building one cache and passing it to several keyrings makes them reuse each other's entries.
-//! Partition IDs control which keyrings see each other's entries within the same cache.
+//! Keyrings that share one cache and one partition ID reuse each other's entries.
 //!
-//! A storm-tracking cache also keeps many concurrent requests from refreshing the same entry at once:
+//! A storm-tracking cache also keeps concurrent requests from all refreshing the same entry:
 //! near expiry, one request refreshes the entry while the others keep using the cached value.
 //!
-//! Requires an existing key store with a provisioned branch key.
-//! Like the hierarchical keyring example, this one needs AWS credentials and does not run offline.
+//! Requires AWS credentials and an existing key store with a provisioned branch key.
 
 use std::time::Duration;
 
@@ -24,7 +22,7 @@ use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // KMS and DynamoDB clients come from the standard AWS config chain (region and credentials).
+    // The clients take their region and credentials from the default AWS config chain.
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
     // The AWS Crypto Tools CI test key store.
@@ -60,8 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sleep(Duration::from_millis(20))
         .build()?;
 
-    // Give both keyrings the same cache and partition id,
-    // so they reuse each other's cached branch key material.
+    // Same cache and partition ID, so the keyrings reuse each other's entries.
     let make_keyring = || {
         HierarchicalKeyring::builder()
             .key_store(key_store.clone())

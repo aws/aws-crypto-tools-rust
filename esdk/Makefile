@@ -12,13 +12,9 @@ test:
 	cargo test --no-default-features --features kms
 	cargo test --no-default-features --features ddb
 
-# Run `make examples LOCAL_ONLY=--local-only` to skip examples that need AWS credentials.
-# Otherwise `make examples` runs all examples by default.
+# `make examples LOCAL_ONLY=--local-only` skips the examples that need AWS credentials.
 LOCAL_ONLY ?=
-# Cargo will only register examples in 2 cases:
-# - examples/*.rs
-# - examples/NAME/main.rs
-# Examples cannot be declared elsewhere.
+# Cargo discovers examples at examples/NAME.rs and examples/NAME/main.rs; match both.
 EXAMPLES := $(basename $(notdir $(wildcard examples/*.rs))) \
             $(notdir $(patsubst %/main.rs,%,$(wildcard examples/*/main.rs)))
 CREDS_EXAMPLES := handling_errors hierarchical_keyring shared_storm_tracking_cache
