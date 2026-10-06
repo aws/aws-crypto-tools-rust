@@ -74,37 +74,77 @@ int main() {
                 }
                 // Question 3: which service denied access?
                 // The fix differs per service: a KMS key policy or grant, or an IAM policy on the table.
-                // Question 4: which resource do you need to act on?
-                // resource() is a copy of the resource this exception carries.
+                // service() is empty for a failure with no AWS service, so check it first.
                 const auto service = denied.service();
                 const auto resource = denied.resource();
-                if (service == Aws::Esdk::Service::Kms && resource &&
-                    resource->type() == Aws::Esdk::ResourceType::KmsKey) {
-                    std::cerr << "grant access to the KMS key " << resource->name() << "\n";
-                } else if (service == Aws::Esdk::Service::DynamoDb && resource &&
-                           resource->type() == Aws::Esdk::ResourceType::DynamoDbTable) {
-                    std::cerr << "grant access to the key store table " << resource->name() << "\n";
-                } else {
-                    // Later releases add services and resource types,
-                    // so every check ends with a branch for anything else.
+                const auto resource_type = resource ? resource->type() : Aws::Esdk::ResourceType::Unknown;
+                if (!service) {
+                    std::cerr << "access denied: " << denied.what() << "\n";
+                    return 1;
+                }
+                switch (*service) {
+                case Aws::Esdk::Service::Kms:
+                    // Question 4: which resource do you need to act on?
+                    // resource() is a copy of the resource this exception carries.
+                    switch (resource_type) {
+                    case Aws::Esdk::ResourceType::KmsKey:
+                        std::cerr << "grant access to the KMS key " << resource->name() << "\n";
+                        break;
+                    default:
+                        // Later releases add resource types,
+                        // so every switch on the resource ends in a default case.
+                        std::cerr << "AWS KMS denied access: " << denied.what() << "\n";
+                    }
+                    break;
+                case Aws::Esdk::Service::DynamoDb:
+                    switch (resource_type) {
+                    case Aws::Esdk::ResourceType::DynamoDbTable:
+                        std::cerr << "grant access to the key store table " << resource->name() << "\n";
+                        break;
+                    default:
+                        std::cerr << "DynamoDB denied access: " << denied.what() << "\n";
+                    }
+                    break;
+                default:
+                    // Later releases add services, so the service switch needs a default case too.
                     std::cerr << "access denied: " << denied.what() << "\n";
                 }
             } catch (const Aws::Esdk::ResourceNotFoundException& not_found) {
                 // A missing resource carries the resource to create or fix.
-                // The branch key is in DynamoDB, so the resource alone tells the cases apart.
+                // Branch on the service, then on the resource within it, the same way.
+                const auto service = not_found.service();
                 const auto resource = not_found.resource();
-                switch (resource ? resource->type() : Aws::Esdk::ResourceType::Unknown) {
-                case Aws::Esdk::ResourceType::BranchKey:
-                    std::cerr << "create the branch key " << resource->name() << " in the key store\n";
+                const auto resource_type = resource ? resource->type() : Aws::Esdk::ResourceType::Unknown;
+                if (!service) {
+                    std::cerr << "a resource does not exist: " << not_found.what() << "\n";
+                    return 1;
+                }
+                switch (*service) {
+                case Aws::Esdk::Service::Kms:
+                    switch (resource_type) {
+                    case Aws::Esdk::ResourceType::KmsKey:
+                        std::cerr << "the KMS key " << resource->name() << " does not exist\n";
+                        break;
+                    default:
+                        std::cerr << "an AWS KMS resource does not exist: " << not_found.what() << "\n";
+                    }
                     break;
-                case Aws::Esdk::ResourceType::DynamoDbTable:
-                    std::cerr << "the key store table " << resource->name() << " does not exist\n";
-                    break;
-                case Aws::Esdk::ResourceType::KmsKey:
-                    std::cerr << "the KMS key " << resource->name() << " does not exist\n";
+                case Aws::Esdk::Service::DynamoDb:
+                    // The key store keeps branch keys in DynamoDB,
+                    // so both a missing branch key and a missing table are DynamoDB resources.
+                    switch (resource_type) {
+                    case Aws::Esdk::ResourceType::BranchKey:
+                        std::cerr << "create the branch key " << resource->name() << " in the key store\n";
+                        break;
+                    case Aws::Esdk::ResourceType::DynamoDbTable:
+                        std::cerr << "the key store table " << resource->name() << " does not exist\n";
+                        break;
+                    default:
+                        std::cerr << "a DynamoDB resource does not exist: " << not_found.what() << "\n";
+                    }
                     break;
                 default:
-                    std::cerr << "an AWS resource does not exist: " << not_found.what() << "\n";
+                    std::cerr << "a resource does not exist: " << not_found.what() << "\n";
                 }
             } catch (const Aws::Esdk::AwsEncryptionSdkException& other) {
                 // Later releases add exception types,

@@ -114,20 +114,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
 
                 // A missing resource carries the resource to create or fix.
-                // The branch key is in DynamoDB, so `service()` is `DynamoDb` for both
-                // a missing branch key and a missing table;
-                // match on `resource()` directly when the service adds nothing.
-                Error::ResourceNotFound(not_found) => match not_found.resource() {
-                    Some(Resource::BranchKey(branch_key)) => {
-                        eprintln!("create the branch key {} in the key store", branch_key.id());
-                    }
-                    Some(Resource::DynamoDbTable(table)) => {
-                        eprintln!("the key store table {} does not exist", table.name());
-                    }
-                    Some(Resource::KmsKey(key)) => {
-                        eprintln!("the KMS key {} does not exist", key.arn());
-                    }
-                    _ => eprintln!("an AWS resource does not exist: {e}"),
+                // Branch on the service, then on the resource within it, the same way.
+                Error::ResourceNotFound(not_found) => match not_found.service() {
+                    Some(Service::Kms) => match not_found.resource() {
+                        Some(Resource::KmsKey(key)) => {
+                            eprintln!("the KMS key {} does not exist", key.arn());
+                        }
+                        _ => eprintln!("an AWS KMS resource does not exist: {e}"),
+                    },
+                    // The key store keeps branch keys in DynamoDB,
+                    // so both a missing branch key and a missing table are DynamoDB resources.
+                    Some(Service::DynamoDb) => match not_found.resource() {
+                        Some(Resource::BranchKey(branch_key)) => {
+                            eprintln!("create the branch key {} in the key store", branch_key.id());
+                        }
+                        Some(Resource::DynamoDbTable(table)) => {
+                            eprintln!("the key store table {} does not exist", table.name());
+                        }
+                        _ => eprintln!("a DynamoDB resource does not exist: {e}"),
+                    },
+                    _ => eprintln!("a resource does not exist: {e}"),
                 },
 
                 // `Error` gains new variants in later releases,
