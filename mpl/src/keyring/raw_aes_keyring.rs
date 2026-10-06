@@ -4,7 +4,7 @@
 //! Raw AES keyring.
 
 use crate::Error;
-use crate::error::Kind;
+use crate::error::{DataKeyInfo, Kind};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -310,10 +310,13 @@ impl Keyring for RawAesKeyring {
         let mut attempted_decryption = false;
         for (index, edk) in encrypted_data_keys.iter().enumerate() {
             let Some(iv) = self.decryptable_edk_iv(edk) else {
-                collected_errors.push(Error::new(Kind::NoMatchingDataKey, format!(
-                    "encrypted data key {index} did not match the keyring, expected key provider id {}",
-                    self.inner.key_namespace,
-                )));
+                collected_errors.push(
+                    Error::new(Kind::NoMatchingDataKey, format!(
+                        "encrypted data key {index} did not match the keyring, expected key provider id {}",
+                        self.inner.key_namespace,
+                    ))
+                    .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from)),
+                );
                 continue;
             };
             attempted_decryption = true;

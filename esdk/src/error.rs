@@ -22,6 +22,11 @@
 //! Other resources involved are named in the message:
 //! when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
 //! because the fix is a KMS permission, and the message names the branch key.
+//! A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account)
+//! of its ARN, and a [`BranchKey`] the [`version`](BranchKey::version) the failing call was about.
+//! A [`NoMatchingDataKey`](Error::NoMatchingDataKey) error's
+//! [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys) lists the message's
+//! encrypted data keys by key provider, so you can tell which keyring would decrypt it.
 //! When a keyring or CMM you passed returns bad materials or none, `resource()` is
 //! [`Resource::Keyring`] or [`Resource::Cmm`] with its name, unless it names
 //! something more specific, such as a corrupt branch key.
@@ -194,8 +199,8 @@ mod generated;
 pub use generated::*;
 
 pub use aws_mpl_primitives::error::{
-    BranchKey, Cache, CmmResource, Collection, ConflictReason, DynamoDbTable, KeyringResource,
-    KmsKey, Resource, RetryKind, Service,
+    BranchKey, Cache, CmmResource, Collection, ConflictReason, DataKeyInfo, DynamoDbTable,
+    KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
 pub use aws_smithy_types::error::display::DisplayErrorContext;
 pub use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};

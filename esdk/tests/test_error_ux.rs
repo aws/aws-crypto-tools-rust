@@ -13,7 +13,7 @@ use aws_esdk::error::{
 };
 use aws_esdk::{DecryptInput, EncryptInput, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
-use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply, TABLE};
+use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply, TABLE, VERSION};
 
 fn context() -> EncryptionContext {
     let mut ec = EncryptionContext::new();
@@ -108,10 +108,26 @@ async fn a_wrong_raw_aes_keyring_names_the_keyring_used() {
             "my-namespace/my-key"
         )))
     );
+    assert_eq!(e.encrypted_data_keys().len(), 1);
+    assert_eq!(
+        e.encrypted_data_keys()[0].key_provider_id(),
+        "other-namespace"
+    );
+    assert!(
+        e.encrypted_data_keys()[0]
+            .key_provider_info()
+            .starts_with(b"other-key")
+    );
     assert!(err.collected().is_empty());
     assert_eq!(
+        err.to_string(),
+        "NoMatchingDataKey: decrypt could not get decryption materials \
+         (keyring my-namespace/my-key; message has: other-namespace)"
+    );
+    assert_eq!(
         format!("{err:#}"),
-        "NoMatchingDataKey: decrypt could not get decryption materials (keyring my-namespace/my-key): \
+        "NoMatchingDataKey: decrypt could not get decryption materials \
+         (keyring my-namespace/my-key; message has: other-namespace): \
          encrypted data key 0 did not match the keyring, expected key provider id my-namespace"
     );
 }
@@ -137,7 +153,7 @@ async fn expired_credentials_on_dynamodb_get_item() {
 }
 
 #[tokio::test]
-async fn a_missing_branch_key_record_names_the_branch_key() {
+async fn a_missing_branch_key_version_record_names_the_branch_key_version() {
     let err = hierarchical_decrypt_error(FakeAws::new(|op, _| {
         (op == "DynamoDB_20120810.GetItem").then(|| Reply::ok("{}"))
     }))
@@ -148,7 +164,9 @@ async fn a_missing_branch_key_record_names_the_branch_key() {
     assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(
         e.resource(),
-        Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
+        Some(&Resource::BranchKey(
+            BranchKey::new(BRANCH_KEY_ID).with_version(VERSION)
+        ))
     );
 }
 
@@ -168,7 +186,9 @@ async fn a_corrupt_branch_key_record_is_invalid_materials_about_the_branch_key()
     };
     assert_eq!(
         e.resource(),
-        Some(&Resource::BranchKey(BranchKey::new(BRANCH_KEY_ID)))
+        Some(&Resource::BranchKey(
+            BranchKey::new(BRANCH_KEY_ID).with_version(VERSION)
+        ))
     );
     assert_eq!(e.service(), Some(&Service::DynamoDb));
     assert_eq!(e.code(), None);

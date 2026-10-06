@@ -6,7 +6,7 @@
 use std::error::Error as _;
 
 use aws_mpl_primitives::error::{
-    BranchKey, Cache, CmmResource, ConflictReason, CryptographicError, DynamoDbTable,
+    BranchKey, Cache, CmmResource, ConflictReason, CryptographicError, DataKeyInfo, DynamoDbTable,
     InternalError, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
 use aws_mpl_primitives::{DigestAlg, Error, hkdf};
@@ -128,6 +128,78 @@ fn each_resource_payload_converts_into_its_variant() {
     assert!(matches!(&keyring, Resource::Keyring(k) if k.name() == "ns/key"));
     let cmm = Resource::from(CmmResource::new("default"));
     assert!(matches!(&cmm, Resource::Cmm(c) if c.name() == "default"));
+}
+
+#[test]
+fn a_kms_key_reads_its_region_and_account_from_a_kms_arn() {
+    let cases = [
+        (
+            "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            Some(("us-west-2", "111122223333")),
+        ),
+        (
+            "arn:aws:kms:eu-west-1:111122223333:key/mrk-1234abcd12ab34cd56ef1234567890ab",
+            Some(("eu-west-1", "111122223333")),
+        ),
+        (
+            "arn:aws-cn:kms:cn-north-1:111122223333:alias/my-alias",
+            Some(("cn-north-1", "111122223333")),
+        ),
+        ("1234abcd-12ab-34cd-56ef-1234567890ab", None),
+        ("mrk-1234abcd12ab34cd56ef1234567890ab", None),
+        ("alias/my-alias", None),
+        ("arn:aws:kms:k", None),
+        ("arn:aws:s3:us-west-2:111122223333:key/k", None),
+        ("arn:aws:kms:us-west-2:111122223333:grant/g", None),
+        ("arn:aws:kms:us-west-2:111122223333:key/", None),
+        ("arn:aws:kms::111122223333:key/k", None),
+        ("arn:aws:kms:us-west-2::key/k", None),
+        ("arn::kms:us-west-2:111122223333:key/k", None),
+        ("", None),
+    ];
+    for (arn, expected) in cases {
+        let key = KmsKey::new(arn);
+        assert_eq!(key.arn(), arn);
+        assert_eq!(key.region(), expected.map(|(r, _)| r), "{arn}");
+        assert_eq!(key.account(), expected.map(|(_, a)| a), "{arn}");
+    }
+    let debug = format!(
+        "{:?}",
+        KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/k")
+    );
+    assert!(debug.contains("region: Some(\"us-west-2\")"), "{debug}");
+    assert!(debug.contains("account: Some(\"111122223333\")"), "{debug}");
+}
+
+#[test]
+fn a_branch_key_has_a_version_only_when_given_one() {
+    let unversioned = BranchKey::new("my-branch-key");
+    assert_eq!(unversioned.version(), None);
+    let versioned = unversioned.clone().with_version("v1");
+    assert_eq!(versioned.id(), "my-branch-key");
+    assert_eq!(versioned.version(), Some("v1"));
+    assert_ne!(versioned, unversioned);
+    assert_eq!(
+        Resource::from(versioned.clone()).to_string(),
+        "branch key my-branch-key"
+    );
+    assert!(format!("{versioned:?}").contains("version: Some(\"v1\")"));
+}
+
+#[test]
+fn data_key_info_debug_shows_utf8_info_as_text_and_other_info_as_hex() {
+    let text = DataKeyInfo::new("aws-kms-hierarchy", b"my-branch-key".to_vec());
+    assert_eq!(text.key_provider_id(), "aws-kms-hierarchy");
+    assert_eq!(text.key_provider_info(), b"my-branch-key");
+    assert_eq!(
+        format!("{text:?}"),
+        r#"DataKeyInfo { key_provider_id: "aws-kms-hierarchy", key_provider_info: "my-branch-key" }"#
+    );
+    let binary = DataKeyInfo::new("raw", vec![0x00, 0xab, 0xff]);
+    assert_eq!(
+        format!("{binary:?}"),
+        r#"DataKeyInfo { key_provider_id: "raw", key_provider_info: 0x00abff }"#
+    );
 }
 
 #[test]
