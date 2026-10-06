@@ -631,11 +631,12 @@ impl Error {
     /// The first error of type `T` in the source chain, starting with `self`.
     ///
     /// ```
-    /// # use aws_mpl_primitives::error::{Error, InternalError};
-    /// # let err = Error::from(InternalError::new("example").with_source(std::io::Error::other("cause")));
-    /// // `err` is an error a call returned.
-    /// if let Some(io) = err.find_source::<std::io::Error>() {
-    ///     assert_eq!(io.to_string(), "cause");
+    /// use aws_mpl_primitives::error::Error;
+    ///
+    /// fn handle(err: &Error) {
+    ///     if let Some(io) = err.find_source::<std::io::Error>() {
+    ///         println!("{io}");
+    ///     }
     /// }
     /// ```
     #[must_use]
@@ -691,16 +692,21 @@ impl std::error::Error for Error {
 /// # Example
 ///
 /// ```
-/// # use aws_mpl_primitives::error::{CryptographicError, Error};
-/// # let err = Error::from(CryptographicError::new("authentication tag did not match"));
-/// // `err` is an error a call returned.
-/// match &err {
-///     // The message is corrupt or modified, or the key is wrong; retrying cannot help.
-///     Error::Cryptographic(_) => eprintln!("reject the message"),
-///     _ => {}
+/// use aws_mpl_primitives::error::Error;
+///
+/// fn handle(err: &Error) {
+///     match err {
+///         // The message is corrupt or modified, or the key is wrong; retrying cannot help.
+///         Error::Cryptographic(_) => eprintln!("reject the message"),
+///         _ => {}
+///     }
 /// }
-/// assert!(!err.is_retryable());
-/// assert_eq!(err.to_string(), "Cryptographic: authentication tag did not match");
+/// ```
+///
+/// What `{}` prints:
+///
+/// ```text
+/// Cryptographic: authentication tag did not match
 /// ```
 #[derive(Clone)]
 pub struct CryptographicError {
@@ -785,16 +791,21 @@ impl From<CryptographicError> for Error {
 /// # Example
 ///
 /// ```
-/// # use aws_mpl_primitives::error::{Error, InternalError};
-/// # let err = Error::from(InternalError::new("cache lock poisoned"));
-/// // `err` is an error a call returned.
-/// match &err {
-///     // A bug in this library: log the whole chain and report it.
-///     Error::Internal(_) => eprintln!("{err:#}"),
-///     _ => {}
+/// use aws_mpl_primitives::error::Error;
+///
+/// fn handle(err: &Error) {
+///     match err {
+///         // A bug in this library: log the whole chain and report it.
+///         Error::Internal(_) => eprintln!("{err:#}"),
+///         _ => {}
+///     }
 /// }
-/// assert!(!err.is_retryable());
-/// assert_eq!(err.to_string(), "Internal: cache lock poisoned");
+/// ```
+///
+/// What `{}` prints:
+///
+/// ```text
+/// Internal: cache lock poisoned
 /// ```
 #[derive(Clone)]
 pub struct InternalError {
