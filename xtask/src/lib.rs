@@ -1783,7 +1783,7 @@ impl From<{st}> for Error {{
             let short = if self.lib.short_constructors {
                 let f = v.predicate.trim_start_matches("is_");
                 format!(
-                    "        assert_eq!(keys_of(&Error::{f}(\"m\").with_encrypted_data_keys(keys())), keys());\n        let other = Error::new(Kind::{other}, \"m\").with_encrypted_data_keys(keys());\n        assert!(other.data().data_keys.is_empty());\n"
+                    "        assert_eq!(keys_of(&Error::{f}(\"m\").with_encrypted_data_keys(keys())), keys());\n        let other = Error::new(Kind::{other}, \"m\").with_encrypted_data_keys(keys());\n        assert_eq!(other.data().data_keys, Vec::<DataKeyInfo>::new());\n"
                 )
             } else {
                 String::new()
@@ -1812,7 +1812,7 @@ impl From<{st}> for Error {{
         let debug = format!("{{s:?}}");
         assert!(debug.contains("arn:aws:kms:us-east-1:111122223333:key/k"), "{{debug}}");
         assert!(debug.contains("0xff00"), "{{debug}}");
-        assert!({st}::new("m").encrypted_data_keys().is_empty());
+        assert_eq!({st}::new("m").encrypted_data_keys().to_vec(), Vec::<DataKeyInfo>::new());
 
         let e = Error::from(s);
         let wrapped = Error::wrap("outer", e.clone());
@@ -1829,7 +1829,7 @@ impl From<{st}> for Error {{
             "all",
             vec![e, Error::new(Kind::{n}, "none")],
         );
-        assert!(keys_of(&mixed).is_empty());
+        assert_eq!(keys_of(&mixed), Vec::<DataKeyInfo>::new());
         assert_eq!(keys_of(&mixed.failures()[0]), keys());
 {short}    }}
 "#
