@@ -93,12 +93,10 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 
 /// A real [`BranchKeyStore`] that is never consulted.
 ///
-/// The type is the one callers actually pass to the keyring, but it points at
-/// a table and KMS key that do not exist, so any key store call would fail.
-/// That is safe here because no test using this helper makes one:
-/// `HierarchicalKeyringBuilder::build` reads only the key store's local configuration,
-/// and the key store first reaches KMS or DynamoDB inside OnEncrypt / OnDecrypt.
-/// Tests that exercise those operations use the `FakeKeyStore` doubles in `mod onencrypt` / `mod ondecrypt` instead.
+/// The type is the one callers actually pass to the keyring,
+/// but it points at a table and KMS key that do not exist, so any key store call would fail.
+/// No test using it makes one: building the keyring reads only the key store's configuration.
+/// Tests that run OnEncrypt / OnDecrypt use the `FakeKeyStore` doubles in `mod onencrypt` / `mod ondecrypt`.
 fn key_store_never_consulted() -> BranchKeyStore {
     let (kms, ddb) = dummy_clients();
     build_without_io(
@@ -1251,7 +1249,7 @@ fn wrap_fails_when_encryption_context_value_too_large() {
 //
 // The `FAKE_*` fixtures here are placeholders for exercising the keyring's own
 // logic. They are deliberately distinct from the `FIXTURE_*` constants above,
-// which carry the real integration-key store values used by the
+// which carry the real integration key store values used by the
 // cache-identifier and wrap / unwrap tests.
 
 const FAKE_BRANCH_KEY: [u8; 32] = [
@@ -2133,8 +2131,7 @@ mod ondecrypt {
         }
 
         // Build a real EDK first, then swap in a key store whose
-        // get_branch_key_version returns an error so the on_decrypt
-        // key store-fallthrough path lights up.
+        // get_branch_key_version fails.
         let priming_keyring = build_keyring(
             FakeKeyStore::new(fake_branch_key_materials()),
             FAKE_BRANCH_KEY_ID,

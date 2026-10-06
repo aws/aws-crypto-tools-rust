@@ -83,15 +83,16 @@ pub trait Keyring: Send + Sync {
         Cow::Borrowed(std::any::type_name::<Self>())
     }
 
-    /// Add a data key to the input's encryption materials,
-    /// generating the plaintext data key if they have none, and return them. See the
-    /// [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
+    /// Add a data key to the input's encryption materials and return them.
+    /// When the materials have no plaintext data key, generate one.
+    /// See the [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
     /// section of the keyring interface specification.
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error>;
 
     /// Decrypt one of the input's encrypted data keys,
-    /// add its plaintext data key to the input's decryption materials, and return them. See the
-    /// [OnDecrypt](../../../spec/framework/keyring-interface.md#ondecrypt)
+    /// add its plaintext data key to the input's decryption materials,
+    /// and return them.
+    /// See the [OnDecrypt](../../../spec/framework/keyring-interface.md#ondecrypt)
     /// section of the keyring interface specification.
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error>;
 }

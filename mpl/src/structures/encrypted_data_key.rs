@@ -25,7 +25,8 @@ pub struct EncryptedDataKey {
 }
 
 impl EncryptedDataKey {
-    /// Start a builder for `EncryptedDataKey`. Every field is required.
+    /// Start a builder for `EncryptedDataKey`.
+    /// Every field is required.
     #[must_use]
     pub fn builder() -> EncryptedDataKeyBuilder {
         EncryptedDataKeyBuilder::default()
@@ -59,21 +60,24 @@ pub struct EncryptedDataKeyBuilder {
 }
 
 impl EncryptedDataKeyBuilder {
-    /// Set the key provider identifier. Required.
+    /// Set the key provider identifier.
+    /// Required.
     #[must_use]
     pub fn key_provider_id(mut self, key_provider_id: impl Into<String>) -> Self {
         self.key_provider_id = Some(key_provider_id.into());
         self
     }
 
-    /// Set the key provider information. Required.
+    /// Set the key provider information.
+    /// Required.
     #[must_use]
     pub fn key_provider_info(mut self, key_provider_info: impl Into<Vec<u8>>) -> Self {
         self.key_provider_info = Some(key_provider_info.into());
         self
     }
 
-    /// Set the ciphertext. Required.
+    /// Set the ciphertext.
+    /// Required.
     #[must_use]
     pub fn ciphertext(mut self, ciphertext: impl Into<Vec<u8>>) -> Self {
         self.ciphertext = Some(ciphertext.into());
@@ -84,8 +88,7 @@ impl EncryptedDataKeyBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a [`Validation`](crate::Error::Validation)
-    /// error if any field is unset.
+    /// - [`Validation`](crate::Error::Validation): a field is unset.
     pub fn build(self) -> Result<EncryptedDataKey, Error> {
         let Some(key_provider_id) = self.key_provider_id else {
             return Err(Error::new(

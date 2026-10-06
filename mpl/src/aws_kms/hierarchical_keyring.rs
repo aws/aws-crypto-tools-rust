@@ -3,11 +3,10 @@
 
 //! AWS KMS Hierarchical Keyring.
 //!
-//! Provides the keyring's construction and configuration surface, its
-//! OnEncrypt and OnDecrypt operations, and the key store- / cache-fallthrough
-//! they share. The pure-crypto wrap and unwrap operations live in
-//! [`super::branch_key_wrap`] and the cache identifier formulas in
-//! [`super::cache_entry_identifier`].
+//! The keyring's builder, its OnEncrypt and OnDecrypt operations,
+//! and the branch key lookup they share: the cache first, then the key store.
+//! The pure-crypto wrap and unwrap operations live in [`super::branch_key_wrap`]
+//! and the cache identifier formulas in [`super::cache_entry_identifier`].
 
 use crate::Error;
 use crate::builder::required;
@@ -46,7 +45,7 @@ impl GetBranchKeyIdInput {
         GetBranchKeyIdInputBuilder::default()
     }
 
-    /// The encryption context of the encryption or decryption.
+    /// The encryption context of the message being encrypted or decrypted.
     #[must_use]
     pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
@@ -60,7 +59,7 @@ pub struct GetBranchKeyIdInputBuilder {
 }
 
 impl GetBranchKeyIdInputBuilder {
-    /// Set the encryption context of the encryption or decryption.
+    /// Set the encryption context of the message being encrypted or decrypted.
     /// Required.
     #[must_use]
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
@@ -108,7 +107,7 @@ impl GetBranchKeyIdOutput {
         &self.branch_key_id
     }
 
-    /// The branch key id, consuming the output.
+    /// The branch key identifier, consuming the output.
     #[must_use]
     pub fn into_branch_key_id(self) -> String {
         self.branch_key_id
@@ -130,7 +129,7 @@ impl GetBranchKeyIdOutputBuilder {
         self
     }
 
-    /// Set or clear the branch key id from an `Option`.
+    /// Set or clear the branch key identifier from an `Option`.
     /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
@@ -208,8 +207,7 @@ struct HierarchicalKeyringInner {
     partition_id_bytes: Vec<u8>,
 
     /// The key store's logical name, which the cache identifier formulas bind.
-    /// Not a construction parameter: it is read from the key store's own
-    /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
+    /// [`HierarchicalKeyringBuilder::build`] reads it once from the key store's `get_key_store_info`.
     logical_key_store_name: String,
 
     /// Cryptographic-materials cache for branch-key materials: the caller's
@@ -286,9 +284,10 @@ impl std::fmt::Debug for HierarchicalKeyringBuilder {
 }
 
 impl HierarchicalKeyringBuilder {
-    /// The key store. Required.
+    /// The key store.
+    /// Required.
     ///
-    /// Pass a [`KeyStoreClient`], or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
+    /// Pass a [`KeyStoreClient`] or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
     #[must_use]
     pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
         self.key_store = Some(key_store.into());
@@ -587,9 +586,8 @@ impl Keyring for HierarchicalKeyring {
         // successfully decrypted, so the input `materials` parameter (owned
         // but never mutated) is dropped without modification.
 
-        // Nothing was attempted: every supplied EDK was filtered out before
-        // the key store was consulted, so this is not an aggregate of failures
-        // but a distinct one — no encrypted data key matched this keyring.
+        // Every EDK was filtered out before the key store was called,
+        // so the error is that no encrypted data key matched, not an aggregate of failures.
         if collected_errors.is_empty() {
             return Err(
                 Error::new(Kind::NoMatchingDataKey, "no encrypted data key matched")
@@ -665,11 +663,12 @@ impl HierarchicalKeyring {
         Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
     }
 
-    /// Run the OnDecrypt steps for a single (already-filtered) EDK:
-    /// parse the version, compute the cache identifier, do the cache
-    /// and key store fallthrough to obtain branch-key materials, and
-    /// unwrap the EDK ciphertext. Returns the recovered plaintext
-    /// data-key bytes on success.
+    /// Run the OnDecrypt steps for one EDK that passed filtering:
+    /// parse the version,
+    /// compute the cache identifier,
+    /// get the branch key materials from the cache or else the key store,
+    /// and unwrap the EDK ciphertext.
+    /// Returns the recovered plaintext data key bytes.
     ///
     /// The caller (`on_decrypt`) is responsible for filtering the EDK
     /// list and for collecting per-EDK errors into the final error.

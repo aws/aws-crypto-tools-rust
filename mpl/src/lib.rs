@@ -14,9 +14,8 @@ pub mod structures;
 
 pub use error::Error;
 pub use shared::IntoShared;
-// Re-exported because `AesGcm` appears in the public signature of
-// `RawAesKeyringBuilder::wrapping_alg`; without this a caller would have to depend on
-// `aws-mpl-primitives` directly just to name the wrapping algorithm.
+// Re-exported because `RawAesKeyringBuilder::wrapping_alg` takes an `AesGcm`,
+// so callers can name the wrapping algorithm without depending on `aws-mpl-primitives`.
 pub use aws_mpl_primitives::AesGcm;
 
 pub use aws_config;

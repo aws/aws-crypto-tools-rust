@@ -50,9 +50,8 @@ const RESERVED_KEY_NAMESPACE_PREFIX: &str = "aws-kms";
 
 /// A keyring that wraps and unwraps data keys with a local AES-GCM wrapping key.
 ///
-/// Construct with [`RawAesKeyring::builder`]. The [`Keyring`] impl performs
-/// AES-GCM encryption of the plaintext data key using the serialized
-/// encryption context as additional authenticated data.
+/// Construct with [`RawAesKeyring::builder`].
+/// The keyring uses the serialized encryption context as AES-GCM additional authenticated data.
 #[derive(Clone)]
 pub struct RawAesKeyring {
     inner: Arc<RawAesKeyringInner>,
@@ -82,7 +81,8 @@ impl std::fmt::Debug for RawAesKeyring {
 }
 
 impl RawAesKeyring {
-    /// Start a builder for `RawAesKeyring`. Every field is required.
+    /// Start a builder for `RawAesKeyring`.
+    /// Every field is required.
     #[must_use]
     pub fn builder() -> RawAesKeyringBuilder {
         RawAesKeyringBuilder::default()
@@ -222,35 +222,35 @@ impl std::fmt::Debug for RawAesKeyringBuilder {
 }
 
 impl RawAesKeyringBuilder {
-    /// Set the key namespace, used as the key provider ID of EDKs this
-    /// keyring produces. Required. Must not be or start with `aws-kms`.
+    /// Set the key namespace, which becomes the key provider ID of each EDK this keyring produces.
+    /// Required, and must not be or start with `aws-kms`.
     #[must_use]
     pub fn key_namespace(mut self, key_namespace: impl Into<String>) -> Self {
         self.key_namespace = Some(key_namespace.into());
         self
     }
 
-    /// Set the key name, serialized into the key provider information of EDKs
-    /// this keyring produces. Required.
+    /// Set the key name, which this keyring serializes into the key provider information of each EDK.
+    /// Required.
     #[must_use]
     pub fn key_name(mut self, key_name: impl Into<String>) -> Self {
         self.key_name = Some(key_name.into());
         self
     }
 
-    /// Set the wrapping key. Required.
+    /// Set the wrapping key.
+    /// Required.
     ///
-    /// The wrapping key MUST be a secret value of cryptographically secure
-    /// pseudo-random bytes, randomly generated from a cryptographically secure
-    /// entropy source. Its length MUST be 128, 192, or 256 bits and MUST match
-    /// the length specified by the wrapping algorithm.
+    /// The wrapping key must be secret bytes from a cryptographically secure random source.
+    /// Its length must be 128, 192, or 256 bits and match the wrapping algorithm.
     #[must_use]
     pub fn wrapping_key(mut self, wrapping_key: impl Into<Vec<u8>>) -> Self {
         self.wrapping_key = Some(wrapping_key.into());
         self
     }
 
-    /// Set the wrapping algorithm. Required.
+    /// Set the wrapping algorithm.
+    /// Required.
     #[must_use]
     pub const fn wrapping_alg(mut self, wrapping_alg: AesGcm) -> Self {
         self.wrapping_alg = Some(wrapping_alg);
@@ -261,7 +261,9 @@ impl RawAesKeyringBuilder {
     ///
     /// # Errors
     ///
-    /// - [`Validation`](crate::Error::Validation): a field is unset, the wrapping key's length does not match the length specified by the wrapping algorithm, or the key namespace is equal to or starts with the reserved value `aws-kms`.
+    /// - [`Validation`](crate::Error::Validation): a field is unset,
+    ///   the wrapping key's length does not match the wrapping algorithm,
+    ///   or the key namespace is or starts with `aws-kms`.
     pub fn build(self) -> Result<RawAesKeyring, Error> {
         let Some(key_namespace) = self.key_namespace else {
             return Err(Error::new(Kind::Validation, "a key namespace is required"));

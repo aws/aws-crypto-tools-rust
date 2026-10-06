@@ -30,7 +30,8 @@ impl GetEncryptionMaterialsInput {
         GetEncryptionMaterialsInputBuilder::default()
     }
 
-    /// The encryption context the caller supplied. May be empty.
+    /// The encryption context the caller supplied.
+    /// May be empty.
     #[must_use]
     pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
@@ -42,7 +43,8 @@ impl GetEncryptionMaterialsInput {
         self.commitment_policy
     }
 
-    /// The algorithm suite to use. When unset, the CMM picks one from the commitment policy.
+    /// The algorithm suite to use.
+    /// When unset, the CMM picks one from the commitment policy.
     #[must_use]
     pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
         self.algorithm_suite_id
@@ -54,7 +56,8 @@ impl GetEncryptionMaterialsInput {
         self.required_encryption_context_keys.as_ref()
     }
 
-    /// The maximum plaintext length the materials are for. When unset, there is no bound.
+    /// The maximum plaintext length the materials are for.
+    /// When unset, there is no bound.
     #[must_use]
     pub const fn max_plaintext_length(&self) -> Option<u64> {
         self.max_plaintext_length
@@ -72,8 +75,8 @@ pub struct GetEncryptionMaterialsInputBuilder {
 }
 
 impl GetEncryptionMaterialsInputBuilder {
-    /// Set the encryption context the caller supplied. May be empty.
-    /// Required.
+    /// Set the encryption context the caller supplied.
+    /// Required, and may be empty.
     #[must_use]
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
         self.encryption_context = Some(encryption_context.into());
@@ -104,14 +107,15 @@ impl GetEncryptionMaterialsInputBuilder {
         self
     }
 
-    /// Set the algorithm suite to use. When unset, the CMM picks one from the commitment policy.
+    /// Set the algorithm suite to use.
+    /// When unset, the CMM picks one from the commitment policy.
     #[must_use]
     pub fn algorithm_suite_id(mut self, algorithm_suite_id: impl Into<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = Some(algorithm_suite_id.into());
         self
     }
 
-    /// Set or clear the algorithm suite id from an `Option`.
+    /// Set or clear the algorithm suite from an `Option`.
     /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
@@ -145,14 +149,15 @@ impl GetEncryptionMaterialsInputBuilder {
         self
     }
 
-    /// Set the maximum plaintext length the materials are for. When unset, there is no bound.
+    /// Set the maximum plaintext length the materials are for.
+    /// When unset, there is no bound.
     #[must_use]
     pub fn max_plaintext_length(mut self, max_plaintext_length: impl Into<u64>) -> Self {
         self.max_plaintext_length = Some(max_plaintext_length.into());
         self
     }
 
-    /// Set or clear the max plaintext length from an `Option`.
+    /// Set or clear the maximum plaintext length from an `Option`.
     /// To set a value, use [`Self::max_plaintext_length`].
     #[must_use]
     pub fn set_max_plaintext_length(mut self, max_plaintext_length: Option<u64>) -> Self {
@@ -280,7 +285,8 @@ impl DecryptMaterialsInput {
         &self.encrypted_data_keys
     }
 
-    /// The encryption context in the message header. May be empty.
+    /// The encryption context in the message header.
+    /// May be empty.
     #[must_use]
     pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
@@ -312,7 +318,7 @@ impl DecryptMaterialsInputBuilder {
         self
     }
 
-    /// Set or clear the algorithm suite id from an `Option`.
+    /// Set or clear the algorithm suite from an `Option`.
     /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
@@ -358,8 +364,8 @@ impl DecryptMaterialsInputBuilder {
         self
     }
 
-    /// Set the encryption context in the message header. May be empty.
-    /// Required.
+    /// Set the encryption context in the message header.
+    /// Required, and may be empty.
     #[must_use]
     pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
         self.encryption_context = Some(encryption_context.into());

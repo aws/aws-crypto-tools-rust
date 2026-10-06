@@ -221,7 +221,7 @@ async fn integ_on_decrypt_round_trips_through_real_key_store_and_kms() {
     //   2. Logical key store name lookup (DDB GetItem path on get_key_store_info)
     //   3. Cache lookup (decrypt scope id) — MISS, since on_encrypt cached
     //      under the encrypt scope id, which is a different key
-    //   4. key store.get_branch_key_version().branch_key_id(branch_key_id).branch_key_version(version).send() call
+    //   4. the key store's get_branch_key_version call
     //      (DDB GetItem + KMS Decrypt for the version-specific record)
     //   5. branch_key_unwrap with the input DM's encryption context
     let key_store = build_key_store().await;
@@ -317,7 +317,7 @@ async fn build_key_store_with_kms_and_logical_name(
 ///
 /// What this checks is narrower than why these tests expect a failure. Every
 /// `hk2` here is built by `build_key_store_with_kms_and_logical_name`, which pins
-/// `KmsConfiguration::KmsKeyArn(KEY_ARN.to_string())` — a us-west-2 ARN — while handing the
+/// `KmsConfiguration::KmsKeyArn(KEY_ARN.to_string())` -- a us-west-2 ARN -- while handing the
 /// key store a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///

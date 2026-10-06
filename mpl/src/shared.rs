@@ -7,7 +7,7 @@
 //! Each trait has a handle that can be stored: [`SharedKeyring`](crate::SharedKeyring),
 //! [`SharedCmm`](crate::SharedCmm), [`SharedCmc`](crate::SharedCmc), and
 //! [`SharedBranchKeySupplier`](crate::SharedBranchKeySupplier).
-//! A key store is held by [`KeyStoreClient`](crate::KeyStoreClient) instead.
+//! [`KeyStoreClient`](crate::KeyStoreClient) holds a key store instead.
 //!
 //! Each handle implements its own trait, so a handle works anywhere a component does.
 //! APIs take `impl Keyring + 'static` and convert with [`IntoShared`]:
