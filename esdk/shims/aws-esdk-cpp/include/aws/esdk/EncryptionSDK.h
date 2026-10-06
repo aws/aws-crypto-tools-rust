@@ -104,10 +104,10 @@ namespace Aws::Esdk {
 /// What a minor or patch release can change:
 /// - Message text: what(), full_message(), and every other message.
 /// - Failures without a specific exception type.
-///   An exception that is not an AwsEncryptionSdkException, or an InternalException, is a bug,
+///   An exception that is neither an AwsEncryptionSdkException nor an InternalException is a bug,
 ///   and a minor or patch release can turn it into a specific exception type.
-/// - Which exception type a collection of several failures becomes.
-/// - New kinds and enum values, so every switch needs a default case.
+/// - Which exception type a collection of several `failures()` becomes.
+/// - Add new kinds and enum values, so every switch needs a default case.
 enum class ErrorKind : std::uint8_t {
     Validation = 0,
     Serialization = 1,
