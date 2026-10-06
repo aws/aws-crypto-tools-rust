@@ -862,7 +862,7 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
 // What: when a waiter is in `BlockMissInflight` and its per-waiter
 // deadline (`enter_time + inflight_ttl`) elapses without the entry
 // appearing or a leader slot opening, the wait loop must return
-// an `Internal` error.
+// a retryable `Throttling` error about the cache.
 //
 // Why: the initial classifier's `elapsed > inflight_ttl` check only
 // fires when `get_cache_entry` is called AFTER the map-level TTL has

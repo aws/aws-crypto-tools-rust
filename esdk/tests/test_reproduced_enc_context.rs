@@ -84,7 +84,7 @@ async fn test_mismatched_encryption_context_on_decrypt() {
         .await
         .expect_err("decrypt must fail when reproduced encryption context has mismatched values");
 
-    // The same key is present on the ec, but the value is different.
+    // Same key, different value.
     assert!(
         err.is_encryption_context_mismatch(),
         "expected EncryptionContextMismatch, got: {:?}",

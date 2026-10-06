@@ -236,8 +236,8 @@ const EAST_MRK_ARN: &str =
 
 #[tokio::test]
 async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
-    // A discovery key store calls the KMS key the record names. The us-west-2 client
-    // cannot use the us-east-1 key, so AWS KMS rejects it.
+    // A discovery key store calls the KMS key the record names.
+    // The us-west-2 client cannot use the us-east-1 key, so AWS KMS rejects it.
     let config = sdk_config().await;
     let key_store = BranchKeyStore::builder()
         .ddb_table_name(TABLE)

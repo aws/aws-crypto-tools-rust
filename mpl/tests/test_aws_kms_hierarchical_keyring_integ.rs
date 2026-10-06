@@ -304,9 +304,8 @@ async fn build_keystore_with_kms_and_logical_name(
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
-/// Asserts the source chain holds the `SdkError<DecryptError>`.
-/// Reaching the SDK error proves the call actually got to KMS, which is the property these tests need:
-/// it means the DDB record was read, so `hk2` went to the keystore instead of
+/// Asserts the source chain holds the `SdkError<DecryptError>`, which proves the call reached KMS.
+/// That means the DDB record was read, so `hk2` went to the keystore instead of
 /// being served from the shared cache, and a cache miss is what is under test.
 /// A bare `is_err()` would also be satisfied by a missing record or an
 /// unreachable table.

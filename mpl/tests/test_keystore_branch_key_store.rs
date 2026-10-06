@@ -312,7 +312,7 @@ async fn get_key_store_info_uses_generated_uuid_when_id_was_none() {
 // ─── Read-path APIs ─────────────────────────────────────────────────────────
 //
 // Without AWS credentials the read path fails at the SDK call.
-// A `Dispatch` error shows the method reached the SDK: with no credentials, the request is never sent.
+// A `Dispatch` error shows the method reached the SDK, which sends no request without credentials.
 // The real-AWS integration tests cover the happy path.
 
 #[tokio::test]

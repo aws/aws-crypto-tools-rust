@@ -1,9 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! A fake AWS KMS and DynamoDB, for tests of what errors customers see.
-//!
-//! Every call succeeds with a well-formed answer unless the test's handler answers it.
+//! A fake AWS KMS and DynamoDB, for tests of the errors customers see.
 #![allow(dead_code)]
 
 use std::sync::Arc;

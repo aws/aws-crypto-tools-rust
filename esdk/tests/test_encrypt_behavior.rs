@@ -122,8 +122,7 @@ async fn test_input_suite_vs_commitment_policy_error() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must fail when input suite violates commitment policy");
-    // The input-suite-vs-commitment-policy check runs in the ESDK encrypt front-end,
-    // before any cryptography, and returns a Validation error.
+    // Encrypt rejects the suite before any cryptography, with a Validation error.
     //
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
@@ -772,7 +771,7 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must halt and indicate failure when a step fails");
-    // The failing step, suite-vs-commitment-policy validation, returns a Validation error.
+    // The failing step is the commitment policy check, which returns Validation.
     assert!(
         err.is_validation(),
         "expected Validation error, got: {err:?}"
