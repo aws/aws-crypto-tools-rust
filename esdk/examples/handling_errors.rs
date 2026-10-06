@@ -145,27 +145,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => return Err(e.into()),
     }
 
-    let branch_key_id = key_store
-        .create_key()
-        .send()
-        .await?
-        .branch_key_id()
-        .to_string();
-    match key_store
-        .version_key()
-        .branch_key_id(&branch_key_id)
-        .send()
-        .await
-    {
-        Ok(_) => println!("rotated branch key {branch_key_id}"),
-        Err(aws_crypto_mpl::Error::Conflict(conflict)) => match conflict.reason() {
-            Some(ConflictReason::ConcurrentModification) => {
-                println!("another caller rotated branch key {branch_key_id} at the same time");
-            }
-            _ => return Err(conflict.into()),
-        },
-        Err(e) => return Err(e.into()),
-    }
-
     Ok(())
 }
