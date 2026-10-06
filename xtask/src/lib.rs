@@ -34,8 +34,6 @@ pub struct Variant {
     pub remote: bool,
     pub doc: String,
     pub example: String,
-    /// What `{}` prints for the error the example handles.
-    pub prints: String,
     #[serde(default)]
     pub default_retry: Option<String>,
     #[serde(default)]
@@ -1488,8 +1486,6 @@ impl RequestId for Error {
         let mut s = doc("/// ", &v.doc);
         s.push_str("///\n/// # Example\n///\n/// ```\n");
         s.push_str(&doc("/// ", &example));
-        s.push_str("/// ```\n///\n/// What `{}` prints:\n///\n/// ```text\n");
-        s.push_str(&doc("/// ", &v.prints));
         s.push_str("/// ```\n");
         let n = &v.name;
         let st = &v.strukt;

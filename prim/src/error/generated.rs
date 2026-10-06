@@ -702,12 +702,6 @@ impl std::error::Error for Error {
 ///     }
 /// }
 /// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Cryptographic: authentication tag did not match
-/// ```
 #[derive(Clone)]
 pub struct CryptographicError {
     data: Box<ErrorData>,
@@ -800,12 +794,6 @@ impl From<CryptographicError> for Error {
 ///         _ => {}
 ///     }
 /// }
-/// ```
-///
-/// What `{}` prints:
-///
-/// ```text
-/// Internal: cache lock poisoned
 /// ```
 #[derive(Clone)]
 pub struct InternalError {
