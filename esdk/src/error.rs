@@ -22,6 +22,8 @@
 //! Other resources involved are named in the message:
 //! when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
 //! because the fix is a KMS permission, and the message names the branch key.
+//! A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account)
+//! of its ARN, and a [`BranchKey`] the [`version`](BranchKey::version) the failing call was about.
 //! A [`NoMatchingDataKey`](Error::NoMatchingDataKey) error's
 //! [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys) lists the message's
 //! encrypted data keys by key provider, so you can tell which keyring would decrypt it.

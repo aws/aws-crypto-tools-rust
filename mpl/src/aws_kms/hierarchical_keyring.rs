@@ -651,13 +651,25 @@ impl HierarchicalKeyring {
             .expect("16-byte slice into [u8; 16]");
 
         let branch_key_version = uuid_16_bytes_to_str(&version_bytes);
+        self.decrypt_edk_at_version(materials, edk, branch_key_id, &branch_key_version)
+            .await
+            .map_err(|e| e.at_branch_key_version(branch_key_id, &branch_key_version))
+    }
 
+    /// Unwrap `edk` with version `branch_key_version` of the branch key, from the cache or the key store.
+    async fn decrypt_edk_at_version(
+        &self,
+        materials: &DecryptionMaterials,
+        edk: &EncryptedDataKey,
+        branch_key_id: &str,
+        branch_key_version: &str,
+    ) -> Result<Vec<u8>, Error> {
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_DECRYPT,
             &self.inner.partition_id_bytes,
             &self.inner.logical_keystore_name,
             branch_key_id,
-            Some(&branch_key_version),
+            Some(branch_key_version),
         );
 
         let cached = self
@@ -675,7 +687,10 @@ impl HierarchicalKeyring {
                 let bkm = self
                     .inner
                     .keystore
-                    .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
+                    .get_branch_key_version(
+                        branch_key_id.to_string(),
+                        branch_key_version.to_owned(),
+                    )
                     .await?;
 
                 let now = SystemTime::now();
@@ -690,7 +705,7 @@ impl HierarchicalKeyring {
             }
         };
 
-        branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
+        branch_key_wrap::unwrap(&bkm, materials.encryption_context(), &edk.ciphertext)
     }
 }
 

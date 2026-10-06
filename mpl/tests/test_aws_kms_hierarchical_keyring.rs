@@ -1582,7 +1582,7 @@ mod onencrypt {
 mod ondecrypt {
     use super::*;
     use aws_crypto_mpl::Keyring;
-    use aws_crypto_mpl::error::DataKeyInfo;
+    use aws_crypto_mpl::error::{BranchKey, DataKeyInfo, Resource};
     use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
 
     /// The 16-byte representation of `FAKE_BRANCH_KEY_VERSION`. Hard-
@@ -1976,7 +1976,10 @@ mod ondecrypt {
                 _branch_key_version: String,
             ) -> Result<BranchKeyMaterials, Error> {
                 Err(Error::from(
-                    aws_crypto_mpl::error::ResourceNotFoundError::new("no such branch key version"),
+                    aws_crypto_mpl::error::ResourceNotFoundError::builder()
+                        .message("no such branch key version")
+                        .resource(BranchKey::new(FAKE_BRANCH_KEY_ID))
+                        .build(),
                 ))
             }
             async fn get_beacon_key(
@@ -2014,6 +2017,12 @@ mod ondecrypt {
         assert!(err.is_resource_not_found(), "{:?}", err);
         assert!(err.collected().is_empty());
         assert_eq!(err.message(), "no such branch key version");
+        assert_eq!(
+            err.resource(),
+            Some(&Resource::BranchKey(
+                BranchKey::new(FAKE_BRANCH_KEY_ID).with_version(FAKE_BRANCH_KEY_VERSION)
+            ))
+        );
     }
 
     #[tokio::test]

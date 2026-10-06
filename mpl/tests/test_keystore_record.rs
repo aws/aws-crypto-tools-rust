@@ -170,6 +170,12 @@ fn materials_branch_key_rejects_wrong_length() {
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, vec![0x01; 16])
         .expect_err("should reject non-32-byte key");
     assert_malformed(&err);
+    assert_eq!(
+        err.resource(),
+        Some(&Resource::BranchKey(
+            BranchKey::new("test-id").with_version(TEST_VERSION_UUID)
+        ))
+    );
 }
 
 #[test]
@@ -360,9 +366,9 @@ fn assert_malformed(err: &aws_crypto_mpl::Error) {
         panic!("expected InvalidMaterials, got {err:?}");
     };
     assert_eq!(e.service(), Some(&Service::DynamoDb));
-    assert_eq!(
-        e.resource(),
-        Some(&Resource::BranchKey(BranchKey::new("test-id")))
-    );
+    let Some(Resource::BranchKey(branch_key)) = e.resource() else {
+        panic!("expected a branch key resource, got {:?}", e.resource());
+    };
+    assert_eq!(branch_key.id(), "test-id");
     assert_eq!(e.code(), None);
 }

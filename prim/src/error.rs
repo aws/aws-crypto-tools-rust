@@ -97,24 +97,80 @@ impl fmt::Display for Resource {
 }
 
 /// A KMS key, by ARN.
+///
+/// ```
+/// use aws_mpl_primitives::error::KmsKey;
+///
+/// let key = KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+/// assert_eq!(key.region(), Some("us-west-2"));
+/// assert_eq!(key.account(), Some("111122223333"));
+/// assert_eq!(KmsKey::new("alias/my-alias").region(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct KmsKey {
     arn: String,
+    region: Option<String>,
+    account: Option<String>,
 }
 
 impl KmsKey {
     /// A KMS key identified by `arn`.
+    ///
+    /// `region()` and `account()` are read from `arn` when it is a KMS ARN.
     #[must_use]
     pub fn new(arn: impl Into<String>) -> Self {
-        Self { arn: arn.into() }
+        let arn = arn.into();
+        let (region, account) = match parse_kms_arn(&arn) {
+            Some((region, account)) => (Some(region.to_owned()), Some(account.to_owned())),
+            None => (None, None),
+        };
+        Self {
+            arn,
+            region,
+            account,
+        }
     }
 
-    /// The KMS key's ARN.
+    /// The KMS key's ARN, or the key ID or alias it was named by.
     #[must_use]
     pub fn arn(&self) -> &str {
         &self.arn
     }
+
+    /// The ARN's region; `None` unless [`arn`](Self::arn) is a KMS ARN.
+    #[must_use]
+    pub fn region(&self) -> Option<&str> {
+        self.region.as_deref()
+    }
+
+    /// The ARN's AWS account ID; `None` unless [`arn`](Self::arn) is a KMS ARN.
+    #[must_use]
+    pub fn account(&self) -> Option<&str> {
+        self.account.as_deref()
+    }
+}
+
+/// The region and account of `arn:<partition>:kms:<region>:<account>:<key|alias>/<name>`.
+fn parse_kms_arn(arn: &str) -> Option<(&str, &str)> {
+    let mut parts = arn.splitn(6, ':');
+    let (Some("arn"), Some(partition), Some("kms"), Some(region), Some(account), Some(resource)) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return None;
+    };
+    let (resource_type, name) = resource.split_once('/')?;
+    let valid = !partition.is_empty()
+        && !region.is_empty()
+        && !account.is_empty()
+        && matches!(resource_type, "key" | "alias")
+        && !name.is_empty();
+    valid.then_some((region, account))
 }
 
 impl From<KmsKey> for Resource {
@@ -151,23 +207,48 @@ impl From<DynamoDbTable> for Resource {
 }
 
 /// A hierarchical keyring branch key, by ID.
+///
+/// ```
+/// use aws_mpl_primitives::error::BranchKey;
+///
+/// let branch_key = BranchKey::new("my-branch-key").with_version("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13");
+/// assert_eq!(branch_key.version(), Some("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13"));
+/// assert_eq!(BranchKey::new("my-branch-key").version(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct BranchKey {
     id: String,
+    version: Option<String>,
 }
 
 impl BranchKey {
     /// A branch key identified by `id`.
     #[must_use]
     pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into() }
+        Self {
+            id: id.into(),
+            version: None,
+        }
+    }
+
+    /// The same branch key, at `version`.
+    #[must_use]
+    pub fn with_version(mut self, version: impl Into<String>) -> Self {
+        self.version = Some(version.into());
+        self
     }
 
     /// The branch key's ID.
     #[must_use]
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The branch key version, when the failing call was about one.
+    #[must_use]
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
 }
 

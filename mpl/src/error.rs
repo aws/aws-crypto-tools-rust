@@ -25,6 +25,8 @@
 //! Other resources involved are named in the message:
 //! when AWS KMS denies decrypting a branch key, `resource()` is the KMS key,
 //! because the fix is a KMS permission, and the message names the branch key.
+//! A [`KmsKey`] also has the [`region`](KmsKey::region) and [`account`](KmsKey::account)
+//! of its ARN, and a [`BranchKey`] the [`version`](BranchKey::version) the failing call was about.
 //! A [`NoMatchingDataKey`](Error::NoMatchingDataKey) error's
 //! [`encrypted_data_keys`](NoMatchingDataKeyError::encrypted_data_keys) lists the message's
 //! encrypted data keys by key provider, so you can tell which keyring would decrypt it.
@@ -182,6 +184,18 @@ impl Error {
         error.set_retry(retry);
         error.set_sdk(code, request_id, meta);
         error
+    }
+
+    /// Add `version` to the branch key `id` this error names, if it names that branch key without one.
+    pub(crate) fn at_branch_key_version(mut self, id: &str, version: &str) -> Self {
+        if let Some(Resource::BranchKey(branch_key)) = self.resource()
+            && branch_key.id() == id
+            && branch_key.version().is_none()
+        {
+            let branch_key = branch_key.clone().with_version(version);
+            self.set_resource(Some(Resource::BranchKey(branch_key)));
+        }
+        self
     }
 
     /// An error for several attempts at the same goal, every one of which failed,
