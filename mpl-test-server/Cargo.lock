@@ -135,6 +135,7 @@ dependencies = [
  "aws-crypto-mpl",
  "axum",
  "ciborium",
+ "futures-util",
  "serde",
  "serde_bytes",
  "tokio",

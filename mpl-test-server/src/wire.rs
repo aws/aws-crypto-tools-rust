@@ -9,8 +9,11 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use axum::routing::post;
+use futures_util::FutureExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 /// Build the router. Shared with tests so they can drive the real wire in-process.
@@ -51,40 +54,40 @@ async fn dispatch(
     }
 
     let outcome = match operation.as_str() {
-        "CreateRawAesKeyring" => decode::<CreateRawAesKeyringRequest>(&body)
-            .and_then(|req| state.create_raw_aes_keyring(req))
-            .and_then(|resp| encode(&resp)),
-        "CreateDefaultCmm" => decode::<CreateDefaultCmmRequest>(&body)
-            .and_then(|req| state.create_default_cmm(req))
-            .and_then(|resp| encode(&resp)),
-        "InitializeEncryptionMaterials" => decode::<InitializeEncryptionMaterialsRequest>(&body)
-            .and_then(|req| state.initialize_encryption_materials(req))
-            .and_then(|resp| encode(&resp)),
-        "InitializeDecryptionMaterials" => decode::<InitializeDecryptionMaterialsRequest>(&body)
-            .and_then(|req| state.initialize_decryption_materials(req))
-            .and_then(|resp| encode(&resp)),
-        "OnEncrypt" => match decode::<OnEncryptRequest>(&body) {
-            Ok(req) => state.on_encrypt(req).await.and_then(|resp| encode(&resp)),
-            Err(e) => Err(e),
-        },
-        "OnDecrypt" => match decode::<OnDecryptRequest>(&body) {
-            Ok(req) => state.on_decrypt(req).await.and_then(|resp| encode(&resp)),
-            Err(e) => Err(e),
-        },
-        "GetEncryptionMaterials" => match decode::<GetEncryptionMaterialsRequest>(&body) {
-            Ok(req) => state
-                .get_encryption_materials(req)
-                .await
-                .and_then(|resp| encode(&resp)),
-            Err(e) => Err(e),
-        },
-        "DecryptMaterials" => match decode::<DecryptMaterialsRequest>(&body) {
-            Ok(req) => state
-                .decrypt_materials(req)
-                .await
-                .and_then(|resp| encode(&resp)),
-            Err(e) => Err(e),
-        },
+        "CreateRawAesKeyring" => dispatch_op::<CreateRawAesKeyringRequest, _>(&body, |req| {
+            state.create_raw_aes_keyring(req)
+        }),
+        "CreateDefaultCmm" => {
+            dispatch_op::<CreateDefaultCmmRequest, _>(&body, |req| state.create_default_cmm(req))
+        }
+        "InitializeEncryptionMaterials" => {
+            dispatch_op::<InitializeEncryptionMaterialsRequest, _>(&body, |req| {
+                state.initialize_encryption_materials(req)
+            })
+        }
+        "InitializeDecryptionMaterials" => {
+            dispatch_op::<InitializeDecryptionMaterialsRequest, _>(&body, |req| {
+                state.initialize_decryption_materials(req)
+            })
+        }
+        "OnEncrypt" => {
+            dispatch_op_async::<OnEncryptRequest, _, _>(&body, |req| state.on_encrypt(req)).await
+        }
+        "OnDecrypt" => {
+            dispatch_op_async::<OnDecryptRequest, _, _>(&body, |req| state.on_decrypt(req)).await
+        }
+        "GetEncryptionMaterials" => {
+            dispatch_op_async::<GetEncryptionMaterialsRequest, _, _>(&body, |req| {
+                state.get_encryption_materials(req)
+            })
+            .await
+        }
+        "DecryptMaterials" => {
+            dispatch_op_async::<DecryptMaterialsRequest, _, _>(&body, |req| {
+                state.decrypt_materials(req)
+            })
+            .await
+        }
         other => Err(ServerError::generic(format!("unknown operation: {other}"))),
     };
 
@@ -92,6 +95,45 @@ async fn dispatch(
         Ok(body) => build(StatusCode::OK, body),
         Err(e) => error_response(&e),
     }
+}
+
+/// Modeled error for a handler that panicked.
+fn handler_panicked() -> ServerError {
+    ServerError::generic("unexpected server error: handler panicked")
+}
+
+fn dispatch_op<Req, Resp>(
+    body: &[u8],
+    handler: impl FnOnce(Req) -> Result<Resp, ServerError>,
+) -> Result<Vec<u8>, ServerError>
+where
+    Req: DeserializeOwned,
+    Resp: Serialize,
+{
+    let req = decode::<Req>(body)?;
+    // A panicking handler would otherwise drop the connection; report it as a
+    // modeled GenericServerError so the client sees a harness failure.
+    let resp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(req)))
+        .map_err(|_| handler_panicked())??;
+    encode(&resp)
+}
+
+/// [`dispatch_op`] for handlers that await.
+async fn dispatch_op_async<Req, Resp, Fut>(
+    body: &[u8],
+    handler: impl FnOnce(Req) -> Fut,
+) -> Result<Vec<u8>, ServerError>
+where
+    Req: DeserializeOwned,
+    Resp: Serialize,
+    Fut: Future<Output = Result<Resp, ServerError>>,
+{
+    let req = decode::<Req>(body)?;
+    let resp = AssertUnwindSafe(handler(req))
+        .catch_unwind()
+        .await
+        .map_err(|_| handler_panicked())??;
+    encode(&resp)
 }
 
 fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, ServerError> {
@@ -117,4 +159,42 @@ fn build(status: StatusCode, body: Vec<u8>) -> Response {
         .header(header::CONTENT_TYPE, "application/cbor")
         .body(Body::from(body))
         .expect("response builder")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request_body() -> Vec<u8> {
+        encode(&CreateDefaultCmmRequest {
+            keyring_id: "k".to_string(),
+        })
+        .unwrap()
+    }
+
+    fn assert_modeled_panic(err: ServerError) {
+        assert!(matches!(err, ServerError::Generic(_)), "got {err:?}");
+        assert_eq!(err.message(), "unexpected server error: handler panicked");
+    }
+
+    #[test]
+    fn handler_panic_becomes_generic_server_error() {
+        let err = dispatch_op::<CreateDefaultCmmRequest, CreateDefaultCmmResponse>(
+            &request_body(),
+            |_| panic!("injected handler panic"),
+        )
+        .unwrap_err();
+        assert_modeled_panic(err);
+    }
+
+    #[tokio::test]
+    async fn async_handler_panic_becomes_generic_server_error() {
+        let err = dispatch_op_async::<CreateDefaultCmmRequest, CreateDefaultCmmResponse, _>(
+            &request_body(),
+            |_| async { panic!("injected handler panic") },
+        )
+        .await
+        .unwrap_err();
+        assert_modeled_panic(err);
+    }
 }

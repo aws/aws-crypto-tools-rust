@@ -16,6 +16,7 @@ path = "src/main.rs"
 aws-crypto-mpl = { path = "../mpl" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 axum = "0.7"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
