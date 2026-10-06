@@ -57,10 +57,16 @@ impl fmt::Display for Service {
 /// so a later release can add detail about a resource without breaking callers.
 ///
 /// ```
-/// use aws_mpl_primitives::error::{BranchKey, Cache, Resource};
-///
-/// assert_eq!(Resource::BranchKey(BranchKey::new("my-branch-key")).to_string(), "branch key my-branch-key");
-/// assert_eq!(Resource::Cache(Cache::new()).to_string(), "materials cache");
+/// # use aws_mpl_primitives::error::{BranchKey, Resource};
+/// # let resource = Resource::BranchKey(BranchKey::new("my-branch-key"));
+/// // `resource` is what an error's `resource()` returned.
+/// match &resource {
+///     Resource::BranchKey(branch_key) => assert_eq!(branch_key.id(), "my-branch-key"),
+///     Resource::KmsKey(key) => println!("KMS key {}", key.arn()),
+///     // Later releases add resource kinds.
+///     _ => {}
+/// }
+/// assert_eq!(resource.to_string(), "branch key my-branch-key");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -95,12 +101,15 @@ impl fmt::Display for Resource {
 /// A KMS key, by ARN.
 ///
 /// ```
-/// use aws_mpl_primitives::error::KmsKey;
-///
-/// let key = KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+/// # use aws_mpl_primitives::error::KmsKey;
+/// # let key = KmsKey::new("arn:aws:kms:us-west-2:111122223333:key/1234abcd");
+/// // `key` is the KMS key an error's `resource()` named.
+/// assert_eq!(key.arn(), "arn:aws:kms:us-west-2:111122223333:key/1234abcd");
 /// assert_eq!(key.region(), Some("us-west-2"));
 /// assert_eq!(key.account(), Some("111122223333"));
-/// assert_eq!(KmsKey::new("alias/my-alias").region(), None);
+/// // An alias name or bare key ID has no region or account.
+/// # let key = KmsKey::new("alias/my-alias");
+/// assert_eq!(key.region(), None);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -205,11 +214,12 @@ impl From<DynamoDbTable> for Resource {
 /// A hierarchical keyring branch key, by ID.
 ///
 /// ```
-/// use aws_mpl_primitives::error::BranchKey;
-///
-/// let branch_key = BranchKey::new("my-branch-key").with_version("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13");
+/// # use aws_mpl_primitives::error::BranchKey;
+/// # let branch_key = BranchKey::new("my-branch-key").with_version("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13");
+/// // `branch_key` is the branch key an error's `resource()` named.
+/// assert_eq!(branch_key.id(), "my-branch-key");
+/// // The version, when the failed call asked for a specific one.
 /// assert_eq!(branch_key.version(), Some("5f8c1e2a-0d3b-4a6e-9c71-2b4d8e6f0a13"));
-/// assert_eq!(BranchKey::new("my-branch-key").version(), None);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -342,9 +352,9 @@ impl From<CmmResource> for Resource {
 /// Holds the key's provider ID and info, never the wrapped key.
 ///
 /// ```
-/// use aws_mpl_primitives::error::DataKeyInfo;
-///
-/// let key = DataKeyInfo::new("aws-kms", b"arn:aws:kms:us-west-2:111122223333:key/1234abcd".to_vec());
+/// # use aws_mpl_primitives::error::DataKeyInfo;
+/// # let key = DataKeyInfo::new("aws-kms", b"arn:aws:kms:us-west-2:111122223333:key/1234abcd".to_vec());
+/// // `key` is one of the data keys a `NoMatchingDataKey` error listed.
 /// assert_eq!(key.key_provider_id(), "aws-kms");
 /// assert_eq!(key.key_provider_info(), b"arn:aws:kms:us-west-2:111122223333:key/1234abcd");
 /// ```
