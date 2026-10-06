@@ -176,12 +176,22 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
 }
 
 /// An error for a branch key record that is malformed,
-/// naming the branch key when the record has an ID.
+/// naming the branch key, and its version, when the record has them.
 fn malformed(authenticated_ec: &BTreeMap<String, String>, message: impl Into<String>) -> Error {
+    let version = authenticated_ec
+        .get(ATTR_TYPE)
+        .filter(|t| *t != TYPE_BRANCH_ACTIVE)
+        .or_else(|| authenticated_ec.get(ATTR_VERSION))
+        .and_then(|v| v.strip_prefix(TYPE_BRANCH_VERSION_PREFIX))
+        .filter(|v| !v.is_empty());
     Error::new(Kind::InvalidMaterials, message).about(
         Some(Service::DynamoDb),
-        authenticated_ec
-            .get(ATTR_BRANCH_KEY_ID)
-            .map(|id| Resource::BranchKey(BranchKey::new(id.clone()))),
+        authenticated_ec.get(ATTR_BRANCH_KEY_ID).map(|id| {
+            let branch_key = BranchKey::new(id.clone());
+            Resource::BranchKey(match version {
+                Some(version) => branch_key.with_version(version),
+                None => branch_key,
+            })
+        }),
     )
 }

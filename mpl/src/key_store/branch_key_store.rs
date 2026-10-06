@@ -747,25 +747,29 @@ impl KeyStore for BranchKeyStore {
             branch_key_version,
         } = input;
         let sort_key = format!("{TYPE_BRANCH_VERSION_PREFIX}{branch_key_version}");
-        let record = self.fetch_record(&branch_key_id, &sort_key).await?;
+        async {
+            let record = self.fetch_record(&branch_key_id, &sort_key).await?;
 
-        let plaintext = decrypt_branch_key(
-            self.kms_client(),
-            &self.inner.kms_configuration,
-            &record,
-            &branch_key_id,
-            &self.inner.logical_key_store_name,
-            self.grant_tokens(),
-        )
-        .await?;
+            let plaintext = decrypt_branch_key(
+                self.kms_client(),
+                &self.inner.kms_configuration,
+                &record,
+                &branch_key_id,
+                &self.inner.logical_key_store_name,
+                self.grant_tokens(),
+            )
+            .await?;
 
-        let auth_ec = self.build_auth_ec(&record);
+            let auth_ec = self.build_auth_ec(&record);
 
-        let branch_key_materials =
-            branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)?;
-        GetBranchKeyVersionOutput::builder()
-            .branch_key_materials(branch_key_materials)
-            .build()
+            let branch_key_materials =
+                branch_key_materials_from_authenticated_encryption_context(&auth_ec, plaintext)?;
+            GetBranchKeyVersionOutput::builder()
+                .branch_key_materials(branch_key_materials)
+                .build()
+        }
+        .await
+        .map_err(|e| e.at_branch_key_version(&branch_key_id, &branch_key_version))
     }
 
     /// # Errors

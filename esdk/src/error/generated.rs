@@ -18,7 +18,9 @@ use std::backtrace::Backtrace;
 use std::fmt;
 use std::sync::Arc;
 
-use aws_mpl_primitives::error::{Collection, ConflictReason, Resource, RetryKind, Service};
+use aws_mpl_primitives::error::{
+    Collection, ConflictReason, DataKeyInfo, Resource, RetryKind, Service,
+};
 use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
 use aws_types::request_id::RequestId;
@@ -70,7 +72,8 @@ pub enum Error {
     /// None of the configured keys wrapped any of the message's encrypted data keys,
     /// for example when decrypting with a keyring that did not encrypt the message.
     ///
-    /// `resource()` names the keyring or CMM that was used.
+    /// `resource()` names the keyring or CMM that was used,
+    /// and `encrypted_data_keys()` lists the message's encrypted data keys by key provider.
     /// Decrypt with a keyring that has one of the message's keys.
     NoMatchingDataKey(NoMatchingDataKeyError),
     /// A cryptographic check failed,
@@ -166,6 +169,7 @@ struct ErrorData {
     retry: Option<RetryKind>,
     remote: Remote,
     reason: Option<ConflictReason>,
+    data_keys: Vec<DataKeyInfo>,
     meta: Option<ErrorMetadata>,
     source: Option<ArcError>,
     collection: Option<Collection>,
@@ -180,6 +184,7 @@ impl ErrorData {
             retry: None,
             remote: Remote::default(),
             reason: None,
+            data_keys: Vec::new(),
             meta: None,
             source: None,
             collection: None,
@@ -239,6 +244,7 @@ impl ErrorData {
             name,
             message: &self.message,
             details,
+            data_keys: provider_ids(&self.data_keys),
             tried: tried(self.collected.iter().map(Error::resource)),
             collected: self.collected.iter().map(as_display).collect(),
         }
@@ -267,6 +273,9 @@ impl ErrorData {
         }
         if let Some(reason) = &self.reason {
             d.field("reason", reason);
+        }
+        if !self.data_keys.is_empty() {
+            d.field("encrypted_data_keys", &self.data_keys);
         }
         if let Some(source) = &self.source {
             let source: &(dyn std::error::Error + 'static) = &**source;
@@ -305,6 +314,7 @@ pub struct ErrorParts {
     pub code: Option<String>,
     pub request_id: Option<String>,
     pub reason: Option<ConflictReason>,
+    pub data_keys: Vec<DataKeyInfo>,
     pub meta: Option<ErrorMetadata>,
     pub collection: Option<Collection>,
     pub collected: Vec<Error>,
@@ -317,8 +327,21 @@ struct Level<'a> {
     name: &'static str,
     message: &'a str,
     details: Vec<String>,
+    /// The key provider IDs of the message's encrypted data keys.
+    data_keys: Vec<&'a str>,
     tried: Vec<&'a str>,
     collected: Vec<&'a dyn fmt::Display>,
+}
+
+/// The distinct key provider IDs of `keys`, in order.
+fn provider_ids(keys: &[DataKeyInfo]) -> Vec<&str> {
+    let mut ids: Vec<&str> = Vec::new();
+    for key in keys {
+        if !ids.contains(&key.key_provider_id()) {
+            ids.push(key.key_provider_id());
+        }
+    }
+    ids
 }
 
 /// The details `Display` prints after the message, in order.
@@ -367,6 +390,7 @@ macro_rules! level {
             name: e.name(),
             message: e.message(),
             details: details(e.service(), e.resource(), e.code(), e.request_id()),
+            data_keys: Vec::new(),
             tried: tried(e.collected().iter().map(|c| c.resource())),
             collected: e.collected().iter().map(as_display).collect(),
         }
@@ -376,10 +400,18 @@ macro_rules! level {
 /// `e` as a `Level`, if it is one of the libraries' errors.
 fn level_of<'a>(e: &'a (dyn std::error::Error + 'static)) -> Option<Level<'a>> {
     if let Some(e) = e.downcast_ref::<Error>() {
-        return Some(level!(e));
+        let mut level = level!(e);
+        if let Error::NoMatchingDataKey(e) = e {
+            level.data_keys = provider_ids(e.encrypted_data_keys());
+        }
+        return Some(level);
     }
     if let Some(e) = e.downcast_ref::<aws_crypto_mpl::error::Error>() {
-        return Some(level!(e));
+        let mut level = level!(e);
+        if let aws_crypto_mpl::error::Error::NoMatchingDataKey(e) = e {
+            level.data_keys = provider_ids(e.encrypted_data_keys());
+        }
+        return Some(level);
     }
     if let Some(e) = e.downcast_ref::<aws_mpl_primitives::error::Error>() {
         return Some(level!(e));
@@ -422,8 +454,15 @@ fn write_level(
         .filter(|d| prev.is_none_or(|p| !p.details.contains(d)))
         .map(String::as_str)
         .collect();
+    let mut parts = Vec::new();
     if !details.is_empty() {
-        write!(f, " ({})", details.join(", "))?;
+        parts.push(details.join(", "));
+    }
+    if !level.data_keys.is_empty() && prev.is_none_or(|p| p.data_keys != level.data_keys) {
+        parts.push(format!("message has: {}", level.data_keys.join(", ")));
+    }
+    if !parts.is_empty() {
+        write!(f, " ({})", parts.join("; "))?;
     }
     if !level.tried.is_empty() {
         write!(f, "; tried: {}", level.tried.join(", "))?;
@@ -583,6 +622,7 @@ impl Error {
         data.retry = inner.data().retry;
         data.remote = inner.data().remote.clone();
         data.reason.clone_from(&inner.data().reason);
+        data.data_keys.clone_from(&inner.data().data_keys);
         data.meta.clone_from(&inner.data().meta);
         data.source = Some(Arc::new(inner));
         Self::from_data(kind, data)
@@ -611,6 +651,14 @@ impl Error {
             if rest.iter().all(|e| e.data().meta == first.data().meta) {
                 data.meta.clone_from(&first.data().meta);
             }
+        }
+        if kind == Kind::NoMatchingDataKey
+            && let Some((first, rest)) = collected.split_first()
+            && rest
+                .iter()
+                .all(|e| e.data().data_keys == first.data().data_keys)
+        {
+            data.data_keys.clone_from(&first.data().data_keys);
         }
         data.collection = Some(collection);
         data.collected = collected;
@@ -867,6 +915,7 @@ impl Error {
             code: data.remote.code.clone(),
             request_id: data.remote.request_id.clone(),
             reason: data.reason.clone(),
+            data_keys: data.data_keys.clone(),
             meta: data.meta.clone(),
             collection: data.collection,
             collected: data.collected.clone(),
@@ -1047,6 +1096,11 @@ impl Error {
             aws_crypto_mpl::error::Error::Conflict(e) => e.reason().cloned(),
             _ => None,
         };
+        if kind == Kind::NoMatchingDataKey
+            && let aws_crypto_mpl::error::Error::NoMatchingDataKey(e) = &inner
+        {
+            data.data_keys = e.encrypted_data_keys().to_vec();
+        }
         let meta = ProvideErrorMetadata::meta(&inner);
         if *meta != ErrorMetadata::default() {
             data.meta = Some(meta.clone());
@@ -1085,6 +1139,9 @@ impl Error {
             request_id: parts.request_id,
         };
         data.reason = parts.reason;
+        if kind == Kind::NoMatchingDataKey {
+            data.data_keys = parts.data_keys;
+        }
         data.meta = parts.meta;
         data.collection = parts.collection;
         data.collected = parts.collected.iter().map(Self::from_mpl_parts).collect();
@@ -1493,23 +1550,31 @@ impl From<EncryptionContextMismatchError> for Error {
 /// None of the configured keys wrapped any of the message's encrypted data keys,
 /// for example when decrypting with a keyring that did not encrypt the message.
 ///
-/// `resource()` names the keyring or CMM that was used.
+/// `resource()` names the keyring or CMM that was used,
+/// and `encrypted_data_keys()` lists the message's encrypted data keys by key provider.
 /// Decrypt with a keyring that has one of the message's keys.
 ///
 /// # Example
 ///
 /// ```
-/// use aws_esdk::error::{Error, KeyringResource, NoMatchingDataKeyError, Resource};
+/// use aws_esdk::error::{DataKeyInfo, Error, KeyringResource, NoMatchingDataKeyError, Resource};
 ///
 /// let err = Error::from(
 ///     NoMatchingDataKeyError::builder()
 ///         .message("encrypted data key 0 did not match the keyring")
 ///         .resource(Resource::Keyring(KeyringResource::new("my-namespace/my-key")))
+///         .encrypted_data_keys([DataKeyInfo::new("other-namespace", b"other-key".to_vec())])
 ///         .build(),
 /// );
 /// if let Error::NoMatchingDataKey(e) = &err {
 ///     assert_eq!(e.resource(), Some(&Resource::Keyring(KeyringResource::new("my-namespace/my-key"))));
+///     assert_eq!(e.encrypted_data_keys()[0].key_provider_id(), "other-namespace");
 /// }
+/// assert_eq!(
+///     err.to_string(),
+///     "NoMatchingDataKey: encrypted data key 0 did not match the keyring \
+///      (keyring my-namespace/my-key; message has: other-namespace)"
+/// );
 /// ```
 #[derive(Clone)]
 pub struct NoMatchingDataKeyError {
@@ -1590,6 +1655,14 @@ impl NoMatchingDataKeyError {
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.data.remote.request_id.as_deref()
+    }
+
+    /// The message's encrypted data keys, by key provider; empty when unknown.
+    ///
+    /// Never the wrapped keys themselves.
+    #[must_use]
+    pub fn encrypted_data_keys(&self) -> &[DataKeyInfo] {
+        &self.data.data_keys
     }
 }
 
@@ -2778,6 +2851,7 @@ pub mod builders {
     use std::sync::Arc;
 
     use super::ConflictReason;
+    use super::DataKeyInfo;
     use super::{ArcError, ErrorData, Kind, Remote, RetryKind};
     use super::{Resource, Service};
 
@@ -2949,6 +3023,7 @@ pub mod builders {
         source: Option<ArcError>,
         retry: Option<RetryKind>,
         remote: Remote,
+        data_keys: Vec<DataKeyInfo>,
     }
 
     impl NoMatchingDataKeyErrorBuilder {
@@ -2995,6 +3070,12 @@ pub mod builders {
             self
         }
 
+        /// The message's encrypted data keys, by key provider.
+        pub fn encrypted_data_keys(mut self, keys: impl IntoIterator<Item = DataKeyInfo>) -> Self {
+            self.data_keys = keys.into_iter().collect();
+            self
+        }
+
         /// Build the error.
         #[track_caller]
         #[must_use]
@@ -3004,6 +3085,7 @@ pub mod builders {
                 .retry
                 .or_else(|| ErrorData::default_retry(Kind::NoMatchingDataKey));
             data.remote = self.remote;
+            data.data_keys = self.data_keys;
             data.source = self.source;
             super::NoMatchingDataKeyError {
                 data: Box::new(data),
@@ -4444,5 +4526,75 @@ mod tests {
         assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
         assert!(std::error::Error::source(&plain).is_some());
         assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
+    }
+
+    #[test]
+    fn encrypted_data_keys_are_shown_and_kept() {
+        fn keys() -> Vec<DataKeyInfo> {
+            vec![
+                DataKeyInfo::new(
+                    "aws-kms",
+                    b"arn:aws:kms:us-west-2:111122223333:key/k".to_vec(),
+                ),
+                DataKeyInfo::new(
+                    "aws-kms",
+                    b"arn:aws:kms:us-east-1:111122223333:key/k".to_vec(),
+                ),
+                DataKeyInfo::new("raw", vec![0xff, 0x00]),
+            ]
+        }
+        fn keys_of(e: &Error) -> Vec<DataKeyInfo> {
+            match e {
+                Error::NoMatchingDataKey(e) => e.encrypted_data_keys().to_vec(),
+                _ => Vec::new(),
+            }
+        }
+        let s = NoMatchingDataKeyError::builder()
+            .message("m")
+            .encrypted_data_keys(keys())
+            .build();
+        assert_eq!(s.encrypted_data_keys(), keys().as_slice());
+        assert_eq!(
+            s.to_string(),
+            "NoMatchingDataKey: m (message has: aws-kms, raw)"
+        );
+        let debug = format!("{s:?}");
+        assert!(
+            debug.contains("arn:aws:kms:us-east-1:111122223333:key/k"),
+            "{debug}"
+        );
+        assert!(debug.contains("0xff00"), "{debug}");
+        assert!(
+            NoMatchingDataKeyError::new("m")
+                .encrypted_data_keys()
+                .is_empty()
+        );
+
+        let e = Error::from(s);
+        let wrapped = Error::wrap("outer", e.clone());
+        assert_eq!(keys_of(&wrapped), keys());
+        assert_eq!(
+            format!("{wrapped:#}"),
+            "NoMatchingDataKey: outer (message has: aws-kms, raw): m"
+        );
+        assert_eq!(wrapped.__parts().data_keys, keys());
+
+        let shared = Error::collect(
+            Kind::NoMatchingDataKey,
+            None,
+            Collection::AllFailed,
+            "all",
+            vec![e.clone(), e.clone()],
+        );
+        assert_eq!(keys_of(&shared), keys());
+        let mixed = Error::collect(
+            Kind::NoMatchingDataKey,
+            None,
+            Collection::AllFailed,
+            "all",
+            vec![e, Error::new(Kind::NoMatchingDataKey, "none")],
+        );
+        assert!(keys_of(&mixed).is_empty());
+        assert_eq!(keys_of(&mixed.failures()[0]), keys());
     }
 }

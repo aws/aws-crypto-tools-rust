@@ -262,7 +262,7 @@ void test_no_matching_data_key_names_the_keyring() {
         ESDK_CHECK(e.resource()->name() == "test-ns/other-key");
         ESDK_CHECK(!e.service().has_value());
         const std::string what = e.what();
-        ESDK_CHECK(what == "NoMatchingDataKey: decrypt could not get decryption materials (keyring test-ns/other-key)");
+        ESDK_CHECK(what == "NoMatchingDataKey: decrypt could not get decryption materials (keyring test-ns/other-key; message has: test-ns)");
         ESDK_CHECK(e.full_message().rfind(what + ": encrypted data key 0 did not match the keyring", 0) == 0);
         // Rust captures a backtrace only when RUST_BACKTRACE or RUST_LIB_BACKTRACE asks for one.
         const char* lib = std::getenv("RUST_LIB_BACKTRACE");
