@@ -15,7 +15,6 @@ readme = "README.md"
 tokio = { version = "1.49.0", features = ["full"] }
 
 aws-smithy-types = "1.3.6"
-aws-types = "=1.6.0"
 aws-sdk-kms = "1.98.0"
 aws-sdk-dynamodb = "1.103.0"
 aws-crypto-mpl = { path = "../mpl" }

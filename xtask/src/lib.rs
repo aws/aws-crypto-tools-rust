@@ -384,9 +384,9 @@ use {shared}::{{{reason}Collection, {data_key_info}Resource, RetryKind, Service}
         );
         if self.lib.sdk {
             s.push_str(
-                r"use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
+                r"use aws_sdk_kms::operation::RequestId;
+use aws_smithy_types::error::metadata::{ErrorMetadata, ProvideErrorMetadata};
 use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
-use aws_types::request_id::RequestId;
 ",
             );
         }
