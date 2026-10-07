@@ -26,8 +26,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os == 'macos-latest' && format('codebuild-CryptoToolsCI-macos-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) }}
+        os: [linux, macos]
+    runs-on: codebuild-CryptoToolsCI-${{ matrix.os }}-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     env:
       ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
       ESDK_TEST_DDB_TABLE: KeyStoreDdbTable
