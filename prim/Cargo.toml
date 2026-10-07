@@ -11,7 +11,7 @@ repository = "https://github.com/aws/aws-crypto-tools-rust"
 readme = "README.md"
 
 [dependencies]
-aws-lc-rs = { version = "1.15.4", default-features = false }
+aws-lc-rs = { version = "1.18.1", default-features = false }
 
 [features]
 default = ["aws-lc-rs/aws-lc-sys"]

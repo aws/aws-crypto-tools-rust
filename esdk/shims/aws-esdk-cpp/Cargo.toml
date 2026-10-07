@@ -17,13 +17,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 aws-crypto-mpl = { path = "../../../mpl" }
 aws-mpl-primitives = { path = "../../../prim" }
-cxx = "1.0.194"
-tokio = {version = "1.49.0", features = ["full"] }
+cxx = "1.0.202"
+tokio = {version = "1.49", features = ["full"] }
 aws-esdk = { path = "../.." }
 
 [build-dependencies]
-cxx-build = "1.0.194"
-cc = "1.2.54"
+cxx-build = "1.0.202"
+cc = "1.6.0"
 
 # Declare this crate as its own workspace root so cargo builds it standalone
 [workspace]

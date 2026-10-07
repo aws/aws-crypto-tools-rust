@@ -10,7 +10,7 @@ use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
 use memory_stats::memory_stats;
-use rand::Rng;
+use rand::RngExt;
 use std::time::Instant;
 
 use crate::benchmark::{EsdkBenchmark, MEMORY_TEST_ITERATIONS};
