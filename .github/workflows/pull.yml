@@ -34,7 +34,7 @@ jobs:
   # so the fan-out scales automatically as new projects are added.
   detect-changes:
     name: Detect changed projects
-    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-22.04' }}
+    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-22.04' }}
     permissions:
       contents: read
       # dorny/paths-filter calls the GitHub "list PR files" API on
@@ -150,7 +150,7 @@ jobs:
       - detect-changes
       - pr-ci-rust
       - pr-ci-duvet
-    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-22.04' }}
+    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-22.04' }}
     steps:
       - name: Verify all required jobs passed
         uses: re-actors/alls-green@release/v1
