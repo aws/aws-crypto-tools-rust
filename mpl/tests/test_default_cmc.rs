@@ -14,6 +14,8 @@ fn default_cmc_is_a_default_storm_tracking_cache_with_the_given_capacity() {
         .build()
         .expect("a DefaultCmc with a capacity builds");
     assert_eq!(cache.entry_capacity(), 5000);
+    // Of the provided caches, only the storm tracking cache has a grace period,
+    // so its default grace period shows the default is a storm tracking cache.
     assert_eq!(cache.grace_period(), Some(Duration::from_secs(10)));
 }
 
