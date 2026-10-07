@@ -25,8 +25,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [linux, macos]
-    runs-on: codebuild-CryptoToolsCI-${{ matrix.os }}-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+        include:
+          - os: linux
+            runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
+          - os: macos
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     defaults:
       run:
         working-directory: esdk-cpp-test-server
