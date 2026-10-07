@@ -19,7 +19,7 @@ on:
 jobs:
   retry:
     if: github.event.workflow_run.conclusion == 'failure'
-    runs-on: ubuntu-latest
+    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
     permissions:
       # Required to call reRunWorkflowFailedJobs.
       actions: write

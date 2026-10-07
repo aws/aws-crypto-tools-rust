@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && (contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest') || matrix.os }}
     env:
       ESDK_TEST_KMS_KEY_ARN: arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126
       ESDK_TEST_DDB_TABLE: KeyStoreDdbTable

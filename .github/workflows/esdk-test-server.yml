@@ -24,7 +24,7 @@ permissions:
 jobs:
   rust-language-server:
     name: "Rust server: fmt, clippy, unit tests"
-    runs-on: ubuntu-latest
+    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: esdk-test-server
@@ -70,8 +70,9 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@main
+    uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/codebuild-runners
     with:
+      runner: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
       focus: rust
       checkout-languages: rust
     secrets:
