@@ -24,7 +24,7 @@ on:
 jobs:
   duvet:
     name: duvet (${{ inputs.project }})
-    runs-on: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
+    runs-on: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
     defaults:

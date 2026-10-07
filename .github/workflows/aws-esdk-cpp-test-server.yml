@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && (contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest') || matrix.os == 'macos-latest' && (contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-macos-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'macos-latest') || matrix.os }}
+    runs-on: ${{ matrix.os == 'macos-latest' && format('codebuild-CryptoToolsCI-macos-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) }}
     defaults:
       run:
         working-directory: esdk-cpp-test-server
@@ -80,7 +80,7 @@ jobs:
       id-token: write
     uses: aws/aws-crypto-tools-commons/.github/workflows/esdk-test-server-reusable.yml@lucmcdon/codebuild-runners
     with:
-      runner: ${{ contains(fromJSON(vars.CODEBUILD_RUNNER_ACTORS || '["lucasmcdonald3"]'), github.triggering_actor) && format('codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-latest' }}
+      runner: codebuild-CryptoToolsCI-linux-aws-crypto-tools-rust-${{ github.run_id }}-${{ github.run_attempt }}
       focus: rust-cpp
       checkout-languages: rust-cpp
     secrets:
