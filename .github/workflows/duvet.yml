@@ -35,13 +35,12 @@ jobs:
         with:
           submodules: 'true'
 
-      # Install duvet at its latest published release, matching the duvet
-      # workflow in aws-cryptographic-material-providers-library. duvet has no
-      # prebuilt binary, so it builds from source; cargo/rustup are
-      # preinstalled on the runner.
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # Install duvet at its latest published release, matching the duvet
+      # workflow in aws-cryptographic-material-providers-library. duvet has no
+      # prebuilt binary, so it builds from source.
       - name: Install duvet
         run: cargo +stable install duvet
 
