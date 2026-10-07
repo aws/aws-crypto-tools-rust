@@ -133,8 +133,9 @@ use aws_crypto_mpl::cmc::{
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration, SharedKeystore};
-use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, MaterialsErrorKind};
+use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::error::{Resource, RetryKind, Service};
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -195,9 +196,8 @@ mod ffi {
         RequireEncryptRequireDecrypt = 3,
     }
 
-    /// ESDK Rust's error kinds.
-    /// Copied under the ESDK Rust's own names,
-    /// carried to C++ as a prefix on the error message (see `shim_err`);
+    /// ESDK Rust's error kinds, under the same names.
+    /// `encode_err` sends the kind to C++ in a header on the error message.
     //
     //= spec/shim/shim.md#error-classification
     //= reason=These are exactly the Rust ESDK's errors.
@@ -209,13 +209,23 @@ mod ffi {
     //= type=implication
     //# - The shim MUST NOT invent error kinds the core library does not define.
     enum ShimErrorKind {
-        Esdk,
-        SerializationError,
-        CryptographicError,
-        MplError,
-        ValidationError,
-        KeystoreError,
-        CacheError,
+        Validation = 0,
+        Serialization = 1,
+        Cryptographic = 2,
+        InvalidMaterials = 3,
+        EncryptionContextMismatch = 4,
+        NoMatchingDataKey = 5,
+        AccessDenied = 6,
+        ResourceNotFound = 7,
+        Service = 8,
+        Dispatch = 9,
+        Internal = 10,
+        Io = 11,
+        Throttling = 12,
+        Conflict = 13,
+        /// Reserved, not a kind: an ESDK Rust variant this shim does not map.
+        /// C++ throws the base exception, with no kind.
+        Unknown = 255,
     }
 
     struct EncryptionContextItem {
@@ -448,49 +458,186 @@ struct CryptographicMaterialsCache {
     inner: SharedCmc,
 }
 
-// ASCII Unit Seperator, used below
-const ERROR_KIND_SEPARATOR: char = '\u{1f}';
+// ASCII Unit Separator, between the header fields.
+const ERROR_FIELD_SEPARATOR: char = '\u{1f}';
+// ASCII Record Separator, between the header and the message.
+const ERROR_HEADER_END: char = '\u{1e}';
 
-/// Encodes a shim error for the C++ facade. Called by every error-raising path.
+/// Encode an error the shim raises itself, which is never retryable and names no AWS call.
 fn shim_err(kind: ffi::ShimErrorKind, operation: &str, message: impl std::fmt::Display) -> String {
-    // `.repr` is the enum's underlying integer (how cxx exposes an enum value);
-    // bind it so every piece of the format string reads the same way.
-    let kind = kind.repr;
-    // cxx can only give a message string, never a typed error.
-    // But typed errors are nice, so we should surface them.
-    // Workaround: create an error message format:
-    // `{kind}{ERROR_KIND_SEPARATOR}{operation}: {message}`
-    //   - kind: ShimErrorKind enum's integer value (translates to error type)
-    //   - ERROR_KIND_SEPARATOR: the ASCII Unit Separator (0x1F), a control character that never appears in these messages
-    //   - `{operation}: {message}`: remainder passed into C++-facing exception
-    format!("{kind}{ERROR_KIND_SEPARATOR}{operation}: {message}")
+    let name = shim_kind_name(kind);
+    let text = format!("{name}: {operation}: {message}");
+    encode_err(kind, None, name, &text, &text, "")
 }
 
-/// Map an ESDK Rust error kind to its ffi error kind.
-fn classify_core_error(kind: &aws_esdk::ErrorKind) -> ffi::ShimErrorKind {
-    use aws_esdk::ErrorKind;
+/// Encode an ESDK or MPL error with its variant, retry kind, details,
+/// and its Rust `{}` and `{:#}` text.
+fn core_err(e: impl Into<aws_esdk::Error>) -> String {
+    let e: aws_esdk::Error = e.into();
+    encode_err(
+        classify_core_error(&e),
+        Some(&e),
+        e.name(),
+        &e.to_string(),
+        &format!("{e:#}"),
+        &backtrace_text(origin_backtrace(&e)),
+    )
+}
+
+/// The backtrace of the innermost library error in `e`'s source chain:
+/// where the failure started, not where the ESDK added context.
+fn origin_backtrace(e: &aws_esdk::Error) -> &std::backtrace::Backtrace {
+    let mut found = e.backtrace();
+    let mut link = std::error::Error::source(e);
+    while let Some(err) = link {
+        if let Some(inner) = err.downcast_ref::<aws_esdk::Error>() {
+            found = inner.backtrace();
+        } else if let Some(inner) = err.downcast_ref::<aws_crypto_mpl::Error>() {
+            found = inner.backtrace();
+        } else if let Some(inner) = err.downcast_ref::<aws_mpl_primitives::Error>() {
+            found = inner.backtrace();
+        }
+        link = err.source();
+    }
+    found
+}
+
+/// The backtrace's text, or empty when none was captured.
+fn backtrace_text(backtrace: &std::backtrace::Backtrace) -> String {
+    match backtrace.status() {
+        std::backtrace::BacktraceStatus::Captured => backtrace.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// The Rust variant name of a kind the shim raises itself.
+fn shim_kind_name(kind: ffi::ShimErrorKind) -> &'static str {
+    use ffi::ShimErrorKind as S;
     match kind {
-        ErrorKind::SerializationError => ffi::ShimErrorKind::SerializationError,
-        ErrorKind::CryptographicError => ffi::ShimErrorKind::CryptographicError,
-        ErrorKind::MplError => ffi::ShimErrorKind::MplError,
-        ErrorKind::KeystoreError => ffi::ShimErrorKind::KeystoreError,
-        ErrorKind::CacheError => ffi::ShimErrorKind::CacheError,
-        ErrorKind::ValidationError => ffi::ShimErrorKind::ValidationError,
-        _ => ffi::ShimErrorKind::Esdk,
+        S::Validation => "Validation",
+        S::Serialization => "Serialization",
+        S::Io => "Io",
+        _ => "Internal",
+    }
+}
+
+fn encode_err(
+    kind: ffi::ShimErrorKind,
+    err: Option<&aws_esdk::Error>,
+    name: &str,
+    display: &str,
+    full: &str,
+    backtrace: &str,
+) -> String {
+    use aws_esdk::error::ConflictReason;
+    use std::fmt::Write as _;
+    // cxx passes only a message string across, not a typed error.
+    // The facade decodes this layout back into a typed exception:
+    // `kind=K<US>retryable=Y<US>retry=R<US>service=S<US>resource_type=T<US>resource=N<US>code=C<US>request_id=I<US>`
+    // `conflict_reason=X<US>credentials=B<US>name=V<US>display_len=L<US>full_len=F<RS>{display}{full}{backtrace}`
+    //   - K: the ShimErrorKind repr; Unknown for a variant the shim does not map
+    //   - Y: 1 when the error is retryable, else 0
+    //   - R: transient, throttling, server, client, or empty when not retryable
+    //   - S: kms, dynamodb, or empty
+    //   - T: kms_key, dynamodb_table, branch_key, cache, keyring, cmm,
+    //     unknown for a resource the shim does not map, or empty
+    //   - N: the resource's name; for unknown, its `Display` text
+    //   - C, I: empty when the error has none
+    //   - X: already_exists, concurrent_modification, or empty
+    //   - B: 1 when an AccessDenied error is about credentials, else 0
+    //   - V: the Rust variant name, such as Throttling
+    //   - L: the byte length of `display`, the Rust `{}` text
+    //   - F: the byte length of `full`, the Rust `{:#}` text; the rest is the Rust backtrace,
+    //     empty unless `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` enabled its capture
+    //   - US, RS: ERROR_FIELD_SEPARATOR, ERROR_HEADER_END
+    // A header value that holds either separator goes out empty, so the header always parses.
+    let clean = |v: &str| {
+        if v.contains([ERROR_FIELD_SEPARATOR, ERROR_HEADER_END]) {
+            String::new()
+        } else {
+            v.to_owned()
+        }
+    };
+    let retryable = if err.is_some_and(aws_esdk::Error::is_retryable) {
+        "1"
+    } else {
+        "0"
+    };
+    let retry = err
+        .and_then(aws_esdk::Error::retry_kind)
+        .map_or("", RetryKind::as_str);
+    let service = err
+        .and_then(aws_esdk::Error::service)
+        .map_or("", Service::as_str);
+    let (resource_type, resource) = match err.and_then(aws_esdk::Error::resource) {
+        Some(Resource::KmsKey(key)) => ("kms_key", clean(key.arn())),
+        Some(Resource::DynamoDbTable(table)) => ("dynamodb_table", clean(table.name())),
+        Some(Resource::BranchKey(branch_key)) => ("branch_key", clean(branch_key.id())),
+        Some(Resource::Cache(_)) => ("cache", String::new()),
+        Some(Resource::Keyring(keyring)) => ("keyring", clean(keyring.name())),
+        Some(Resource::Cmm(cmm)) => ("cmm", clean(cmm.name())),
+        Some(other) => ("unknown", clean(&other.to_string())),
+        None => ("", String::new()),
+    };
+    let code = err
+        .and_then(aws_esdk::Error::code)
+        .map(clean)
+        .unwrap_or_default();
+    let request_id = err
+        .and_then(aws_esdk::Error::request_id)
+        .map(clean)
+        .unwrap_or_default();
+    let conflict_reason = match err {
+        Some(aws_esdk::Error::Conflict(c)) => match c.reason() {
+            Some(ConflictReason::AlreadyExists) => "already_exists",
+            Some(ConflictReason::ConcurrentModification) => "concurrent_modification",
+            _ => "",
+        },
+        _ => "",
+    };
+    let credentials = match err {
+        Some(aws_esdk::Error::AccessDenied(a)) if a.is_credentials() => "1",
+        _ => "0",
+    };
+    let name = clean(name);
+    let sep = ERROR_FIELD_SEPARATOR;
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "kind={}{sep}retryable={retryable}{sep}retry={retry}{sep}service={service}{sep}resource_type={resource_type}{sep}resource={resource}{sep}code={code}{sep}request_id={request_id}{sep}conflict_reason={conflict_reason}{sep}credentials={credentials}{sep}name={name}{sep}display_len={}{sep}full_len={}{ERROR_HEADER_END}{display}{full}{backtrace}",
+        kind.repr,
+        display.len(),
+        full.len(),
+    );
+    out
+}
+
+/// Map an ESDK Rust error to its ffi error kind.
+fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
+    use aws_esdk::Error as E;
+    use ffi::ShimErrorKind as S;
+    match e {
+        E::Validation(_) => S::Validation,
+        E::Serialization(_) => S::Serialization,
+        E::Cryptographic(_) => S::Cryptographic,
+        E::InvalidMaterials(_) => S::InvalidMaterials,
+        E::EncryptionContextMismatch(_) => S::EncryptionContextMismatch,
+        E::NoMatchingDataKey(_) => S::NoMatchingDataKey,
+        E::AccessDenied(_) => S::AccessDenied,
+        E::ResourceNotFound(_) => S::ResourceNotFound,
+        E::Throttling(_) => S::Throttling,
+        E::Conflict(_) => S::Conflict,
+        E::Service(_) => S::Service,
+        E::Dispatch(_) => S::Dispatch,
+        E::Io(_) => S::Io,
+        E::Internal(_) => S::Internal,
+        _ => S::Unknown,
     }
 }
 
 /// Map a core input builder's `build()` error through the shim's error translation.
-fn build_core_input<T>(built: Result<T, aws_esdk::Error>, operation: &str) -> Result<T, String> {
-    built.map_err(|e| shim_err(classify_core_error(&e.kind), operation, e))
-}
-
-/// Map an MPL materials error kind to its ffi error kind.
-fn classify_mpl_error(kind: &MaterialsErrorKind) -> ffi::ShimErrorKind {
-    match kind {
-        MaterialsErrorKind::Validation => ffi::ShimErrorKind::ValidationError,
-        _ => ffi::ShimErrorKind::MplError,
-    }
+fn build_core_input<T>(built: Result<T, aws_esdk::Error>) -> Result<T, String> {
+    built.map_err(core_err)
 }
 
 /// Validates a C++-supplied resource handle, then borrows the resource behind it.
@@ -501,7 +648,7 @@ fn require_handle<'a, T>(ptr: *const T, name: &str, operation: &str) -> Result<&
     //# and MUST return an error when a required handle is absent.
     if ptr.is_null() {
         return Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             operation,
             format!("{name} is null"),
         ));
@@ -543,7 +690,7 @@ fn alg_id_target_to_core(e: ffi::EsdkAlgorithmSuiteId) -> Result<EsdkAlgorithmSu
         //# - The shim MUST return an error when the target value is not one of the algorithm
         //# suite IDs defined by the core ESDK.
         _ => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "algorithm suite translation",
             format!("unrecognized EsdkAlgorithmSuiteId value: {:#06x}", e.repr),
         )),
@@ -581,9 +728,9 @@ fn alg_id_core_to_target(e: EsdkAlgorithmSuiteId) -> Result<ffi::EsdkAlgorithmSu
         //# - The shim MUST return an error when the core ESDK produces an algorithm suite
         //# the shim does not define.
         _ => Err(shim_err(
-            ffi::ShimErrorKind::Esdk,
+            ffi::ShimErrorKind::Internal,
             "algorithm suite translation",
-            "core returned an algorithm suite id unknown to the C++ bindings",
+            "ESDK Rust returned an algorithm suite ID this version of the C++ library does not recognize",
         )),
     }
 }
@@ -605,7 +752,7 @@ fn commitment_policy_target_to_core(
         //# - The shim MUST return an error when the target commitment policy is not a supported
         //# value.
         _ => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "commitment policy translation",
             format!("unrecognized EsdkCommitmentPolicy value: {}", x.repr),
         )),
@@ -654,9 +801,9 @@ fn max_edks_target_to_core(n: u32) -> Option<std::num::NonZeroUsize> {
 fn make_frame_length(frame_length: u32) -> Result<NonZeroU32, String> {
     NonZeroU32::new(frame_length).ok_or_else(|| {
         shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "frame length translation",
-            "Frame length must be non-zero",
+            "frame length must be greater than zero",
         )
     })
 }
@@ -668,7 +815,7 @@ fn make_kms_config(
 ) -> Result<KmsConfiguration, String> {
     match kind {
         ffi::KmsConfigurationType::Unset => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "create_keystore",
             "kms_configuration_type is unset",
         )),
@@ -692,9 +839,9 @@ fn make_kms_config(
         //# - The shim MUST return an error when the target KMS configuration type is not a
         //# supported value.
         _ => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "create_keystore",
-            "Invalid KmsConfigurationType",
+            "unrecognized KMS configuration type",
         )),
     }
 }
@@ -705,7 +852,7 @@ fn from_ffi_duration(d: ffi::Duration, field: &str, op: &str) -> Result<Duration
         .checked_add(Duration::from_nanos(u64::from(d.nanos)))
         .ok_or_else(|| {
             shim_err(
-                ffi::ShimErrorKind::ValidationError,
+                ffi::ShimErrorKind::Validation,
                 op,
                 format!("{field} is out of range"),
             )
@@ -718,14 +865,14 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
     let capacity = |field: &str, v: u32| -> Result<usize, String> {
         let bounded = i32::try_from(v).map_err(|_| {
             shim_err(
-                ffi::ShimErrorKind::ValidationError,
+                ffi::ShimErrorKind::Validation,
                 op,
                 format!("{field} {v} exceeds the bridge's supported maximum"),
             )
         })?;
         usize::try_from(bounded).map_err(|_| {
             shim_err(
-                ffi::ShimErrorKind::ValidationError,
+                ffi::ShimErrorKind::Validation,
                 op,
                 format!("{field} {v} does not fit in usize"),
             )
@@ -759,7 +906,7 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
             .map(CacheType::StormTracking)
             .map_err(|e| {
                 shim_err(
-                    ffi::ShimErrorKind::ValidationError,
+                    ffi::ShimErrorKind::Validation,
                     op,
                     format!("failed to build StormTrackingCache: {e}"),
                 )
@@ -777,7 +924,7 @@ fn make_cache_type(cache: &ffi::CacheType) -> Result<CacheType, String> {
         //# - The shim MUST return an error when the target cache kind is not a supported
         //# value.
         _ => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             op,
             "unrecognized or unset cache kind",
         )),
@@ -794,13 +941,7 @@ fn create_cryptographic_materials_cache(
     //# - Creating a cryptographic materials cache MUST provide the target-supplied
     //# cache type, with its values, to the core ESDK.
     let cache_type = make_cache_type(cache)?;
-    let created = create_cryptographic_materials_cache_core(cache_type).map_err(|e| {
-        shim_err(
-            classify_mpl_error(&e.kind),
-            "create_cryptographic_materials_cache",
-            e,
-        )
-    })?;
+    let created = create_cryptographic_materials_cache_core(cache_type).map_err(core_err)?;
     Ok(Box::new(CryptographicMaterialsCache { inner: created }))
 }
 
@@ -864,7 +1005,7 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
     let new_app_name = merge_user_agent(&current_app_name, &user_agent_string);
     let app_name = AppName::new(new_app_name).map_err(|e| {
         shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "client configuration",
             format!("invalid app name: {e}"),
         )
@@ -983,9 +1124,9 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
         //# source (see [Resources](#resources)).
         .keyring(keyring.inner.clone());
-    let core_input = build_core_input(apply_encrypt_options(builder, input)?.build(), "encrypt")?;
+    let core_input = build_core_input(apply_encrypt_options(builder, input)?.build())?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
-    let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt", e))?;
+    let output = output.map_err(core_err)?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1016,9 +1157,9 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //# converted as defined in [Encryption context](#encryption-context).
         .encryption_context(encryption_context_target_to_core(&input.encryption_context))
         .keyring(keyring.inner.clone());
-    let core_input = build_core_input(apply_decrypt_options(builder, input)?.build(), "decrypt")?;
+    let core_input = build_core_input(apply_decrypt_options(builder, input)?.build())?;
     let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
-    let output = output.map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt", e))?;
+    let output = output.map_err(core_err)?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1063,7 +1204,6 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
-    let op = "create_keystore";
     let builder = BranchKeyStore::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
@@ -1094,9 +1234,7 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
         .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
-    let store = TOKIO_RUNTIME
-        .block_on(builder.build())
-        .map_err(|e| shim_err(ffi::ShimErrorKind::KeystoreError, op, e))?;
+    let store = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
     Ok(Box::new(KeyStore {
         inner: SharedKeystore::new(store),
     }))
@@ -1115,7 +1253,7 @@ fn wrapping_alg_target_to_core(
 ) -> Result<aws_mpl_primitives::AesGcm, String> {
     match alg {
         ffi::AesWrappingAlg::Unset => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
             "wrapping_alg is unset",
         )),
@@ -1126,9 +1264,9 @@ fn wrapping_alg_target_to_core(
         //# - The shim MUST return an error when the target wrapping algorithm is not a
         //# supported value.
         _ => Err(shim_err(
-            ffi::ShimErrorKind::ValidationError,
+            ffi::ShimErrorKind::Validation,
             "create_raw_aes_keyring",
-            "Invalid AesWrappingAlg",
+            "unrecognized AES wrapping algorithm",
         )),
     }
 }
@@ -1153,7 +1291,7 @@ fn create_raw_aes_keyring(input: &ffi::RawAesKeyringInput) -> Result<Box<Keyring
         //# [AES wrapping algorithm](#aes-wrapping-algorithm).
         wrapping_alg_target_to_core(input.wrapping_alg)?,
     )
-    .map_err(|e| shim_err(classify_mpl_error(&e.kind), "create_raw_aes_keyring", e))?;
+    .map_err(core_err)?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),
@@ -1208,13 +1346,7 @@ fn create_hierarchical_keyring(
     if let Some(partition_id) = partition_id {
         builder = builder.partition_id(partition_id);
     }
-    let keyring = builder.build().map_err(|e| {
-        shim_err(
-            classify_mpl_error(&e.kind),
-            "create_hierarchical_keyring",
-            e,
-        )
-    })?;
+    let keyring = builder.build().map_err(core_err)?;
 
     Ok(Box::new(Keyring {
         inner: SharedKeyring::new(keyring),
@@ -1353,7 +1485,7 @@ impl StreamState {
     fn write(&mut self, chunk: &[u8]) -> Result<Vec<u8>, String> {
         let tx = self.input_tx.as_ref().ok_or_else(|| {
             shim_err(
-                ffi::ShimErrorKind::ValidationError,
+                ffi::ShimErrorKind::Validation,
                 self.operation,
                 "write after finish",
             )
@@ -1391,14 +1523,14 @@ impl StreamState {
     fn join_worker(&mut self) -> Result<ffi::StreamFinishOutput, String> {
         let worker = self.worker.take().ok_or_else(|| {
             shim_err(
-                ffi::ShimErrorKind::ValidationError,
+                ffi::ShimErrorKind::Validation,
                 self.operation,
                 "finish called twice",
             )
         })?;
         worker.join().map_err(|_| {
             shim_err(
-                ffi::ShimErrorKind::Esdk,
+                ffi::ShimErrorKind::Internal,
                 self.operation,
                 "stream worker panicked",
             )
@@ -1460,7 +1592,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                 .transpose()?,
         )
         .build();
-    let core_input = build_core_input(core_input, "encrypt_stream")?;
+    let core_input = build_core_input(core_input)?;
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1469,7 +1601,7 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
                     &mut writer,
                     &core_input,
                 ))
-                .map_err(|e| shim_err(classify_core_error(&e.kind), "encrypt_stream", e))?;
+                .map_err(core_err)?;
             //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
             //# - A successful finish step MUST return the same non-payload outputs as
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
@@ -1509,7 +1641,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 .transpose()?,
         )
         .build();
-    let core_input = build_core_input(core_input, "decrypt_stream")?;
+    let core_input = build_core_input(core_input)?;
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
@@ -1523,7 +1655,7 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
                 //# and the shim MUST surface the core ESDK's refusal to stream a message whose
                 //# verification cannot complete until the end of the message.
-                .map_err(|e| shim_err(classify_core_error(&e.kind), "decrypt_stream", e))?;
+                .map_err(core_err)?;
             Ok(ffi::StreamFinishOutput {
                 algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
                 encryption_context: encryption_context_core_to_target(output.encryption_context),

@@ -13,6 +13,7 @@ use super::header_types::{
 use super::serializable_types::get_iv_length;
 use super::serialize_functions::{read_bytes, read_u8, read_u32, write_bytes, write_u8, write_u32};
 use super::{Error, ser_err};
+use crate::error::{Kind, err};
 use crate::types::{SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 
@@ -129,8 +130,9 @@ pub(crate) fn write_v1_header_body(
     //# specified by the [algorithm suite](../framework/algorithm-suites.md).
     let iv_length_usize = get_iv_length(&body.algorithm_suite);
     let Ok(iv_length) = u8::try_from(iv_length_usize) else {
-        return ser_err(&format!(
-            "IV length {iv_length_usize} exceeds the UInt8 IV-length field"
+        return Err(err(
+            Kind::Internal,
+            format!("IV length {iv_length_usize} exceeds the UInt8 IV-length field"),
         ));
     };
 
@@ -171,7 +173,7 @@ pub(crate) fn read_v1_reserved_bytes(
     if result == RESERVED_BYTES {
         Ok(())
     } else {
-        ser_err("Incorrect reserved bytes")
+        ser_err("incorrect reserved bytes")
     }
 }
 
@@ -188,7 +190,7 @@ pub(crate) fn read_v1_header_iv_length(
     if usize::from(iv_len) == get_iv_length(suite) {
         Ok(iv_len)
     } else {
-        ser_err("Header IV length does not match algorithm suite")
+        ser_err("header IV length does not match algorithm suite")
     }
 }
 

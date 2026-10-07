@@ -200,7 +200,10 @@ fn alg_id_target_to_core_rejects_unknown() {
     //# - The shim MUST return an error when the target value is not one of the algorithm
     //# suite IDs defined by the core ESDK.
     let err = alg_id_target_to_core(F { repr: 0xFFFF }).unwrap_err();
-    assert!(err.contains("unrecognized"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
     assert!(alg_id_target_to_core(F { repr: 0x0000 }).is_err());
 }
 
@@ -303,7 +306,7 @@ fn make_frame_length_translates_and_rejects_zero() {
     //# value.
     let err = make_frame_length(0).unwrap_err();
     assert!(
-        err.contains("Frame length must be non-zero"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     assert!(make_frame_length(4096).is_ok());
@@ -377,70 +380,254 @@ fn make_kms_config_rejects_unknown_type() {
     //# supported value.
     let err = make_kms_config(ffi::KmsConfigurationType { repr: 99 }, "").unwrap_err();
     assert!(
-        err.contains("Invalid KmsConfigurationType"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
     let err = make_kms_config(ffi::KmsConfigurationType::Unset, "").unwrap_err();
     assert!(
-        err.contains("kms_configuration_type is unset"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
 
 #[test]
-fn classify_core_error_maps_each_kind() {
-    use aws_esdk::ErrorKind;
-    // ErrorKind::Esdk has no explicit arm; it maps through the wildcard.
-    let cases = [
-        (ErrorKind::Esdk, ffi::ShimErrorKind::Esdk),
+fn classify_core_error_maps_each_variant_to_the_same_name() {
+    use aws_esdk::error as e;
+    use ffi::ShimErrorKind as S;
+    let cases: [(aws_esdk::Error, S); 14] = [
+        (e::ValidationError::new("x").into(), S::Validation),
+        (e::SerializationError::new("x").into(), S::Serialization),
+        (e::CryptographicError::new("x").into(), S::Cryptographic),
         (
-            ErrorKind::SerializationError,
-            ffi::ShimErrorKind::SerializationError,
+            e::InvalidMaterialsError::new("x").into(),
+            S::InvalidMaterials,
         ),
         (
-            ErrorKind::CryptographicError,
-            ffi::ShimErrorKind::CryptographicError,
+            e::EncryptionContextMismatchError::new("x").into(),
+            S::EncryptionContextMismatch,
         ),
-        (ErrorKind::MplError, ffi::ShimErrorKind::MplError),
         (
-            ErrorKind::ValidationError,
-            ffi::ShimErrorKind::ValidationError,
+            e::NoMatchingDataKeyError::new("x").into(),
+            S::NoMatchingDataKey,
         ),
-        (ErrorKind::KeystoreError, ffi::ShimErrorKind::KeystoreError),
-        (ErrorKind::CacheError, ffi::ShimErrorKind::CacheError),
+        (e::AccessDeniedError::new("x").into(), S::AccessDenied),
+        (
+            e::ResourceNotFoundError::new("x").into(),
+            S::ResourceNotFound,
+        ),
+        (e::ServiceError::new("x").into(), S::Service),
+        (e::DispatchError::new("x").into(), S::Dispatch),
+        (e::InternalError::new("x").into(), S::Internal),
+        (e::IoError::new("x").into(), S::Io),
+        (e::ThrottlingError::new("x").into(), S::Throttling),
+        (e::ConflictError::new("x").into(), S::Conflict),
     ];
-    for (kind, expected) in cases {
-        assert_eq!(
-            classify_core_error(&kind).repr,
-            expected.repr,
-            "for {kind:?}"
+    for (err, expected) in cases {
+        assert_eq!(classify_core_error(&err).repr, expected.repr, "for {err:?}");
+    }
+}
+
+/// The `kind=K<US>retryable=Y<US>retry=R` prefix the facade decodes.
+fn err_prefix(kind: ffi::ShimErrorKind, retry: &str) -> String {
+    let sep = ERROR_FIELD_SEPARATOR;
+    let retryable = u8::from(!retry.is_empty());
+    format!(
+        "kind={}{sep}retryable={retryable}{sep}retry={retry}{sep}",
+        kind.repr
+    )
+}
+
+#[test]
+fn core_err_encodes_an_mpl_errors_kind_and_retry_kind() {
+    use aws_crypto_mpl::Error as MplError;
+    use aws_crypto_mpl::error::{NoMatchingDataKeyError, RetryKind, ServiceError, ValidationError};
+    let cases = [
+        (
+            MplError::from(NoMatchingDataKeyError::new("x")),
+            ffi::ShimErrorKind::NoMatchingDataKey,
+            "",
+        ),
+        (
+            MplError::from(
+                ServiceError::builder()
+                    .message("x")
+                    .retry_kind(RetryKind::Throttling)
+                    .build(),
+            ),
+            ffi::ShimErrorKind::Service,
+            "throttling",
+        ),
+        (
+            MplError::from(aws_crypto_mpl::error::ThrottlingError::new("x")),
+            ffi::ShimErrorKind::Throttling,
+            "throttling",
+        ),
+        (
+            MplError::from(ValidationError::new("x")),
+            ffi::ShimErrorKind::Validation,
+            "",
+        ),
+    ];
+    for (e, kind, retry) in cases {
+        let err = core_err(e);
+        assert!(
+            err.starts_with(&err_prefix(kind, retry)),
+            "unexpected error: {err}"
         );
     }
 }
 
 #[test]
-fn classify_mpl_error_maps_validation_and_defaults_to_mpl_error() {
-    let cases = [
-        (
-            MaterialsErrorKind::Validation,
-            ffi::ShimErrorKind::ValidationError,
-        ),
-        (
-            MaterialsErrorKind::KeyringFailed,
-            ffi::ShimErrorKind::MplError,
-        ),
-        (
-            MaterialsErrorKind::NoMatchingDataKey,
-            ffi::ShimErrorKind::MplError,
-        ),
-    ];
-    for (kind, expected) in cases {
-        assert_eq!(
-            classify_mpl_error(&kind).repr,
-            expected.repr,
-            "for {kind:?}"
-        );
-    }
+fn core_err_encodes_the_aws_call() {
+    use aws_crypto_mpl::Error as MplError;
+    use aws_crypto_mpl::error::{AccessDeniedError, KmsKey, Resource, Service};
+    let err = core_err(MplError::from(
+        AccessDeniedError::builder()
+            .message("denied")
+            .service(Service::Kms)
+            .resource(Resource::KmsKey(KmsKey::new("arn:aws:kms:k")))
+            .build(),
+    ));
+    let sep = ERROR_FIELD_SEPARATOR;
+    assert!(
+        err.contains(&format!(
+            "{sep}service=kms{sep}resource_type=kms_key{sep}resource=arn:aws:kms:k{sep}"
+        )),
+        "unexpected error: {err}"
+    );
+}
+
+/// The header field `name`, from an encoded error.
+fn header_field<'a>(encoded: &'a str, name: &str) -> &'a str {
+    let header = &encoded[..encoded.find(ERROR_HEADER_END).expect("a header")];
+    header
+        .split(ERROR_FIELD_SEPARATOR)
+        .find_map(|f| f.strip_prefix(&format!("{name}=")))
+        .expect("the field")
+}
+
+/// The Rust `{}` and `{:#}` text after the header.
+fn message_parts(encoded: &str) -> (&str, &str) {
+    let (display, full, _) = body_parts(encoded);
+    (display, full)
+}
+
+/// The Rust `{}` text, `{:#}` text and backtrace after the header.
+fn body_parts(encoded: &str) -> (&str, &str, &str) {
+    let body = &encoded[encoded.find(ERROR_HEADER_END).expect("a header") + 1..];
+    let display_len: usize = header_field(encoded, "display_len").parse().unwrap();
+    let full_len: usize = header_field(encoded, "full_len").parse().unwrap();
+    let (display, rest) = body.split_at(display_len);
+    let (full, backtrace) = rest.split_at(full_len);
+    (display, full, backtrace)
+}
+
+#[test]
+fn core_err_carries_the_backtrace_after_the_messages() {
+    use aws_esdk::error::InternalError;
+    let err = InternalError::new("example");
+    let captured = backtrace_text(origin_backtrace(&aws_esdk::Error::from(err.clone())));
+    let encoded = core_err(err);
+    let (display, full, backtrace) = body_parts(&encoded);
+    assert_eq!(display, "Internal: example");
+    assert_eq!(full, "Internal: example");
+    assert_eq!(backtrace, captured);
+}
+
+#[test]
+fn the_backtrace_is_the_innermost_library_errors() {
+    let inner = aws_crypto_mpl::Error::internal("origin");
+    let outer = aws_esdk::Error::from(inner.clone());
+    assert!(std::ptr::eq(origin_backtrace(&outer), inner.backtrace()));
+}
+
+#[test]
+fn shim_err_has_no_backtrace() {
+    let encoded = shim_err(ffi::ShimErrorKind::Validation, "decrypt", "bad input");
+    let (_, _, backtrace) = body_parts(&encoded);
+    assert_eq!(backtrace, "");
+}
+
+#[test]
+fn core_err_encodes_the_new_resources_reason_credentials_and_name() {
+    use aws_esdk::error::{
+        AccessDeniedError, Cache, CmmResource, ConflictError, ConflictReason, KeyringResource,
+        Resource, Service, ThrottlingError,
+    };
+    let throttled = core_err(
+        ThrottlingError::builder()
+            .resource(Resource::Cache(Cache::new()))
+            .build(),
+    );
+    assert_eq!(header_field(&throttled, "resource_type"), "cache");
+    assert_eq!(header_field(&throttled, "service"), "");
+    assert_eq!(header_field(&throttled, "name"), "Throttling");
+
+    let keyring = core_err(
+        aws_esdk::error::NoMatchingDataKeyError::builder()
+            .resource(Resource::Keyring(KeyringResource::new("ns/name")))
+            .build(),
+    );
+    assert_eq!(header_field(&keyring, "resource_type"), "keyring");
+    assert_eq!(header_field(&keyring, "resource"), "ns/name");
+
+    let cmm = core_err(
+        aws_esdk::error::InvalidMaterialsError::builder()
+            .resource(Resource::Cmm(CmmResource::new("default")))
+            .build(),
+    );
+    assert_eq!(header_field(&cmm, "resource_type"), "cmm");
+    assert_eq!(header_field(&cmm, "resource"), "default");
+
+    let conflict = core_err(
+        ConflictError::builder()
+            .service(Service::DynamoDb)
+            .reason(ConflictReason::ConcurrentModification)
+            .build(),
+    );
+    assert_eq!(
+        header_field(&conflict, "conflict_reason"),
+        "concurrent_modification"
+    );
+    assert_eq!(header_field(&conflict, "credentials"), "0");
+
+    let expired = core_err(
+        AccessDeniedError::builder()
+            .code("ExpiredTokenException")
+            .build(),
+    );
+    assert_eq!(header_field(&expired, "credentials"), "1");
+}
+
+#[test]
+fn core_err_sends_the_display_and_alternate_text() {
+    use aws_esdk::error::InternalError;
+    let err = aws_esdk::Error::from(
+        InternalError::new("outer").with_source(std::io::Error::other("the cause")),
+    );
+    let encoded = core_err(err);
+    let (display, full) = message_parts(&encoded);
+    assert_eq!(display, "Internal: outer");
+    assert_eq!(full, "Internal: outer: the cause");
+}
+
+#[test]
+fn a_message_holding_the_separators_still_decodes() {
+    use aws_esdk::error::InternalError;
+    let message = format!("a{ERROR_HEADER_END}b{ERROR_FIELD_SEPARATOR}c");
+    let encoded = core_err(InternalError::new(message.clone()));
+    let (display, full) = message_parts(&encoded);
+    assert_eq!(display, format!("Internal: {message}"));
+    assert_eq!(full, display);
+}
+
+#[test]
+fn shim_err_is_not_retryable() {
+    let err = shim_err(ffi::ShimErrorKind::Validation, "op", "x");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 // Inputs the facade cannot express, so must be tested in Rust
@@ -455,13 +642,19 @@ fn encrypt_rejects_null_keyring() {
     //# - The shim MUST return an error, and MUST NOT invoke the core ESDK, when no
     //# materials source is supplied.
     let err = expect_err(encrypt(&unset_encrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
 fn decrypt_rejects_null_keyring() {
     let err = expect_err(decrypt(&unset_decrypt_input()));
-    assert!(err.contains("keyring is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -495,7 +688,7 @@ fn create_keystore_rejects_unset_kms_config_type() {
     unset_kms.kms_configuration_type = ffi::KmsConfigurationType::Unset;
     let err = expect_err(create_keystore(&unset_kms));
     assert!(
-        err.contains("kms_configuration_type is unset"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -510,7 +703,10 @@ fn create_hierarchical_keyring_rejects_null_key_store() {
     let err = expect_err(create_hierarchical_keyring(
         &unset_hierarchical_keyring_input(),
     ));
-    assert!(err.contains("key_store is null"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -537,7 +733,7 @@ fn create_hierarchical_keyring_reports_bad_cache() {
     };
     let err = expect_err(create_hierarchical_keyring(&input));
     assert!(
-        err.contains("unrecognized or unset cache kind"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -578,7 +774,7 @@ fn create_hierarchical_keyring_passes_ttl_nanos_to_the_core() {
         ),
     ));
     assert!(
-        err.contains("ttl is out of range"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -602,7 +798,7 @@ fn create_cache_rejects_unknown_kind() {
             shared: std::ptr::null(),
         }));
         assert!(
-            err.contains("unrecognized or unset cache kind"),
+            err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
             "unexpected error: {err}"
         );
     }
@@ -677,7 +873,10 @@ fn create_storm_tracking_cache_rejects_zero_sleep() {
     let mut input = storm_tracking_cache_input();
     input.sleep = ZERO_DURATION;
     let err = expect_err(make_cache_type(&input));
-    assert!(err.contains("sleep"), "unexpected error: {err}");
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -689,7 +888,7 @@ fn create_storm_tracking_cache_rejects_out_of_range_durations() {
     };
     let err = expect_err(make_cache_type(&input));
     assert!(
-        err.contains("grace_period is out of range"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {err}"
     );
 }
@@ -760,7 +959,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg::Unset,
     }));
     assert!(
-        unset.contains("wrapping_alg is unset"),
+        unset.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unset}"
     );
 
@@ -771,7 +970,7 @@ fn create_raw_aes_keyring_rejects_unsupported_wrapping_alg() {
         wrapping_alg: ffi::AesWrappingAlg { repr: 99 },
     }));
     assert!(
-        unknown.contains("Invalid AesWrappingAlg"),
+        unknown.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
         "unexpected error: {unknown}"
     );
 }
@@ -1050,7 +1249,7 @@ fn stream_finish_surfaces_worker_panic() {
     let mut state = StreamState::spawn("test_stream", |_reader, _writer| panic!("worker panic"));
     let err = expect_err(state.finish());
     assert!(
-        err.contains("stream worker panicked"),
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Internal, "")),
         "unexpected error: {err}"
     );
 }

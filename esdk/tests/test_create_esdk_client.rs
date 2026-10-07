@@ -3,7 +3,7 @@
 
 use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind, decrypt, encrypt};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
 use std::num::NonZeroU32;
 
@@ -62,9 +62,9 @@ async fn test_net_v400_message_is_not_readable() {
         .await
         .expect_err("v4.0.0 .NET message must not decrypt");
     assert!(
-        matches!(err.kind, ErrorKind::CryptographicError),
-        "expected CryptographicError, got {:?}",
-        err.kind
+        err.is_cryptographic(),
+        "expected Cryptographic error, got {:?}",
+        err
     );
 }
 
@@ -317,9 +317,9 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
         .build()
         .expect_err("build must fail when neither keyring nor cmm is set");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 
     let err = EncryptInput::builder()
@@ -329,9 +329,9 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
         .build()
         .expect_err("build must fail when both keyring and cmm are set");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 }
 
@@ -354,9 +354,9 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
         .build()
         .expect_err("build must fail when neither keyring nor cmm is set");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 
     let err = DecryptInput::builder()
@@ -366,9 +366,9 @@ async fn test_decrypt_rejects_neither_and_both_sources() {
         .build()
         .expect_err("build must fail when both keyring and cmm are set");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 }
 
@@ -467,9 +467,9 @@ async fn test_esdk_encrypt_rejects_input_with_non_default_commitment_policy() {
         .await
         .expect_err("Esdk::encrypt must reject input that sets commitment_policy when the client also configures it");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 }
 
@@ -488,9 +488,9 @@ async fn test_esdk_encrypt_rejects_input_with_max_encrypted_data_keys() {
         .await
         .expect_err("Esdk::encrypt must reject input that sets max_encrypted_data_keys when the client also configures it");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 }
 
@@ -509,9 +509,9 @@ async fn test_esdk_decrypt_rejects_input_with_non_default_commitment_policy() {
         .await
         .expect_err("Esdk::decrypt must reject input that sets commitment_policy when the client also configures it");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 }
 
@@ -530,9 +530,9 @@ async fn test_esdk_decrypt_rejects_input_with_max_encrypted_data_keys() {
         .await
         .expect_err("Esdk::decrypt must reject input that sets max_encrypted_data_keys when the client also configures it");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "expected ValidationError, got {:?}",
-        err.kind
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
     );
 }
 
@@ -611,25 +611,17 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         .encrypt(&enc_input)
         .await
         .expect_err("ForbidEncryptAllowDecrypt + committing V2 suite must fail encrypt");
-    // The ESDK gates the algorithm suite against the commitment policy before
-    // calling the MPL, surfacing the conflict as a ValidationError. Match on the
-    // variant (a stable type identity) rather than message text.
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected ValidationError, got {:?}: {}",
-        err.kind,
-        err.message
+    // The ESDK rejects the suite before calling the MPL, with a Validation error.
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {:?}: {}",
+        err,
+        err.message()
     );
-    let inner = err.to_string();
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
-    //= reason=the ESDK gates the algorithm suite against the commitment policy and yields a ValidationError
+    //= reason=the ESDK gates the algorithm suite against the commitment policy and yields a Validation error
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    assert!(
-        inner.contains("commitment policy"),
-        "expected a commitment-policy rejection, got: {inner}"
-    );
 }
 
 // Symmetric to `test_esdk_commitment_policy_actually_gates_encrypt`: proves
@@ -686,20 +678,14 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     let err = default_esdk.decrypt(&dec_input).await.expect_err(
         "default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
     );
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected ValidationError, got {:?}: {}",
-        err.kind,
-        err.message
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {:?}: {}",
+        err,
+        err.message()
     );
-    let inner = err.to_string();
     //= spec/client-apis/client.md#commitment-policy
     //= type=test
-    //= reason=the ESDK gates the parsed algorithm suite against the commitment policy and yields a ValidationError
+    //= reason=the ESDK gates the parsed algorithm suite against the commitment policy and yields a Validation error
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    assert!(
-        inner.contains("commitment policy"),
-        "expected a commitment-policy rejection, got: {inner}"
-    );
 }

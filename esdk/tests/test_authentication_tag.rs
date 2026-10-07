@@ -7,7 +7,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
 use test_helpers::*;
 
 /// V1 header auth layout: IV(12) || Tag(16) immediately after the header body.
@@ -75,7 +74,7 @@ async fn test_v1_header_auth_has_iv_then_tag() {
 
     //= spec/client-apis/encrypt.md#authentication-tag
     //= type=test
-    //= reason=Untampered V1 ct decrypts; flipping a header auth tag byte → CryptographicError, so the tag is the verified AEAD output
+    //= reason=Untampered V1 ct decrypts; flipping a header auth tag byte → Cryptographic error, so the tag is the verified AEAD output
     //# The value of this MUST be the output of the [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
     //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
     //
@@ -88,12 +87,11 @@ async fn test_v1_header_auth_has_iv_then_tag() {
         pt,
         "valid V1 ct must decrypt"
     );
-    assert_eq!(
+    assert!(
         try_decrypt_v1_with_keyring(&tag_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
+            .is_cryptographic(),
         "tampered V1 header auth tag must fail authentication"
     );
 }
@@ -213,9 +211,9 @@ async fn test_auth_tag_tampered_header_fails_decrypt_v1() {
         .await
         .expect_err("V1 tampered header must fail decryption");
     assert!(
-        matches!(err.kind, ErrorKind::CryptographicError),
-        "V1: expected CryptographicError, got {:?}",
-        err.kind
+        err.is_cryptographic(),
+        "V1: expected Cryptographic error, got {:?}",
+        err
     );
 }
 
@@ -233,8 +231,8 @@ async fn test_auth_tag_tampered_header_fails_decrypt_v2() {
         .await
         .expect_err("V2 tampered header must fail decryption");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "V2: expected ValidationError, got {:?}",
-        err.kind
+        err.is_cryptographic(),
+        "V2: expected Cryptographic error, got {:?}",
+        err
     );
 }

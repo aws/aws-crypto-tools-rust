@@ -3,12 +3,10 @@
 
 //! Encryption context serialization for message header and AAD.
 
-use std::backtrace::Backtrace;
-use std::sync::Arc;
-
+use super::Error;
 use super::serialize_functions::{read_u16, read_vec, write_bytes, write_u16};
-use super::{Error, ser_err};
-use crate::error::ErrorKind;
+use crate::error::err;
+use crate::error::{Kind, err_with_cause};
 use crate::types::{EncryptionContext, SafeRead, SafeWrite};
 
 /// Read the header's AAD encryption context sub-section.
@@ -18,12 +16,8 @@ pub(crate) fn read_encryption_context(
 ) -> Result<EncryptionContext, Error> {
     let len = usize::from(read_u16(r, raw)?);
     let bytes = read_vec(r, len, raw)?;
-    EncryptionContext::deserialize(&bytes).map_err(|e| Error {
-        kind: ErrorKind::SerializationError,
-        message: format!("Invalid encryption context: {}", e.message),
-        backtrace: Arc::new(Backtrace::capture()),
-        cause: Some(Arc::new(e)),
-    })
+    EncryptionContext::deserialize(&bytes)
+        .map_err(|e| err_with_cause(Kind::Serialization, "invalid encryption context", e))
 }
 
 /// Write canonical EC bytes for signing/AES-GCM AAD; empty EC writes nothing.
@@ -80,7 +74,10 @@ pub(crate) fn write_aad_section(
     //= spec/data-format/message-header.md#key-value-pairs-length
     //# The key value pairs length MUST be interpreted as a UInt16.
     let Ok(bytes_u16) = u16::try_from(bytes) else {
-        return ser_err("Encryption context key value pair length value is too large for u16");
+        return Err(err(
+            Kind::Validation,
+            "encryption context key value pair length value is too large for u16",
+        ));
     };
     write_u16(w, bytes_u16)?;
 
@@ -93,7 +90,10 @@ pub(crate) fn write_aad_section(
 pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Result<(), Error> {
     // Count.
     let Ok(data_len) = u16::try_from(data.len()) else {
-        return ser_err("Encryption context key value pair count is too large for u16");
+        return Err(err(
+            Kind::Validation,
+            "encryption context key value pair count is too large for u16",
+        ));
     };
     write_u16(w, data_len)?;
 
@@ -103,14 +103,20 @@ pub(crate) fn write_aad(w: &mut dyn SafeWrite, data: &EncryptionContext) -> Resu
 
         // Key: length + UTF-8 bytes.
         let Ok(key_len) = u16::try_from(key.len()) else {
-            return ser_err("Encryption context key length is too large for u16");
+            return Err(err(
+                Kind::Validation,
+                "encryption context key length is too large for u16",
+            ));
         };
         write_u16(w, key_len)?;
         write_bytes(w, key.as_bytes())?;
 
         // Value: length + UTF-8 bytes.
         let Ok(val_len) = u16::try_from(value.len()) else {
-            return ser_err("Encryption context value length is too large for u16");
+            return Err(err(
+                Kind::Validation,
+                "encryption context value length is too large for u16",
+            ));
         };
         write_u16(w, val_len)?;
         write_bytes(w, value.as_bytes())?;

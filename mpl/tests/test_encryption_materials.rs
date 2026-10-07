@@ -68,12 +68,7 @@ fn test_required_ec_keys_must_be_subset() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None);
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .message
-            .contains("not found in encryption context")
-    );
+    assert!(result.unwrap_err().is_encryption_context_mismatch());
 }
 
 #[test]
@@ -84,7 +79,7 @@ fn test_edks_must_be_empty_without_pdk() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![edk], ec, reck, None, None, None);
     assert!(result.is_err());
-    assert!(result.unwrap_err().message.contains("must be empty"));
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -95,12 +90,7 @@ fn test_signing_key_rejected_without_asymmetric_signing() {
 
     let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, Some(sk), None);
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .message
-            .contains("Signing key must not be present")
-    );
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -151,12 +141,7 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
         Some(ssk),
     );
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .message
-            .contains("Symmetric signing keys must not be present")
-    );
+    assert!(result.unwrap_err().is_invalid_materials());
 }
 
 #[test]
@@ -181,8 +166,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
     assert!(
         mat.validate_aws_crypto_public_key()
             .unwrap_err()
-            .to_string()
-            .contains("MUST NOT include")
+            .is_invalid_materials()
     );
 }
 
@@ -294,7 +278,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
-    assert!(err.to_string().contains("MUST include"));
+    assert!(err.is_invalid_materials(), "{:?}", err);
 }
 
 #[test]

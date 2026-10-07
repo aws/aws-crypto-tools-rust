@@ -171,10 +171,9 @@ async fn test_corrupted_header_auth_tag_fails_decrypt() {
         let err = decrypt(&dec_input).await.expect_err(&format!(
             "{version:?}: corrupted header auth tag must fail decryption"
         ));
-        assert_eq!(
-            err.kind,
-            ErrorKind::CryptographicError,
-            "{version:?}: expected CryptographicError, got {err:?}"
+        assert!(
+            err.is_cryptographic(),
+            "{version:?}: expected Cryptographic error, got {err:?}"
         );
     }
 }

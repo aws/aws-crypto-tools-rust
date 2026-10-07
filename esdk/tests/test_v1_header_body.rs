@@ -491,10 +491,10 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
         .await
         .expect_err("decrypt must reject tampered reserved bytes");
     assert!(
-        matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
-        "expected SerializationError, got: {} ({:?})",
-        err.message,
-        err.kind
+        err.is_serialization(),
+        "expected Serialization error, got: {} ({:?})",
+        err.message(),
+        err
     );
 }
 
@@ -524,9 +524,9 @@ async fn test_v1_iv_length_mismatch_rejected() {
         .await
         .expect_err("decrypt must reject mismatched IV length");
     assert!(
-        matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
-        "expected SerializationError, got: {} ({:?})",
-        err.message,
-        err.kind
+        err.is_serialization(),
+        "expected Serialization error, got: {} ({:?})",
+        err.message(),
+        err
     );
 }

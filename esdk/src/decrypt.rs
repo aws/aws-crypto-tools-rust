@@ -5,7 +5,7 @@
 //! obtains decryption materials from a keyring/CMM, derives the data key,
 //! and decrypts the plaintext (handling both framed and nonframed formats).
 
-use crate::error::{Error, esdk_err, val_err};
+use crate::error::{Error, Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::header_types::ContentType;
@@ -67,7 +67,22 @@ impl DecryptMode {
 /// Decrypt an encrypted message stream, writing plaintext to the output.
 ///
 /// # Errors
-/// Returns an error if input validation, header parsing, decryption, or signature verification fails.
+///
+/// Returns an [`Error`](crate::Error), one of:
+/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`decrypt`](crate::decrypt) instead).
+/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
+/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
+/// - [`Cryptographic`](crate::Error::Cryptographic): the header tag, a frame tag, the key commitment, or the signature does not verify.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
+/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
+/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
+/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
+/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
+/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
+/// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
+/// - [`Io`](crate::Error::Io): the supplied ciphertext reader or plaintext writer fails.
+/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 pub async fn decrypt_stream(
     //= spec/client-apis/decrypt.md#encrypted-message
     //= type=implication
@@ -116,7 +131,21 @@ pub async fn decrypt_stream(
 /// Decrypt an encrypted message, returning the plaintext and metadata.
 ///
 /// # Errors
-/// Returns an error if input validation, header parsing, decryption, or signature verification fails.
+///
+/// Returns an [`Error`](crate::Error), one of:
+/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, or the commitment policy does not allow the message's algorithm suite.
+/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
+/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
+/// - [`Cryptographic`](crate::Error::Cryptographic): the header tag, a frame tag, the key commitment, or the signature does not verify.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
+/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
+/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
+/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
+/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
+/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
+/// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
+/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
@@ -144,14 +173,14 @@ pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     .await?;
 
     let Ok(ciphertext_len) = u64::try_from(input.ciphertext.len()) else {
-        return Err(esdk_err("Ciphertext length does not fit in u64"));
+        return Err(err(Kind::Internal, "ciphertext length does not fit in u64"));
     };
     if cursor.position() != ciphertext_len {
         //= spec/client-apis/decrypt.md#behavior
         //# - If this operation successfully completes the above steps
         //# but there are consumable bytes which are intended to be decrypted,
         //# this operation MUST fail.
-        return Err(esdk_err("Data after message footer"));
+        return Err(err(Kind::Serialization, "data after message footer"));
     }
 
     // Return excess capacity when the upper-bound reservation greatly exceeds
@@ -223,6 +252,30 @@ async fn internal_decrypt(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
     commitment_policy: CommitmentPolicy,
 ) -> Result<DecryptStreamOutput, Error> {
+    let source = input_source.as_ref().map(MaterialSource::resource);
+    decrypt_steps(
+        ciphertext,
+        plaintext,
+        input_source,
+        encryption_context,
+        mode,
+        max_encrypted_data_keys,
+        commitment_policy,
+    )
+    .await
+    .map_err(|e| materials::name_material_source(e, source.as_ref()))
+}
+
+/// The decrypt steps; [`internal_decrypt`] names the material source in their errors.
+async fn decrypt_steps(
+    ciphertext: &mut dyn SafeRead,
+    plaintext: &mut dyn SafeWrite,
+    input_source: Option<MaterialSource>,
+    encryption_context: &EncryptionContext,
+    mode: DecryptMode,
+    max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
+    commitment_policy: CommitmentPolicy,
+) -> Result<DecryptStreamOutput, Error> {
     //= spec/client-apis/decrypt.md#behavior
     //= type=implication
     //# - Decrypt operation Step 1 MUST be [Parse the header](#parse-the-header)
@@ -256,8 +309,9 @@ async fn internal_decrypt(
         .asymmetric_signature_algorithm()
         .is_some();
     if suite_has_signature != state.dec_mat.verification_key().is_some() {
-        return Err(val_err(
-            "Decryption materials verification_key presence must match algorithm suite signature algorithm",
+        return Err(err(
+            Kind::InvalidMaterials,
+            "decryption materials must include a verification key exactly when the algorithm suite has a signature algorithm",
         ));
     }
 
@@ -381,7 +435,7 @@ async fn step_get_decryption_materials(
         algorithm_suite_id,
     )) {
         return Err(val_err(
-            "Parsed algorithm suite is not supported by the configured commitment policy for decryption",
+            "parsed algorithm suite is not supported by the configured commitment policy for decryption",
         ));
     }
 
@@ -401,8 +455,9 @@ async fn step_get_decryption_materials(
     let suite = get_esdk_algorithm_suite_id(dec_mat.algorithm_suite_id())?.specification();
 
     if &suite != header_body.algorithm_suite() {
-        return Err(val_err(
-            "Stored header algorithm suite does not match decryption algorithm suite",
+        return Err(err(
+            Kind::InvalidMaterials,
+            "the algorithm suite in the decryption materials does not match the message header's algorithm suite",
         ));
     }
 
@@ -438,13 +493,21 @@ async fn step_get_decryption_materials(
         //# - The input keying material MUST be the data key generated by the key provider.
         dec_mat
             .plaintext_data_key()
-            .ok_or_else(|| val_err("Decryption materials must contain a plaintext data key"))?
+            .ok_or_else(|| {
+                err(
+                    Kind::InvalidMaterials,
+                    "decryption materials must contain a plaintext data key",
+                )
+            })?
             .as_bytes(),
         &suite,
     )?;
 
     if !header::header_version_supports_commitment(&suite, header_body) {
-        return Err(val_err("Invalid commitment values found in header body"));
+        return Err(err(
+            Kind::Serialization,
+            "invalid commitment values found in header body",
+        ));
     }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -458,7 +521,10 @@ async fn step_get_decryption_materials(
             &suite,
             header_body,
             derived_data_keys.commitment_key.as_ref().ok_or_else(|| {
-                val_err("Derived key material must contain a commitment key for HKDF commitment")
+                err(
+                    Kind::Internal,
+                    "derived key material must contain a commitment key for HKDF commitment",
+                )
             })?,
         )?;
     }
@@ -543,7 +609,8 @@ fn step_verify_header(state: DecryptState) -> Result<DecryptState, Error> {
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //# If this tag verification fails, this operation MUST immediately halt and fail.
-    maybe_header_auth?;
+    maybe_header_auth
+        .map_err(|e| Error::from_prim("the header authentication tag did not verify", e))?;
 
     Ok(state)
 }
@@ -634,7 +701,10 @@ fn step_verify_signature(ciphertext: &mut dyn SafeRead, state: &DecryptState) ->
             //# - The input to verify MUST be the concatenation of the serialization of the
             //# [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md).
             state.sig_digest.context.clone().ok_or_else(|| {
-                val_err("Signature digest context must be present for signature verification")
+                err(
+                    Kind::Internal,
+                    "signature digest context must be present for signature verification",
+                )
             })?,
             //= spec/client-apis/decrypt.md#verify-the-signature
             //# - The verification key MUST be the [verification key](../framework/structures.md#verification-key)
@@ -682,7 +752,7 @@ fn verify_signature(
     let valid = ecdsa_verify_context(
         ecdsa_params,
         dec_mat.verification_key()
-            .ok_or_else(|| val_err("Decryption materials must contain a verification key for signature verification"))?
+            .ok_or_else(|| err(Kind::InvalidMaterials, "decryption materials must contain a verification key for signature verification"))?
             .as_bytes(),
         context,
         &signature,
@@ -691,7 +761,7 @@ fn verify_signature(
     if !valid {
         //= spec/client-apis/decrypt.md#verify-the-signature
         //# If this verification is not successful, this operation MUST immediately halt and fail.
-        return Err(esdk_err("Signature verification failed"));
+        return Err(err(Kind::Cryptographic, "signature verification failed"));
     }
     Ok(())
 }

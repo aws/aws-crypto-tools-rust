@@ -59,7 +59,6 @@
 //! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
 //! [shared-cache]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
 
-use std::error::Error as _;
 use std::time::Duration;
 
 use aws_config::{BehaviorVersion, Region};
@@ -68,14 +67,14 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
-use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
+use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError, MaterialsErrorKind,
+    EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
@@ -307,10 +306,8 @@ async fn build_keystore_with_kms_and_logical_name(
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
-/// Asserts the whole chain by type: `MaterialsError` ->
-/// `KeystoreError(Kms)` -> `SdkError<DecryptError>`. Reaching the SDK error
-/// proves the call actually got to KMS, which is the property these tests need:
-/// it means the DDB record was read, so `hk2` went to the keystore instead of
+/// Asserts the source chain holds the `SdkError<DecryptError>`, which proves the call reached KMS.
+/// That means the DDB record was read, so `hk2` went to the keystore instead of
 /// being served from the shared cache, and a cache miss is what is under test.
 /// A bare `is_err()` would also be satisfied by a missing record or an
 /// unreachable table.
@@ -321,34 +318,15 @@ async fn build_keystore_with_kms_and_logical_name(
 /// `integ_discovery_keystore_cannot_reach_an_out_of_region_mrk` there is no
 /// Dafny assertion naming the expected exception for this path. Where Dafny
 /// does name one, that test pins it.
-fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, context: &str) {
+fn assert_failed_at_kms(result: Result<EncryptionMaterials, Error>, context: &str) {
     let err = match result {
         Err(e) => e,
         Ok(_) => panic!("{context}: expected on_encrypt to fail"),
     };
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
-
-    let keystore_err = err
-        .source()
-        .unwrap_or_else(|| {
-            panic!("{context}: the keystore failure must be attached as the cause, got: {err}")
-        })
-        .downcast_ref::<KeystoreError>()
-        .unwrap_or_else(|| {
-            panic!("{context}: the cause must be the originating KeystoreError, got: {err}")
-        });
-    assert_eq!(
-        keystore_err.kind(),
-        &KeystoreErrorKind::Kms,
-        "{context}: expected the failure to come from the KMS call, got: {err}",
-    );
 
     assert!(
-        keystore_err
-            .source()
-            .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
-            .is_some(),
-        "{context}: the KMS SDK error must be nested inside the KeystoreError, got: {err}",
+        err.find_source::<SdkError<DecryptError>>().is_some(),
+        "{context}: the KMS SDK error must be in the source chain, got: {err:#}",
     );
 }
 
@@ -734,18 +712,9 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
-
-    // The kind alone is too coarse to be a real assertion here: the keyring
-    // flattens every keystore failure to KeyringFailed, so a missing record
-    // or an unreachable table would satisfy it just as well as the ARN
-    // disagreement this test is about. The keystore kind survives in the
-    // message (`KeystoreError(Authentication)`), so match on that to pin the
-    // failure to the kms-arn-compat check in resolve_keystore_arn.
-    assert!(
-        err.to_string().contains("KeystoreError(Authentication)"),
-        "expected the ARN-disagreement path (Authentication), got: {err}",
-    );
+    // Only the kms-arn-compat check in resolve_keystore_arn returns Validation;
+    // a missing record or an unreachable table returns a remote kind.
+    assert!(err.is_validation(), "got: {err}");
 }
 
 #[tokio::test]
@@ -867,7 +836,7 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("plain Discovery MUST NOT reach a us-east-1 MRK from a us-west-2 client");
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
+    assert!(err.is_service(), "{:?}", err);
 
     // Dafny asserts the specific KMS `IncorrectKeyException` here
     // (AwsCryptographyKeyStore/test/TestDiscoveryGetKeys.dfy):
@@ -876,19 +845,9 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
     //       case ComAmazonawsKms(nestedError) =>
     //         expect nestedError.IncorrectKeyException?;
     //
-    // The keystore nests the originating SDK error as the cause.
-    // The chain is MaterialsError -> KeystoreError -> SdkError.
-    let keystore_err = err
-        .source()
-        .expect("the keystore failure must be attached as the cause")
-        .downcast_ref::<KeystoreError>()
-        .expect("the cause must be the originating KeystoreError");
-    assert_eq!(keystore_err.kind(), &KeystoreErrorKind::Kms);
-
-    let sdk_err = keystore_err
-        .source()
-        .expect("the KMS SDK error must be nested inside the KeystoreError")
-        .downcast_ref::<SdkError<DecryptError>>()
+    // The keyring returns the keystore's error, whose source is the SDK error.
+    let sdk_err = err
+        .find_source::<SdkError<DecryptError>>()
         .expect("the nested cause must be the originating Decrypt SdkError");
     let service_err = sdk_err
         .as_service_error()
