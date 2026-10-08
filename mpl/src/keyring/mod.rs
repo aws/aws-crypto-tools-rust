@@ -6,6 +6,58 @@
 //! Uses #[async_trait] so that the CMM can hold any runtime defined
 //! keyring. The macro makes this work by rewriting each `async fn`
 //! to return a boxed future.
+//!
+//! # Errors for keyring and CMM authors
+//!
+//! The AWS Encryption SDK passes the [`Error`] variant your [`Keyring`] or [`Cmm`](crate::Cmm) returns
+//! on to its caller, so pick the variant that tells the caller what to do:
+//!
+//! - **[`NoMatchingDataKey`](Error::NoMatchingDataKey)** when no encrypted data key belongs to this keyring.
+//!   Decide this from each key's provider ID and provider info, before trying to decrypt.
+//!   Pass the encrypted data keys to [`with_encrypted_data_keys`](Error::with_encrypted_data_keys)
+//!   so the caller can see which key providers the message has.
+//! - **[`Cryptographic`](Error::Cryptographic)** when an encrypted data key belongs to this keyring
+//!   but does not decrypt.
+//! - **[`InvalidMaterials`](Error::InvalidMaterials)** when the materials are inconsistent,
+//!   for example they already hold a plaintext data key.
+//! - **[`Validation`](Error::Validation)** when the keyring's own configuration is invalid.
+//!
+//! Each variant above has a constructor of the same name, such as [`Error::cryptographic`].
+//! Attach the underlying error with [`with_source`](Error::with_source):
+//!
+//! ```
+//! use aws_crypto_mpl::Error;
+//!
+//! # let io_error = std::io::Error::other("connection reset");
+//! let err = Error::cryptographic("encrypted data key 0 did not decrypt").with_source(io_error);
+//! assert!(err.is_cryptographic());
+//!
+//! # let encrypted_data_keys: Vec<aws_crypto_mpl::structures::EncryptedDataKey> = Vec::new();
+//! use aws_crypto_mpl::error::DataKeyInfo;
+//!
+//! let err = Error::no_matching_data_key("no encrypted data key belongs to this keyring")
+//!     .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from));
+//! assert!(err.is_no_matching_data_key());
+//! ```
+//!
+//! To report several failures as one error:
+//!
+//! - [`Error::all_failed`] when you tried several encrypted data keys and each failed.
+//!   Any one succeeding would have been enough, so the result is retryable if any attempt is.
+//! - [`Error::any_failed`] when several steps your keyring needed failed.
+//!   One permanent failure makes the result not retryable.
+//!
+//! Both pick the variant and keep the details every failure shares.
+//! Given a single failure, both return it unchanged.
+//!
+//! Implement [`name`](Keyring::name): errors about your keyring show it.
+//! You do not need to set `resource()` to your keyring.
+//! When your error is `InvalidMaterials` or `NoMatchingDataKey` and names no resource,
+//! the AWS Encryption SDK sets `resource()` to [`Resource::Keyring`](crate::error::Resource::Keyring)
+//! or [`Resource::Cmm`](crate::error::Resource::Cmm) with your name.
+
+use crate::Error;
+use std::borrow::Cow;
 
 use async_trait::async_trait;
 
@@ -13,13 +65,22 @@ pub mod raw_aes_keyring;
 
 pub use raw_aes_keyring::RawAesKeyring;
 
-use crate::structures::{
-    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError,
-};
+use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 
 /// To hold a keyring whose concrete type is chosen at runtime, use [`SharedKeyring`].
 #[async_trait]
 pub trait Keyring: Send + Sync {
+    /// A short name for this keyring, which errors show.
+    ///
+    /// When the ESDK attributes an error to this keyring, it sets `resource()` to
+    /// [`Resource::Keyring`](crate::error::Resource::Keyring) with this name.
+    /// Keep it stable and short, and never put secrets in it.
+    /// Return `Cow::Owned` for a name built at runtime.
+    /// The default is the type's name.
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(std::any::type_name::<Self>())
+    }
+
     /// Modify the supplied [`EncryptionMaterials`] by generating and/or
     /// encrypting a data key. See the
     /// [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
@@ -27,7 +88,7 @@ pub trait Keyring: Send + Sync {
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError>;
+    ) -> Result<EncryptionMaterials, Error>;
 
     /// Modify the supplied [`DecryptionMaterials`] by deriving the plaintext
     /// data key from one of the supplied encrypted data keys. See the
@@ -37,7 +98,7 @@ pub trait Keyring: Send + Sync {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError>;
+    ) -> Result<DecryptionMaterials, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -51,10 +112,14 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Keyring for SharedKeyring {
+    fn name(&self) -> Cow<'_, str> {
+        self.0.name()
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, Error> {
         self.0.on_encrypt(materials).await
     }
 
@@ -62,7 +127,7 @@ impl Keyring for SharedKeyring {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, Error> {
         self.0.on_decrypt(materials, encrypted_data_keys).await
     }
 }

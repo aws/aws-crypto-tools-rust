@@ -121,9 +121,9 @@ async fn test_encrypted_data_key_count_greater_than_zero() {
             .await
             .expect_err(&format!("{version:?}: EDK count of 0 must be rejected"));
         assert!(
-            matches!(err.kind, ErrorKind::SerializationError),
-            "{version:?}: expected SerializationError, got {:?}",
-            err.kind
+            err.is_serialization(),
+            "{version:?}: expected Serialization error, got {:?}",
+            err
         );
     }
 }
@@ -254,9 +254,9 @@ async fn test_nonframed_nonzero_frame_length_rejected() {
             "{version:?}: nonframed content with non-zero frame length must be rejected"
         ));
         assert!(
-            matches!(err.kind, ErrorKind::SerializationError),
-            "{version:?}: expected SerializationError, got {:?}",
-            err.kind
+            err.is_serialization(),
+            "{version:?}: expected Serialization error, got {:?}",
+            err
         );
     }
 }

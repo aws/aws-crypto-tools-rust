@@ -10,18 +10,19 @@
 
 #![cfg(feature = "test-utils")]
 
+use aws_crypto_mpl::Error;
+use aws_crypto_mpl::error::{Cache, Resource, RetryKind};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use aws_crypto_mpl::cmc::{
-    BytesUsage, CacheEntry, CachedMaterials, Cmc, CmcErrorKind, LocalCmc, MessageUsage,
-    StormTrackingCache, StormTrackingCmc, UsageMetadata,
+    BytesUsage, CacheEntry, CachedMaterials, Cmc, LocalCmc, MessageUsage, StormTrackingCache,
+    StormTrackingCmc, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId, MaterialsError,
-    MaterialsErrorKind,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -107,7 +108,7 @@ fn storm_config(
     fan_out: usize,
     inflight_ttl: Duration,
     sleep: Duration,
-) -> Result<StormTrackingCache, MaterialsError> {
+) -> Result<StormTrackingCache, Error> {
     StormTrackingCache::builder()
         .entry_capacity(entry_capacity)
         .entry_pruning_tail_size(entry_pruning_tail_size)
@@ -301,9 +302,9 @@ async fn test_sub_second_grace_period_is_honored() {
 
 // ── Group 3 — Builder defaults and validation ─────────────────────────────────
 
-fn assert_rejected(result: Result<StormTrackingCache, MaterialsError>, what: &str) {
+fn assert_rejected(result: Result<StormTrackingCache, Error>, what: &str) {
     let err = result.expect_err(what);
-    assert_eq!(err.kind, MaterialsErrorKind::Validation, "{what}: {err:?}");
+    assert!(err.is_validation(), "{what}: {err:?}");
 }
 
 #[test]
@@ -759,16 +760,13 @@ async fn test_get_miss_inflight_exceeds_ttl_fails() {
         "inflight TTL exceeded MUST return an error"
     );
     let err = result.expect_err("error");
-    assert_eq!(
-        err.kind,
-        CmcErrorKind::StorageFailed,
-        "expected StorageFailed, got {err:?}"
-    );
-    assert!(
-        err.message.contains("InFlightTTL"),
-        "error message must contain 'InFlightTTL', got: {}",
-        err.message
-    );
+    let Error::Throttling(e) = &err else {
+        panic!("expected Throttling, got {err:?}");
+    };
+    assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
+    assert_eq!(e.service(), None);
+    assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
+    assert!(err.is_retryable());
 }
 
 #[tokio::test]
@@ -844,7 +842,7 @@ async fn test_get_miss_inflight_outside_interval_returns_none_and_updates() {
 // What: when a waiter is in `BlockMissInflight` and its per-waiter
 // deadline (`enter_time + inflight_ttl`) elapses without the entry
 // appearing or a leader slot opening, the wait loop must return
-// `StorageFailed("InFlightTTL exceeded")`.
+// a retryable `Throttling` error about the cache.
 //
 // Why: the initial classifier's `elapsed > inflight_ttl` check only
 // fires when `get_cache_entry` is called AFTER the map-level TTL has
@@ -906,16 +904,13 @@ async fn test_block_miss_inflight_deadline_fires_when_exceeded() {
         .expect("getter must complete after per-waiter deadline elapses")
         .expect("task joins");
     let err = result.expect_err("must be an error once the deadline fires");
-    assert_eq!(
-        err.kind,
-        CmcErrorKind::StorageFailed,
-        "expected StorageFailed, got {err:?}"
-    );
-    assert!(
-        err.message.contains("InFlightTTL"),
-        "error message must contain 'InFlightTTL', got: {}",
-        err.message
-    );
+    let Error::Throttling(e) = &err else {
+        panic!("expected Throttling, got {err:?}");
+    };
+    assert_eq!(e.retry_kind(), Some(RetryKind::Throttling));
+    assert_eq!(e.service(), None);
+    assert_eq!(e.resource(), Some(&Resource::Cache(Cache::new())));
+    assert!(err.is_retryable());
 }
 
 // ── Group 10 — Material Variant Coverage ─────────────────────────────────────

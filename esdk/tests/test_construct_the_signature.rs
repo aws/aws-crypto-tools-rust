@@ -7,7 +7,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::ErrorKind;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -190,18 +189,17 @@ async fn test_signature_input_is_header_plus_body() {
         "header tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered header → ValidationError (header auth tag mismatch).
+    // Valid ct decrypts; a tampered header fails decrypt with a Cryptographic error.
     assert!(
         decrypt_ciphertext_result(&valid_ct).await.is_ok(),
         "valid ct must decrypt"
     );
-    assert_eq!(
+    assert!(
         decrypt_ciphertext_result(&tampered_header)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::ValidationError,
-        "tampered header body byte must produce ValidationError"
+            .is_cryptographic(),
+        "tampered header body byte must produce Cryptographic error"
     );
 
     // Tamper body (first byte of the first frame's encrypted content).
@@ -214,14 +212,13 @@ async fn test_signature_input_is_header_plus_body() {
         "body tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered body → CryptographicError (AES-GCM auth failure).
-    assert_eq!(
+    // Valid ct decrypts; a tampered body fails AES-GCM authentication with a Cryptographic error.
+    assert!(
         decrypt_ciphertext_result(&tampered_body)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
-        "tampered body must produce CryptographicError"
+            .is_cryptographic(),
+        "tampered body must produce Cryptographic error"
     );
 }
 

@@ -144,7 +144,7 @@ pub(crate) fn read_v2_header_body(
     //# - MUST deserialize the [Algorithm Suite ID](../data-format/message-header.md#algorithm-suite-id).
     let algorithm_suite = read_esdk_suite_id(r, raw)?;
     if !has_commitment(&algorithm_suite) {
-        return ser_err("Algorithm suite must support commitment");
+        return ser_err("algorithm suite must support commitment");
     }
 
     // Message ID

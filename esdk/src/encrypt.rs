@@ -8,7 +8,7 @@
 use std::num::NonZeroU32;
 
 use crate::error::Error;
-use crate::error::{esdk_err, ser_err, val_err};
+use crate::error::{Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::encryption_context::write_empty_ec_or_write_aad;
@@ -61,12 +61,19 @@ struct EncryptionMaterialsResult {
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - The encryption context contains keys with the reserved `aws-crypto-` prefix
-/// - The algorithm suite is incompatible with the commitment policy
-/// - Encryption materials cannot be obtained from the CMM
-/// - The number of encrypted data keys exceeds the configured maximum
-/// - Key derivation, header construction, body encryption, or signature generation fails
+/// Returns an [`Error`](crate::Error), one of:
+/// - [`Validation`](crate::Error::Validation): an encryption context key uses the reserved `aws-crypto-` prefix, the commitment policy does not allow the requested algorithm suite, the encrypted data key count exceeds the configured maximum, or the plaintext exceeds the size limit.
+/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, such as no plaintext data key, an unsupported algorithm suite, or no signing key for a signing suite.
+/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the keyring or CMM rejects the encryption context.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): the keyring or CMM produces no data key.
+/// - [`Cryptographic`](crate::Error::Cryptographic): data key derivation, frame encryption, or signing fails.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
+/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
+/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
+/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
+/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
+/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
+/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 //= spec/client-apis/client.md#encrypt
 //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
 //# that adheres to [encrypt](./encrypt.md).
@@ -112,12 +119,20 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - The encryption context contains keys with the reserved `aws-crypto-` prefix
-/// - The algorithm suite is incompatible with the commitment policy
-/// - Encryption materials cannot be obtained from the CMM
-/// - The number of encrypted data keys exceeds the configured maximum
-/// - Key derivation, header construction, body encryption, or signature generation fails
+/// Returns an [`Error`](crate::Error), one of:
+/// - [`Validation`](crate::Error::Validation): an encryption context key uses the reserved `aws-crypto-` prefix, the commitment policy does not allow the requested algorithm suite, the encrypted data key count exceeds the configured maximum, or the plaintext exceeds the size limit.
+/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, such as no plaintext data key, an unsupported algorithm suite, or no signing key for a signing suite.
+/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the keyring or CMM rejects the encryption context.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): the keyring or CMM produces no data key.
+/// - [`Cryptographic`](crate::Error::Cryptographic): data key derivation, frame encryption, or signing fails.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
+/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
+/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
+/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
+/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
+/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
+/// - [`Io`](crate::Error::Io): the supplied plaintext reader or ciphertext writer fails.
+/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 //= spec/client-apis/streaming.md#overview
 //# The AWS Encryption SDK MAY provide APIs that enable streamed [encryption](encrypt.md)
 //# and [decryption](decrypt.md).
@@ -161,6 +176,35 @@ pub async fn encrypt_stream(
 async fn internal_encrypt(
     plaintext: &mut dyn SafeRead,
     // ciphertext is the output buffer for this function
+    ciphertext: &mut dyn SafeWrite,
+    plaintext_len: Option<usize>,
+    input_source: Option<MaterialSource>,
+    encryption_context: &EncryptionContext,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    frame_length: NonZeroU32,
+    max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
+    commitment_policy: CommitmentPolicy,
+) -> Result<EncryptStreamOutput, Error> {
+    let source = input_source.as_ref().map(MaterialSource::resource);
+    encrypt_steps(
+        plaintext,
+        ciphertext,
+        plaintext_len,
+        input_source,
+        encryption_context,
+        algorithm_suite_id,
+        frame_length,
+        max_encrypted_data_keys,
+        commitment_policy,
+    )
+    .await
+    .map_err(|e| materials::name_material_source(e, source.as_ref()))
+}
+
+/// The encrypt steps; [`internal_encrypt`] names the material source in their errors.
+#[expect(clippy::too_many_arguments)]
+async fn encrypt_steps(
+    plaintext: &mut dyn SafeRead,
     ciphertext: &mut dyn SafeWrite,
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
@@ -319,7 +363,7 @@ async fn step_get_encryption_materials(
         let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
         if !policy.allows_for_encrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(id)) {
             return Err(val_err(
-                "Input algorithm suite is not supported by the configured commitment policy for encryption",
+                "input algorithm suite is not supported by the configured commitment policy for encryption",
             ));
         }
     }
@@ -382,7 +426,12 @@ async fn step_get_encryption_materials(
         //# - The input keying material MUST be the data key generated by the key provider.
         materials
             .plaintext_data_key()
-            .ok_or_else(|| esdk_err("Encryption materials must contain a plaintext data key"))?
+            .ok_or_else(|| {
+                err(
+                    Kind::InvalidMaterials,
+                    "encryption materials must contain a plaintext data key",
+                )
+            })?
             .as_bytes(),
         &algorithm_suite,
     )?;
@@ -489,16 +538,20 @@ fn step_construct_signature(
             materials
                 .signing_key()
                 .ok_or_else(|| {
-                    esdk_err(
-                        "Encryption materials must contain a signing key for signature algorithm",
+                    err(
+                        Kind::InvalidMaterials,
+                        "encryption materials must contain a signing key for signature algorithm",
                     )
                 })?
                 .as_bytes(),
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# - the input to sign MUST be the concatenation of the serialization of the [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md)
-            sig_digest
-                .context
-                .ok_or_else(|| esdk_err("Signature digest context must be present for signing"))?,
+            sig_digest.context.ok_or_else(|| {
+                err(
+                    Kind::Internal,
+                    "signature digest context must be present for signing",
+                )
+            })?,
             &mut signature_bytes,
         )?;
 
@@ -543,7 +596,7 @@ fn validate_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
     for (key, _) in ec.iter() {
         if key.starts_with(RESERVED_ENCRYPTION_CONTEXT) {
             return Err(val_err(
-                "Encryption context keys cannot contain reserved prefix 'aws-crypto-'",
+                "encryption context keys must not begin with the reserved prefix 'aws-crypto-'",
             ));
         }
     }
@@ -644,8 +697,9 @@ fn build_header_body(
             encrypted_data_keys,
             frame_length,
         ),
-        v => ser_err(&format!(
-            "Algorithm suite declares unsupported message format version {v}"
+        v => Err(err(
+            Kind::Internal,
+            format!("algorithm suite declares unsupported message format version {v}"),
         )),
     }
 }
@@ -660,13 +714,17 @@ fn build_v2_header_body(
     suite_data: Option<Vec<u8>>,
 ) -> Result<HeaderBody, Error> {
     let Some(sd) = suite_data else {
-        return ser_err("Suite data must be present for a committing algorithm suite");
+        return Err(err(
+            Kind::Internal,
+            "suite data must be present for a committing algorithm suite",
+        ));
     };
     let expected_len = suite.algorithm_suite_data_length();
     if sd.len() != expected_len {
-        return ser_err(
-            "Suite data length must match the commitment key output length for a committing suite",
-        );
+        return Err(err(
+            Kind::Internal,
+            "suite data length must match the commitment key output length for a committing suite",
+        ));
     }
     //= spec/client-apis/encrypt.md#v2-header
     //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.
@@ -693,8 +751,9 @@ fn build_v1_header_body(
 ) -> Result<HeaderBody, Error> {
     let header_iv_length_usize = get_iv_length(suite);
     let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
-        return ser_err(&format!(
-            "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
+        return Err(err(
+            Kind::Internal,
+            format!("IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"),
         ));
     };
     Ok(HeaderBody::V1Body(V1HeaderBody {
@@ -717,10 +776,13 @@ fn build_header_auth_tag(
 ) -> Result<HeaderAuth, Error> {
     let key_length = get_encrypt_key_length(suite);
     if data_key.len() != key_length {
-        return ser_err(&format!(
-            "Incorrect data key length: got {}, expected {}",
-            data_key.len(),
-            key_length
+        return Err(err(
+            Kind::Internal,
+            format!(
+                "incorrect data key length: got {}, expected {}",
+                data_key.len(),
+                key_length
+            ),
         ));
     }
 

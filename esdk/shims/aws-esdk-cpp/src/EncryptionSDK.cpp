@@ -2,6 +2,11 @@
 
 #include "aws/esdk/EncryptionSDK.h"
 
+#include <algorithm>
+#include <map>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "rust/cxx.h"                 // rust::Error, rust::Box, rust::Vec, rust::Slice
@@ -9,27 +14,176 @@
 
 namespace ffi = ::aws_esdk_ffi;
 
-namespace Aws {
-namespace Esdk {
+namespace Aws::Esdk {
 namespace detail {
 
-// Rethrow Rust ESDK exceptions as corresponding C++ exceptions.
-// If a Rust exception isn't explicitly listed, default to throwing the C++ AwsEncryptionSdkException.
-[[noreturn]] void throw_shim_exception(const std::string& what) {
-    ::ffi::ShimErrorKind kind = ::ffi::ShimErrorKind::Esdk;
-    std::string message = what;
-    if (what.size() >= 2 && what[1] == '\x1f' && what[0] >= '0' && what[0] <= '9') {
-        kind = static_cast<::ffi::ShimErrorKind>(what[0] - '0');
-        message = what.substr(2);
+// A Rust error, decoded from the string lib.rs's encode_err builds.
+struct ShimError {
+    ::ffi::ShimErrorKind kind;
+    ErrorDetails details;
+    std::string message;
+};
+
+// Parses a small non-negative decimal number; nullopt if `v` is not one.
+std::optional<std::uint8_t> parse_repr(std::string_view v) {
+    if (v.empty() || v.size() > 3) {
+        return std::nullopt;
     }
-    switch (kind) {
-        case ::ffi::ShimErrorKind::SerializationError: throw SerializationException(message);
-        case ::ffi::ShimErrorKind::CryptographicError: throw CryptographicException(message);
-        case ::ffi::ShimErrorKind::ValidationError: throw ValidationException(message);
+    unsigned value = 0;
+    for (const char c : v) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        value = value * 10 + static_cast<unsigned>(c - '0');
+    }
+    if (value > 255) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint8_t>(value);
+}
+
+// Parses a decimal byte length; nullopt if `v` is not one.
+std::optional<std::size_t> parse_len(std::string_view v) {
+    if (v.empty() || v.size() > 9) {
+        return std::nullopt;
+    }
+    std::size_t value = 0;
+    for (const char c : v) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        value = value * 10 + static_cast<std::size_t>(c - '0');
+    }
+    return value;
+}
+
+std::optional<std::string> non_empty(std::string_view v) {
+    if (v.empty()) {
+        return std::nullopt;
+    }
+    return std::string(v);
+}
+
+// The message part of `what`, without the header: what follows the header end, or all of `what`.
+std::string message_part(std::string_view what) {
+    const auto header_end = what.find('\x1e');
+    return std::string(header_end == std::string_view::npos ? what : what.substr(header_end + 1));
+}
+
+// nullopt when `what` does not have the encode_err layout.
+std::optional<ShimError> decode_shim_error(std::string_view what) {
+    const auto header_end = what.find('\x1e');
+    if (header_end == std::string_view::npos) {
+        return std::nullopt;
+    }
+    std::map<std::string_view, std::string_view> fields;
+    std::string_view header = what.substr(0, header_end);
+    while (!header.empty()) {
+        const auto sep = header.find('\x1f');
+        const auto field = header.substr(0, sep);
+        const auto eq = field.find('=');
+        if (eq != std::string_view::npos) {
+            fields[field.substr(0, eq)] = field.substr(eq + 1);
+        }
+        if (sep == std::string_view::npos) {
+            break;
+        }
+        header.remove_prefix(sep + 1);
+    }
+    const auto kind = parse_repr(fields["kind"]);
+    if (!kind) {
+        return std::nullopt;
+    }
+    ErrorDetails details;
+    details.retryable = fields["retryable"] == "1";
+    const auto retry = fields["retry"];
+    if (retry == "transient") {
+        details.retry_kind = RetryKind::Transient;
+    } else if (retry == "throttling") {
+        details.retry_kind = RetryKind::Throttling;
+    } else if (retry == "server") {
+        details.retry_kind = RetryKind::Server;
+    } else if (retry == "client") {
+        details.retry_kind = RetryKind::Client;
+    }
+    const auto service = fields["service"];
+    if (service == "kms") {
+        details.service = Service::Kms;
+    } else if (service == "dynamodb") {
+        details.service = Service::DynamoDb;
+    }
+    const auto resource_type = fields["resource_type"];
+    const std::string resource(fields["resource"]);
+    if (resource_type == "kms_key") {
+        details.resource = Resource{ResourceType::KmsKey, resource};
+    } else if (resource_type == "dynamodb_table") {
+        details.resource = Resource{ResourceType::DynamoDbTable, resource};
+    } else if (resource_type == "branch_key") {
+        details.resource = Resource{ResourceType::BranchKey, resource};
+    } else if (resource_type == "cache") {
+        details.resource = Resource{ResourceType::Cache, ""};
+    } else if (resource_type == "keyring") {
+        details.resource = Resource{ResourceType::Keyring, resource};
+    } else if (resource_type == "cmm") {
+        details.resource = Resource{ResourceType::Cmm, resource};
+    } else if (!resource_type.empty()) {
+        details.resource = Resource{ResourceType::Unknown, resource};
+    }
+    details.code = non_empty(fields["code"]);
+    details.request_id = non_empty(fields["request_id"]);
+    const auto reason = fields["conflict_reason"];
+    if (reason == "already_exists") {
+        details.conflict_reason = ConflictReason::AlreadyExists;
+    } else if (reason == "concurrent_modification") {
+        details.conflict_reason = ConflictReason::ConcurrentModification;
+    }
+    details.credentials = fields["credentials"] == "1";
+    details.name = std::string(fields["name"]);
+    // The message part is the Rust `{}` text, `display_len` bytes, then the `{:#}` text,
+    // `full_len` bytes, then the Rust backtrace.
+    const std::string_view body = what.substr(header_end + 1);
+    const auto display_len = parse_len(fields["display_len"]);
+    const auto full_len = parse_len(fields["full_len"]);
+    if (!display_len || !full_len || *display_len > body.size() ||
+        *full_len > body.size() - *display_len) {
+        return std::nullopt;
+    }
+    details.full_message = std::string(body.substr(*display_len, *full_len));
+    details.backtrace = std::string(body.substr(*display_len + *full_len));
+    return ShimError{
+        static_cast<::ffi::ShimErrorKind>(*kind),
+        std::move(details),
+        std::string(body.substr(0, *display_len)),
+    };
+}
+
+// Rethrow a Rust error as the matching C++ exception.
+[[noreturn]] void throw_shim_exception(const std::string& what) {
+    auto error = decode_shim_error(what);
+    if (!error) {
+        throw AwsEncryptionSdkException(message_part(what));
+    }
+    auto& m = error->message;
+    auto& d = error->details;
+    switch (error->kind) {
+        case ::ffi::ShimErrorKind::Validation: throw ValidationException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Serialization: throw SerializationException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Cryptographic: throw CryptographicException(m, std::move(d));
+        case ::ffi::ShimErrorKind::InvalidMaterials: throw InvalidMaterialsException(m, std::move(d));
+        case ::ffi::ShimErrorKind::EncryptionContextMismatch: throw EncryptionContextMismatchException(m, std::move(d));
+        case ::ffi::ShimErrorKind::NoMatchingDataKey: throw NoMatchingDataKeyException(m, std::move(d));
+        case ::ffi::ShimErrorKind::AccessDenied: throw AccessDeniedException(m, std::move(d));
+        case ::ffi::ShimErrorKind::ResourceNotFound: throw ResourceNotFoundException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Service: throw ServiceException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Dispatch: throw DispatchException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Internal: throw InternalException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Io: throw IoException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Throttling: throw ThrottlingException(m, std::move(d));
+        case ::ffi::ShimErrorKind::Conflict: throw ConflictException(m, std::move(d));
         //= spec/shim/shim.md#error-classification
         //# - An error whose kind the shim does not expose MUST be reported as the shim's
         //# own base error type.
-        default: throw AwsEncryptionSdkException(message);
+        default: throw AwsEncryptionSdkException(std::nullopt, std::move(d), m);
     }
 }
 
@@ -613,5 +767,4 @@ StreamResult EncryptionSDK::decrypt_stream(std::istream& source, std::ostream& s
     return detail::pump_stream(stream, source, sink);
 }
 
-}  // namespace Esdk
-}  // namespace Aws
+}  // namespace Aws::Esdk

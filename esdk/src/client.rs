@@ -19,12 +19,13 @@
 //! defined later without breaking callers); committing to a precedence rule
 //! today is not.
 
+use crate::Error;
+use crate::error::val_err;
 use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptInput,
     EncryptOutput, EncryptStreamInput, EncryptStreamOutput, SafeRead, SafeWrite,
 };
-use crate::{Error, val_err};
 use std::num::NonZeroUsize;
 
 /// Cross-call configuration for the optional [`Esdk`] client.
@@ -128,9 +129,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
-    /// or its EDK cap is set (config provided in two places).
-    /// Otherwise, returns whatever [`encrypt`](crate::encrypt) returns.
+    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
+    ///
+    /// Otherwise returns any variant [`encrypt`](crate::encrypt) returns.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
@@ -142,9 +143,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
-    /// or its EDK cap is set.
-    /// Otherwise, returns whatever [`decrypt`](crate::decrypt) returns.
+    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
+    ///
+    /// Otherwise returns any variant [`decrypt`](crate::decrypt) returns.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
@@ -156,9 +157,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
-    /// or its EDK cap is set.
-    /// Otherwise, returns whatever [`encrypt_stream`](crate::encrypt_stream) returns.
+    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
+    ///
+    /// Otherwise returns any variant [`encrypt_stream`](crate::encrypt_stream) returns.
     pub async fn encrypt_stream(
         &self,
         plaintext: &mut dyn SafeRead,
@@ -173,9 +174,9 @@ impl Esdk {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if the input's commitment policy is not the default
-    /// or its EDK cap is set.
-    /// Otherwise, returns whatever [`decrypt_stream`](crate::decrypt_stream) returns.
+    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
+    ///
+    /// Otherwise returns any variant [`decrypt_stream`](crate::decrypt_stream) returns.
     pub async fn decrypt_stream(
         &self,
         ciphertext: &mut dyn SafeRead,
@@ -238,7 +239,7 @@ where
             "EsdkConfig is provided by both the Esdk client and the input struct. \
              Set commitment_policy and max_encrypted_data_keys \
              in exactly one place: on the Esdk client (via Esdk::builder), or on the \
-             input struct (when using the free encrypt/decrypt functions).",
+             input struct (when using the free encrypt/decrypt functions)",
         ));
     }
     let mut filled = input.clone();

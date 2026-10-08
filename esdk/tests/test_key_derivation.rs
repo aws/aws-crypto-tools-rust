@@ -10,7 +10,6 @@ mod test_helpers;
 
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_esdk::__test_internals::{algorithm_suite_from_bytes, derive_key_v2, derive_keys};
-use aws_esdk::ErrorKind;
 use aws_mpl_primitives::{hkdf_expand, hkdf_extract};
 
 // AES-256 data key length, required by the `derive_keys` length precondition.
@@ -307,15 +306,9 @@ fn test_kdf_input_length_validation() {
     //# - The length of the input keying material MUST equal the [key derivation input length](#key-derivation-input-length)
     //# specified by the algorithm suite commit key derivation setting.
     let err = result.expect_err("wrong-length PDK must be rejected");
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "wrong-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
-    );
     assert!(
-        err.to_string()
-            .contains("does not match KDF input key length"),
-        "error must name the KDF input length mismatch, got: {err}"
+        err.is_invalid_materials(),
+        "wrong-length PDK must yield InvalidMaterials, got: {err:?}"
     );
 }
 
@@ -334,15 +327,9 @@ fn test_kdf_input_length_validation_too_long() {
     let result = derive_key_v2(&message_id, &too_long_pdk, &alg_suite);
 
     let err = result.expect_err("over-length PDK must be rejected");
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "over-length PDK must yield ErrorKind::ValidationError, got: {err:?}"
-    );
     assert!(
-        err.to_string()
-            .contains("does not match KDF input key length"),
-        "error must name the KDF input length mismatch, got: {err}"
+        err.is_invalid_materials(),
+        "over-length PDK must yield InvalidMaterials, got: {err:?}"
     );
 }
 
@@ -370,14 +357,9 @@ fn test_v2_message_id_length_validation() {
     //= reason=A message ID that is not 256 bits is rejected, enforcing the commit-key salt length
     //# - The salt MUST be the [message ID](../data-format/message-header.md#message-id) with a length of 256 bits.
     let err = result.expect_err("wrong-length V2 message ID must be rejected");
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "wrong-length message ID must yield ErrorKind::ValidationError, got: {err:?}"
-    );
     assert!(
-        err.to_string().contains("message ID"),
-        "error must name the message ID length problem, got: {err}"
+        err.is_internal(),
+        "wrong-length message ID must yield Internal, got: {err:?}"
     );
 }
 

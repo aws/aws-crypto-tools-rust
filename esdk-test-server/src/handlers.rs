@@ -139,7 +139,7 @@ impl AppState {
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
             .set_frame_length(frame_length)
             .build()
-            .map_err(|e| ServerError::Esdk(e.message))?;
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         let output = aws_esdk::encrypt(&input)
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;
@@ -158,7 +158,7 @@ impl AppState {
             .commitment_policy(commitment_policy)
             .set_max_encrypted_data_keys(max)
             .build()
-            .map_err(|e| ServerError::Esdk(e.message))?;
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         let output = aws_esdk::decrypt(&input)
             .await
             .map_err(|e| ServerError::esdk(e.to_string()))?;

@@ -3,7 +3,7 @@
 //! Public API types for encrypt and decrypt operations.
 
 use crate::Error;
-use crate::val_err;
+use crate::error::val_err;
 use std::num::{NonZeroU32, NonZeroUsize};
 
 /// Internal union of the two ways a caller can supply materials, resolved from
@@ -43,7 +43,7 @@ fn validate_material_source(
 ) -> Result<(), Error> {
     match (keyring.is_some(), cmm.is_some()) {
         (true, false) | (false, true) => Ok(()),
-        _ => Err(val_err("Exactly one of a keyring or CMM must be provided")),
+        _ => Err(val_err("exactly one of a keyring or CMM must be provided")),
     }
 }
 
@@ -507,12 +507,11 @@ impl<'a> EncryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if no plaintext was set,
-    /// or if not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): no plaintext was set, or not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptInput<'a>, Error> {
         let plaintext = self
             .plaintext
-            .ok_or_else(|| val_err("A plaintext must be provided"))?;
+            .ok_or_else(|| val_err("a plaintext must be provided"))?;
         //= spec/client-apis/encrypt.md#input
         //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
         //
@@ -786,7 +785,7 @@ impl EncryptStreamInputBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptStreamInput {
@@ -1013,12 +1012,11 @@ impl<'a> DecryptInputBuilder<'a> {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if no ciphertext was set,
-    /// or if not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): no ciphertext was set, or not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptInput<'a>, Error> {
         let ciphertext = self
             .ciphertext
-            .ok_or_else(|| val_err("A ciphertext must be provided"))?;
+            .ok_or_else(|| val_err("a ciphertext must be provided"))?;
         //= spec/client-apis/decrypt.md#input
         //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
         //
@@ -1219,7 +1217,7 @@ impl DecryptStreamInputBuilder {
     ///
     /// # Errors
     ///
-    /// Returns a `ValidationError` if not exactly one of a keyring or CMM was set.
+    /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(DecryptStreamInput {

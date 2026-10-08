@@ -3,16 +3,14 @@
 
 //! Tests for encrypt.md#behavior, encrypt.md#get-the-encryption-materials,
 //! encrypt.md#construct-the-header, and encrypt.md#output.
-// The spy CMM below implements the native `aws_crypto_mpl::cmm::Cmm` trait,
-// whose methods return `MaterialsError` by value.
-#![allow(clippy::result_large_err)]
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
 mod test_helpers;
 
+use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
+use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials};
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -124,14 +122,8 @@ async fn test_input_suite_vs_commitment_policy_error() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must fail when input suite violates commitment policy");
-    // Native path: the input-suite-vs-commitment-policy check runs in the ESDK
-    // encrypt front-end and surfaces as a ValidationError (no cryptography
-    // attempted), rather than an MPL error from the CMM.
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected ValidationError, got: {err:?}"
-    );
+    // Encrypt rejects the suite before any cryptography, with a Validation error.
+    //
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# If an [input algorithm suite](#algorithm-suite) is provided
@@ -143,9 +135,8 @@ async fn test_input_suite_vs_commitment_policy_error() {
     //= reason=Test sets commitment_policy on input; policy-violation error proves it was passed
     //# - Commitment Policy: This MUST be the [commitment policy](client.md#commitment-policy) configured in the [client](client.md) exposing this encrypt function.
     assert!(
-        err.message.contains("commitment policy"),
-        "expected a commitment-policy violation message, got: {}",
-        err.message
+        err.is_validation(),
+        "expected Validation error, got: {err:?}"
     );
 }
 
@@ -327,13 +318,13 @@ impl Cmm for DuplicateEdkCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         let materials = self.inner.get_encryption_materials(request).await?;
         let mut edks = materials.encrypted_data_keys().to_vec();
         let Some(first) = edks.first().cloned() else {
-            return Err(MaterialsError::new(
+            return Err(MplError::from(aws_crypto_mpl::error::ValidationError::new(
                 "inner CMM returned no encrypted data keys",
-            ));
+            )));
         };
         edks.push(first);
         EncryptionMaterials::new(
@@ -350,7 +341,7 @@ impl Cmm for DuplicateEdkCmm {
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }
@@ -376,15 +367,9 @@ async fn test_max_edk_exceeded_error() {
     //= type=test
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
     //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md) encrypt MUST yield an error.
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected ValidationError, got: {err:?}"
-    );
     assert!(
-        err.message.contains("exceeds") && err.message.contains("maximum"),
-        "error must indicate EDK count exceeds maximum, got: {}",
-        err.message
+        err.is_validation(),
+        "expected Validation error, got: {err:?}"
     );
 
     // The same CMM under a maximum of 2 encrypts, so the failure above is the
@@ -604,15 +589,9 @@ async fn test_reserved_encryption_context_prefix_must_fail() {
     //= type=test
     //# If the input encryption context contains any entries with a key beginning with `aws-crypto-`,
     //# the encryption operation MUST fail.
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected ValidationError, got: {err:?}"
-    );
     assert!(
-        err.message.contains("aws-crypto-"),
-        "error must identify the reserved prefix, got: {}",
-        err.message
+        err.is_validation(),
+        "expected Validation error, got: {err:?}"
     );
 }
 
@@ -677,7 +656,7 @@ impl Cmm for SpyCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         // Record observations from the request the ESDK constructed.
         *self.observed_algorithm_suite_id.lock().unwrap() = Some(request.algorithm_suite_id());
         *self.observed_max_plaintext_length.lock().unwrap() =
@@ -689,7 +668,7 @@ impl Cmm for SpyCmm {
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }
@@ -792,21 +771,14 @@ async fn test_step_failure_must_halt_and_indicate_failure() {
         .unwrap();
     let result = encrypt(&enc_input).await;
     let err = result.expect_err("encrypt must halt and indicate failure when a step fails");
-    // Native path: the failing step (suite-vs-commitment-policy validation) surfaces
-    // as a ValidationError from the ESDK encrypt.
-    assert_eq!(
-        err.kind,
-        ErrorKind::ValidationError,
-        "expected ValidationError, got: {err:?}"
+    // The failing step is the commitment policy check, which returns Validation.
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got: {err:?}"
     );
     //= spec/client-apis/encrypt.md#behavior
     //= type=test
     //# If any of these steps fails, this operation MUST halt and indicate a failure to the caller.
-    assert!(
-        err.message.contains("commitment policy"),
-        "expected a commitment-policy violation message, got: {}",
-        err.message
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -943,10 +915,12 @@ async fn test_message_bodies_not_equal_must_fail() {
     // auth, not an encrypt comparison). That requirement is annotated type=implication in
     // encrypt.rs (the body is written directly to the output, so inequality is impossible).
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered body content must produce CryptographicError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
+        "tampered body content must produce Cryptographic error"
     );
 }
 
@@ -1076,7 +1050,7 @@ async fn test_frame_fields_serialized_per_spec() {
 //         .expect_err("non-ESDK materials suite must be rejected");
 //     assert_eq!(
 //         err.kind,
-//         ErrorKind::Esdk,
+//         ErrorKind::Internal,
 //         "non-ESDK materials suite must yield an error, got: {err:?}"
 //     );
 // }

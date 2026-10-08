@@ -4,8 +4,8 @@
 //! Converting an existing `Shared*` handle reuses it instead of nesting it.
 
 use aws_config::{BehaviorVersion, SdkConfig};
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
-use aws_crypto_mpl::structures::MaterialsError;
 use aws_crypto_mpl::{
     AesGcm, BranchKeyStore, BranchKeyStoreBuilder, BranchKeySupplier, Cmc, Cmm, DefaultCmm,
     IntoShared, Keyring, Keystore, KmsConfiguration, LocalCmc, RawAesKeyring,
@@ -55,7 +55,7 @@ impl BranchKeySupplier for Supplier {
     fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+    ) -> Result<GetBranchKeyIdOutput, Error> {
         Ok(GetBranchKeyIdOutput::new("branch-key-id".to_string()))
     }
 }

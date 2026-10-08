@@ -1,0 +1,541 @@
+# The error types of every library in this repository.
+#
+# `cargo xtask gen-errors` writes each library's `src/error/generated.rs` from this file,
+# and `cargo xtask gen-errors --check` fails when those files are stale.
+# See "What errors may contain" in CONTRIBUTING.md before writing an error message.
+#
+# `[[variant]]`: every variant any library can have, in the order the enums list them.
+#   name       the variant, for example `Validation` in `Error::Validation(ValidationError)`
+#   struct     the variant's struct
+#   predicate  the `Error::is_*` method
+#   remote     whether the struct has `service()`, `resource()`, `code()`, and `request_id()`
+#   doc        the docs on the variant and its struct
+#   example    a doctest for the struct's docs: a function that handles the error; `{crate}` becomes the crate name
+#   default_retry          the retry kind a new error of this variant has
+#   credentials_codes      error codes for which `is_credentials()` is true
+#   reason                 the type `reason()` returns
+#   reason_example         a value of that type, for the generated tests
+#   data_keys              whether the struct has `encrypted_data_keys()`, the message's
+#                          encrypted data keys as `DataKeyInfo`; at most one variant sets it
+#
+# `[[library]]`: one per crate.
+#   name                the name conversions use, as in `from_<name>`
+#   crate_name          the crate's name in Rust paths
+#   output              the generated file, relative to the repository root
+#   shared              the module holding `Service`, `Resource`, `RetryKind`, and `ConflictReason`
+#   doc                 the docs on the `Error` enum
+#   variants            the variants this library has
+#   sdk                 whether `Error` implements the AWS SDK's error traits
+#   short_constructors  whether `Error` has `Error::validation(message)` and the like
+#   [[library.from]]    another library's errors this one converts, through `from_<library>`;
+#                       `fallback` maps each source variant this library lacks to one it has
+
+[[variant]]
+name = "Validation"
+struct = "ValidationError"
+predicate = "is_validation"
+remote = false
+doc = """
+An input or configuration value is invalid,
+for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
+
+Fix the input; retrying cannot succeed."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // Fix the input; the same call cannot succeed.
+        Error::Validation(e) => eprintln!("invalid input: {}", e.message()),
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "InvalidMaterials"
+struct = "InvalidMaterialsError"
+predicate = "is_invalid_materials"
+remote = true
+doc = """
+A keyring, CMM, or key store returned materials that are inconsistent or malformed,
+for example no plaintext data key after encryption, a signing key for a suite that does not sign,
+or a branch key record with a missing attribute or a key of the wrong length.
+
+Usually a bug in a custom keyring or CMM, or a corrupt key store record;
+retrying cannot succeed.
+`resource()` names the branch key, keyring, or CMM."""
+example = """
+use {crate}::error::{Error, Resource};
+
+fn handle(err: &Error) {
+    match err {
+        Error::InvalidMaterials(e) => match e.resource() {
+            // The key store record for this branch key is corrupt.
+            Some(Resource::BranchKey(branch_key)) => eprintln!("repair branch key {}", branch_key.id()),
+            // A keyring or CMM returned bad materials.
+            Some(Resource::Keyring(_) | Resource::Cmm(_)) => {}
+            _ => {}
+        },
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "EncryptionContextMismatch"
+struct = "EncryptionContextMismatchError"
+predicate = "is_encryption_context_mismatch"
+remote = false
+doc = """
+An encryption context does not match,
+for example a required key is missing, or a value passed to decrypt differs from the message's.
+
+Check the encryption context passed to the call."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // Check the encryption context passed to the call.
+        Error::EncryptionContextMismatch(_) => eprintln!("{err:#}"),
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "NoMatchingDataKey"
+struct = "NoMatchingDataKeyError"
+predicate = "is_no_matching_data_key"
+remote = true
+data_keys = true
+doc = """
+None of the configured keys wrapped any of the message's encrypted data keys,
+for example when decrypting with a keyring that did not encrypt the message.
+
+Decrypt with a keyring that has one of the message's keys.
+`encrypted_data_keys()` lists the message's encrypted data keys by key provider,
+and `resource()` names the keyring or CMM that was used."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        Error::NoMatchingDataKey(e) => {
+            // The keys the message was encrypted for, by key provider.
+            for key in e.encrypted_data_keys() {
+                eprintln!("the message was encrypted for {}", key.key_provider_id());
+            }
+        }
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "Cryptographic"
+struct = "CryptographicError"
+predicate = "is_cryptographic"
+remote = false
+doc = """
+A cryptographic check failed,
+for example an AES-GCM authentication tag or a message signature did not verify.
+
+The message is corrupt or modified, or you are decrypting it with the wrong key;
+retrying cannot succeed."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // The message is corrupt or modified, or the key is wrong; retrying cannot help.
+        Error::Cryptographic(_) => eprintln!("reject the message"),
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "AccessDenied"
+struct = "AccessDeniedError"
+predicate = "is_access_denied"
+remote = true
+credentials_codes = [
+    "ExpiredTokenException",
+    "UnrecognizedClientException",
+    "InvalidSignatureException",
+    "IncompleteSignature",
+    "IncompleteSignatureException",
+    "MissingAuthenticationTokenException",
+]
+doc = """
+AWS KMS or DynamoDB denied access.
+
+If `is_credentials()` is true, the credentials are expired or invalid.
+Otherwise fix the permissions for `service()` on `resource()`."""
+example = """
+use {crate}::error::{Error, Resource, Service};
+
+fn handle(err: &Error) {
+    match err {
+        // The credentials themselves are expired or invalid.
+        Error::AccessDenied(e) if e.is_credentials() => {}
+        // Otherwise branch on the service, then on the resource within it.
+        Error::AccessDenied(e) => match e.service() {
+            Some(Service::Kms) => match e.resource() {
+                Some(Resource::KmsKey(key)) => eprintln!("AWS KMS denied the KMS key {}", key.arn()),
+                _ => {}
+            },
+            Some(Service::DynamoDb) => match e.resource() {
+                Some(Resource::DynamoDbTable(table)) => eprintln!("DynamoDB denied the table {}", table.name()),
+                _ => {}
+            },
+            _ => {}
+        },
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "ResourceNotFound"
+struct = "ResourceNotFoundError"
+predicate = "is_resource_not_found"
+remote = true
+doc = """
+A KMS key, DynamoDB table, or branch key does not exist.
+
+Fix the configuration that names `resource()`."""
+example = """
+use {crate}::error::{Error, Resource, Service};
+
+fn handle(err: &Error) {
+    match err {
+        Error::ResourceNotFound(e) => match e.service() {
+            // The key store keeps branch keys in DynamoDB.
+            Some(Service::DynamoDb) => match e.resource() {
+                Some(Resource::BranchKey(branch_key)) => eprintln!("create branch key {}", branch_key.id()),
+                Some(Resource::DynamoDbTable(table)) => eprintln!("create the table {}", table.name()),
+                _ => {}
+            },
+            Some(Service::Kms) => match e.resource() {
+                Some(Resource::KmsKey(key)) => eprintln!("the KMS key {} does not exist", key.arn()),
+                _ => {}
+            },
+            _ => {}
+        },
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "Throttling"
+struct = "ThrottlingError"
+predicate = "is_throttling"
+remote = true
+default_retry = "Throttling"
+doc = """
+A service or resource throttled the request.
+
+Always retryable, with [`RetryKind::Throttling`](crate::error::RetryKind::Throttling).
+`service()` and `resource()` say what was throttled: AWS KMS, DynamoDB, or the materials cache,
+which is [`Resource::Cache`](crate::error::Resource::Cache) with no `service()`."""
+example = """
+use {crate}::error::{Error, Resource, Service};
+
+fn handle(err: &Error) {
+    if err.is_retryable() {
+        // Back off by `err.retry_kind()` before retrying.
+    }
+    // Match `Throttling` only to learn what was throttled.
+    if let Error::Throttling(e) = err {
+        match e.service() {
+            Some(Service::Kms | Service::DynamoDb) => {}
+            // The materials cache is not an AWS service.
+            None => match e.resource() {
+                Some(Resource::Cache(_)) => {}
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+}
+"""
+
+[[variant]]
+name = "Conflict"
+struct = "ConflictError"
+predicate = "is_conflict"
+remote = true
+reason = "ConflictReason"
+reason_example = "ConflictReason::ConcurrentModification"
+doc = """
+The request conflicts with the current state of `resource()`,
+for example creating a branch key whose ID already exists,
+or rotating a branch key that another caller rotated at the same time.
+
+Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
+`reason()` says which conflict occurred."""
+example = """
+use {crate}::error::{ConflictReason, Error};
+
+fn handle(err: &Error) {
+    match err {
+        Error::Conflict(e) => match e.reason() {
+            // Another caller rotated the branch key; it already has a new version.
+            Some(ConflictReason::ConcurrentModification) => {}
+            // The branch key ID is in use; use the existing key or pick another ID.
+            Some(ConflictReason::AlreadyExists) => {}
+            _ => {}
+        },
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "Service"
+struct = "ServiceError"
+predicate = "is_service"
+remote = true
+doc = """
+AWS KMS or DynamoDB rejected or failed the request for any other reason,
+for example an internal service error or a KMS `IncorrectKeyException`.
+
+A server-side failure is retryable.
+`code()` is the service's error code."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // An AWS server error: retry later.
+        e if e.is_retryable() => {}
+        // `code()` is the service's own error code, for a distinction the variants don't make.
+        Error::Service(e) if e.code() == Some("DisabledException") => {}
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "Dispatch"
+struct = "DispatchError"
+predicate = "is_dispatch"
+remote = true
+doc = """
+A request to AWS KMS or DynamoDB was not sent, or its response did not arrive,
+for example because of a network error, a timeout, or missing credentials or region.
+
+Retryable for a network error or timeout."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // A network error or timeout: retry later.
+        e if e.is_retryable() => {}
+        // Missing credentials or region: fix the AWS SDK configuration.
+        Error::Dispatch(_) => {}
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "Serialization"
+struct = "SerializationError"
+predicate = "is_serialization"
+remote = false
+doc = """
+The bytes are not a well-formed encrypted message,
+for example truncated input, an unsupported message version, or data after the footer.
+
+Treat the message as corrupt; retrying cannot succeed."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // The bytes are not a valid encrypted message; treat it as corrupt.
+        Error::Serialization(_) | Error::Cryptographic(_) => eprintln!("reject the message"),
+        _ => {}
+    }
+}
+"""
+
+[[variant]]
+name = "Io"
+struct = "IoError"
+predicate = "is_io"
+remote = false
+doc = """
+A reader or writer you passed failed while streaming,
+for example a closed connection or a full disk.
+
+The [`source`](std::error::Error::source) is the [`std::io::Error`]."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    if let Error::Io(_) = err {
+        // The reader or writer you passed failed; its error is the source.
+        if let Some(io) = err.find_source::<std::io::Error>() {
+            eprintln!("{io}");
+        }
+    }
+}
+"""
+
+[[variant]]
+name = "Internal"
+struct = "InternalError"
+predicate = "is_internal"
+remote = false
+doc = """
+An internal invariant was violated, for example a poisoned lock.
+
+A bug in this library; report it.
+Never retryable."""
+example = """
+use {crate}::error::Error;
+
+fn handle(err: &Error) {
+    match err {
+        // A bug in this library: log the whole chain and report it.
+        Error::Internal(_) => eprintln!("{err:#}"),
+        _ => {}
+    }
+}
+"""
+
+[[library]]
+name = "prim"
+crate_name = "aws_mpl_primitives"
+output = "prim/src/error/generated.rs"
+shared = "crate::error"
+sdk = false
+short_constructors = false
+variants = ["Cryptographic", "Internal"]
+doc = """
+An error from a cryptographic primitive.
+
+Match on the variant to decide what to do.
+Later releases can add variants, so a `match` needs a catch-all arm.
+
+Messages are for people and logs: their text can change in any release, even a patch release.
+Decide from the variant and its accessors, never from the message.
+
+A minor or patch release can also turn an `Internal` error into a specific variant."""
+
+[[library]]
+name = "mpl"
+crate_name = "aws_crypto_mpl"
+output = "mpl/src/error/generated.rs"
+shared = "aws_mpl_primitives::error"
+sdk = true
+short_constructors = true
+variants = [
+    "Validation",
+    "InvalidMaterials",
+    "EncryptionContextMismatch",
+    "NoMatchingDataKey",
+    "Cryptographic",
+    "AccessDenied",
+    "ResourceNotFound",
+    "Throttling",
+    "Conflict",
+    "Service",
+    "Dispatch",
+    "Internal",
+]
+doc = """
+An error from a keyring, CMM, key store, or cache.
+
+To handle it:
+1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
+2. Otherwise match on the variant; each variant's docs say what to do.
+   Later releases can add variants, so a `match` needs a catch-all arm.
+
+See the [module docs](crate::error) for examples.
+
+For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
+so retry only at a higher level, with your own backoff.
+Nothing retries materials-cache throttling for you.
+Match `Error::Throttling` only to learn what was throttled.
+
+Messages are for people and logs: their text can change in any release, even a patch release.
+Decide from the variant and its accessors, never from the message.
+
+A minor or patch release can also change which variant a failure gets:
+- A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
+- A collection of `failures()` that resolves to one variant can resolve to a different variant.
+
+See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
+
+`Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
+
+[[library.from]]
+library = "prim"
+fallback = {}
+
+[[library]]
+name = "esdk"
+crate_name = "aws_esdk"
+output = "esdk/src/error/generated.rs"
+shared = "aws_mpl_primitives::error"
+sdk = true
+short_constructors = false
+variants = [
+    "Validation",
+    "InvalidMaterials",
+    "EncryptionContextMismatch",
+    "NoMatchingDataKey",
+    "Cryptographic",
+    "AccessDenied",
+    "ResourceNotFound",
+    "Throttling",
+    "Conflict",
+    "Service",
+    "Dispatch",
+    "Serialization",
+    "Io",
+    "Internal",
+]
+doc = """
+An error from the AWS Encryption SDK.
+
+To handle it:
+1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
+2. Otherwise match on the variant; each variant's docs say what to do.
+   An error from a keyring, CMM, key store, or cache keeps its variant:
+   each [`aws_crypto_mpl::Error`] variant has one here with the same name.
+   Later releases can add variants, so a `match` needs a catch-all arm.
+
+See the [module docs](crate::error) for examples.
+
+For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
+so retry only at a higher level, with your own backoff.
+Nothing retries materials-cache throttling for you.
+Match `Error::Throttling` only to learn what was throttled.
+
+Messages are for people and logs: their text can change in any release, even a patch release.
+Decide from the variant and its accessors, never from the message.
+
+A minor or patch release can also change which variant a failure gets:
+- A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
+- A collection of `failures()` that resolves to one variant can resolve to a different variant.
+
+See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
+
+`Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
+
+[[library.from]]
+library = "mpl"
+fallback = {}
+
+[[library.from]]
+library = "prim"
+fallback = {}
