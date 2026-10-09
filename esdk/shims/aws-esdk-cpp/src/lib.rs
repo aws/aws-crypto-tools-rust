@@ -1232,10 +1232,8 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
         .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
-    let store = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
-    Ok(Box::new(KeyStore {
-        inner: KeyStoreClient::new(store),
-    }))
+    let inner = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
+    Ok(Box::new(KeyStore { inner }))
 }
 
 /// An empty target list means no grant tokens were supplied.
