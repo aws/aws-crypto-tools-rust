@@ -212,3 +212,158 @@ async fn test_streaming_rejects_neither_and_both_sources() {
         );
     }
 }
+
+// An async source that hands out one byte per read and pends between reads,
+// and a sink that accepts at most three bytes per write.
+// The round trip through them checks that the streaming APIs resume
+// correctly after every partial and pending read and write.
+struct Trickle<T> {
+    inner: T,
+    ready: bool,
+}
+
+impl<T> Trickle<T> {
+    fn new(inner: T) -> Self {
+        Self {
+            inner,
+            ready: false,
+        }
+    }
+}
+
+impl<T: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for Trickle<T> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if !std::mem::replace(&mut self.ready, true) {
+            cx.waker().wake_by_ref();
+            return std::task::Poll::Pending;
+        }
+        self.ready = false;
+        let mut one = [0u8; 1];
+        let mut one_buf = tokio::io::ReadBuf::new(&mut one);
+        let poll = std::pin::Pin::new(&mut self.inner).poll_read(cx, &mut one_buf);
+        if let std::task::Poll::Ready(Ok(())) = poll {
+            buf.put_slice(one_buf.filled());
+        }
+        poll
+    }
+}
+
+impl<T: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for Trickle<T> {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        if !std::mem::replace(&mut self.ready, true) {
+            cx.waker().wake_by_ref();
+            return std::task::Poll::Pending;
+        }
+        self.ready = false;
+        let n = buf.len().min(3);
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, &buf[..n])
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[tokio::test]
+async fn test_streaming_round_trip_through_pending_partial_io() {
+    let keyring = test_keyring().await;
+    // Three frames, the last one partial.
+    let plaintext: Vec<u8> = (0..=255u8).cycle().take(2 * 4096 + 100).collect();
+
+    let enc_input = EncryptStreamInput::builder()
+        .keyring(keyring.clone())
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .build()
+        .unwrap();
+    let mut ciphertext = Vec::new();
+    aws_esdk::encrypt_stream(
+        Trickle::new(plaintext.as_slice()),
+        Trickle::new(&mut ciphertext),
+        &enc_input,
+    )
+    .await
+    .unwrap();
+
+    let dec_input = DecryptStreamInput::builder()
+        .keyring(keyring)
+        .build()
+        .unwrap();
+    let mut decrypted = Vec::new();
+    aws_esdk::decrypt_stream(
+        Trickle::new(ciphertext.as_slice()),
+        Trickle::new(&mut decrypted),
+        &dec_input,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(decrypted, plaintext);
+}
+
+// On a single-threaded runtime, another task runs only when this one yields.
+// A large one-shot encrypt and decrypt must let it run.
+#[tokio::test(flavor = "current_thread")]
+async fn test_large_message_yields_to_other_tasks() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let ticks = Arc::new(AtomicU64::new(0));
+    let ticker = tokio::spawn({
+        let ticks = ticks.clone();
+        async move {
+            loop {
+                ticks.fetch_add(1, Ordering::Relaxed);
+                tokio::task::yield_now().await;
+            }
+        }
+    });
+
+    let keyring = test_keyring().await;
+    let plaintext = vec![0u8; 4 << 20];
+    let ciphertext = aws_esdk::encrypt(
+        &aws_esdk::EncryptInput::builder()
+            .plaintext(&plaintext)
+            .keyring(keyring.clone())
+            .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            .build()
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+    .ciphertext;
+    let after_encrypt = ticks.load(Ordering::Relaxed);
+    assert!(after_encrypt > 0, "the ticker never ran during encrypt");
+
+    aws_esdk::decrypt(
+        &aws_esdk::DecryptInput::builder()
+            .ciphertext(&ciphertext)
+            .keyring(keyring)
+            .build()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        ticks.load(Ordering::Relaxed) > after_encrypt,
+        "the ticker never ran during decrypt"
+    );
+    ticker.abort();
+}

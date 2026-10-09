@@ -426,8 +426,9 @@ async fn test_v1_header_body_fields_parsed_from_wire() {
     // Parse the V1 header body via the production deserialization function.
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut raw = Vec::new();
-    let header_body =
-        read_header_body(&mut cursor, None, &mut raw).expect("V1 header body must parse");
+    let header_body = read_header_body(&mut cursor, None, &mut raw)
+        .await
+        .expect("V1 header body must parse");
     // A V1 message parses to a V1 header body (message format version 1).
     assert_eq!(
         header_body.algorithm_suite().message_format_version(),
@@ -570,8 +571,9 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     // Parse the V2 header body via the production deserialization function.
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut raw = Vec::new();
-    let header_body =
-        read_header_body(&mut cursor, None, &mut raw).expect("V2 header body must parse");
+    let header_body = read_header_body(&mut cursor, None, &mut raw)
+        .await
+        .expect("V2 header body must parse");
     // A V2 message parses to a V2 header body (message format version 2).
     assert_eq!(
         header_body.algorithm_suite().message_format_version(),

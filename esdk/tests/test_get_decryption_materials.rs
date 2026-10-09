@@ -148,7 +148,7 @@ async fn test_algorithm_suite_from_decryption_materials() {
     // Parse the header directly to read the algorithm suite from the wire
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut raw = Vec::new();
-    let header_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    let header_body = read_header_body(&mut cursor, None, &mut raw).await.unwrap();
     let wire_suite_bytes = header_body.algorithm_suite().id();
 
     // Decrypt and verify the output suite matches what the header contained
@@ -253,7 +253,7 @@ async fn test_kdf_algorithm_from_materials_suite() {
     // Parse header and verify the suite's KDF is HKDF (not Identity)
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut raw = Vec::new();
-    let header_body = read_header_body(&mut cursor, None, &mut raw).unwrap();
+    let header_body = read_header_body(&mut cursor, None, &mut raw).await.unwrap();
     let suite = header_body.algorithm_suite();
     // Sanity check: the suite parsed from the header declares HKDF derivation.
     assert!(

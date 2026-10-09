@@ -11,13 +11,10 @@ use super::header_types::{
 };
 use super::serialize_functions::{read_u32, read_vec, write_bytes, write_u32};
 use super::{Error, ser_err};
-use crate::types::{SafeRead, SafeWrite};
+use crate::types::{Source, Tee};
 use aws_crypto_mpl::structures::AlgorithmSuite;
 
-pub(crate) fn write_v2_header_body(
-    w: &mut dyn SafeWrite,
-    body: &V2HeaderBody,
-) -> Result<(), Error> {
+pub(crate) fn write_v2_header_body(w: &mut Tee, body: &V2HeaderBody) -> Result<(), Error> {
     //= spec/data-format/message-header.md#header-body-version-2-0
     //# The V2 Header Body MUST consist of, in order,
     //# Version,
@@ -122,10 +119,10 @@ pub(crate) const fn has_commitment(suite: &AlgorithmSuite) -> bool {
     suite.key_commitment()
 }
 
-pub(crate) fn read_v2_header_body(
-    r: &mut dyn SafeRead,
+pub(crate) async fn read_v2_header_body(
+    r: &mut dyn Source,
     max_edks: Option<std::num::NonZeroUsize>,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<V2HeaderBody, Error> {
     //= spec/data-format/message-header.md#header-body-version-2-0
     //# The V2 Header Body MUST consist of, in order,
@@ -142,7 +139,7 @@ pub(crate) fn read_v2_header_body(
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Algorithm Suite ID](../data-format/message-header.md#algorithm-suite-id).
-    let algorithm_suite = read_esdk_suite_id(r, raw)?;
+    let algorithm_suite = read_esdk_suite_id(r, raw).await?;
     if !has_commitment(&algorithm_suite) {
         return ser_err("algorithm suite must support commitment");
     }
@@ -151,31 +148,31 @@ pub(crate) fn read_v2_header_body(
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Message ID](../data-format/message-header.md#message-id).
-    let message_id = read_message_id_v2(r, raw)?;
+    let message_id = read_message_id_v2(r, raw).await?;
 
     // AAD
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [AAD](../data-format/message-header.md#aad).
-    let encryption_context = read_encryption_context(r, raw)?;
+    let encryption_context = read_encryption_context(r, raw).await?;
 
     // Encrypted Data Keys
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Encrypted Data Keys](../data-format/message-header.md#encrypted-data-keys).
-    let encrypted_data_keys = read_edks(r, max_edks, raw)?;
+    let encrypted_data_keys = read_edks(r, max_edks, raw).await?;
 
     // Content Type
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Content Type](../data-format/message-header.md#content-type).
-    let content_type = read_content_type(r, raw)?;
+    let content_type = read_content_type(r, raw).await?;
 
     // Frame Length
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //# - MUST deserialize the [Frame Length](../data-format/message-header.md#frame-length).
-    let frame_length = read_u32(r, raw)?;
+    let frame_length = read_u32(r, raw).await?;
 
     // Algorithm Suite Data
 
@@ -186,11 +183,11 @@ pub(crate) fn read_v2_header_body(
     //= spec/data-format/message-header.md#algorithm-suite-data
     //= type=implication
     //# The algorithm suite data MUST be interpreted as bytes.
-    let suite_data = read_vec(r, len_usize, raw)?;
+    let suite_data = read_vec(r, len_usize, raw).await?;
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=implication
-    //= reason=std::io::Read blocks until bytes are available or EOF; the sequential read calls above inherently wait for consumable bytes
+    //= reason=each read awaits the input until bytes are available or EOF; the sequential reads above wait for consumable bytes
     //# This operation MUST wait if it doesn't have enough consumable encrypted message bytes to
     //# deserialize the next field of the message header until enough input bytes become consumable or
     //# the caller indicates an end to the encrypted message.

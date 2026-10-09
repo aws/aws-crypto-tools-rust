@@ -24,7 +24,7 @@ use crate::error::val_err;
 use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use crate::types::{
     DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptInput,
-    EncryptOutput, EncryptStreamInput, EncryptStreamOutput, SafeRead, SafeWrite,
+    EncryptOutput, EncryptStreamInput, EncryptStreamOutput,
 };
 use std::num::NonZeroUsize;
 
@@ -160,12 +160,16 @@ impl Esdk {
     /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
     ///
     /// Otherwise returns any variant [`encrypt_stream`](crate::encrypt_stream) returns.
-    pub async fn encrypt_stream(
+    pub async fn encrypt_stream<R, W>(
         &self,
-        plaintext: &mut dyn SafeRead,
-        ciphertext: &mut dyn SafeWrite,
+        plaintext: R,
+        ciphertext: W,
         input: &EncryptStreamInput,
-    ) -> Result<EncryptStreamOutput, Error> {
+    ) -> Result<EncryptStreamOutput, Error>
+    where
+        R: tokio::io::AsyncRead + Unpin + Send,
+        W: tokio::io::AsyncWrite + Unpin + Send,
+    {
         crate::encrypt::encrypt_stream(plaintext, ciphertext, &fill_or_reject(input, &self.config)?)
             .await
     }
@@ -177,12 +181,16 @@ impl Esdk {
     /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
     ///
     /// Otherwise returns any variant [`decrypt_stream`](crate::decrypt_stream) returns.
-    pub async fn decrypt_stream(
+    pub async fn decrypt_stream<R, W>(
         &self,
-        ciphertext: &mut dyn SafeRead,
-        plaintext: &mut dyn SafeWrite,
+        ciphertext: R,
+        plaintext: W,
         input: &DecryptStreamInput,
-    ) -> Result<DecryptStreamOutput, Error> {
+    ) -> Result<DecryptStreamOutput, Error>
+    where
+        R: tokio::io::AsyncRead + Unpin + Send,
+        W: tokio::io::AsyncWrite + Unpin + Send,
+    {
         crate::decrypt::decrypt_stream(ciphertext, plaintext, &fill_or_reject(input, &self.config)?)
             .await
     }

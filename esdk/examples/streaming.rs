@@ -4,15 +4,14 @@
 //! Encrypts a file into a second file with `encrypt_stream`, then decrypts it into a third with `decrypt_stream`.
 //!
 //! The one-shot `encrypt` and `decrypt` hold the whole message in memory.
-//! The streaming APIs read from any `Read` and write to any `Write`,
-//! so a file or socket of any size passes through in bounded memory.
+//! The streaming APIs read from any tokio `AsyncRead` and write to any `AsyncWrite`,
+//! so a file, socket, or S3 object of any size passes through in bounded memory.
 //!
 //! The example uses a non-signing suite: streamed decrypt rejects a multi-frame signed message.
 //!
 //! Runs offline.
 
-use std::fs::{self, File};
-use std::io::Write;
+use tokio::fs::{self, File};
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::{
@@ -23,14 +22,14 @@ use aws_esdk::{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::temp_dir().join(format!("esdk-streaming-example-{}", std::process::id()));
-    fs::create_dir_all(&dir)?;
+    fs::create_dir_all(&dir).await?;
     let plaintext_path = dir.join("plaintext.txt");
     let ciphertext_path = dir.join("ciphertext.bin");
     let decrypted_path = dir.join("decrypted.txt");
 
     // Stands in for a file the application already has.
     let plaintext = b"the quick brown fox jumps over the lazy dog";
-    File::create(&plaintext_path)?.write_all(plaintext)?;
+    fs::write(&plaintext_path, plaintext).await?;
 
     // For demonstration only.
     // A real application must load its wrapping key from a secure store, never hardcode it.
@@ -52,15 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .build()?;
-    {
-        let mut input = File::open(&plaintext_path)?;
-        let mut output = File::create(&ciphertext_path)?;
-        if let Err(e) = encrypt_stream(&mut input, &mut output, &enc_input).await {
-            // On error the ciphertext file is incomplete; delete it.
-            drop(output);
-            let _ = fs::remove_file(&ciphertext_path);
-            return Err(e.into());
-        }
+    let input = File::open(&plaintext_path).await?;
+    let output = File::create(&ciphertext_path).await?;
+    if let Err(e) = encrypt_stream(input, output, &enc_input).await {
+        // On error the ciphertext file is incomplete; delete it.
+        let _ = fs::remove_file(&ciphertext_path).await;
+        return Err(e.into());
     }
 
     // decrypt_stream writes plaintext to `output` before it has verified the whole message.
@@ -69,24 +65,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .encryption_context(encryption_context)
         .keyring(keyring)
         .build()?;
-    {
-        let mut input = File::open(&ciphertext_path)?;
-        let mut output = File::create(&decrypted_path)?;
-        if let Err(e) = decrypt_stream(&mut input, &mut output, &dec_input).await {
-            // On error the plaintext written so far is unverified; delete it unused.
-            drop(output);
-            let _ = fs::remove_file(&decrypted_path);
-            return Err(e.into());
-        }
+    let input = File::open(&ciphertext_path).await?;
+    let output = File::create(&decrypted_path).await?;
+    if let Err(e) = decrypt_stream(input, output, &dec_input).await {
+        // On error the plaintext written so far is unverified; delete it unused.
+        let _ = fs::remove_file(&decrypted_path).await;
+        return Err(e.into());
     }
 
     assert_eq!(
-        fs::read(&decrypted_path)?,
+        fs::read(&decrypted_path).await?,
         plaintext,
         "Decryption failed: decrypted file differs from plaintext"
     );
 
-    fs::remove_dir_all(&dir)?;
+    fs::remove_dir_all(&dir).await?;
     println!("Success! Streaming encryption and decryption completed successfully.");
     Ok(())
 }

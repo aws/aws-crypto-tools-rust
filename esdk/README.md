@@ -90,7 +90,7 @@ The client's methods return a `Validation` error when the input sets them too.
 
 ## Streaming
 
-`encrypt_stream` / `decrypt_stream` read from any `Read` and write to any `Write`, so memory use stays bounded however large the input is.
+`encrypt_stream` / `decrypt_stream` read from any tokio `AsyncRead` and write to any `AsyncWrite`, so memory use stays bounded however large the input is.
 
 Streamed decrypt writes plaintext to the sink before it has verified the whole message.
 It returns `Ok` only if the message authenticates.

@@ -16,11 +16,11 @@ use crate::message::header_types::{
     ContentType, HeaderAuth, HeaderBody, MessageId, MessageType, V1HeaderBody, V2HeaderBody,
 };
 use crate::message::serializable_types::{get_encrypt_key_length, get_iv_length};
-use crate::message::{DigestWriter, body, footer, header};
+use crate::message::{DigestWriter, body, footer, header, serialize_functions};
 use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
     AlgorithmSuiteId, CommitmentPolicy, EncryptInput, EncryptOutput, EncryptStreamInput,
-    EncryptStreamOutput, EncryptionContext, MaterialSource, SafeRead, SafeWrite,
+    EncryptStreamOutput, EncryptionContext, MaterialSource, Sink, Source,
 };
 use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_crypto_mpl::structures::EncryptedDataKey;
@@ -145,7 +145,7 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 //# This input MAY be [streamed](streaming.md) to this operation.
 //
 //= spec/client-apis/encrypt.md#encrypted-message
-//= reason=SafeWrite flushes each frame without buffering full ciphertext
+//= reason=each frame is written to the output without buffering the full ciphertext
 //# This operation MAY [stream](streaming.md) the encrypted message.
 //
 //= spec/client-apis/encrypt.md#plaintext
@@ -153,14 +153,18 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 //= reason=We stream without holding the full plaintext in memory, so this SHOULD-NOT antecedent does not apply
 //# If an implementation requires holding the input entire plaintext in memory in order to perform this operation,
 //# that implementation SHOULD NOT provide an API that allows this input to be streamed.
-pub async fn encrypt_stream(
-    plaintext: &mut dyn SafeRead,
-    ciphertext: &mut dyn SafeWrite,
+pub async fn encrypt_stream<R, W>(
+    mut plaintext: R,
+    mut ciphertext: W,
     input: &EncryptStreamInput,
-) -> Result<EncryptStreamOutput, Error> {
-    internal_encrypt(
-        plaintext,
-        ciphertext,
+) -> Result<EncryptStreamOutput, Error>
+where
+    R: tokio::io::AsyncRead + Unpin + Send,
+    W: tokio::io::AsyncWrite + Unpin + Send,
+{
+    let output = internal_encrypt(
+        &mut plaintext,
+        &mut ciphertext,
         input.data_size,
         input.material_source(),
         &input.encryption_context,
@@ -169,14 +173,16 @@ pub async fn encrypt_stream(
         input.max_encrypted_data_keys,
         input.commitment_policy,
     )
-    .await
+    .await?;
+    serialize_functions::flush_sink(&mut ciphertext).await?;
+    Ok(output)
 }
 
 #[expect(clippy::too_many_arguments)]
 async fn internal_encrypt(
-    plaintext: &mut dyn SafeRead,
+    plaintext: &mut dyn Source,
     // ciphertext is the output buffer for this function
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
@@ -204,8 +210,8 @@ async fn internal_encrypt(
 /// The encrypt steps; [`internal_encrypt`] names the material source in their errors.
 #[expect(clippy::too_many_arguments)]
 async fn encrypt_steps(
-    plaintext: &mut dyn SafeRead,
-    ciphertext: &mut dyn SafeWrite,
+    plaintext: &mut dyn Source,
+    ciphertext: &mut dyn Sink,
     plaintext_len: Option<usize>,
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
@@ -269,7 +275,8 @@ async fn encrypt_steps(
         frame_length,
         ciphertext,
         &mut sig_digest,
-    )?;
+    )
+    .await?;
 
     //= spec/client-apis/encrypt.md#behavior
     //= type=implication
@@ -285,7 +292,8 @@ async fn encrypt_steps(
         ciphertext,
         &mut sig_digest,
         plaintext_len,
-    )?;
+    )
+    .await?;
 
     //= spec/client-apis/encrypt.md#behavior
     //= type=implication
@@ -309,7 +317,8 @@ async fn encrypt_steps(
             //# Note that the message header and message body MAY have already been input during previous steps.
             sig_digest,
             ciphertext,
-        )?;
+        )
+        .await?;
     } else {
         //= spec/client-apis/encrypt.md#behavior
         //# - If the materials do not have an algorithm suite including a signature algorithm,
@@ -324,7 +333,7 @@ async fn encrypt_steps(
     //# MUST NOT be added to the output message.
     //
     //= spec/client-apis/streaming.md#outputs
-    //= reason=All bytes written to SafeWrite before Ok is returned
+    //= reason=all bytes are written to the output before Ok is returned
     //# Operations MUST NOT indicate completion or success until an end to the output has been indicated.
     Ok(EncryptStreamOutput {
         encryption_context: header.encryption_context,
@@ -444,13 +453,13 @@ async fn step_get_encryption_materials(
 }
 
 /// Step 2: [Construct the header](spec/client-apis/encrypt.md#construct-the-header)
-fn step_construct_header(
+async fn step_construct_header(
     mat_result: &EncryptionMaterialsResult,
     encryption_context: &EncryptionContext,
     required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: NonZeroU32,
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
 ) -> Result<header::HeaderInfo, Error> {
     //= spec/client-apis/encrypt.md#authentication-tag
@@ -473,7 +482,7 @@ fn step_construct_header(
     //# If this operation is streaming the encrypted message and
     //# the entire message header has been serialized,
     //# the serialized message header MUST be released.
-    header::write_header(&header, ciphertext, sig_digest)?;
+    header::write_header(&header, ciphertext, sig_digest).await?;
 
     //= spec/client-apis/encrypt.md#authentication-tag
     //# The encrypted message output by the Encrypt operation MUST have a message header equal
@@ -487,11 +496,11 @@ fn step_construct_header(
 }
 
 /// Step 3: [Construct the body](spec/client-apis/encrypt.md#construct-the-body)
-fn step_construct_body(
-    plaintext: &mut dyn SafeRead,
+async fn step_construct_body(
+    plaintext: &mut dyn Source,
     header: &header::HeaderInfo,
     data_key: &[u8],
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
     sig_digest: &mut DigestWriter,
     max_plaintext_length: Option<usize>,
 ) -> Result<(), Error> {
@@ -511,14 +520,15 @@ fn step_construct_body(
         sig_digest,
         max_plaintext_length,
     )
+    .await
 }
 
 /// Step 4: [Construct the signature](spec/client-apis/encrypt.md#construct-the-signature)
-fn step_construct_signature(
+async fn step_construct_signature(
     header: &header::HeaderInfo,
     materials: &EncryptionMaterials,
     sig_digest: DigestWriter,
-    ciphertext: &mut dyn SafeWrite,
+    ciphertext: &mut dyn Sink,
 ) -> Result<(), Error> {
     //= spec/client-apis/encrypt.md#construct-the-signature
     //# If the [algorithm suite](../framework/algorithm-suites.md) contains a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
@@ -568,15 +578,17 @@ fn step_construct_signature(
         //# [algorithm suite ID](message-header.md#algorithm-suite-id) field that contains a
         //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm), the message MUST also contain a
         //# [message footer](message-footer.md) serialized after the [message body](message-body.md).
+        let mut footer_bytes = Vec::new();
         footer::write_footer(
             //= spec/data-format/message-footer.md#signature
             //= type=implication
             //= reason=ciphertext is the concatenation of header and body
             //# This signature MUST be calculated over both the [message header](message-header.md) and the [message body](message-body.md),
             //# in the order of serialization.
-            ciphertext,
+            &mut footer_bytes,
             signature_bytes.as_ref(),
         )?;
+        serialize_functions::write_to_sink(ciphertext, &footer_bytes).await?;
     } else {
         //= spec/data-format/message.md#structure
         //# If the algorithm suite does not contain a signature algorithm, the message MUST NOT contain a message footer.

@@ -1548,8 +1548,8 @@ pub async fn run_decrypt(
 /// Run encrypt_stream under the chosen [`CallStyle`].
 pub async fn run_encrypt_stream(
     style: CallStyle,
-    plaintext: &mut dyn SafeRead,
-    ciphertext: &mut dyn SafeWrite,
+    plaintext: impl tokio::io::AsyncRead + Unpin + Send,
+    ciphertext: impl tokio::io::AsyncWrite + Unpin + Send,
     input: &EncryptStreamInput,
 ) -> Result<EncryptStreamOutput, Error> {
     match style {
@@ -1565,8 +1565,8 @@ pub async fn run_encrypt_stream(
 /// Run decrypt_stream under the chosen [`CallStyle`].
 pub async fn run_decrypt_stream(
     style: CallStyle,
-    ciphertext: &mut dyn SafeRead,
-    plaintext: &mut dyn SafeWrite,
+    ciphertext: impl tokio::io::AsyncRead + Unpin + Send,
+    plaintext: impl tokio::io::AsyncWrite + Unpin + Send,
     input: &DecryptStreamInput,
 ) -> Result<DecryptStreamOutput, Error> {
     match style {

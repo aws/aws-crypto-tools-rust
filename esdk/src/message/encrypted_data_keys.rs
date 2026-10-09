@@ -6,10 +6,10 @@
 use super::serialize_functions::{read_seq_u16, read_str_u16, read_u16, write_bytes, write_u16};
 use super::{Error, ser_err};
 use crate::error::{Kind, err};
-use crate::types::{SafeRead, SafeWrite};
+use crate::types::{Source, Tee};
 use aws_crypto_mpl::structures::EncryptedDataKey;
 
-pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Result<(), Error> {
+pub(crate) fn write_edks(w: &mut Tee, edks: &[EncryptedDataKey]) -> Result<(), Error> {
     //= spec/data-format/message-header.md#encrypted-data-keys
     //# The Encrypted Data Keys MUST consist of, in order,
     //# Encrypted Data Key Count,
@@ -44,7 +44,7 @@ pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Re
     Ok(())
 }
 
-pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result<(), Error> {
+pub(crate) fn write_edk(w: &mut Tee, edk: &EncryptedDataKey) -> Result<(), Error> {
     //= spec/data-format/message-header.md#encrypted-data-key-entries
     //# Each Encrypted Data Key Entry MUST consist of, in order,
     //# Key Provider ID Length,
@@ -133,10 +133,10 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     write_bytes(w, edk.ciphertext())
 }
 
-pub(crate) fn read_edks(
-    r: &mut dyn SafeRead,
+pub(crate) async fn read_edks(
+    r: &mut dyn Source,
     max_edks: Option<std::num::NonZeroUsize>,
-    raw: &mut dyn SafeWrite,
+    raw: &mut Tee,
 ) -> Result<Vec<EncryptedDataKey>, Error> {
     //= spec/data-format/message-header.md#encrypted-data-keys
     //# The Encrypted Data Keys MUST consist of, in order,
@@ -150,7 +150,7 @@ pub(crate) fn read_edks(
     //
     //= spec/data-format/message-header.md#encrypted-data-key-count
     //# The encrypted data key count MUST be interpreted as a UInt16.
-    let count = read_u16(r, raw)?;
+    let count = read_u16(r, raw).await?;
 
     //= spec/data-format/message-header.md#encrypted-data-key-count
     //# This value MUST be greater than 0.
@@ -183,15 +183,12 @@ pub(crate) fn read_edks(
 
     let mut edks = Vec::with_capacity(usize::from(count));
     for _ in 0..count {
-        edks.push(read_edk(r, raw)?);
+        edks.push(read_edk(r, raw).await?);
     }
     Ok(edks)
 }
 
-pub(crate) fn read_edk(
-    r: &mut dyn SafeRead,
-    raw: &mut dyn SafeWrite,
-) -> Result<EncryptedDataKey, Error> {
+pub(crate) async fn read_edk(r: &mut dyn Source, raw: &mut Tee) -> Result<EncryptedDataKey, Error> {
     //= spec/data-format/message-header.md#encrypted-data-key-entries
     //# Each Encrypted Data Key Entry MUST consist of, in order,
     //# Key Provider ID Length,
@@ -215,7 +212,7 @@ pub(crate) fn read_edk(
     //
     //= spec/data-format/message-header.md#key-provider-id
     //# The key provider ID MUST be interpreted as UTF-8 encoded bytes.
-    let provider_id = read_str_u16(r, raw)?;
+    let provider_id = read_str_u16(r, raw).await?;
 
     // Key Provider Information Length and Key Provider Information
 
@@ -231,7 +228,7 @@ pub(crate) fn read_edk(
     //
     //= spec/data-format/message-header.md#key-provider-information
     //# The key provider information MUST be interpreted as bytes.
-    let provider_info = read_seq_u16(r, raw)?;
+    let provider_info = read_seq_u16(r, raw).await?;
 
     // Encrypted Data Key Length and Encrypted Data Key
 
@@ -248,7 +245,7 @@ pub(crate) fn read_edk(
     //= spec/data-format/message-header.md#encrypted-data-key
     //= type=implication
     //# The encrypted data key MUST be interpreted as bytes.
-    let edk = read_seq_u16(r, raw)?;
+    let edk = read_seq_u16(r, raw).await?;
 
     EncryptedDataKey::builder()
         .key_provider_id(provider_id)

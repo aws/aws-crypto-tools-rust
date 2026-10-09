@@ -51,55 +51,57 @@ fn validate_material_source(
 //# This value MUST default to 4096 bytes.
 const DEFAULT_FRAME_LENGTH: NonZeroU32 = NonZeroU32::new(4096).expect("4096 is non-zero");
 
-/// Output bytes sink for streaming encrypt/decrypt operations.
-///
-/// Auto-implemented for any type that is `Write + Send + Sync + Debug`
-/// (e.g. `Vec<u8>`, `std::fs::File`).
+/// The output a streaming encrypt or decrypt writes to:
+/// any [`AsyncWrite`](tokio::io::AsyncWrite) that is `Unpin + Send`.
 //= spec/client-apis/streaming.md#outputs
 //# In order to support streaming, the operation MUST produce some output within a streaming framework.
 //
 //= spec/client-apis/streaming.md#outputs
-//= reason=SafeWrite wraps std::io::Write; write() is the output release mechanism
+//= reason=Sink is tokio's AsyncWrite; write is the output release mechanism
 //# - There MUST be a mechanism for output bytes to be released.
-pub trait SafeWrite: std::io::Write + Send + Sync + std::fmt::Debug {}
+#[doc(hidden)]
+pub trait Sink: tokio::io::AsyncWrite + Unpin + Send {}
 //= spec/client-apis/streaming.md#outputs
-//= reason=encrypt_stream/decrypt_stream return Result; Ok(()) is the end-of-output indicator
+//= reason=encrypt_stream/decrypt_stream flush the output and then return Ok, the end-of-output indicator
 //# - There MUST be a mechanism to indicate that the entire output has been released.
-impl<T: std::io::Write + Send + Sync + std::fmt::Debug> SafeWrite for T {}
+impl<T: tokio::io::AsyncWrite + Unpin + Send + ?Sized> Sink for T {}
 
-/// Input bytes source for streaming encrypt/decrypt operations.
-///
-/// Auto-implemented for any type that is `Read + Send + Sync + Debug`
-/// (e.g. `std::io::Cursor`, `std::fs::File`).
+/// The input a streaming encrypt or decrypt reads from:
+/// any [`AsyncRead`](tokio::io::AsyncRead) that is `Unpin + Send`.
 //= spec/client-apis/streaming.md#inputs
 //# In order to support streaming, the operation MUST accept some input within a streaming framework.
 //
 //= spec/client-apis/streaming.md#inputs
-//= reason=SafeRead wraps std::io::Read; read() is the input consumption mechanism
+//= reason=Source is tokio's AsyncRead; read is the input consumption mechanism
 //# - There MUST be a mechanism for input bytes to become consumable.
-pub trait SafeRead: std::io::Read + Send + Sync + std::fmt::Debug {}
+#[doc(hidden)]
+pub trait Source: tokio::io::AsyncRead + Unpin + Send {}
 //= spec/client-apis/streaming.md#overview
 //= type=implication
-//= reason=SafeRead wraps std::io::Read; the trait exposes only incremental reads, so callers never need to hold the full input in memory
+//= reason=Source is tokio's AsyncRead; it exposes only incremental reads, so callers never need to hold the full input in memory
 //# If an implementation requires holding the entire input in memory in order to perform the operation,
 //# that implementation SHOULD NOT provide an API that allows the caller to stream the operation.
 //
 //= spec/client-apis/streaming.md#overview
 //= type=implication
-//= reason=SafeRead wraps std::io::Read; processing happens incrementally regardless of input size
+//= reason=Source is tokio's AsyncRead; processing happens incrementally regardless of input size
 //# APIs that support streaming of the encrypt or decrypt operation SHOULD allow customers
 //# to be able to process arbitrarily large inputs with a finite amount of working memory.
 //
 //= spec/client-apis/encrypt.md#plaintext
 //= type=implication
-//= reason=SafeRead wraps std::io::Read; the plaintext flows in incrementally and is never held whole
+//= reason=Source is tokio's AsyncRead; the plaintext flows in incrementally and is never held whole
 //# If an implementation requires holding the input entire plaintext in memory in order to perform this operation,
 //# that implementation SHOULD NOT provide an API that allows this input to be streamed.
 //
 //= spec/client-apis/streaming.md#inputs
-//= reason=SafeRead wraps std::io::Read; read() returning Ok(0) is the EOF indicator
+//= reason=Source is tokio's AsyncRead; a read of zero bytes is the EOF indicator
 //# - There MUST be a mechanism to indicate that there are no more input bytes.
-impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
+impl<T: tokio::io::AsyncRead + Unpin + Send + ?Sized> Source for T {}
+
+/// An in-memory writer that mirrors the bytes a step reads or writes, such as a signature digest.
+#[doc(hidden)]
+pub type Tee = dyn std::io::Write + Send;
 
 /// Algorithm suite identifiers for the ESDK.
 ///
