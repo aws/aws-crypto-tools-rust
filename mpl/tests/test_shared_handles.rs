@@ -87,3 +87,14 @@ fn shared_cmc_reuses_handle() {
 fn shared_branch_key_supplier_reuses_handle() {
     assert_reuses_handle!(SharedBranchKeySupplier, BranchKeySupplier, Supplier);
 }
+
+#[test]
+fn an_arc_keyring_and_cmm_keep_the_inner_name() {
+    let raw = keyring();
+    let name = raw.name().into_owned();
+    assert_eq!(std::sync::Arc::new(raw).name(), name);
+
+    let cmm = DefaultCmm::new(keyring());
+    let name = cmm.name().into_owned();
+    assert_eq!(std::sync::Arc::new(cmm).name(), name);
+}

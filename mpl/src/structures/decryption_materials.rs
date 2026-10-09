@@ -13,7 +13,7 @@ use super::algorithm_suite::{
 use super::encryption_context::EncryptionContext;
 
 /// Materials needed for decryption.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,

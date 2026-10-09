@@ -86,3 +86,25 @@ impl Cmm for SharedCmm {
         self.0.decrypt_materials(input).await
     }
 }
+
+/// A CMM behind an `Arc` is a CMM, so one instance can be shared without being `Clone`.
+#[async_trait]
+impl<T: Cmm + ?Sized> Cmm for std::sync::Arc<T> {
+    fn name(&self) -> Cow<'_, str> {
+        (**self).name()
+    }
+
+    async fn get_encryption_materials(
+        &self,
+        input: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+        (**self).get_encryption_materials(input).await
+    }
+
+    async fn decrypt_materials(
+        &self,
+        input: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, Error> {
+        (**self).decrypt_materials(input).await
+    }
+}

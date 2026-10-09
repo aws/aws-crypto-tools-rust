@@ -14,7 +14,7 @@ use super::encrypted_data_key::EncryptedDataKey;
 use super::encryption_context::EncryptionContext;
 
 /// Materials needed for encryption.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EncryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encrypted_data_keys: Vec<EncryptedDataKey>,

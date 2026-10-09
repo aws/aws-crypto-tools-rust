@@ -121,3 +121,19 @@ impl Keyring for SharedKeyring {
         self.0.on_decrypt(input).await
     }
 }
+
+/// A keyring behind an `Arc` is a keyring, so one instance can be shared without being `Clone`.
+#[async_trait]
+impl<T: Keyring + ?Sized> Keyring for std::sync::Arc<T> {
+    fn name(&self) -> Cow<'_, str> {
+        (**self).name()
+    }
+
+    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+        (**self).on_encrypt(input).await
+    }
+
+    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+        (**self).on_decrypt(input).await
+    }
+}
