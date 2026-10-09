@@ -36,3 +36,5 @@ Cargo.lock
 /streaming_example
 /streaming_chunks_example
 /shared_cache_example
+/set_algorithm_suite_example
+/set_commitment_policy_example
