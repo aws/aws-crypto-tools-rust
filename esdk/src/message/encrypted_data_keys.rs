@@ -250,9 +250,9 @@ pub(crate) fn read_edk(
     //# The encrypted data key MUST be interpreted as bytes.
     let edk = read_seq_u16(r, raw)?;
 
-    Ok(EncryptedDataKey::builder()
+    EncryptedDataKey::builder()
         .key_provider_id(provider_id)
         .key_provider_info(provider_info)
         .ciphertext(edk)
-        .build()?)
+        .build()
 }

@@ -201,7 +201,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- Key store: a failure with a reason ----
     //
-    // Key store operations return `aws_crypto_mpl::Error`, which has the same variants and accessors.
+    // Key store operations return the same `Error`.
     // A `Conflict` says why through `reason()`.
     // Creating a branch key whose ID is already in use is `AlreadyExists`;
     // rotating a branch key that another caller rotated at the same time is `ConcurrentModification`.
@@ -216,7 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(output) => println!("created branch key {}", output.branch_key_id()),
-        Err(aws_crypto_mpl::Error::Conflict(conflict)) => match conflict.reason() {
+        Err(Error::Conflict(conflict)) => match conflict.reason() {
             Some(ConflictReason::AlreadyExists) => {
                 println!("branch key {BRANCH_KEY_ID} already exists; use it or pick another ID");
             }

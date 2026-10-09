@@ -543,7 +543,7 @@ fn core_err_carries_the_backtrace_after_the_messages() {
 #[test]
 fn the_backtrace_is_the_innermost_library_errors() {
     let inner = aws_crypto_mpl::Error::internal("origin");
-    let outer = aws_esdk::Error::from(inner.clone());
+    let outer = aws_esdk::Error::wrap("context", inner.clone());
     assert!(std::ptr::eq(origin_backtrace(&outer), inner.backtrace()));
 }
 

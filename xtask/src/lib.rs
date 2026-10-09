@@ -58,6 +58,9 @@ pub struct Library {
     pub shared: String,
     pub sdk: bool,
     pub short_constructors: bool,
+    /// Whether the crate-internal constructors are `#[doc(hidden)] pub`.
+    #[serde(default)]
+    pub internal_pub: bool,
     pub variants: Vec<String>,
     pub doc: String,
     #[serde(default)]
@@ -103,7 +106,14 @@ pub fn generate(spec: &Spec) -> Result<Vec<Output>, String> {
         .iter()
         .map(|lib| Output {
             path: lib.output.clone(),
-            contents: Gen { spec, lib }.file(),
+            contents: {
+                let contents = Gen { spec, lib }.file();
+                if lib.internal_pub {
+                    contents.replace("pub(crate) ", "#[doc(hidden)] pub ")
+                } else {
+                    contents
+                }
+            },
         })
         .collect())
 }

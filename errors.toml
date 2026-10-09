@@ -27,6 +27,8 @@
 #   variants            the variants this library has
 #   sdk                 whether `Error` implements the AWS SDK's error traits
 #   short_constructors  whether `Error` has `Error::validation(message)` and the like
+#   internal_pub        whether the crate-internal constructors are `#[doc(hidden)] pub`,
+#                       for a sibling crate that re-exports this `Error`
 #   [[library.from]]    another library's errors this one converts, through `from_<library>`;
 #                       `fallback` maps each source variant this library lacks to one it has
 
@@ -449,69 +451,21 @@ variants = [
     "Conflict",
     "Service",
     "Dispatch",
-    "Internal",
-]
-doc = """
-An error from a keyring, CMM, key store, or cache.
-
-To handle it:
-1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
-2. Otherwise match on the variant; each variant's docs say what to do.
-   Later releases can add variants, so a `match` needs a catch-all arm.
-
-See the [module docs](crate::error) for examples.
-
-For errors from AWS KMS or DynamoDB, the AWS SDK client has already retried according to its `RetryConfig`,
-so retry only at a higher level, with your own backoff.
-Nothing retries materials-cache throttling for you.
-Match `Error::Throttling` only to learn what was throttled.
-
-Messages are for people and logs: their text can change in any release, even a patch release.
-Decide from the variant and its accessors, never from the message.
-
-A minor or patch release can also change which variant a failure gets:
-- A failure that reaches you as an `Internal` error, or as anything other than this `Error`, can get a specific variant.
-- A collection of `failures()` that resolves to one variant can resolve to a different variant.
-
-See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
-
-`Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
-
-[[library.from]]
-library = "prim"
-fallback = {}
-
-[[library]]
-name = "esdk"
-crate_name = "aws_esdk"
-output = "esdk/src/error/generated.rs"
-shared = "aws_mpl_primitives::error"
-sdk = true
-short_constructors = false
-variants = [
-    "Validation",
-    "InvalidMaterials",
-    "EncryptionContextMismatch",
-    "NoMatchingDataKey",
-    "Cryptographic",
-    "AccessDenied",
-    "ResourceNotFound",
-    "Throttling",
-    "Conflict",
-    "Service",
-    "Dispatch",
     "Serialization",
     "Io",
     "Internal",
 ]
+internal_pub = true
 doc = """
-An error from the AWS Encryption SDK.
+An error from the AWS Encryption SDK or its materials library:
+an encrypt or decrypt operation, a keyring, CMM, key store, or cache.
+
+The AWS Encryption SDK re-exports this type as `aws_esdk::Error`,
+so a custom keyring or CMM returns the same type its caller handles.
 
 To handle it:
 1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
 2. Otherwise match on the variant; each variant's docs say what to do.
-   An error from a keyring, CMM, key store, or cache keeps its variant:
-   each [`aws_crypto_mpl::Error`] variant has one here with the same name.
    Later releases can add variants, so a `match` needs a catch-all arm.
 
 See the [module docs](crate::error) for examples.
@@ -531,10 +485,6 @@ A minor or patch release can also change which variant a failure gets:
 See [What a minor or patch release can change](crate::error#what-a-minor-or-patch-release-can-change).
 
 `Error` implements `ProvideErrorKind` so AWS SDK retry code can classify it."""
-
-[[library.from]]
-library = "mpl"
-fallback = {}
 
 [[library.from]]
 library = "prim"

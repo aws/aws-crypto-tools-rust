@@ -20,7 +20,7 @@ fn generation_error(spec: &xtask::Spec) -> String {
 #[test]
 fn the_checked_in_spec_generates_every_library() {
     let outputs = xtask::generate(&spec()).unwrap();
-    assert_eq!(outputs.len(), 3);
+    assert_eq!(outputs.len(), 2);
     for out in outputs {
         assert!(out.contents.starts_with(xtask::HEADER), "{}", out.path);
     }
@@ -29,42 +29,41 @@ fn the_checked_in_spec_generates_every_library() {
 #[test]
 fn a_source_variant_with_no_target_and_no_fallback_fails() {
     let mut spec = spec();
-    library(&mut spec, "esdk")
+    library(&mut spec, "mpl")
         .variants
-        .retain(|v| v != "Conflict");
+        .retain(|v| v != "Cryptographic");
     let err = generation_error(&spec);
-    assert!(err.contains("`esdk` converts from `mpl`"), "{err}");
-    assert!(err.contains("variant `Conflict`"), "{err}");
+    assert!(err.contains("`mpl` converts from `prim`"), "{err}");
+    assert!(err.contains("variant `Cryptographic`"), "{err}");
     assert!(err.contains("no fallback"), "{err}");
 }
 
 #[test]
 fn a_fallback_covers_a_missing_variant() {
     let mut spec = spec();
-    let esdk = library(&mut spec, "esdk");
-    esdk.variants.retain(|v| v != "Conflict");
-    esdk.from[0]
+    let mpl = library(&mut spec, "mpl");
+    mpl.variants.retain(|v| v != "Cryptographic");
+    mpl.from[0]
         .fallback
-        .insert("Conflict".into(), "Service".into());
+        .insert("Cryptographic".into(), "Internal".into());
     let outputs = xtask::generate(&spec).unwrap();
-    let esdk = outputs.iter().find(|o| o.path.starts_with("esdk")).unwrap();
+    let mpl = outputs.iter().find(|o| o.path.starts_with("mpl")).unwrap();
     assert!(
-        esdk.contents
-            .contains("aws_crypto_mpl::error::Error::Conflict(_) => Kind::Service")
+        mpl.contents
+            .contains("aws_mpl_primitives::error::Error::Cryptographic(_) => Kind::Internal")
     );
 }
 
 #[test]
 fn a_fallback_to_a_variant_the_target_lacks_fails() {
     let mut spec = spec();
-    library(&mut spec, "mpl").from[0]
+    let mpl = library(&mut spec, "mpl");
+    mpl.variants.retain(|v| v != "Io");
+    mpl.from[0]
         .fallback
-        .insert("Cryptographic".into(), "Serialization".into());
+        .insert("Cryptographic".into(), "Io".into());
     let err = generation_error(&spec);
-    assert!(
-        err.contains("maps `Cryptographic` to `Serialization`"),
-        "{err}"
-    );
+    assert!(err.contains("maps `Cryptographic` to `Io`"), "{err}");
     assert!(err.contains("which `mpl` does not have"), "{err}");
 }
 
