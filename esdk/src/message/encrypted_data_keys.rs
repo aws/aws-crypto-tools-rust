@@ -247,9 +247,9 @@ pub(crate) async fn read_edk(r: &mut dyn Source, raw: &mut Tee) -> Result<Encryp
     //# The encrypted data key MUST be interpreted as bytes.
     let edk = read_seq_u16(r, raw).await?;
 
-    EncryptedDataKey::builder()
+    Ok(EncryptedDataKey::builder()
         .key_provider_id(provider_id)
         .key_provider_info(provider_info)
         .ciphertext(edk)
-        .build()
+        .build()?)
 }

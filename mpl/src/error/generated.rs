@@ -27,11 +27,7 @@ use aws_smithy_types::retry::{ErrorKind, ProvideErrorKind};
 
 type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
 
-/// An error from the AWS Encryption SDK or its materials library:
-/// an encrypt or decrypt operation, a keyring, CMM, key store, or cache.
-///
-/// The AWS Encryption SDK re-exports this type as `aws_esdk::Error`,
-/// so a custom keyring or CMM returns the same type its caller handles.
+/// An error from a keyring, CMM, key store, or cache.
 ///
 /// To handle it:
 /// 1. Check [`is_retryable`](Self::is_retryable); [`retry_kind`](Self::retry_kind) says how to back off.
@@ -122,16 +118,6 @@ pub enum Error {
     ///
     /// Retryable for a network error or timeout.
     Dispatch(DispatchError),
-    /// The bytes are not a well-formed encrypted message,
-    /// for example truncated input, an unsupported message version, or data after the footer.
-    ///
-    /// Treat the message as corrupt; retrying cannot succeed.
-    Serialization(SerializationError),
-    /// A reader or writer you passed failed while streaming,
-    /// for example a closed connection or a full disk.
-    ///
-    /// The [`source`](std::error::Error::source) is the [`std::io::Error`].
-    Io(IoError),
     /// An internal invariant was violated, for example a poisoned lock.
     ///
     /// A bug in this library; report it.
@@ -142,8 +128,7 @@ pub enum Error {
 /// Which variant an error is, for this crate's own constructors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::enum_variant_names)]
-#[doc(hidden)]
-pub enum Kind {
+pub(crate) enum Kind {
     Validation,
     InvalidMaterials,
     EncryptionContextMismatch,
@@ -155,8 +140,6 @@ pub enum Kind {
     Conflict,
     Service,
     Dispatch,
-    Serialization,
-    Io,
     Internal,
 }
 
@@ -533,8 +516,6 @@ impl Error {
             Self::Conflict(e) => &e.data,
             Self::Service(e) => &e.data,
             Self::Dispatch(e) => &e.data,
-            Self::Serialization(e) => &e.data,
-            Self::Io(e) => &e.data,
             Self::Internal(e) => &e.data,
         }
     }
@@ -552,8 +533,6 @@ impl Error {
             Self::Conflict(e) => &mut e.data,
             Self::Service(e) => &mut e.data,
             Self::Dispatch(e) => &mut e.data,
-            Self::Serialization(e) => &mut e.data,
-            Self::Io(e) => &mut e.data,
             Self::Internal(e) => &mut e.data,
         }
     }
@@ -577,8 +556,6 @@ impl Error {
             Kind::Conflict => Self::Conflict(ConflictError { data }),
             Kind::Service => Self::Service(ServiceError { data }),
             Kind::Dispatch => Self::Dispatch(DispatchError { data }),
-            Kind::Serialization => Self::Serialization(SerializationError { data }),
-            Kind::Io => Self::Io(IoError { data }),
             Kind::Internal => Self::Internal(InternalError { data }),
         }
     }
@@ -599,15 +576,13 @@ impl Error {
 
     /// An error of `kind` with `message`.
     #[track_caller]
-    #[doc(hidden)]
-    pub fn new(kind: Kind, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: Kind, message: impl Into<String>) -> Self {
         Self::from_data(kind, ErrorData::new(message.into()))
     }
 
     /// Like [`new`](Self::new), with `cause` as the source.
     #[track_caller]
-    #[doc(hidden)]
-    pub fn with_cause(
+    pub(crate) fn with_cause(
         kind: Kind,
         message: impl Into<String>,
         cause: impl std::error::Error + Send + Sync + 'static,
@@ -619,8 +594,7 @@ impl Error {
 
     /// Add context to `inner`, keeping its variant, retry kind, and details.
     #[track_caller]
-    #[doc(hidden)]
-    pub fn wrap(message: impl Into<String>, inner: Self) -> Self {
+    pub(crate) fn wrap(message: impl Into<String>, inner: Self) -> Self {
         let kind = inner.kind();
         let mut data = ErrorData::new(message.into());
         data.retry = inner.data().retry;
@@ -635,8 +609,7 @@ impl Error {
     /// An error of `kind` that collects two or more failures
     /// and keeps each detail they all share.
     #[track_caller]
-    #[doc(hidden)]
-    pub fn collect(
+    pub(crate) fn collect(
         kind: Kind,
         retry: Option<RetryKind>,
         collection: Collection,
@@ -672,8 +645,7 @@ impl Error {
         err
     }
 
-    #[doc(hidden)]
-    pub const fn kind(&self) -> Kind {
+    pub(crate) const fn kind(&self) -> Kind {
         match self {
             Self::Validation(_) => Kind::Validation,
             Self::InvalidMaterials(_) => Kind::InvalidMaterials,
@@ -686,22 +658,18 @@ impl Error {
             Self::Conflict(_) => Kind::Conflict,
             Self::Service(_) => Kind::Service,
             Self::Dispatch(_) => Kind::Dispatch,
-            Self::Serialization(_) => Kind::Serialization,
-            Self::Io(_) => Kind::Io,
             Self::Internal(_) => Kind::Internal,
         }
     }
 
     /// Set the retry kind; `None` makes the error not retryable.
-    #[doc(hidden)]
-    pub fn set_retry(&mut self, retry: Option<RetryKind>) {
+    pub(crate) fn set_retry(&mut self, retry: Option<RetryKind>) {
         self.data_mut().retry = retry;
     }
 
     /// Set the service and resource this error is about.
     #[must_use]
-    #[doc(hidden)]
-    pub fn about(mut self, service: Option<Service>, resource: Option<Resource>) -> Self {
+    pub(crate) fn about(mut self, service: Option<Service>, resource: Option<Resource>) -> Self {
         let remote = &mut self.data_mut().remote;
         remote.service = service;
         remote.resource = resource;
@@ -709,20 +677,17 @@ impl Error {
     }
 
     /// Replace the message.
-    #[doc(hidden)]
-    pub fn set_message(&mut self, message: impl Into<String>) {
+    pub(crate) fn set_message(&mut self, message: impl Into<String>) {
         self.data_mut().message = message.into();
     }
 
     /// Replace the resource this error is about, keeping its service.
-    #[doc(hidden)]
-    pub fn set_resource(&mut self, resource: Option<Resource>) {
+    pub(crate) fn set_resource(&mut self, resource: Option<Resource>) {
         self.data_mut().remote.resource = resource;
     }
 
     /// Set the error code, request ID, and metadata the AWS service returned.
-    #[doc(hidden)]
-    pub fn set_sdk(
+    pub(crate) fn set_sdk(
         &mut self,
         code: Option<String>,
         request_id: Option<String>,
@@ -735,8 +700,7 @@ impl Error {
     }
 
     /// Set why the request conflicts.
-    #[doc(hidden)]
-    pub fn set_reason(&mut self, reason: ConflictReason) {
+    pub(crate) fn set_reason(&mut self, reason: ConflictReason) {
         self.data_mut().reason = Some(reason);
     }
 
@@ -766,8 +730,6 @@ impl Error {
             Self::Conflict(_) => "Conflict",
             Self::Service(_) => "Service",
             Self::Dispatch(_) => "Dispatch",
-            Self::Serialization(_) => "Serialization",
-            Self::Io(_) => "Io",
             Self::Internal(_) => "Internal",
         }
     }
@@ -1027,18 +989,6 @@ impl Error {
         matches!(self, Self::Dispatch(_))
     }
 
-    /// Whether this is a [`Serialization`](Self::Serialization) error.
-    #[must_use]
-    pub const fn is_serialization(&self) -> bool {
-        matches!(self, Self::Serialization(_))
-    }
-
-    /// Whether this is a [`Io`](Self::Io) error.
-    #[must_use]
-    pub const fn is_io(&self) -> bool {
-        matches!(self, Self::Io(_))
-    }
-
     /// Whether this is a [`Internal`](Self::Internal) error.
     #[must_use]
     pub const fn is_internal(&self) -> bool {
@@ -1123,8 +1073,10 @@ impl Error {
     /// The variant is the one with the same name, or the fallback in `errors.toml`.
     /// Keeps the retry kind and details, and keeps `inner` as the source.
     #[track_caller]
-    #[doc(hidden)]
-    pub fn from_prim(message: impl Into<String>, inner: aws_mpl_primitives::error::Error) -> Self {
+    pub(crate) fn from_prim(
+        message: impl Into<String>,
+        inner: aws_mpl_primitives::error::Error,
+    ) -> Self {
         let kind = match &inner {
             aws_mpl_primitives::error::Error::Cryptographic(_) => Kind::Cryptographic,
             aws_mpl_primitives::error::Error::Internal(_) => Kind::Internal,
@@ -1147,8 +1099,7 @@ impl Error {
     ///
     /// Keeps every field: the variant by name (or the fallback in `errors.toml`),
     /// the message, retry kind, details, collected errors, source, and backtrace.
-    #[doc(hidden)]
-    pub fn from_prim_parts(inner: &aws_mpl_primitives::error::Error) -> Self {
+    pub(crate) fn from_prim_parts(inner: &aws_mpl_primitives::error::Error) -> Self {
         let parts = inner.__parts();
         let kind = match parts.name {
             "Cryptographic" => Kind::Cryptographic,
@@ -2550,193 +2501,6 @@ impl From<DispatchError> for Error {
     }
 }
 
-/// The bytes are not a well-formed encrypted message,
-/// for example truncated input, an unsupported message version, or data after the footer.
-///
-/// Treat the message as corrupt; retrying cannot succeed.
-///
-/// # Example
-///
-/// ```
-/// use aws_crypto_mpl::error::Error;
-///
-/// fn handle(err: &Error) {
-///     match err {
-///         // The bytes are not a valid encrypted message; treat it as corrupt.
-///         Error::Serialization(_) | Error::Cryptographic(_) => eprintln!("reject the message"),
-///         _ => {}
-///     }
-/// }
-/// ```
-#[derive(Clone)]
-pub struct SerializationError {
-    data: Box<ErrorData>,
-}
-
-impl SerializationError {
-    /// This error with `message`.
-    #[track_caller]
-    #[must_use]
-    pub fn new(message: impl Into<String>) -> Self {
-        let mut data = ErrorData::new(message.into());
-        data.retry = ErrorData::default_retry(Kind::Serialization);
-        Self {
-            data: Box::new(data),
-        }
-    }
-
-    /// A builder for this error.
-    pub fn builder() -> builders::SerializationErrorBuilder {
-        builders::SerializationErrorBuilder::default()
-    }
-
-    /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
-    #[must_use]
-    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Arc::new(source));
-        self
-    }
-
-    /// This error's message, without its sources.
-    ///
-    /// For people and logs: the text can change in any release, even a patch release.
-    /// Decide from the variant and its accessors, never from the message.
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.data.message
-    }
-
-    /// Whether the same call might succeed if made again later.
-    #[must_use]
-    pub fn is_retryable(&self) -> bool {
-        self.data.retry.is_some()
-    }
-
-    /// How to back off before retrying, or `None` when the error is not retryable.
-    #[must_use]
-    pub fn retry_kind(&self) -> Option<RetryKind> {
-        self.data.retry
-    }
-}
-
-impl fmt::Debug for SerializationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.data.debug(f, "SerializationError", false)
-    }
-}
-
-impl fmt::Display for SerializationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_error(f, &self.data, "Serialization", false)
-    }
-}
-
-impl std::error::Error for SerializationError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.data.source()
-    }
-}
-
-impl From<SerializationError> for Error {
-    fn from(e: SerializationError) -> Self {
-        Self::Serialization(e)
-    }
-}
-
-/// A reader or writer you passed failed while streaming,
-/// for example a closed connection or a full disk.
-///
-/// The [`source`](std::error::Error::source) is the [`std::io::Error`].
-///
-/// # Example
-///
-/// ```
-/// use aws_crypto_mpl::error::Error;
-///
-/// fn handle(err: &Error) {
-///     if let Error::Io(_) = err {
-///         // The reader or writer you passed failed; its error is the source.
-///         if let Some(io) = err.find_source::<std::io::Error>() {
-///             eprintln!("{io}");
-///         }
-///     }
-/// }
-/// ```
-#[derive(Clone)]
-pub struct IoError {
-    data: Box<ErrorData>,
-}
-
-impl IoError {
-    /// This error with `message`.
-    #[track_caller]
-    #[must_use]
-    pub fn new(message: impl Into<String>) -> Self {
-        let mut data = ErrorData::new(message.into());
-        data.retry = ErrorData::default_retry(Kind::Io);
-        Self {
-            data: Box::new(data),
-        }
-    }
-
-    /// A builder for this error.
-    pub fn builder() -> builders::IoErrorBuilder {
-        builders::IoErrorBuilder::default()
-    }
-
-    /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
-    #[must_use]
-    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.data.source = Some(Arc::new(source));
-        self
-    }
-
-    /// This error's message, without its sources.
-    ///
-    /// For people and logs: the text can change in any release, even a patch release.
-    /// Decide from the variant and its accessors, never from the message.
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.data.message
-    }
-
-    /// Whether the same call might succeed if made again later.
-    #[must_use]
-    pub fn is_retryable(&self) -> bool {
-        self.data.retry.is_some()
-    }
-
-    /// How to back off before retrying, or `None` when the error is not retryable.
-    #[must_use]
-    pub fn retry_kind(&self) -> Option<RetryKind> {
-        self.data.retry
-    }
-}
-
-impl fmt::Debug for IoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.data.debug(f, "IoError", false)
-    }
-}
-
-impl fmt::Display for IoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_error(f, &self.data, "Io", false)
-    }
-}
-
-impl std::error::Error for IoError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.data.source()
-    }
-}
-
-impl From<IoError> for Error {
-    fn from(e: IoError) -> Self {
-        Self::Io(e)
-    }
-}
-
 /// An internal invariant was violated, for example a poisoned lock.
 ///
 /// A bug in this library; report it.
@@ -3575,98 +3339,6 @@ pub mod builders {
         }
     }
 
-    /// Builds a [`SerializationError`](super::SerializationError).
-    #[derive(Debug, Default)]
-    #[must_use]
-    pub struct SerializationErrorBuilder {
-        message: String,
-        source: Option<ArcError>,
-        retry: Option<RetryKind>,
-        remote: Remote,
-    }
-
-    impl SerializationErrorBuilder {
-        /// Set the message: what went wrong, for people and logs.
-        pub fn message(mut self, message: impl Into<String>) -> Self {
-            self.message = message.into();
-            self
-        }
-
-        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
-        pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Arc::new(source));
-            self
-        }
-
-        /// Make the error retryable, with `retry` saying how to back off.
-        ///
-        /// Without it, the error is not retryable.
-        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
-            self.retry = Some(retry);
-            self
-        }
-
-        /// Build the error.
-        #[track_caller]
-        #[must_use]
-        pub fn build(self) -> super::SerializationError {
-            let mut data = ErrorData::new(self.message);
-            data.retry = self
-                .retry
-                .or_else(|| ErrorData::default_retry(Kind::Serialization));
-            data.remote = self.remote;
-            data.source = self.source;
-            super::SerializationError {
-                data: Box::new(data),
-            }
-        }
-    }
-
-    /// Builds a [`IoError`](super::IoError).
-    #[derive(Debug, Default)]
-    #[must_use]
-    pub struct IoErrorBuilder {
-        message: String,
-        source: Option<ArcError>,
-        retry: Option<RetryKind>,
-        remote: Remote,
-    }
-
-    impl IoErrorBuilder {
-        /// Set the message: what went wrong, for people and logs.
-        pub fn message(mut self, message: impl Into<String>) -> Self {
-            self.message = message.into();
-            self
-        }
-
-        /// Set the error that caused this one, which [`source`](std::error::Error::source) returns.
-        pub fn source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-            self.source = Some(Arc::new(source));
-            self
-        }
-
-        /// Make the error retryable, with `retry` saying how to back off.
-        ///
-        /// Without it, the error is not retryable.
-        pub fn retry_kind(mut self, retry: RetryKind) -> Self {
-            self.retry = Some(retry);
-            self
-        }
-
-        /// Build the error.
-        #[track_caller]
-        #[must_use]
-        pub fn build(self) -> super::IoError {
-            let mut data = ErrorData::new(self.message);
-            data.retry = self.retry.or_else(|| ErrorData::default_retry(Kind::Io));
-            data.remote = self.remote;
-            data.source = self.source;
-            super::IoError {
-                data: Box::new(data),
-            }
-        }
-    }
-
     /// Builds a [`InternalError`](super::InternalError).
     #[derive(Debug, Default)]
     #[must_use]
@@ -3730,8 +3402,6 @@ const _: () = {
     assert_send_sync::<ConflictError>();
     assert_send_sync::<ServiceError>();
     assert_send_sync::<DispatchError>();
-    assert_send_sync::<SerializationError>();
-    assert_send_sync::<IoError>();
     assert_send_sync::<InternalError>();
 };
 
@@ -4402,96 +4072,6 @@ mod tests {
         assert!(format!("{e:?}").contains("Dispatch"));
 
         let plain = DispatchError::new("plain").with_source(cause());
-        assert_eq!(plain.message(), "plain");
-        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
-        assert!(std::error::Error::source(&plain).is_some());
-        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
-    }
-
-    #[test]
-    fn is_serialization_builder_and_accessors() {
-        let s = SerializationError::builder()
-            .retry_kind(RetryKind::Server)
-            .source(cause())
-            .message("what went wrong")
-            .build();
-        assert_eq!(s.message(), "what went wrong");
-        assert!(s.is_retryable());
-        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert!(std::error::Error::source(&s).is_some());
-        assert_eq!(s.to_string(), "Serialization: what went wrong");
-        assert!(format!("{s:?}").contains("what went wrong"));
-
-        let e = Error::from(s);
-        assert!(e.is_serialization());
-        assert_eq!(e.name(), "Serialization");
-        assert_eq!(e.message(), "what went wrong");
-        assert!(e.is_retryable());
-        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), None);
-        assert_eq!(e.resource(), None);
-        assert_eq!(e.code(), None);
-        assert_eq!(e.request_id(), None);
-        assert_eq!(
-            ProvideErrorKind::retryable_error_kind(&e),
-            Some(ErrorKind::ServerError)
-        );
-        assert_eq!(ProvideErrorKind::code(&e), e.code());
-        assert_eq!(RequestId::request_id(&e), e.request_id());
-        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
-        assert!(e.collected().is_empty());
-        let _ = e.backtrace();
-        assert!(e.find_source::<std::io::Error>().is_some());
-        assert_eq!(e.to_string(), "Serialization: what went wrong");
-        assert!(format!("{e:#}").ends_with(": the cause"));
-        assert!(format!("{e:?}").contains("Serialization"));
-
-        let plain = SerializationError::new("plain").with_source(cause());
-        assert_eq!(plain.message(), "plain");
-        assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
-        assert!(std::error::Error::source(&plain).is_some());
-        assert!(Error::from(plain).find_source::<std::io::Error>().is_some());
-    }
-
-    #[test]
-    fn is_io_builder_and_accessors() {
-        let s = IoError::builder()
-            .retry_kind(RetryKind::Server)
-            .source(cause())
-            .message("what went wrong")
-            .build();
-        assert_eq!(s.message(), "what went wrong");
-        assert!(s.is_retryable());
-        assert_eq!(s.retry_kind(), Some(RetryKind::Server));
-        assert!(std::error::Error::source(&s).is_some());
-        assert_eq!(s.to_string(), "Io: what went wrong");
-        assert!(format!("{s:?}").contains("what went wrong"));
-
-        let e = Error::from(s);
-        assert!(e.is_io());
-        assert_eq!(e.name(), "Io");
-        assert_eq!(e.message(), "what went wrong");
-        assert!(e.is_retryable());
-        assert_eq!(e.retry_kind(), Some(RetryKind::Server));
-        assert_eq!(e.service(), None);
-        assert_eq!(e.resource(), None);
-        assert_eq!(e.code(), None);
-        assert_eq!(e.request_id(), None);
-        assert_eq!(
-            ProvideErrorKind::retryable_error_kind(&e),
-            Some(ErrorKind::ServerError)
-        );
-        assert_eq!(ProvideErrorKind::code(&e), e.code());
-        assert_eq!(RequestId::request_id(&e), e.request_id());
-        assert_eq!(ProvideErrorMetadata::meta(&e).code(), None);
-        assert!(e.collected().is_empty());
-        let _ = e.backtrace();
-        assert!(e.find_source::<std::io::Error>().is_some());
-        assert_eq!(e.to_string(), "Io: what went wrong");
-        assert!(format!("{e:#}").ends_with(": the cause"));
-        assert!(format!("{e:?}").contains("Io"));
-
-        let plain = IoError::new("plain").with_source(cause());
         assert_eq!(plain.message(), "plain");
         assert_eq!(plain.is_retryable(), plain.retry_kind().is_some());
         assert!(std::error::Error::source(&plain).is_some());

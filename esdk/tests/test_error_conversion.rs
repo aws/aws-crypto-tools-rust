@@ -27,7 +27,7 @@ fn every_mpl_variant() -> Vec<mpl::Error> {
 fn every_mpl_variant_keeps_its_name() {
     for inner in every_mpl_variant() {
         let name = inner.name();
-        let outer = inner;
+        let outer = Error::from(inner);
         let same = matches!(
             (&outer, name),
             (Error::Validation(_), "Validation")
@@ -61,7 +61,7 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
         .resource(Resource::BranchKey(BranchKey::new("my-branch-key")))
         .service(Service::DynamoDb)
         .build();
-    let Error::Conflict(e) = mpl::Error::from(inner) else {
+    let Error::Conflict(e) = Error::from(mpl::Error::from(inner)) else {
         panic!("expected Conflict");
     };
     assert_eq!(e.service(), Some(&Service::DynamoDb));
@@ -74,11 +74,11 @@ fn the_conversion_keeps_retry_kind_details_and_reason() {
     assert_eq!(e.reason(), Some(&ConflictReason::ConcurrentModification));
     assert!(!e.is_retryable());
 
-    let throttled = mpl::Error::from(
+    let throttled = Error::from(mpl::Error::from(
         mpl::ThrottlingError::builder()
             .resource(Resource::Cache(Cache::new()))
             .build(),
-    );
+    ));
     assert_eq!(throttled.retry_kind(), Some(RetryKind::Throttling));
     assert_eq!(throttled.service(), None);
     assert_eq!(throttled.resource(), Some(&Resource::Cache(Cache::new())));

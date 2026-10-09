@@ -679,10 +679,8 @@ async fn failures_lists_every_attempt_behind_a_keyring_error() {
 
     assert!(err.is_cryptographic(), "{err:?}");
     assert!(err.collected().is_empty());
-    let keyring_err = std::error::Error::source(&err)
-        .and_then(|s| s.downcast_ref::<aws_esdk::Error>())
-        .unwrap();
-    assert_eq!(keyring_err.collected().len(), 2);
+    let mpl = err.find_source::<aws_crypto_mpl::Error>().unwrap();
+    assert_eq!(mpl.collected().len(), 2);
 
     let failures = err.failures();
     assert_eq!(failures.len(), 2);
@@ -695,7 +693,7 @@ async fn failures_lists_every_attempt_behind_a_keyring_error() {
         "{:?}",
         failures[1]
     );
-    assert_eq!(failures[1].message(), keyring_err.collected()[1].message());
+    assert_eq!(failures[1].message(), mpl.collected()[1].message());
 }
 
 #[tokio::test]

@@ -109,7 +109,7 @@ pub(crate) async fn get_decryption_materials(
     }
     let request = request
         .build()
-        .map_err(|e| Error::wrap("decrypt could not get decryption materials", e))?;
+        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# This operation MUST obtain this set of [decryption materials](../framework/structures.md#decryption-materials),
@@ -123,7 +123,7 @@ pub(crate) async fn get_decryption_materials(
     let materials = cmm
         .decrypt_materials(request)
         .await
-        .map_err(|e| Error::wrap("decrypt could not get decryption materials", e))?
+        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?
         .into_decryption_materials();
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
@@ -209,12 +209,12 @@ pub(crate) async fn get_encryption_materials(
     }
     let request = request
         .build()
-        .map_err(|e| Error::wrap("encrypt could not get encryption materials", e))?;
+        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?;
 
     let materials = cmm
         .get_encryption_materials(request)
         .await
-        .map_err(|e| Error::wrap("encrypt could not get encryption materials", e))?
+        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?
         .into_encryption_materials();
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials

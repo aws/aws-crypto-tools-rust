@@ -478,6 +478,8 @@ fn origin_backtrace(e: &aws_esdk::Error) -> &std::backtrace::Backtrace {
     while let Some(err) = link {
         if let Some(inner) = err.downcast_ref::<aws_esdk::Error>() {
             found = inner.backtrace();
+        } else if let Some(inner) = err.downcast_ref::<aws_crypto_mpl::Error>() {
+            found = inner.backtrace();
         } else if let Some(inner) = err.downcast_ref::<aws_mpl_primitives::Error>() {
             found = inner.backtrace();
         }

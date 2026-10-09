@@ -17,6 +17,7 @@
 
 use std::time::Duration;
 
+use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, aws_config,
@@ -36,12 +37,12 @@ impl BranchKeySupplier for TenantBranchKeySupplier {
     async fn get_branch_key_id(
         &self,
         input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, Error> {
+    ) -> Result<GetBranchKeyIdOutput, MplError> {
         let branch_key_id = match input.encryption_context().get("tenant") {
             Some("TenantA") => &self.tenant_a,
             Some("TenantB") => &self.tenant_b,
             _ => {
-                return Err(Error::validation(
+                return Err(MplError::validation(
                     "the encryption context has no known tenant",
                 ));
             }
@@ -60,7 +61,7 @@ fn tenant_context(tenant: &str) -> EncryptionContext {
 fn fixed_keyring(
     key_store: &KeyStoreClient,
     branch_key_id: &str,
-) -> Result<HierarchicalKeyring, Error> {
+) -> Result<HierarchicalKeyring, MplError> {
     HierarchicalKeyring::builder()
         .key_store(key_store.clone())
         .ttl(Duration::from_secs(600))

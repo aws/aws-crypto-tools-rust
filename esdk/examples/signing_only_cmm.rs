@@ -14,7 +14,7 @@ use aws_crypto_mpl::cmm::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_crypto_mpl::{AesGcm, Cmm, DefaultCmm, Keyring, RawAesKeyring};
+use aws_crypto_mpl::{AesGcm, Cmm, DefaultCmm, Error as MplError, Keyring, RawAesKeyring};
 use aws_esdk::error::Error;
 use aws_esdk::{AlgorithmSuiteId, DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
@@ -37,13 +37,13 @@ impl Cmm for SigningSuiteOnlyCmm {
     async fn get_encryption_materials(
         &self,
         input: GetEncryptionMaterialsInput,
-    ) -> Result<GetEncryptionMaterialsOutput, Error> {
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         // The caller may leave the suite unset and let the default CMM choose,
         // so check the suite on the materials it returns.
         let output = self.inner.get_encryption_materials(input).await?;
         let suite = output.encryption_materials().algorithm_suite();
         if suite.asymmetric_signature_algorithm().is_none() {
-            return Err(Error::validation("algorithm suite must use signing"));
+            return Err(MplError::validation("algorithm suite must use signing"));
         }
         Ok(output)
     }
@@ -51,9 +51,9 @@ impl Cmm for SigningSuiteOnlyCmm {
     async fn decrypt_materials(
         &self,
         input: DecryptMaterialsInput,
-    ) -> Result<DecryptMaterialsOutput, Error> {
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         if !input.algorithm_suite_id().has_asymmetric_signing() {
-            return Err(Error::validation("algorithm suite must use signing"));
+            return Err(MplError::validation("algorithm suite must use signing"));
         }
         self.inner.decrypt_materials(input).await
     }
