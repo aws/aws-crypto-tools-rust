@@ -80,8 +80,9 @@ const LOGICAL_KEY_STORE_NAME: &str = "KeyStoreDdbTable";
 /// decision is made.
 struct FixedBranchKeySupplier(&'static str);
 
+#[async_trait]
 impl BranchKeySupplier for FixedBranchKeySupplier {
-    fn get_branch_key_id(
+    async fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
     ) -> Result<GetBranchKeyIdOutput, Error> {

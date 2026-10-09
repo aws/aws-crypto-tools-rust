@@ -30,8 +30,9 @@ fn cache() -> LocalCmc {
 
 struct Supplier;
 
+#[async_trait::async_trait]
 impl BranchKeySupplier for Supplier {
-    fn get_branch_key_id(
+    async fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
     ) -> Result<GetBranchKeyIdOutput, Error> {

@@ -154,15 +154,14 @@ impl GetBranchKeyIdOutputBuilder {
 /// Implementations are typically used by callers running multi-tenant workloads
 /// who want to pick the branch key based on encryption-context metadata.
 ///
-/// The decision is made from the encryption context alone, so this method is
-/// synchronous. An implementation that must perform IO to reach its answer is
-/// responsible for bridging to it itself (for example
-/// `tokio::task::block_in_place`).
-///
 /// To hold a supplier whose concrete type is chosen at runtime, use [`SharedBranchKeySupplier`].
+#[async_trait::async_trait]
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
-    fn get_branch_key_id(&self, input: GetBranchKeyIdInput) -> Result<GetBranchKeyIdOutput, Error>;
+    async fn get_branch_key_id(
+        &self,
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -174,9 +173,13 @@ crate::shared::shared_handle!(
     BranchKeySupplier
 );
 
+#[async_trait::async_trait]
 impl BranchKeySupplier for SharedBranchKeySupplier {
-    fn get_branch_key_id(&self, input: GetBranchKeyIdInput) -> Result<GetBranchKeyIdOutput, Error> {
-        self.0.get_branch_key_id(input)
+    async fn get_branch_key_id(
+        &self,
+        input: GetBranchKeyIdInput,
+    ) -> Result<GetBranchKeyIdOutput, Error> {
+        self.0.get_branch_key_id(input).await
     }
 }
 
@@ -468,7 +471,9 @@ impl Keyring for HierarchicalKeyring {
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
         let materials = input.materials;
-        let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
+        let branch_key_id = self
+            .resolve_branch_key_id(materials.encryption_context())
+            .await?;
 
         let (plaintext_dk, generated) = match materials.plaintext_data_key() {
             Some(pdk) => (pdk.clone(), false),
@@ -556,7 +561,9 @@ impl Keyring for HierarchicalKeyring {
             ));
         }
 
-        let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
+        let branch_key_id = self
+            .resolve_branch_key_id(materials.encryption_context())
+            .await?;
 
         let mut collected_errors: Vec<Error> = Vec::new();
         for edk in &encrypted_data_keys {
@@ -639,7 +646,7 @@ impl HierarchicalKeyring {
     /// Resolve the branch-key id for this operation: either the
     /// configured static value or the supplier callback's output bound
     /// to the current encryption context.
-    fn resolve_branch_key_id(
+    async fn resolve_branch_key_id(
         &self,
         encryption_context: &EncryptionContext,
     ) -> Result<String, Error> {
@@ -661,7 +668,10 @@ impl HierarchicalKeyring {
         let input = GetBranchKeyIdInput::builder()
             .encryption_context(encryption_context.clone())
             .build()?;
-        Ok(supplier.get_branch_key_id(input)?.into_branch_key_id())
+        Ok(supplier
+            .get_branch_key_id(input)
+            .await?
+            .into_branch_key_id())
     }
 
     /// Run the OnDecrypt steps for one EDK that passed filtering:
