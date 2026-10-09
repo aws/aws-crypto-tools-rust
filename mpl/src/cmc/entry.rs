@@ -4,6 +4,7 @@
 //! Cache entry, usage metadata, and the cached-materials enum for the
 //! cryptographic materials cache.
 
+use std::sync::{Mutex, PoisonError};
 use std::time::SystemTime;
 
 use crate::Error;
@@ -173,7 +174,7 @@ pub struct CacheEntry {
     materials: CachedMaterials,
     creation_time: SystemTime,
     expiry_time: SystemTime,
-    usage_metadata: UsageMetadata,
+    usage_metadata: Mutex<UsageMetadata>,
 }
 
 impl CacheEntry {
@@ -204,8 +205,38 @@ impl CacheEntry {
 
     /// Usage counters tracked alongside the cached materials.
     #[must_use]
-    pub const fn usage_metadata(&self) -> UsageMetadata {
-        self.usage_metadata
+    pub fn usage_metadata(&self) -> UsageMetadata {
+        *self
+            .usage_metadata
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Count one more message of `bytes` plaintext bytes against this entry.
+    ///
+    /// Returns `false`, leaving the counters unchanged, if either counter would overflow.
+    /// A [`Cmc`](super::Cmc) calls this from
+    /// [`update_usage_metadata`](super::Cmc::update_usage_metadata)
+    /// and deletes the entry when it returns `false`.
+    //= spec/framework/cryptographic-materials-cache.md#usage-metadata
+    //= type=implication
+    //= reason=both counters change under one lock
+    //# Updating usage metadata SHOULD be atomic.
+    #[must_use]
+    pub fn record_use(&self, bytes: u64) -> bool {
+        let mut usage = self
+            .usage_metadata
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let (Some(messages), Some(total_bytes)) = (
+            usage.messages_used.get().checked_add(1),
+            usage.bytes_used.get().checked_add(bytes),
+        ) else {
+            return false;
+        };
+        usage.messages_used = MessageUsage(messages);
+        usage.bytes_used = BytesUsage(total_bytes);
+        true
     }
 }
 
@@ -287,7 +318,7 @@ impl CacheEntryBuilder {
             materials: required(self.materials, "materials")?,
             creation_time: required(self.creation_time, "creation_time")?,
             expiry_time: required(self.expiry_time, "expiry_time")?,
-            usage_metadata: self.usage_metadata.unwrap_or_default(),
+            usage_metadata: Mutex::new(self.usage_metadata.unwrap_or_default()),
         })
     }
 }

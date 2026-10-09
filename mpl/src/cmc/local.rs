@@ -18,7 +18,8 @@ use lru::LruCache;
 
 use super::{
     CacheEntry, Cmc, DeleteCacheEntryInput, DeleteCacheEntryOutput, GetCacheEntryInput,
-    GetCacheEntryOutput, PutCacheEntryInput, PutCacheEntryOutput,
+    GetCacheEntryOutput, PutCacheEntryInput, PutCacheEntryOutput, UpdateUsageMetadataInput,
+    UpdateUsageMetadataOutput,
 };
 
 /// Internal storage type — the `lru` crate's `LruCache` keyed by cache id
@@ -313,5 +314,23 @@ impl Cmc for LocalCmc {
             cache.pop(input.identifier());
         }
         Ok(DeleteCacheEntryOutput::default())
+    }
+
+    async fn update_usage_metadata(
+        &self,
+        input: UpdateUsageMetadataInput,
+    ) -> Result<UpdateUsageMetadataOutput, Error> {
+        let mut inner = self
+            .inner
+            .store
+            .lock()
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
+        if let Some(cache) = inner.as_mut()
+            && let Some(entry) = cache.peek(input.identifier())
+            && !entry.record_use(input.bytes_used())
+        {
+            cache.pop(input.identifier());
+        }
+        Ok(UpdateUsageMetadataOutput::default())
     }
 }

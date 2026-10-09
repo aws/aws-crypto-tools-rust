@@ -43,6 +43,7 @@ use super::local::{CACHE_PRUNING_TAIL_SIZE, Clock};
 use super::{
     CacheEntry, Cmc, DeleteCacheEntryInput, DeleteCacheEntryOutput, GetCacheEntryInput,
     GetCacheEntryOutput, LocalCmc, PutCacheEntryInput, PutCacheEntryOutput,
+    UpdateUsageMetadataInput, UpdateUsageMetadataOutput,
 };
 
 /// Per-key inflight tracking state, held under a `Mutex`.
@@ -701,6 +702,13 @@ impl Cmc for StormTrackingCmc {
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error> {
         self.inner.local.delete_cache_entry(input).await
+    }
+
+    async fn update_usage_metadata(
+        &self,
+        input: UpdateUsageMetadataInput,
+    ) -> Result<UpdateUsageMetadataOutput, Error> {
+        self.inner.local.update_usage_metadata(input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {

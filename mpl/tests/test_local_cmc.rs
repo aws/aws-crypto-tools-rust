@@ -35,7 +35,7 @@ use aws_crypto_mpl::Error;
 
 use aws_crypto_mpl::cmc::{
     BytesUsage, CacheEntry, CachedMaterials, Cmc, DeleteCacheEntryInput, GetCacheEntryInput,
-    LocalCmc, MessageUsage, PutCacheEntryInput, UsageMetadata,
+    LocalCmc, MessageUsage, PutCacheEntryInput, UpdateUsageMetadataInput, UsageMetadata,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
@@ -61,6 +61,14 @@ trait CmcExt: Cmc {
     async fn delete_entry(&self, id: &[u8]) -> Result<(), Error> {
         let input = DeleteCacheEntryInput::builder().identifier(id).build()?;
         self.delete_cache_entry(input).await.map(|_| ())
+    }
+
+    async fn record_use(&self, id: &[u8], bytes: u64) -> Result<(), Error> {
+        let input = UpdateUsageMetadataInput::builder()
+            .identifier(id)
+            .bytes_used(bytes)
+            .build()?;
+        self.update_usage_metadata(input).await.map(|_| ())
     }
 }
 
@@ -660,6 +668,79 @@ async fn test_concurrent_put_atomic_visibility() {
         "concurrent puts MUST yield one of the two supplied UsageMetadata values, observed {:?}",
         got.usage_metadata()
     );
+}
+
+// Update usage metadata
+
+fn usage(messages: u64, bytes: u64) -> UsageMetadata {
+    UsageMetadata::builder()
+        .messages_used(MessageUsage::new(messages))
+        .bytes_used(BytesUsage::new(bytes))
+        .build()
+        .expect("usage metadata builds")
+}
+
+fn frozen_cmc(now: SystemTime) -> LocalCmc {
+    LocalCmc::builder()
+        .entry_capacity(4)
+        .clock(move || now)
+        .build()
+        .expect("LocalCmc constructs")
+}
+
+#[tokio::test]
+async fn test_update_usage_metadata_counts_one_message_and_its_bytes() {
+    let now = anchor_now();
+    let cmc = frozen_cmc(now);
+    cmc.put_entry(
+        b"id",
+        make_entry_with_usage(now, now + STANDARD_TTL, usage(2, 20)),
+    )
+    .await
+    .expect("put succeeds");
+
+    cmc.record_use(b"id", 5).await.expect("update succeeds");
+
+    let got = cmc.get_entry(b"id").await.expect("get succeeds");
+    assert_eq!(
+        got.expect("entry is present").usage_metadata(),
+        usage(3, 25)
+    );
+}
+
+#[tokio::test]
+async fn test_update_usage_metadata_without_entry_is_a_no_op() {
+    let cmc = frozen_cmc(anchor_now());
+    cmc.record_use(b"missing", 5)
+        .await
+        .expect("update succeeds");
+    assert!(
+        cmc.get_entry(b"missing")
+            .await
+            .expect("get succeeds")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn test_update_usage_metadata_deletes_entry_on_overflow() {
+    let now = anchor_now();
+    for (label, start, bytes) in [
+        ("message count", usage(u64::MAX, 0), 1),
+        ("byte count", usage(0, u64::MAX), 1),
+    ] {
+        let cmc = frozen_cmc(now);
+        cmc.put_entry(b"id", make_entry_with_usage(now, now + STANDARD_TTL, start))
+            .await
+            .expect("put succeeds");
+
+        cmc.record_use(b"id", bytes).await.expect("update succeeds");
+
+        assert!(
+            cmc.get_entry(b"id").await.expect("get succeeds").is_none(),
+            "{label}: an entry whose usage would overflow is deleted"
+        );
+    }
 }
 
 // Delete

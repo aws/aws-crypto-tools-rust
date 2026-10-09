@@ -9,7 +9,8 @@ use async_trait::async_trait;
 
 use super::{
     Cmc, DeleteCacheEntryInput, DeleteCacheEntryOutput, GetCacheEntryInput, GetCacheEntryOutput,
-    PutCacheEntryInput, PutCacheEntryOutput, StormTrackingCmc,
+    PutCacheEntryInput, PutCacheEntryOutput, StormTrackingCmc, UpdateUsageMetadataInput,
+    UpdateUsageMetadataOutput,
 };
 use crate::Error;
 use crate::error::Kind;
@@ -102,6 +103,13 @@ impl Cmc for DefaultCmc {
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error> {
         self.inner.delete_cache_entry(input).await
+    }
+
+    async fn update_usage_metadata(
+        &self,
+        input: UpdateUsageMetadataInput,
+    ) -> Result<UpdateUsageMetadataOutput, Error> {
+        self.inner.update_usage_metadata(input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {

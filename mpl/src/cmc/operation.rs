@@ -333,3 +333,109 @@ impl DeleteCacheEntryOutputBuilder {
         Ok(DeleteCacheEntryOutput {})
     }
 }
+
+/// Input for [`Cmc::update_usage_metadata`](super::Cmc::update_usage_metadata).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct UpdateUsageMetadataInput {
+    identifier: Vec<u8>,
+    bytes_used: u64,
+}
+
+impl UpdateUsageMetadataInput {
+    /// Start a builder for `UpdateUsageMetadataInput`.
+    #[must_use]
+    pub fn builder() -> UpdateUsageMetadataInputBuilder {
+        UpdateUsageMetadataInputBuilder::default()
+    }
+
+    /// The cache identifier of the entry to update.
+    #[must_use]
+    pub fn identifier(&self) -> &[u8] {
+        &self.identifier
+    }
+
+    /// The plaintext bytes of the one message being counted against the entry.
+    #[must_use]
+    pub const fn bytes_used(&self) -> u64 {
+        self.bytes_used
+    }
+}
+
+/// Builder for [`UpdateUsageMetadataInput`], returned by [`UpdateUsageMetadataInput::builder`].
+#[derive(Debug, Clone, Default)]
+pub struct UpdateUsageMetadataInputBuilder {
+    identifier: Option<Vec<u8>>,
+    bytes_used: Option<u64>,
+}
+
+impl UpdateUsageMetadataInputBuilder {
+    /// Set the cache identifier. Required.
+    #[must_use]
+    pub fn identifier(mut self, identifier: impl Into<Vec<u8>>) -> Self {
+        self.identifier = Some(identifier.into());
+        self
+    }
+
+    /// Set or clear the cache identifier, for forwarding an existing `Option`.
+    #[must_use]
+    pub fn set_identifier(mut self, identifier: Option<Vec<u8>>) -> Self {
+        self.identifier = identifier;
+        self
+    }
+
+    /// Set the plaintext bytes of the message. Required.
+    #[must_use]
+    pub const fn bytes_used(mut self, bytes_used: u64) -> Self {
+        self.bytes_used = Some(bytes_used);
+        self
+    }
+
+    /// Set or clear the plaintext bytes, for forwarding an existing `Option`.
+    #[must_use]
+    pub const fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
+        self.bytes_used = bytes_used;
+        self
+    }
+
+    /// Construct the input.
+    ///
+    /// # Errors
+    ///
+    /// Returns a validation error ([`Error::is_validation`])
+    /// if `identifier` or `bytes_used` is unset.
+    pub fn build(self) -> Result<UpdateUsageMetadataInput, Error> {
+        Ok(UpdateUsageMetadataInput {
+            identifier: required(self.identifier, "identifier")?,
+            bytes_used: required(self.bytes_used, "bytes_used")?,
+        })
+    }
+}
+
+/// Output of [`Cmc::update_usage_metadata`](super::Cmc::update_usage_metadata).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct UpdateUsageMetadataOutput {}
+
+impl UpdateUsageMetadataOutput {
+    /// Start a builder for `UpdateUsageMetadataOutput`.
+    #[must_use]
+    pub fn builder() -> UpdateUsageMetadataOutputBuilder {
+        UpdateUsageMetadataOutputBuilder::default()
+    }
+}
+
+/// Builder for [`UpdateUsageMetadataOutput`], returned by [`UpdateUsageMetadataOutput::builder`].
+#[derive(Debug, Clone, Default)]
+pub struct UpdateUsageMetadataOutputBuilder {}
+
+impl UpdateUsageMetadataOutputBuilder {
+    /// Construct the output.
+    ///
+    /// # Errors
+    ///
+    /// Never returns an error.
+    pub const fn build(self) -> Result<UpdateUsageMetadataOutput, Error> {
+        Ok(UpdateUsageMetadataOutput {})
+    }
+}

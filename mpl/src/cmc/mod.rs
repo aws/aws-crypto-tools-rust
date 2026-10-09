@@ -27,7 +27,8 @@ pub use operation::{
     DeleteCacheEntryInput, DeleteCacheEntryInputBuilder, DeleteCacheEntryOutput,
     DeleteCacheEntryOutputBuilder, GetCacheEntryInput, GetCacheEntryInputBuilder,
     GetCacheEntryOutput, GetCacheEntryOutputBuilder, PutCacheEntryInput, PutCacheEntryInputBuilder,
-    PutCacheEntryOutput, PutCacheEntryOutputBuilder,
+    PutCacheEntryOutput, PutCacheEntryOutputBuilder, UpdateUsageMetadataInput,
+    UpdateUsageMetadataInputBuilder, UpdateUsageMetadataOutput, UpdateUsageMetadataOutputBuilder,
 };
 pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};
 
@@ -64,6 +65,15 @@ pub trait Cmc: Send + Sync {
         &self,
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error>;
+
+    /// Count one more message of `bytes_used` plaintext bytes against the entry for the identifier.
+    /// Does nothing if there is no entry.
+    /// Deletes the entry if either counter would overflow.
+    /// A caching CMM calls this each time it reuses cached encryption materials.
+    async fn update_usage_metadata(
+        &self,
+        input: UpdateUsageMetadataInput,
+    ) -> Result<UpdateUsageMetadataOutput, Error>;
 
     /// How long before an entry expires the cache sends one caller to refresh it.
     /// Return `None`, the default, if the cache does not refresh early.
@@ -108,6 +118,13 @@ impl Cmc for SharedCmc {
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error> {
         self.0.delete_cache_entry(input).await
+    }
+
+    async fn update_usage_metadata(
+        &self,
+        input: UpdateUsageMetadataInput,
+    ) -> Result<UpdateUsageMetadataOutput, Error> {
+        self.0.update_usage_metadata(input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {
