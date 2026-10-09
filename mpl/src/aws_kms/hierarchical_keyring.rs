@@ -149,6 +149,20 @@ impl GetBranchKeyIdOutputBuilder {
     }
 }
 
+impl From<String> for GetBranchKeyIdOutput {
+    fn from(branch_key_id: String) -> Self {
+        Self { branch_key_id }
+    }
+}
+
+impl From<&str> for GetBranchKeyIdOutput {
+    fn from(branch_key_id: &str) -> Self {
+        Self {
+            branch_key_id: branch_key_id.to_owned(),
+        }
+    }
+}
+
 /// User-supplied callback that maps an encryption context to a branch key id.
 ///
 /// Implementations are typically used by callers running multi-tenant workloads

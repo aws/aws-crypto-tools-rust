@@ -163,6 +163,12 @@ impl OnDecryptInput {
     pub fn into_materials(self) -> DecryptionMaterials {
         self.materials
     }
+
+    /// The materials and the encrypted data keys, consuming the input.
+    #[must_use]
+    pub fn into_parts(self) -> (DecryptionMaterials, Vec<EncryptedDataKey>) {
+        (self.materials, self.encrypted_data_keys)
+    }
 }
 
 /// Builder for [`OnDecryptInput`].
@@ -283,5 +289,17 @@ impl OnDecryptOutputBuilder {
         Ok(OnDecryptOutput {
             materials: required(self.materials, "materials")?,
         })
+    }
+}
+
+impl From<EncryptionMaterials> for OnEncryptOutput {
+    fn from(materials: EncryptionMaterials) -> Self {
+        Self { materials }
+    }
+}
+
+impl From<DecryptionMaterials> for OnDecryptOutput {
+    fn from(materials: DecryptionMaterials) -> Self {
+        Self { materials }
     }
 }

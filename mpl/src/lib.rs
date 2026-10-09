@@ -20,7 +20,8 @@ pub use aws_mpl_primitives::AesGcm;
 
 pub use aws_config;
 pub use aws_kms::hierarchical_keyring::{
-    BranchKeySupplier, HierarchicalKeyring, HierarchicalKeyringBuilder, SharedBranchKeySupplier,
+    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
+    HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
 
 // Both SDK clients appear in `BranchKeyStoreBuilder`'s public signature,

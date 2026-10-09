@@ -169,9 +169,15 @@ pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind}
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
     ///
+    /// The variant, retry kind, error code, and request ID come from the SDK error,
+    /// the same way this library's own keyrings and key store classify theirs.
     /// The message is "`operation` failed", and the source is the SDK error.
+    ///
+    /// A custom keyring or CMM that calls an AWS service returns this,
+    /// so callers can match its failures by variant and [`service`](Self::service)
+    /// instead of by message.
     #[track_caller]
-    pub(crate) fn from_sdk<E>(
+    pub fn from_sdk<E>(
         service: Service,
         operation: &str,
         resource: Option<Resource>,

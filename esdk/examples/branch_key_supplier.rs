@@ -18,10 +18,10 @@
 use std::time::Duration;
 
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{
-    BranchKeySupplier, HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
+    BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, aws_config,
+    aws_sdk_dynamodb, aws_sdk_kms,
 };
 use aws_esdk::error::Error;
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
@@ -47,9 +47,7 @@ impl BranchKeySupplier for TenantBranchKeySupplier {
                 ));
             }
         };
-        GetBranchKeyIdOutput::builder()
-            .branch_key_id(branch_key_id)
-            .build()
+        Ok(branch_key_id.as_str().into())
     }
 }
 

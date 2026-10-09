@@ -74,12 +74,11 @@ impl Keyring for LocalKekKeyring {
                 materials.add_data_key(PlaintextDataKey::new(data_key), edk)
             }
         }?;
-        OnEncryptOutput::builder().materials(materials).build()
+        Ok(materials.into())
     }
 
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, MplError> {
-        let encrypted_data_keys = input.encrypted_data_keys().to_vec();
-        let materials = input.into_materials();
+        let (materials, encrypted_data_keys) = input.into_parts();
         if materials.plaintext_data_key().is_some() {
             return Err(MplError::invalid_materials(
                 "on_decrypt requires materials without a plaintext data key",
@@ -112,8 +111,9 @@ impl Keyring for LocalKekKeyring {
                 &mut data_key,
             )
             .map_err(|e| MplError::cryptographic("failed to unwrap data key").with_source(e))?;
-            let materials = materials.add_data_key(PlaintextDataKey::new(data_key))?;
-            return OnDecryptOutput::builder().materials(materials).build();
+            return Ok(materials
+                .add_data_key(PlaintextDataKey::new(data_key))?
+                .into());
         }
 
         Err(MplError::no_matching_data_key(
