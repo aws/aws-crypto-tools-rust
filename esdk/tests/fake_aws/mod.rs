@@ -135,7 +135,6 @@ impl FakeAws {
             .build()
             .await
             .expect("the key store configuration is valid")
-            .into()
     }
 
     /// A hierarchical keyring for [`BRANCH_KEY_ID`] with its own empty cache.

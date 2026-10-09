@@ -96,7 +96,6 @@ async fn build_store(
         .build()
         .await
         .expect("construction with valid config must succeed")
-        .into()
 }
 
 // ─── TestGetActiveKey ───────────────────────────────────────────────────────
@@ -463,7 +462,6 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
         .build()
         .await
         .expect("construction does not touch DynamoDB, so it must succeed");
-    let store = KeyStoreClient::new(store);
 
     let err = match store
         .get_active_branch_key()
