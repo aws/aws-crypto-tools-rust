@@ -18,6 +18,18 @@ pub enum KmsConfiguration {
     MrDiscovery(MrDiscovery),
 }
 
+impl KmsConfiguration {
+    /// [`KmsKeyArn`](Self::KmsKeyArn) for `arn`.
+    pub fn kms_key_arn(arn: impl Into<String>) -> Self {
+        Self::KmsKeyArn(arn.into())
+    }
+
+    /// [`KmsMrKeyArn`](Self::KmsMrKeyArn) for `arn`.
+    pub fn kms_mr_key_arn(arn: impl Into<String>) -> Self {
+        Self::KmsMrKeyArn(arn.into())
+    }
+}
+
 /// Settings for [`KmsConfiguration::Discovery`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]

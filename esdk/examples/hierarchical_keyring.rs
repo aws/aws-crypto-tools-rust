@@ -24,9 +24,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let key_store = BranchKeyStore::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
-                .to_string(),
+        .kms_configuration(KmsConfiguration::kms_key_arn(
+            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",
         ))
         .kms_client(kms_client)
         .ddb_client(ddb_client)
