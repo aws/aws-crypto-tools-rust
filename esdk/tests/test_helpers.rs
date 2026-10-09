@@ -1523,6 +1523,18 @@ impl CallStyle {
     pub const ALL: [Self; 2] = [Self::Free, Self::Client];
 }
 
+/// An `Esdk` client configured with `commitment_policy` and `max_encrypted_data_keys`,
+/// so the `Client` style runs an input's settings through the client.
+fn client_for(
+    commitment_policy: CommitmentPolicy,
+    max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
+) -> Esdk {
+    let mut config = EsdkConfig::default();
+    config.commitment_policy = commitment_policy;
+    config.max_encrypted_data_keys = max_encrypted_data_keys;
+    Esdk::new(config)
+}
+
 /// Run encrypt under the chosen [`CallStyle`].
 pub async fn run_encrypt(
     style: CallStyle,
@@ -1530,7 +1542,18 @@ pub async fn run_encrypt(
 ) -> Result<EncryptOutput, Error> {
     match style {
         CallStyle::Free => encrypt(input).await,
-        CallStyle::Client => Esdk::default().encrypt(input).await,
+        CallStyle::Client => {
+            client_for(input.commitment_policy(), input.max_encrypted_data_keys())
+                .encrypt()
+                .plaintext(input.plaintext())
+                .encryption_context(input.encryption_context().clone())
+                .set_algorithm_suite_id(input.algorithm_suite_id())
+                .frame_length(input.frame_length())
+                .set_keyring(input.keyring().cloned())
+                .set_cmm(input.cmm().cloned())
+                .send()
+                .await
+        }
     }
 }
 
@@ -1541,7 +1564,16 @@ pub async fn run_decrypt(
 ) -> Result<DecryptOutput, Error> {
     match style {
         CallStyle::Free => decrypt(input).await,
-        CallStyle::Client => Esdk::default().decrypt(input).await,
+        CallStyle::Client => {
+            client_for(input.commitment_policy(), input.max_encrypted_data_keys())
+                .decrypt()
+                .ciphertext(input.ciphertext())
+                .encryption_context(input.encryption_context().clone())
+                .set_keyring(input.keyring().cloned())
+                .set_cmm(input.cmm().cloned())
+                .send()
+                .await
+        }
     }
 }
 
@@ -1555,8 +1587,15 @@ pub async fn run_encrypt_stream(
     match style {
         CallStyle::Free => encrypt_stream(plaintext, ciphertext, input).await,
         CallStyle::Client => {
-            Esdk::default()
-                .encrypt_stream(plaintext, ciphertext, input)
+            client_for(input.commitment_policy(), input.max_encrypted_data_keys())
+                .encrypt_stream()
+                .encryption_context(input.encryption_context().clone())
+                .set_algorithm_suite_id(input.algorithm_suite_id())
+                .frame_length(input.frame_length())
+                .set_data_size(input.data_size())
+                .set_keyring(input.keyring().cloned())
+                .set_cmm(input.cmm().cloned())
+                .send(plaintext, ciphertext)
                 .await
         }
     }
@@ -1572,8 +1611,12 @@ pub async fn run_decrypt_stream(
     match style {
         CallStyle::Free => decrypt_stream(ciphertext, plaintext, input).await,
         CallStyle::Client => {
-            Esdk::default()
-                .decrypt_stream(ciphertext, plaintext, input)
+            client_for(input.commitment_policy(), input.max_encrypted_data_keys())
+                .decrypt_stream()
+                .encryption_context(input.encryption_context().clone())
+                .set_keyring(input.keyring().cloned())
+                .set_cmm(input.cmm().cloned())
+                .send(ciphertext, plaintext)
                 .await
         }
     }

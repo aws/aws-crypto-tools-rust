@@ -7,13 +7,13 @@
 //! Use `ForbidEncryptAllowDecrypt` only while migrating from an ESDK version 1.x that cannot read committing messages,
 //! and move to the default once every reader is upgraded.
 //!
-//! The policy is set once on an `Esdk` client, which applies it to every operation the client runs.
+//! The policy is set once on an `Esdk` client, which applies it to every operation the client starts.
 //! The free `encrypt` and `decrypt` functions take the same setting on each input instead.
 //!
 //! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{CommitmentPolicy, DecryptInput, EncryptInput, EncryptionContext, Esdk};
+use aws_esdk::{CommitmentPolicy, EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,23 +36,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
 
     let encrypted = esdk
-        .encrypt(
-            &EncryptInput::builder()
-                .plaintext(plaintext)
-                .encryption_context(encryption_context.clone())
-                .keyring(keyring.clone())
-                .build()?,
-        )
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .send()
         .await?;
 
     let decrypted = esdk
-        .decrypt(
-            &DecryptInput::builder()
-                .ciphertext(&encrypted.ciphertext)
-                .encryption_context(encryption_context)
-                .keyring(keyring)
-                .build()?,
-        )
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .send()
         .await?;
 
     assert_eq!(

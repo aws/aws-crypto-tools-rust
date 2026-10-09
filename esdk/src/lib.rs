@@ -17,9 +17,9 @@
 //!
 //! For callers who want to set the cross-call configuration once and reuse it,
 //! the [`Esdk`](crate::Esdk) client is an optional convenience layer:
-//! configure it via [`Esdk::builder`](crate::Esdk::builder) and call
+//! configure it via [`Esdk::builder`](crate::Esdk::builder), then start each operation with
 //! [`Esdk::encrypt`](crate::Esdk::encrypt) / [`Esdk::decrypt`](crate::Esdk::decrypt)
-//! (and the streaming variants) instead.
+//! (or the streaming variants) and finish it with `send`.
 //!
 //! The SDK supports both **framed** and **nonframed** message body formats,
 //! as well as **V1** and **V2** message format versions (V2 adds key commitment).

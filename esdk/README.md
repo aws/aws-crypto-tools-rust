@@ -74,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## The `Esdk` client
 
 `encrypt` / `decrypt` read the commitment policy and the encrypted data key cap from each input.
-To set them once, build an `Esdk` client and call its methods instead:
+To set them once, build an `Esdk` client.
+Each of its operations is a fluent builder that takes those two settings from the client:
 
 ```rust
 use aws_esdk::{CommitmentPolicy, Esdk};
@@ -82,11 +83,8 @@ use aws_esdk::{CommitmentPolicy, Esdk};
 let esdk = Esdk::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
     .build();
-let encrypted = esdk.encrypt(&input).await?;
+let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
 ```
-
-Set them on the client or on the input, not both.
-The client's methods return a `Validation` error when the input sets them too.
 
 ## Streaming
 

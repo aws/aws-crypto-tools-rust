@@ -3,30 +3,29 @@
 
 //! Optional [`Esdk`] client and its [`EsdkConfig`].
 //!
-//! `Esdk` is an optional convenience layer over the free
-//! [`encrypt`](crate::encrypt) / [`decrypt`](crate::decrypt) /
-//! [`encrypt_stream`](crate::encrypt_stream) /
-//! [`decrypt_stream`](crate::decrypt_stream) functions. It holds an
-//! [`EsdkConfig`] — a commitment policy and an optional cap on the number of
-//! encrypted data keys — and forwards each call to the corresponding free
-//! function with those fields filled in from the client.
+//! `Esdk` holds an [`EsdkConfig`]: a commitment policy and an optional cap on the number of
+//! encrypted data keys. Each operation starts a fluent builder that takes those two settings
+//! from the client and has no setters for them:
 //!
-//! Callers who don't want a client can keep using the free functions and set
-//! `commitment_policy` / `max_encrypted_data_keys` on the input's builder.
+//! ```ignore
+//! let esdk = Esdk::builder().commitment_policy(policy).build();
+//! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
+//! ```
 //!
-//! Per-call config on the input AND a configured `Esdk` is currently rejected:
-//! returning an error today is forward-compatible (override semantics can be
-//! defined later without breaking callers); committing to a precedence rule
-//! today is not.
+//! Callers who don't want a client use the free [`encrypt`](crate::encrypt) /
+//! [`decrypt`](crate::decrypt) / [`encrypt_stream`](crate::encrypt_stream) /
+//! [`decrypt_stream`](crate::decrypt_stream) functions, and set those settings on the input's builder.
 
 use crate::Error;
-use crate::error::val_err;
-use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use crate::types::{
-    DecryptInput, DecryptOutput, DecryptStreamInput, DecryptStreamOutput, EncryptInput,
-    EncryptOutput, EncryptStreamInput, EncryptStreamOutput,
+    AlgorithmSuiteId, DecryptInput, DecryptInputBuilder, DecryptOutput, DecryptStreamInput,
+    DecryptStreamInputBuilder, DecryptStreamOutput, EncryptInput, EncryptInputBuilder,
+    EncryptOutput, EncryptStreamInput, EncryptStreamInputBuilder, EncryptStreamOutput,
+    EncryptionContext,
 };
-use std::num::NonZeroUsize;
+use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
+use aws_crypto_mpl::{Cmm, Keyring, SharedCmm, SharedKeyring};
+use std::num::{NonZeroU32, NonZeroUsize};
 
 /// Cross-call configuration for the optional [`Esdk`] client.
 ///
@@ -64,20 +63,11 @@ impl Default for EsdkConfig {
     }
 }
 
-/// Optional client over the free encrypt/decrypt functions.
+/// Optional client that applies one [`EsdkConfig`] to every operation.
 ///
-/// Holds an [`EsdkConfig`] and forwards each operation to the corresponding
-/// free function ([`encrypt`](crate::encrypt), [`decrypt`](crate::decrypt),
-/// [`encrypt_stream`](crate::encrypt_stream), [`decrypt_stream`](crate::decrypt_stream))
-/// with `commitment_policy` and `max_encrypted_data_keys` filled in from
-/// `self.config`.
-///
-/// If the input also sets either of those fields, the call is rejected with a
-/// validation error. Override semantics may be defined in a future release;
-/// callers should set the fields in exactly one place.
-///
-/// Note: an input commitment policy set to its default value is not detected as a conflict;
-/// configure it via [`Esdk::builder`] only.
+/// Each operation method returns a fluent builder that takes `commitment_policy`
+/// and `max_encrypted_data_keys` from the client; set the rest on the builder
+/// and finish with `send`.
 ///
 /// # Example
 ///
@@ -85,12 +75,13 @@ impl Default for EsdkConfig {
 /// let esdk = Esdk::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build();
-/// let input = EncryptInput::builder()
+/// let output = esdk
+///     .encrypt()
 ///     .plaintext(plaintext)
 ///     .encryption_context(ec)
 ///     .keyring(keyring)
-///     .build()?;
-/// let output = esdk.encrypt(&input).await?;
+///     .send()
+///     .await?;
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 #[non_exhaustive]
@@ -125,135 +116,243 @@ impl Esdk {
         &self.config
     }
 
-    /// Encrypt with the client's configured commitment policy and EDK cap.
-    ///
-    /// # Errors
-    ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`encrypt`](crate::encrypt) returns.
+    /// Start an encrypt with this client's commitment policy and encrypted data key cap.
+    /// Set the rest on the returned builder, then call [`send`](EncryptFluentBuilder::send).
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
-    pub async fn encrypt(&self, input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
-        crate::encrypt::encrypt(&fill_or_reject(input, &self.config)?).await
+    pub fn encrypt<'a>(&self) -> EncryptFluentBuilder<'a> {
+        EncryptFluentBuilder {
+            config: self.config,
+            inner: EncryptInput::builder(),
+        }
     }
 
-    /// Decrypt with the client's configured commitment policy and EDK cap.
-    ///
-    /// # Errors
-    ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`decrypt`](crate::decrypt) returns.
+    /// Start a decrypt with this client's commitment policy and encrypted data key cap.
+    /// Set the rest on the returned builder, then call [`send`](DecryptFluentBuilder::send).
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
-    pub async fn decrypt(&self, input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
-        crate::decrypt::decrypt(&fill_or_reject(input, &self.config)?).await
+    pub fn decrypt<'a>(&self) -> DecryptFluentBuilder<'a> {
+        DecryptFluentBuilder {
+            config: self.config,
+            inner: DecryptInput::builder(),
+        }
     }
 
-    /// Stream-encrypt with the client's configured commitment policy and EDK cap.
-    ///
-    /// # Errors
-    ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`encrypt_stream`](crate::encrypt_stream) returns.
-    pub async fn encrypt_stream<R, W>(
-        &self,
-        plaintext: R,
-        ciphertext: W,
-        input: &EncryptStreamInput,
-    ) -> Result<EncryptStreamOutput, Error>
-    where
-        R: tokio::io::AsyncRead + Unpin + Send,
-        W: tokio::io::AsyncWrite + Unpin + Send,
-    {
-        crate::encrypt::encrypt_stream(plaintext, ciphertext, &fill_or_reject(input, &self.config)?)
-            .await
+    /// Start a streaming encrypt with this client's commitment policy and encrypted data key cap.
+    /// Set the rest on the returned builder, then call [`send`](EncryptStreamFluentBuilder::send).
+    pub fn encrypt_stream(&self) -> EncryptStreamFluentBuilder {
+        EncryptStreamFluentBuilder {
+            config: self.config,
+            inner: EncryptStreamInput::builder(),
+        }
     }
 
-    /// Stream-decrypt with the client's configured commitment policy and EDK cap.
-    ///
-    /// # Errors
-    ///
-    /// - [`Validation`](crate::Error::Validation): the input also sets a non-default commitment policy or an encrypted data key cap; set these on the client or the input, not both.
-    ///
-    /// Otherwise returns any variant [`decrypt_stream`](crate::decrypt_stream) returns.
-    pub async fn decrypt_stream<R, W>(
-        &self,
-        ciphertext: R,
-        plaintext: W,
-        input: &DecryptStreamInput,
-    ) -> Result<DecryptStreamOutput, Error>
-    where
-        R: tokio::io::AsyncRead + Unpin + Send,
-        W: tokio::io::AsyncWrite + Unpin + Send,
-    {
-        crate::decrypt::decrypt_stream(ciphertext, plaintext, &fill_or_reject(input, &self.config)?)
-            .await
+    /// Start a streaming decrypt with this client's commitment policy and encrypted data key cap.
+    /// Set the rest on the returned builder, then call [`send`](DecryptStreamFluentBuilder::send).
+    pub fn decrypt_stream(&self) -> DecryptStreamFluentBuilder {
+        DecryptStreamFluentBuilder {
+            config: self.config,
+            inner: DecryptStreamInput::builder(),
+        }
     }
 }
 
-/// Internal abstraction over the four input structs that carry the
-/// "client-config" fields. Used by [`fill_or_reject`] so the four `Esdk`
-/// methods don't repeat the rejection-and-fill logic.
-trait HasClientConfigFields {
-    fn client_commitment_policy(&self) -> CommitmentPolicy;
-    fn client_max_encrypted_data_keys(&self) -> Option<NonZeroUsize>;
-    fn set_client_commitment_policy(&mut self, p: CommitmentPolicy);
-    fn set_client_max_encrypted_data_keys(&mut self, n: Option<NonZeroUsize>);
-}
-
-macro_rules! impl_client_config_fields {
-    ($t:ty) => {
-        impl HasClientConfigFields for $t {
-            fn client_commitment_policy(&self) -> CommitmentPolicy {
-                self.commitment_policy
-            }
-            fn client_max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-                self.max_encrypted_data_keys
-            }
-            fn set_client_commitment_policy(&mut self, p: CommitmentPolicy) {
-                self.commitment_policy = p;
-            }
-            fn set_client_max_encrypted_data_keys(&mut self, n: Option<NonZeroUsize>) {
-                self.max_encrypted_data_keys = n;
-            }
+/// Forward a setter to the wrapped input builder.
+macro_rules! forward {
+    ($(#[$meta:meta])* $name:ident($arg:ident: $ty:ty)) => {
+        $(#[$meta])*
+        pub fn $name(mut self, $arg: $ty) -> Self {
+            self.inner = self.inner.$name($arg);
+            self
         }
     };
 }
 
-impl_client_config_fields!(EncryptInput<'_>);
-impl_client_config_fields!(EncryptStreamInput);
-impl_client_config_fields!(DecryptInput<'_>);
-impl_client_config_fields!(DecryptStreamInput);
+/// The setters every operation's fluent builder has.
+macro_rules! forward_common {
+    () => {
+        forward!(
+            /// Set the encryption context. See the input builder for details.
+            encryption_context(encryption_context: EncryptionContext)
+        );
+        forward!(
+            /// Set or clear the encryption context from an `Option`.
+            set_encryption_context(encryption_context: Option<EncryptionContext>)
+        );
+        forward!(
+            /// Set the keyring. Set exactly one of a keyring or a CMM.
+            keyring(keyring: impl Keyring + 'static)
+        );
+        forward!(
+            /// Set or clear the keyring from an `Option`.
+            set_keyring(keyring: Option<SharedKeyring>)
+        );
+        forward!(
+            /// Set the cryptographic materials manager. Set exactly one of a keyring or a CMM.
+            cmm(cmm: impl Cmm + 'static)
+        );
+        forward!(
+            /// Set or clear the CMM from an `Option`.
+            set_cmm(cmm: Option<SharedCmm>)
+        );
+    };
+}
 
-/// Reject the call if the input also carries client-level config; otherwise
-/// return a clone of the input with the client config's fields filled in.
-///
-/// Returning an error today (rather than picking a precedence rule) is
-/// forward-compatible: a future release may define override semantics
-/// without breaking callers.
-fn fill_or_reject<I>(input: &I, config: &EsdkConfig) -> Result<I, Error>
-where
-    I: HasClientConfigFields + Clone,
-{
-    if input.client_commitment_policy() != DEFAULT_COMMITMENT_POLICY
-        || input.client_max_encrypted_data_keys().is_some()
-    {
-        return Err(val_err(
-            "EsdkConfig is provided by both the Esdk client and the input struct. \
-             Set commitment_policy and max_encrypted_data_keys \
-             in exactly one place: on the Esdk client (via Esdk::builder), or on the \
-             input struct (when using the free encrypt/decrypt functions)",
-        ));
+/// The setters the two encrypt builders share.
+macro_rules! forward_encrypt {
+    () => {
+        forward!(
+            /// Set the algorithm suite. Unset uses the commitment policy's default suite.
+            algorithm_suite_id(algorithm_suite_id: AlgorithmSuiteId)
+        );
+        forward!(
+            /// Set or clear the algorithm suite from an `Option`.
+            set_algorithm_suite_id(algorithm_suite_id: Option<AlgorithmSuiteId>)
+        );
+        forward!(
+            /// Set the frame length in bytes. Defaults to 4096.
+            frame_length(frame_length: NonZeroU32)
+        );
+        forward!(
+            /// Set or clear the frame length from an `Option`.
+            set_frame_length(frame_length: Option<NonZeroU32>)
+        );
+    };
+}
+
+/// An encrypt started by [`Esdk::encrypt`].
+#[derive(Debug, Clone)]
+#[must_use = "a fluent builder does nothing until `send` is awaited"]
+pub struct EncryptFluentBuilder<'a> {
+    config: EsdkConfig,
+    inner: EncryptInputBuilder<'a>,
+}
+
+impl<'a> EncryptFluentBuilder<'a> {
+    forward!(
+        /// Set the plaintext to encrypt. Required.
+        plaintext(plaintext: &'a [u8])
+    );
+    forward_common!();
+    forward_encrypt!();
+
+    /// Encrypt.
+    ///
+    /// # Errors
+    ///
+    /// Returns any variant [`encrypt`](crate::encrypt) returns.
+    pub async fn send(self) -> Result<EncryptOutput, Error> {
+        let input = self
+            .inner
+            .commitment_policy(self.config.commitment_policy)
+            .set_max_encrypted_data_keys(self.config.max_encrypted_data_keys)
+            .build()?;
+        crate::encrypt::encrypt(&input).await
     }
-    let mut filled = input.clone();
-    filled.set_client_commitment_policy(config.commitment_policy);
-    filled.set_client_max_encrypted_data_keys(config.max_encrypted_data_keys);
-    Ok(filled)
+}
+
+/// A decrypt started by [`Esdk::decrypt`].
+#[derive(Debug, Clone)]
+#[must_use = "a fluent builder does nothing until `send` is awaited"]
+pub struct DecryptFluentBuilder<'a> {
+    config: EsdkConfig,
+    inner: DecryptInputBuilder<'a>,
+}
+
+impl<'a> DecryptFluentBuilder<'a> {
+    forward!(
+        /// Set the encrypted message to decrypt. Required.
+        ciphertext(ciphertext: &'a [u8])
+    );
+    forward_common!();
+
+    /// Decrypt.
+    ///
+    /// # Errors
+    ///
+    /// Returns any variant [`decrypt`](crate::decrypt) returns.
+    pub async fn send(self) -> Result<DecryptOutput, Error> {
+        let input = self
+            .inner
+            .commitment_policy(self.config.commitment_policy)
+            .set_max_encrypted_data_keys(self.config.max_encrypted_data_keys)
+            .build()?;
+        crate::decrypt::decrypt(&input).await
+    }
+}
+
+/// A streaming encrypt started by [`Esdk::encrypt_stream`].
+#[derive(Debug, Clone)]
+#[must_use = "a fluent builder does nothing until `send` is awaited"]
+pub struct EncryptStreamFluentBuilder {
+    config: EsdkConfig,
+    inner: EncryptStreamInputBuilder,
+}
+
+impl EncryptStreamFluentBuilder {
+    forward_common!();
+    forward_encrypt!();
+    forward!(
+        /// Set the plaintext length in bytes, when it is known in advance.
+        data_size(data_size: usize)
+    );
+    forward!(
+        /// Set or clear the plaintext length from an `Option`.
+        set_data_size(data_size: Option<usize>)
+    );
+
+    /// Encrypt `plaintext` into `ciphertext`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any variant [`encrypt_stream`](crate::encrypt_stream) returns.
+    pub async fn send<R, W>(self, plaintext: R, ciphertext: W) -> Result<EncryptStreamOutput, Error>
+    where
+        R: tokio::io::AsyncRead + Unpin + Send,
+        W: tokio::io::AsyncWrite + Unpin + Send,
+    {
+        let input = self
+            .inner
+            .commitment_policy(self.config.commitment_policy)
+            .set_max_encrypted_data_keys(self.config.max_encrypted_data_keys)
+            .build()?;
+        crate::encrypt::encrypt_stream(plaintext, ciphertext, &input).await
+    }
+}
+
+/// A streaming decrypt started by [`Esdk::decrypt_stream`].
+#[derive(Debug, Clone)]
+#[must_use = "a fluent builder does nothing until `send` is awaited"]
+pub struct DecryptStreamFluentBuilder {
+    config: EsdkConfig,
+    inner: DecryptStreamInputBuilder,
+}
+
+impl DecryptStreamFluentBuilder {
+    forward_common!();
+
+    /// Decrypt `ciphertext` into `plaintext`.
+    ///
+    /// `plaintext` receives output before the whole message is verified;
+    /// see [`decrypt_stream`](crate::decrypt_stream).
+    ///
+    /// # Errors
+    ///
+    /// Returns any variant [`decrypt_stream`](crate::decrypt_stream) returns.
+    pub async fn send<R, W>(self, ciphertext: R, plaintext: W) -> Result<DecryptStreamOutput, Error>
+    where
+        R: tokio::io::AsyncRead + Unpin + Send,
+        W: tokio::io::AsyncWrite + Unpin + Send,
+    {
+        let input = self
+            .inner
+            .commitment_policy(self.config.commitment_policy)
+            .set_max_encrypted_data_keys(self.config.max_encrypted_data_keys)
+            .build()?;
+        crate::decrypt::decrypt_stream(ciphertext, plaintext, &input).await
+    }
 }
 
 /// Fluent builder for [`Esdk`].

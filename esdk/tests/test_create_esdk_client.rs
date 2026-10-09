@@ -448,97 +448,7 @@ fn test_esdk_new_takes_explicit_config() {
     );
 }
 
-// Esdk methods reject calls whose input *also* sets commitment_policy or
-// max_encrypted_data_keys: providing config in two places at once is reserved.
-// The rejection check fires before any materials are requested.
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_encrypt_rejects_input_with_non_default_commitment_policy() {
-    let esdk = Esdk::default();
-    let input = EncryptInput::builder()
-        .plaintext(b"")
-        .keyring(test_keyring().await)
-        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build()
-        .unwrap();
-
-    let err = esdk
-        .encrypt(&input)
-        .await
-        .expect_err("Esdk::encrypt must reject input that sets commitment_policy when the client also configures it");
-    assert!(
-        err.is_validation(),
-        "expected Validation error, got {:?}",
-        err
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_encrypt_rejects_input_with_max_encrypted_data_keys() {
-    let esdk = Esdk::default();
-    let input = EncryptInput::builder()
-        .plaintext(b"")
-        .keyring(test_keyring().await)
-        .max_encrypted_data_keys(std::num::NonZeroUsize::new(2).unwrap())
-        .build()
-        .unwrap();
-
-    let err = esdk
-        .encrypt(&input)
-        .await
-        .expect_err("Esdk::encrypt must reject input that sets max_encrypted_data_keys when the client also configures it");
-    assert!(
-        err.is_validation(),
-        "expected Validation error, got {:?}",
-        err
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_decrypt_rejects_input_with_non_default_commitment_policy() {
-    let esdk = Esdk::default();
-    let input = DecryptInput::builder()
-        .ciphertext(b"")
-        .keyring(test_keyring().await)
-        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build()
-        .unwrap();
-
-    let err = esdk
-        .decrypt(&input)
-        .await
-        .expect_err("Esdk::decrypt must reject input that sets commitment_policy when the client also configures it");
-    assert!(
-        err.is_validation(),
-        "expected Validation error, got {:?}",
-        err
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_esdk_decrypt_rejects_input_with_max_encrypted_data_keys() {
-    let esdk = Esdk::default();
-    let input = DecryptInput::builder()
-        .ciphertext(b"")
-        .keyring(test_keyring().await)
-        .max_encrypted_data_keys(std::num::NonZeroUsize::new(2).unwrap())
-        .build()
-        .unwrap();
-
-    let err = esdk
-        .decrypt(&input)
-        .await
-        .expect_err("Esdk::decrypt must reject input that sets max_encrypted_data_keys when the client also configures it");
-    assert!(
-        err.is_validation(),
-        "expected Validation error, got {:?}",
-        err
-    );
-}
-
-// Round-trip: configure the Esdk client, hand it inputs that DO NOT set client
-// config, and verify the encrypt/decrypt pair succeeds and produces the
-// original plaintext.
+// Round-trip through the Esdk client's fluent builders.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_esdk_encrypt_decrypt_round_trip() {
     let plaintext: &[u8] = b"hello via Esdk client";
@@ -549,33 +459,29 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
         .build();
 
     let ec = EncryptionContext::new();
-    let enc_input = EncryptInput::builder()
-        .plaintext(plaintext)
-        .encryption_context(ec.clone())
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
     //= spec/client-apis/client.md#encrypt
     //= type=test
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
     let ct = esdk
-        .encrypt(&enc_input)
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(ec.clone())
+        .keyring(keyring.clone())
+        .send()
         .await
-        .expect("Esdk::encrypt must succeed for a default input + configured client");
+        .expect("Esdk::encrypt must succeed with a configured client");
 
-    let dec_input = DecryptInput::builder()
-        .ciphertext(&ct.ciphertext)
-        .encryption_context(ec)
-        .keyring(keyring)
-        .build()
-        .unwrap();
     //= spec/client-apis/client.md#decrypt
     //= type=test
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
     let pt = esdk
-        .decrypt(&dec_input)
+        .decrypt()
+        .ciphertext(&ct.ciphertext)
+        .encryption_context(ec)
+        .keyring(keyring)
+        .send()
         .await
         .expect("Esdk::decrypt must succeed on the matching ciphertext");
     assert_eq!(
@@ -599,16 +505,14 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
 
-    let enc_input = EncryptInput::builder()
+    let err = esdk
+        .encrypt()
         .plaintext(b"x")
         .keyring(keyring)
         // Explicitly request a V2 committing suite. ForbidEncryptAllowDecrypt
         // forbids committing on encrypt → must fail.
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .build()
-        .unwrap();
-    let err = esdk
-        .encrypt(&enc_input)
+        .send()
         .await
         .expect_err("ForbidEncryptAllowDecrypt + committing V2 suite must fail encrypt");
     // The ESDK rejects the suite before calling the MPL, with a Validation error.
@@ -640,7 +544,7 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     let plaintext = b"decrypt gating proof";
 
     // Build a non-committing V1 ciphertext using the free encrypt path with the
-    // matching ForbidEncryptAllowDecrypt policy on the input. (Esdk::encrypt
+    // matching ForbidEncryptAllowDecrypt policy on the input. (The default Esdk
     // can't produce this ciphertext under the default RequireEncryptRequireDecrypt,
     // which is why we use the free function here for setup.)
     let ct = encrypt_with_suite(
@@ -655,14 +559,11 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     let esdk = Esdk::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
-    let dec_input = DecryptInput::builder()
-        .ciphertext(&ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
-
     let out = esdk
-        .decrypt(&dec_input)
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring.clone())
+        .send()
         .await
         .expect("Esdk(ForbidEncryptAllowDecrypt) must accept a V1 non-committing ciphertext");
     assert_eq!(
@@ -675,9 +576,15 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     // ForbidEncryptAllowDecrypt config flowing through (not just "any V1
     // ciphertext decrypts via Esdk::decrypt").
     let default_esdk = Esdk::default();
-    let err = default_esdk.decrypt(&dec_input).await.expect_err(
-        "default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
-    );
+    let err = default_esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
+        .await
+        .expect_err(
+            "default Esdk (RequireEncryptRequireDecrypt) must reject V1 non-committing ciphertext",
+        );
     assert!(
         err.is_validation(),
         "expected Validation error, got {:?}: {}",

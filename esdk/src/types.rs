@@ -464,7 +464,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the maximum number of encrypted data keys.
     /// Default is no limit.
     ///
-    /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
@@ -486,7 +486,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -740,8 +740,7 @@ impl EncryptStreamInputBuilder {
     /// Set the maximum number of encrypted data keys.
     /// Default is no limit.
     ///
-    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
-    /// provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
@@ -763,8 +762,7 @@ impl EncryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
-    /// provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -969,7 +967,7 @@ impl<'a> DecryptInputBuilder<'a> {
     /// Set the maximum number of encrypted data keys.
     /// Default is no limit.
     ///
-    /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
@@ -991,7 +989,7 @@ impl<'a> DecryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -1172,8 +1170,7 @@ impl DecryptStreamInputBuilder {
     /// Set the maximum number of encrypted data keys.
     /// Default is no limit.
     ///
-    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
-    /// provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
@@ -1195,8 +1192,7 @@ impl DecryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
-    /// provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
     #[must_use]
     pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
