@@ -111,10 +111,8 @@
 
 pub mod error;
 pub use error::Error;
-
-/// The materials library: keyrings, CMMs, caches, and the key store.
-pub use aws_crypto_mpl;
 mod encrypt;
+pub mod io;
 pub use encrypt::*;
 mod decrypt;
 pub use decrypt::*;

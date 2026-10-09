@@ -367,3 +367,42 @@ async fn test_large_message_yields_to_other_tasks() {
     );
     ticker.abort();
 }
+
+// A std::io reader and writer passed through SyncReader and SyncWriter round-trip.
+#[tokio::test]
+async fn test_streaming_round_trip_through_sync_adapters() {
+    use aws_esdk::io::{SyncReader, SyncWriter};
+
+    let keyring = test_keyring().await;
+    let plaintext: Vec<u8> = (0..=255u8).cycle().take(4096 + 17).collect();
+
+    let enc_input = EncryptStreamInput::builder()
+        .keyring(keyring.clone())
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .build()
+        .unwrap();
+    let mut ciphertext = SyncWriter::new(Vec::new());
+    aws_esdk::encrypt_stream(
+        SyncReader::new(std::io::Cursor::new(&plaintext)),
+        &mut ciphertext,
+        &enc_input,
+    )
+    .await
+    .unwrap();
+    let ciphertext = ciphertext.into_inner();
+
+    let dec_input = DecryptStreamInput::builder()
+        .keyring(keyring)
+        .build()
+        .unwrap();
+    let mut decrypted = SyncWriter::new(Vec::new());
+    aws_esdk::decrypt_stream(
+        SyncReader::new(ciphertext.as_slice()),
+        &mut decrypted,
+        &dec_input,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(decrypted.into_inner(), plaintext);
+}
