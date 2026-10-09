@@ -109,7 +109,12 @@ Run one with `cargo run --example <name>`:
 | `raw_aes_keyring` | no |
 | `streaming` | no |
 | `custom_keyring` | no |
+| `set_algorithm_suite` | no |
+| `set_commitment_policy` | no |
+| `signing_only_cmm` | no |
 | `hierarchical_keyring` | KMS + DynamoDB |
+| `branch_key_supplier` | KMS + DynamoDB |
+| `rotate_branch_key` | KMS + DynamoDB |
 | `shared_storm_tracking_cache` | KMS + DynamoDB |
 | `handling_errors` | KMS + DynamoDB |
 

@@ -22,7 +22,7 @@
 use std::time::Duration;
 
 use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Error, Resource, Service};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
@@ -40,16 +40,14 @@ const PLAINTEXT: &[u8] = b"Hello World";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let key_store = KeyStoreClient::from(
-        BranchKeyStore::builder()
-            .ddb_table_name(TABLE_NAME)
-            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
-            .kms_client(aws_sdk_kms::Client::new(&sdk_config))
-            .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
-            .build()
-            .await?,
-    );
+    let key_store = BranchKeyStore::builder()
+        .ddb_table_name(TABLE_NAME)
+        .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+        .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
+        .build()
+        .await?;
     let keyring = HierarchicalKeyring::builder()
         .key_store(key_store.clone())
         .ttl(Duration::from_secs(600))

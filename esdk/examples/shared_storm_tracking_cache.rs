@@ -5,7 +5,11 @@
 //!
 //! A hierarchical keyring caches branch key material so it does not call KMS on every message.
 //! By default, each keyring gets its own cache.
-//! Keyrings that share one cache and one partition ID reuse each other's entries.
+//! Keyrings that share one cache reuse each other's entries
+//! when they also have the same partition ID, logical key store name, and branch key ID.
+//! Here the two keyrings use separate key store instances with the same logical name,
+//! as two services reading one key store table would.
+//! Never give two different key store tables the same logical name.
 //!
 //! A storm-tracking cache also keeps concurrent requests from all refreshing the same entry:
 //! near expiry, one request refreshes the entry while the others keep using the cached value.
@@ -14,7 +18,7 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::{BranchKeyStore, KmsConfiguration};
+use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{
     HierarchicalKeyring, StormTrackingCmc, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
 };
@@ -27,17 +31,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = BranchKeyStore::builder()
-        .ddb_table_name("KeyStoreDdbTable")
-        .logical_key_store_name("KeyStoreDdbTable")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
-                .to_string(),
-        ))
-        .kms_client(aws_sdk_kms::Client::new(&sdk_config))
-        .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
-        .build()
-        .await?;
+    let make_key_store = || {
+        BranchKeyStore::builder()
+            .ddb_table_name("KeyStoreDdbTable")
+            .logical_key_store_name("KeyStoreDdbTable")
+            .kms_configuration(KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
+                    .to_string(),
+            ))
+            .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+            .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
+            .build()
+    };
+    let key_store_a = make_key_store().await?;
+    let key_store_b = make_key_store().await?;
 
     // Every parameter is optional; each value set here is its default.
     let cache = StormTrackingCmc::builder()
@@ -58,18 +65,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sleep(Duration::from_millis(20))
         .build()?;
 
-    // Same cache and partition ID, so the keyrings reuse each other's entries.
-    let make_keyring = || {
+    // Same cache, partition ID, logical key store name, and branch key ID,
+    // so the keyrings reuse each other's entries.
+    let make_keyring = |key_store: KeyStoreClient| {
         HierarchicalKeyring::builder()
-            .key_store(key_store.clone())
+            .key_store(key_store)
             .ttl(Duration::from_secs(600))
             .branch_key_id("3f43a9af-08c5-4317-b694-3d3e883dcaef")
             .cache(cache.clone())
             .partition_id("shared-partition")
             .build()
     };
-    let keyring_a = make_keyring()?;
-    let keyring_b = make_keyring()?;
+    let keyring_a = make_keyring(key_store_a)?;
+    let keyring_b = make_keyring(key_store_b)?;
 
     let plaintext = b"Hello World";
 
