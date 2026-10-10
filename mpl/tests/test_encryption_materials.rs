@@ -24,10 +24,14 @@ fn make_ec_with_keys(keys: &[&str]) -> EncryptionContext {
 }
 
 fn make_edk() -> EncryptedDataKey {
+    edk_with_ciphertext(b"c")
+}
+
+fn edk_with_ciphertext(ciphertext: &[u8]) -> EncryptedDataKey {
     EncryptedDataKey::builder()
         .key_provider_id("p")
         .key_provider_info(b"i")
-        .ciphertext(b"c")
+        .ciphertext(ciphertext)
         .build()
         .unwrap()
 }
@@ -434,15 +438,17 @@ fn test_add_data_key_rejects_wrong_length() {
 
 #[test]
 fn test_add_encrypted_data_key_appends() {
+    let first = edk_with_ciphertext(b"first");
+    let second = edk_with_ciphertext(b"second");
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .build()
         .unwrap()
-        .add_data_key(PlaintextDataKey::new(vec![7; 32]), make_edk())
+        .add_data_key(PlaintextDataKey::new(vec![7; 32]), first.clone())
         .unwrap()
-        .add_encrypted_data_key(make_edk())
+        .add_encrypted_data_key(second.clone())
         .unwrap();
-    assert_eq!(mat.encrypted_data_keys().len(), 2);
+    assert_eq!(mat.encrypted_data_keys(), [first, second]);
 }
 
 #[test]
