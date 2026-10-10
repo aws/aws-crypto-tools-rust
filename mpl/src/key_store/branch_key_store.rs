@@ -29,7 +29,6 @@ use time::OffsetDateTime;
 use time::macros::format_description;
 use uuid::Uuid;
 
-use crate::aws_kms::user_agent::with_user_agent;
 use crate::builder::required;
 use crate::key_store::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
@@ -336,9 +335,7 @@ impl BranchKeyStoreBuilder {
                 logical_key_store_name,
                 kms_configuration,
                 grant_tokens: self.grant_tokens.unwrap_or_default(),
-                // The KMS client might be ours or one the caller passed in.
-                // Adding the user agent here covers both.
-                kms_client: with_user_agent(kms_client),
+                kms_client,
                 ddb_client,
                 key_store_id,
             }),

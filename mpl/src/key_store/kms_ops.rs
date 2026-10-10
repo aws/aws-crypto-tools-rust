@@ -22,6 +22,7 @@ use aws_sdk_kms::config::http::HttpResponse;
 use aws_sdk_kms::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_kms::primitives::Blob;
 
+use crate::aws_kms::user_agent::user_agent_override;
 use crate::key_store::attributes::{ATTR_ENC, ATTR_KMS_ARN};
 use crate::key_store::config::KmsConfiguration;
 use crate::key_store::kms_config::{is_arn_compatible, parse_arn};
@@ -183,6 +184,8 @@ pub(crate) async fn decrypt_branch_key(
         .ciphertext_blob(Blob::new(record.enc.clone()))
         .set_encryption_context(Some(ec.into_iter().collect()))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| {
@@ -237,6 +240,8 @@ pub(crate) async fn generate_wrapped_key(
                 .collect(),
         ))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| map_kms_error("GenerateDataKeyWithoutPlaintext", key_arn, e))?;
@@ -282,6 +287,8 @@ pub(crate) async fn reencrypt_wrapped_key(
                 .collect(),
         ))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| map_kms_error("ReEncrypt", key_arn, e))?;

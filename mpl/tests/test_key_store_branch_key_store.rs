@@ -158,32 +158,6 @@ async fn build_defaults_only_the_absent_client() {
     assert!(ks::ddb_client(&store).config().region().is_none());
 }
 
-// Construction tags only the KMS client's user agent with this crate's identifier.
-#[cfg(feature = "test-utils")]
-#[tokio::test]
-async fn build_tags_the_kms_client_and_not_the_ddb_client() {
-    use aws_crypto_mpl::key_store::branch_key_store::__test_internals as ks;
-
-    let store = ks::build(fixture_config_with_id("user-agent"))
-        .await
-        .unwrap();
-
-    let kms_names: Vec<&str> = ks::kms_client(&store)
-        .config()
-        .framework_metadata()
-        .iter()
-        .map(|metadata| metadata.name())
-        .collect();
-    assert_eq!(kms_names, vec!["AwsCryptographicMPL-Rust"]);
-    assert!(
-        ks::ddb_client(&store)
-            .config()
-            .framework_metadata()
-            .is_empty(),
-        "the DynamoDB client must carry no identifier"
-    );
-}
-
 #[tokio::test]
 async fn new_with_caller_supplied_key_store_id_records_it_verbatim() {
     let store = fixture_config_with_id("caller-id")
