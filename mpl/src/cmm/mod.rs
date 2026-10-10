@@ -4,9 +4,9 @@
 //! The `Cmm` trait — the abstract contract every Cryptographic Materials
 //! Manager MUST implement.
 //!
-//! Uses #[async_trait] so that the CMM can hold any runtime defined
-//! CMM. The macro makes this work by rewriting each `async fn`
-//! to return a boxed future.
+//! Implement it with [`#[async_trait]`](macro@crate::async_trait).
+//! The macro rewrites each `async fn` to return a boxed future,
+//! so a caller can hold a CMM whose type is chosen at runtime.
 //!
 //! See [Errors for keyring and CMM authors](crate::keyring#errors-for-keyring-and-cmm-authors)
 //! for which error variant to return.

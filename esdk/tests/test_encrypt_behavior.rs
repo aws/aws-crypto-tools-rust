@@ -9,6 +9,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
 use aws_crypto_mpl::cmm::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
@@ -317,7 +318,7 @@ struct DuplicateEdkCmm {
     inner: DefaultCmm,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Cmm for DuplicateEdkCmm {
     async fn get_encryption_materials(
         &self,
@@ -662,7 +663,7 @@ struct SpyCmm {
     observed_max_plaintext_length: Arc<std::sync::Mutex<Option<Option<i64>>>>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Cmm for SpyCmm {
     async fn get_encryption_materials(
         &self,

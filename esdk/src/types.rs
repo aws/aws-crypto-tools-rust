@@ -127,6 +127,9 @@ pub use aws_crypto_mpl::keyring::Keyring;
 /// Implement it to supply a custom CMM.
 pub use aws_crypto_mpl::cmm::Cmm;
 
+/// Put `#[async_trait]` on an `impl` of [`Keyring`] or [`Cmm`].
+pub use aws_crypto_mpl::async_trait;
+
 /// The Material Providers Library's conversion into a shared handle, re-exported.
 /// `keyring.into_shared()` returns a [`SharedKeyring`], reusing it if it already is one.
 pub use aws_crypto_mpl::IntoShared;

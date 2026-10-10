@@ -10,6 +10,7 @@
 //!
 //! Runs offline.
 
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmm::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
@@ -31,7 +32,7 @@ impl SigningSuiteOnlyCmm {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Cmm for SigningSuiteOnlyCmm {
     async fn get_encryption_materials(
         &self,

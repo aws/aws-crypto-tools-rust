@@ -10,6 +10,7 @@
 
 use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::Keyring;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
@@ -54,7 +55,7 @@ impl LocalKekKeyring {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Keyring for LocalKekKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
         let materials = input.into_materials();

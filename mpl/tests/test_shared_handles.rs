@@ -4,6 +4,7 @@
 //! Converting an existing `Shared*` handle reuses it instead of nesting it.
 
 use aws_crypto_mpl::Error;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
 use aws_crypto_mpl::{
     AesGcm, BranchKeySupplier, Cmc, Cmm, DefaultCmm, IntoShared, Keyring, LocalCmc, RawAesKeyring,
@@ -30,7 +31,7 @@ fn cache() -> LocalCmc {
 
 struct Supplier;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl BranchKeySupplier for Supplier {
     async fn get_branch_key_id(
         &self,

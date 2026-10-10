@@ -18,6 +18,7 @@
 use std::time::Duration;
 
 use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring, aws_config,
@@ -32,7 +33,7 @@ struct TenantBranchKeySupplier {
     tenant_b: String,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl BranchKeySupplier for TenantBranchKeySupplier {
     async fn get_branch_key_id(
         &self,

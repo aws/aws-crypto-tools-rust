@@ -3,9 +3,9 @@
 
 //! The `Keyring` trait — the abstract contract every keyring MUST implement.
 //!
-//! Uses #[async_trait] so that the CMM can hold any runtime defined
-//! keyring. The macro makes this work by rewriting each `async fn`
-//! to return a boxed future.
+//! Implement it with [`#[async_trait]`](macro@crate::async_trait).
+//! The macro rewrites each `async fn` to return a boxed future,
+//! so a CMM can hold a keyring whose type is chosen at runtime.
 //!
 //! # Errors for keyring and CMM authors
 //!

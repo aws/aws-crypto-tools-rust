@@ -56,7 +56,7 @@ pub use types::{
 
 /// A key store: the storage and AWS KMS protection of branch keys and beacon keys.
 ///
-/// Implement this trait, with `#[async_trait]`, to provide a key store.
+/// Implement this trait, with [`#[async_trait]`](macro@crate::async_trait), to provide a key store.
 /// To call one, wrap it in a [`KeyStoreClient`].
 #[async_trait]
 pub trait KeyStore: Send + Sync {

@@ -18,6 +18,7 @@ mod test_helpers;
 use aws_esdk::*;
 
 use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{
     Keyring, OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput,
 };
@@ -37,7 +38,7 @@ struct LocalKekKeyring {
     kek: [u8; 32],
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Keyring for LocalKekKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
         let materials = input.materials();
@@ -249,7 +250,7 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
 #[derive(Clone, Debug)]
 struct ShortDataKeyKeyring;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Keyring for ShortDataKeyKeyring {
     fn name(&self) -> std::borrow::Cow<'_, str> {
         "short".into()

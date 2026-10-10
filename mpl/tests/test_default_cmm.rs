@@ -7,7 +7,7 @@ use aws_crypto_mpl::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use async_trait::async_trait;
+use aws_crypto_mpl::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 

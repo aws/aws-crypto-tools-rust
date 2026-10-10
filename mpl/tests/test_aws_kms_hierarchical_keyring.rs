@@ -24,8 +24,8 @@ use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
+use aws_crypto_mpl::async_trait;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 

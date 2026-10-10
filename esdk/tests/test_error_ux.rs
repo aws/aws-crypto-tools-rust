@@ -6,6 +6,7 @@
 
 mod fake_aws;
 
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::OnEncryptInput;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
@@ -628,7 +629,7 @@ async fn version_key_without_an_active_branch_key_names_the_branch_key() {
 /// Wraps the data key under two keyrings, so the message has two encrypted data keys.
 struct Both<A, B>(A, B);
 
-#[async_trait::async_trait]
+#[async_trait]
 impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Keyring
     for Both<A, B>
 {

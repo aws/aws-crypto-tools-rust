@@ -13,6 +13,9 @@ pub mod shared;
 pub mod structures;
 
 pub use error::Error;
+
+/// Put `#[async_trait]` on an `impl` of [`Keyring`], [`Cmm`], [`Cmc`], [`KeyStore`], or [`BranchKeySupplier`].
+pub use async_trait::async_trait;
 pub use shared::IntoShared;
 // Re-exported because `RawAesKeyringBuilder::wrapping_alg` takes an `AesGcm`,
 // so callers can name the wrapping algorithm without depending on `aws-mpl-primitives`.
