@@ -17,7 +17,7 @@ use aws_crypto_mpl::keyring::{
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, PlaintextDataKey,
+    EsdkAlgorithmSuiteId, EsdkCommitmentPolicy, PlaintextDataKey,
 };
 use aws_mpl_primitives::{EcdsaSignatureAlgorithm, ecdsa_sign, ecdsa_verify, signature_len};
 
@@ -66,7 +66,7 @@ impl MockKeyring {
 #[async_trait]
 impl Keyring for MockKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        let materials = input.materials();
+        let materials = input.into_materials();
         self.encrypt_calls.fetch_add(1, Ordering::SeqCst);
         let suite = materials.algorithm_suite();
         let pdk_bytes = vec![self.pdk_byte; suite.encryption_key_length()];
@@ -76,30 +76,19 @@ impl Keyring for MockKeyring {
             .ciphertext(pdk_bytes.clone())
             .build()
             .unwrap();
-        let materials = EncryptionMaterials::builder()
-            .algorithm_suite_id(materials.algorithm_suite_id())
-            .encrypted_data_keys(vec![edk])
-            .encryption_context(materials.encryption_context().clone())
-            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
-            .plaintext_data_key(PlaintextDataKey::new(pdk_bytes))
-            .set_signing_key(materials.signing_key().cloned())
-            .build()?;
-        OnEncryptOutput::builder().materials(materials).build()
+        Ok(materials
+            .add_data_key(PlaintextDataKey::new(pdk_bytes), edk)?
+            .into())
     }
 
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-        let materials = input.materials();
+        let materials = input.into_materials();
         self.decrypt_calls.fetch_add(1, Ordering::SeqCst);
         let suite = materials.algorithm_suite();
         let pdk_bytes = vec![self.pdk_byte; suite.encryption_key_length()];
-        let materials = DecryptionMaterials::builder()
-            .algorithm_suite_id(materials.algorithm_suite_id())
-            .encryption_context(materials.encryption_context().clone())
-            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
-            .plaintext_data_key(PlaintextDataKey::new(pdk_bytes))
-            .set_verification_key(materials.verification_key().cloned())
-            .build()?;
-        OnDecryptOutput::builder().materials(materials).build()
+        Ok(materials
+            .add_data_key(PlaintextDataKey::new(pdk_bytes))?
+            .into())
     }
 }
 

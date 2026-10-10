@@ -15,7 +15,6 @@ use aws_crypto_mpl::cmm::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use aws_crypto_mpl::structures::EncryptionMaterials;
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -329,22 +328,12 @@ impl Cmm for DuplicateEdkCmm {
             .get_encryption_materials(request)
             .await?
             .into_encryption_materials();
-        let mut edks = materials.encrypted_data_keys().to_vec();
-        let Some(first) = edks.first().cloned() else {
-            return Err(MplError::from(aws_crypto_mpl::error::ValidationError::new(
+        let Some(first) = materials.encrypted_data_keys().first().cloned() else {
+            return Err(MplError::validation(
                 "inner CMM returned no encrypted data keys",
-            )));
+            ));
         };
-        edks.push(first);
-        let materials = EncryptionMaterials::builder()
-            .algorithm_suite_id(materials.algorithm_suite_id())
-            .encrypted_data_keys(edks)
-            .encryption_context(materials.encryption_context().clone())
-            .required_encryption_context_keys(materials.required_encryption_context_keys().clone())
-            .set_plaintext_data_key(materials.plaintext_data_key().cloned())
-            .set_signing_key(materials.signing_key().cloned())
-            .set_symmetric_signing_keys(materials.symmetric_signing_keys().map(<[_]>::to_vec))
-            .build()?;
+        let materials = materials.add_encrypted_data_key(first)?;
         GetEncryptionMaterialsOutput::builder()
             .encryption_materials(materials)
             .build()
