@@ -51,7 +51,7 @@ fn test_valid_construction_minimal() {
 fn test_valid_construction_with_all_optional_fields() {
     let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
     let reck = BTreeSet::from(["k1".to_string()]);
-    let pdk = PlaintextDataKey::new(b"secret".to_vec());
+    let pdk = PlaintextDataKey::new(vec![0x5a; 32]);
     let vk = p384_verification_key();
 
     // ESDK signing suite: asymmetric only (no symmetric_signing_key).
@@ -209,7 +209,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
 fn test_plaintext_data_key_immutability_decryption() {
     let ec = EncryptionContext::new();
     let reck = BTreeSet::new();
-    let pdk = PlaintextDataKey::new(b"secret".to_vec());
+    let pdk = PlaintextDataKey::new(vec![0x5a; 32]);
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
     // No symmetric_signing_key under ESDK suites.
@@ -221,7 +221,7 @@ fn test_plaintext_data_key_immutability_decryption() {
         .build()
         .unwrap();
     let pdk_ref = mat.plaintext_data_key().unwrap();
-    assert_eq!(pdk_ref.as_bytes(), b"secret");
+    assert_eq!(pdk_ref.as_bytes(), [0x5a; 32]);
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn test_symmetric_signing_key_debug_redacted_dec() {
 fn test_field_getters_return_constructed_values() {
     let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
     let reck = BTreeSet::from(["k1".to_string()]);
-    let pdk = PlaintextDataKey::new(b"secret".to_vec());
+    let pdk = PlaintextDataKey::new(vec![0x5a; 32]);
     let vk = p384_verification_key();
 
     let mat = DecryptionMaterials::builder()
@@ -284,7 +284,7 @@ fn test_field_getters_return_none_for_omitted_optional_fields() {
 fn test_debug_format_includes_all_fields() {
     let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
     let reck = BTreeSet::from(["k1".to_string()]);
-    let pdk = PlaintextDataKey::new(b"secret".to_vec());
+    let pdk = PlaintextDataKey::new(vec![0x5a; 32]);
     let vk = p384_verification_key();
 
     let mat = DecryptionMaterials::builder()
@@ -393,6 +393,16 @@ fn test_add_data_key_rejects_wrong_length() {
         .unwrap();
     let err = mat
         .add_data_key(PlaintextDataKey::new(vec![7; 16]))
+        .unwrap_err();
+    assert!(err.is_invalid_materials(), "{:?}", err);
+}
+
+#[test]
+fn test_build_rejects_wrong_length_plaintext_data_key() {
+    let err = DecryptionMaterials::builder()
+        .algorithm_suite_id(NO_SIGN_SUITE)
+        .plaintext_data_key(PlaintextDataKey::new(vec![7; 16]))
+        .build()
         .unwrap_err();
     assert!(err.is_invalid_materials(), "{:?}", err);
 }

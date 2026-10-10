@@ -246,7 +246,8 @@ async fn custom_keyring_wrong_kek_fails_decrypt() {
     );
 }
 
-/// Returns a plaintext data key half the suite's length.
+/// Builds materials with a plaintext data key half the suite's length,
+/// which the materials builders reject.
 #[derive(Clone, Debug)]
 struct ShortDataKeyKeyring;
 
@@ -259,31 +260,25 @@ impl Keyring for ShortDataKeyKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
         let m = input.into_materials();
         let short = m.algorithm_suite().encryption_key_length() / 2;
-        let edk = EncryptedDataKey::builder()
-            .key_provider_id(PROVIDER_ID)
-            .key_provider_info(b"")
-            .ciphertext(vec![0; 8])
-            .build()?;
-        let materials = EncryptionMaterials::builder()
+        let err = EncryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
             .encryption_context(m.encryption_context().clone())
-            .encrypted_data_keys(vec![edk])
             .plaintext_data_key(PlaintextDataKey::new(vec![0; short]))
-            .set_signing_key(m.signing_key().cloned())
-            .build()?;
-        OnEncryptOutput::builder().materials(materials).build()
+            .build()
+            .expect_err("build must reject a short plaintext data key");
+        Err(err)
     }
 
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, MplError> {
         let m = input.into_materials();
         let short = m.algorithm_suite().encryption_key_length() / 2;
-        let materials = DecryptionMaterials::builder()
+        let err = DecryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
             .encryption_context(m.encryption_context().clone())
             .plaintext_data_key(PlaintextDataKey::new(vec![0; short]))
-            .set_verification_key(m.verification_key().cloned())
-            .build()?;
-        OnDecryptOutput::builder().materials(materials).build()
+            .build()
+            .expect_err("build must reject a short plaintext data key");
+        Err(err)
     }
 }
 

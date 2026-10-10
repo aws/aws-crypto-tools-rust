@@ -5,6 +5,9 @@
 
 use std::fmt;
 
+use crate::Error;
+use crate::error::Kind;
+
 // ============================================================================
 // Algorithm suite ID enum
 // ============================================================================
@@ -541,6 +544,24 @@ impl PlaintextDataKey {
             }
         }
     }
+}
+
+/// An `InvalidMaterials` error unless `key` is `suite`'s encryption key length.
+pub(crate) fn check_data_key_length(
+    suite: &AlgorithmSuite,
+    key: &PlaintextDataKey,
+) -> Result<(), Error> {
+    let expected_len = suite.encryption_key_length();
+    if key.len() != expected_len {
+        return Err(Error::new(
+            Kind::InvalidMaterials,
+            format!(
+                "plaintext data key is {} bytes, expected {expected_len} for the algorithm suite",
+                key.len(),
+            ),
+        ));
+    }
+    Ok(())
 }
 
 impl fmt::Debug for PlaintextDataKey {

@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SymmetricSigningKey, VerificationKey,
+    check_data_key_length,
 };
 use super::encryption_context::EncryptionContext;
 
@@ -46,16 +47,7 @@ impl DecryptionMaterials {
                 "the materials already have a plaintext data key",
             ));
         }
-        let expected_len = self.algorithm_suite().encryption_key_length();
-        if plaintext_data_key.len() != expected_len {
-            return Err(Error::new(
-                Kind::InvalidMaterials,
-                format!(
-                    "plaintext data key is {} bytes, expected {expected_len} for the algorithm suite",
-                    plaintext_data_key.len(),
-                ),
-            ));
-        }
+        check_data_key_length(&self.algorithm_suite(), &plaintext_data_key)?;
         self.plaintext_data_key = Some(plaintext_data_key);
         Ok(self)
     }
@@ -203,7 +195,8 @@ impl DecryptionMaterialsBuilder {
     ///
     /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id` is unset.
     /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): a required encryption context key is not in the encryption context.
-    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the verification key or symmetric signing key does not suit the algorithm suite.
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the plaintext data key is not the algorithm suite's encryption key length,
+    ///   or the verification key or symmetric signing key does not suit the algorithm suite.
     pub fn build(self) -> Result<DecryptionMaterials, Error> {
         let Some(algorithm_suite_id) = self.algorithm_suite_id else {
             return Err(Error::new(
@@ -212,6 +205,10 @@ impl DecryptionMaterialsBuilder {
             ));
         };
         let suite = algorithm_suite_id.specification();
+
+        if let Some(key) = &self.plaintext_data_key {
+            check_data_key_length(&algorithm_suite_id.specification(), key)?;
+        }
 
         // Required encryption context keys must be a subset of encryption context keys
         for key in &self.required_encryption_context_keys {
