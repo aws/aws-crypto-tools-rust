@@ -71,6 +71,50 @@ pub use types::{
 };
 
 /// To hold a keyring whose concrete type is chosen at runtime, use [`SharedKeyring`].
+///
+/// A keyring changes the materials only through `add_data_key` and `add_encrypted_data_key`:
+///
+/// ```
+/// use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
+/// use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
+/// use aws_crypto_mpl::{Error, Keyring, async_trait};
+///
+/// struct MyKeyring;
+///
+/// # impl MyKeyring {
+/// #     fn generate(&self, _len: usize) -> Result<PlaintextDataKey, Error> { unimplemented!() }
+/// #     fn wrap(&self, _key: &PlaintextDataKey) -> Result<EncryptedDataKey, Error> { unimplemented!() }
+/// #     fn unwrap(&self, _edk: &EncryptedDataKey) -> Result<Option<PlaintextDataKey>, Error> { unimplemented!() }
+/// # }
+/// #[async_trait]
+/// impl Keyring for MyKeyring {
+///     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
+///         let materials = input.into_materials();
+///         let materials = match materials.plaintext_data_key() {
+///             Some(key) => {
+///                 let edk = self.wrap(key)?;
+///                 materials.add_encrypted_data_key(edk)?
+///             }
+///             None => {
+///                 let key = self.generate(materials.algorithm_suite().encryption_key_length())?;
+///                 let edk = self.wrap(&key)?;
+///                 materials.add_data_key(key, edk)?
+///             }
+///         };
+///         Ok(materials.into())
+///     }
+///
+///     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
+///         let (materials, encrypted_data_keys) = input.into_parts();
+///         for edk in &encrypted_data_keys {
+///             if let Some(key) = self.unwrap(edk)? {
+///                 return Ok(materials.add_data_key(key)?.into());
+///             }
+///         }
+///         Err(Error::no_matching_data_key("no encrypted data key belongs to this keyring"))
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait Keyring: Send + Sync {
     /// A short name for this keyring, which errors show.
