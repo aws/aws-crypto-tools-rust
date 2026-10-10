@@ -373,6 +373,18 @@ impl EsdkBuilder {
         self
     }
 
+    /// Set the commitment policy from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::commitment_policy`].
+    #[must_use]
+    pub const fn set_commitment_policy(
+        mut self,
+        commitment_policy: Option<CommitmentPolicy>,
+    ) -> Self {
+        self.commitment_policy = commitment_policy;
+        self
+    }
+
     /// Set the maximum number of encrypted data keys per message.
     //= spec/client-apis/client.md#initialization
     //# - On client initialization,
@@ -380,6 +392,18 @@ impl EsdkBuilder {
     #[must_use]
     pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
         self.max_encrypted_data_keys = Some(n);
+        self
+    }
+
+    /// Set the maximum number of encrypted data keys from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::max_encrypted_data_keys`].
+    #[must_use]
+    pub const fn set_max_encrypted_data_keys(
+        mut self,
+        max_encrypted_data_keys: Option<NonZeroUsize>,
+    ) -> Self {
+        self.max_encrypted_data_keys = max_encrypted_data_keys;
         self
     }
 

@@ -125,6 +125,7 @@ pub struct GetKeyStoreInfoFluentBuilder {
 
 impl GetKeyStoreInfoFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &GetKeyStoreInfoInputBuilder {
         &self.inner
     }
@@ -151,6 +152,7 @@ pub struct CreateKeyStoreFluentBuilder {
 
 impl CreateKeyStoreFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &CreateKeyStoreInputBuilder {
         &self.inner
     }
@@ -176,6 +178,7 @@ pub struct CreateKeyFluentBuilder {
 
 impl CreateKeyFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &CreateKeyInputBuilder {
         &self.inner
     }
@@ -229,6 +232,7 @@ pub struct VersionKeyFluentBuilder {
 
 impl VersionKeyFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &VersionKeyInputBuilder {
         &self.inner
     }
@@ -270,6 +274,7 @@ pub struct GetActiveBranchKeyFluentBuilder {
 
 impl GetActiveBranchKeyFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &GetActiveBranchKeyInputBuilder {
         &self.inner
     }
@@ -311,6 +316,7 @@ pub struct GetBranchKeyVersionFluentBuilder {
 
 impl GetBranchKeyVersionFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &GetBranchKeyVersionInputBuilder {
         &self.inner
     }
@@ -366,6 +372,7 @@ pub struct GetBeaconKeyFluentBuilder {
 
 impl GetBeaconKeyFluentBuilder {
     /// The input set so far.
+    #[must_use]
     pub const fn as_input(&self) -> &GetBeaconKeyInputBuilder {
         &self.inner
     }

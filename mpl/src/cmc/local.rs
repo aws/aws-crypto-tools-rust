@@ -8,6 +8,7 @@
 //! specified in `../spec/framework/local-cryptographic-materials-cache.md`.
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::Kind;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -100,11 +101,13 @@ impl LocalCmc {
     }
 
     /// Configured entry capacity.
+    #[must_use]
     pub fn entry_capacity(&self) -> usize {
         self.inner.entry_capacity
     }
 
     /// Configured entry pruning tail size.
+    #[must_use]
     pub fn entry_pruning_tail_size(&self) -> usize {
         self.inner.entry_pruning_tail_size
     }
@@ -252,12 +255,7 @@ impl LocalCmcBuilder {
     /// Returns a validation error ([`Error::is_validation`])
     /// if `entry_capacity` is unset.
     pub fn build(self) -> Result<LocalCmc, Error> {
-        let Some(entry_capacity) = self.entry_capacity else {
-            return Err(Error::new(
-                Kind::Validation,
-                "an entry capacity is required",
-            ));
-        };
+        let entry_capacity = required(self.entry_capacity, "entry_capacity")?;
         Ok(LocalCmc::with_clock(
             entry_capacity,
             self.entry_pruning_tail_size

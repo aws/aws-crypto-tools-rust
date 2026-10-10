@@ -109,6 +109,7 @@
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
+mod builder;
 pub mod error;
 pub use error::Error;
 mod encrypt;

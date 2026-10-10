@@ -4,6 +4,7 @@
 //! Raw AES keyring.
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::{DataKeyInfo, Kind};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -230,11 +231,27 @@ impl RawAesKeyringBuilder {
         self
     }
 
+    /// Set or clear the key namespace from an `Option`.
+    /// To set a value, use [`Self::key_namespace`].
+    #[must_use]
+    pub fn set_key_namespace(mut self, key_namespace: Option<String>) -> Self {
+        self.key_namespace = key_namespace;
+        self
+    }
+
     /// Set the key name, which this keyring serializes into the key provider information of each EDK.
     /// Required.
     #[must_use]
     pub fn key_name(mut self, key_name: impl Into<String>) -> Self {
         self.key_name = Some(key_name.into());
+        self
+    }
+
+    /// Set or clear the key name from an `Option`.
+    /// To set a value, use [`Self::key_name`].
+    #[must_use]
+    pub fn set_key_name(mut self, key_name: Option<String>) -> Self {
+        self.key_name = key_name;
         self
     }
 
@@ -249,11 +266,27 @@ impl RawAesKeyringBuilder {
         self
     }
 
+    /// Set or clear the wrapping key from an `Option`.
+    /// To set a value, use [`Self::wrapping_key`].
+    #[must_use]
+    pub fn set_wrapping_key(mut self, wrapping_key: Option<Vec<u8>>) -> Self {
+        self.wrapping_key = wrapping_key;
+        self
+    }
+
     /// Set the wrapping algorithm.
     /// Required.
     #[must_use]
     pub const fn wrapping_alg(mut self, wrapping_alg: AesGcm) -> Self {
         self.wrapping_alg = Some(wrapping_alg);
+        self
+    }
+
+    /// Set or clear the wrapping algorithm from an `Option`.
+    /// To set a value, use [`Self::wrapping_alg`].
+    #[must_use]
+    pub const fn set_wrapping_alg(mut self, wrapping_alg: Option<AesGcm>) -> Self {
+        self.wrapping_alg = wrapping_alg;
         self
     }
 
@@ -265,21 +298,10 @@ impl RawAesKeyringBuilder {
     ///   the wrapping key's length does not match the wrapping algorithm,
     ///   or the key namespace is or starts with `aws-kms`.
     pub fn build(self) -> Result<RawAesKeyring, Error> {
-        let Some(key_namespace) = self.key_namespace else {
-            return Err(Error::new(Kind::Validation, "a key namespace is required"));
-        };
-        let Some(key_name) = self.key_name else {
-            return Err(Error::new(Kind::Validation, "a key name is required"));
-        };
-        let Some(wrapping_key) = self.wrapping_key else {
-            return Err(Error::new(Kind::Validation, "a wrapping key is required"));
-        };
-        let Some(wrapping_alg) = self.wrapping_alg else {
-            return Err(Error::new(
-                Kind::Validation,
-                "a wrapping algorithm is required",
-            ));
-        };
+        let key_namespace = required(self.key_namespace, "key_namespace")?;
+        let key_name = required(self.key_name, "key_name")?;
+        let wrapping_key = required(self.wrapping_key, "wrapping_key")?;
+        let wrapping_alg = required(self.wrapping_alg, "wrapping_alg")?;
 
         // A prefix check, not an equality check: `aws-kms-hierarchy`,
         // `aws-kms-rsa` and `aws-kms-ecdh` are the key provider IDs of other

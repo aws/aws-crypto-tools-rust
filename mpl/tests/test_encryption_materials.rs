@@ -54,7 +54,7 @@ fn p384_signing_key() -> SigningKey {
 #[test]
 fn test_valid_construction_minimal() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let result = EncryptionMaterials::builder()
@@ -102,7 +102,7 @@ fn test_required_ec_keys_must_be_subset() {
 #[test]
 fn test_edks_must_be_empty_without_pdk() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
     let edk = make_edk();
 
     let result = EncryptionMaterials::builder()
@@ -118,7 +118,7 @@ fn test_edks_must_be_empty_without_pdk() {
 #[test]
 fn test_signing_key_rejected_without_asymmetric_signing() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
     let sk = SigningKey::new(b"sign".to_vec());
 
     let result = EncryptionMaterials::builder()
@@ -147,7 +147,7 @@ fn test_signing_key_accepted_regardless_of_length() {
     ];
     for (suite_id, sk) in cases {
         let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
-        let reck = BTreeSet::new();
+        let reck = BTreeSet::<String>::new();
         let pdk =
             PlaintextDataKey::new(vec![0x5a; suite_id.specification().encryption_key_length()]);
         let edk = make_edk();
@@ -171,7 +171,7 @@ fn test_signing_key_accepted_regardless_of_length() {
 #[test]
 fn test_symmetric_keys_rejected_without_symmetric_signing() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
     let ssk = vec![SymmetricSigningKey::new(b"sym".to_vec())];
     let pdk = pdk_32();
     let edk = make_edk();
@@ -191,7 +191,7 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
 #[test]
 fn test_validate_aws_crypto_public_key_happy_path() {
     let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
     let pdk = pdk_32();
     let sk = p384_signing_key();
     let edk = make_edk();
@@ -211,7 +211,7 @@ fn test_validate_aws_crypto_public_key_happy_path() {
 #[test]
 fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
     let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
@@ -229,7 +229,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
 #[test]
 fn test_plaintext_data_key_immutability() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
     let pdk = pdk_32();
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
@@ -296,7 +296,7 @@ fn test_field_getters_return_constructed_values() {
 #[test]
 fn test_field_getters_return_none_for_omitted_optional_fields() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
 
     let mat = EncryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
@@ -342,7 +342,7 @@ fn test_debug_format_includes_all_fields() {
 #[test]
 fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let ec = make_ec_with_keys(&["other-key"]);
-    let reck = BTreeSet::new();
+    let reck = BTreeSet::<String>::new();
     let pdk = pdk_32();
     let sk = p384_signing_key();
     let edk = make_edk();
@@ -370,7 +370,7 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
     // a wrong `commit_kdf` pass silently.
     for suite_id in [NO_SIGN_SUITE, SIGN_SUITE] {
         let ec = EncryptionContext::new();
-        let reck = BTreeSet::new();
+        let reck = BTreeSet::<String>::new();
         let (sk, edks) = if suite_id == SIGN_SUITE {
             (Some(p384_signing_key()), vec![])
         } else {

@@ -199,6 +199,14 @@ impl BranchKeyStoreBuilder {
         self
     }
 
+    /// Set or clear the DynamoDB table name from an `Option`.
+    /// To set a value, use [`Self::ddb_table_name`].
+    #[must_use]
+    pub fn set_ddb_table_name(mut self, ddb_table_name: Option<String>) -> Self {
+        self.ddb_table_name = ddb_table_name;
+        self
+    }
+
     /// Set the logical name cryptographically bound to all keys in the
     /// table. Required.
     #[must_use]
@@ -207,11 +215,27 @@ impl BranchKeyStoreBuilder {
         self
     }
 
+    /// Set or clear the logical key store name from an `Option`.
+    /// To set a value, use [`Self::logical_key_store_name`].
+    #[must_use]
+    pub fn set_logical_key_store_name(mut self, logical_key_store_name: Option<String>) -> Self {
+        self.logical_key_store_name = logical_key_store_name;
+        self
+    }
+
     /// Set the KMS key configuration governing encryption and decryption.
     /// Required.
     #[must_use]
     pub fn kms_configuration(mut self, config: impl Into<KmsConfiguration>) -> Self {
         self.kms_configuration = Some(config.into());
+        self
+    }
+
+    /// Set or clear the KMS configuration from an `Option`.
+    /// To set a value, use [`Self::kms_configuration`].
+    #[must_use]
+    pub fn set_kms_configuration(mut self, kms_configuration: Option<KmsConfiguration>) -> Self {
+        self.kms_configuration = kms_configuration;
         self
     }
 
@@ -250,8 +274,8 @@ impl BranchKeyStoreBuilder {
     /// from the KMS configuration (the SDK's default region provider chain
     /// for `Discovery`).
     #[must_use]
-    pub fn kms_client(mut self, client: KmsClient) -> Self {
-        self.kms_client = Some(client);
+    pub fn kms_client(mut self, client: impl Into<KmsClient>) -> Self {
+        self.kms_client = Some(client.into());
         self
     }
 
@@ -267,8 +291,8 @@ impl BranchKeyStoreBuilder {
     /// parsed from the KMS configuration (the SDK's default region provider
     /// chain for `Discovery`).
     #[must_use]
-    pub fn ddb_client(mut self, client: DynamoDbClient) -> Self {
-        self.ddb_client = Some(client);
+    pub fn ddb_client(mut self, client: impl Into<DynamoDbClient>) -> Self {
+        self.ddb_client = Some(client.into());
         self
     }
 

@@ -3,6 +3,7 @@
 //! Public API types for encrypt and decrypt operations.
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::val_err;
 use std::num::{NonZeroU32, NonZeroUsize};
 
@@ -382,8 +383,8 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the key-value pairs to associate with the encrypted data.
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -464,6 +465,15 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
+    /// Set the plaintext from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::plaintext`].
+    #[must_use]
+    pub const fn set_plaintext(mut self, plaintext: Option<&'a [u8]>) -> Self {
+        self.plaintext = plaintext;
+        self
+    }
+
     /// Set the maximum number of encrypted data keys.
     /// Default is no limit.
     ///
@@ -514,9 +524,7 @@ impl<'a> EncryptInputBuilder<'a> {
     ///
     /// - [`Validation`](crate::Error::Validation): no plaintext was set, or not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<EncryptInput<'a>, Error> {
-        let plaintext = self
-            .plaintext
-            .ok_or_else(|| val_err("a plaintext must be provided"))?;
+        let plaintext = required(self.plaintext, "plaintext")?;
         //= spec/client-apis/encrypt.md#input
         //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
         //
@@ -655,8 +663,8 @@ impl EncryptStreamInputBuilder {
     /// Set the key-value pairs to associate with the encrypted data.
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -910,13 +918,22 @@ impl<'a> DecryptInputBuilder<'a> {
         self
     }
 
+    /// Set the ciphertext from an `Option`.
+    /// `None` leaves it unset.
+    /// To set a value, use [`Self::ciphertext`].
+    #[must_use]
+    pub const fn set_ciphertext(mut self, ciphertext: Option<&'a [u8]>) -> Self {
+        self.ciphertext = ciphertext;
+        self
+    }
+
     /// Set the encryption context to verify against the encrypted message.
     /// If non-empty, decrypt requires every entry to be present in the message's encryption
     /// context (subset check).
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -1017,9 +1034,7 @@ impl<'a> DecryptInputBuilder<'a> {
     ///
     /// - [`Validation`](crate::Error::Validation): no ciphertext was set, or not exactly one of a keyring or CMM was set.
     pub fn build(self) -> Result<DecryptInput<'a>, Error> {
-        let ciphertext = self
-            .ciphertext
-            .ok_or_else(|| val_err("a ciphertext must be provided"))?;
+        let ciphertext = required(self.ciphertext, "ciphertext")?;
         //= spec/client-apis/decrypt.md#input
         //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
         //
@@ -1122,8 +1137,8 @@ impl DecryptStreamInputBuilder {
     /// encryption context (subset check).
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 

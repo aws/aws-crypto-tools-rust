@@ -141,31 +141,37 @@ impl StormTrackingCmc {
     }
 
     /// Maximum number of entries the inner [`LocalCmc`] holds.
+    #[must_use]
     pub fn entry_capacity(&self) -> usize {
         self.inner.local.entry_capacity()
     }
 
     /// How many least-recently-used entries each get checks for expired entries to evict.
+    #[must_use]
     pub fn entry_pruning_tail_size(&self) -> usize {
         self.inner.local.entry_pruning_tail_size()
     }
 
     /// How long one caller has to refresh an entry before another caller may try.
+    #[must_use]
     pub fn grace_interval(&self) -> Duration {
         self.inner.grace_interval
     }
 
     /// Maximum number of refreshes in flight at once.
+    #[must_use]
     pub fn fan_out(&self) -> usize {
         self.inner.fan_out
     }
 
     /// How long a caller waits for another caller's refresh before failing.
+    #[must_use]
     pub fn inflight_ttl(&self) -> Duration {
         self.inner.inflight_ttl
     }
 
     /// How long a waiting caller sleeps between checks of the cache.
+    #[must_use]
     pub fn sleep(&self) -> Duration {
         self.inner.sleep
     }
@@ -174,6 +180,7 @@ impl StormTrackingCmc {
     /// wrapper delegates storage to the inner cache.
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
+    #[must_use]
     pub fn inner(&self) -> &LocalCmc {
         &self.inner.local
     }
@@ -197,6 +204,7 @@ impl StormTrackingCmc {
     /// does NOT prune stale entries.
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
+    #[must_use]
     pub fn inflight_count(&self) -> usize {
         let state = self
             .inner
