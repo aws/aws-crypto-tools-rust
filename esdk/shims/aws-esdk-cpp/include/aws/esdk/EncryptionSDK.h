@@ -499,6 +499,7 @@ public:
 };
 
 /// KMS Client.
+/// Every KmsClient and DdbClient in a process shares one connection pool and one default credential chain.
 class KmsClient {
     std::shared_ptr<detail::KmsClientImpl> impl_;
     friend class KeyStore;
@@ -509,6 +510,7 @@ public:
 };
 
 /// DynamoDB client.
+/// Every KmsClient and DdbClient in a process shares one connection pool and one default credential chain.
 class DdbClient {
     std::shared_ptr<detail::DdbClientImpl> impl_;
     friend class KeyStore;

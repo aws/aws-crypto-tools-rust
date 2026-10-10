@@ -1143,6 +1143,25 @@ fn create_sdk_config_applies_every_field() {
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
 }
 
+#[test]
+fn create_sdk_config_adds_the_user_agent_once() {
+    let ua = shim_user_agent();
+    for _ in 0..2 {
+        let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
+        let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
+        assert_eq!(app_name.matches(ua.as_str()).count(), 1, "{app_name}");
+    }
+}
+
+#[test]
+fn clients_carry_an_explicit_http_client() {
+    let cfg = unset_client_config();
+    let kms = create_kms_client(&cfg).expect("kms client");
+    let ddb = create_ddb_client(&cfg).expect("ddb client");
+    assert!(kms.inner.config().http_client().is_some());
+    assert!(ddb.inner.config().http_client().is_some());
+}
+
 // Handles
 
 // into_keyring_handle is the Rust that backs the public C++ `Keyring::adopt` path.

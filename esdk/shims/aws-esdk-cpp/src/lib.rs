@@ -124,7 +124,7 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
-use aws_config::{AppName, Region, SdkConfig};
+use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
@@ -137,6 +137,10 @@ use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Resource, RetryKind, Service};
+use aws_sdk_kms::config::SharedHttpClient;
+use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
+use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
+use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -985,15 +989,25 @@ fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
     }
 }
 
-//= spec/shim/esdk-shim.md#service-client-configuration
-//= type=implication
-//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
-//# - The shim SHOULD allow one client configuration to be applied to multiple
-//# service clients.
-fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
-    let shared_config = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
-        aws_config::BehaviorVersion::latest(),
-    ));
+// Loaded once per process.
+// Every client config derives from it, so all clients share one credential chain and HTTP client.
+static DEFAULT_SDK_CONFIG: LazyLock<Result<SdkConfig, String>> =
+    LazyLock::new(load_default_sdk_config);
+
+/// The AWS SDK's default HTTPS client.
+fn default_http_client() -> Option<SharedHttpClient> {
+    default_http_client_plugin_v2(BehaviorVersion::latest())?
+        .runtime_components(&RuntimeComponentsBuilder::new("aws-esdk-cpp"))
+        .http_client()
+}
+
+fn load_default_sdk_config() -> Result<SdkConfig, String> {
+    let mut loader = aws_config::defaults(BehaviorVersion::latest());
+    // A config without an HTTP client gives each service client its own connection pool.
+    if let Some(http_client) = default_http_client() {
+        loader = loader.http_client(http_client);
+    }
+    let shared_config = TOKIO_RUNTIME.block_on(loader.load());
 
     let user_agent_string = shim_user_agent();
     let current_app_name = shared_config
@@ -1008,7 +1022,19 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
             format!("invalid app name: {e}"),
         )
     })?;
-    let mut builder = shared_config.to_builder().app_name(app_name);
+    Ok(shared_config.to_builder().app_name(app_name).build())
+}
+
+//= spec/shim/esdk-shim.md#service-client-configuration
+//= type=implication
+//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
+//# - The shim SHOULD allow one client configuration to be applied to multiple
+//# service clients.
+fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
+    let mut builder = DEFAULT_SDK_CONFIG
+        .as_ref()
+        .map_err(Clone::clone)?
+        .to_builder();
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target does not supply a retry configuration, the shim MUST defer to
     //# the core ESDK's default retry configuration and MUST NOT substitute its own.
