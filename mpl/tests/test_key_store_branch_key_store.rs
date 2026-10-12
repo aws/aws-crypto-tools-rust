@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the concrete [`BranchKeyStore`] — construction surface,
+//! Tests for the DynamoDB key store — construction surface,
 //! `GetKeyStoreInfo`, and read-path dispatch.
 //!
 //! No real AWS calls are made in this file: the fixtures supply zero-config
@@ -21,7 +21,7 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::{Discovery, MrDiscovery};
-use aws_crypto_mpl::{BranchKeyStore, BranchKeyStoreBuilder, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
 
 fn key_store_id(store: &KeyStoreClient) -> String {
     store
@@ -48,8 +48,8 @@ const KMS_KEY_ARN: &str =
 
 /// A builder with every required field, the simplest
 /// `KmsConfiguration::KmsKeyArn` variant, and no optional fields.
-fn required_only() -> BranchKeyStoreBuilder {
-    BranchKeyStore::builder()
+fn required_only() -> KeyStoreClientBuilder {
+    KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
         .logical_key_store_name("test-logical")
@@ -57,18 +57,18 @@ fn required_only() -> BranchKeyStoreBuilder {
 
 /// `required_only` plus a key store id and the dummy clients,
 /// so construction never builds a default client.
-fn fixture_config_with_id(id: &str) -> BranchKeyStoreBuilder {
+fn fixture_config_with_id(id: &str) -> KeyStoreClientBuilder {
     let (kms, ddb) = dummy_clients();
     required_only().id(id).ddb_client(ddb).kms_client(kms)
 }
 
 /// Same as `fixture_config_with_id` but with no id, so construction
 /// exercises the v4-UUID fallback.
-fn fixture_config_no_id() -> BranchKeyStoreBuilder {
+fn fixture_config_no_id() -> KeyStoreClientBuilder {
     fixture_config_with_id("placeholder").set_id(None)
 }
 
-async fn build_err(builder: BranchKeyStoreBuilder) -> aws_crypto_mpl::Error {
+async fn build_err(builder: KeyStoreClientBuilder) -> aws_crypto_mpl::Error {
     match builder.build().await {
         Ok(_) => panic!("build must fail"),
         Err(e) => e,
@@ -78,7 +78,7 @@ async fn build_err(builder: BranchKeyStoreBuilder) -> aws_crypto_mpl::Error {
 #[tokio::test]
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = BranchKeyStore::builder()
+    let builder = KeyStoreClient::builder()
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -90,7 +90,7 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = BranchKeyStore::builder()
+    let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
         .kms_client(kms)
@@ -102,7 +102,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_kms_configuration_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = BranchKeyStore::builder()
+    let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -127,35 +127,28 @@ fn build_with_both_clients_is_ready_on_first_poll() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn build_defaults_absent_clients_to_the_kms_arn_region() {
-    use aws_crypto_mpl::key_store::branch_key_store::__test_internals as ks;
+    use aws_crypto_mpl::key_store::__test_internals::branch_key_store::build_clients;
 
-    let store = ks::build(required_only())
+    let (kms, ddb) = build_clients(required_only())
         .await
         .expect("build must default both absent clients");
-    assert_eq!(
-        ks::kms_client(&store).config().region().map(|r| r.as_ref()),
-        Some("us-west-2")
-    );
-    assert_eq!(
-        ks::ddb_client(&store).config().region().map(|r| r.as_ref()),
-        Some("us-west-2")
-    );
+    assert_eq!(kms.config().region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert_eq!(ddb.config().region().map(|r| r.as_ref()), Some("us-west-2"));
 }
 
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn build_defaults_only_the_absent_client() {
-    use aws_crypto_mpl::key_store::branch_key_store::__test_internals as ks;
+    use aws_crypto_mpl::key_store::__test_internals::branch_key_store::build_clients;
 
     // The supplied DynamoDB client has no Region; the defaulted KMS client
     // gets the ARN's.
     let (_, ddb) = dummy_clients();
-    let store = ks::build(required_only().ddb_client(ddb)).await.unwrap();
-    assert_eq!(
-        ks::kms_client(&store).config().region().map(|r| r.as_ref()),
-        Some("us-west-2")
-    );
-    assert!(ks::ddb_client(&store).config().region().is_none());
+    let (kms, ddb) = build_clients(required_only().ddb_client(ddb))
+        .await
+        .unwrap();
+    assert_eq!(kms.config().region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert!(ddb.config().region().is_none());
 }
 
 #[tokio::test]
@@ -255,7 +248,7 @@ async fn new_with_mr_discovery_config_succeeds() {
 #[tokio::test]
 async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
-    let cfg = BranchKeyStore::builder()
+    let cfg = KeyStoreClient::builder()
         .ddb_table_name("my-table")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
         .logical_key_store_name("my-logical")

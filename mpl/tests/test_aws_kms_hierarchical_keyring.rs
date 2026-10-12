@@ -39,10 +39,10 @@ use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     HierarchicalKeyringBuilder,
 };
 use aws_crypto_mpl::key_store::{
-    BranchKeyStore, BranchKeyStoreBuilder, CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput,
-    CreateKeyStoreOutput, Discovery, GetActiveBranchKeyInput, GetActiveBranchKeyOutput,
-    GetBeaconKeyInput, GetBeaconKeyOutput, GetBranchKeyVersionInput, GetBranchKeyVersionOutput,
-    GetKeyStoreInfoInput, GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KmsConfiguration,
+    CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput, Discovery,
+    GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
+    GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
+    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration,
     VersionKeyInput, VersionKeyOutput,
 };
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
@@ -92,7 +92,7 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
     }
 }
 
-/// A real [`BranchKeyStore`] that is never consulted.
+/// A real DynamoDB key store that is never consulted.
 ///
 /// The type is the one callers actually pass to the keyring,
 /// but it points at a table and KMS key that do not exist, so any key store call would fail.
@@ -101,7 +101,7 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 fn key_store_never_consulted() -> KeyStoreClient {
     let (kms, ddb) = dummy_clients();
     build_without_io(
-        BranchKeyStore::builder()
+        KeyStoreClient::builder()
             .ddb_table_name("test-table")
             .kms_configuration(KmsConfiguration::KmsKeyArn(
                 "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
@@ -115,12 +115,12 @@ fn key_store_never_consulted() -> KeyStoreClient {
 
 /// Builds `builder` by polling its future once.
 /// With both clients supplied, `build` does no IO, so it is ready on the first poll.
-fn build_without_io(builder: BranchKeyStoreBuilder) -> KeyStoreClient {
+fn build_without_io(builder: KeyStoreClientBuilder) -> KeyStoreClient {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
     let mut fut = std::pin::pin!(builder.build());
     match fut.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
-        Poll::Ready(result) => result.expect("BranchKeyStore construction must succeed"),
+        Poll::Ready(result) => result.expect("key store construction must succeed"),
         Poll::Pending => panic!("build with both clients supplied must not await"),
     }
 }

@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! KMS-backed read helpers for the [`BranchKeyStore`](super::BranchKeyStore).
+//! KMS-backed read helpers for the DynamoDB key store.
 //!
 //! Implements the cross-cutting "Authenticating a KeyStore item" and
 //! "AWS KMS Branch Key Decryption" sections of `branch-key-store.md`,

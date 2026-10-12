@@ -4,7 +4,7 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{BranchKeyStore, HierarchicalKeyring, KmsConfiguration, cmc::DefaultCmc};
+use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
 use aws_esdk::{CommitmentPolicy, Esdk};
 use log::info;
 use sysinfo::System;
@@ -66,7 +66,7 @@ impl EsdkBenchmark {
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-        let key_store = BranchKeyStore::builder()
+        let key_store = KeyStoreClient::builder()
             .kms_client(aws_sdk_kms::Client::new(&sdk_config))
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)

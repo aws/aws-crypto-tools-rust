@@ -27,7 +27,7 @@ pub use aws_kms::hierarchical_keyring::{
     HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
 
-// Both SDK clients appear in `BranchKeyStoreBuilder`'s public signature,
+// Both SDK clients appear in `KeyStoreClientBuilder`'s public signature,
 // and a key store `Error` carries their SDK errors as its source.
 // Downcasting that source needs the exact SDK version this crate uses,
 // which the consumer's own dependency might not resolve to.
@@ -40,7 +40,5 @@ pub use cmc::{
     UsageMetadata,
 };
 pub use cmm::{Cmm, DefaultCmm, SharedCmm};
-pub use key_store::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStore, KeyStoreClient, KmsConfiguration,
-};
+pub use key_store::{KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

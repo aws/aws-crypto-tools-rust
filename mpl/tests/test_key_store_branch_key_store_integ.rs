@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Real-AWS integration tests for the [`BranchKeyStore`] read path.
+//! Real-AWS integration tests for the DynamoDB key store read path.
 //!
 //! These tests call real AWS and run in CI via the OIDC-assumed role.
 //! They require read access to the test resources (DDB `KeyStoreDdbTable`
@@ -26,7 +26,7 @@ use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
 use aws_crypto_mpl::error_chain::aws_service_error_code;
-use aws_crypto_mpl::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KmsConfiguration};
 
 // ─── Fixtures (mirror Fixtures.dfy) ─────────────────────────────────────────
 
@@ -78,7 +78,7 @@ async fn kms_client_for_region(region: &'static str) -> KmsClient {
     KmsClient::new(&cfg)
 }
 
-/// Build a `BranchKeyStore` for the given KMS configuration, logical
+/// Build a DynamoDB key store for the given KMS configuration, logical
 /// key store name, and explicit region-pinned clients. The clients are
 /// supplied via the config so no default client is constructed.
 async fn build_store(
@@ -87,7 +87,7 @@ async fn build_store(
     kms_client: KmsClient,
     ddb_client: DynamoDbClient,
 ) -> KeyStoreClient {
-    BranchKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(kms_configuration)
         .logical_key_store_name(logical_key_store_name)
@@ -453,7 +453,7 @@ async fn integ_get_active_key_against_a_missing_table_nests_the_ddb_sdk_error() 
     // as `Unhandled` carrying `AccessDeniedException`. A caller permitted on
     // the whole table namespace instead sees `ResourceNotFoundException`. Both
     // are the same nesting, which is what is under test here.
-    let store = BranchKeyStore::builder()
+    let store = KeyStoreClient::builder()
         .ddb_table_name("aws-crypto-tools-rust-table-that-does-not-exist")
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)

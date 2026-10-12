@@ -1,11 +1,8 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! [`BranchKeyStore`], the [`KeyStore`] implementation backed by AWS KMS and Amazon DynamoDB.
-//!
-//! Construct with [`BranchKeyStore::builder`]. The KMS and DynamoDB clients
-//! are optional; when omitted, a default client is built using the Region
-//! parsed from the configured KMS ARN.
+//! The [`KeyStore`] implementation backed by AWS KMS and Amazon DynamoDB,
+//! built with [`KeyStoreClient::builder`].
 
 use crate::Error;
 use crate::error::{BranchKey, ConflictReason, DynamoDbTable, Kind, Resource, RetryKind, Service};
@@ -57,14 +54,12 @@ use crate::key_store::{
 use crate::structures::BeaconKeyMaterials;
 
 /// A [`KeyStore`] backed by AWS KMS and Amazon DynamoDB.
-///
-/// [`BranchKeyStore::builder`] builds one and returns it as a [`KeyStoreClient`].
 #[derive(Clone)]
-pub struct BranchKeyStore {
-    inner: Arc<BranchKeyStoreInner>,
+pub(crate) struct DynamoDbKeyStore {
+    inner: Arc<DynamoDbKeyStoreInner>,
 }
 
-struct BranchKeyStoreInner {
+struct DynamoDbKeyStoreInner {
     ddb_table_name: String,
     logical_key_store_name: String,
     kms_configuration: KmsConfiguration,
@@ -81,13 +76,15 @@ struct BranchKeyStoreInner {
 const DDB_TABLE_NAME_MIN_LEN: usize = 3;
 const DDB_TABLE_NAME_MAX_LEN: usize = 255;
 
-impl BranchKeyStore {
-    /// Start a builder for a `BranchKeyStore`.
+impl KeyStoreClient {
+    /// Start a builder for a key store backed by AWS KMS and Amazon DynamoDB.
     #[must_use]
-    pub fn builder() -> BranchKeyStoreBuilder {
-        BranchKeyStoreBuilder::default()
+    pub fn builder() -> KeyStoreClientBuilder {
+        KeyStoreClientBuilder::default()
     }
+}
 
+impl DynamoDbKeyStore {
     fn kms_client(&self) -> &KmsClient {
         &self.inner.kms_client
     }
@@ -175,12 +172,12 @@ impl BranchKeyStore {
     }
 }
 
-/// Builder for [`BranchKeyStore`].
+/// Builder for a [`KeyStoreClient`] backed by AWS KMS and Amazon DynamoDB.
 ///
 /// `ddb_table_name`, `logical_key_store_name`, and `kms_configuration` are required.
 /// Everything else is optional.
 #[derive(Debug, Clone, Default)]
-pub struct BranchKeyStoreBuilder {
+pub struct KeyStoreClientBuilder {
     ddb_table_name: Option<String>,
     logical_key_store_name: Option<String>,
     kms_configuration: Option<KmsConfiguration>,
@@ -190,7 +187,7 @@ pub struct BranchKeyStoreBuilder {
     ddb_client: Option<DynamoDbClient>,
 }
 
-impl BranchKeyStoreBuilder {
+impl KeyStoreClientBuilder {
     /// Set the DynamoDB table name that backs this key store.
     /// Required.
     #[must_use]
@@ -317,7 +314,7 @@ impl BranchKeyStoreBuilder {
         self.build_store().await.map(KeyStoreClient::new)
     }
 
-    async fn build_store(self) -> Result<BranchKeyStore, Error> {
+    async fn build_store(self) -> Result<DynamoDbKeyStore, Error> {
         let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
         let logical_key_store_name =
             required(self.logical_key_store_name, "logical_key_store_name")?;
@@ -353,8 +350,8 @@ impl BranchKeyStoreBuilder {
 
         let key_store_id = self.id.unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        Ok(BranchKeyStore {
-            inner: Arc::new(BranchKeyStoreInner {
+        Ok(DynamoDbKeyStore {
+            inner: Arc::new(DynamoDbKeyStoreInner {
                 ddb_table_name,
                 logical_key_store_name,
                 kms_configuration,
@@ -368,7 +365,7 @@ impl BranchKeyStoreBuilder {
 }
 
 #[async_trait]
-impl KeyStore for BranchKeyStore {
+impl KeyStore for DynamoDbKeyStore {
     /// # Errors
     ///
     /// Does not return an error.
@@ -1141,28 +1138,18 @@ fn record_from_ddb_item(
     })
 }
 
-/// Internal accessors exposed solely so integration tests under `tests/` can
-/// build a `BranchKeyStore` and assert on the SDK clients resolved during construction. Gated behind
-/// `test-utils` so it is not compiled for library consumers. Not part of the
-/// public API. Do not use.
-///
-/// Everything in this module is exempt from semantic versioning and may be
-/// changed, renamed, or removed at any time.
+/// Internals that the crate's own integration tests reach.
+/// Not part of the public API and may change in any release.
 #[cfg(feature = "test-utils")]
-#[doc(hidden)]
 pub mod __test_internals {
-    use super::{BranchKeyStore, BranchKeyStoreBuilder};
+    use super::KeyStoreClientBuilder;
     use crate::Error;
 
-    pub async fn build(builder: BranchKeyStoreBuilder) -> Result<BranchKeyStore, Error> {
-        builder.build_store().await
-    }
-
-    pub fn kms_client(store: &BranchKeyStore) -> &aws_sdk_kms::Client {
-        store.kms_client()
-    }
-
-    pub fn ddb_client(store: &BranchKeyStore) -> &aws_sdk_dynamodb::Client {
-        store.ddb_client()
+    /// Build the key store and return its KMS and DynamoDB clients.
+    pub async fn build_clients(
+        builder: KeyStoreClientBuilder,
+    ) -> Result<(aws_sdk_kms::Client, aws_sdk_dynamodb::Client), Error> {
+        let store = builder.build_store().await?;
+        Ok((store.kms_client().clone(), store.ddb_client().clone()))
     }
 }

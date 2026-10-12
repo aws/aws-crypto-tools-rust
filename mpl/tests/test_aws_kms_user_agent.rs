@@ -1,12 +1,12 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! The user agent on the AWS requests a `BranchKeyStore` sends.
+//! The user agent on the AWS requests the DynamoDB key store sends.
 
 use std::sync::{Arc, Mutex};
 
 use aws_config::FrameworkMetadata;
-use aws_crypto_mpl::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KmsConfiguration};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 use aws_smithy_runtime_api::client::http::{
@@ -108,7 +108,7 @@ fn ddb_client(capture: &Capture) -> DynamoDbClient {
 }
 
 async fn key_store(capture: &Capture, framework: Option<FrameworkMetadata>) -> KeyStoreClient {
-    BranchKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_owned()))
