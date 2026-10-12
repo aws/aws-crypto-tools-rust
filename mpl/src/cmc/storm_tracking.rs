@@ -31,26 +31,15 @@
 //! (e.g. `async-std`, `smol`) will hit a runtime panic when a get triggers
 //! the blocking path.
 
+use crate::Error;
+use crate::error::Kind;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 
-use super::{CacheEntry, Cmc, CmcError, LocalCmc};
-
-/// Which unit the caller uses for the numeric time knobs.
-///
-/// Applies to `grace_period`, `grace_interval`, and `inflight_ttl`.
-/// Does NOT apply to `sleep_milli` (always milliseconds).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TimeUnits {
-    /// Interpret numeric values as seconds (the default).
-    #[default]
-    Seconds,
-    /// Interpret numeric values as milliseconds.
-    Milliseconds,
-}
+use super::{CacheEntry, Cmc, LocalCmc, StormTrackingCache};
 
 /// Per-key inflight tracking state, held under a `Mutex`.
 struct StormTrackingState {
@@ -73,128 +62,50 @@ enum GetDecision {
     Wait { deadline: Option<SystemTime> },
 }
 
-/// The result of validating and interpreting a raw `StormTrackingCmc` config.
-struct ValidatedConfig {
-    grace_period: Duration,
-    grace_interval: Duration,
-    inflight_ttl: Duration,
-    sleep_milli: Duration,
-    fan_out: usize,
-    time_units: TimeUnits,
-}
-
-impl ValidatedConfig {
-    /// Validate raw config values and produce the interpreted `Duration`s.
-    ///
-    /// Spec: `grace_period`, `grace_interval`, `inflight_ttl`, `sleep_milli`,
-    /// and `fan_out` all MUST be at least 1.
-    fn from_raw(
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-    ) -> Result<Self, CmcError> {
-        let time_units = time_units.unwrap_or_default();
-        let to_duration = |v: u64| -> Duration {
-            match time_units {
-                TimeUnits::Seconds => Duration::from_secs(v),
-                TimeUnits::Milliseconds => Duration::from_millis(v),
-            }
-        };
-
-        // Lower bounds.
-        if grace_period == 0 {
-            return Err(CmcError::invalid_entry("grace_period must be at least 1"));
-        }
-        if grace_interval == 0 {
-            return Err(CmcError::invalid_entry("grace_interval must be at least 1"));
-        }
-        if inflight_ttl == 0 {
-            return Err(CmcError::invalid_entry("inflight_ttl must be at least 1"));
-        }
-        if fan_out == 0 {
-            return Err(CmcError::invalid_entry("fan_out must be at least 1"));
-        }
-        if sleep_milli == 0 {
-            return Err(CmcError::invalid_entry("sleep_milli must be at least 1"));
-        }
-
-        let grace_period = to_duration(grace_period);
-        let grace_interval = to_duration(grace_interval);
-        let inflight_ttl = to_duration(inflight_ttl);
-
-        // Ordering: grace_interval <= inflight_ttl <= grace_period.
-        if grace_interval > grace_period {
-            return Err(CmcError::invalid_entry(
-                "grace_interval must be <= grace_period",
-            ));
-        }
-        if inflight_ttl > grace_period {
-            return Err(CmcError::invalid_entry(
-                "inflight_ttl must be <= grace_period",
-            ));
-        }
-        if grace_interval > inflight_ttl {
-            return Err(CmcError::invalid_entry(
-                "grace_interval must be <= inflight_ttl",
-            ));
-        }
-
-        Ok(Self {
-            grace_period,
-            grace_interval,
-            inflight_ttl,
-            sleep_milli: Duration::from_millis(sleep_milli),
-            fan_out,
-            time_units,
-        })
-    }
-}
-
 /// Storm-tracking Cryptographic Materials Cache.
 ///
 /// Wraps a [`LocalCmc`] and adds grace-period / grace-interval storm
 /// protection.  See the module-level docs and
 /// `spec/framework/storm-tracking-cryptographic-materials-cache.md` for the
 /// full behavioral specification.
+#[derive(Clone)]
 pub struct StormTrackingCmc {
-    inner: LocalCmc,
+    inner: Arc<StormTrackingCmcInner>,
+}
+
+struct StormTrackingCmcInner {
+    local: LocalCmc,
     grace_period: Duration,
     grace_interval: Duration,
     fan_out: usize,
     inflight_ttl: Duration,
-    sleep_milli: Duration,
-    time_units: TimeUnits,
+    sleep: Duration,
     state: Mutex<StormTrackingState>,
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
+/// The error when another caller holds the in-flight slot for this key past `inflight_ttl`.
+/// This is contention, not a fault: the next attempt usually finds the entry filled.
+fn inflight_ttl_exceeded() -> Error {
+    Error::new(
+        Kind::Throttling,
+        "timed out waiting for another caller to fill the cache entry",
+    )
+    .about(
+        None,
+        Some(crate::error::Resource::Cache(crate::error::Cache::new())),
+    )
+}
+
 impl StormTrackingCmc {
-    /// Construct a `StormTrackingCmc` using `SystemTime::now` as the clock.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-    ) -> Result<Self, CmcError> {
-        Self::with_clock_impl(
-            entry_capacity,
-            entry_pruning_tail_size,
-            grace_period,
-            grace_interval,
-            fan_out,
-            inflight_ttl,
-            sleep_milli,
-            time_units,
-            SystemTime::now,
-        )
+    /// Construct a `StormTrackingCmc` from `config` using `SystemTime::now`
+    /// as the clock.
+    ///
+    /// # Errors
+    ///
+    /// Does not return an error.
+    pub fn new(config: &StormTrackingCache) -> Result<Self, Error> {
+        Self::with_clock_impl(config, SystemTime::now)
     }
 
     /// Test-only constructor with clock injection. Gated behind the
@@ -202,107 +113,67 @@ impl StormTrackingCmc {
     /// Tests use this to advance time deterministically without sleeping.
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_clock<F>(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-        now: F,
-    ) -> Result<Self, CmcError>
+    pub fn with_clock<F>(config: &StormTrackingCache, now: F) -> Result<Self, Error>
     where
         F: Fn() -> SystemTime + Send + Sync + 'static,
     {
-        Self::with_clock_impl(
-            entry_capacity,
-            entry_pruning_tail_size,
-            grace_period,
-            grace_interval,
-            fan_out,
-            inflight_ttl,
-            sleep_milli,
-            time_units,
-            now,
-        )
+        Self::with_clock_impl(config, now)
     }
 
     /// Internal constructor that accepts an arbitrary clock. `pub(crate)`
     /// to mirror `LocalCmc::with_clock_impl`'s visibility for consistency
     /// across the two cache implementations; not part of the public API.
     /// Callers use `new` (production) or `with_clock` (test-utils feature).
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn with_clock_impl<F>(
-        entry_capacity: usize,
-        entry_pruning_tail_size: usize,
-        grace_period: u64,
-        grace_interval: u64,
-        fan_out: usize,
-        inflight_ttl: u64,
-        sleep_milli: u64,
-        time_units: Option<TimeUnits>,
-        now: F,
-    ) -> Result<Self, CmcError>
+    ///
+    /// `config` needs no validation here: [`StormTrackingCache`] can only
+    /// be built through its validating builder.
+    pub(crate) fn with_clock_impl<F>(config: &StormTrackingCache, now: F) -> Result<Self, Error>
     where
         F: Fn() -> SystemTime + Send + Sync + 'static,
     {
-        let cfg = ValidatedConfig::from_raw(
-            grace_period,
-            grace_interval,
-            fan_out,
-            inflight_ttl,
-            sleep_milli,
-            time_units,
-        )?;
-
         let now_arc: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(now);
         let inner_clock = Arc::clone(&now_arc);
 
-        let inner =
-            LocalCmc::with_clock_impl(entry_capacity, entry_pruning_tail_size, move || {
-                inner_clock()
-            })?;
+        let local = LocalCmc::with_clock_impl(
+            config.entry_capacity(),
+            config.entry_pruning_tail_size(),
+            move || inner_clock(),
+        )?;
 
         Ok(Self {
-            inner,
-            grace_period: cfg.grace_period,
-            grace_interval: cfg.grace_interval,
-            fan_out: cfg.fan_out,
-            inflight_ttl: cfg.inflight_ttl,
-            sleep_milli: cfg.sleep_milli,
-            time_units: cfg.time_units,
-            state: Mutex::new(StormTrackingState {
-                inflight: HashMap::new(),
+            inner: Arc::new(StormTrackingCmcInner {
+                local,
+                grace_period: config.grace_period(),
+                grace_interval: config.grace_interval(),
+                fan_out: config.fan_out(),
+                inflight_ttl: config.inflight_ttl(),
+                sleep: config.sleep(),
+                state: Mutex::new(StormTrackingState {
+                    inflight: HashMap::new(),
+                }),
+                now: now_arc,
             }),
-            now: now_arc,
         })
     }
 
     pub fn grace_period(&self) -> Duration {
-        self.grace_period
+        self.inner.grace_period
     }
 
     pub fn grace_interval(&self) -> Duration {
-        self.grace_interval
+        self.inner.grace_interval
     }
 
     pub fn fan_out(&self) -> usize {
-        self.fan_out
+        self.inner.fan_out
     }
 
     pub fn inflight_ttl(&self) -> Duration {
-        self.inflight_ttl
+        self.inner.inflight_ttl
     }
 
-    pub fn sleep_milli(&self) -> Duration {
-        self.sleep_milli
-    }
-
-    pub fn time_units(&self) -> TimeUnits {
-        self.time_units
+    pub fn sleep(&self) -> Duration {
+        self.inner.sleep
     }
 
     /// Borrow the inner `LocalCmc`. Useful in tests to verify that the
@@ -310,7 +181,7 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn inner(&self) -> &LocalCmc {
-        &self.inner
+        &self.inner.local
     }
 
     /// Peek the inflight map for `cache_id`. Returns the most recent time
@@ -320,7 +191,11 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn peek_inflight(&self, cache_id: &[u8]) -> Option<SystemTime> {
-        let state = self.state.lock().expect("StormTrackingCmc lock poisoned");
+        let state = self
+            .inner
+            .state
+            .lock()
+            .expect("StormTrackingCmc lock poisoned");
         state.inflight.get(cache_id).copied()
     }
 
@@ -329,7 +204,11 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn inflight_count(&self) -> usize {
-        let state = self.state.lock().expect("StormTrackingCmc lock poisoned");
+        let state = self
+            .inner
+            .state
+            .lock()
+            .expect("StormTrackingCmc lock poisoned");
         state.inflight.len()
     }
 
@@ -339,7 +218,11 @@ impl StormTrackingCmc {
     #[cfg(feature = "test-utils")]
     #[doc(hidden)]
     pub fn mark_inflight(&self, cache_id: &[u8], when: SystemTime) {
-        let mut state = self.state.lock().expect("StormTrackingCmc lock poisoned");
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .expect("StormTrackingCmc lock poisoned");
         state.inflight.insert(cache_id.to_vec(), when);
     }
 
@@ -349,17 +232,19 @@ impl StormTrackingCmc {
     ///
     /// All non-observability state-touching paths use this helper so
     /// pruning stays uniform across the classifier, the wait loop, and
-    /// `put_cache_entry`. Poisoned-mutex errors are surfaced as
-    /// `CmcError::storage_failed` instead of panics.
+    /// `put_cache_entry`.
+    /// Returns an `Internal` error if the mutex is poisoned.
     fn state_locked(
         &self,
         now: SystemTime,
         skip_key: &[u8],
-    ) -> Result<MutexGuard<'_, StormTrackingState>, CmcError> {
-        let mut guard = self.state.lock().map_err(|e| {
-            CmcError::storage_failed(format!("StormTrackingCmc lock poisoned: {e}"))
-        })?;
-        let ttl = self.inflight_ttl;
+    ) -> Result<MutexGuard<'_, StormTrackingState>, Error> {
+        let mut guard = self
+            .inner
+            .state
+            .lock()
+            .map_err(|_| Error::new(Kind::Internal, "cache lock poisoned"))?;
+        let ttl = self.inner.inflight_ttl;
         guard.inflight.retain(|k, t| {
             k.as_slice() == skip_key
                 || now
@@ -380,18 +265,18 @@ impl StormTrackingCmc {
         cache_id: &[u8],
         cached: &Option<Arc<CacheEntry>>,
         now: SystemTime,
-    ) -> Result<GetDecision, CmcError> {
+    ) -> Result<GetDecision, Error> {
         match cached {
             Some(entry) => {
                 // Cache hit.
-                if state.inflight.len() >= self.fan_out {
+                if state.inflight.len() >= self.inner.fan_out {
                     // Fan-out saturated: serve the cached entry even if
                     // within the grace period; storm tracking is disabled
                     // until slots free up.
                     return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
                 }
 
-                if !within_grace_period(entry.expiry_time, now, self.grace_period) {
+                if !within_grace_period(entry.expiry_time, now, self.inner.grace_period) {
                     return Ok(GetDecision::Ready(Some(Arc::clone(entry))));
                 }
 
@@ -403,7 +288,7 @@ impl StormTrackingCmc {
                         Ok(GetDecision::Ready(None))
                     }
                     Some(inflight_t) => {
-                        if within_grace_interval(inflight_t, now, self.grace_interval) {
+                        if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
                             // Another thread is already refreshing; serve
                             // the cached copy.
                             Ok(GetDecision::Ready(Some(Arc::clone(entry))))
@@ -420,7 +305,7 @@ impl StormTrackingCmc {
                 // Cache miss.
                 match state.inflight.get(cache_id).copied() {
                     None => {
-                        if state.inflight.len() >= self.fan_out {
+                        if state.inflight.len() >= self.inner.fan_out {
                             // No slot; do not mark inflight yet — the wait
                             // loop will mark once a slot opens.
                             Ok(GetDecision::Wait { deadline: None })
@@ -432,18 +317,18 @@ impl StormTrackingCmc {
                     Some(inflight_t) => {
                         let elapsed = now.duration_since(inflight_t).unwrap_or(Duration::ZERO);
 
-                        if elapsed > self.inflight_ttl {
-                            return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                        if elapsed > self.inner.inflight_ttl {
+                            return Err(inflight_ttl_exceeded());
                         }
 
-                        if within_grace_interval(inflight_t, now, self.grace_interval) {
+                        if within_grace_interval(inflight_t, now, self.inner.grace_interval) {
                             // Another thread is fetching; wait until it
                             // completes or its grace interval elapses.
                             // The per-waiter deadline mirrors the Dafny
                             // reference extern: computed once here, checked
                             // each iteration in `wait_for_leader`.
                             Ok(GetDecision::Wait {
-                                deadline: Some(now + self.inflight_ttl),
+                                deadline: Some(now + self.inner.inflight_ttl),
                             })
                         } else {
                             // Grace interval elapsed; take the leader slot.
@@ -474,15 +359,15 @@ impl StormTrackingCmc {
         &self,
         cache_id: &[u8],
         deadline: Option<SystemTime>,
-    ) -> Result<Option<Arc<CacheEntry>>, CmcError> {
+    ) -> Result<Option<Arc<CacheEntry>>, Error> {
         loop {
-            tokio::time::sleep(self.sleep_milli).await;
+            tokio::time::sleep(self.inner.sleep).await;
 
-            if let Some(hit) = self.inner.get_cache_entry(cache_id).await? {
+            if let Some(hit) = self.inner.local.get_cache_entry(cache_id).await? {
                 return Ok(Some(hit));
             }
 
-            let now = (self.now)();
+            let now = (self.inner.now)();
 
             // Per-waiter TTL check (only present for the "key inflight"
             // classification). Fires if this getter has been in the loop
@@ -491,7 +376,7 @@ impl StormTrackingCmc {
             if let Some(deadline) = deadline
                 && now >= deadline
             {
-                return Err(CmcError::storage_failed("InFlightTTL exceeded"));
+                return Err(inflight_ttl_exceeded());
             }
 
             // Re-classify per Dafny `CheckNewEntry`: become leader when
@@ -499,12 +384,12 @@ impl StormTrackingCmc {
             // elapsed). Prune runs inside `state_locked` so the fan-out
             // check reflects live state.
             let mut state = self.state_locked(now, cache_id)?;
-            let slot_open = state.inflight.len() < self.fan_out;
+            let slot_open = state.inflight.len() < self.inner.fan_out;
             let leader_permitted = state
                 .inflight
                 .get(cache_id)
                 .copied()
-                .is_none_or(|t| !within_grace_interval(t, now, self.grace_interval));
+                .is_none_or(|t| !within_grace_interval(t, now, self.inner.grace_interval));
 
             if slot_open && leader_permitted {
                 state.inflight.insert(cache_id.to_vec(), now);
@@ -538,24 +423,24 @@ pub fn within_grace_interval(
 
 #[async_trait]
 impl Cmc for StormTrackingCmc {
-    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), CmcError> {
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
         // Write to the inner cache FIRST, then clear inflight. Reversing
         // this order opens a race window where a blocked getter can
         // observe `cache miss + not inflight` between the two operations
         // and start a redundant refresh — defeating storm-tracking
         // coalescing. It also preserves inflight state if the inner put
         // fails, so a failed refresh doesn't lose the leader signal.
-        self.inner.put_cache_entry(cache_id, entry).await?;
+        self.inner.local.put_cache_entry(cache_id, entry).await?;
 
-        let now = (self.now)();
+        let now = (self.inner.now)();
         let mut state = self.state_locked(now, cache_id)?;
         state.inflight.remove(cache_id);
         Ok(())
     }
 
-    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, CmcError> {
-        let cached = self.inner.get_cache_entry(cache_id).await?;
-        let now = (self.now)();
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+        let cached = self.inner.local.get_cache_entry(cache_id).await?;
+        let now = (self.inner.now)();
 
         // Classify with the lock held; drop the lock before any await.
         let decision = {
@@ -569,7 +454,7 @@ impl Cmc for StormTrackingCmc {
         }
     }
 
-    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), CmcError> {
-        self.inner.delete_cache_entry(cache_id).await
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
+        self.inner.local.delete_cache_entry(cache_id).await
     }
 }

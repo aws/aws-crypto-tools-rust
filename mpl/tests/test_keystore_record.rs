@@ -5,12 +5,13 @@
 
 use std::collections::BTreeMap;
 
+use aws_crypto_mpl::error::{BranchKey, Resource, Service};
+
 use aws_crypto_mpl::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
     TYPE_BRANCH_VERSION_PREFIX,
 };
-use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::record::{
     EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
     custom_encryption_context_from_authenticated_encryption_context, encryption_context_from_item,
@@ -101,15 +102,12 @@ fn record_format_optional_custom_ec_round_trips() {
         branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key()).unwrap();
     assert_eq!(result.encryption_context().len(), 2);
     assert_eq!(
-        result.encryption_context().get(b"tenant".as_ref()).unwrap(),
-        b"acme-corp"
+        result.encryption_context().get("tenant").unwrap(),
+        "acme-corp"
     );
     assert_eq!(
-        result
-            .encryption_context()
-            .get(b"department".as_ref())
-            .unwrap(),
-        b"finance"
+        result.encryption_context().get("department").unwrap(),
+        "finance"
     );
 }
 
@@ -118,8 +116,7 @@ fn materials_reconstruction_rejects_invalid_type_value() {
     let ec = make_authenticated_ec("invalid:type", "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid type");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
-    assert!(err.message.contains("Invalid type attribute"));
+    assert_malformed(&err);
 }
 
 #[test]
@@ -127,7 +124,7 @@ fn materials_reconstruction_rejects_beacon_type() {
     let ec = make_authenticated_ec("beacon:ACTIVE", "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("beacon:ACTIVE is not valid for branch key materials");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -144,8 +141,7 @@ fn materials_reconstruction_branch_active_rejects_missing_version() {
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject missing version");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
-    assert!(err.message.contains("version"));
+    assert_malformed(&err);
 }
 
 #[test]
@@ -173,8 +169,13 @@ fn materials_branch_key_rejects_wrong_length() {
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some(&version_str));
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, vec![0x01; 16])
         .expect_err("should reject non-32-byte key");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
-    assert!(err.message.contains("32 bytes"));
+    assert_malformed(&err);
+    assert_eq!(
+        err.resource(),
+        Some(&Resource::BranchKey(
+            BranchKey::new("test-id").with_version(TEST_VERSION_UUID)
+        ))
+    );
 }
 
 #[test]
@@ -201,8 +202,7 @@ fn materials_version_rejects_invalid_prefix() {
     let ec = make_authenticated_ec(TYPE_BRANCH_ACTIVE, "test-id", Some("invalid:prefix:uuid"));
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("should reject invalid version prefix");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
-    assert!(err.message.contains("MUST be"));
+    assert_malformed(&err);
 }
 
 #[test]
@@ -227,10 +227,7 @@ fn materials_encryption_context_constructed_by_custom_ec() {
     let result =
         branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key()).unwrap();
     assert_eq!(result.encryption_context().len(), 1);
-    assert_eq!(
-        result.encryption_context().get(b"org".as_ref()).unwrap(),
-        b"amazon"
-    );
+    assert_eq!(result.encryption_context().get("org").unwrap(), "amazon");
 }
 
 #[test]
@@ -250,8 +247,8 @@ fn custom_ec_extraction_strips_prefix() {
     auth_ec.insert("branch-key-id".to_string(), "id".to_string());
 
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
-    assert!(result.contains_key(b"mykey"));
-    assert!(!result.contains_key(format!("{}mykey", CUSTOM_EC_PREFIX).as_bytes()));
+    assert!(result.contains_key("mykey"));
+    assert!(!result.contains_key(&format!("{}mykey", CUSTOM_EC_PREFIX)));
 }
 
 #[test]
@@ -261,8 +258,8 @@ fn custom_ec_extraction_preserves_values() {
     auth_ec.insert(format!("{}size", CUSTOM_EC_PREFIX), "large".to_string());
 
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
-    assert_eq!(result.get(b"color".as_ref()).unwrap(), b"blue");
-    assert_eq!(result.get(b"size".as_ref()).unwrap(), b"large");
+    assert_eq!(result.get("color").unwrap(), "blue");
+    assert_eq!(result.get("size").unwrap(), "large");
 }
 
 #[test]
@@ -275,7 +272,7 @@ fn custom_ec_extraction_ignores_non_prefixed_keys() {
 
     let result = custom_encryption_context_from_authenticated_encryption_context(&auth_ec).unwrap();
     assert_eq!(result.len(), 1);
-    assert!(result.contains_key(b"included"));
+    assert!(result.contains_key("included"));
 }
 
 #[test]
@@ -284,7 +281,7 @@ fn materials_reconstruction_rejects_bare_version_prefix_type() {
     let ec = make_authenticated_ec(TYPE_BRANCH_VERSION_PREFIX, "test-id", None);
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("bare 'branch:version:' with no version must be rejected");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
+    assert_malformed(&err);
 }
 
 #[test]
@@ -296,7 +293,7 @@ fn materials_reconstruction_rejects_active_with_bare_version_attribute() {
     );
     let err = branch_key_materials_from_authenticated_encryption_context(&ec, test_branch_key())
         .expect_err("ACTIVE with bare 'branch:version:' version must be rejected");
-    assert_eq!(err.kind, KeystoreErrorKind::RecordMalformed);
+    assert_malformed(&err);
 }
 
 // to_attribute_map and encryption_context_from_item are inverses: projecting a
@@ -360,4 +357,18 @@ fn additional_item_attributes_are_carried_verbatim() {
     assert_eq!(ec["custom-column"], "value");
     assert_eq!(ec[&format!("{}dept", CUSTOM_EC_PREFIX)], "eng");
     assert!(!ec.contains_key(&format!("{0}{0}dept", CUSTOM_EC_PREFIX)));
+}
+
+/// A malformed record is `InvalidMaterials` about the branch key, from DynamoDB.
+#[track_caller]
+fn assert_malformed(err: &aws_crypto_mpl::Error) {
+    let aws_crypto_mpl::Error::InvalidMaterials(e) = err else {
+        panic!("expected InvalidMaterials, got {err:?}");
+    };
+    assert_eq!(e.service(), Some(&Service::DynamoDb));
+    let Some(Resource::BranchKey(branch_key)) = e.resource() else {
+        panic!("expected a branch key resource, got {:?}", e.resource());
+    };
+    assert_eq!(branch_key.id(), "test-id");
+    assert_eq!(e.code(), None);
 }

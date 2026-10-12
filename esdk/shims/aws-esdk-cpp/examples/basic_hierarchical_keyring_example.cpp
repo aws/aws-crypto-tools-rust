@@ -2,9 +2,12 @@
 //
 // Requires an existing key store with a provisioned branch key.
 
+#include <chrono>
 #include <iostream>
 #include <vector>
 #include <aws/esdk/EncryptionSDK.h>
+
+using namespace std::chrono_literals;
 
 int main() {
     try {
@@ -21,7 +24,7 @@ int main() {
         auto keyring = Aws::Esdk::HierarchicalKeyring(
             keystore,
             "3ce7656b-e166-40f3-8c9b-a920ce6596cd",  // branch_key_id
-            4242,  // ttl_seconds: how long cached branch key material may be reused
+            4242s,  // ttl: how long cached branch key material may be reused
             // Unset options keep the library defaults.
             Aws::Esdk::HierarchicalKeyringOptions()
                 .with_cache(Aws::Esdk::CacheType::Default(42))
