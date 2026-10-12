@@ -4,7 +4,7 @@
 //! Frame decryption and body deserialization.
 
 use super::{BodyAADContent, body_aad, get_alg_suite};
-use crate::error::esdk_err;
+use crate::error::{Kind, err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
@@ -21,8 +21,9 @@ fn release_previous_frame(
     fail_if_multi_frame: bool,
 ) -> Result<(), Error> {
     if fail_if_multi_frame {
-        return Err(esdk_err(
-            "Streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages.",
+        return Err(err(
+            Kind::Validation,
+            "streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages",
         ));
     }
     write_bytes(w, result)
@@ -52,7 +53,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
     let frame_length_u64 = u64::from(header.body.frame_length());
     let Ok(frame_length_usize) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(
-            "Frame length {} exceeds usize::MAX",
+            "frame length {} exceeds usize::MAX",
             header.body.frame_length()
         ));
     };
@@ -141,7 +142,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //# The sequence number MUST be interpreted as a UInt32.
             let seq_num: u32 = read_u32(ciphertext, sig_digest)?;
             if seq_num != expected_frame {
-                return ser_err("Final sequence number out of order");
+                return ser_err("final sequence number out of order");
             }
 
             // IV
@@ -194,7 +195,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
                 //# The length of the plaintext to be encrypted in the Final Frame MUST be
                 //# greater than or equal to 0 and less than or equal to the [Frame Length](message-header.md#frame-length).
                 header.body.frame_length(),
-                "Content length MUST NOT exceed the frame length",
+                "content length MUST NOT exceed the frame length",
                 &mut enc_content,
                 sig_digest,
             )?;
@@ -231,7 +232,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             debug_assert!(enc_content.len() <= frame_length_usize);
             let Ok(final_content_len_u64) = u64::try_from(enc_content.len()) else {
                 return ser_err(&format!(
-                    "Final-frame encrypted content length {} exceeds u64::MAX",
+                    "final-frame encrypted content length {} exceeds u64::MAX",
                     enc_content.len()
                 ));
             };
@@ -332,7 +333,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //# Otherwise, the Decrypt operation MUST treat them as the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number)
         //# and deserialize the following bytes according to the [regular frame spec](../data-format/message-body.md#regular-frame).
         if seq_num != expected_frame {
-            return ser_err("Sequence number out of order");
+            return ser_err("sequence number out of order");
         }
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -562,7 +563,7 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     let enc_content = serialize_functions::read_seq_u64_bounded(
         ciphertext,
         header::SAFE_MAX_ENCRYPT,
-        "Frame exceeds AES-GCM cryptographic safety for a single key/iv.",
+        "nonframed encrypted content length exceeds the 64 GiB maximum",
         sig_digest,
     )?;
     // read_seq_u64_bounded reads the u64 length then reads exactly that many bytes,
@@ -608,7 +609,7 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //# equal to the length of the plaintext that was encrypted.
     let Ok(nonframed_content_len_u64) = u64::try_from(enc_content.len()) else {
         return ser_err(&format!(
-            "Nonframed encrypted content length {} exceeds u64::MAX",
+            "nonframed encrypted content length {} exceeds u64::MAX",
             enc_content.len()
         ));
     };

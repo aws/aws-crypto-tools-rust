@@ -59,8 +59,7 @@
 //! [appendix-a]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#appendix-a-cache-entry-identifier-formulas
 //! [shared-cache]: https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#shared-cache-considerations
 
-use std::error::Error as _;
-use std::sync::Arc;
+use std::time::Duration;
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
@@ -68,16 +67,16 @@ use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::decrypt::DecryptError;
 
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache};
-use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
-use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore, KeystoreError};
+use aws_crypto_mpl::keystore::{BranchKeyStore, Keystore};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
-    EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+    EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{KeyStoreConfig, Keyring, KmsConfiguration};
+use aws_crypto_mpl::{Keyring, KmsConfiguration, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -95,32 +94,28 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
     (KmsClient::new(&cfg), DynamoDbClient::new(&cfg))
 }
 
-async fn build_keystore() -> Arc<dyn Keystore> {
+async fn build_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    Arc::new(
-        BranchKeyStore::new(KeyStoreConfig {
-            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-            kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-            id: None,
-            grant_tokens: None,
-            ddb_client: Some(ddb),
-            kms_client: Some(kms),
-        })
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
         .await
-        .unwrap(),
-    )
+        .unwrap()
 }
 
-/// Default TTL for the fixture keyrings, in seconds. Long enough that no test
-/// races an expiry.
-const FIXTURE_TTL_SECONDS: u64 = 3600;
+/// TTL for the fixture keyrings.
+/// Long enough that no test races an expiry.
+const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 
 /// Build a keyring over `keystore` for `branch_key_id`, with a keyring-local
 /// default cache. Every test varies only these three things, so they share one
-/// fixture rather than repeating the six-argument constructor.
+/// fixture.
 fn keyring_for(
-    keystore: Arc<dyn Keystore>,
+    keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
 ) -> HierarchicalKeyring {
@@ -133,27 +128,26 @@ fn keyring_for(
 }
 
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
-/// two keyrings the same `Arc<dyn Cmc>`.
+/// two keyrings the same `SharedCmc`.
 fn keyring_with_cache(
-    keystore: Arc<dyn Keystore>,
+    keystore: impl Keystore + 'static,
     branch_key_id: &str,
     partition: &str,
     cache: CacheType,
 ) -> HierarchicalKeyring {
-    HierarchicalKeyring::new(
-        keystore,
-        FIXTURE_TTL_SECONDS,
-        Some(branch_key_id.to_string()),
-        None,
-        Some(cache),
-        Some(partition.to_string()),
-    )
-    .expect("fixture keyring configuration must be valid")
+    HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(branch_key_id)
+        .cache(cache)
+        .partition_id(partition)
+        .build()
+        .expect("fixture keyring configuration must be valid")
 }
 
 /// Pick a non-signing suite so signing-key invariants don't intrude.
 fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
 }
 
 /// Build empty encryption materials with a small encryption context, in
@@ -161,7 +155,7 @@ fn non_signing_suite() -> AlgorithmSuiteId {
 /// <https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders/test/Keyrings/AwsKms/AwsKmsHierarchicalKeyring/TestAwsKmsHierarchicalKeyring.dfy#L64>
 fn fresh_materials() -> EncryptionMaterials {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    ec.insert("region", "us-west-2");
     EncryptionMaterials::new(
         non_signing_suite(),
         Vec::new(),
@@ -291,20 +285,16 @@ async fn ddb_client_us_west_2() -> DynamoDbClient {
 async fn build_keystore_with_kms_and_logical_name(
     kms: KmsClient,
     logical_keystore_name: &str,
-) -> Arc<dyn Keystore> {
-    Arc::new(
-        BranchKeyStore::new(KeyStoreConfig {
-            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-            kms_configuration: KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()),
-            logical_keystore_name: logical_keystore_name.to_string(),
-            id: None,
-            grant_tokens: None,
-            ddb_client: Some(ddb_client_us_west_2().await),
-            kms_client: Some(kms),
-        })
+) -> BranchKeyStore {
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .logical_keystore_name(logical_keystore_name)
+        .ddb_client(ddb_client_us_west_2().await)
+        .kms_client(kms)
+        .build()
         .await
-        .unwrap(),
-    )
+        .unwrap()
 }
 
 /// Assert that `hk2`'s encrypt failed, and failed at the KMS call rather than
@@ -316,10 +306,8 @@ async fn build_keystore_with_kms_and_logical_name(
 /// keystore a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
-/// Asserts the whole chain by type: `MaterialsError` ->
-/// `KeystoreError(Kms)` -> `SdkError<DecryptError>`. Reaching the SDK error
-/// proves the call actually got to KMS, which is the property these tests need:
-/// it means the DDB record was read, so `hk2` went to the keystore instead of
+/// Asserts the source chain holds the `SdkError<DecryptError>`, which proves the call reached KMS.
+/// That means the DDB record was read, so `hk2` went to the keystore instead of
 /// being served from the shared cache, and a cache miss is what is under test.
 /// A bare `is_err()` would also be satisfied by a missing record or an
 /// unreachable table.
@@ -330,34 +318,15 @@ async fn build_keystore_with_kms_and_logical_name(
 /// `integ_discovery_keystore_cannot_reach_an_out_of_region_mrk` there is no
 /// Dafny assertion naming the expected exception for this path. Where Dafny
 /// does name one, that test pins it.
-fn assert_failed_at_kms(result: Result<EncryptionMaterials, MaterialsError>, context: &str) {
+fn assert_failed_at_kms(result: Result<EncryptionMaterials, Error>, context: &str) {
     let err = match result {
         Err(e) => e,
         Ok(_) => panic!("{context}: expected on_encrypt to fail"),
     };
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
-
-    let keystore_err = err
-        .source()
-        .unwrap_or_else(|| {
-            panic!("{context}: the keystore failure must be attached as the cause, got: {err}")
-        })
-        .downcast_ref::<KeystoreError>()
-        .unwrap_or_else(|| {
-            panic!("{context}: the cause must be the originating KeystoreError, got: {err}")
-        });
-    assert_eq!(
-        keystore_err.kind(),
-        &KeystoreErrorKind::Kms,
-        "{context}: expected the failure to come from the KMS call, got: {err}",
-    );
 
     assert!(
-        keystore_err
-            .source()
-            .and_then(|c| c.downcast_ref::<SdkError<DecryptError>>())
-            .is_some(),
-        "{context}: the KMS SDK error must be nested inside the KeystoreError, got: {err}",
+        err.find_source::<SdkError<DecryptError>>().is_some(),
+        "{context}: the KMS SDK error must be in the source chain, got: {err:#}",
     );
 }
 
@@ -423,7 +392,7 @@ async fn integ_on_encrypt_with_pre_existing_pdk_round_trips() {
     let zeroed = vec![0u8; key_len];
 
     let mut ec = EncryptionContext::new();
-    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    ec.insert("region", "us-west-2");
     let materials_in = EncryptionMaterials::new(
         suite,
         Vec::new(),
@@ -460,12 +429,10 @@ fn shared_cache_materials() -> EncryptionMaterials {
     fresh_materials()
 }
 
-/// Build a fresh `LocalCmc` wrapped in `Arc<dyn Cmc>`, suitable for
-/// constructing a `CacheType::Shared` for each of HK1 and HK2.
-fn shared_cache_arc() -> Arc<dyn aws_crypto_mpl::Cmc> {
-    use aws_crypto_mpl::{Cmc, LocalCmc};
-    let local: Arc<dyn Cmc> = Arc::new(LocalCmc::new(100, 50).unwrap());
-    local
+/// Build a fresh `LocalCmc`,
+/// suitable for constructing a `CacheType::Shared` for each of HK1 and HK2.
+fn shared_cache() -> SharedCmc {
+    SharedCmc::new(aws_crypto_mpl::LocalCmc::new(100, 50).unwrap())
 }
 
 #[tokio::test]
@@ -487,19 +454,19 @@ async fn integ_shared_cache_with_same_partition_id_and_same_logical_keystore_nam
     )
     .await;
 
-    let cache_arc = shared_cache_arc();
+    let cache = shared_cache();
 
     let hk1 = keyring_with_cache(
         keystore_west,
         BRANCH_KEY_ID,
         "partitionId",
-        CacheType::Shared(Arc::clone(&cache_arc)),
+        CacheType::Shared(cache.clone()),
     );
     let hk2 = keyring_with_cache(
         keystore_east,
         BRANCH_KEY_ID,
         "partitionId",
-        CacheType::Shared(cache_arc),
+        CacheType::Shared(cache),
     );
 
     // HK2 encrypt fails first: the shared cache is cold, so it must reach KMS.
@@ -531,29 +498,25 @@ async fn integ_shared_cache_with_different_unspecified_partition_id_and_same_log
     )
     .await;
 
-    let cache_arc = shared_cache_arc();
+    let cache = shared_cache();
 
     // Not built through `keyring_for` / `keyring_with_cache`: those supply a
     // partition id, and the point of this test is the `None` case, where each
     // keyring generates its own distinct v4 UUID partition id.
-    let hk1 = HierarchicalKeyring::new(
-        keystore_west,
-        FIXTURE_TTL_SECONDS,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(Arc::clone(&cache_arc))),
-        None,
-    )
-    .unwrap();
-    let hk2 = HierarchicalKeyring::new(
-        keystore_east,
-        FIXTURE_TTL_SECONDS,
-        Some(BRANCH_KEY_ID.to_string()),
-        None,
-        Some(CacheType::Shared(cache_arc)),
-        None,
-    )
-    .unwrap();
+    let hk1 = HierarchicalKeyring::builder()
+        .key_store(keystore_west)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(BRANCH_KEY_ID)
+        .cache(CacheType::Shared(cache.clone()))
+        .build()
+        .unwrap();
+    let hk2 = HierarchicalKeyring::builder()
+        .key_store(keystore_east)
+        .ttl(FIXTURE_TTL)
+        .branch_key_id(BRANCH_KEY_ID)
+        .cache(CacheType::Shared(cache))
+        .build()
+        .unwrap();
 
     assert_failed_at_kms(
         hk2.on_encrypt(shared_cache_materials()).await,
@@ -583,19 +546,19 @@ async fn integ_shared_cache_with_different_specified_partition_id_and_same_logic
     )
     .await;
 
-    let cache_arc = shared_cache_arc();
+    let cache = shared_cache();
 
     let hk1 = keyring_with_cache(
         keystore_west,
         BRANCH_KEY_ID,
         "partitionIdHK1",
-        CacheType::Shared(Arc::clone(&cache_arc)),
+        CacheType::Shared(cache.clone()),
     );
     let hk2 = keyring_with_cache(
         keystore_east,
         BRANCH_KEY_ID,
         "partitionIdHK2",
-        CacheType::Shared(cache_arc),
+        CacheType::Shared(cache),
     );
 
     assert_failed_at_kms(
@@ -627,19 +590,19 @@ async fn integ_shared_cache_with_same_partition_id_and_different_logical_keystor
     )
     .await;
 
-    let cache_arc = shared_cache_arc();
+    let cache = shared_cache();
 
     let hk1 = keyring_with_cache(
         keystore_west,
         BRANCH_KEY_ID,
         "partitionId",
-        CacheType::Shared(Arc::clone(&cache_arc)),
+        CacheType::Shared(cache.clone()),
     );
     let hk2 = keyring_with_cache(
         keystore_east,
         BRANCH_KEY_ID,
         "partitionId",
-        CacheType::Shared(cache_arc),
+        CacheType::Shared(cache),
     );
 
     assert_failed_at_kms(
@@ -677,21 +640,17 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 
 /// Build a keystore in Discovery mode: no configured KMS key ARN, so each
 /// record's own `kms-arn` is used for the KMS Decrypt.
-async fn build_discovery_keystore() -> Arc<dyn Keystore> {
+async fn build_discovery_keystore() -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    Arc::new(
-        BranchKeyStore::new(KeyStoreConfig {
-            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-            kms_configuration: KmsConfiguration::Discovery,
-            logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-            id: None,
-            grant_tokens: None,
-            ddb_client: Some(ddb),
-            kms_client: Some(kms),
-        })
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::Discovery)
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
         .await
-        .unwrap(),
-    )
+        .unwrap()
 }
 
 #[tokio::test]
@@ -753,18 +712,9 @@ async fn integ_pinned_keystore_rejects_a_branch_key_under_another_kms_key() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("a keystore pinned to KEY_ARN MUST reject the Discovery-only branch key");
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
-
-    // The kind alone is too coarse to be a real assertion here: the keyring
-    // flattens every keystore failure to KeyringFailed, so a missing record
-    // or an unreachable table would satisfy it just as well as the ARN
-    // disagreement this test is about. The keystore kind survives in the
-    // message (`KeystoreError(Authentication)`), so match on that to pin the
-    // failure to the kms-arn-compat check in resolve_keystore_arn.
-    assert!(
-        err.to_string().contains("KeystoreError(Authentication)"),
-        "expected the ARN-disagreement path (Authentication), got: {err}",
-    );
+    // Only the kms-arn-compat check in resolve_keystore_arn returns Validation;
+    // a missing record or an unreachable table returns a remote kind.
+    assert!(err.is_validation(), "got: {err}");
 }
 
 #[tokio::test]
@@ -783,7 +733,7 @@ async fn integ_discovery_keystore_serves_two_branch_keys_under_different_kms_key
             "partition-id-integ-discovery-two-b",
         ),
     ] {
-        let keyring = keyring_for(Arc::clone(&keystore), branch_key_id, partition);
+        let keyring = keyring_for(keystore.clone(), branch_key_id, partition);
         let materials_out = keyring
             .on_encrypt(fresh_materials())
             .await
@@ -832,23 +782,19 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 
 /// Build a keystore in MRDiscovery mode: the record's `kms-arn` is used, but
 /// rewritten into `region` first.
-async fn build_mr_discovery_keystore(region: &str) -> Arc<dyn Keystore> {
+async fn build_mr_discovery_keystore(region: &str) -> BranchKeyStore {
     let (kms, ddb) = build_clients().await;
-    Arc::new(
-        BranchKeyStore::new(KeyStoreConfig {
-            ddb_table_name: BRANCH_KEY_STORE_NAME.to_string(),
-            kms_configuration: KmsConfiguration::MrDiscovery {
-                region: region.to_string(),
-            },
-            logical_keystore_name: LOGICAL_KEY_STORE_NAME.to_string(),
-            id: None,
-            grant_tokens: None,
-            ddb_client: Some(ddb),
-            kms_client: Some(kms),
+    BranchKeyStore::builder()
+        .ddb_table_name(BRANCH_KEY_STORE_NAME)
+        .kms_configuration(KmsConfiguration::MrDiscovery {
+            region: region.to_string(),
         })
+        .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
+        .ddb_client(ddb)
+        .kms_client(kms)
+        .build()
         .await
-        .unwrap(),
-    )
+        .unwrap()
 }
 
 #[tokio::test]
@@ -890,7 +836,7 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
         .on_encrypt(fresh_materials())
         .await
         .expect_err("plain Discovery MUST NOT reach a us-east-1 MRK from a us-west-2 client");
-    assert_eq!(err.kind(), &MaterialsErrorKind::KeyringFailed);
+    assert!(err.is_service(), "{:?}", err);
 
     // Dafny asserts the specific KMS `IncorrectKeyException` here
     // (AwsCryptographyKeyStore/test/TestDiscoveryGetKeys.dfy):
@@ -899,19 +845,9 @@ async fn integ_discovery_keystore_cannot_reach_an_out_of_region_mrk() {
     //       case ComAmazonawsKms(nestedError) =>
     //         expect nestedError.IncorrectKeyException?;
     //
-    // The keystore nests the originating SDK error as the cause.
-    // The chain is MaterialsError -> KeystoreError -> SdkError.
-    let keystore_err = err
-        .source()
-        .expect("the keystore failure must be attached as the cause")
-        .downcast_ref::<KeystoreError>()
-        .expect("the cause must be the originating KeystoreError");
-    assert_eq!(keystore_err.kind(), &KeystoreErrorKind::Kms);
-
-    let sdk_err = keystore_err
-        .source()
-        .expect("the KMS SDK error must be nested inside the KeystoreError")
-        .downcast_ref::<SdkError<DecryptError>>()
+    // The keyring returns the keystore's error, whose source is the SDK error.
+    let sdk_err = err
+        .find_source::<SdkError<DecryptError>>()
         .expect("the nested cause must be the originating Decrypt SdkError");
     let service_err = sdk_err
         .as_service_error()
