@@ -4,7 +4,7 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
+use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsKeyArn, cmc::DefaultCmc};
 use aws_esdk::{CommitmentPolicy, Esdk};
 use log::info;
 use sysinfo::System;
@@ -71,7 +71,7 @@ impl EsdkBenchmark {
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
             .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
+            .kms_configuration(KmsKeyArn::new(HIERARCHY_KEY_ARN))
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;

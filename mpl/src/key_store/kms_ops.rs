@@ -90,27 +90,27 @@ pub(crate) fn resolve_key_store_arn(
     record_kms_arn: &str,
     branch_key_id: &str,
 ) -> Result<String, Error> {
-    match kms_config {
-        KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
-            if !is_arn_compatible(kms_config, record_kms_arn) {
-                return Err(Error::new(
-                    Kind::Validation,
-                    format!(
-                        "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
-                    ),
-                ));
-            }
-            Ok(configured.clone())
-        }
+    let configured = match kms_config {
+        KmsConfiguration::KmsKeyArn(configured) => configured.arn(),
+        KmsConfiguration::KmsMrKeyArn(configured) => configured.arn(),
         KmsConfiguration::Discovery(_) => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
-            Ok(record_kms_arn.to_string())
+            return Ok(record_kms_arn.to_string());
         }
         KmsConfiguration::MrDiscovery(mr_discovery) => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
-            rewrite_arn_region(record_kms_arn, mr_discovery.region(), branch_key_id)
+            return rewrite_arn_region(record_kms_arn, mr_discovery.region(), branch_key_id);
         }
+    };
+    if !is_arn_compatible(kms_config, record_kms_arn) {
+        return Err(Error::new(
+            Kind::Validation,
+            format!(
+                "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
+            ),
+        ));
     }
+    Ok(configured.to_owned())
 }
 
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery

@@ -21,7 +21,7 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::{Discovery, MrDiscovery};
-use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, KmsKeyArn};
 
 fn key_store_id(store: &KeyStoreClient) -> String {
     store
@@ -51,7 +51,7 @@ const KMS_KEY_ARN: &str =
 fn required_only() -> KeyStoreClientBuilder {
     KeyStoreClient::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
 }
 
@@ -79,7 +79,7 @@ async fn build_err(builder: KeyStoreClientBuilder) -> aws_crypto_mpl::Error {
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
     let builder = KeyStoreClient::builder()
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
         .ddb_client(ddb);
@@ -92,7 +92,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
     let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
@@ -208,8 +208,7 @@ async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
 
 #[tokio::test]
 async fn new_with_malformed_kms_arn_returns_configuration_error() {
-    let cfg = fixture_config_with_id("caller-id")
-        .kms_configuration(KmsConfiguration::KmsKeyArn("not-an-arn".to_string()));
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsKeyArn::new("not-an-arn"));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
@@ -219,8 +218,8 @@ async fn new_with_malformed_kms_arn_returns_configuration_error() {
 
 #[tokio::test]
 async fn new_with_alias_kms_arn_returns_configuration_error() {
-    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::KmsKeyArn(
-        "arn:aws:kms:us-west-2:111122223333:alias/my-alias".to_string(),
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsKeyArn::new(
+        "arn:aws:kms:us-west-2:111122223333:alias/my-alias",
     ));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with alias ARN must fail"),
@@ -250,7 +249,7 @@ async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
     let cfg = KeyStoreClient::builder()
         .ddb_table_name("my-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .logical_key_store_name("my-logical")
         .id("my-id")
         .grant_tokens(["grant-1", "grant-2"])

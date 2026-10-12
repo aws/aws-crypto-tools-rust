@@ -40,5 +40,8 @@ pub use cmc::{
     UsageMetadata,
 };
 pub use cmm::{Cmm, DefaultCmm, SharedCmm};
-pub use key_store::{KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration};
+pub use key_store::{
+    Discovery, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, KmsKeyArn,
+    KmsMrKeyArn, MrDiscovery,
+};
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

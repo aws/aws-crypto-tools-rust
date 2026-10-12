@@ -22,7 +22,7 @@
 use std::time::Duration;
 
 use aws_crypto_mpl::error::ConflictReason;
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Error, Resource, Service};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let key_store = KeyStoreClient::builder()
         .ddb_table_name(TABLE_NAME)
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::kms_key_arn(KMS_KEY_ARN))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))
         .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
         .build()

@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use aws_config::FrameworkMetadata;
-use aws_crypto_mpl::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KmsKeyArn};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 use aws_smithy_runtime_api::client::http::{
@@ -111,7 +111,7 @@ async fn key_store(capture: &Capture, framework: Option<FrameworkMetadata>) -> K
     KeyStoreClient::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_owned()))
+        .kms_configuration(KmsKeyArn::new(KEY_ARN))
         .kms_client(kms_client(capture, framework))
         .ddb_client(ddb_client(capture))
         .build()

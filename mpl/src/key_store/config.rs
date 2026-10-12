@@ -8,9 +8,9 @@
 #[non_exhaustive]
 pub enum KmsConfiguration {
     /// Single-region KMS Key ARN compatibility. ARN may be MRK or non-MRK.
-    KmsKeyArn(String),
+    KmsKeyArn(KmsKeyArn),
     /// MRK ARN compatibility. ARN may be MRK or non-MRK.
-    KmsMrKeyArn(String),
+    KmsMrKeyArn(KmsMrKeyArn),
     /// Discovery configuration; KMS Key ARN is read from each DDB record.
     Discovery(Discovery),
     /// MRDiscovery configuration; KMS Key ARN is read from each DDB record.
@@ -18,15 +18,45 @@ pub enum KmsConfiguration {
     MrDiscovery(MrDiscovery),
 }
 
-impl KmsConfiguration {
-    /// [`KmsKeyArn`](Self::KmsKeyArn) for `arn`.
-    pub fn kms_key_arn(arn: impl Into<String>) -> Self {
-        Self::KmsKeyArn(arn.into())
+/// Settings for [`KmsConfiguration::KmsKeyArn`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KmsKeyArn {
+    arn: String,
+}
+
+impl KmsKeyArn {
+    /// Use the KMS key `arn`.
+    #[must_use]
+    pub fn new(arn: impl Into<String>) -> Self {
+        Self { arn: arn.into() }
     }
 
-    /// [`KmsMrKeyArn`](Self::KmsMrKeyArn) for `arn`.
-    pub fn kms_mr_key_arn(arn: impl Into<String>) -> Self {
-        Self::KmsMrKeyArn(arn.into())
+    /// The KMS key ARN.
+    #[must_use]
+    pub fn arn(&self) -> &str {
+        &self.arn
+    }
+}
+
+/// Settings for [`KmsConfiguration::KmsMrKeyArn`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KmsMrKeyArn {
+    arn: String,
+}
+
+impl KmsMrKeyArn {
+    /// Use the KMS key `arn`.
+    #[must_use]
+    pub fn new(arn: impl Into<String>) -> Self {
+        Self { arn: arn.into() }
+    }
+
+    /// The KMS key ARN.
+    #[must_use]
+    pub fn arn(&self) -> &str {
+        &self.arn
     }
 }
 
@@ -55,6 +85,18 @@ impl MrDiscovery {
     #[must_use]
     pub fn region(&self) -> &str {
         &self.region
+    }
+}
+
+impl From<KmsKeyArn> for KmsConfiguration {
+    fn from(kms_key_arn: KmsKeyArn) -> Self {
+        Self::KmsKeyArn(kms_key_arn)
+    }
+}
+
+impl From<KmsMrKeyArn> for KmsConfiguration {
+    fn from(kms_mr_key_arn: KmsMrKeyArn) -> Self {
+        Self::KmsMrKeyArn(kms_mr_key_arn)
     }
 }
 

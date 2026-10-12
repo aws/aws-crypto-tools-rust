@@ -78,7 +78,7 @@ use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, Keyring, KmsConfiguration, LocalCmc, SharedCmc};
+use aws_crypto_mpl::{Cmc, Keyring, KmsKeyArn, LocalCmc, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -100,7 +100,7 @@ async fn build_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
     KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KEY_ARN))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -302,7 +302,7 @@ async fn build_key_store_with_kms_and_logical_name(
 ) -> KeyStoreClient {
     KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KEY_ARN))
         .logical_key_store_name(logical_key_store_name)
         .ddb_client(ddb_client_us_west_2().await)
         .kms_client(kms)
@@ -316,7 +316,7 @@ async fn build_key_store_with_kms_and_logical_name(
 ///
 /// What this checks is narrower than why these tests expect a failure. Every
 /// `hk2` here is built by `build_key_store_with_kms_and_logical_name`, which pins
-/// `KmsConfiguration::KmsKeyArn(KEY_ARN.to_string())` -- a us-west-2 ARN -- while handing the
+/// `KmsKeyArn::new(KEY_ARN)` -- a us-west-2 ARN -- while handing the
 /// key store a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///

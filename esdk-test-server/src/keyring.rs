@@ -14,7 +14,7 @@ use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::SharedKeyring;
 
@@ -108,7 +108,7 @@ async fn build_hierarchical(
     let key_store = KeyStoreClient::builder()
         .ddb_table_name(config.key_store_table_name.clone())
         .logical_key_store_name(config.logical_key_store_name.clone())
-        .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
+        .kms_configuration(KmsKeyArn::new(config.kms_key_arn.clone()))
         .build()
         .await
         .map_err(|e| ServerError::esdk(e.to_string()))?;

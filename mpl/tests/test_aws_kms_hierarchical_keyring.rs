@@ -42,7 +42,7 @@ use aws_crypto_mpl::key_store::{
     CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput, Discovery,
     GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
     GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
-    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration,
+    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsKeyArn,
     VersionKeyInput, VersionKeyOutput,
 };
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
@@ -103,9 +103,8 @@ fn key_store_never_consulted() -> KeyStoreClient {
     build_without_io(
         KeyStoreClient::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                    .to_string(),
+            .kms_configuration(KmsKeyArn::new(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
             ))
             .logical_key_store_name("test-logical")
             .kms_client(kms)
