@@ -108,12 +108,12 @@ async fn test_encrypted_data_key_count_greater_than_zero() {
         let mut tampered = ct.clone();
         tampered[offset] = 0;
         tampered[offset + 1] = 0;
-        let mut dec_input =
-            DecryptInput::with_legacy_keyring(&tampered, EncryptionContext::new(), keyring.clone());
-        if let Version::V1 = version {
-            dec_input.commitment_policy =
-                aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-        }
+        let dec_input = DecryptInput::builder()
+            .ciphertext(&tampered)
+            .keyring(keyring.clone())
+            .commitment_policy(commitment_policy_for(version))
+            .build()
+            .unwrap();
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //= type=test
         //# This value MUST be greater than 0.
@@ -121,9 +121,9 @@ async fn test_encrypted_data_key_count_greater_than_zero() {
             .await
             .expect_err(&format!("{version:?}: EDK count of 0 must be rejected"));
         assert!(
-            matches!(err.kind, ErrorKind::SerializationError),
-            "{version:?}: expected SerializationError, got {:?}",
-            err.kind
+            err.is_serialization(),
+            "{version:?}: expected Serialization error, got {:?}",
+            err
         );
     }
 }
@@ -243,20 +243,20 @@ async fn test_nonframed_nonzero_frame_length_rejected() {
         ct[frame_length_offset + 2] = 0x10;
         ct[frame_length_offset + 3] = 0x00;
 
-        let mut dec_input =
-            DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring.clone());
-        if let Version::V1 = version {
-            dec_input.commitment_policy =
-                aws_mpl_legacy::commitment::EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
-        }
+        let dec_input = DecryptInput::builder()
+            .ciphertext(&ct)
+            .keyring(keyring.clone())
+            .commitment_policy(commitment_policy_for(version))
+            .build()
+            .unwrap();
 
         let err = decrypt(&dec_input).await.expect_err(&format!(
             "{version:?}: nonframed content with non-zero frame length must be rejected"
         ));
         assert!(
-            matches!(err.kind, ErrorKind::SerializationError),
-            "{version:?}: expected SerializationError, got {:?}",
-            err.kind
+            err.is_serialization(),
+            "{version:?}: expected Serialization error, got {:?}",
+            err
         );
     }
 }

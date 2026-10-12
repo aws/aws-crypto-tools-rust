@@ -4,7 +4,7 @@
 //! Frame decryption and body deserialization.
 
 use super::{BodyAADContent, body_aad, get_alg_suite};
-use crate::error::esdk_err;
+use crate::error::{Kind, err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
@@ -12,7 +12,7 @@ use crate::message::serialize_functions::{
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::primitives::aes_decrypt;
+use aws_mpl_primitives::aes_decrypt;
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 fn release_previous_frame(
@@ -21,8 +21,9 @@ fn release_previous_frame(
     fail_if_multi_frame: bool,
 ) -> Result<(), Error> {
     if fail_if_multi_frame {
-        return Err(esdk_err(
-            "Streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages.",
+        return Err(err(
+            Kind::Validation,
+            "streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages",
         ));
     }
     write_bytes(w, result)
@@ -42,17 +43,17 @@ pub(crate) fn read_and_decrypt_framed_message_body(
 
     //= spec/data-format/message-body.md#regular-frame-iv
     //# The IV length MUST be equal to the IV length of the algorithm suite specified by the [Algorithm Suite ID](message-header.md#algorithm-suite-id) field.
-    let mut iv = vec![0u8; usize::from(get_iv_length(&header.suite))];
+    let mut iv = vec![0u8; get_iv_length(&header.suite)];
 
     //= spec/data-format/message-body.md#regular-frame-authentication-tag
     //# The authentication tag length MUST be equal to the authentication tag length of the algorithm suite
     //# specified by the [Algorithm Suite ID](message-header.md#algorithm-suite-id) field.
-    let mut auth_tag = vec![0u8; usize::from(get_tag_length(&header.suite))];
+    let mut auth_tag = vec![0u8; get_tag_length(&header.suite)];
     let alg_suite = get_alg_suite(&header.suite)?;
     let frame_length_u64 = u64::from(header.body.frame_length());
     let Ok(frame_length_usize) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(
-            "Frame length {} exceeds usize::MAX",
+            "frame length {} exceeds usize::MAX",
             header.body.frame_length()
         ));
     };
@@ -141,7 +142,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //# The sequence number MUST be interpreted as a UInt32.
             let seq_num: u32 = read_u32(ciphertext, sig_digest)?;
             if seq_num != expected_frame {
-                return ser_err("Final sequence number out of order");
+                return ser_err("final sequence number out of order");
             }
 
             // IV
@@ -194,7 +195,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
                 //# The length of the plaintext to be encrypted in the Final Frame MUST be
                 //# greater than or equal to 0 and less than or equal to the [Frame Length](message-header.md#frame-length).
                 header.body.frame_length(),
-                "Content length MUST NOT exceed the frame length",
+                "content length MUST NOT exceed the frame length",
                 &mut enc_content,
                 sig_digest,
             )?;
@@ -231,7 +232,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             debug_assert!(enc_content.len() <= frame_length_usize);
             let Ok(final_content_len_u64) = u64::try_from(enc_content.len()) else {
                 return ser_err(&format!(
-                    "Final-frame encrypted content length {} exceeds u64::MAX",
+                    "final-frame encrypted content length {} exceeds u64::MAX",
                     enc_content.len()
                 ));
             };
@@ -332,7 +333,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //# Otherwise, the Decrypt operation MUST treat them as the [Sequence Number](../data-format/message-body.md#regular-frame-sequence-number)
         //# and deserialize the following bytes according to the [regular frame spec](../data-format/message-body.md#regular-frame).
         if seq_num != expected_frame {
-            return ser_err("Sequence number out of order");
+            return ser_err("sequence number out of order");
         }
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -535,12 +536,8 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //= type=implication
     //= reason=read_vec returns Vec<u8>
     //# The IV MUST be interpreted as bytes.
-    let iv = serialize_functions::read_vec(
-        ciphertext,
-        usize::from(get_iv_length(&header.suite)),
-        sig_digest,
-    )?;
-    debug_assert_eq!(iv.len(), usize::from(get_iv_length(&header.suite)));
+    let iv = serialize_functions::read_vec(ciphertext, get_iv_length(&header.suite), sig_digest)?;
+    debug_assert_eq!(iv.len(), get_iv_length(&header.suite));
 
     //= spec/data-format/message-body.md#nonframed-data-encrypted-content-length
     //# The encrypted content length MUST be interpreted as a UInt64.
@@ -566,7 +563,7 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     let enc_content = serialize_functions::read_seq_u64_bounded(
         ciphertext,
         header::SAFE_MAX_ENCRYPT,
-        "Frame exceeds AES-GCM cryptographic safety for a single key/iv.",
+        "nonframed encrypted content length exceeds the 64 GiB maximum",
         sig_digest,
     )?;
     // read_seq_u64_bounded reads the u64 length then reads exactly that many bytes,
@@ -591,12 +588,9 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //= type=implication
     //= reason=read_vec returns Vec<u8>
     //# The authentication tag value MUST be interpreted as bytes.
-    let auth_tag = serialize_functions::read_vec(
-        ciphertext,
-        usize::from(get_tag_length(&header.suite)),
-        sig_digest,
-    )?;
-    debug_assert_eq!(auth_tag.len(), usize::from(get_tag_length(&header.suite)));
+    let auth_tag =
+        serialize_functions::read_vec(ciphertext, get_tag_length(&header.suite), sig_digest)?;
+    debug_assert_eq!(auth_tag.len(), get_tag_length(&header.suite));
     let mut aad = Vec::new();
 
     //= spec/client-apis/decrypt.md#nonframed-message-body-decryption
@@ -615,7 +609,7 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //# equal to the length of the plaintext that was encrypted.
     let Ok(nonframed_content_len_u64) = u64::try_from(enc_content.len()) else {
         return ser_err(&format!(
-            "Nonframed encrypted content length {} exceeds u64::MAX",
+            "nonframed encrypted content length {} exceeds u64::MAX",
             enc_content.len()
         ));
     };

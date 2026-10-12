@@ -15,8 +15,7 @@ crate-type = ["staticlib"]
 # (e.g. aws-esdk-cpp = "X.Y.Z").
 aws-esdk-cpp = { path = "../.." }
 aws-esdk = { path = "../../../.." }
-aws-mpl-legacy = { package = "aws-mpl-native", path = "../../../../../unsafe-unreviewed-mpl/mpl" }
-tokio = { version = "1.49.0", features = ["rt"] }
+aws-crypto-mpl = { path = "../../../../../mpl" }
 
 # Standalone crate, not a member of the shim's workspace
 [workspace]

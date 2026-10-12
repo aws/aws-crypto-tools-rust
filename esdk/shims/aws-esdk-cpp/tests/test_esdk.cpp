@@ -1,8 +1,10 @@
 // Integration tests exercising the C++ interfaces (EncryptionSDK.h).
 
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -12,6 +14,8 @@
 #include <vector>
 
 #include "esdk_test_support.h"
+
+using namespace std::chrono_literals;
 
 // Test utility -- OK iff `expr` throws `ExType`
 #define CHECK_THROWS_TYPE(ExType, expr)                                                  \
@@ -166,6 +170,50 @@ void test_raw_aes_round_trip() {
     }
 }
 
+void test_raw_aes_non_ascii_encryption_context_round_trips() {
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> ec = {
+        {"\xEF\xBD\x9E", "caf\xC3\xA9"},              // U+FF5E -> "cafe" with U+00E9
+        {"\xF0\x9F\x98\x80", "\xF0\x9F\xA6\x80"},  // U+1F600 -> U+1F980
+    };
+    auto ciphertext =
+        sdk.encrypt(to_bytes("non-ascii ec"), keyring,
+                    Aws::Esdk::EncryptOptions().with_encryption_context(ec))
+            .ciphertext;
+    auto decrypted = sdk.decrypt(ciphertext, keyring,
+                                 Aws::Esdk::DecryptOptions().with_encryption_context(ec));
+    for (const auto& kv : ec) {
+        auto it = decrypted.encryption_context.find(kv.first);
+        ESDK_CHECK(it != decrypted.encryption_context.end() && it->second == kv.second);
+    }
+}
+
+void test_non_utf8_encryption_context_throws_invalid_argument() {
+    // cxx's rust::String constructor throws std::invalid_argument on non-UTF-8 bytes,
+    // before the call reaches Rust.
+    std::vector<std::uint8_t> key(32, 0x2A);
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    const std::map<std::string, std::string> bad_key = {{"\xFF", "value"}};
+    const std::map<std::string, std::string> bad_value = {{"key", "\xC3"}};
+    auto plaintext = to_bytes("non-utf-8 ec");
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_key)));
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.encrypt(plaintext, keyring,
+                                  Aws::Esdk::EncryptOptions().with_encryption_context(bad_value)));
+
+    auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
+    CHECK_THROWS_TYPE(std::invalid_argument,
+                      sdk.decrypt(ciphertext, keyring,
+                                  Aws::Esdk::DecryptOptions().with_encryption_context(bad_key)));
+}
+
 void test_raw_aes_mismatched_key_length_throws() {
     std::vector<std::uint8_t> short_key(16, 0x01);
     //= spec/shim/esdk-shim.md#aes-wrapping-algorithm
@@ -173,10 +221,9 @@ void test_raw_aes_mismatched_key_length_throws() {
     //= reason=A 16-byte key is too short for AES 256 (needs 32)
     //# - The shim MUST translate the target AES wrapping algorithm to the core ESDK
     //# wrapping algorithm of the same meaning.
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
-                      Aws::Esdk::RawAesKeyring(
-                          "test-ns", "test-key", short_key,
-                          Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::RawAesKeyring(
+                         "test-ns", "test-key", short_key,
+                         Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16));
 }
 
 void test_raw_aes_wrong_keyring_fails() {
@@ -188,7 +235,42 @@ void test_raw_aes_wrong_keyring_fails() {
                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
     Aws::Esdk::EncryptionSDK sdk;
     auto ciphertext = sdk.encrypt(to_bytes("keyed to A"), keyring_a).ciphertext;
-    CHECK_THROWS_ESDK(sdk.decrypt(ciphertext, keyring_b));
+    CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(ciphertext, keyring_b));
+    try {
+        sdk.decrypt(ciphertext, keyring_b);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(e.kind() == Aws::Esdk::ErrorKind::Cryptographic);
+        ESDK_CHECK(!e.retryable());
+    }
+}
+
+void test_no_matching_data_key_names_the_keyring() {
+    std::vector<std::uint8_t> key(32, 0x01);
+    Aws::Esdk::RawAesKeyring encrypting("test-ns", "test-key", key,
+                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::RawAesKeyring decrypting("test-ns", "other-key", key,
+                                        Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::EncryptionSDK sdk;
+    auto ciphertext = sdk.encrypt(to_bytes("keyed to test-key"), encrypting).ciphertext;
+    CHECK_THROWS_TYPE(Aws::Esdk::NoMatchingDataKeyException, sdk.decrypt(ciphertext, decrypting));
+    try {
+        sdk.decrypt(ciphertext, decrypting);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(e.name() == "NoMatchingDataKey");
+        ESDK_CHECK(e.resource().has_value());
+        ESDK_CHECK(e.resource()->type() == Aws::Esdk::ResourceType::Keyring);
+        ESDK_CHECK(e.resource()->name() == "test-ns/other-key");
+        ESDK_CHECK(!e.service().has_value());
+        const std::string what = e.what();
+        ESDK_CHECK(what == "NoMatchingDataKey: decrypt could not get decryption materials (keyring test-ns/other-key; message has: test-ns)");
+        ESDK_CHECK(e.full_message().rfind(what + ": encrypted data key 0 did not match the keyring", 0) == 0);
+        // Rust captures a backtrace only when RUST_BACKTRACE or RUST_LIB_BACKTRACE asks for one.
+        const char* lib = std::getenv("RUST_LIB_BACKTRACE");
+        const char* any = std::getenv("RUST_BACKTRACE");
+        const char* setting = lib ? lib : any;
+        const bool enabled = setting && std::string(setting) != "0";
+        ESDK_CHECK(e.backtrace().empty() != enabled);
+    }
 }
 
 void test_cache_kinds() {
@@ -201,8 +283,8 @@ void test_cache_kinds() {
     //= type=test
     //# - The shim MUST support creating a storm tracking cache.
     auto storm_cache = Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
-        /*grace_interval=*/1, /*fan_out=*/20, /*inflight_ttl=*/10, /*sleep_milli=*/20));
+        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
+        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
 
     //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
     //= type=test
@@ -219,13 +301,42 @@ void test_cache_kinds() {
 void test_keystore_rejects_short_table_name() {
     Aws::Esdk::KmsClient kms;
     Aws::Esdk::DdbClient ddb;
-    // LegacyError kind: exactly the base exception type.
-    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
-                      Aws::Esdk::KeyStore("ab", "ab",
-                                          "arn:aws:kms:us-west-2:000000000000:key/test",
-                                          Aws::Esdk::KeyStoreOptions()
-                                              .with_kms_client(kms)
-                                              .with_ddb_client(ddb)));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::KeyStore("ab", "ab",
+                                         "arn:aws:kms:us-west-2:000000000000:key/test",
+                                         Aws::Esdk::KeyStoreOptions()
+                                             .with_kms_client(kms)
+                                             .with_ddb_client(ddb)));
+}
+
+void test_hierarchical_keyring_ttl() {
+    Aws::Esdk::KmsClient kms;
+    Aws::Esdk::DdbClient ddb;
+    auto keystore = Aws::Esdk::KeyStore(
+        "test-table", "test-logical",
+        "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+        Aws::Esdk::KeyStoreOptions().with_kms_client(kms).with_ddb_client(ddb));
+
+    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 10min);
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 0s));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", -1s));
+
+    // The core requires the grace period to be less than the TTL,
+    // so these pin the exact TTL value that reaches it.
+    auto with_grace = [](std::chrono::milliseconds grace_period) {
+        return Aws::Esdk::HierarchicalKeyringOptions().with_cache(
+            Aws::Esdk::CacheType::StormTracking(
+                /*entry_capacity=*/16, /*entry_pruning_tail_size=*/4, grace_period,
+                /*grace_interval=*/100ms, /*fan_out=*/4, /*inflight_ttl=*/100ms,
+                /*sleep=*/10ms));
+    };
+    Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1499ms));
+    CHECK_THROWS_TYPE(
+        Aws::Esdk::ValidationException,
+        Aws::Esdk::HierarchicalKeyring(keystore, "branch-key-id", 1500ms, with_grace(1500ms)));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
+                      Aws::Esdk::CryptographicMaterialsCache(Aws::Esdk::CacheType::StormTracking(
+                          16, 4, 10s, 1s, 4, 10s, /*sleep=*/-1ms)));
 }
 
 // Assert a particular error scenario forwards the error raised by ESDK Rust
@@ -251,6 +362,53 @@ void test_error_kinds() {
                         .ciphertext.to_vector();
     tampered.back() ^= 0xFF;
     CHECK_THROWS_TYPE(Aws::Esdk::CryptographicException, sdk.decrypt(tampered, keyring));
+}
+
+// An ESDK Rust error as lib.rs's encode_err sends it, with the message "Future: m".
+std::string encoded_error(const std::string& kind, const std::string& conflict_reason) {
+    const std::string us = "\x1f";
+    const std::string message = "Future: m";
+    return "kind=" + kind + us + "retryable=1" + us + "retry=future" + us + "service=s3" + us +
+           "resource_type=bucket" + us + "resource=my-bucket" + us + "code=SomeCode" + us +
+           "request_id=req-1" + us + "conflict_reason=" + conflict_reason + us + "credentials=0" +
+           us + "name=Future" + us + "display_len=9" + us + "full_len=9" + "\x1e" + message +
+           message;
+}
+
+void test_values_this_library_does_not_know() {
+    const auto unknown_kind = encoded_error("255", "");
+    //= spec/shim/shim.md#error-classification
+    //= type=test
+    //# - An error whose kind the shim does not expose MUST be reported as the shim's
+    //# own base error type.
+    CHECK_THROWS_TYPE(Aws::Esdk::AwsEncryptionSdkException,
+                      Aws::Esdk::detail::throw_shim_exception(unknown_kind));
+    try {
+        Aws::Esdk::detail::throw_shim_exception(unknown_kind);
+    } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
+        ESDK_CHECK(!e.kind().has_value());
+        ESDK_CHECK(std::string(e.what()) == "Future: m");
+        ESDK_CHECK(e.name() == "Future");
+        ESDK_CHECK(e.retryable());
+        ESDK_CHECK(!e.retry_kind().has_value());
+        ESDK_CHECK(!e.service().has_value());
+        ESDK_CHECK(e.resource().has_value());
+        ESDK_CHECK(e.resource()->type() == Aws::Esdk::ResourceType::Unknown);
+        ESDK_CHECK(e.resource()->name() == "my-bucket");
+        ESDK_CHECK(e.code() == "SomeCode");
+        ESDK_CHECK(e.request_id() == "req-1");
+    }
+
+    const auto unknown_reason = encoded_error("13", "future");
+    CHECK_THROWS_TYPE(Aws::Esdk::ConflictException,
+                      Aws::Esdk::detail::throw_shim_exception(unknown_reason));
+    try {
+        Aws::Esdk::detail::throw_shim_exception(unknown_reason);
+    } catch (const Aws::Esdk::ConflictException& e) {
+        ESDK_CHECK(e.kind() == Aws::Esdk::ErrorKind::Conflict);
+        ESDK_CHECK(!e.reason().has_value());
+        ESDK_CHECK(e.retryable());
+    }
 }
 
 void test_client_configuration() {
@@ -513,8 +671,8 @@ void test_full_resource_chain(const TestConfig& cfg) {
             .with_grant_tokens({"grant-token-example"}));
 
     Aws::Esdk::CryptographicMaterialsCache cache(Aws::Esdk::CacheType::StormTracking(
-        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10,
-        /*grace_interval=*/1, /*fan_out=*/20, /*inflight_ttl=*/10, /*sleep_milli=*/20));
+        /*entry_capacity=*/100, /*entry_pruning_tail_size=*/1, /*grace_period=*/10s,
+        /*grace_interval=*/1s, /*fan_out=*/20, /*inflight_ttl=*/10s, /*sleep=*/20ms));
 
     //= spec/shim/esdk-shim.md#create-hierarchical-keyring
     //= type=test
@@ -527,7 +685,7 @@ void test_full_resource_chain(const TestConfig& cfg) {
         //# - Creating a hierarchical keyring MUST provide the target-supplied branch key id
         //# and time-to-live to the core ESDK.
         cfg.branch_key_id,
-        /*ttl_seconds=*/600,
+        std::chrono::seconds{600},
         Aws::Esdk::HierarchicalKeyringOptions()
             //= spec/shim/esdk-shim.md#create-hierarchical-keyring
             //= type=test
@@ -725,11 +883,16 @@ int main(int argc, char** argv) {
     // Always run offline tests
     try {
         test_raw_aes_round_trip();
+        test_raw_aes_non_ascii_encryption_context_round_trips();
+        test_non_utf8_encryption_context_throws_invalid_argument();
         test_raw_aes_wrong_keyring_fails();
+        test_no_matching_data_key_names_the_keyring();
         test_raw_aes_mismatched_key_length_throws();
         test_cache_kinds();
         test_keystore_rejects_short_table_name();
+        test_hierarchical_keyring_ttl();
         test_error_kinds();
+        test_values_this_library_does_not_know();
         test_client_configuration();
         test_bytes_and_string_ergonomics();
         test_streaming();

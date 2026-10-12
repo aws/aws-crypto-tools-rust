@@ -3,13 +3,13 @@
 
 //! Type definitions for message header fields.
 
-use super::serializable_types::ESDKCanonicalEncryptionContext;
 use super::serialize_functions::{read_bytes, read_u8, read_vec, write_bytes, write_u8};
 use super::{Error, ser_err};
-use crate::error::val_err_with_cause;
-use crate::types::{SafeRead, SafeWrite};
-use aws_mpl_legacy::EncryptedDataKey;
-use aws_mpl_legacy::suites::AlgorithmSuite;
+use crate::error::{Kind, err_with_cause};
+use crate::suites::algorithm_suite_from_bytes;
+use crate::types::{EncryptionContext, SafeRead, SafeWrite};
+use aws_crypto_mpl::structures::AlgorithmSuite;
+use aws_crypto_mpl::structures::EncryptedDataKey;
 
 pub(crate) type MessageId = Vec<u8>;
 
@@ -50,7 +50,7 @@ pub(crate) fn read_msg_format_version(
         //# and [types](../data-format/message-header.md#type)
         //# and fail with a more specific error message.
         0x41 => ser_err(
-            "Input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
+            "input appears to be Base64-encoded. The ESDK expects raw binary message format, not Base64",
         ),
         _ => ser_err(&format!(
             "unsupported message format version: {version:#04x}"
@@ -131,7 +131,7 @@ pub struct V1HeaderBody {
     pub(crate) message_type: MessageType,
     pub(crate) algorithm_suite: AlgorithmSuite,
     pub(crate) message_id: MessageId,
-    pub(crate) encryption_context: ESDKCanonicalEncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
     pub(crate) content_type: ContentType,
     pub(crate) header_iv_length: u8,
@@ -143,7 +143,7 @@ pub struct V1HeaderBody {
 pub struct V2HeaderBody {
     pub(crate) algorithm_suite: AlgorithmSuite,
     pub(crate) message_id: MessageId,
-    pub(crate) encryption_context: ESDKCanonicalEncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     pub(crate) encrypted_data_keys: Vec<EncryptedDataKey>,
     pub(crate) content_type: ContentType,
     pub(crate) frame_length: u32,
@@ -184,7 +184,7 @@ impl HeaderBody {
             Self::V2Body(body) => body.message_id.as_slice(),
         }
     }
-    pub(crate) const fn encryption_context(&self) -> &ESDKCanonicalEncryptionContext {
+    pub(crate) const fn encryption_context(&self) -> &EncryptionContext {
         match self {
             Self::V1Body(body) => &body.encryption_context,
             Self::V2Body(body) => &body.encryption_context,
@@ -247,7 +247,7 @@ pub(crate) const MESSAGE_ID_LEN_V2: usize = 32;
 pub(crate) fn read_esdk_suite_id(
     r: &mut dyn SafeRead,
     raw: &mut dyn SafeWrite,
-) -> Result<&'static AlgorithmSuite, Error> {
+) -> Result<AlgorithmSuite, Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The length of the serialized algorithm suite ID field MUST be 2 bytes.
     let mut esdk_suite_id_bytes = [0; 2];
@@ -259,16 +259,20 @@ pub(crate) fn read_esdk_suite_id(
     //
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    let suite =
-        aws_mpl_legacy::suites::get_algorithm_suite_info(esdk_suite_id_bytes).map_err(|e| {
-            val_err_with_cause(
-                format!(
-                    "Unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
-                    esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]
-                ),
-                e,
-            )
-        })?;
+    //
+    //= spec/data-format/message.md#structure
+    //= reason=This is the only place an algorithm suite ID is resolved from the wire; returning Err here aborts deserialization before any trailing bytes are read, so none can be treated as a footer
+    //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
+    let suite = algorithm_suite_from_bytes(esdk_suite_id_bytes).map_err(|e| {
+        err_with_cause(
+            Kind::Serialization,
+            format!(
+                "unrecognized or unsupported algorithm suite ID: 0x{:02X}{:02X}",
+                esdk_suite_id_bytes[0], esdk_suite_id_bytes[1]
+            ),
+            e,
+        )
+    })?;
     Ok(suite)
 }
 
@@ -278,8 +282,7 @@ pub(crate) fn write_esdk_suite_id(
 ) -> Result<(), Error> {
     //= spec/data-format/message-header.md#algorithm-suite-id
     //# The length of the serialized algorithm suite ID field MUST be 2 bytes.
-    debug_assert_eq!(suite.binary_id.len(), 2);
-    write_bytes(w, &suite.binary_id[..])
+    write_bytes(w, &suite.id()[..])
 }
 
 pub(crate) fn read_message_id_v1(

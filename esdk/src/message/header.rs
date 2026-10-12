@@ -7,14 +7,15 @@ use super::header_types::{
     ContentType, HeaderAuth, HeaderBody, MESSAGE_ID_LEN_V1, MESSAGE_ID_LEN_V2,
     MessageFormatVersion, MessageId, read_msg_format_version,
 };
-use super::serializable_types::ESDKEncryptionContext;
 use super::v1_header_body::{read_v1_header_body, write_v1_header_body};
-use super::v2_header_body::{get_hkdf, read_v2_header_body, write_v2_header_body};
+use super::v2_header_body::{
+    commit_key_length, has_commitment, read_v2_header_body, write_v2_header_body,
+};
 use super::{DigestWriter, Error, header_auth, ser_err, serialize_functions};
-use crate::error::val_err;
-use crate::types::{SafeRead, SafeWrite};
+use crate::error::{Kind, err, val_err};
+use crate::types::{EncryptionContext, SafeRead, SafeWrite};
+use aws_crypto_mpl::structures::AlgorithmSuite;
 use aws_lc_rs::constant_time;
-use aws_mpl_legacy::suites::{AlgorithmSuite, DerivationAlgorithm};
 
 pub(crate) const START_SEQUENCE_NUMBER: u32 = 1;
 
@@ -34,7 +35,7 @@ pub(crate) const SAFE_MAX_ENCRYPT: u64 = 0x000F_FFFF_FFE0;
 pub struct HeaderInfo {
     pub(crate) body: HeaderBody,
     pub(crate) raw_header: Vec<u8>,
-    pub(crate) encryption_context: ESDKEncryptionContext,
+    pub(crate) encryption_context: EncryptionContext,
     pub(crate) suite: AlgorithmSuite,
     pub(crate) header_auth: HeaderAuth,
 }
@@ -45,8 +46,8 @@ pub(crate) fn write_header_body(w: &mut dyn SafeWrite, body: &HeaderBody) -> Res
     // is a dev-time guard against future drift; the invariant is enforced at the call site.
     debug_assert!(
         match body {
-            HeaderBody::V1Body(b) => b.algorithm_suite.message_version == 1,
-            HeaderBody::V2Body(b) => b.algorithm_suite.message_version == 2,
+            HeaderBody::V1Body(b) => b.algorithm_suite.message_format_version() == 1,
+            HeaderBody::V2Body(b) => b.algorithm_suite.message_format_version() == 2,
         },
         "header body variant does not match its embedded algorithm suite's message_version",
     );
@@ -121,48 +122,50 @@ pub fn read_header_body(
     match result.content_type() {
         ContentType::Framed => {
             if result.frame_length() == 0 {
-                return ser_err("Frame length must be positive if content is framed");
+                return ser_err("frame length must be positive if content is framed");
             }
         }
         ContentType::NonFramed => {
             if result.frame_length() != 0 {
                 //= spec/data-format/message-header.md#frame-length
                 //# When the [content type](#content-type) is nonframed, the value of this field MUST be 0.
-                return ser_err("Frame length must be zero if content is nonframed");
+                return ser_err("frame length must be zero if content is nonframed");
             }
         }
     }
     Ok(result)
 }
 
-pub(crate) fn header_version_supports_commitment(
+pub(crate) const fn header_version_supports_commitment(
     suite: &AlgorithmSuite,
     body: &HeaderBody,
 ) -> bool {
-    match (suite.commitment, body) {
-        (DerivationAlgorithm::Hkdf(header), HeaderBody::V2Body(body)) => {
-            usize::try_from(header.output_key_length).is_ok_and(|n| body.suite_data.len() == n)
+    match body {
+        HeaderBody::V2Body(body) => {
+            has_commitment(suite) && body.suite_data.len() == commit_key_length(suite)
         }
-        (_, HeaderBody::V1Body(_)) => true,
-        _ => false,
+        HeaderBody::V1Body(_) => true,
     }
 }
 
 pub(crate) fn validate_max_encrypted_data_keys(
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    edks: &[aws_mpl_legacy::EncryptedDataKey],
+    edks: &[aws_crypto_mpl::structures::EncryptedDataKey],
 ) -> Result<(), Error> {
     if edks.is_empty() {
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //# This value MUST be greater than 0.
-        return Err(val_err("Encrypted data key count must be greater than 0"));
+        return Err(err(
+            Kind::InvalidMaterials,
+            "encrypted data key count must be greater than 0",
+        ));
     }
 
     if let Some(max) = max_encrypted_data_keys
         && edks.len() > max.get()
     {
         return Err(val_err(format!(
-            "Encrypted data key count {} exceeds configured maximum {}",
+            "encrypted data key count {} exceeds configured maximum {}",
             edks.len(),
             max.get(),
         )));
@@ -182,12 +185,13 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
     // (suites are sourced from the static algorithm-suites table), but match explicitly
     // so a hypothetical future or malformed value fails loudly instead of silently
     // falling through to the V2 length.
-    let length = match suite.message_version {
+    let length = match suite.message_format_version() {
         1 => MESSAGE_ID_LEN_V1,
         2 => MESSAGE_ID_LEN_V2,
         v => {
-            return ser_err(&format!(
-                "Cannot generate message ID for unsupported message format version: {v}"
+            return Err(err(
+                Kind::Internal,
+                format!("cannot generate message ID for unsupported message format version: {v}"),
             ));
         }
     };
@@ -198,7 +202,7 @@ pub fn generate_message_id(suite: &AlgorithmSuite) -> Result<MessageId, Error> {
     //# While implementations cannot guarantee complete uniqueness,
     //# implementations MUST use a good source of randomness when generating message IDs in order to make
     //# the chance of duplicate IDs negligible.
-    aws_mpl_legacy::primitives::generate_random_bytes(&mut rand_bytes)?;
+    aws_mpl_primitives::generate_random_bytes(&mut rand_bytes)?;
     Ok(rand_bytes)
 }
 
@@ -214,20 +218,19 @@ pub(crate) fn validate_suite_data(
     if constant_time::verify_slices_are_equal(header_body.suite_data(), expected_suite_data)
         .is_err()
     {
-        return Err(val_err(
-            "Algorithm suite data does not match expected value",
+        return Err(err(
+            Kind::Cryptographic,
+            "the key commitment in the message header does not match the derived commit key",
         ));
     }
 
-    let Ok(suite_data_len) = u32::try_from(expected_suite_data.len()) else {
-        return Err(val_err("Algorithm suite data length exceeds u32::MAX"));
-    };
     //= spec/data-format/message-header.md#algorithm-suite-data
     //# The length of the suite data field MUST be equal to the [Algorithm Suite Data Length](../framework/algorithm-suites.md#algorithm-suite-data-length) value
     //# of the [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    if get_hkdf(&suite.commitment)?.output_key_length != suite_data_len {
-        return Err(val_err(
-            "Algorithm suite data length does not match the algorithm suite's declared suite-data length",
+    if commit_key_length(suite) != expected_suite_data.len() {
+        return Err(err(
+            Kind::Internal,
+            "algorithm suite data length does not match the algorithm suite's declared suite-data length",
         ));
     }
     Ok(())

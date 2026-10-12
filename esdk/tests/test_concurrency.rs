@@ -16,8 +16,6 @@ mod fixtures;
 mod test_helpers;
 
 use aws_esdk::*;
-use aws_mpl_legacy::commitment::EsdkCommitmentPolicy;
-use aws_mpl_legacy::suites::EsdkAlgorithmSuiteId;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -39,8 +37,8 @@ fn v1_message_id(ct: &[u8]) -> Vec<u8> {
 /// Run `THREADS` OS threads, each doing `ITERS_PER_THREAD` encrypt + decrypt
 /// round trips. Returns every message ID produced across all threads.
 fn concurrent_round_trips(
-    suite: Option<EsdkAlgorithmSuiteId>,
-    policy: EsdkCommitmentPolicy,
+    suite: Option<AlgorithmSuiteId>,
+    policy: CommitmentPolicy,
     extract_id: fn(&[u8]) -> Vec<u8>,
 ) -> Vec<Vec<u8>> {
     let ids: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -60,23 +58,24 @@ fn concurrent_round_trips(
                     for i in 0..ITERS_PER_THREAD {
                         // Encrypt and record the message ID from the header.
                         let plaintext = format!("thread {t} message {i}").into_bytes();
-                        let mut enc_input = EncryptInput::with_legacy_keyring(
-                            &plaintext,
-                            EncryptionContext::new(),
-                            keyring.clone(),
-                        );
-                        enc_input.algorithm_suite_id = suite;
-                        enc_input.commitment_policy = policy;
+                        let mut builder = EncryptInput::builder()
+                            .plaintext(&plaintext)
+                            .keyring(keyring.clone())
+                            .commitment_policy(policy);
+                        if let Some(suite) = suite {
+                            builder = builder.algorithm_suite_id(suite);
+                        }
+                        let enc_input = builder.build().unwrap();
                         let out = encrypt(&enc_input).await.unwrap();
                         ids.lock().unwrap().push(extract_id(&out.ciphertext));
 
                         // Decrypt and verify the round trip.
-                        let mut dec_input = DecryptInput::with_legacy_keyring(
-                            &out.ciphertext,
-                            EncryptionContext::new(),
-                            keyring.clone(),
-                        );
-                        dec_input.commitment_policy = policy;
+                        let dec_input = DecryptInput::builder()
+                            .ciphertext(&out.ciphertext)
+                            .keyring(keyring.clone())
+                            .commitment_policy(policy)
+                            .build()
+                            .unwrap();
                         let dec = decrypt(&dec_input).await.unwrap();
                         assert_eq!(
                             dec.plaintext, plaintext,
@@ -100,7 +99,7 @@ fn concurrent_v2_round_trips_and_unique_message_ids() {
     // Default committing suite produces V2 messages.
     let ids = concurrent_round_trips(
         None,
-        EsdkCommitmentPolicy::RequireEncryptRequireDecrypt,
+        CommitmentPolicy::RequireEncryptRequireDecrypt,
         v2_message_id,
     );
 
@@ -120,8 +119,8 @@ fn concurrent_v2_round_trips_and_unique_message_ids() {
 fn concurrent_v1_round_trips_and_unique_message_ids() {
     // A non-committing suite produces V1 messages.
     let ids = concurrent_round_trips(
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256),
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt,
+        Some(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256),
+        CommitmentPolicy::ForbidEncryptAllowDecrypt,
         v1_message_id,
     );
 

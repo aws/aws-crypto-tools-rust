@@ -12,23 +12,14 @@ const WRAPPING_KEY: [u8; 32] = [0x2A; 32];
 
 /// Step 2: define your keyring.
 ///
-/// TODO(native-mpl): once native MPL is available,
-/// model the custom keyring example off of
-/// https://github.com/aws/aws-encryption-sdk-python/blob/master/examples/src/custom_mpl_cmm_example.py
-fn build_keyring() -> Result<aws_esdk::Keyring, Box<dyn std::error::Error>> {
-    let mpl = aws_mpl_legacy::dafny::Client::from_conf(
-        aws_mpl_legacy::dafny::types::MaterialProvidersConfig::builder().build()?,
-    )?;
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    let keyring = runtime.block_on(
-        mpl.create_raw_aes_keyring()
-            .key_namespace("custom-keyring-example")
-            .key_name("demo-key")
-            .wrapping_key(WRAPPING_KEY.to_vec())
-            .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-            .send(),
-    )?;
-    Ok(keyring.into())
+/// TODO: provide custom implementations of the Keyring interface's methods
+fn build_keyring() -> Result<impl aws_esdk::Keyring, Box<dyn std::error::Error>> {
+    Ok(aws_crypto_mpl::keyring::RawAesKeyring::new(
+        "custom-keyring-example",
+        "demo-key",
+        WRAPPING_KEY.to_vec(),
+        aws_crypto_mpl::AesGcm::Aes256Gcm,
+    )?)
 }
 
 /// Step 3: export your keyring.

@@ -16,6 +16,7 @@ use crate::structures::{
 /// four material kinds: encryption, decryption, branch-key, or beacon-key
 /// materials. The variant tracks which kind of materials this entry holds.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum CachedMaterials {
     /// Encryption materials cached by a caching CMM on the encrypt path.
     Encryption(EncryptionMaterials),

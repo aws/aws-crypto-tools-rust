@@ -192,24 +192,21 @@ async fn test_unrecognized_algorithm_suite_errors() {
         ct[suite_offset] = 0xFF;
         ct[suite_offset + 1] = 0xFF;
         let keyring = test_keyring().await;
-        let dec_input = DecryptInput::with_legacy_keyring(&ct, EncryptionContext::new(), keyring);
+        let dec_input = DecryptInput::builder()
+            .ciphertext(&ct)
+            .keyring(keyring)
+            .build()
+            .unwrap();
         let err = decrypt(&dec_input).await.unwrap_err();
-
-        assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "{label}: expected ValidationError, got {:?}",
-            err.kind
-        );
-
-        let err_msg = err.to_string();
 
         //= spec/data-format/message.md#structure
         //= type=test
         //= reason=All valid algorithm suite IDs map to known signature algorithms; an unrecognized suite ID is rejected at header parsing before the signature algorithm is ever inspected
         //# If the [algorithm suite ID](message-header.md#algorithm-suite-id) is unrecognized or unsupported, or its [algorithm suite](../framework/algorithm-suites.md) definition cannot be used to determine whether a [signature algorithm](../framework/algorithm-suites.md#signature-algorithm) is required, the operation MUST raise an error and MUST NOT treat any trailing bytes as a valid [message footer](message-footer.md).
         assert!(
-            err_msg.contains("algorithm suite ID"),
-            "{label}: error must mention algorithm suite ID, got: {err_msg}"
+            err.is_serialization(),
+            "{label}: expected Serialization error, got {:?}",
+            err
         );
     }
 }

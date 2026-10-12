@@ -30,15 +30,23 @@ pub enum SmallEncryptionContextVariation {
     CD,
 }
 
+pub fn ec_of(pairs: &[(&str, &str)]) -> EncryptionContext {
+    let mut ec = EncryptionContext::new();
+    for &(k, v) in pairs {
+        ec.insert(k, v);
+    }
+    ec
+}
+
 pub fn small_encryption_context(v: SmallEncryptionContextVariation) -> EncryptionContext {
-    let key_a = "keyA".to_string();
-    let val_a = "valA".to_string();
-    let key_b = "keyB".to_string();
-    let val_b = "valB".to_string();
-    let key_c = "keyC".to_string();
-    let val_c = "valC".to_string();
-    let key_d = "keyD".to_string();
-    let val_d = "valD".to_string();
+    let key_a = "keyA";
+    let val_a = "valA";
+    let key_b = "keyB";
+    let val_b = "valB";
+    let key_c = "keyC";
+    let val_c = "valC";
+    let key_d = "keyD";
+    let val_d = "valD";
 
     let mut h = EncryptionContext::new();
     match v {
@@ -70,10 +78,7 @@ pub fn small_encryption_context(v: SmallEncryptionContextVariation) -> Encryptio
 
 pub fn get_reserved_ec_map() -> EncryptionContext {
     let mut h = EncryptionContext::new();
-    h.insert(
-        "aws-crypto-public-key".to_string(),
-        "not a real public key".to_string(),
-    );
+    h.insert("aws-crypto-public-key", "not a real public key");
     h
 }
 
@@ -110,14 +115,14 @@ pub fn small_encryption_context_keys(v: SmallEncryptionContextVariation) -> Vec<
 pub fn small_mismatched_encryption_context(
     v: SmallEncryptionContextVariation,
 ) -> EncryptionContext {
-    let key_a = "keyA".to_string();
-    let val_a = "valA".to_string();
-    let key_b = "keyB".to_string();
-    let val_b = "valB".to_string();
-    let key_c = "keyC".to_string();
-    let val_c = "valC".to_string();
-    let key_d = "keyD".to_string();
-    let val_d = "valD".to_string();
+    let key_a = "keyA";
+    let val_a = "valA";
+    let key_b = "keyB";
+    let val_b = "valB";
+    let key_c = "keyC";
+    let val_c = "valC";
+    let key_d = "keyD";
+    let val_d = "valD";
 
     let mut h: EncryptionContext = EncryptionContext::new();
     match v {
@@ -151,23 +156,4 @@ pub fn namespace_and_name(n: u8) -> (String, String) {
     let s = "child".to_string() + &n.to_string() + " Namespace";
     let t = "child".to_string() + &n.to_string() + " Name";
     (s, t)
-}
-
-pub async fn generate_key_pair(
-    key_modulus_length: aws_mpl_legacy::dafny::aes_gcm::AESEncryption::RSAModulusLengthBitsToGenerate,
-) -> aws_mpl_legacy::dafny::aws_cryptography_primitives::operation::generate_rsa_key_pair::GenerateRsaKeyPairOutput
-{
-    let crypto = aws_mpl_legacy::dafny::aws_cryptography_primitives::client::Client::from_conf(
-        aws_mpl_legacy::dafny::aws_cryptography_primitives::types::CryptoConfig::builder()
-            .build()
-            .unwrap(),
-    )
-    .unwrap();
-
-    crypto
-        .generate_rsa_key_pair()
-        .length_bits(key_modulus_length)
-        .send()
-        .await
-        .unwrap()
 }
