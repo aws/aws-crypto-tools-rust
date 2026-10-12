@@ -41,7 +41,6 @@ pub use cmc::{
 };
 pub use cmm::{Cmm, DefaultCmm, SharedCmm};
 pub use key_store::{
-    Discovery, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, KmsKeyArn,
-    KmsMrKeyArn, MrDiscovery,
+    Discovery, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, MrDiscovery,
 };
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

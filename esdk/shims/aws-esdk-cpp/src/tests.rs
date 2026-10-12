@@ -362,7 +362,7 @@ fn make_kms_config_accepts_key_arn() {
     //# - The shim MUST translate a KMS key ARN configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::KmsKeyArn, "arn:test-key").unwrap(),
-        KmsConfiguration::KmsKeyArn(v) if v.arn() == "arn:test-key"
+        KmsConfiguration::KmsKeyArn(v) if v == "arn:test-key"
     ));
 }
 
@@ -374,7 +374,7 @@ fn make_kms_config_accepts_mr_key_arn() {
     //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
     assert!(matches!(
         make_kms_config(ffi::KmsConfigurationType::KmsMrKeyArn, "arn:test-mr-key").unwrap(),
-        KmsConfiguration::KmsMrKeyArn(v) if v.arn() == "arn:test-mr-key"
+        KmsConfiguration::KmsMrKeyArn(v) if v == "arn:test-mr-key"
     ));
 }
 

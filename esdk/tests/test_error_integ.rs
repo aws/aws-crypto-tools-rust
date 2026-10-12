@@ -13,7 +13,7 @@ use aws_crypto_mpl::aws_sdk_kms;
 use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::structures::EncryptionContext;
-use aws_crypto_mpl::{Discovery, HierarchicalKeyring, KeyStoreClient, KmsKeyArn};
+use aws_crypto_mpl::{Discovery, HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
 use aws_esdk::Esdk;
 use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
 
@@ -56,7 +56,7 @@ async fn key_store_with(
     KeyStoreClient::builder()
         .ddb_table_name(table)
         .logical_key_store_name(TABLE)
-        .kms_configuration(KmsKeyArn::new(kms_key_arn))
+        .kms_configuration(KmsConfiguration::KmsKeyArn(kms_key_arn.into()))
         .kms_client(kms)
         .ddb_client(ddb)
         .build()
@@ -246,7 +246,9 @@ async fn integ_a_discovery_key_store_names_the_kms_key_from_the_record() {
     let key_store = KeyStoreClient::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
-        .kms_configuration(Discovery::default())
+        .kms_configuration(KmsConfiguration::Discovery(
+            Discovery::builder().build().unwrap(),
+        ))
         .kms_client(aws_sdk_kms::Client::new(&config))
         .ddb_client(aws_sdk_dynamodb::Client::new(&config))
         .build()

@@ -6,13 +6,13 @@
 //!
 //! ```no_run
 //! # async fn example() -> Result<(), aws_crypto_mpl::Error> {
-//! use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
+//! use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 //!
 //! let key_store = KeyStoreClient::builder()
 //!     .ddb_table_name("my-table")
 //!     .logical_key_store_name("my-table")
-//!     .kms_configuration(KmsKeyArn::new(
-//!         "arn:aws:kms:us-west-2:111122223333:key/my-key",
+//!     .kms_configuration(KmsConfiguration::KmsKeyArn(
+//!         "arn:aws:kms:us-west-2:111122223333:key/my-key".into(),
 //!     ))
 //!     .build()
 //!     .await?;
@@ -41,7 +41,7 @@ pub use client::{
     GetBeaconKeyFluentBuilder, GetBranchKeyVersionFluentBuilder, GetKeyStoreInfoFluentBuilder,
     KeyStoreClient, VersionKeyFluentBuilder,
 };
-pub use config::{Discovery, KmsConfiguration, KmsKeyArn, KmsMrKeyArn, MrDiscovery};
+pub use config::{Discovery, DiscoveryBuilder, KmsConfiguration, MrDiscovery, MrDiscoveryBuilder};
 pub use types::{
     CreateKeyInput, CreateKeyInputBuilder, CreateKeyOutput, CreateKeyOutputBuilder,
     CreateKeyStoreInput, CreateKeyStoreInputBuilder, CreateKeyStoreOutput,

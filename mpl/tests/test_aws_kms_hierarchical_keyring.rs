@@ -42,7 +42,7 @@ use aws_crypto_mpl::key_store::{
     CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput, Discovery,
     GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
     GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
-    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsKeyArn,
+    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration,
     VersionKeyInput, VersionKeyOutput,
 };
 use aws_crypto_mpl::structures::{
@@ -100,8 +100,9 @@ fn key_store_never_consulted() -> KeyStoreClient {
     build_without_io(
         KeyStoreClient::builder()
             .ddb_table_name("test-table")
-            .kms_configuration(KmsKeyArn::new(
-                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            .kms_configuration(KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                    .into(),
             ))
             .logical_key_store_name("test-logical")
             .kms_client(kms)
@@ -1302,7 +1303,9 @@ fn fake_key_store_info() -> GetKeyStoreInfoOutput {
         .key_store_name("test-table")
         .logical_key_store_name(FAKE_LOGICAL_KEY_STORE_NAME)
         .grant_tokens(Vec::<String>::new())
-        .kms_configuration(Discovery::default())
+        .kms_configuration(KmsConfiguration::Discovery(
+            Discovery::builder().build().unwrap(),
+        ))
         .build()
         .unwrap()
 }

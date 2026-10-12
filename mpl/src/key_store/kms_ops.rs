@@ -91,8 +91,8 @@ pub(crate) fn resolve_key_store_arn(
     branch_key_id: &str,
 ) -> Result<String, Error> {
     let configured = match kms_config {
-        KmsConfiguration::KmsKeyArn(configured) => configured.arn(),
-        KmsConfiguration::KmsMrKeyArn(configured) => configured.arn(),
+        KmsConfiguration::KmsKeyArn(configured) => configured.as_str(),
+        KmsConfiguration::KmsMrKeyArn(configured) => configured.as_str(),
         KmsConfiguration::Discovery(_) => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
             return Ok(record_kms_arn.to_string());
