@@ -131,15 +131,13 @@ async fn custom_keyring_round_trips_via_public_api() {
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.
-    let out = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .keyring(keyring.clone())
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let out = Esdk::default()
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap();
 
     // The custom keyring's EDK is serialized into the message header.
     assert!(
@@ -150,42 +148,36 @@ async fn custom_keyring_round_trips_via_public_api() {
     );
 
     // Decrypt back through the same keyring.
-    let dec = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&out.ciphertext)
-            .keyring(keyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let dec = Esdk::default()
+        .decrypt()
+        .ciphertext(&out.ciphertext)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(dec.plaintext, plaintext);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_wrong_kek_fails_decrypt() {
     let enc_keyring = LocalKekKeyring { kek: [7u8; 32] };
-    let out = encrypt(
-        &EncryptInput::builder()
-            .plaintext(b"wrong kek must fail")
-            .keyring(enc_keyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let out = Esdk::default()
+        .encrypt()
+        .plaintext(b"wrong kek must fail")
+        .keyring(enc_keyring)
+        .send()
+        .await
+        .unwrap();
 
     // A keyring with a different KEK cannot unwrap the data key.
     let wrong_keyring = LocalKekKeyring { kek: [8u8; 32] };
-    let err = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&out.ciphertext)
-            .keyring(wrong_keyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .expect_err("decrypt under a different KEK must fail");
+    let err = Esdk::default()
+        .decrypt()
+        .ciphertext(&out.ciphertext)
+        .keyring(wrong_keyring)
+        .send()
+        .await
+        .expect_err("decrypt under a different KEK must fail");
     assert!(
         err.is_cryptographic(),
         "expected the keyring's unwrap failure, got {:?}",
@@ -231,15 +223,13 @@ impl Keyring for ShortDataKeyKeyring {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
-    let err = encrypt(
-        &EncryptInput::builder()
-            .plaintext(b"short key")
-            .keyring(ShortDataKeyKeyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .expect_err("a short plaintext data key must fail");
+    let err = Esdk::default()
+        .encrypt()
+        .plaintext(b"short key")
+        .keyring(ShortDataKeyKeyring)
+        .send()
+        .await
+        .expect_err("a short plaintext data key must fail");
     assert!(err.is_invalid_materials(), "{err:?}");
     assert_eq!(
         err.resource(),
@@ -251,23 +241,19 @@ async fn a_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_decrypt_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
-    let out = encrypt(
-        &EncryptInput::builder()
-            .plaintext(b"short key")
-            .keyring(LocalKekKeyring { kek: [7u8; 32] })
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    let err = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&out.ciphertext)
-            .keyring(ShortDataKeyKeyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .expect_err("a short plaintext data key must fail");
+    let out = Esdk::default()
+        .encrypt()
+        .plaintext(b"short key")
+        .keyring(LocalKekKeyring { kek: [7u8; 32] })
+        .send()
+        .await
+        .unwrap();
+    let err = Esdk::default()
+        .decrypt()
+        .ciphertext(&out.ciphertext)
+        .keyring(ShortDataKeyKeyring)
+        .send()
+        .await
+        .expect_err("a short plaintext data key must fail");
     assert!(err.is_invalid_materials(), "{err:?}");
 }

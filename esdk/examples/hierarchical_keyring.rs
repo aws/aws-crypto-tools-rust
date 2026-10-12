@@ -10,7 +10,7 @@ use std::time::Duration;
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Error, Resource, Service};
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,12 +46,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let input = EncryptInput::builder()
+    let esdk = Esdk::default();
+
+    let result = esdk
+        .encrypt()
         .plaintext(plaintext)
         .encryption_context(encryption_context.clone())
         .keyring(keyring.clone())
-        .build()?;
-    let encrypted = match encrypt(&input).await {
+        .send()
+        .await;
+    let encrypted = match result {
         Ok(output) => output,
         Err(e) => {
             match &e {
@@ -72,14 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(keyring)
-            .build()?,
-    )
-    .await?;
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .send()
+        .await?;
 
     assert_eq!(
         decrypted.plaintext, plaintext,

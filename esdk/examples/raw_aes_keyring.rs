@@ -7,7 +7,7 @@
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
 use aws_esdk::error::Error;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,21 +31,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
-            .keyring(keyring.clone())
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
 
-    let input = DecryptInput::builder()
+    let encrypted = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .send()
+        .await?;
+
+    let result = esdk
+        .decrypt()
         .ciphertext(&encrypted.ciphertext)
         .encryption_context(encryption_context)
         .keyring(keyring)
-        .build()?;
-    let decrypted = match decrypt(&input).await {
+        .send()
+        .await;
+    let decrypted = match result {
         Ok(output) => output,
         Err(e) => {
             match &e {

@@ -13,7 +13,7 @@ use aws_crypto_mpl::Keyring;
 use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
 
 /// Identifies this keyring's encrypted data keys inside the message header.
@@ -136,23 +136,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
-            .keyring(keyring.clone())
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
 
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(keyring)
-            .build()?,
-    )
-    .await?;
+    let encrypted = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .send()
+        .await?;
+
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .send()
+        .await?;
 
     assert_eq!(
         decrypted.plaintext, plaintext,

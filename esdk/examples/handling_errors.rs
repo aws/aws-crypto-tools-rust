@@ -25,7 +25,7 @@ use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Error, Resource, Service};
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 // The AWS Crypto Tools CI test key store.
 // Replace these with your own key store's table, name, KMS key ARN, and branch key ID.
@@ -58,11 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
     // so encrypt can fail in either service.
-    let input = EncryptInput::builder()
+    let esdk = Esdk::default();
+    let result = esdk
+        .encrypt()
         .plaintext(PLAINTEXT)
         .keyring(keyring.clone())
-        .build()?;
-    let encrypted = match encrypt(&input).await {
+        .send()
+        .await;
+    let encrypted = match result {
         Ok(output) => output,
         Err(e) => {
             match &e {
@@ -139,11 +142,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // ---- Decrypt: failures only decrypt has, and every failure behind an error ----
-    let input = DecryptInput::builder()
+    let result = esdk
+        .decrypt()
         .ciphertext(&encrypted.ciphertext)
         .keyring(keyring)
-        .build()?;
-    let decrypted = match decrypt(&input).await {
+        .send()
+        .await;
+    let decrypted = match result {
         Ok(output) => output,
         Err(e) => {
             match &e {

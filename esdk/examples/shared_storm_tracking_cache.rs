@@ -22,7 +22,7 @@ use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{
     HierarchicalKeyring, StormTrackingCmc, aws_config, aws_sdk_dynamodb, aws_sdk_kms,
 };
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,24 +85,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    // Encrypt with A, decrypt with B: both go through the same cache.
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
-            .keyring(keyring_a)
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
 
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(keyring_b)
-            .build()?,
-    )
-    .await?;
+    // Encrypt with A, decrypt with B: both go through the same cache.
+    let encrypted = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring_a)
+        .send()
+        .await?;
+
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring_b)
+        .send()
+        .await?;
 
     assert_eq!(
         decrypted.plaintext, plaintext,

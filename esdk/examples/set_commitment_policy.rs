@@ -8,7 +8,6 @@
 //! and move to the default once every reader is upgraded.
 //!
 //! The policy is set once on an `Esdk` client, which applies it to every operation the client starts.
-//! The free `encrypt` and `decrypt` functions take the same setting on each input instead.
 //!
 //! Runs offline.
 

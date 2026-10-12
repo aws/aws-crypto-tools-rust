@@ -6,10 +6,9 @@ The AWS Encryption SDK is a client-side encryption library.
 It uses envelope encryption: a data key encrypts your data, and one or more wrapping keys in a _keyring_ encrypt that data key.
 The encrypted data keys are stored in the encrypted message, so you don't track them separately.
 
+Every operation starts on an [`Esdk`](#the-esdk-client) client.
 The two primary operations are `encrypt` and `decrypt`.
 Each has a streaming variant (`encrypt_stream` / `decrypt_stream`) for data too large to hold in memory.
-Per-call configuration lives on the `EncryptInput` / `DecryptInput` structs.
-The optional [`Esdk`](#the-esdk-client) client holds that configuration for every call made through it.
 
 ## Prerequisites
 
@@ -31,7 +30,7 @@ A one-shot encrypt/decrypt round trip with a raw AES keyring:
 
 ```rust
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,23 +47,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "quickstart");
 
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(b"the quick brown fox")
-            .encryption_context(encryption_context.clone())
-            .keyring(keyring.clone())
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
 
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(keyring)
-            .build()?,
-    )
-    .await?;
+    let encrypted = esdk
+        .encrypt()
+        .plaintext(b"the quick brown fox")
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .send()
+        .await?;
+
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .send()
+        .await?;
 
     assert_eq!(decrypted.plaintext, b"the quick brown fox");
     Ok(())
@@ -73,9 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## The `Esdk` client
 
-`encrypt` / `decrypt` read the commitment policy and the encrypted data key cap from each input.
-To set them once, build an `Esdk` client.
-Each of its operations is a fluent builder that takes those two settings from the client:
+An `Esdk` client holds the commitment policy and the cap on encrypted data keys, and applies them to every operation it starts.
+`Esdk::default()` uses the `RequireEncryptRequireDecrypt` policy and no cap.
+Set either one with `Esdk::builder()`:
 
 ```rust
 use aws_esdk::{CommitmentPolicy, Esdk};

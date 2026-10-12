@@ -2,15 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Adapters that let a synchronous [`std::io::Read`] or [`std::io::Write`]
-//! be passed to [`encrypt_stream`](crate::encrypt_stream) and [`decrypt_stream`](crate::decrypt_stream).
+//! be passed to [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) and
+//! [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream).
 //!
 //! ```no_run
-//! # async fn example(input: aws_esdk::EncryptStreamInput) -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example(esdk: aws_esdk::Esdk, keyring: aws_esdk::SharedKeyring) -> Result<(), Box<dyn std::error::Error>> {
 //! use aws_esdk::io::{SyncReader, SyncWriter};
 //!
 //! let plaintext = std::fs::File::open("plaintext.txt")?;
 //! let ciphertext = std::fs::File::create("ciphertext.bin")?;
-//! aws_esdk::encrypt_stream(SyncReader::new(plaintext), SyncWriter::new(ciphertext), &input).await?;
+//! esdk.encrypt_stream()
+//!     .keyring(keyring)
+//!     .send(SyncReader::new(plaintext), SyncWriter::new(ciphertext))
+//!     .await?;
 //! # Ok(())
 //! # }
 //! ```

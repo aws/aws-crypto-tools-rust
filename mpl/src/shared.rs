@@ -13,8 +13,9 @@
 //! APIs take `impl Keyring + 'static` and convert with [`IntoShared`]:
 //!
 //! ```ignore
-//! pub fn with_keyring(pt: &[u8], ec: EncryptionContext, keyring: impl Keyring + 'static) -> Self {
-//!     Self { keyring: Some(keyring.into_shared()), ..Default::default() }
+//! pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+//!     self.keyring = Some(keyring.into_shared());
+//!     self
 //! }
 //! ```
 //!
@@ -22,10 +23,10 @@
 //!
 //! ```ignore
 //! let raw = RawAesKeyring::builder()...build()?;
-//! EncryptInput::with_keyring(pt, ec.clone(), raw.clone());
+//! esdk.encrypt().plaintext(pt).keyring(raw.clone());
 //!
 //! let shared = SharedKeyring::new(raw);
-//! EncryptInput::with_keyring(pt, ec, shared);  // reuses the handle, no second Arc
+//! esdk.encrypt().plaintext(pt).keyring(shared);  // reuses the handle, no second Arc
 //! ```
 //!
 //! This matches the AWS SDK for Rust (`SharedCredentialsProvider`, `SharedHttpClient`)

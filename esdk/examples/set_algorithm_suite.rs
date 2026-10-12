@@ -15,7 +15,7 @@
 //! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{AlgorithmSuiteId, DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{AlgorithmSuiteId, EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,29 +33,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "example");
 
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
-            .keyring(keyring.clone())
-            .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
+
+    let encrypted = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .send()
+        .await?;
     assert_eq!(
         encrypted.algorithm_suite_id,
         AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 
     // Decrypt reads the algorithm suite from the message, so it is not set here.
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context)
-            .keyring(keyring)
-            .build()?,
-    )
-    .await?;
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .send()
+        .await?;
 
     assert_eq!(
         decrypted.plaintext, plaintext,

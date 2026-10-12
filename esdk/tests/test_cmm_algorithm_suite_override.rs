@@ -81,14 +81,15 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     };
 
     // Caller requests signing+committing, but CMM overrides to committing-only.
-    let enc_input = EncryptInput::builder()
+
+    let out = Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .cmm(cmm)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        .build()
+        .send()
+        .await
         .unwrap();
-
-    let out = encrypt(&enc_input).await.unwrap();
 
     // Output must reflect the CMM's suite, not the caller's.
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -105,15 +106,13 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     );
 
     // Round-trip to prove the ciphertext is valid.
-    let dec = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&out.ciphertext)
-            .keyring(keyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let dec = Esdk::default()
+        .decrypt()
+        .ciphertext(&out.ciphertext)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(dec.plaintext, b"hello");
     assert_eq!(
         dec.algorithm_suite_id,

@@ -55,24 +55,21 @@ const MAX_GROWTH_BYTES: isize = 512 * 1024;
 async fn round_trip(plaintext: &[u8]) {
     // Fresh keyring per iteration so keyring construction is measured too.
     let keyring = test_helpers::test_keyring().await;
-    let out = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .keyring(keyring.clone())
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    let dec = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&out.ciphertext)
-            .keyring(keyring)
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let esdk = Esdk::default();
+    let out = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .send()
+        .await
+        .unwrap();
+    let dec = esdk
+        .decrypt()
+        .ciphertext(&out.ciphertext)
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(dec.plaintext, plaintext);
 }
 

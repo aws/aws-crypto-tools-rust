@@ -915,10 +915,10 @@ struct EncryptResult {
     /// The encrypted message.
     Bytes ciphertext;
     /// Encryption context associated with the encrypted message.
-    /// This can differ from the value provided to EncryptInput.
+    /// This can differ from the value set in EncryptOptions.
     std::map<std::string, std::string> encryption_context;
     /// Algorithm suite used for encryption.
-    /// This can differ from the value provided to EncryptInput.
+    /// This can differ from the value set in EncryptOptions.
     AlgorithmSuiteId algorithm_suite_id;
 };
 

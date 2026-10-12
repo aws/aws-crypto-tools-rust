@@ -25,7 +25,7 @@ use aws_crypto_mpl::{
     aws_sdk_dynamodb, aws_sdk_kms,
 };
 use aws_esdk::error::Error;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 /// Maps the `tenant` value in the encryption context to that tenant's branch key ID.
 struct TenantBranchKeySupplier {
@@ -111,35 +111,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let plaintext = b"Hello World";
 
-    let encrypted_a = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(tenant_context("TenantA"))
-            .keyring(keyring.clone())
-            .build()?,
-    )
-    .await?;
-    let encrypted_b = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(tenant_context("TenantB"))
-            .keyring(keyring)
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
+
+    let encrypted_a = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(tenant_context("TenantA"))
+        .keyring(keyring.clone())
+        .send()
+        .await?;
+    let encrypted_b = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(tenant_context("TenantB"))
+        .keyring(keyring)
+        .send()
+        .await?;
 
     let keyring_a = fixed_keyring(&key_store, &branch_key_a)?;
     let keyring_b = fixed_keyring(&key_store, &branch_key_b)?;
 
     // Tenant B's branch key cannot decrypt tenant A's message.
-    let result = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted_a.ciphertext)
-            .encryption_context(tenant_context("TenantA"))
-            .keyring(keyring_b.clone())
-            .build()?,
-    )
-    .await;
+    let result = esdk
+        .decrypt()
+        .ciphertext(&encrypted_a.ciphertext)
+        .encryption_context(tenant_context("TenantA"))
+        .keyring(keyring_b.clone())
+        .send()
+        .await;
     assert!(
         matches!(result, Err(Error::NoMatchingDataKey(_))),
         "a different tenant's branch key must not decrypt the message, got {result:?}"
@@ -150,14 +149,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (&encrypted_a, "TenantA", keyring_a),
         (&encrypted_b, "TenantB", keyring_b),
     ] {
-        let decrypted = decrypt(
-            &DecryptInput::builder()
-                .ciphertext(&encrypted.ciphertext)
-                .encryption_context(tenant_context(tenant))
-                .keyring(keyring)
-                .build()?,
-        )
-        .await?;
+        let decrypted = esdk
+            .decrypt()
+            .ciphertext(&encrypted.ciphertext)
+            .encryption_context(tenant_context(tenant))
+            .keyring(keyring)
+            .send()
+            .await?;
         assert_eq!(
             decrypted.plaintext, plaintext,
             "Decryption failed: plaintext mismatch"

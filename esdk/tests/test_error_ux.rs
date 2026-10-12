@@ -11,10 +11,10 @@ use aws_crypto_mpl::keyring::OnEncryptInput;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::structures::EncryptionContext;
+use aws_esdk::Esdk;
 use aws_esdk::error::{
     BranchKey, Cache, DynamoDbTable, Error, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
-use aws_esdk::{DecryptInput, EncryptInput, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply, TABLE, VERSION};
 
@@ -25,25 +25,28 @@ fn context() -> EncryptionContext {
 }
 
 async fn encrypt_with(keyring: impl aws_crypto_mpl::Keyring + 'static) -> Vec<u8> {
-    let input = EncryptInput::builder()
+    Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .encryption_context(context())
         .keyring(keyring)
-        .build()
-        .unwrap();
-    encrypt(&input).await.unwrap().ciphertext
+        .send()
+        .await
+        .unwrap()
+        .ciphertext
 }
 
 async fn decrypt_with(
     ciphertext: &[u8],
     keyring: impl aws_crypto_mpl::Keyring + 'static,
 ) -> Result<Vec<u8>, Error> {
-    let input = DecryptInput::builder()
+    Esdk::default()
+        .decrypt()
         .ciphertext(ciphertext)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    decrypt(&input).await.map(|out| out.plaintext)
+        .send()
+        .await
+        .map(|out| out.plaintext)
 }
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
@@ -242,12 +245,13 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
         .cache(SharedCmc::new(cache))
         .build()
         .unwrap();
-    let input = EncryptInput::builder()
+    let err = Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = encrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     let Error::Throttling(e) = &err else {
         panic!("expected Throttling, got {err:?}");
     };
@@ -273,13 +277,15 @@ async fn a_tampered_frame_is_cryptographic() {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()
         .unwrap();
-    let input = EncryptInput::builder()
+    let mut ciphertext = Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let mut ciphertext = encrypt(&input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
     // The last content byte of the final frame, just before its 16-byte tag.
     let i = ciphertext.len() - 17;
     ciphertext[i] ^= 1;
@@ -300,13 +306,14 @@ async fn an_encryption_context_mismatch_names_the_key_not_the_value() {
     let ciphertext = encrypt_with(keyring.clone()).await;
     let mut other = EncryptionContext::new();
     other.insert("tenant", "a-different-value");
-    let input = DecryptInput::builder()
+    let err = Esdk::default()
+        .decrypt()
         .ciphertext(&ciphertext)
         .encryption_context(other)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = decrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     assert!(err.is_encryption_context_mismatch(), "{err:?}");
     let alternate = format!("{err:#}");
     assert!(alternate.contains("key 'tenant'"), "{alternate}");
@@ -454,12 +461,13 @@ async fn version_key_keeps_the_kms_classification_of_the_record_check() {
 
 /// The error from encrypting under the fake's hierarchical keyring.
 async fn hierarchical_encrypt_error(fake: FakeAws) -> Error {
-    let input = EncryptInput::builder()
+    Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(fake.keyring().await)
-        .build()
-        .unwrap();
-    encrypt(&input).await.expect_err("the fake fails the call")
+        .send()
+        .await
+        .expect_err("the fake fails the call")
 }
 
 fn on(op: &'static str, reply: Reply) -> FakeAws {
@@ -799,12 +807,13 @@ async fn a_discovery_key_store_names_the_kms_key_from_the_record() {
         "TrentService.Decrypt" => Some(Reply::error(400, "AccessDeniedException", "disc-req")),
         _ => None,
     });
-    let input = EncryptInput::builder()
+    let err = Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(discovery_keyring(&fake).await)
-        .build()
-        .unwrap();
-    let err = encrypt(&input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     let Error::AccessDenied(e) = &err else {
         panic!("expected AccessDenied, got {err:?}");
     };

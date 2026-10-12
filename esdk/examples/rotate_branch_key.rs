@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,15 +54,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let plaintext = b"Hello World";
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "example");
+    let esdk = Esdk::default();
     let encrypt_with = async |keyring: HierarchicalKeyring| {
-        encrypt(
-            &EncryptInput::builder()
-                .plaintext(plaintext)
-                .encryption_context(encryption_context.clone())
-                .keyring(keyring)
-                .build()?,
-        )
-        .await
+        esdk.encrypt()
+            .plaintext(plaintext)
+            .encryption_context(encryption_context.clone())
+            .keyring(keyring)
+            .send()
+            .await
     };
 
     let before_rotation = encrypt_with(make_keyring()?).await?;
@@ -80,14 +79,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Both messages decrypt: the old one under the earlier version, the new one under the active version.
     for encrypted in [before_rotation, after_rotation] {
-        let decrypted = decrypt(
-            &DecryptInput::builder()
-                .ciphertext(&encrypted.ciphertext)
-                .encryption_context(encryption_context.clone())
-                .keyring(keyring.clone())
-                .build()?,
-        )
-        .await?;
+        let decrypted = esdk
+            .decrypt()
+            .ciphertext(&encrypted.ciphertext)
+            .encryption_context(encryption_context.clone())
+            .keyring(keyring.clone())
+            .send()
+            .await?;
         assert_eq!(
             decrypted.plaintext, plaintext,
             "Decryption failed: plaintext mismatch"

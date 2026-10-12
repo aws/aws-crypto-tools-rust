@@ -14,10 +14,7 @@
 use tokio::fs::{self, File};
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{
-    AlgorithmSuiteId, DecryptStreamInput, EncryptStreamInput, EncryptionContext, decrypt_stream,
-    encrypt_stream,
-};
+use aws_esdk::{AlgorithmSuiteId, EncryptionContext, Esdk};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,14 +43,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "streaming-example");
     encryption_context.insert("is not", "secret");
 
-    let enc_input = EncryptStreamInput::builder()
+    let esdk = Esdk::default();
+
+    let input = File::open(&plaintext_path).await?;
+    let output = File::create(&ciphertext_path).await?;
+    let result = esdk
+        .encrypt_stream()
         .encryption_context(encryption_context.clone())
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .build()?;
-    let input = File::open(&plaintext_path).await?;
-    let output = File::create(&ciphertext_path).await?;
-    if let Err(e) = encrypt_stream(input, output, &enc_input).await {
+        .send(input, output)
+        .await;
+    if let Err(e) = result {
         // On error the ciphertext file is incomplete; delete it.
         let _ = fs::remove_file(&ciphertext_path).await;
         return Err(e.into());
@@ -61,13 +62,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // decrypt_stream writes plaintext to `output` before it has verified the whole message.
     // It returns Ok only if the whole message authenticates.
-    let dec_input = DecryptStreamInput::builder()
-        .encryption_context(encryption_context)
-        .keyring(keyring)
-        .build()?;
     let input = File::open(&ciphertext_path).await?;
     let output = File::create(&decrypted_path).await?;
-    if let Err(e) = decrypt_stream(input, output, &dec_input).await {
+    let result = esdk
+        .decrypt_stream()
+        .encryption_context(encryption_context)
+        .keyring(keyring)
+        .send(input, output)
+        .await;
+    if let Err(e) = result {
         // On error the plaintext written so far is unverified; delete it unused.
         let _ = fs::remove_file(&decrypted_path).await;
         return Err(e.into());

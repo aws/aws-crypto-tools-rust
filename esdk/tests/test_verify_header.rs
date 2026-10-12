@@ -20,25 +20,19 @@ async fn test_verify_header_fails_on_tampered_header() {
     let keyring = test_keyring().await;
     let plaintext = b"tamper header test";
 
-    let enc_input = EncryptInput::builder()
+    let esdk = Esdk::default();
+    let valid_ct = esdk
+        .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // Tamper with a byte in the header body (byte 10 is safely within the header body).
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[10] ^= 0xFF;
-
-    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
-        .ciphertext(&valid_ct)
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
-        .ciphertext(&tampered_ct)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
@@ -64,9 +58,20 @@ async fn test_verify_header_fails_on_tampered_header() {
     //= reason=Tag verify failure proves tag from header is checked
     //# - the tag MUST be the value serialized in the message header's
     //# [authentication tag field](../data-format/message-header.md#authentication-tag)
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        esdk.decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        esdk.decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -76,7 +81,7 @@ async fn test_verify_header_fails_on_tampered_header() {
 
 // TODO(native-mpl): relies on the smithy `mpl()` client + required-encryption-context
 // CMM (create_required_encryption_context_cmm), not yet implemented in native
-// aws-crypto-mpl (no RequiredEncryptionContextCmm type; EncryptInput exposes no
+// aws-crypto-mpl (no RequiredEncryptionContextCmm type; the encrypt builder exposes no
 // required_encryption_context_keys). The EC-to-only-authenticate AAD path can be
 // re-covered once/if a native required-EC CMM lands.
 /*
@@ -105,8 +110,16 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
         .await
         .unwrap();
 
-    let enc_input = EncryptInput::builder().plaintext(plaintext).encryption_context(encryption_context).cmm(req_cmm).build().unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let esdk = Esdk::default();
+    let ct = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context)
+        .cmm(req_cmm)
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // The required-EC CMM removed keyA from the header and listed it as required;
     // decrypt must reconstruct the EC-to-only-authenticate from the reproduced EC
@@ -114,7 +127,6 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
     // authenticated input that never appears on the wire, so it can't be parsed —
     // a successful encrypt/decrypt agreement across the two independent paths
     // (encrypt-side required-EC CMM vs decrypt-side filtering) is the observable.
-    let valid_input = DecryptInput::builder().ciphertext(&ct).encryption_context(reproduced_ec).keyring(keyring.clone()).build().unwrap();
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
     //= reason=Filtered EC-to-only-authenticate is an off-wire authenticated input; encrypt and decrypt agree only if decrypt filters/serializes it to the required keys per spec
@@ -125,7 +137,14 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys-1)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
     assert_eq!(
-        decrypt(&valid_input).await.unwrap().plaintext,
+        esdk.decrypt()
+            .ciphertext(&ct)
+            .encryption_context(reproduced_ec)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .unwrap()
+            .plaintext,
         plaintext,
         "correct reproduced EC must decrypt"
     );
@@ -136,8 +155,12 @@ async fn test_verify_header_encryption_context_to_only_authenticate() {
     // wrapping AAD, so a wrong value fails at EDK unwrap before header verification.
     let wrong_reproduced_ec =
         small_mismatched_encryption_context(SmallEncryptionContextVariation::A);
-    let bad_input = DecryptInput::builder().ciphertext(&ct).encryption_context(wrong_reproduced_ec).keyring(keyring).build().unwrap();
-    let err = decrypt(&bad_input)
+    let err = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(wrong_reproduced_ec)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("wrong reproduced EC value must fail decryption");
     let ErrorKind::MplError(legacy) = &err.kind else {
@@ -157,16 +180,18 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     // before completion cannot be considered signed.
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Esdk::default()
+        .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
         // frame_length 4096 exceeds the 30-byte plaintext, keeping this a
         // single-frame message so decrypt_stream exercises signature verification.
         .frame_length(NonZeroU32::new(4096).unwrap())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     let mut tampered_ct = valid_ct.clone();
     let len = tampered_ct.len();
@@ -176,10 +201,7 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let stream_input = DecryptStreamInput::builder()
-        .keyring(keyring)
-        .build()
-        .unwrap();
+    let esdk = Esdk::default();
 
     //= spec/client-apis/decrypt.md#verify-the-header
     //= type=test
@@ -188,13 +210,17 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     //# all released output MUST NOT be considered signed data until
     //# this operation successfully completes.
     assert!(
-        decrypt_stream(&mut valid_cursor, &mut valid_output, &stream_input)
+        esdk.decrypt_stream()
+            .keyring(keyring.clone())
+            .send(&mut valid_cursor, &mut valid_output)
             .await
             .is_ok(),
         "valid ct must stream to Ok"
     );
     assert!(
-        decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
+        esdk.decrypt_stream()
+            .keyring(keyring)
+            .send(&mut tampered_cursor, &mut tampered_output)
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -211,21 +237,22 @@ async fn test_streamed_release_parsed_header_after_verification() {
 
     let mut ec = EncryptionContext::new();
     ec.insert("release-key", "release-value");
-    let enc_input = EncryptInput::builder()
+    let ct = Esdk::default()
+        .encrypt()
         .plaintext(plaintext)
         .encryption_context(ec)
         .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     let mut cursor = std::io::Cursor::new(ct.as_slice());
     let mut output = Vec::new();
-    let stream_input = DecryptStreamInput::builder()
+    let result = Esdk::default()
+        .decrypt_stream()
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let result = decrypt_stream(&mut cursor, &mut output, &stream_input)
+        .send(&mut cursor, &mut output)
         .await
         .unwrap();
     assert_eq!(output, plaintext);

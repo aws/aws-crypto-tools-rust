@@ -7,19 +7,15 @@
 //! with a unique data key, which is itself encrypted by one or more
 //! wrapping keys (key providers / keyrings).
 //!
-//! The two primary operations are:
-//! - [`encrypt()`](fn@crate::encrypt) — encrypts plaintext and serializes an encrypted message
-//! - [`decrypt()`](fn@crate::decrypt) — deserializes an encrypted message and decrypts the plaintext
+//! Configure an [`Esdk`](crate::Esdk) client with [`Esdk::builder`](crate::Esdk::builder),
+//! then start each operation with [`Esdk::encrypt`](crate::Esdk::encrypt) /
+//! [`Esdk::decrypt`](crate::Esdk::decrypt) (or the streaming variants) and finish it with `send`:
 //!
-//! Per-call configuration (commitment policy, max encrypted data keys, etc.)
-//! lives on the [`EncryptInput`](crate::EncryptInput) /
-//! [`DecryptInput`](crate::DecryptInput) structs.
-//!
-//! For callers who want to set the cross-call configuration once and reuse it,
-//! the [`Esdk`](crate::Esdk) client is an optional convenience layer:
-//! configure it via [`Esdk::builder`](crate::Esdk::builder), then start each operation with
-//! [`Esdk::encrypt`](crate::Esdk::encrypt) / [`Esdk::decrypt`](crate::Esdk::decrypt)
-//! (or the streaming variants) and finish it with `send`.
+//! ```ignore
+//! let esdk = Esdk::default();
+//! let encrypted = esdk.encrypt().plaintext(b"hello").keyring(keyring.clone()).send().await?;
+//! let decrypted = esdk.decrypt().ciphertext(&encrypted.ciphertext).keyring(keyring).send().await?;
+//! ```
 //!
 //! The SDK supports both **framed** and **nonframed** message body formats,
 //! as well as **V1** and **V2** message format versions (V2 adds key commitment).
@@ -112,11 +108,9 @@
 mod builder;
 pub mod error;
 pub use error::Error;
+mod decrypt;
 mod encrypt;
 pub mod io;
-pub use encrypt::*;
-mod decrypt;
-pub use decrypt::*;
 mod suites;
 mod types;
 pub use types::*;

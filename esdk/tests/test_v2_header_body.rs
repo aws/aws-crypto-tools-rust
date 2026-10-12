@@ -117,7 +117,7 @@ async fn test_v2_header_message_id() {
 
 // TODO(native-mpl): relies on the smithy `mpl()` client + required-encryption-context
 // CMM (create_required_encryption_context_cmm), not yet implemented in native
-// aws-crypto-mpl (no RequiredEncryptionContextCmm type; EncryptInput exposes no
+// aws-crypto-mpl (no RequiredEncryptionContextCmm type; the encrypt builder exposes no
 // required_encryption_context_keys). The AAD "required EC keys excluded from header"
 // assertion needs a native required-EC CMM to be re-covered.
 /*
@@ -156,8 +156,16 @@ async fn test_v2_header_aad() {
         .unwrap();
 
     let pt = b"aad required ec test v2";
-    let enc_input = EncryptInput::with_legacy_cmm(pt, ec.clone(), req_cmm);
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let esdk = Esdk::default();
+    let ct = esdk
+        .encrypt()
+        .plaintext(pt)
+        .encryption_context(ec.clone())
+        .cmm(req_cmm)
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // AAD starts at offset 35 (after Version(1) + AlgSuiteID(2) + MessageID(32))
     let aad_byte_len = u16::from_be_bytes([ct[35], ct[36]]) as usize;
@@ -183,12 +191,17 @@ async fn test_v2_header_aad() {
     );
 
     // Round-trip proves the message is still valid when required EC is supplied on decrypt
-    let dec_input = DecryptInput::with_legacy_keyring(
-        &ct,
-        std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())]),
-        keyring,
-    );
-    let result = decrypt(&dec_input).await.unwrap();
+    let result = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(std::collections::HashMap::from([(
+            "required_key".to_string(),
+            "required_val".to_string(),
+        )]))
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(
         result.plaintext, pt,
         "round-trip with required EC proves correctness"

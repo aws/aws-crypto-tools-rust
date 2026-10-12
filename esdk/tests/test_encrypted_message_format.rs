@@ -21,12 +21,13 @@ async fn test_decrypt_rejects_base64_encoded_input() {
     };
 
     let keyring = test_keyring().await;
-    let dec_input = DecryptInput::builder()
+    let err = Esdk::default()
+        .decrypt()
         .ciphertext(&fake_b64_input)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = decrypt(&dec_input).await.unwrap_err();
+        .send()
+        .await
+        .unwrap_err();
     let msg = format!("{err}");
     //= spec/client-apis/decrypt.md#encrypted-message-format
     //= type=test

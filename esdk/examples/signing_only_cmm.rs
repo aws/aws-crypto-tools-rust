@@ -17,7 +17,7 @@ use aws_crypto_mpl::cmm::{
 };
 use aws_crypto_mpl::{AesGcm, Cmm, DefaultCmm, Error as MplError, Keyring, RawAesKeyring};
 use aws_esdk::error::Error;
-use aws_esdk::{AlgorithmSuiteId, DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
+use aws_esdk::{AlgorithmSuiteId, EncryptionContext, Esdk};
 
 /// Passes requests to a [`DefaultCmm`] and fails any that would use an algorithm suite without a signature.
 struct SigningSuiteOnlyCmm {
@@ -77,39 +77,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "example");
 
-    // The default algorithm suite signs, so the CMM allows it.
-    let encrypted = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context.clone())
-            .cmm(cmm.clone())
-            .build()?,
-    )
-    .await?;
+    let esdk = Esdk::default();
 
-    let decrypted = decrypt(
-        &DecryptInput::builder()
-            .ciphertext(&encrypted.ciphertext)
-            .encryption_context(encryption_context.clone())
-            .cmm(cmm.clone())
-            .build()?,
-    )
-    .await?;
+    // The default algorithm suite signs, so the CMM allows it.
+    let encrypted = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context.clone())
+        .cmm(cmm.clone())
+        .send()
+        .await?;
+
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(&encrypted.ciphertext)
+        .encryption_context(encryption_context.clone())
+        .cmm(cmm.clone())
+        .send()
+        .await?;
     assert_eq!(
         decrypted.plaintext, plaintext,
         "Decryption failed: plaintext mismatch"
     );
 
     // A suite without a signature is rejected.
-    let result = encrypt(
-        &EncryptInput::builder()
-            .plaintext(plaintext)
-            .encryption_context(encryption_context)
-            .cmm(cmm)
-            .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-            .build()?,
-    )
-    .await;
+    let result = esdk
+        .encrypt()
+        .plaintext(plaintext)
+        .encryption_context(encryption_context)
+        .cmm(cmm)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+        .send()
+        .await;
     assert!(
         matches!(result, Err(Error::Validation(_))),
         "a non-signing suite must be rejected, got {result:?}"

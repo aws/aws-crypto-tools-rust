@@ -7,7 +7,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
 use test_helpers::*;
 
 //= spec/data-format/message-header.md#structure
@@ -108,16 +107,14 @@ async fn test_encrypted_data_key_count_greater_than_zero() {
         let mut tampered = ct.clone();
         tampered[offset] = 0;
         tampered[offset + 1] = 0;
-        let dec_input = DecryptInput::builder()
-            .ciphertext(&tampered)
-            .keyring(keyring.clone())
-            .commitment_policy(commitment_policy_for(version))
-            .build()
-            .unwrap();
         //= spec/data-format/message-header.md#encrypted-data-key-count
         //= type=test
         //# This value MUST be greater than 0.
-        let err = decrypt(&dec_input)
+        let err = esdk_with(commitment_policy_for(version))
+            .decrypt()
+            .ciphertext(&tampered)
+            .keyring(keyring.clone())
+            .send()
             .await
             .expect_err(&format!("{version:?}: EDK count of 0 must be rejected"));
         assert!(
@@ -243,16 +240,15 @@ async fn test_nonframed_nonzero_frame_length_rejected() {
         ct[frame_length_offset + 2] = 0x10;
         ct[frame_length_offset + 3] = 0x00;
 
-        let dec_input = DecryptInput::builder()
+        let err = esdk_with(commitment_policy_for(version))
+            .decrypt()
             .ciphertext(&ct)
             .keyring(keyring.clone())
-            .commitment_policy(commitment_policy_for(version))
-            .build()
-            .unwrap();
-
-        let err = decrypt(&dec_input).await.expect_err(&format!(
-            "{version:?}: nonframed content with non-zero frame length must be rejected"
-        ));
+            .send()
+            .await
+            .expect_err(&format!(
+                "{version:?}: nonframed content with non-zero frame length must be rejected"
+            ));
         assert!(
             err.is_serialization(),
             "{version:?}: expected Serialization error, got {:?}",

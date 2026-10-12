@@ -21,14 +21,16 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     // frame auth tag is the integrity layer under test.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0u8..=200).collect(); // 201 bytes / frame_length 50 → 4 regular + 1 final
-    let enc_input = EncryptInput::builder()
+    let ct = Esdk::default()
+        .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(50).unwrap())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .build()
-        .unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     let frames = parse_all_frames(&ct, 50);
     let first = &frames[0];
@@ -231,23 +233,27 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
     // All-distinct bytes: any reorder, skip, or duplication breaks equality.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0..=255).collect();
-    let enc_input = EncryptInput::builder()
+    let ct = Esdk::default()
+        .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(50).unwrap())
-        .build()
-        .unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
     //# - The plaintext MUST be the next subsequence of consumable plaintext bytes that have not yet been encrypted.
-    let dec_input = DecryptInput::builder()
+    let result = Esdk::default()
+        .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let result = decrypt(&dec_input).await.unwrap().plaintext;
+        .send()
+        .await
+        .unwrap()
+        .plaintext;
     assert_eq!(result, pt);
 }
 
@@ -352,15 +358,14 @@ async fn test_construct_frame_final_frame_field_serialization() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_construct_frame_streaming_frame_released() {
     let keyring = test_keyring().await;
-    let stream_input = EncryptStreamInput::builder()
-        .keyring(keyring.clone())
-        .frame_length(NonZeroU32::new(10).unwrap())
-        .build()
-        .unwrap();
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    encrypt_stream(&mut reader, &mut output, &stream_input)
+    Esdk::default()
+        .encrypt_stream()
+        .keyring(keyring.clone())
+        .frame_length(NonZeroU32::new(10).unwrap())
+        .send(&mut reader, &mut output)
         .await
         .expect("streaming encrypt");
 
@@ -376,11 +381,12 @@ async fn test_construct_frame_streaming_frame_released() {
     //# the serialized frame MUST be released.
     assert!(!output.is_empty());
 
-    let dec_input = DecryptInput::builder()
+    let decrypted = Esdk::default()
+        .decrypt()
         .ciphertext(&output)
         .keyring(keyring)
-        .build()
+        .send()
+        .await
         .unwrap();
-    let decrypted = decrypt(&dec_input).await.unwrap();
     assert_eq!(decrypted.plaintext, plaintext);
 }

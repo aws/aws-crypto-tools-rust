@@ -64,26 +64,8 @@ impl DecryptMode {
 //= reason=Caller obligation; Err signals discard
 //# Additionally, if this operation fails, callers MUST discard the released plaintext and encryption context
 //# and MUST rollback any processing done due to the released plaintext or encryption context.
-/// Decrypt an encrypted message stream, writing plaintext to the output.
-///
-/// # Errors
-///
-/// Returns an [`Error`](crate::Error), one of:
-/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`decrypt`](crate::decrypt) instead).
-/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
-/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
-/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
-/// - [`Cryptographic`](crate::Error::Cryptographic): the header tag, a frame tag, the key commitment, or the signature does not verify.
-/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
-/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
-/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
-/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
-/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
-/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
-/// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
-/// - [`Io`](crate::Error::Io): the supplied ciphertext reader or plaintext writer fails.
-/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-pub async fn decrypt_stream<R, W>(
+/// Decrypt an encrypted message stream into a plaintext stream. Called by [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream).
+pub(crate) async fn decrypt_stream<R, W>(
     //= spec/client-apis/decrypt.md#encrypted-message
     //= type=implication
     //= reason=the ciphertext is read incrementally without buffering the full message
@@ -131,28 +113,8 @@ where
     Ok(output)
 }
 
-//= spec/client-apis/client.md#decrypt
-//# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
-//# that adheres to [decrypt](./decrypt.md).
-/// Decrypt an encrypted message, returning the plaintext and metadata.
-///
-/// # Errors
-///
-/// Returns an [`Error`](crate::Error), one of:
-/// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, or the commitment policy does not allow the message's algorithm suite.
-/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
-/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
-/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
-/// - [`Cryptographic`](crate::Error::Cryptographic): the header tag, a frame tag, the key commitment, or the signature does not verify.
-/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
-/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
-/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
-/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
-/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
-/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
-/// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
-/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-pub async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
+/// Decrypt `input.ciphertext`. Called by [`Esdk::decrypt`](crate::Esdk::decrypt).
+pub(crate) async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
     //= spec/client-apis/decrypt.md#behavior
