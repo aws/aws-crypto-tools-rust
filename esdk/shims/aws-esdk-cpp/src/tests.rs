@@ -135,7 +135,41 @@ fn unset_client_config() -> ffi::MplAwsClientConfig {
             mode_adaptive: false,
             max_attempts: unset_u32(),
         },
+        credentials: ffi::OptCredentials {
+            set: false,
+            value: test_credentials("", "", None),
+        },
     }
+}
+
+fn test_credentials(
+    access_key_id: &str,
+    secret_access_key: &str,
+    session_token: Option<&str>,
+) -> ffi::Credentials {
+    ffi::Credentials {
+        access_key_id: access_key_id.to_string(),
+        secret_access_key: secret_access_key.to_string(),
+        session_token: ffi::OptString {
+            set: session_token.is_some(),
+            value: session_token.unwrap_or_default().to_string(),
+        },
+        expiration: unset_duration(),
+    }
+}
+
+fn client_config_with_credentials(credentials: ffi::Credentials) -> ffi::MplAwsClientConfig {
+    let mut cfg = unset_client_config();
+    cfg.region = ffi::OptString {
+        set: true,
+        value: "us-west-2".to_string(),
+    };
+    cfg.retry.max_attempts = set_u32(1);
+    cfg.credentials = ffi::OptCredentials {
+        set: true,
+        value: credentials,
+    };
+    cfg
 }
 
 fn keystore_config_with_clients(kms: &MplKmsClient, ddb: &MplDdbClient) -> ffi::KeyStoreConfig {
@@ -1141,6 +1175,219 @@ fn create_sdk_config_applies_every_field() {
 
     let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
     assert!(app_name.contains("AwsEncryptionSdk-Shim-C++-Rust-"));
+}
+
+#[test]
+fn create_sdk_config_adds_the_user_agent_once() {
+    let ua = shim_user_agent();
+    for _ in 0..2 {
+        let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
+        let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
+        assert_eq!(app_name.matches(ua.as_str()).count(), 1, "{app_name}");
+    }
+}
+
+#[test]
+fn clients_carry_an_explicit_http_client() {
+    let cfg = unset_client_config();
+    let kms = create_kms_client(&cfg).expect("kms client");
+    let ddb = create_ddb_client(&cfg).expect("ddb client");
+    let creds = test_credentials("AKIDDERIVED", "secret", None);
+    let derived_kms = kms_client_with_credentials(&kms, &creds).expect("derived kms");
+    let derived_ddb = ddb_client_with_credentials(&ddb, &creds).expect("derived ddb");
+    assert!(kms.inner.config().http_client().is_some());
+    assert!(ddb.inner.config().http_client().is_some());
+    assert!(derived_kms.inner.config().http_client().is_some());
+    assert!(derived_ddb.inner.config().http_client().is_some());
+}
+
+// Records the signing headers of a request, then fails it before it is sent.
+#[derive(Debug, Clone, Default)]
+struct CaptureSigning(std::sync::Arc<std::sync::Mutex<Option<SigningHeaders>>>);
+
+#[derive(Debug)]
+struct SigningHeaders {
+    authorization: String,
+    security_token: Option<String>,
+}
+
+impl aws_sdk_kms::config::Intercept for CaptureSigning {
+    fn name(&self) -> &'static str {
+        "CaptureSigning"
+    }
+
+    fn read_before_transmit(
+        &self,
+        context: &aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        let headers = context.request().headers();
+        *self.0.lock().unwrap() = Some(SigningHeaders {
+            authorization: headers.get("authorization").unwrap_or_default().to_string(),
+            security_token: headers.get("x-amz-security-token").map(str::to_string),
+        });
+        Err("request captured".into())
+    }
+}
+
+impl CaptureSigning {
+    fn take(&self) -> SigningHeaders {
+        self.0.lock().unwrap().take().expect("a request was signed")
+    }
+}
+
+fn kms_signing(client: &MplKmsClient) -> SigningHeaders {
+    let capture = CaptureSigning::default();
+    let config = client
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(capture.clone())
+        .build();
+    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    assert!(result.is_err(), "the interceptor stops every request");
+    capture.take()
+}
+
+fn ddb_signing(client: &MplDdbClient) -> SigningHeaders {
+    let capture = CaptureSigning::default();
+    let config = client
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(capture.clone())
+        .build();
+    let result = TOKIO_RUNTIME.block_on(
+        aws_sdk_dynamodb::Client::from_conf(config)
+            .list_tables()
+            .send(),
+    );
+    assert!(result.is_err(), "the interceptor stops every request");
+    capture.take()
+}
+
+#[test]
+fn kms_clients_sign_with_their_own_credentials() {
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let base = create_kms_client(&cfg).expect("kms client");
+    let derived = kms_client_with_credentials(
+        &base,
+        &test_credentials("AKIDDERIVED", "secret-derived", Some("token-derived")),
+    )
+    .expect("derived kms client");
+
+    let base_signing = kms_signing(&base);
+    assert!(
+        base_signing.authorization.contains("Credential=AKIDBASE/"),
+        "{base_signing:?}"
+    );
+    assert_eq!(base_signing.security_token, None);
+
+    let derived_signing = kms_signing(&derived);
+    assert!(
+        derived_signing
+            .authorization
+            .contains("Credential=AKIDDERIVED/"),
+        "{derived_signing:?}"
+    );
+    assert_eq!(
+        derived_signing.security_token.as_deref(),
+        Some("token-derived")
+    );
+}
+
+#[test]
+fn ddb_clients_sign_with_their_own_credentials() {
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let base = create_ddb_client(&cfg).expect("ddb client");
+    let derived = ddb_client_with_credentials(
+        &base,
+        &test_credentials("AKIDDERIVED", "secret-derived", Some("token-derived")),
+    )
+    .expect("derived ddb client");
+
+    let base_signing = ddb_signing(&base);
+    assert!(
+        base_signing.authorization.contains("Credential=AKIDBASE/"),
+        "{base_signing:?}"
+    );
+    let derived_signing = ddb_signing(&derived);
+    assert!(
+        derived_signing
+            .authorization
+            .contains("Credential=AKIDDERIVED/"),
+        "{derived_signing:?}"
+    );
+    assert_eq!(
+        derived_signing.security_token.as_deref(),
+        Some("token-derived")
+    );
+}
+
+#[test]
+fn derived_clients_keep_the_base_configuration() {
+    let mut cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret", None));
+    cfg.retry.max_attempts = set_u32(5);
+    let creds = test_credentials("AKIDDERIVED", "secret", None);
+
+    let kms = create_kms_client(&cfg).expect("kms client");
+    let derived = kms_client_with_credentials(&kms, &creds).expect("derived kms");
+    let config = derived.inner.config();
+    assert_eq!(config.region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert_eq!(config.retry_config().map(|r| r.max_attempts()), Some(5));
+
+    let ddb = create_ddb_client(&cfg).expect("ddb client");
+    let derived = ddb_client_with_credentials(&ddb, &creds).expect("derived ddb");
+    let config = derived.inner.config();
+    assert_eq!(config.region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert_eq!(config.retry_config().map(|r| r.max_attempts()), Some(5));
+}
+
+#[test]
+fn empty_credentials_are_rejected_without_echoing_them() {
+    let kms = create_kms_client(&unset_client_config()).expect("kms client");
+    let ddb = create_ddb_client(&unset_client_config()).expect("ddb client");
+    for (access_key_id, secret_access_key) in [("", "secret-value"), ("AKIDVALUE", "")] {
+        let creds = || test_credentials(access_key_id, secret_access_key, Some("token-value"));
+        let errors = [
+            expect_err(create_kms_client(&client_config_with_credentials(creds()))),
+            expect_err(create_ddb_client(&client_config_with_credentials(creds()))),
+            expect_err(kms_client_with_credentials(&kms, &creds())),
+            expect_err(ddb_client_with_credentials(&ddb, &creds())),
+        ];
+        for err in errors {
+            assert!(
+                err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+                "unexpected error: {err}"
+            );
+            assert!(err.contains("must not be empty"), "unexpected error: {err}");
+            for value in ["AKIDVALUE", "secret-value", "token-value"] {
+                assert!(!err.contains(value), "error contains {value}: {err}");
+            }
+        }
+    }
+}
+
+#[test]
+fn credentials_expiration_is_time_since_the_epoch() {
+    let mut creds = test_credentials("AKID", "secret", None);
+    let unset = credentials_target_to_core(&creds, "test").expect("credentials");
+    assert_eq!(unset.expiry(), None);
+
+    creds.expiration = set_duration(1_700_000_000, 5);
+    let set = credentials_target_to_core(&creds, "test").expect("credentials");
+    assert_eq!(
+        set.expiry(),
+        Some(SystemTime::UNIX_EPOCH + Duration::new(1_700_000_000, 5))
+    );
+
+    creds.expiration = set_duration(u64::MAX, 0);
+    let err = expect_err(credentials_target_to_core(&creds, "test"));
+    assert!(
+        err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+        "unexpected error: {err}"
+    );
 }
 
 // Handles

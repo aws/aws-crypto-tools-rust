@@ -124,7 +124,7 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
-use aws_config::{AppName, Region, SdkConfig};
+use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
@@ -137,9 +137,13 @@ use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Resource, RetryKind, Service};
+use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
+use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
+use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
+use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -296,9 +300,23 @@ mod ffi {
         max_attempts: OptU32,
     }
 
+    struct Credentials {
+        access_key_id: String,
+        secret_access_key: String,
+        session_token: OptString,
+        /// Time since the Unix epoch.
+        expiration: OptDuration,
+    }
+
+    struct OptCredentials {
+        set: bool,
+        value: Credentials,
+    }
+
     struct MplAwsClientConfig {
         region: OptString,
         retry: RetryConfig,
+        credentials: OptCredentials,
     }
 
     enum KmsConfigurationType {
@@ -371,6 +389,10 @@ mod ffi {
         // destructor runs cxx's generated drop glue and drops the Rust Box.
         type MplDdbClient;
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
+        fn ddb_client_with_credentials(
+            base: &MplDdbClient,
+            credentials: &Credentials,
+        ) -> Result<Box<MplDdbClient>>;
 
         type KeyStore;
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
@@ -388,6 +410,10 @@ mod ffi {
 
         type MplKmsClient;
         fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
+        fn kms_client_with_credentials(
+            base: &MplKmsClient,
+            credentials: &Credentials,
+        ) -> Result<Box<MplKmsClient>>;
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
@@ -422,6 +448,13 @@ opt_to_option!(
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
     OptDuration => ffi::Duration,
 );
+
+impl ffi::OptCredentials {
+    /// `Some(&value)` when `set` is true, else `None`.
+    fn as_option(&self) -> Option<&ffi::Credentials> {
+        self.set.then_some(&self.value)
+    }
+}
 
 // Resources
 
@@ -984,15 +1017,25 @@ fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
     }
 }
 
-//= spec/shim/esdk-shim.md#service-client-configuration
-//= type=implication
-//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
-//# - The shim SHOULD allow one client configuration to be applied to multiple
-//# service clients.
-fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
-    let shared_config = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
-        aws_config::BehaviorVersion::latest(),
-    ));
+// Loaded once per process.
+// Every client config derives from it, so all clients share one credential chain and HTTP client.
+static DEFAULT_SDK_CONFIG: LazyLock<Result<SdkConfig, String>> =
+    LazyLock::new(load_default_sdk_config);
+
+/// The AWS SDK's default HTTPS client.
+fn default_http_client() -> Option<SharedHttpClient> {
+    default_http_client_plugin_v2(BehaviorVersion::latest())?
+        .runtime_components(&RuntimeComponentsBuilder::new("aws-esdk-cpp"))
+        .http_client()
+}
+
+fn load_default_sdk_config() -> Result<SdkConfig, String> {
+    let mut loader = aws_config::defaults(BehaviorVersion::latest());
+    // A config without an HTTP client gives each service client its own connection pool.
+    if let Some(http_client) = default_http_client() {
+        loader = loader.http_client(http_client);
+    }
+    let shared_config = TOKIO_RUNTIME.block_on(loader.load());
 
     let user_agent_string = shim_user_agent();
     let current_app_name = shared_config
@@ -1007,7 +1050,68 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
             format!("invalid app name: {e}"),
         )
     })?;
-    let mut builder = shared_config.to_builder().app_name(app_name);
+    Ok(shared_config.to_builder().app_name(app_name).build())
+}
+
+/// C++ to Rust for static credentials.
+fn credentials_target_to_core(
+    input: &ffi::Credentials,
+    operation: &str,
+) -> Result<aws_sdk_kms::config::Credentials, String> {
+    // Messages name the empty field only; they never carry credential values.
+    for (field, value) in [
+        ("access key id", &input.access_key_id),
+        ("secret access key", &input.secret_access_key),
+    ] {
+        if value.is_empty() {
+            return Err(shim_err(
+                ffi::ShimErrorKind::Validation,
+                operation,
+                format!("{field} must not be empty"),
+            ));
+        }
+    }
+    let expiration = match input.expiration.to_option() {
+        None => None,
+        Some(d) => {
+            let since_epoch = from_ffi_duration(d, "credentials expiration", operation)?;
+            let Some(expiration) = SystemTime::UNIX_EPOCH.checked_add(since_epoch) else {
+                return Err(shim_err(
+                    ffi::ShimErrorKind::Validation,
+                    operation,
+                    "credentials expiration is out of range",
+                ));
+            };
+            Some(expiration)
+        }
+    };
+    Ok(aws_sdk_kms::config::Credentials::new(
+        input.access_key_id.as_str(),
+        input.secret_access_key.as_str(),
+        input.session_token.to_option(),
+        expiration,
+        "aws-esdk-cpp",
+    ))
+}
+
+//= spec/shim/esdk-shim.md#service-client-configuration
+//= type=implication
+//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
+//# - The shim SHOULD allow one client configuration to be applied to multiple
+//# service clients.
+fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
+    let mut builder = DEFAULT_SDK_CONFIG
+        .as_ref()
+        .map_err(Clone::clone)?
+        .to_builder();
+    if let Some(credentials) = input.credentials.as_option() {
+        let credentials = credentials_target_to_core(credentials, "client configuration")?;
+        // Static credentials need no cache.
+        // A cached copy would take a slot in the identity cache that every client shares.
+        builder = builder
+            .credentials_provider(SharedCredentialsProvider::new(credentials))
+            .identity_cache(IdentityCache::no_cache());
+    }
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target does not supply a retry configuration, the shim MUST defer to
     //# the core ESDK's default retry configuration and MUST NOT substitute its own.
@@ -1195,6 +1299,43 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
     let sdk_config = create_sdk_config(input)?;
     Ok(Box::new(MplDdbClient {
         inner: aws_sdk_dynamodb::Client::new(&sdk_config),
+    }))
+}
+
+// A derived client keeps the base client's configuration and HTTP client.
+// See create_sdk_config for why static credentials skip the identity cache.
+
+fn kms_client_with_credentials(
+    base: &MplKmsClient,
+    credentials: &ffi::Credentials,
+) -> Result<Box<MplKmsClient>, String> {
+    let credentials = credentials_target_to_core(credentials, "KMS client with credentials")?;
+    let config = base
+        .inner
+        .config()
+        .to_builder()
+        .credentials_provider(credentials)
+        .identity_cache(IdentityCache::no_cache())
+        .build();
+    Ok(Box::new(MplKmsClient {
+        inner: aws_sdk_kms::Client::from_conf(config),
+    }))
+}
+
+fn ddb_client_with_credentials(
+    base: &MplDdbClient,
+    credentials: &ffi::Credentials,
+) -> Result<Box<MplDdbClient>, String> {
+    let credentials = credentials_target_to_core(credentials, "DynamoDB client with credentials")?;
+    let config = base
+        .inner
+        .config()
+        .to_builder()
+        .credentials_provider(credentials)
+        .identity_cache(IdentityCache::no_cache())
+        .build();
+    Ok(Box::new(MplDdbClient {
+        inner: aws_sdk_dynamodb::Client::from_conf(config),
     }))
 }
 
