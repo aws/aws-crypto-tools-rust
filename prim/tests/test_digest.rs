@@ -82,5 +82,5 @@ fn test_digest_rejects_wrong_length_output_buffer() {
     // for the wrong digest.
     let mut out = [0u8; 32];
     let err = digest(DigestAlg::Sha512, &ASDF, &mut out).unwrap_err();
-    assert!(err.message.contains("output buffer length of 32"));
+    assert!(err.is_cryptographic(), "{:?}", err);
 }

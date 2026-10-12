@@ -8,12 +8,11 @@
 mod fixtures;
 mod test_helpers;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
+use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring};
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials, MaterialsError};
+use aws_crypto_mpl::keyring::RawAesKeyring;
+use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials};
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;
@@ -21,7 +20,7 @@ use fixtures::*;
 // Wraps a real CMM but forces a different algorithm suite on encrypt.
 struct SuiteOverrideCmm {
     inner: DefaultCmm,
-    suite: EsdkAlgorithmSuiteId,
+    suite: AlgorithmSuiteId,
 }
 
 #[async_trait]
@@ -29,7 +28,7 @@ impl Cmm for SuiteOverrideCmm {
     async fn get_encryption_materials(
         &self,
         request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         // Rebuild the inner request, replacing the caller's requested suite
         // with the CMM's chosen suite while carrying the remaining fields
         // through unchanged. The inner default CMM then produces materials
@@ -38,7 +37,9 @@ impl Cmm for SuiteOverrideCmm {
             request.encryption_context().clone(),
             request.commitment_policy(),
         )
-        .with_algorithm_suite_id(self.suite);
+        .with_algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
+            self.suite,
+        ));
         if let Some(keys) = request.required_encryption_context_keys() {
             inner_request = inner_request.with_required_encryption_context_keys(keys.clone());
         }
@@ -51,7 +52,7 @@ impl Cmm for SuiteOverrideCmm {
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }
@@ -60,22 +61,23 @@ impl Cmm for SuiteOverrideCmm {
 async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     // CMM overrides caller's suite; output reflects CMM's choice, not caller's.
     let (ns, name) = namespace_and_name(0);
-    let keyring: Arc<dyn Keyring> = Arc::new(
-        RawAesKeyring::new(ns, name, vec![0u8; 32], AesGcm::Aes256Gcm)
-            .expect("raw AES keyring construction must succeed for test key material"),
-    );
+    let keyring = RawAesKeyring::new(ns, name, vec![0u8; 32], AesGcm::Aes256Gcm)
+        .expect("raw AES keyring construction must succeed for test key material");
 
     // The CMM always resolves to a committing-only suite, ignoring the
     // caller's requested suite, over a default CMM backed by the raw AES keyring.
-    let cmm: Arc<dyn Cmm> = Arc::new(SuiteOverrideCmm {
+    let cmm = SuiteOverrideCmm {
         inner: DefaultCmm::new(keyring.clone()),
-        suite: EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
-    });
+        suite: AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+    };
 
     // Caller requests signing+committing, but CMM overrides to committing-only.
-    let mut enc_input = EncryptInput::with_cmm(b"hello", EncryptionContext::new(), cmm);
-    enc_input.algorithm_suite_id =
-        Some(EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = EncryptInput::builder()
+        .plaintext(b"hello")
+        .cmm(cmm)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
 
     let out = encrypt(&enc_input).await.unwrap();
 
@@ -86,24 +88,26 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     //# from the [input algorithm suite](#algorithm-suite).
     assert_eq!(
         out.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
     assert_ne!(
         out.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384
     );
 
     // Round-trip to prove the ciphertext is valid.
-    let dec = decrypt(&DecryptInput::with_keyring(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        keyring,
-    ))
+    let dec = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
     assert_eq!(dec.plaintext, b"hello");
     assert_eq!(
         dec.algorithm_suite_id,
-        EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
+        AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey
     );
 }

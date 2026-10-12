@@ -3,6 +3,8 @@
 
 //! Encryption context construction for branch key store operations.
 
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeMap;
 
 use super::attributes::{
@@ -10,7 +12,6 @@ use super::attributes::{
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
     TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
-use super::error::{KeystoreError, KeystoreErrorKind};
 use crate::structures::EncryptionContext;
 
 /// Inputs required to construct any flavor of keystore encryption context.
@@ -39,17 +40,17 @@ pub struct EncryptionContextInput<'a> {
 fn build_base(
     input: &EncryptionContextInput<'_>,
     type_value: &str,
-) -> Result<BTreeMap<String, String>, KeystoreError> {
+) -> Result<BTreeMap<String, String>, Error> {
     if input.branch_key_id.is_empty() {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        return Err(Error::new(
+            Kind::Validation,
             "branch-key-id MUST not be an empty string",
         ));
     }
 
     if type_value.is_empty() {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        return Err(Error::new(
+            Kind::Validation,
             "type field MUST not be an empty string",
         ));
     }
@@ -84,36 +85,15 @@ fn build_base(
 
     // Custom encryption context
     if let Some(custom) = input.custom_ec {
-        for (k, v) in custom.iter() {
-            // The custom encryption context becomes part of the authenticated
-            // AWS KMS encryption context, so a byte sequence that is not valid
-            // UTF-8 cannot be represented and MUST be rejected. Decoding it
-            // lossily would substitute U+FFFD, producing an encryption context
-            // that other implementations cannot reproduce.
-            let Ok(key_str) = str::from_utf8(k) else {
-                return Err(KeystoreError::new(
-                    KeystoreErrorKind::Configuration,
-                    "custom encryption context key MUST be valid UTF-8",
-                ));
-            };
-
-            let Ok(val_str) = str::from_utf8(v) else {
-                return Err(KeystoreError::new(
-                    KeystoreErrorKind::Configuration,
-                    format!(
-                        "custom encryption context value for key '{key_str}' MUST be valid UTF-8"
-                    ),
-                ));
-            };
-
+        for (key_str, val_str) in custom.iter() {
             // A custom key that already carries the prefix, or a duplicate
             // after prefixing, would otherwise overwrite a previous entry.
             if ec
                 .insert(format!("{CUSTOM_EC_PREFIX}{key_str}"), val_str.to_string())
                 .is_some()
             {
-                return Err(KeystoreError::new(
-                    KeystoreErrorKind::Configuration,
+                return Err(Error::new(
+                    Kind::Validation,
                     format!(
                         "custom encryption context key '{key_str}' collides with an existing \
                          encryption context entry after prefixing with '{CUSTOM_EC_PREFIX}'"
@@ -137,7 +117,7 @@ fn build_base(
 pub fn active_encryption_context(
     input: &EncryptionContextInput<'_>,
     version: &str,
-) -> Result<BTreeMap<String, String>, KeystoreError> {
+) -> Result<BTreeMap<String, String>, Error> {
     let mut ec = decrypt_only_encryption_context(input, version)?;
 
     // In DECRYPT_ONLY the branch key version lives in `type`; ACTIVE moves it
@@ -157,10 +137,10 @@ pub fn active_encryption_context(
 pub fn decrypt_only_encryption_context(
     input: &EncryptionContextInput<'_>,
     version: &str,
-) -> Result<BTreeMap<String, String>, KeystoreError> {
+) -> Result<BTreeMap<String, String>, Error> {
     if version.is_empty() {
-        return Err(KeystoreError::new(
-            KeystoreErrorKind::Configuration,
+        return Err(Error::new(
+            Kind::Validation,
             "branch key version MUST not be an empty string",
         ));
     }
@@ -179,7 +159,7 @@ pub fn decrypt_only_encryption_context(
 /// Builds the beacon-key encryption context.
 pub fn beacon_key_encryption_context(
     input: &EncryptionContextInput<'_>,
-) -> Result<BTreeMap<String, String>, KeystoreError> {
+) -> Result<BTreeMap<String, String>, Error> {
     let ec = build_base(input, TYPE_BEACON_ACTIVE)?;
 
     debug_assert!(

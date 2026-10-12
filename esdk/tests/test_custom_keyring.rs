@@ -17,12 +17,12 @@ mod test_helpers;
 
 use aws_esdk::*;
 
+use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
-    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, MaterialsError, PlaintextDataKey,
+    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials, PlaintextDataKey,
 };
 use aws_mpl_primitives::{AesGcm, aes_decrypt, aes_encrypt, generate_random_bytes};
-use std::sync::Arc;
 
 const PROVIDER_ID: &str = "local-test-keyring";
 const WRAP_IV_LEN: usize = 12;
@@ -30,7 +30,7 @@ const WRAP_TAG_LEN: usize = 16;
 
 /// Caller-implemented keyring. Wraps the data key with AES-256-GCM under a
 /// local KEK and stores `iv || ciphertext || tag` as the EDK ciphertext.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LocalKekKeyring {
     kek: [u8; 32],
 }
@@ -40,7 +40,7 @@ impl Keyring for LocalKekKeyring {
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, MplError> {
         // Data key length in bytes, from the algorithm suite in the materials.
         let key_len = materials.algorithm_suite().encryption_key_length();
 
@@ -50,7 +50,12 @@ impl Keyring for LocalKekKeyring {
             None => {
                 let mut dk = vec![0u8; key_len];
                 generate_random_bytes(&mut dk).map_err(|e| {
-                    MaterialsError::keyring_failed_with_cause("failed to generate data key", e)
+                    MplError::from(
+                        aws_crypto_mpl::error::CryptographicError::new(
+                            "failed to generate data key",
+                        )
+                        .with_source(e),
+                    )
                 })?;
                 dk
             }
@@ -59,7 +64,10 @@ impl Keyring for LocalKekKeyring {
         // Wrap the data key under the KEK with a fresh IV.
         let mut iv = vec![0u8; WRAP_IV_LEN];
         generate_random_bytes(&mut iv).map_err(|e| {
-            MaterialsError::keyring_failed_with_cause("failed to generate wrap IV", e)
+            MplError::from(
+                aws_crypto_mpl::error::CryptographicError::new("failed to generate wrap IV")
+                    .with_source(e),
+            )
         })?;
         let mut wrapped = Vec::new();
         aes_encrypt(
@@ -70,7 +78,12 @@ impl Keyring for LocalKekKeyring {
             &[],
             &mut wrapped,
         )
-        .map_err(|e| MaterialsError::keyring_failed_with_cause("failed to wrap data key", e))?;
+        .map_err(|e| {
+            MplError::from(
+                aws_crypto_mpl::error::CryptographicError::new("failed to wrap data key")
+                    .with_source(e),
+            )
+        })?;
 
         // Append the wrapped key to the materials as this keyring's EDK.
         let mut edk_ciphertext = iv;
@@ -98,10 +111,12 @@ impl Keyring for LocalKekKeyring {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, MplError> {
         if materials.plaintext_data_key().is_some() {
-            return Err(MaterialsError::plaintext_data_key_already_present(
-                "on_decrypt requires materials without a plaintext data key",
+            return Err(MplError::from(
+                aws_crypto_mpl::error::InvalidMaterialsError::new(
+                    "on_decrypt requires materials without a plaintext data key",
+                ),
             ));
         }
 
@@ -115,8 +130,10 @@ impl Keyring for LocalKekKeyring {
             }
             let bytes = &edk.ciphertext;
             if bytes.len() != WRAP_IV_LEN + key_len + WRAP_TAG_LEN {
-                return Err(MaterialsError::keyring_failed(
-                    "EDK ciphertext has unexpected length",
+                return Err(MplError::from(
+                    aws_crypto_mpl::error::CryptographicError::new(
+                        "EDK ciphertext has unexpected length",
+                    ),
                 ));
             }
             let (iv, rest) = bytes.split_at(WRAP_IV_LEN);
@@ -132,7 +149,10 @@ impl Keyring for LocalKekKeyring {
                 &mut data_key,
             )
             .map_err(|e| {
-                MaterialsError::keyring_failed_with_cause("failed to unwrap data key", e)
+                MplError::from(
+                    aws_crypto_mpl::error::CryptographicError::new("failed to unwrap data key")
+                        .with_source(e),
+                )
             })?;
             return DecryptionMaterials::new(
                 materials.algorithm_suite_id(),
@@ -144,23 +164,25 @@ impl Keyring for LocalKekKeyring {
             );
         }
 
-        Err(MaterialsError::no_matching_data_key(
-            "no EDK matched this keyring",
+        Err(MplError::from(
+            aws_crypto_mpl::error::NoMatchingDataKeyError::new("no EDK matched this keyring"),
         ))
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_round_trips_via_public_api() {
-    let keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [7u8; 32] });
+    let keyring = LocalKekKeyring { kek: [7u8; 32] };
     let plaintext = b"extension interface round trip";
 
     // Encrypt entirely through the custom keyring.
-    let out = encrypt(&EncryptInput::with_keyring(
-        plaintext,
-        EncryptionContext::new(),
-        keyring.clone(),
-    ))
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(plaintext)
+            .keyring(keyring.clone())
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
 
@@ -173,11 +195,13 @@ async fn custom_keyring_round_trips_via_public_api() {
     );
 
     // Decrypt back through the same keyring.
-    let dec = decrypt(&DecryptInput::with_keyring(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        keyring,
-    ))
+    let dec = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
     assert_eq!(dec.plaintext, plaintext);
@@ -185,27 +209,121 @@ async fn custom_keyring_round_trips_via_public_api() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn custom_keyring_wrong_kek_fails_decrypt() {
-    let enc_keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [7u8; 32] });
-    let out = encrypt(&EncryptInput::with_keyring(
-        b"wrong kek must fail",
-        EncryptionContext::new(),
-        enc_keyring,
-    ))
+    let enc_keyring = LocalKekKeyring { kek: [7u8; 32] };
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"wrong kek must fail")
+            .keyring(enc_keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .unwrap();
 
     // A keyring with a different KEK cannot unwrap the data key.
-    let wrong_keyring: Arc<dyn Keyring> = Arc::new(LocalKekKeyring { kek: [8u8; 32] });
-    let err = decrypt(&DecryptInput::with_keyring(
-        &out.ciphertext,
-        EncryptionContext::new(),
-        wrong_keyring,
-    ))
+    let wrong_keyring = LocalKekKeyring { kek: [8u8; 32] };
+    let err = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(wrong_keyring)
+            .build()
+            .unwrap(),
+    )
     .await
     .expect_err("decrypt under a different KEK must fail");
     assert!(
-        matches!(err.kind, ErrorKind::MplError),
+        err.is_cryptographic(),
         "expected the keyring's unwrap failure, got {:?}",
-        err.kind
+        err
     );
+}
+
+/// Returns a plaintext data key half the suite's length.
+#[derive(Clone, Debug)]
+struct ShortDataKeyKeyring;
+
+#[async_trait::async_trait]
+impl Keyring for ShortDataKeyKeyring {
+    fn name(&self) -> std::borrow::Cow<'_, str> {
+        "short".into()
+    }
+
+    async fn on_encrypt(
+        &self,
+        materials: EncryptionMaterials,
+    ) -> Result<EncryptionMaterials, MplError> {
+        let short = materials.algorithm_suite().encryption_key_length() / 2;
+        EncryptionMaterials::new(
+            materials.algorithm_suite_id(),
+            vec![EncryptedDataKey::new(
+                PROVIDER_ID.to_owned(),
+                Vec::new(),
+                vec![0; 8],
+            )],
+            materials.encryption_context().clone(),
+            materials.required_encryption_context_keys().clone(),
+            Some(PlaintextDataKey::new(vec![0; short])),
+            materials.signing_key().cloned(),
+            materials.symmetric_signing_keys().map(<[_]>::to_vec),
+        )
+    }
+
+    async fn on_decrypt(
+        &self,
+        materials: DecryptionMaterials,
+        _encrypted_data_keys: &[EncryptedDataKey],
+    ) -> Result<DecryptionMaterials, MplError> {
+        let short = materials.algorithm_suite().encryption_key_length() / 2;
+        DecryptionMaterials::new(
+            materials.algorithm_suite_id(),
+            materials.encryption_context().clone(),
+            materials.required_encryption_context_keys().clone(),
+            Some(PlaintextDataKey::new(vec![0; short])),
+            materials.verification_key().cloned(),
+            materials.symmetric_signing_key().cloned(),
+        )
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
+    let err = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"short key")
+            .keyring(ShortDataKeyKeyring)
+            .build()
+            .unwrap(),
+    )
+    .await
+    .expect_err("a short plaintext data key must fail");
+    assert!(err.is_invalid_materials(), "{err:?}");
+    assert_eq!(
+        err.resource(),
+        Some(&aws_esdk::error::Resource::Keyring(
+            aws_esdk::error::KeyringResource::new("short")
+        ))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_decrypt_plaintext_data_key_of_the_wrong_length_is_invalid_materials() {
+    let out = encrypt(
+        &EncryptInput::builder()
+            .plaintext(b"short key")
+            .keyring(LocalKekKeyring { kek: [7u8; 32] })
+            .build()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let err = decrypt(
+        &DecryptInput::builder()
+            .ciphertext(&out.ciphertext)
+            .keyring(ShortDataKeyKeyring)
+            .build()
+            .unwrap(),
+    )
+    .await
+    .expect_err("a short plaintext data key must fail");
+    assert!(err.is_invalid_materials(), "{err:?}");
 }
