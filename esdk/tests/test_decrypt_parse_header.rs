@@ -16,29 +16,40 @@ async fn test_unsupported_version_rejected() {
     let keyring = test_keyring().await;
     let plaintext = b"unsupported version test";
 
-    let enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Byte 0 is the version field — set to an unsupported value
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[0] = 0xFF;
 
-    let valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    let tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#parse-the-header
     //= type=test
-    //= reason=Supported version byte → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported version byte → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported version](../data-format/message-header.md#supported-versions).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported version must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported version byte must produce SerializationError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
+        "unsupported version byte must produce Serialization error"
     );
 }
 
@@ -47,10 +58,13 @@ async fn test_unsupported_content_type_v1_rejected() {
     let keyring = test_keyring().await;
     let plaintext = b"unsupported content type v1 test";
 
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     let (content_type_offset, _, _, _) = parse_v1_trailing_offsets(&valid_ct);
@@ -63,23 +77,31 @@ async fn test_unsupported_content_type_v1_rejected() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[content_type_offset] = 0xFF; // unsupported content type
 
-    let mut valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    valid_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
-    let mut tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
-    tampered_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Supported content type byte → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported content type byte → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported content type](../data-format/message-header.md#supported-content-types).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported content type must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported V1 content type must produce SerializationError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
+        "unsupported V1 content type must produce Serialization error"
     );
 }
 
@@ -88,8 +110,11 @@ async fn test_unsupported_content_type_v2_rejected() {
     let keyring = test_keyring().await;
     let plaintext = b"unsupported content type v2 test";
 
-    let enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     let fields = parse_v2_header_field_offsets(&valid_ct);
@@ -106,21 +131,29 @@ async fn test_unsupported_content_type_v2_rejected() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[*ct_start] = 0xFF; // unsupported content type
 
-    let valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    let tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Supported content type byte → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported content type byte → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported content type](../data-format/message-header.md#supported-content-types).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported content type must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported V2 content type must produce SerializationError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
+        "unsupported V2 content type must produce Serialization error"
     );
 }
 
@@ -129,10 +162,13 @@ async fn test_unsupported_type_rejected() {
     let keyring = test_keyring().await;
     let plaintext = b"unsupported type test";
 
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // V1 layout: byte 0 = version (0x01), byte 1 = type (0x80)
@@ -141,23 +177,31 @@ async fn test_unsupported_type_rejected() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[1] = 0xFF; // unsupported type
 
-    let mut valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    valid_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
-    let mut tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
-    tampered_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Supported type byte (0x80) → Ok; unsupported value 0xFF → SerializationError
+    //= reason=Supported type byte (0x80) → Ok; unsupported value 0xFF → Serialization error
     //# The value MUST be a [supported type](../data-format/message-header.md#supported-types).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "supported type must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "unsupported V1 type byte must produce SerializationError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_serialization(),
+        "unsupported V1 type byte must produce Serialization error"
     );
 }
 
@@ -186,24 +230,18 @@ async fn test_max_encrypted_data_keys_enforcement() {
         .unwrap();
 
     let plaintext = b"max edk decrypt test";
-    let enc_input = EncryptInput::with_keyring(
-        plaintext,
-        EncryptionContext::new(),
-        multi_keyring.clone(),
-    );
+    let enc_input = EncryptInput::builder().plaintext(plaintext).keyring(multi_keyring.clone()).build().unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Two decrypt inputs differing only in max_encrypted_data_keys.
-    let mut allowing_input =
-        DecryptInput::with_keyring(&ct, EncryptionContext::new(), multi_keyring.clone());
-    allowing_input.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(2).unwrap());
-    let mut limiting_input =
-        DecryptInput::with_keyring(&ct, EncryptionContext::new(), multi_keyring);
-    limiting_input.max_encrypted_data_keys = Some(std::num::NonZeroUsize::new(1).unwrap());
+    let allowing_input =
+        DecryptInput::builder().ciphertext(&ct).keyring(multi_keyring.clone()).max_encrypted_data_keys(std::num::NonZeroUsize::new(2).unwrap()).build().unwrap();
+    let limiting_input =
+        DecryptInput::builder().ciphertext(&ct).keyring(multi_keyring).max_encrypted_data_keys(std::num::NonZeroUsize::new(1).unwrap()).build().unwrap();
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=2 EDKs on wire + max=2 → Ok; same ct + max=1 → SerializationError, halting deserialization
+    //= reason=2 EDKs on wire + max=2 → Ok; same ct + max=1 → Serialization error, halting deserialization
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys)
     //# deserialized from the [message header](../data-format/message-header.md)
     //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md),
@@ -215,8 +253,8 @@ async fn test_max_encrypted_data_keys_enforcement() {
     );
     assert_eq!(
         decrypt(&limiting_input).await.unwrap_err().kind,
-        ErrorKind::SerializationError,
-        "max=1 with 2 EDKs on wire must produce SerializationError"
+        ErrorKind::Serialization,
+        "max=1 with 2 EDKs on wire must produce Serialization error"
     );
 }
 */
@@ -228,26 +266,37 @@ async fn test_no_header_info_released_before_verification() {
     let keyring = test_keyring().await;
     let plaintext = b"no header info before verification";
 
-    let enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[10] ^= 0xFF;
 
-    let valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    let tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → ValidationError with no DecryptOutput, so nothing released
+    //= reason=Untampered ct decrypts (Ok with output); tampered header byte → Cryptographic error with no DecryptOutput, so nothing released
     //# Until the [header is verified](#verify-the-header), this operation MUST NOT
     //# release any parsed information from the header.
     assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::ValidationError,
-        "tampered header must produce ValidationError, no output"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
+        "tampered header must produce Cryptographic error, no output"
     );
 }
 
@@ -257,10 +306,13 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
     let keyring = test_keyring().await;
     let plaintext = b"v1 header auth tag tamper test";
 
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // V1 header auth: IV(12) + Tag(16) at the end of the header, before the body.
@@ -270,10 +322,16 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[auth_tag_last_byte] ^= 0xFF;
 
-    let mut valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    valid_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
-    let mut tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
-    tampered_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
@@ -283,16 +341,18 @@ async fn test_v1_header_auth_tag_deserialized_and_verified() {
     //
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Untampered V1 message decrypts; tampered V1 auth tag byte → CryptographicError, proving the tag was deserialized and used
+    //= reason=Untampered V1 message decrypts; tampered V1 auth tag byte → Cryptographic error, proving the tag was deserialized and used
     //# - MUST deserialize the [Authentication Tag](../data-format/message-header.md#authentication-tag).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "valid V1 ct must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered V1 auth tag must produce CryptographicError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
+        "tampered V1 auth tag must produce Cryptographic error"
     );
 }
 
@@ -302,10 +362,13 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
     let keyring = test_keyring().await;
     let plaintext = b"v1 header auth iv tamper test";
 
-    let mut enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
     let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // V1 header auth IV is 12 bytes immediately before the 16-byte auth tag, which
@@ -315,23 +378,31 @@ async fn test_v1_header_auth_iv_deserialized_and_used() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[iv_start] ^= 0xFF;
 
-    let mut valid_input = DecryptInput::from_encrypt(&valid_ct, &enc_input);
-    valid_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
-    let mut tampered_input = DecryptInput::from_encrypt(&tampered_ct, &enc_input);
-    tampered_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&valid_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
+        .ciphertext(&tampered_ct)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v1-header-deserialization
     //= type=test
-    //= reason=Untampered V1 message decrypts; tampered V1 header auth IV byte → CryptographicError, proving IV was deserialized and used
+    //= reason=Untampered V1 message decrypts; tampered V1 header auth IV byte → Cryptographic error, proving IV was deserialized and used
     //# - MUST deserialize the [IV](../data-format/message-header.md#iv).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "valid V1 ct must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered V1 header auth IV must produce CryptographicError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
+        "tampered V1 header auth IV must produce Cryptographic error"
     );
 }
 
@@ -343,9 +414,13 @@ async fn test_v1_header_body_fields_parsed_from_wire() {
     let keyring = test_keyring().await;
     let plaintext = b"v1 fields parse test";
 
-    let mut enc_input = EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring);
-    enc_input.algorithm_suite_id = Some(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy = Some(EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt);
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Parse the V1 header body via the production deserialization function.
@@ -485,8 +560,11 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let keyring = test_keyring().await;
     let plaintext = b"v2 fields parse test";
 
-    let enc_input =
-        EncryptInput::with_keyring(plaintext, EncryptionContext::new(), keyring.clone());
+    let enc_input = EncryptInput::builder()
+        .plaintext(plaintext)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // Parse the V2 header body via the production deserialization function.
@@ -594,10 +672,8 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let (sd_start, sd_end) = get("Algorithm Suite Data");
     assert_eq!(sd_end - sd_start, 32, "V2 Algorithm Suite Data is 32 bytes");
 
-    // Now tamper the V2 auth tag byte (immediately after Algorithm Suite Data)
-    // and confirm decrypt fails with CryptographicError — direct proof that
-    // the implementation deserialized the auth tag from the wire and used it
-    // for header verification.
+    // Flip the first header auth tag byte, right after Algorithm Suite Data.
+    // A Cryptographic error shows decrypt verified the header with the tag it read.
     let auth_tag_offset = sd_end;
     let auth_tag_end = auth_tag_offset + 16;
     assert!(
@@ -607,9 +683,16 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     let mut tampered_ct = ct.clone();
     tampered_ct[auth_tag_offset] ^= 0xFF;
 
-    let valid_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring.clone());
-    let tampered_input =
-        DecryptInput::with_keyring(&tampered_ct, EncryptionContext::new(), keyring);
+    let valid_input = DecryptInput::builder()
+        .ciphertext(&ct)
+        .keyring(keyring.clone())
+        .build()
+        .unwrap();
+    let tampered_input = DecryptInput::builder()
+        .ciphertext(&tampered_ct)
+        .keyring(keyring)
+        .build()
+        .unwrap();
 
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
@@ -619,15 +702,17 @@ async fn test_v2_header_body_fields_parsed_from_wire() {
     //
     //= spec/client-apis/decrypt.md#v2-header-deserialization
     //= type=test
-    //= reason=Untampered ct decrypts; tampered V2 auth tag byte → CryptographicError, proving the auth tag was deserialized and used
+    //= reason=Untampered ct decrypts; tampered V2 auth tag byte → Cryptographic error, proving the auth tag was deserialized and used
     //# - MUST deserialize the [Authentication Tag](../data-format/message-header.md#authentication-tag).
     assert!(
         decrypt(&valid_input).await.is_ok(),
         "valid V2 ct must decrypt"
     );
-    assert_eq!(
-        decrypt(&tampered_input).await.unwrap_err().kind,
-        ErrorKind::CryptographicError,
-        "tampered V2 auth tag must produce CryptographicError"
+    assert!(
+        decrypt(&tampered_input)
+            .await
+            .unwrap_err()
+            .is_cryptographic(),
+        "tampered V2 auth tag must produce Cryptographic error"
     );
 }
