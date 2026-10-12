@@ -240,23 +240,27 @@ impl HierarchicalKeyring {
     }
 
     /// The configured TTL for cached branch-key materials.
+    #[must_use]
     pub fn ttl(&self) -> Duration {
         self.inner.ttl
     }
 
     /// The configured static branch key id, if this keyring was built with one
     /// rather than with a [`BranchKeySupplier`].
+    #[must_use]
     pub fn branch_key_id(&self) -> Option<&str> {
         self.inner.branch_key_id.as_deref()
     }
 
     /// The configured branch key id supplier, if this keyring was built with
     /// one rather than with a static branch key id.
+    #[must_use]
     pub fn branch_key_id_supplier(&self) -> Option<&SharedBranchKeySupplier> {
         self.inner.branch_key_id_supplier.as_ref()
     }
 
     /// The configured key store.
+    #[must_use]
     pub fn key_store(&self) -> &KeyStoreClient {
         &self.inner.key_store
     }
@@ -304,10 +308,18 @@ impl HierarchicalKeyringBuilder {
     /// The key store.
     /// Required.
     ///
-    /// Pass the [`KeyStoreClient`] that [`BranchKeyStore::builder`](crate::BranchKeyStore::builder) builds, or any [`KeyStore`](crate::KeyStore).
+    /// Pass the [`KeyStoreClient`] that [`KeyStoreClient::builder`] builds, or any [`KeyStore`](crate::KeyStore).
     #[must_use]
     pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
         self.key_store = Some(key_store.into());
+        self
+    }
+
+    /// Set or clear the key store from an `Option`.
+    /// To set a value, use [`Self::key_store`].
+    #[must_use]
+    pub fn set_key_store(mut self, key_store: Option<KeyStoreClient>) -> Self {
+        self.key_store = key_store;
         self
     }
 
@@ -319,6 +331,14 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
+    /// Set or clear the TTL from an `Option`.
+    /// To set a value, use [`Self::ttl`].
+    #[must_use]
+    pub fn set_ttl(mut self, ttl: Option<Duration>) -> Self {
+        self.ttl = ttl;
+        self
+    }
+
     /// A static branch key id.
     /// Set this or [`branch_key_id_supplier`](Self::branch_key_id_supplier), not both.
     #[must_use]
@@ -327,11 +347,27 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
+    /// Set or clear the static branch key id from an `Option`.
+    /// To set a value, use [`Self::branch_key_id`].
+    #[must_use]
+    pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
+        self.branch_key_id = branch_key_id;
+        self
+    }
+
     /// A [`BranchKeySupplier`].
     /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
     #[must_use]
     pub fn branch_key_id_supplier(mut self, supplier: impl BranchKeySupplier + 'static) -> Self {
         self.branch_key_id_supplier = Some(supplier.into_shared());
+        self
+    }
+
+    /// Set or clear the branch key id supplier from an `Option`.
+    /// To set a value, use [`Self::branch_key_id_supplier`].
+    #[must_use]
+    pub fn set_branch_key_id_supplier(mut self, supplier: Option<SharedBranchKeySupplier>) -> Self {
+        self.branch_key_id_supplier = supplier;
         self
     }
 
@@ -347,11 +383,27 @@ impl HierarchicalKeyringBuilder {
         self
     }
 
+    /// Set or clear the cache from an `Option`.
+    /// To set a value, use [`Self::cache`].
+    #[must_use]
+    pub fn set_cache(mut self, cache: Option<SharedCmc>) -> Self {
+        self.cache = cache;
+        self
+    }
+
     /// The partition id.
     /// When unset, the keyring generates a fresh v4 UUID and stores it as the 16-byte partition id.
     #[must_use]
     pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
         self.partition_id = Some(partition_id.into());
+        self
+    }
+
+    /// Set or clear the partition id from an `Option`.
+    /// To set a value, use [`Self::partition_id`].
+    #[must_use]
+    pub fn set_partition_id(mut self, partition_id: Option<String>) -> Self {
+        self.partition_id = partition_id;
         self
     }
 
@@ -362,8 +414,8 @@ impl HierarchicalKeyringBuilder {
     /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
     /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
-    /// If the key store's [`get_key_store_info`](crate::Keystore::get_key_store_info) fails, returns that error unchanged.
-    /// The built-in [`BranchKeyStore`](crate::BranchKeyStore) does not fail it.
+    /// If the key store's [`get_key_store_info`](crate::KeyStore::get_key_store_info) fails, returns that error unchanged.
+    /// The key store [`KeyStoreClient::builder`] builds does not fail it.
     pub fn build(self) -> Result<HierarchicalKeyring, Error> {
         let Self {
             key_store,
@@ -374,13 +426,8 @@ impl HierarchicalKeyringBuilder {
             partition_id,
         } = self;
 
-        let Some(key_store) = key_store else {
-            return Err(Error::new(Kind::Validation, "a key store is required"));
-        };
-
-        let Some(ttl) = ttl else {
-            return Err(Error::new(Kind::Validation, "a TTL is required"));
-        };
+        let key_store = required(key_store, "key_store")?;
+        let ttl = required(ttl, "ttl")?;
         if ttl.is_zero() {
             return Err(Error::new(
                 Kind::Validation,

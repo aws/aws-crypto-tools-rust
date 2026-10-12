@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! KMS-backed read helpers for the [`BranchKeyStore`](super::BranchKeyStore).
+//! KMS-backed read helpers for the DynamoDB key store.
 //!
 //! Implements the cross-cutting "Authenticating a KeyStore item" and
 //! "AWS KMS Branch Key Decryption" sections of `branch-key-store.md`,
@@ -22,6 +22,7 @@ use aws_sdk_kms::config::http::HttpResponse;
 use aws_sdk_kms::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_kms::primitives::Blob;
 
+use crate::aws_kms::user_agent::user_agent_override;
 use crate::key_store::attributes::{ATTR_ENC, ATTR_KMS_ARN};
 use crate::key_store::config::KmsConfiguration;
 use crate::key_store::kms_config::{is_arn_compatible, parse_arn};
@@ -89,27 +90,27 @@ pub(crate) fn resolve_key_store_arn(
     record_kms_arn: &str,
     branch_key_id: &str,
 ) -> Result<String, Error> {
-    match kms_config {
-        KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
-            if !is_arn_compatible(kms_config, record_kms_arn) {
-                return Err(Error::new(
-                    Kind::Validation,
-                    format!(
-                        "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
-                    ),
-                ));
-            }
-            Ok(configured.clone())
-        }
+    let configured = match kms_config {
+        KmsConfiguration::KmsKeyArn(configured) => configured.arn(),
+        KmsConfiguration::KmsMrKeyArn(configured) => configured.arn(),
         KmsConfiguration::Discovery(_) => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
-            Ok(record_kms_arn.to_string())
+            return Ok(record_kms_arn.to_string());
         }
         KmsConfiguration::MrDiscovery(mr_discovery) => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
-            rewrite_arn_region(record_kms_arn, mr_discovery.region(), branch_key_id)
+            return rewrite_arn_region(record_kms_arn, mr_discovery.region(), branch_key_id);
         }
+    };
+    if !is_arn_compatible(kms_config, record_kms_arn) {
+        return Err(Error::new(
+            Kind::Validation,
+            format!(
+                "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
+            ),
+        ));
     }
+    Ok(configured.to_owned())
 }
 
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery
@@ -183,6 +184,8 @@ pub(crate) async fn decrypt_branch_key(
         .ciphertext_blob(Blob::new(record.enc.clone()))
         .set_encryption_context(Some(ec.into_iter().collect()))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| {
@@ -237,6 +240,8 @@ pub(crate) async fn generate_wrapped_key(
                 .collect(),
         ))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| map_kms_error("GenerateDataKeyWithoutPlaintext", key_arn, e))?;
@@ -282,6 +287,8 @@ pub(crate) async fn reencrypt_wrapped_key(
                 .collect(),
         ))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
+        .customize()
+        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| map_kms_error("ReEncrypt", key_arn, e))?;

@@ -13,7 +13,7 @@ use super::{
     UpdateUsageMetadataOutput,
 };
 use crate::Error;
-use crate::error::Kind;
+use crate::builder::required;
 
 /// The default Cryptographic Materials Cache.
 ///
@@ -35,6 +35,7 @@ impl DefaultCmc {
     }
 
     /// Maximum number of entries the cache holds.
+    #[must_use]
     pub fn entry_capacity(&self) -> usize {
         self.inner.entry_capacity()
     }
@@ -68,12 +69,7 @@ impl DefaultCmcBuilder {
     /// Returns a validation error ([`Error::is_validation`])
     /// if `entry_capacity` is unset.
     pub fn build(self) -> Result<DefaultCmc, Error> {
-        let Some(entry_capacity) = self.entry_capacity else {
-            return Err(Error::new(
-                Kind::Validation,
-                "an entry capacity is required",
-            ));
-        };
+        let entry_capacity = required(self.entry_capacity, "entry_capacity")?;
         Ok(DefaultCmc {
             inner: StormTrackingCmc::builder()
                 .entry_capacity(entry_capacity)

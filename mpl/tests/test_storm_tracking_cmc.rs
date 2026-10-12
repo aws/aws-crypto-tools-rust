@@ -10,6 +10,7 @@
 #![cfg(feature = "test-utils")]
 
 use aws_crypto_mpl::Error;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::error::{Cache, Resource, RetryKind};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -25,7 +26,7 @@ use aws_crypto_mpl::structures::{
 };
 
 /// Positional shorthand for the `Cmc` operations.
-#[async_trait::async_trait]
+#[async_trait]
 trait CmcExt: Cmc {
     async fn put_entry(&self, id: &[u8], entry: CacheEntry) -> Result<(), Error> {
         let input = PutCacheEntryInput::builder()

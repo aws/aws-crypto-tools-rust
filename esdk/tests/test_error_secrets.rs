@@ -6,7 +6,7 @@
 
 mod fake_aws;
 
-use async_trait::async_trait;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};

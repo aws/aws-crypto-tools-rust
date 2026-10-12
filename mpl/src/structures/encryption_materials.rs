@@ -4,11 +4,13 @@
 //! Encryption materials structure.
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SigningKey, SymmetricSigningKey,
+    check_data_key_length,
 };
 use super::encrypted_data_key::EncryptedDataKey;
 use super::encryption_context::EncryptionContext;
@@ -44,25 +46,17 @@ impl EncryptionMaterials {
     ///   or `plaintext_data_key` is not the algorithm suite's encryption key length.
     pub fn add_data_key(
         mut self,
-        plaintext_data_key: PlaintextDataKey,
+        plaintext_data_key: impl Into<PlaintextDataKey>,
         encrypted_data_key: EncryptedDataKey,
     ) -> Result<Self, Error> {
+        let plaintext_data_key = plaintext_data_key.into();
         if self.plaintext_data_key.is_some() {
             return Err(Error::new(
                 Kind::InvalidMaterials,
                 "the materials already have a plaintext data key",
             ));
         }
-        let expected_len = self.algorithm_suite().encryption_key_length();
-        if plaintext_data_key.len() != expected_len {
-            return Err(Error::new(
-                Kind::InvalidMaterials,
-                format!(
-                    "plaintext data key is {} bytes, expected {expected_len} for the algorithm suite",
-                    plaintext_data_key.len(),
-                ),
-            ));
-        }
+        check_data_key_length(&self.algorithm_suite(), &plaintext_data_key)?;
         self.plaintext_data_key = Some(plaintext_data_key);
         self.encrypted_data_keys.push(encrypted_data_key);
         Ok(self)
@@ -87,34 +81,50 @@ impl EncryptionMaterials {
         Ok(self)
     }
 
-    pub fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
+    /// The algorithm suite.
+    #[must_use]
+    pub const fn algorithm_suite_id(&self) -> AlgorithmSuiteId {
         self.algorithm_suite_id
     }
 
+    /// The specification of the algorithm suite.
+    #[must_use]
     pub fn algorithm_suite(&self) -> AlgorithmSuite {
         self.algorithm_suite_id.specification()
     }
 
+    /// The encrypted data keys, in the order keyrings added them.
+    #[must_use]
     pub fn encrypted_data_keys(&self) -> &[EncryptedDataKey] {
         &self.encrypted_data_keys
     }
 
-    pub fn encryption_context(&self) -> &EncryptionContext {
+    /// The encryption context.
+    #[must_use]
+    pub const fn encryption_context(&self) -> &EncryptionContext {
         &self.encryption_context
     }
 
-    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
+    /// The encryption context keys that must be supplied again at decrypt time.
+    #[must_use]
+    pub const fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
     }
 
-    pub fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
+    /// The plaintext data key, once a keyring has added one.
+    #[must_use]
+    pub const fn plaintext_data_key(&self) -> Option<&PlaintextDataKey> {
         self.plaintext_data_key.as_ref()
     }
 
-    pub fn signing_key(&self) -> Option<&SigningKey> {
+    /// The signing key, for an algorithm suite with asymmetric signing.
+    #[must_use]
+    pub const fn signing_key(&self) -> Option<&SigningKey> {
         self.signing_key.as_ref()
     }
 
+    /// The symmetric signing keys, for an algorithm suite with symmetric signing.
+    #[must_use]
     pub fn symmetric_signing_keys(&self) -> Option<&[SymmetricSigningKey]> {
         self.symmetric_signing_keys.as_deref()
     }
@@ -164,34 +174,85 @@ impl EncryptionMaterialsBuilder {
         self
     }
 
-    /// Set the encrypted data keys.
+    /// Set or clear the algorithm suite from an `Option`.
+    /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
-    pub fn encrypted_data_keys(mut self, encrypted_data_keys: Vec<EncryptedDataKey>) -> Self {
-        self.encrypted_data_keys = encrypted_data_keys;
+    pub const fn set_algorithm_suite_id(
+        mut self,
+        algorithm_suite_id: Option<AlgorithmSuiteId>,
+    ) -> Self {
+        self.algorithm_suite_id = algorithm_suite_id;
+        self
+    }
+
+    /// Set the encrypted data keys.
+    /// Defaults to none.
+    #[must_use]
+    pub fn encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.encrypted_data_keys = encrypted_data_keys.into();
+        self
+    }
+
+    /// Set or clear the encrypted data keys from an `Option`.
+    /// To set a value, use [`Self::encrypted_data_keys`].
+    #[must_use]
+    pub fn set_encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: Option<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.encrypted_data_keys = encrypted_data_keys.unwrap_or_default();
         self
     }
 
     /// Set the encryption context.
+    /// Defaults to empty.
     #[must_use]
-    pub fn encryption_context(mut self, encryption_context: EncryptionContext) -> Self {
-        self.encryption_context = encryption_context;
+    pub fn encryption_context(mut self, encryption_context: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = encryption_context.into();
+        self
+    }
+
+    /// Set or clear the encryption context from an `Option`.
+    /// To set a value, use [`Self::encryption_context`].
+    #[must_use]
+    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+        self.encryption_context = encryption_context.unwrap_or_default();
         self
     }
 
     /// Set the required encryption context keys.
+    /// Defaults to none.
     #[must_use]
     pub fn required_encryption_context_keys(
         mut self,
-        required_encryption_context_keys: BTreeSet<String>,
+        required_encryption_context_keys: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
-        self.required_encryption_context_keys = required_encryption_context_keys;
+        self.required_encryption_context_keys = required_encryption_context_keys
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        self
+    }
+
+    /// Set or clear the required encryption context keys from an `Option`.
+    /// To set a value, use [`Self::required_encryption_context_keys`].
+    #[must_use]
+    pub fn set_required_encryption_context_keys(
+        mut self,
+        required_encryption_context_keys: Option<BTreeSet<String>>,
+    ) -> Self {
+        self.required_encryption_context_keys =
+            required_encryption_context_keys.unwrap_or_default();
         self
     }
 
     /// Set the plaintext data key.
     #[must_use]
-    pub fn plaintext_data_key(mut self, plaintext_data_key: PlaintextDataKey) -> Self {
-        self.plaintext_data_key = Some(plaintext_data_key);
+    pub fn plaintext_data_key(mut self, plaintext_data_key: impl Into<PlaintextDataKey>) -> Self {
+        self.plaintext_data_key = Some(plaintext_data_key.into());
         self
     }
 
@@ -205,8 +266,8 @@ impl EncryptionMaterialsBuilder {
 
     /// Set the signing key.
     #[must_use]
-    pub fn signing_key(mut self, signing_key: SigningKey) -> Self {
-        self.signing_key = Some(signing_key);
+    pub fn signing_key(mut self, signing_key: impl Into<SigningKey>) -> Self {
+        self.signing_key = Some(signing_key.into());
         self
     }
 
@@ -222,9 +283,9 @@ impl EncryptionMaterialsBuilder {
     #[must_use]
     pub fn symmetric_signing_keys(
         mut self,
-        symmetric_signing_keys: Vec<SymmetricSigningKey>,
+        symmetric_signing_keys: impl Into<Vec<SymmetricSigningKey>>,
     ) -> Self {
-        self.symmetric_signing_keys = Some(symmetric_signing_keys);
+        self.symmetric_signing_keys = Some(symmetric_signing_keys.into());
         self
     }
 
@@ -245,15 +306,15 @@ impl EncryptionMaterialsBuilder {
     ///
     /// - [`Validation`](crate::Error::Validation): `algorithm_suite_id` is unset.
     /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): a required encryption context key is not in the encryption context.
-    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): encrypted data keys are set without a plaintext data key,
+    /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the plaintext data key is not the algorithm suite's encryption key length,
+    ///   encrypted data keys are set without a plaintext data key,
     ///   or the signing key or symmetric signing keys do not suit the algorithm suite.
     pub fn build(self) -> Result<EncryptionMaterials, Error> {
-        let Some(algorithm_suite_id) = self.algorithm_suite_id else {
-            return Err(Error::new(
-                Kind::Validation,
-                "an algorithm suite is required",
-            ));
-        };
+        let algorithm_suite_id = required(self.algorithm_suite_id, "algorithm_suite_id")?;
+
+        if let Some(key) = &self.plaintext_data_key {
+            check_data_key_length(&algorithm_suite_id.specification(), key)?;
+        }
 
         // Required encryption context keys must be a subset of encryption context keys
         for key in &self.required_encryption_context_keys {

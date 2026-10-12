@@ -4,7 +4,7 @@
 //! Encrypted data key structure.
 
 use crate::Error;
-use crate::error::Kind;
+use crate::builder::required;
 
 /// An encrypted data key comprised of provider ID, provider info, and ciphertext.
 ///
@@ -68,11 +68,27 @@ impl EncryptedDataKeyBuilder {
         self
     }
 
+    /// Set or clear the key provider identifier from an `Option`.
+    /// To set a value, use [`Self::key_provider_id`].
+    #[must_use]
+    pub fn set_key_provider_id(mut self, key_provider_id: Option<String>) -> Self {
+        self.key_provider_id = key_provider_id;
+        self
+    }
+
     /// Set the key provider information.
     /// Required.
     #[must_use]
     pub fn key_provider_info(mut self, key_provider_info: impl Into<Vec<u8>>) -> Self {
         self.key_provider_info = Some(key_provider_info.into());
+        self
+    }
+
+    /// Set or clear the key provider information from an `Option`.
+    /// To set a value, use [`Self::key_provider_info`].
+    #[must_use]
+    pub fn set_key_provider_info(mut self, key_provider_info: Option<Vec<u8>>) -> Self {
+        self.key_provider_info = key_provider_info;
         self
     }
 
@@ -84,27 +100,23 @@ impl EncryptedDataKeyBuilder {
         self
     }
 
+    /// Set or clear the ciphertext from an `Option`.
+    /// To set a value, use [`Self::ciphertext`].
+    #[must_use]
+    pub fn set_ciphertext(mut self, ciphertext: Option<Vec<u8>>) -> Self {
+        self.ciphertext = ciphertext;
+        self
+    }
+
     /// Build the `EncryptedDataKey`.
     ///
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): a field is unset.
     pub fn build(self) -> Result<EncryptedDataKey, Error> {
-        let Some(key_provider_id) = self.key_provider_id else {
-            return Err(Error::new(
-                Kind::Validation,
-                "a key provider ID is required",
-            ));
-        };
-        let Some(key_provider_info) = self.key_provider_info else {
-            return Err(Error::new(
-                Kind::Validation,
-                "key provider information is required",
-            ));
-        };
-        let Some(ciphertext) = self.ciphertext else {
-            return Err(Error::new(Kind::Validation, "a ciphertext is required"));
-        };
+        let key_provider_id = required(self.key_provider_id, "key_provider_id")?;
+        let key_provider_info = required(self.key_provider_info, "key_provider_info")?;
+        let ciphertext = required(self.ciphertext, "ciphertext")?;
         Ok(EncryptedDataKey {
             key_provider_id,
             key_provider_info,

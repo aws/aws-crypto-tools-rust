@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use aws_crypto_mpl::key_store::{BranchKeyStore, KmsConfiguration};
+use aws_crypto_mpl::key_store::{KeyStoreClient, KmsKeyArn};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, decrypt, encrypt};
 
@@ -22,10 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The AWS Crypto Tools CI test key store.
     // Replace these with your own key store's table, name, and KMS key ARN.
-    let key_store = BranchKeyStore::builder()
+    let key_store = KeyStoreClient::builder()
         .ddb_table_name("KeyStoreDdbTable")
         .logical_key_store_name("KeyStoreDdbTable")
-        .kms_configuration(KmsConfiguration::kms_key_arn(
+        .kms_configuration(KmsKeyArn::new(
             "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",
         ))
         .kms_client(aws_sdk_kms::Client::new(&sdk_config))

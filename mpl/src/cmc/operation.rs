@@ -8,11 +8,7 @@ use std::sync::Arc;
 
 use super::CacheEntry;
 use crate::Error;
-use crate::error::Kind;
-
-fn required<T>(value: Option<T>, field: &str) -> Result<T, Error> {
-    value.ok_or_else(|| Error::new(Kind::Validation, format!("{field} is required")))
-}
+use crate::builder::required;
 
 /// Input for [`Cmc::put_cache_entry`](super::Cmc::put_cache_entry).
 #[derive(Debug)]

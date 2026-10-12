@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the concrete [`BranchKeyStore`] — construction surface,
+//! Tests for the DynamoDB key store — construction surface,
 //! `GetKeyStoreInfo`, and read-path dispatch.
 //!
 //! No real AWS calls are made in this file: the fixtures supply zero-config
@@ -21,7 +21,7 @@ use aws_sdk_kms::Client as KmsClient;
 
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 use aws_crypto_mpl::key_store::{Discovery, MrDiscovery};
-use aws_crypto_mpl::{BranchKeyStore, BranchKeyStoreBuilder, KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::{KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, KmsKeyArn};
 
 fn key_store_id(store: &KeyStoreClient) -> String {
     store
@@ -48,27 +48,27 @@ const KMS_KEY_ARN: &str =
 
 /// A builder with every required field, the simplest
 /// `KmsConfiguration::KmsKeyArn` variant, and no optional fields.
-fn required_only() -> BranchKeyStoreBuilder {
-    BranchKeyStore::builder()
+fn required_only() -> KeyStoreClientBuilder {
+    KeyStoreClient::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
 }
 
 /// `required_only` plus a key store id and the dummy clients,
 /// so construction never builds a default client.
-fn fixture_config_with_id(id: &str) -> BranchKeyStoreBuilder {
+fn fixture_config_with_id(id: &str) -> KeyStoreClientBuilder {
     let (kms, ddb) = dummy_clients();
     required_only().id(id).ddb_client(ddb).kms_client(kms)
 }
 
 /// Same as `fixture_config_with_id` but with no id, so construction
 /// exercises the v4-UUID fallback.
-fn fixture_config_no_id() -> BranchKeyStoreBuilder {
+fn fixture_config_no_id() -> KeyStoreClientBuilder {
     fixture_config_with_id("placeholder").set_id(None)
 }
 
-async fn build_err(builder: BranchKeyStoreBuilder) -> aws_crypto_mpl::Error {
+async fn build_err(builder: KeyStoreClientBuilder) -> aws_crypto_mpl::Error {
     match builder.build().await {
         Ok(_) => panic!("build must fail"),
         Err(e) => e,
@@ -78,8 +78,8 @@ async fn build_err(builder: BranchKeyStoreBuilder) -> aws_crypto_mpl::Error {
 #[tokio::test]
 async fn build_without_ddb_table_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = BranchKeyStore::builder()
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+    let builder = KeyStoreClient::builder()
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .logical_key_store_name("test-logical")
         .kms_client(kms)
         .ddb_client(ddb);
@@ -90,9 +90,9 @@ async fn build_without_ddb_table_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_logical_key_store_name_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = BranchKeyStore::builder()
+    let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .kms_client(kms)
         .ddb_client(ddb);
     let err = build_err(builder).await;
@@ -102,7 +102,7 @@ async fn build_without_logical_key_store_name_returns_configuration_error() {
 #[tokio::test]
 async fn build_without_kms_configuration_returns_configuration_error() {
     let (kms, ddb) = dummy_clients();
-    let builder = BranchKeyStore::builder()
+    let builder = KeyStoreClient::builder()
         .ddb_table_name("test-table")
         .logical_key_store_name("test-logical")
         .kms_client(kms)
@@ -127,61 +127,28 @@ fn build_with_both_clients_is_ready_on_first_poll() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn build_defaults_absent_clients_to_the_kms_arn_region() {
-    use aws_crypto_mpl::key_store::branch_key_store::__test_internals as ks;
+    use aws_crypto_mpl::key_store::__test_internals::branch_key_store::build_clients;
 
-    let store = ks::build(required_only())
+    let (kms, ddb) = build_clients(required_only())
         .await
         .expect("build must default both absent clients");
-    assert_eq!(
-        ks::kms_client(&store).config().region().map(|r| r.as_ref()),
-        Some("us-west-2")
-    );
-    assert_eq!(
-        ks::ddb_client(&store).config().region().map(|r| r.as_ref()),
-        Some("us-west-2")
-    );
+    assert_eq!(kms.config().region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert_eq!(ddb.config().region().map(|r| r.as_ref()), Some("us-west-2"));
 }
 
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn build_defaults_only_the_absent_client() {
-    use aws_crypto_mpl::key_store::branch_key_store::__test_internals as ks;
+    use aws_crypto_mpl::key_store::__test_internals::branch_key_store::build_clients;
 
     // The supplied DynamoDB client has no Region; the defaulted KMS client
     // gets the ARN's.
     let (_, ddb) = dummy_clients();
-    let store = ks::build(required_only().ddb_client(ddb)).await.unwrap();
-    assert_eq!(
-        ks::kms_client(&store).config().region().map(|r| r.as_ref()),
-        Some("us-west-2")
-    );
-    assert!(ks::ddb_client(&store).config().region().is_none());
-}
-
-// Construction tags only the KMS client's user agent with this crate's identifier.
-#[cfg(feature = "test-utils")]
-#[tokio::test]
-async fn build_tags_the_kms_client_and_not_the_ddb_client() {
-    use aws_crypto_mpl::key_store::branch_key_store::__test_internals as ks;
-
-    let store = ks::build(fixture_config_with_id("user-agent"))
+    let (kms, ddb) = build_clients(required_only().ddb_client(ddb))
         .await
         .unwrap();
-
-    let kms_names: Vec<&str> = ks::kms_client(&store)
-        .config()
-        .framework_metadata()
-        .iter()
-        .map(|metadata| metadata.name())
-        .collect();
-    assert_eq!(kms_names, vec!["AwsCryptographicMPL-Rust"]);
-    assert!(
-        ks::ddb_client(&store)
-            .config()
-            .framework_metadata()
-            .is_empty(),
-        "the DynamoDB client must carry no identifier"
-    );
+    assert_eq!(kms.config().region().map(|r| r.as_ref()), Some("us-west-2"));
+    assert!(ddb.config().region().is_none());
 }
 
 #[tokio::test]
@@ -241,8 +208,7 @@ async fn new_without_key_store_id_two_calls_produce_distinct_uuids() {
 
 #[tokio::test]
 async fn new_with_malformed_kms_arn_returns_configuration_error() {
-    let cfg = fixture_config_with_id("caller-id")
-        .kms_configuration(KmsConfiguration::KmsKeyArn("not-an-arn".to_string()));
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsKeyArn::new("not-an-arn"));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with malformed ARN must fail"),
         Err(e) => e,
@@ -252,8 +218,8 @@ async fn new_with_malformed_kms_arn_returns_configuration_error() {
 
 #[tokio::test]
 async fn new_with_alias_kms_arn_returns_configuration_error() {
-    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsConfiguration::KmsKeyArn(
-        "arn:aws:kms:us-west-2:111122223333:alias/my-alias".to_string(),
+    let cfg = fixture_config_with_id("caller-id").kms_configuration(KmsKeyArn::new(
+        "arn:aws:kms:us-west-2:111122223333:alias/my-alias",
     ));
     let err = match cfg.build().await {
         Ok(_) => panic!("construction with alias ARN must fail"),
@@ -281,9 +247,9 @@ async fn new_with_mr_discovery_config_succeeds() {
 #[tokio::test]
 async fn get_key_store_info_returns_configured_values() {
     let (kms, ddb) = dummy_clients();
-    let cfg = BranchKeyStore::builder()
+    let cfg = KeyStoreClient::builder()
         .ddb_table_name("my-table")
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KMS_KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KMS_KEY_ARN))
         .logical_key_store_name("my-logical")
         .id("my-id")
         .grant_tokens(["grant-1", "grant-2"])

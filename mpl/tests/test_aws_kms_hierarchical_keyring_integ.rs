@@ -22,7 +22,7 @@
 //! configurations against the KeyStore directly, never through a keyring. See
 //! the comments on those two sections.
 //!
-//! Per-operation caching is NOT asserted here. A real `BranchKeyStore` exposes
+//! Per-operation caching is NOT asserted here. A real DynamoDB key store exposes
 //! no call counter, and proving a cache hit by comparing wall-clock latency
 //! between a cold and a warm call is a timing heuristic, not an assertion — it
 //! passes or flakes with runner load. Caching is asserted instead in
@@ -47,7 +47,7 @@
 //!   `*_uses_branch_key_supplier_when_configured`,
 //!   `*_skips_edks_with_wrong_branch_key_id`, and `*_collects_per_edk_errors_*`
 //!   tests), which use key store doubles to count calls — something a real
-//!   `BranchKeyStore` cannot expose.
+//!   DynamoDB key store cannot expose.
 //!
 //! Sections of the AWS KMS Hierarchical Keyring specification these tests cite:
 //!
@@ -72,13 +72,13 @@ use aws_sdk_kms::operation::decrypt::DecryptError;
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::key_store::{BranchKeyStore, Discovery, KeyStoreClient, MrDiscovery};
+use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, MrDiscovery};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, Keyring, KmsConfiguration, LocalCmc, SharedCmc};
+use aws_crypto_mpl::{Cmc, Keyring, KmsKeyArn, LocalCmc, SharedCmc};
 
 // ─── Fixtures (mirror Dafny Fixtures.dfy) ──────────────────────────────────
 
@@ -98,9 +98,9 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
 
 async fn build_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KEY_ARN))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
         .ddb_client(ddb)
         .kms_client(kms)
@@ -294,15 +294,15 @@ async fn ddb_client_us_west_2() -> DynamoDbClient {
     DynamoDbClient::new(&cfg)
 }
 
-/// Build a `BranchKeyStore` with the supplied KMS client and logical
+/// Build a DynamoDB key store with the supplied KMS client and logical
 /// key store name. The DDB client is pinned to `us-west-2`.
 async fn build_key_store_with_kms_and_logical_name(
     kms: KmsClient,
     logical_key_store_name: &str,
 ) -> KeyStoreClient {
-    BranchKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
-        .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
+        .kms_configuration(KmsKeyArn::new(KEY_ARN))
         .logical_key_store_name(logical_key_store_name)
         .ddb_client(ddb_client_us_west_2().await)
         .kms_client(kms)
@@ -316,7 +316,7 @@ async fn build_key_store_with_kms_and_logical_name(
 ///
 /// What this checks is narrower than why these tests expect a failure. Every
 /// `hk2` here is built by `build_key_store_with_kms_and_logical_name`, which pins
-/// `KmsConfiguration::KmsKeyArn(KEY_ARN.to_string())` -- a us-west-2 ARN -- while handing the
+/// `KmsKeyArn::new(KEY_ARN)` -- a us-west-2 ARN -- while handing the
 /// key store a KMS client for another region, so the intended failure is the KMS
 /// `Decrypt` rejecting a key from a different region.
 ///
@@ -698,7 +698,7 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 /// record's own `kms-arn` is used for the KMS Decrypt.
 async fn build_discovery_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(Discovery::default())
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
@@ -858,7 +858,7 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 /// rewritten into `region` first.
 async fn build_mr_discovery_key_store(region: &str) -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
-    BranchKeyStore::builder()
+    KeyStoreClient::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(MrDiscovery::new(region))
         .logical_key_store_name(LOGICAL_KEY_STORE_NAME)

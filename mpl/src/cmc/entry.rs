@@ -8,7 +8,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::SystemTime;
 
 use crate::Error;
-use crate::error::Kind;
+use crate::builder::required;
 
 use crate::structures::{
     BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials, EncryptionMaterials,
@@ -321,8 +321,4 @@ impl CacheEntryBuilder {
             usage_metadata: Mutex::new(self.usage_metadata.unwrap_or_default()),
         })
     }
-}
-
-fn required<T>(value: Option<T>, field: &str) -> Result<T, Error> {
-    value.ok_or_else(|| Error::new(Kind::Validation, format!("{field} is required")))
 }

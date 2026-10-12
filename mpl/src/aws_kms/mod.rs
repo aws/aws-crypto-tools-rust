@@ -21,7 +21,6 @@ pub mod __test_internals {
     pub use super::branch_key_wrap::{compute_aad, unwrap, wrap};
     pub use super::cache_entry_identifier::build_cache_identifier;
     pub use super::mrk_match::aws_kms_mrk_match_for_decrypt;
-    pub use super::user_agent::{MPL_FRAMEWORK_NAME, with_user_agent};
 
     use super::hierarchical_keyring::HierarchicalKeyring;
     use crate::cmc::SharedCmc;

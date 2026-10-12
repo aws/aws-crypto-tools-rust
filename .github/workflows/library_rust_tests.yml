@@ -74,8 +74,9 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+      # Same features as the coverage step, so feature-gated tests are linted too.
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets ${{ inputs.project != 'prim' && '--all-features' || '' }} -- -D warnings
 
       - name: Build
         run: cargo build --verbose

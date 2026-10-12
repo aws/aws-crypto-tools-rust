@@ -8,6 +8,7 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmm::DecryptMaterialsInput;
 use aws_crypto_mpl::cmm::{self, DefaultCmm};
 use aws_crypto_mpl::cmm::{
@@ -350,7 +351,7 @@ struct DecryptSpyCmm {
     observed_ec_keys: Arc<Mutex<Option<Vec<String>>>>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl cmm::Cmm for DecryptSpyCmm {
     async fn get_encryption_materials(
         &self,

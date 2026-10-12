@@ -6,6 +6,7 @@
 
 mod fake_aws;
 
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::OnEncryptInput;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
@@ -628,7 +629,7 @@ async fn version_key_without_an_active_branch_key_names_the_branch_key() {
 /// Wraps the data key under two keyrings, so the message has two encrypted data keys.
 struct Both<A, B>(A, B);
 
-#[async_trait::async_trait]
+#[async_trait]
 impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Keyring
     for Both<A, B>
 {
@@ -768,12 +769,10 @@ const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
 
 /// A hierarchical keyring over a discovery key store: the KMS key comes from each branch key record.
 async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyring {
-    let key_store = aws_crypto_mpl::BranchKeyStore::builder()
+    let key_store = aws_crypto_mpl::KeyStoreClient::builder()
         .ddb_table_name(TABLE)
         .logical_key_store_name(TABLE)
-        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
-            Default::default(),
-        ))
+        .kms_configuration(aws_crypto_mpl::Discovery::default())
         .kms_client(fake.kms_client())
         .ddb_client(fake.ddb_client())
         .build()

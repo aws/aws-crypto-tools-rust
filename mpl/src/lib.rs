@@ -13,6 +13,9 @@ pub mod shared;
 pub mod structures;
 
 pub use error::Error;
+
+/// Put `#[async_trait]` on an `impl` of [`Keyring`], [`Cmm`], [`Cmc`], [`KeyStore`], or [`BranchKeySupplier`].
+pub use async_trait::async_trait;
 pub use shared::IntoShared;
 // Re-exported because `RawAesKeyringBuilder::wrapping_alg` takes an `AesGcm`,
 // so callers can name the wrapping algorithm without depending on `aws-mpl-primitives`.
@@ -24,7 +27,7 @@ pub use aws_kms::hierarchical_keyring::{
     HierarchicalKeyringBuilder, SharedBranchKeySupplier,
 };
 
-// Both SDK clients appear in `BranchKeyStoreBuilder`'s public signature,
+// Both SDK clients appear in `KeyStoreClientBuilder`'s public signature,
 // and a key store `Error` carries their SDK errors as its source.
 // Downcasting that source needs the exact SDK version this crate uses,
 // which the consumer's own dependency might not resolve to.
@@ -38,6 +41,7 @@ pub use cmc::{
 };
 pub use cmm::{Cmm, DefaultCmm, SharedCmm};
 pub use key_store::{
-    BranchKeyStore, BranchKeyStoreBuilder, KeyStore, KeyStoreClient, KmsConfiguration,
+    Discovery, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsConfiguration, KmsKeyArn,
+    KmsMrKeyArn, MrDiscovery,
 };
 pub use keyring::{Keyring, RawAesKeyring, RawAesKeyringBuilder, SharedKeyring};

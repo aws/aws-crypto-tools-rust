@@ -8,8 +8,8 @@
 mod fixtures;
 mod test_helpers;
 
-use async_trait::async_trait;
 use aws_crypto_mpl::Error as MplError;
+use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::cmm::GetEncryptionMaterialsInput;
 use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
 use aws_crypto_mpl::cmm::{

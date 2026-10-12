@@ -4,9 +4,9 @@
 //! The `Cmc` trait — the abstract contract every Cryptographic Materials
 //! Cache MUST implement.
 //!
-//! The MPL needs `dyn Cmc` and `Box<dyn Cmc>` for plug-in caches so that a
-//! caching CMM can hold an arbitrary, runtime-configured cache.
-//! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
+//! Implement it with [`#[async_trait]`](macro@crate::async_trait).
+//! The macro rewrites each `async fn` to return a boxed future,
+//! so a keyring can hold a cache whose type is chosen at runtime.
 
 pub mod default;
 pub mod entry;

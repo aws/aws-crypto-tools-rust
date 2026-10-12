@@ -131,7 +131,7 @@ use aws_crypto_mpl::cmc::{
     DefaultCmc, LocalCmc, SharedCmc, StormTrackingCmc, StormTrackingCmcBuilder,
 };
 use aws_crypto_mpl::key_store::{
-    BranchKeyStore, Discovery, KeyStoreClient, KmsConfiguration, MrDiscovery,
+    Discovery, KeyStoreClient, KmsConfiguration, KmsKeyArn, KmsMrKeyArn, MrDiscovery,
 };
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
@@ -807,12 +807,10 @@ fn make_kms_config(
         )),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS key ARN configuration.
-        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsConfiguration::KmsKeyArn(value.to_string())),
+        ffi::KmsConfigurationType::KmsKeyArn => Ok(KmsKeyArn::new(value).into()),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a KMS multi-Region-key ARN configuration.
-        ffi::KmsConfigurationType::KmsMrKeyArn => {
-            Ok(KmsConfiguration::KmsMrKeyArn(value.to_string()))
-        }
+        ffi::KmsConfigurationType::KmsMrKeyArn => Ok(KmsMrKeyArn::new(value).into()),
         //= spec/shim/esdk-shim.md#kms-configuration
         //# - The shim MUST translate a discovery configuration.
         ffi::KmsConfigurationType::Discovery => Ok(Discovery::default().into()),
@@ -1203,7 +1201,7 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
 //= spec/shim/esdk-shim.md#create-key-store
 //# - The shim MUST provide an operation that creates a key store backed by the core ESDK.
 fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String> {
-    let builder = BranchKeyStore::builder()
+    let builder = KeyStoreClient::builder()
         //= spec/shim/esdk-shim.md#create-key-store
         //# - Creating a key store MUST provide the target-supplied table name and logical key
         //# store name to the core ESDK.

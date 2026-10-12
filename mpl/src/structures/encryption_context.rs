@@ -43,11 +43,13 @@ impl EncryptionContext {
     }
 
     /// Check if empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Number of entries.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -78,6 +80,7 @@ impl EncryptionContext {
     }
 
     /// Returns the underlying map reference.
+    #[must_use]
     pub fn as_map(&self) -> &BTreeMap<String, String> {
         &self.0
     }
