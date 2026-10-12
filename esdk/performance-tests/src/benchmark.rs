@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
-use aws_esdk::{Esdk, EsdkCommitmentPolicy};
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::client::Client as KeystoreClient;
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::KmsConfiguration;
-use aws_mpl_legacy::dafny::aws_cryptography_keyStore::types::key_store_config::KeyStoreConfig;
-use aws_mpl_legacy::dafny::types::keyring::KeyringRef;
+use std::time::Duration;
+
+use aws_crypto_mpl::{
+    AesGcm, BranchKeyStore, CacheType, DefaultCache, HierarchicalKeyring, KmsConfiguration,
+    RawAesKeyring, SharedKeyring,
+};
+use aws_esdk::{CommitmentPolicy, Esdk};
 use log::info;
 use sysinfo::System;
 
@@ -49,7 +51,7 @@ impl KeyringChoice {
 
 pub struct EsdkBenchmark {
     pub esdk_client: Esdk,
-    pub keyring: KeyringRef,
+    pub keyring: SharedKeyring,
     pub keyring_name: &'static str,
     pub config: TestConfig,
     pub results: Vec<BenchmarkResult>,
@@ -86,58 +88,51 @@ impl EsdkBenchmark {
         })
     }
 
-    async fn setup_esdk(keyring_choice: KeyringChoice) -> Result<(Esdk, KeyringRef)> {
+    async fn setup_esdk(keyring_choice: KeyringChoice) -> Result<(Esdk, SharedKeyring)> {
         let esdk_client = Esdk::builder()
-            .commitment_policy(EsdkCommitmentPolicy::RequireEncryptRequireDecrypt)
+            .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
             .build();
 
         let keyring = match keyring_choice {
-            KeyringChoice::Hierarchical => Self::hierarchical_keyring().await?,
-            KeyringChoice::RawAes => Self::raw_aes_keyring().await?,
+            KeyringChoice::Hierarchical => SharedKeyring::new(Self::hierarchical_keyring().await?),
+            KeyringChoice::RawAes => SharedKeyring::new(Self::raw_aes_keyring()?),
         };
 
         Ok((esdk_client, keyring))
     }
 
-    async fn hierarchical_keyring() -> Result<KeyringRef> {
+    async fn hierarchical_keyring() -> Result<HierarchicalKeyring> {
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let kms_client = aws_sdk_kms::Client::new(&sdk_config);
-        let ddb_client = aws_sdk_dynamodb::Client::new(&sdk_config);
 
-        let key_store_config = KeyStoreConfig::builder()
-            .kms_client(kms_client)
-            .ddb_client(ddb_client)
+        let key_store = BranchKeyStore::builder()
+            .kms_client(aws_sdk_kms::Client::new(&sdk_config))
+            .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
+            .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
             .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
             .build()
-            .map_err(|e| anyhow::anyhow!("failed to build key store config: {e:?}"))?;
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
 
-        let key_store = KeystoreClient::from_conf(key_store_config)
-            .map_err(|e| anyhow::anyhow!("failed to build key store client: {e:?}"))?;
-
-        aws_esdk::mpl()
-            .create_aws_kms_hierarchical_keyring()
+        HierarchicalKeyring::builder()
             .key_store(key_store)
             .branch_key_id(BRANCH_KEY_ID)
-            .ttl_seconds(600_000)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to create hierarchical keyring: {e:?}"))
+            .ttl(Duration::from_secs(600_000))
+            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .build()
+            .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))
     }
 
     /// Raw AES keyring with a fixed 256-bit wrapping key. Wraps data keys
     /// locally, so it needs no AWS resources or credentials.
-    async fn raw_aes_keyring() -> Result<KeyringRef> {
-        aws_esdk::mpl()
-            .create_raw_aes_keyring()
-            .key_namespace(RAW_AES_KEY_NAMESPACE)
-            .key_name(RAW_AES_KEY_NAME)
-            .wrapping_key(vec![0u8; 32])
-            .wrapping_alg(aws_mpl_legacy::dafny::types::AesWrappingAlg::AlgAes256GcmIv12Tag16)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to create raw AES keyring: {e:?}"))
+    fn raw_aes_keyring() -> Result<RawAesKeyring> {
+        RawAesKeyring::new(
+            RAW_AES_KEY_NAMESPACE,
+            RAW_AES_KEY_NAME,
+            vec![0u8; 32],
+            AesGcm::Aes256Gcm,
+        )
+        .map_err(|e| anyhow::anyhow!("failed to create raw AES keyring: {e}"))
     }
 
     pub fn save_results(&self, output_path: &str) -> Result<()> {

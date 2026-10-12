@@ -7,7 +7,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
 use test_helpers::*;
 
 /// V1 header auth layout: IV(12) || Tag(16) immediately after the header body.
@@ -75,7 +74,7 @@ async fn test_v1_header_auth_has_iv_then_tag() {
 
     //= spec/client-apis/encrypt.md#authentication-tag
     //= type=test
-    //= reason=Untampered V1 ct decrypts; flipping a header auth tag byte → CryptographicError, so the tag is the verified AEAD output
+    //= reason=Untampered V1 ct decrypts; flipping a header auth tag byte → Cryptographic error, so the tag is the verified AEAD output
     //# The value of this MUST be the output of the [authenticated encryption algorithm](../framework/algorithm-suites.md#encryption-algorithm)
     //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
     //
@@ -88,12 +87,11 @@ async fn test_v1_header_auth_has_iv_then_tag() {
         pt,
         "valid V1 ct must decrypt"
     );
-    assert_eq!(
+    assert!(
         try_decrypt_v1_with_keyring(&tag_tampered, &keyring)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
+            .is_cryptographic(),
         "tampered V1 header auth tag must fail authentication"
     );
 }
@@ -146,10 +144,7 @@ async fn test_auth_tag_present_with_required_ec_v1() {
     //= reason=with a non-empty required EC the encryption-context-to-only-authenticate is non-empty, exercising the AAD-concatenation and required-EC-filtering code paths; the tag bytes prove an AEAD output was produced for this scenario and the round-trip proves encrypt and decrypt agree on the AAD construction
     //# - The AAD MUST be the concatenation of the serialized [message header body](../data-format/message-header.md#header-body)
     //# and the serialization of encryption context to only authenticate.
-    let ec = std::collections::HashMap::from([
-        ("test-public-key".to_string(), "testval".to_string()),
-        ("user-key".to_string(), "user-val".to_string()),
-    ]);
+    let ec = fixtures::ec_of(&[("test-public-key", "testval"), ("user-key", "user-val")]);
     let keyring = test_keyring().await;
     let pt = b"v1 required ec with auth tag";
     let ct = encrypt_no_sign_ec_keyring(pt, ec.clone(), Version::V1, &keyring).await;
@@ -179,10 +174,7 @@ async fn test_auth_tag_present_with_required_ec_v2() {
     //= reason=with a non-empty required EC the encryption-context-to-only-authenticate is non-empty, exercising the AAD-concatenation and required-EC-filtering code paths; the tag bytes prove an AEAD output was produced for this scenario and the round-trip proves encrypt and decrypt agree on the AAD construction
     //# - The AAD MUST be the concatenation of the serialized [message header body](../data-format/message-header.md#header-body)
     //# and the serialization of encryption context to only authenticate.
-    let ec = std::collections::HashMap::from([
-        ("test-public-key".to_string(), "testval".to_string()),
-        ("user-key".to_string(), "user-val".to_string()),
-    ]);
+    let ec = fixtures::ec_of(&[("test-public-key", "testval"), ("user-key", "user-val")]);
     let keyring = test_keyring().await;
     let pt = b"v2 required ec with auth tag";
     let ct = encrypt_no_sign_ec_keyring(pt, ec.clone(), Version::V2, &keyring).await;
@@ -219,9 +211,9 @@ async fn test_auth_tag_tampered_header_fails_decrypt_v1() {
         .await
         .expect_err("V1 tampered header must fail decryption");
     assert!(
-        matches!(err.kind, ErrorKind::CryptographicError),
-        "V1: expected CryptographicError, got {:?}",
-        err.kind
+        err.is_cryptographic(),
+        "V1: expected Cryptographic error, got {:?}",
+        err
     );
 }
 
@@ -239,8 +231,8 @@ async fn test_auth_tag_tampered_header_fails_decrypt_v2() {
         .await
         .expect_err("V2 tampered header must fail decryption");
     assert!(
-        matches!(err.kind, ErrorKind::ValidationError),
-        "V2: expected ValidationError, got {:?}",
-        err.kind
+        err.is_cryptographic(),
+        "V2: expected Cryptographic error, got {:?}",
+        err
     );
 }

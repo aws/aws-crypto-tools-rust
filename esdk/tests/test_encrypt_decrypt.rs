@@ -5,7 +5,8 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, ErrorKind};
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext};
+use std::num::NonZeroU32;
 use test_helpers::{CallStyle, run_decrypt, run_encrypt, test_keyring};
 
 // Round-trips plaintext via encrypt/decrypt. Iterates over CallStyle so both
@@ -18,7 +19,12 @@ async fn test_encrypt_decrypt() {
         let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let ec = EncryptionContext::new();
-        let encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring);
+        let encrypt_input = EncryptInput::builder()
+            .plaintext(plaintext)
+            .encryption_context(ec)
+            .keyring(keyring)
+            .build()
+            .unwrap();
 
         //= spec/client-apis/client.md#encrypt
         //= type=test
@@ -29,7 +35,10 @@ async fn test_encrypt_decrypt() {
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"));
         let esdk_ciphertext = encrypt_output.ciphertext;
 
-        let decrypt_input = DecryptInput::from_encrypt(&esdk_ciphertext, &encrypt_input);
+        let decrypt_input = DecryptInput::builder_from_encrypt(&encrypt_input)
+            .ciphertext(&esdk_ciphertext)
+            .build()
+            .unwrap();
 
         //= spec/client-apis/client.md#decrypt
         //= type=test
@@ -46,35 +55,24 @@ async fn test_encrypt_decrypt() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_bad_decrypt_input() {
-    for style in CallStyle::ALL {
-        let keyring = test_keyring().await;
-        let ec = EncryptionContext::new();
-        let encrypt_input = EncryptInput::with_keyring(b"hello esdk", ec.clone(), keyring.clone());
-        let esdk_ciphertext = run_encrypt(style, &encrypt_input)
-            .await
-            .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"))
-            .ciphertext;
-        let mut decrypt_input = DecryptInput::with_keyring(&esdk_ciphertext, ec, keyring);
+// DecryptInputBuilder::build() rejects an input with no keyring or CMM.
+#[test]
+fn test_bad_decrypt_input() {
+    let result = DecryptInput::builder().ciphertext(b"").build();
 
-        decrypt_input.keyring = None;
-        let bad_decrypt_output = run_decrypt(style, &decrypt_input).await;
-
-        //= spec/client-apis/decrypt.md#input
-        //= type=test
-        //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
-        //
-        //= spec/client-apis/decrypt.md#input
-        //= type=test
-        //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-        let err = bad_decrypt_output.expect_err("decrypt must fail when source = None");
-        assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError under {style:?}, got {:?}",
-            err.kind
-        );
-    }
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+    let err = result.expect_err("build must fail when no keyring or CMM is set");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -83,19 +81,23 @@ async fn test_encrypt_decrypt_short() {
         let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
         let ec = EncryptionContext::new();
-        let encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring);
+        let encrypt_input = EncryptInput::builder()
+            .plaintext(plaintext)
+            .encryption_context(ec)
+            .keyring(keyring)
+            .build()
+            .unwrap();
         let encrypt_output = run_encrypt(style, &encrypt_input)
             .await
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"));
         let esdk_ciphertext = encrypt_output.ciphertext;
         let cipher_len: usize = esdk_ciphertext.len();
-        let mut decrypt_input =
-            DecryptInput::from_encrypt(&esdk_ciphertext[..cipher_len], &encrypt_input);
-
         // Truncate the last byte of the ciphertext. For the default signing suite this
-        // chops off the final byte of the footer signature, so footer deserialization
-        // fails with UnexpectedEof inside read_footer (mapped to SerializationError by ser_io).
-        decrypt_input.ciphertext = &esdk_ciphertext[..cipher_len - 1];
+        // chops off the final byte of the footer signature, so decrypt fails with a Serialization error.
+        let decrypt_input = DecryptInput::builder_from_encrypt(&encrypt_input)
+            .ciphertext(&esdk_ciphertext[..cipher_len - 1])
+            .build()
+            .unwrap();
         //= spec/client-apis/decrypt.md#behavior
         //= type=test
         //= reason=Truncating the ciphertext's last byte makes footer deserialization fail; decrypt MUST halt with an error
@@ -105,12 +107,11 @@ async fn test_encrypt_decrypt_short() {
         let err = run_decrypt(style, &decrypt_input)
             .await
             .expect_err("truncated ciphertext must fail decrypt");
-        assert_eq!(
-            err.kind,
-            ErrorKind::SerializationError,
-            "truncated ciphertext must produce a SerializationError under {style:?}, got: {:?} ({})",
-            err.kind,
-            err.message
+        assert!(
+            err.is_serialization(),
+            "truncated ciphertext must produce a Serialization error under {style:?}, got: {:?} ({})",
+            err,
+            err.message()
         );
     }
 }
@@ -122,26 +123,31 @@ async fn test_encrypt_decrypt_ec() {
     for style in CallStyle::ALL {
         let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
-        let encryption_context =
-            std::collections::HashMap::from([("stuff".to_string(), "junk".to_string())]);
-        let encrypt_input =
-            EncryptInput::with_keyring(plaintext, encryption_context, keyring.clone());
+        let encryption_context = fixtures::ec_of(&[("stuff", "junk")]);
+        let encrypt_input = EncryptInput::builder()
+            .plaintext(plaintext)
+            .encryption_context(encryption_context)
+            .keyring(keyring.clone())
+            .build()
+            .unwrap();
         let encrypt_output = run_encrypt(style, &encrypt_input)
             .await
             .unwrap_or_else(|e| panic!("encrypt failed under {style:?}: {e:?}"));
         let esdk_ciphertext = encrypt_output.ciphertext;
         let ec = EncryptionContext::new();
-        let decrypt_input = DecryptInput::with_keyring(&esdk_ciphertext, ec, keyring);
+        let decrypt_input = DecryptInput::builder()
+            .ciphertext(&esdk_ciphertext)
+            .encryption_context(ec)
+            .keyring(keyring)
+            .build()
+            .unwrap();
         let decrypt_output = run_decrypt(style, &decrypt_input)
             .await
             .unwrap_or_else(|e| panic!("decrypt failed under {style:?}: {e:?}"));
 
         assert_eq!(decrypt_output.plaintext, plaintext);
         assert_eq!(
-            decrypt_output
-                .encryption_context
-                .get("stuff")
-                .map(String::as_str),
+            decrypt_output.encryption_context.get("stuff"),
             Some("junk"),
             "input EC pair (stuff, junk) must round-trip to the decrypt output under {style:?}, got: {:?}",
             decrypt_output.encryption_context
@@ -154,9 +160,13 @@ async fn test_encrypt_decrypt_bad_ec() {
     for style in CallStyle::ALL {
         let keyring = test_keyring().await;
         let plaintext = b"hello esdk";
-        let encryption_context =
-            std::collections::HashMap::from([("aws-crypto-stuff".to_string(), "junk".to_string())]);
-        let encrypt_input = EncryptInput::with_keyring(plaintext, encryption_context, keyring);
+        let encryption_context = fixtures::ec_of(&[("aws-crypto-stuff", "junk")]);
+        let encrypt_input = EncryptInput::builder()
+            .plaintext(plaintext)
+            .encryption_context(encryption_context)
+            .keyring(keyring)
+            .build()
+            .unwrap();
         let encrypt_output = run_encrypt(style, &encrypt_input).await;
 
         //= spec/client-apis/encrypt.md#encryption-context
@@ -164,40 +174,33 @@ async fn test_encrypt_decrypt_bad_ec() {
         //# If the input encryption context contains any entries with a key beginning with `aws-crypto-`,
         //# the encryption operation MUST fail.
         let err = encrypt_output.expect_err("encrypt must fail for aws-crypto- EC key");
-        assert_eq!(
-            err.kind,
-            ErrorKind::ValidationError,
-            "expected ValidationError for reserved 'aws-crypto-' prefix under {style:?}, got: {:?} ({})",
-            err.kind,
-            err.message
+        assert!(
+            err.is_validation(),
+            "expected Validation error for reserved 'aws-crypto-' prefix under {style:?}, got: {:?} ({})",
+            err,
+            err.message()
         );
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_bad_encrypt_input() {
-    for style in CallStyle::ALL {
-        let keyring = test_keyring().await;
-        let plaintext = b"hello esdk";
-        let ec = EncryptionContext::new();
-        let mut encrypt_input = EncryptInput::with_keyring(plaintext, ec, keyring);
-        encrypt_input.keyring = None;
-        let encrypt_output = run_encrypt(style, &encrypt_input).await;
+// EncryptInputBuilder::build() rejects an input with no keyring or CMM.
+#[test]
+fn test_bad_encrypt_input() {
+    let result = EncryptInput::builder().plaintext(b"hello esdk").build();
 
-        //= spec/client-apis/encrypt.md#input
-        //= type=test
-        //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
-        //
-        //= spec/client-apis/encrypt.md#input
-        //= type=test
-        //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-        let err = encrypt_output.expect_err("encrypt must fail when source = None");
-        assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError under {style:?}, got {:?}",
-            err.kind
-        );
-    }
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+    let err = result.expect_err("build must fail when no keyring or CMM is set");
+    assert!(
+        err.is_validation(),
+        "expected Validation error, got {:?}",
+        err
+    );
 }
 
 // Sweeps frame_length from 4 (multi-frame) up to plaintext.len() (single
@@ -210,21 +213,30 @@ async fn test_encrypt_decrypt_varied_frame_lengths() {
         let plaintext = "0123456789abcdef".as_bytes();
 
         let ec = EncryptionContext::new();
-        let mut encrypt_input = EncryptInput::with_keyring(plaintext, ec.clone(), keyring.clone());
         // Sweep frame_length from 4 (multi-frame) up to plaintext.len() (single full frame),
         // round-tripping at each length to confirm encrypt+decrypt agree across both regimes.
         for i in 4..=plaintext.len() {
-            encrypt_input.frame_length.0 =
-                std::num::NonZeroU32::new(u32::try_from(i).expect("frame length fits u32"))
-                    .unwrap();
+            let encrypt_input = EncryptInput::builder()
+                .plaintext(plaintext)
+                .encryption_context(ec.clone())
+                .keyring(keyring.clone())
+                .frame_length(
+                    NonZeroU32::new(u32::try_from(i).expect("frame length fits u32")).unwrap(),
+                )
+                .build()
+                .unwrap();
             let encrypt_output = run_encrypt(style, &encrypt_input)
                 .await
                 .unwrap_or_else(|e| {
                     panic!("encrypt failed under {style:?} (frame_len={i}): {e:?}")
                 });
             let esdk_ciphertext = encrypt_output.ciphertext;
-            let decrypt_input =
-                DecryptInput::with_keyring(&esdk_ciphertext, ec.clone(), keyring.clone());
+            let decrypt_input = DecryptInput::builder()
+                .ciphertext(&esdk_ciphertext)
+                .encryption_context(ec.clone())
+                .keyring(keyring.clone())
+                .build()
+                .unwrap();
             let decrypt_output = run_decrypt(style, &decrypt_input)
                 .await
                 .unwrap_or_else(|e| {

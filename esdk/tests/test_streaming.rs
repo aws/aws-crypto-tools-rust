@@ -5,7 +5,7 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext, ErrorKind};
+use aws_esdk::{DecryptStreamInput, EncryptStreamInput, EncryptionContext};
 use test_helpers::{
     CallStyle, multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, run_decrypt_stream,
     run_encrypt_stream, test_keyring,
@@ -23,7 +23,11 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
 
         // Encrypt via streaming API
         let ec = EncryptionContext::new();
-        let enc_input = EncryptStreamInput::with_keyring(ec.clone(), keyring.clone());
+        let enc_input = EncryptStreamInput::builder()
+            .encryption_context(ec.clone())
+            .keyring(keyring.clone())
+            .build()
+            .unwrap();
 
         let mut pt_cursor = std::io::Cursor::new(&plaintext[..]);
         let mut ciphertext: Vec<u8> = Vec::new();
@@ -61,7 +65,11 @@ async fn test_streaming_encrypt_decrypt_round_trip() {
         );
 
         // Decrypt via streaming API
-        let dec_input = DecryptStreamInput::with_keyring(ec, keyring);
+        let dec_input = DecryptStreamInput::builder()
+            .encryption_context(ec)
+            .keyring(keyring)
+            .build()
+            .unwrap();
         let mut ct_cursor = std::io::Cursor::new(&ciphertext[..]);
         let mut decrypted: Vec<u8> = Vec::new();
 
@@ -108,7 +116,10 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
     for style in CallStyle::ALL {
         let (_plaintext, keyring, ct) = multi_frame_signed_for_stream().await;
 
-        let dec_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
+        let dec_input = DecryptStreamInput::builder()
+            .keyring(keyring)
+            .build()
+            .unwrap();
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
@@ -116,9 +127,9 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
             .await
             .expect_err("multi-frame signed message must fail in streaming mode");
         assert!(
-            matches!(err.kind, ErrorKind::Esdk),
-            "expected ErrorKind::Esdk under {style:?}, got {:?}",
-            err.kind
+            err.is_validation(),
+            "expected Validation under {style:?}, got {:?}",
+            err
         );
 
         assert!(
@@ -135,7 +146,10 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     for style in CallStyle::ALL {
         let (plaintext, keyring, ct) = multi_frame_unsigned_for_stream().await;
 
-        let dec_input = DecryptStreamInput::with_keyring(EncryptionContext::new(), keyring);
+        let dec_input = DecryptStreamInput::builder()
+            .keyring(keyring)
+            .build()
+            .unwrap();
 
         let mut ct_cursor = std::io::Cursor::new(&ct[..]);
         let mut output: Vec<u8> = Vec::new();
@@ -149,81 +163,52 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     }
 }
 
-// encrypt_stream and decrypt_stream must reject an input that sets neither
-// keyring nor cmm, and one that sets both. A raw-AES keyring and a default CMM
-// built from it keep this free of KMS credentials; validation runs before any
-// streaming IO, so empty buffers suffice.
+// EncryptStreamInputBuilder::build() and DecryptStreamInputBuilder::build()
+// reject an input that sets neither keyring nor cmm, and one that sets both.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streaming_rejects_neither_and_both_sources() {
-    for style in CallStyle::ALL {
-        let keyring = test_keyring().await;
-        let cmm: std::sync::Arc<dyn aws_crypto_mpl::cmm::Cmm> =
-            std::sync::Arc::new(aws_crypto_mpl::cmm::DefaultCmm::new(keyring.clone()));
+    let keyring = test_keyring().await;
+    let cmm = aws_crypto_mpl::cmm::DefaultCmm::new(keyring.clone());
 
-        //= spec/client-apis/encrypt.md#input
-        //= type=test
-        //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
-        //
-        //= spec/client-apis/encrypt.md#input
-        //= type=test
-        //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-        let neither = EncryptStreamInput::new();
-        let mut pt = std::io::Cursor::new(&b""[..]);
-        let mut ct: Vec<u8> = Vec::new();
-        let err = run_encrypt_stream(style, &mut pt, &mut ct, &neither)
-            .await
-            .expect_err("encrypt_stream must fail when neither keyring nor cmm is set");
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/encrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
+    let neither = EncryptStreamInput::builder().build();
+    let both = EncryptStreamInput::builder()
+        .keyring(keyring.clone())
+        .cmm(cmm.clone())
+        .build();
+    for (case, result) in [("neither", neither), ("both", both)] {
+        let err = result.expect_err("EncryptStreamInput build must fail");
         assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError under {style:?}, got {:?}",
-            err.kind
+            err.is_validation(),
+            "expected Validation error for {case}, got {:?}",
+            err
         );
+    }
 
-        let mut both = EncryptStreamInput::new();
-        both.keyring = Some(keyring.clone().into());
-        both.cmm = Some(cmm.clone().into());
-        let mut pt = std::io::Cursor::new(&b""[..]);
-        let mut ct: Vec<u8> = Vec::new();
-        let err = run_encrypt_stream(style, &mut pt, &mut ct, &both)
-            .await
-            .expect_err("encrypt_stream must fail when both keyring and cmm are set");
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
+    //
+    //= spec/client-apis/decrypt.md#input
+    //= type=test
+    //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
+    let neither = DecryptStreamInput::builder().build();
+    let both = DecryptStreamInput::builder()
+        .keyring(keyring)
+        .cmm(cmm)
+        .build();
+    for (case, result) in [("neither", neither), ("both", both)] {
+        let err = result.expect_err("DecryptStreamInput build must fail");
         assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError under {style:?}, got {:?}",
-            err.kind
-        );
-
-        //= spec/client-apis/decrypt.md#input
-        //= type=test
-        //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
-        //
-        //= spec/client-apis/decrypt.md#input
-        //= type=test
-        //# If the caller does not provide exactly one of a keyring or CMM, the Decrypt operation MUST fail.
-        let neither = DecryptStreamInput::new();
-        let mut ct = std::io::Cursor::new(&b""[..]);
-        let mut pt: Vec<u8> = Vec::new();
-        let err = run_decrypt_stream(style, &mut ct, &mut pt, &neither)
-            .await
-            .expect_err("decrypt_stream must fail when neither keyring nor cmm is set");
-        assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError under {style:?}, got {:?}",
-            err.kind
-        );
-
-        let mut both = DecryptStreamInput::new();
-        both.keyring = Some(keyring.into());
-        both.cmm = Some(cmm.into());
-        let mut ct = std::io::Cursor::new(&b""[..]);
-        let mut pt: Vec<u8> = Vec::new();
-        let err = run_decrypt_stream(style, &mut ct, &mut pt, &both)
-            .await
-            .expect_err("decrypt_stream must fail when both keyring and cmm are set");
-        assert!(
-            matches!(err.kind, ErrorKind::ValidationError),
-            "expected ValidationError under {style:?}, got {:?}",
-            err.kind
+            err.is_validation(),
+            "expected Validation error for {case}, got {:?}",
+            err
         );
     }
 }

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -97,7 +98,7 @@ inline Aws::Esdk::HierarchicalKeyring make_hierarchical_keyring(const KeyStoreEn
                                      .with_kms_client(kms)
                                      .with_ddb_client(ddb));
     return Aws::Esdk::HierarchicalKeyring(
-        std::move(keystore), env.branch_key_id, /*ttl_seconds=*/600000,
+        std::move(keystore), env.branch_key_id, std::chrono::seconds{600000},
         Aws::Esdk::HierarchicalKeyringOptions().with_cache(
             Aws::Esdk::CacheType::Default(100)));
 }
