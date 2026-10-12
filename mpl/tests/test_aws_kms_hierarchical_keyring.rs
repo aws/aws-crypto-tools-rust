@@ -42,8 +42,8 @@ use aws_crypto_mpl::key_store::{
     BranchKeyStore, BranchKeyStoreBuilder, CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput,
     CreateKeyStoreOutput, Discovery, GetActiveBranchKeyInput, GetActiveBranchKeyOutput,
     GetBeaconKeyInput, GetBeaconKeyOutput, GetBranchKeyVersionInput, GetBranchKeyVersionOutput,
-    GetKeyStoreInfoInput, GetKeyStoreInfoOutput, KeyStore, KmsConfiguration, VersionKeyInput,
-    VersionKeyOutput,
+    GetKeyStoreInfoInput, GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KmsConfiguration,
+    VersionKeyInput, VersionKeyOutput,
 };
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::structures::{
@@ -97,7 +97,7 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// but it points at a table and KMS key that do not exist, so any key store call would fail.
 /// No test using it makes one: building the keyring reads only the key store's configuration.
 /// Tests that run OnEncrypt / OnDecrypt use the `FakeKeyStore` doubles in `mod onencrypt` / `mod ondecrypt`.
-fn key_store_never_consulted() -> BranchKeyStore {
+fn key_store_never_consulted() -> KeyStoreClient {
     let (kms, ddb) = dummy_clients();
     build_without_io(
         BranchKeyStore::builder()
@@ -114,7 +114,7 @@ fn key_store_never_consulted() -> BranchKeyStore {
 
 /// Builds `builder` by polling its future once.
 /// With both clients supplied, `build` does no IO, so it is ready on the first poll.
-fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
+fn build_without_io(builder: BranchKeyStoreBuilder) -> KeyStoreClient {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
     let mut fut = std::pin::pin!(builder.build());

@@ -72,7 +72,7 @@ use aws_sdk_kms::operation::decrypt::DecryptError;
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::unwrap as branch_key_unwrap;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
-use aws_crypto_mpl::key_store::{BranchKeyStore, Discovery, KeyStore, KeyStoreClient, MrDiscovery};
+use aws_crypto_mpl::key_store::{BranchKeyStore, Discovery, KeyStoreClient, MrDiscovery};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
@@ -96,7 +96,7 @@ async fn build_clients() -> (KmsClient, DynamoDbClient) {
     (KmsClient::new(&cfg), DynamoDbClient::new(&cfg))
 }
 
-async fn build_key_store() -> BranchKeyStore {
+async fn build_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
@@ -116,7 +116,7 @@ const FIXTURE_TTL: Duration = Duration::from_secs(3600);
 /// Build a keyring over `key_store` for `branch_key_id`, with its own `LocalCmc`.
 /// Every test varies only these three things, so they share one fixture.
 fn keyring_for(
-    key_store: impl KeyStore + 'static,
+    key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
 ) -> HierarchicalKeyring {
@@ -131,7 +131,7 @@ fn keyring_for(
 /// Same, with an explicit cache. Used by the shared-cache tests, which hand
 /// two keyrings the same `SharedCmc`.
 fn keyring_with_cache(
-    key_store: impl KeyStore + 'static,
+    key_store: impl Into<KeyStoreClient>,
     branch_key_id: &str,
     partition: &str,
     cache: impl Cmc + 'static,
@@ -196,7 +196,7 @@ async fn integ_on_encrypt_round_trips_through_real_key_store_and_kms() {
     // the same active branch-key materials from the real key store. This
     // proves the on-wire EDK ciphertext is decryptable end-to-end with
     // the real KMS-backed branch key, not just the stub fake.
-    let real_key_store = KeyStoreClient::new(build_key_store().await);
+    let real_key_store = build_key_store().await;
     let bkm: BranchKeyMaterials = real_key_store
         .get_active_branch_key()
         .branch_key_id(BRANCH_KEY_ID.to_string())
@@ -299,7 +299,7 @@ async fn ddb_client_us_west_2() -> DynamoDbClient {
 async fn build_key_store_with_kms_and_logical_name(
     kms: KmsClient,
     logical_key_store_name: &str,
-) -> BranchKeyStore {
+) -> KeyStoreClient {
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
         .kms_configuration(KmsConfiguration::KmsKeyArn(KEY_ARN.to_string()))
@@ -696,7 +696,7 @@ const DISCOVERY_BRANCH_KEY_ACTIVE_VERSION: &str = "6b7a8ef4-8c1c-4f63-b196-a6ef7
 
 /// Build a key store in Discovery mode: no configured KMS key ARN, so each
 /// record's own `kms-arn` is used for the KMS Decrypt.
-async fn build_discovery_key_store() -> BranchKeyStore {
+async fn build_discovery_key_store() -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
@@ -743,7 +743,8 @@ async fn integ_discovery_key_store_wraps_under_the_records_own_kms_key() {
     );
 
     let pdk = materials_out.plaintext_data_key().unwrap();
-    let bkm: BranchKeyMaterials = KeyStoreClient::new(build_discovery_key_store().await)
+    let bkm: BranchKeyMaterials = build_discovery_key_store()
+        .await
         .get_active_branch_key()
         .branch_key_id(DISCOVERY_BRANCH_KEY_ID.to_string())
         .send()
@@ -855,7 +856,7 @@ const EAST_BRANCH_KEY: &str = "MyEastBranch2";
 
 /// Build a key store in MRDiscovery mode: the record's `kms-arn` is used, but
 /// rewritten into `region` first.
-async fn build_mr_discovery_key_store(region: &str) -> BranchKeyStore {
+async fn build_mr_discovery_key_store(region: &str) -> KeyStoreClient {
     let (kms, ddb) = build_clients().await;
     BranchKeyStore::builder()
         .ddb_table_name(BRANCH_KEY_STORE_NAME)
