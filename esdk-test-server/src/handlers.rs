@@ -11,16 +11,16 @@ use crate::model::{
     CreateClientRequest, CreateClientResponse, DecryptRequest, DecryptResponse, EncryptRequest,
     EncryptResponse, EsdkAlgorithmSuiteId, EsdkClientConfig, EsdkCommitmentPolicy,
 };
-use aws_esdk::EsdkAlgorithmSuiteId as MplAlgorithmSuiteId;
-use aws_esdk::EsdkCommitmentPolicy as MplCommitmentPolicy;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Keyring as EsdkKeyring};
+use aws_esdk::AlgorithmSuiteId as MplAlgorithmSuiteId;
+use aws_esdk::CommitmentPolicy as MplCommitmentPolicy;
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, SharedKeyring};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 /// The materials a registered client encrypts/decrypts with.
 struct ClientEntry {
-    keyring: EsdkKeyring,
+    keyring: SharedKeyring,
     commitment_policy: MplCommitmentPolicy,
     max_encrypted_data_keys: Option<NonZeroUsize>,
 }
@@ -87,14 +87,7 @@ fn max_edks(config: &EsdkClientConfig) -> Result<Option<NonZeroUsize>, ServerErr
 fn encryption_context(
     map: Option<std::collections::BTreeMap<String, String>>,
 ) -> EncryptionContext {
-    map.map(|m| {
-        EncryptionContext::from_map(
-            m.into_iter()
-                .map(|(k, v)| (k.into_bytes(), v.into_bytes()))
-                .collect(),
-        )
-    })
-    .unwrap_or_default()
+    map.map(EncryptionContext::from).unwrap_or_default()
 }
 
 impl AppState {
@@ -124,28 +117,32 @@ impl AppState {
     pub async fn encrypt(&self, req: EncryptRequest) -> Result<EncryptResponse, ServerError> {
         let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
-        let mut input = EncryptInput::new();
-        input.plaintext = &req.plaintext;
-        input.encryption_context = ec;
-        input.keyring = Some(keyring);
-        input.commitment_policy = commitment_policy;
-        input.max_encrypted_data_keys = max;
-        if let Some(suite) = req.algorithm_suite_id {
-            input.algorithm_suite_id = Some(map_algorithm_suite(suite));
-        }
-        if let Some(frame) = req.frame_length {
-            input.frame_length = u32::try_from(frame)
-                .ok()
-                .and_then(|f| aws_esdk::FrameLength::new(f).ok())
-                .ok_or_else(|| {
-                    ServerError::generic(format!(
-                        "frameLength must be in 1..=u32::MAX, got {frame}"
-                    ))
-                })?;
-        }
+        let frame_length = req
+            .frame_length
+            .map(|frame| {
+                u32::try_from(frame)
+                    .ok()
+                    .and_then(std::num::NonZeroU32::new)
+                    .ok_or_else(|| {
+                        ServerError::generic(format!(
+                            "frameLength must be in 1..=u32::MAX, got {frame}"
+                        ))
+                    })
+            })
+            .transpose()?;
+        let input = EncryptInput::builder()
+            .plaintext(&req.plaintext)
+            .encryption_context(ec)
+            .set_keyring(Some(keyring))
+            .commitment_policy(commitment_policy)
+            .set_max_encrypted_data_keys(max)
+            .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite))
+            .set_frame_length(frame_length)
+            .build()
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         let output = aws_esdk::encrypt(&input)
             .await
-            .map_err(|e| ServerError::Esdk(e.message))?;
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(EncryptResponse {
             ciphertext: output.ciphertext,
         })
@@ -154,15 +151,17 @@ impl AppState {
     pub async fn decrypt(&self, req: DecryptRequest) -> Result<DecryptResponse, ServerError> {
         let (keyring, commitment_policy, max) = self.materials(&req.client_id)?;
         let ec = encryption_context(req.encryption_context);
-        let mut input = DecryptInput::new();
-        input.ciphertext = &req.ciphertext;
-        input.encryption_context = ec;
-        input.keyring = Some(keyring);
-        input.commitment_policy = commitment_policy;
-        input.max_encrypted_data_keys = max;
+        let input = DecryptInput::builder()
+            .ciphertext(&req.ciphertext)
+            .encryption_context(ec)
+            .set_keyring(Some(keyring))
+            .commitment_policy(commitment_policy)
+            .set_max_encrypted_data_keys(max)
+            .build()
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         let output = aws_esdk::decrypt(&input)
             .await
-            .map_err(|e| ServerError::Esdk(e.message))?;
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         Ok(DecryptResponse {
             plaintext: output.plaintext,
         })
@@ -172,7 +171,7 @@ impl AppState {
     fn materials(
         &self,
         client_id: &str,
-    ) -> Result<(EsdkKeyring, MplCommitmentPolicy, Option<NonZeroUsize>), ServerError> {
+    ) -> Result<(SharedKeyring, MplCommitmentPolicy, Option<NonZeroUsize>), ServerError> {
         if client_id.is_empty() {
             return Err(ServerError::generic("clientId must be non-empty"));
         }

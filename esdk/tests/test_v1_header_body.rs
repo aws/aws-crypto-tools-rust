@@ -178,9 +178,9 @@ async fn test_v1_header_aad() {
     let pt = b"aad required ec test";
     let mut enc_input = EncryptInput::with_legacy_cmm(pt, ec.clone(), req_cmm);
     enc_input.algorithm_suite_id =
-        Some(aws_mpl_legacy::suites::EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
+        Some(aws_mpl_legacy::suites::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
     enc_input.commitment_policy =
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+        CommitmentPolicy::ForbidEncryptAllowDecrypt;
     let ct = encrypt(&enc_input).await.unwrap().ciphertext;
 
     // The AAD section of the header is at offset 20 (after Version+Type+AlgSuiteID+MessageID).
@@ -209,13 +209,7 @@ async fn test_v1_header_aad() {
     );
 
     // Round-trip proves the message is still valid when required EC is supplied on decrypt
-    let mut dec_input = DecryptInput::with_keyring(
-        &ct,
-        std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())]),
-        keyring,
-    );
-    dec_input.commitment_policy =
-        EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    let dec_input = DecryptInput::builder().ciphertext(&ct).encryption_context(std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())])).keyring(keyring).commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt).build().unwrap();
     let result = decrypt(&dec_input).await.unwrap();
     assert_eq!(
         result.plaintext, pt,
@@ -481,8 +475,12 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
     // Tamper: set reserved bytes to non-zero
     ct[reserved_offset] = 0x01;
 
-    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    let dec_input = DecryptInput::builder()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/data-format/message-header.md#reserved
     //= type=test
@@ -493,10 +491,10 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
         .await
         .expect_err("decrypt must reject tampered reserved bytes");
     assert!(
-        matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
-        "expected SerializationError, got: {} ({:?})",
-        err.message,
-        err.kind
+        err.is_serialization(),
+        "expected Serialization error, got: {} ({:?})",
+        err.message(),
+        err
     );
 }
 
@@ -510,8 +508,12 @@ async fn test_v1_iv_length_mismatch_rejected() {
     assert_eq!(ct[iv_length_offset], 12, "baseline: IV length should be 12");
     ct[iv_length_offset] = 11;
 
-    let mut dec_input = DecryptInput::with_keyring(&ct, EncryptionContext::new(), keyring);
-    dec_input.commitment_policy = EsdkCommitmentPolicy::ForbidEncryptAllowDecrypt;
+    let dec_input = DecryptInput::builder()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .build()
+        .unwrap();
 
     //= spec/data-format/message-header.md#iv-length
     //= type=test
@@ -522,9 +524,9 @@ async fn test_v1_iv_length_mismatch_rejected() {
         .await
         .expect_err("decrypt must reject mismatched IV length");
     assert!(
-        matches!(err.kind, aws_esdk::ErrorKind::SerializationError),
-        "expected SerializationError, got: {} ({:?})",
-        err.message,
-        err.kind
+        err.is_serialization(),
+        "expected Serialization error, got: {} ({:?})",
+        err.message(),
+        err
     );
 }

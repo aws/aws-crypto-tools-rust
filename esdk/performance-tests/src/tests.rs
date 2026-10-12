@@ -3,7 +3,8 @@
 
 use crate::alloc;
 use anyhow::Result;
-use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk, Keyring};
+use aws_crypto_mpl::HierarchicalKeyring;
+use aws_esdk::{DecryptInput, EncryptInput, EncryptionContext, Esdk};
 use chrono::Utc;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -18,21 +19,23 @@ use crate::results::{BenchmarkResult, average, percentile};
 impl EsdkBenchmark {
     fn benchmark_encryption_context(data_len: usize) -> EncryptionContext {
         let mut ec = EncryptionContext::new();
-        ec.insert(b"purpose".to_vec(), b"performance-test".to_vec());
-        ec.insert(b"size".to_vec(), data_len.to_string().into_bytes());
+        ec.insert("purpose".to_string(), "performance-test".to_string());
+        ec.insert("size".to_string(), data_len.to_string());
         ec
     }
 
     /// Runs one encrypt+decrypt cycle and returns (encrypt_ms, decrypt_ms).
     async fn encrypt_decrypt(
         esdk_client: &Esdk,
-        keyring: &Keyring,
+        keyring: &HierarchicalKeyring,
         data: &[u8],
     ) -> Result<(f64, f64)> {
-        let mut encrypt_input = EncryptInput::new();
-        encrypt_input.plaintext = data;
-        encrypt_input.encryption_context = Self::benchmark_encryption_context(data.len());
-        encrypt_input.keyring = Some(keyring.clone());
+        let encrypt_input = EncryptInput::builder()
+            .plaintext(data)
+            .encryption_context(Self::benchmark_encryption_context(data.len()))
+            .keyring(keyring.clone())
+            .build()
+            .map_err(|e| anyhow::anyhow!("invalid encrypt input: {e}"))?;
 
         let encrypt_start = Instant::now();
         let encrypt_output = esdk_client
@@ -43,9 +46,11 @@ impl EsdkBenchmark {
 
         let ciphertext = encrypt_output.ciphertext;
 
-        let mut decrypt_input = DecryptInput::new();
-        decrypt_input.ciphertext = &ciphertext;
-        decrypt_input.keyring = Some(keyring.clone());
+        let decrypt_input = DecryptInput::builder()
+            .ciphertext(&ciphertext)
+            .keyring(keyring.clone())
+            .build()
+            .map_err(|e| anyhow::anyhow!("invalid decrypt input: {e}"))?;
 
         let decrypt_start = Instant::now();
         let decrypt_output = esdk_client

@@ -5,28 +5,28 @@
 //! derives a data key, encrypts the plaintext (framed or nonframed),
 //! and serializes the result into an encrypted message.
 
+use std::num::NonZeroU32;
+
 use crate::error::Error;
-use crate::error::{esdk_err, ser_err, val_err};
+use crate::error::{Kind, err, val_err};
 use crate::key_derivation;
 use crate::materials;
 use crate::message::encryption_context::write_empty_ec_or_write_aad;
 use crate::message::header_types::{
     ContentType, HeaderAuth, HeaderBody, MessageId, MessageType, V1HeaderBody, V2HeaderBody,
 };
-use crate::message::serializable_types::{
-    ESDKCanonicalEncryptionContext, get_encrypt_key_length, get_iv_length, to_canonical_pairs,
-};
+use crate::message::serializable_types::{get_encrypt_key_length, get_iv_length};
 use crate::message::{DigestWriter, body, footer, header};
-use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg};
+use crate::suites::{algorithm_suite_id_from_bytes, get_ecdsa_alg, get_esdk_algorithm_suite_id};
 use crate::types::{
-    EncryptInput, EncryptOutput, EncryptStreamInput, EncryptStreamOutput, EncryptionContext,
-    EsdkCommitmentPolicy, FrameLength, MaterialSource, SafeRead, SafeWrite,
+    AlgorithmSuiteId, CommitmentPolicy, EncryptInput, EncryptOutput, EncryptStreamInput,
+    EncryptStreamOutput, EncryptionContext, MaterialSource, SafeRead, SafeWrite,
 };
 use aws_crypto_mpl::structures::AlgorithmSuite;
-use aws_crypto_mpl::structures::AlgorithmSuiteId;
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::structures::EncryptionMaterials;
 use aws_mpl_primitives::{aes_encrypt, ecdsa_sign_digest};
+use std::collections::BTreeSet;
 
 /// AES-GCM IV length in bytes (used for body frames; header IV length varies by suite).
 const IV_LEN: usize = 12;
@@ -36,8 +36,8 @@ const AUTH_TAG_LEN: usize = 16;
 /// Best-effort capacity hint for the ciphertext buffer, to minimize
 /// reallocations. Total encrypted content equals `plaintext_len`, plus fixed
 /// per-frame and header overhead.
-fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: FrameLength) -> usize {
-    let frame_length_usize = usize::try_from(frame_length.0.get()).unwrap_or(usize::MAX);
+fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: NonZeroU32) -> usize {
+    let frame_length_usize = usize::try_from(frame_length.get()).unwrap_or(usize::MAX);
     let frames = plaintext_len.div_ceil(frame_length_usize).max(1);
     // Sequence number field + IV + authentication tag per frame.
     let per_frame_overhead = 4 + IV_LEN + AUTH_TAG_LEN;
@@ -53,10 +53,6 @@ fn estimated_ciphertext_capacity(plaintext_len: usize, frame_length: FrameLength
 /// Intermediate state produced by [`step_get_encryption_materials`] and consumed by subsequent steps.
 struct EncryptionMaterialsResult {
     materials: EncryptionMaterials,
-    /// UTF-8 validated view of `materials.encryption_context()`.
-    encryption_context: EncryptionContext,
-    /// UTF-8 validated view of `materials.required_encryption_context_keys()`.
-    required_encryption_context_keys: Vec<String>,
     derived_data_keys: key_derivation::ExpandedKeyMaterial,
     message_id: MessageId,
 }
@@ -65,19 +61,23 @@ struct EncryptionMaterialsResult {
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - No keyring or CMM is provided (input validation fails)
-/// - The encryption context contains keys with the reserved `aws-crypto-` prefix
-/// - The algorithm suite is incompatible with the commitment policy
-/// - Encryption materials cannot be obtained from the CMM
-/// - The number of encrypted data keys exceeds the configured maximum
-/// - Key derivation, header construction, body encryption, or signature generation fails
+/// Returns an [`Error`](crate::Error), one of:
+/// - [`Validation`](crate::Error::Validation): an encryption context key uses the reserved `aws-crypto-` prefix, the commitment policy does not allow the requested algorithm suite, the encrypted data key count exceeds the configured maximum, or the plaintext exceeds the size limit.
+/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, such as no plaintext data key, an unsupported algorithm suite, or no signing key for a signing suite.
+/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the keyring or CMM rejects the encryption context.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): the keyring or CMM produces no data key.
+/// - [`Cryptographic`](crate::Error::Cryptographic): data key derivation, frame encryption, or signing fails.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
+/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
+/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
+/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
+/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
+/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
+/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 //= spec/client-apis/client.md#encrypt
 //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
 //# that adheres to [encrypt](./encrypt.md).
 pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
-    input.validate()?;
-
     let mut cursor = std::io::Cursor::new(input.plaintext);
 
     let total_size = estimated_ciphertext_capacity(input.plaintext.len(), input.frame_length);
@@ -119,13 +119,20 @@ pub async fn encrypt(input: &EncryptInput<'_>) -> Result<EncryptOutput, Error> {
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - No keyring or CMM is provided (input validation fails)
-/// - The encryption context contains keys with the reserved `aws-crypto-` prefix
-/// - The algorithm suite is incompatible with the commitment policy
-/// - Encryption materials cannot be obtained from the CMM
-/// - The number of encrypted data keys exceeds the configured maximum
-/// - Key derivation, header construction, body encryption, or signature generation fails
+/// Returns an [`Error`](crate::Error), one of:
+/// - [`Validation`](crate::Error::Validation): an encryption context key uses the reserved `aws-crypto-` prefix, the commitment policy does not allow the requested algorithm suite, the encrypted data key count exceeds the configured maximum, or the plaintext exceeds the size limit.
+/// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, such as no plaintext data key, an unsupported algorithm suite, or no signing key for a signing suite.
+/// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the keyring or CMM rejects the encryption context.
+/// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): the keyring or CMM produces no data key.
+/// - [`Cryptographic`](crate::Error::Cryptographic): data key derivation, frame encryption, or signing fails.
+/// - [`AccessDenied`](crate::Error::AccessDenied): AWS KMS or `DynamoDB` denies a call from the hierarchical keyring.
+/// - [`ResourceNotFound`](crate::Error::ResourceNotFound): a KMS key, `DynamoDB` table, or branch key does not exist.
+/// - [`Throttling`](crate::Error::Throttling): AWS KMS, `DynamoDB`, or the materials cache throttles the request.
+/// - [`Conflict`](crate::Error::Conflict): the keyring or CMM reports a conflict with a resource's current state.
+/// - [`Service`](crate::Error::Service): AWS KMS or `DynamoDB` fails the request for another reason.
+/// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
+/// - [`Io`](crate::Error::Io): the supplied plaintext reader or ciphertext writer fails.
+/// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
 //= spec/client-apis/streaming.md#overview
 //# The AWS Encryption SDK MAY provide APIs that enable streamed [encryption](encrypt.md)
 //# and [decryption](decrypt.md).
@@ -151,8 +158,6 @@ pub async fn encrypt_stream(
     ciphertext: &mut dyn SafeWrite,
     input: &EncryptStreamInput,
 ) -> Result<EncryptStreamOutput, Error> {
-    input.validate()?;
-
     internal_encrypt(
         plaintext,
         ciphertext,
@@ -176,9 +181,38 @@ async fn internal_encrypt(
     input_source: Option<MaterialSource>,
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
-    frame_length: FrameLength,
+    frame_length: NonZeroU32,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
+) -> Result<EncryptStreamOutput, Error> {
+    let source = input_source.as_ref().map(MaterialSource::resource);
+    encrypt_steps(
+        plaintext,
+        ciphertext,
+        plaintext_len,
+        input_source,
+        encryption_context,
+        algorithm_suite_id,
+        frame_length,
+        max_encrypted_data_keys,
+        commitment_policy,
+    )
+    .await
+    .map_err(|e| materials::name_material_source(e, source.as_ref()))
+}
+
+/// The encrypt steps; [`internal_encrypt`] names the material source in their errors.
+#[expect(clippy::too_many_arguments)]
+async fn encrypt_steps(
+    plaintext: &mut dyn SafeRead,
+    ciphertext: &mut dyn SafeWrite,
+    plaintext_len: Option<usize>,
+    input_source: Option<MaterialSource>,
+    encryption_context: &EncryptionContext,
+    algorithm_suite_id: Option<AlgorithmSuiteId>,
+    frame_length: NonZeroU32,
+    max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptStreamOutput, Error> {
     //= spec/client-apis/encrypt.md#behavior
     //= reason=Every step uses ?; any failure returns Err to the caller
@@ -223,8 +257,8 @@ async fn internal_encrypt(
     //# - The message MUST begin with [Message Header](message-header.md)
     let header = step_construct_header(
         &mat_result,
-        &mat_result.encryption_context,
-        &mat_result.required_encryption_context_keys,
+        mat_result.materials.encryption_context(),
+        mat_result.materials.required_encryption_context_keys(),
         mat_result.materials.encrypted_data_keys(),
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# The frame length used in the procedures described below MUST be the input [frame length](#frame-length),
@@ -308,7 +342,7 @@ async fn step_get_encryption_materials(
     encryption_context: &EncryptionContext,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     max_encrypted_data_keys: Option<std::num::NonZeroUsize>,
-    commitment_policy: EsdkCommitmentPolicy,
+    commitment_policy: CommitmentPolicy,
 ) -> Result<EncryptionMaterialsResult, Error> {
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The CMM used MUST be the input CMM, if supplied.
@@ -319,7 +353,7 @@ async fn step_get_encryption_materials(
     //
     //= spec/client-apis/encrypt.md#algorithm-suite
     //= type=implication
-    //= reason=EsdkAlgorithmSuiteId enum only contains ESDK-supported suites
+    //= reason=AlgorithmSuiteId enum only contains ESDK-supported suites
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
     if let Some(id) = algorithm_suite_id {
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -327,9 +361,9 @@ async fn step_get_encryption_materials(
         //# that is not supported by the [commitment policy](client.md#commitment-policy)
         //# configured in the [client](client.md) encrypt MUST yield an error.
         let policy = aws_crypto_mpl::structures::CommitmentPolicy::Esdk(commitment_policy);
-        if !policy.allows_for_encrypt(id) {
+        if !policy.allows_for_encrypt(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(id)) {
             return Err(val_err(
-                "Input algorithm suite is not supported by the configured commitment policy for encryption",
+                "input algorithm suite is not supported by the configured commitment policy for encryption",
             ));
         }
     }
@@ -341,7 +375,7 @@ async fn step_get_encryption_materials(
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# The call to [Get Encryption Materials](../framework/cmm-interface.md#get-encryption-materials)
     //# on that CMM MUST be constructed as follows:
-    let validated = materials::get_encryption_materials(
+    let materials = materials::get_encryption_materials(
         cmm,
         //= spec/client-apis/encrypt.md#get-the-encryption-materials
         //# - Algorithm Suite: If provided, this MUST be the [input algorithm suite](#algorithm-suite).
@@ -351,7 +385,6 @@ async fn step_get_encryption_materials(
         commitment_policy,
     )
     .await?;
-    let materials = validated.materials;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If the number of [encrypted data keys](../framework/structures.md#encrypted-data-keys) on the [encryption materials](../framework/structures.md#encryption-materials)
@@ -371,12 +404,8 @@ async fn step_get_encryption_materials(
     //# Note that the algorithm suite in the retrieved encryption materials MAY be different
     //# from the [input algorithm suite](#algorithm-suite).
     //
-    //= spec/client-apis/encrypt.md#get-the-encryption-materials
-    //= type=implication
-    //= reason=AlgorithmSuiteId enumerates only ESDK suites, so the materials cannot carry another
-    //# If this algorithm suite is not [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum)
-    //# encrypt MUST yield an error.
-    let algorithm_suite = materials.algorithm_suite();
+    let algorithm_suite =
+        get_esdk_algorithm_suite_id(materials.algorithm_suite_id())?.specification();
 
     let message_id = header::generate_message_id(&algorithm_suite)?;
 
@@ -397,15 +426,18 @@ async fn step_get_encryption_materials(
         //# - The input keying material MUST be the data key generated by the key provider.
         materials
             .plaintext_data_key()
-            .ok_or_else(|| esdk_err("Encryption materials must contain a plaintext data key"))?
+            .ok_or_else(|| {
+                err(
+                    Kind::InvalidMaterials,
+                    "encryption materials must contain a plaintext data key",
+                )
+            })?
             .as_bytes(),
         &algorithm_suite,
     )?;
 
     Ok(EncryptionMaterialsResult {
         materials,
-        encryption_context: validated.encryption_context,
-        required_encryption_context_keys: validated.required_encryption_context_keys,
         derived_data_keys,
         message_id,
     })
@@ -415,9 +447,9 @@ async fn step_get_encryption_materials(
 fn step_construct_header(
     mat_result: &EncryptionMaterialsResult,
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &[String],
+    required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
-    frame_length: FrameLength,
+    frame_length: NonZeroU32,
     ciphertext: &mut dyn SafeWrite,
     sig_digest: &mut DigestWriter,
 ) -> Result<header::HeaderInfo, Error> {
@@ -431,7 +463,7 @@ fn step_construct_header(
         encryption_context,
         required_encryption_context_keys,
         encrypted_data_keys,
-        frame_length.0.get(),
+        frame_length.get(),
         &mat_result.derived_data_keys,
     )?;
 
@@ -506,16 +538,20 @@ fn step_construct_signature(
             materials
                 .signing_key()
                 .ok_or_else(|| {
-                    esdk_err(
-                        "Encryption materials must contain a signing key for signature algorithm",
+                    err(
+                        Kind::InvalidMaterials,
+                        "encryption materials must contain a signing key for signature algorithm",
                     )
                 })?
                 .as_bytes(),
             //= spec/client-apis/encrypt.md#construct-the-signature
             //# - the input to sign MUST be the concatenation of the serialization of the [message header](../data-format/message-header.md) and [message body](../data-format/message-body.md)
-            sig_digest
-                .context
-                .ok_or_else(|| esdk_err("Signature digest context must be present for signing"))?,
+            sig_digest.context.ok_or_else(|| {
+                err(
+                    Kind::Internal,
+                    "signature digest context must be present for signing",
+                )
+            })?,
             &mut signature_bytes,
         )?;
 
@@ -558,9 +594,9 @@ const RESERVED_ENCRYPTION_CONTEXT: &str = "aws-crypto-";
 
 fn validate_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
     for (key, _) in ec.iter() {
-        if key.starts_with(RESERVED_ENCRYPTION_CONTEXT.as_bytes()) {
+        if key.starts_with(RESERVED_ENCRYPTION_CONTEXT) {
             return Err(val_err(
-                "Encryption context keys cannot contain reserved prefix 'aws-crypto-'",
+                "encryption context keys must not begin with the reserved prefix 'aws-crypto-'",
             ));
         }
     }
@@ -571,7 +607,7 @@ fn build_header_for_encrypt(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
     encryption_context: &EncryptionContext,
-    required_encryption_context_keys: &[String],
+    required_encryption_context_keys: &BTreeSet<String>,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     derived_data_keys: &key_derivation::ExpandedKeyMaterial,
@@ -583,35 +619,29 @@ fn build_header_for_encrypt(
     //# the [encryption material's](../framework/structures.md#encryption-materials)
     //# [required encryption context keys](../framework/structures.md#required-encryption-context-keys)
     //# serialized according to the [encryption context serialization specification](../framework/structures.md#serialization).
-    let required_keys: std::collections::BTreeSet<&[u8]> = required_encryption_context_keys
-        .iter()
-        .map(String::as_bytes)
-        .collect();
     let mut stored_encryption_context = EncryptionContext::new();
     let mut required_encryption_context_map = EncryptionContext::new();
     for (key, value) in encryption_context.iter() {
-        if required_keys.contains(key.as_slice()) {
-            required_encryption_context_map.insert(key.clone(), value.clone());
+        if required_encryption_context_keys.contains(key) {
+            required_encryption_context_map.insert(key, value);
         } else {
-            stored_encryption_context.insert(key.clone(), value.clone());
+            stored_encryption_context.insert(key, value);
         }
     }
-    let canonical_stored_encryption_context = to_canonical_pairs(&stored_encryption_context)?;
 
     let body: HeaderBody = build_header_body(
         message_id,
         suite,
-        &canonical_stored_encryption_context,
+        &stored_encryption_context,
         encrypted_data_keys,
         frame_length,
         derived_data_keys.commitment_key.as_deref().cloned(),
     )?;
 
-    let canonical_req_encryption_context = to_canonical_pairs(&required_encryption_context_map)?;
     let mut serialized_req_encryption_context = Vec::new();
     write_empty_ec_or_write_aad(
         &mut serialized_req_encryption_context,
-        &canonical_req_encryption_context,
+        &required_encryption_context_map,
     )?;
 
     let mut raw_header = Vec::new();
@@ -640,7 +670,7 @@ fn build_header_for_encrypt(
 fn build_header_body(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
-    encryption_context: &ESDKCanonicalEncryptionContext,
+    encryption_context: &EncryptionContext,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     suite_data: Option<Vec<u8>>,
@@ -667,8 +697,9 @@ fn build_header_body(
             encrypted_data_keys,
             frame_length,
         ),
-        v => ser_err(&format!(
-            "Algorithm suite declares unsupported message format version {v}"
+        v => Err(err(
+            Kind::Internal,
+            format!("algorithm suite declares unsupported message format version {v}"),
         )),
     }
 }
@@ -677,19 +708,23 @@ fn build_header_body(
 fn build_v2_header_body(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
-    encryption_context: &ESDKCanonicalEncryptionContext,
+    encryption_context: &EncryptionContext,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
     suite_data: Option<Vec<u8>>,
 ) -> Result<HeaderBody, Error> {
     let Some(sd) = suite_data else {
-        return ser_err("Suite data must be present for a committing algorithm suite");
+        return Err(err(
+            Kind::Internal,
+            "suite data must be present for a committing algorithm suite",
+        ));
     };
     let expected_len = suite.algorithm_suite_data_length();
     if sd.len() != expected_len {
-        return ser_err(
-            "Suite data length must match the commitment key output length for a committing suite",
-        );
+        return Err(err(
+            Kind::Internal,
+            "suite data length must match the commitment key output length for a committing suite",
+        ));
     }
     //= spec/client-apis/encrypt.md#v2-header
     //# The serialization order MUST follow the [Header Body Version 2.0](../data-format/message-header.md#header-body-version-20) specification.
@@ -710,14 +745,15 @@ fn build_v2_header_body(
 fn build_v1_header_body(
     message_id: &MessageId,
     suite: &AlgorithmSuite,
-    encryption_context: &ESDKCanonicalEncryptionContext,
+    encryption_context: &EncryptionContext,
     encrypted_data_keys: &[EncryptedDataKey],
     frame_length: u32,
 ) -> Result<HeaderBody, Error> {
     let header_iv_length_usize = get_iv_length(suite);
     let Ok(header_iv_length) = u8::try_from(header_iv_length_usize) else {
-        return ser_err(&format!(
-            "IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"
+        return Err(err(
+            Kind::Internal,
+            format!("IV length {header_iv_length_usize} exceeds the UInt8 IV-length field"),
         ));
     };
     Ok(HeaderBody::V1Body(V1HeaderBody {
@@ -740,10 +776,13 @@ fn build_header_auth_tag(
 ) -> Result<HeaderAuth, Error> {
     let key_length = get_encrypt_key_length(suite);
     if data_key.len() != key_length {
-        return ser_err(&format!(
-            "Incorrect data key length: got {}, expected {}",
-            data_key.len(),
-            key_length
+        return Err(err(
+            Kind::Internal,
+            format!(
+                "incorrect data key length: got {}, expected {}",
+                data_key.len(),
+                key_length
+            ),
         ));
     }
 

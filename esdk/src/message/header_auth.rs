@@ -26,7 +26,7 @@ pub(crate) fn write_header_auth_tag(
         //# if the message format version associated with the [algorithm suite](../framework/algorithm-suites.md#supported-algorithm-suites) is 2.0,
         //# this operation MUST serialize the [message header authentication](../data-format/message-header.md#header-authentication-version-2-0) with the following specifics:
         2 => write_header_auth_tag_v2(w, header_auth),
-        _ => ser_err("Unexpected message version"),
+        _ => ser_err("unexpected message version"),
     }
 }
 
@@ -121,7 +121,7 @@ pub fn read_header_auth_tag(
         //# The Decrypt operation MUST then deserialize the
         //# [Header Authentication Version 2.0](../data-format/message-header.md#header-authentication-version-20):
         2 => read_header_auth_tag_v2(r, suite, raw),
-        _ => ser_err("Unexpected message version"),
+        _ => ser_err("unexpected message version"),
     }
 }
 pub(crate) fn read_header_auth_tag_v1(

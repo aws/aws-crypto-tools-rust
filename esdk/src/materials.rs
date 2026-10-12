@@ -2,85 +2,46 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cryptographic materials management — CMM creation and materials retrieval.
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
-
-use crate::error::{Error, val_err};
+use crate::error::{CmmResource, Error, KeyringResource, Resource, val_err};
+use crate::error::{Kind, err};
 use crate::message::header_types::HeaderBody;
-use crate::message::serializable_types::{
-    from_canonical_pairs, is_esdk_encrypted_data_keys, is_esdk_encryption_context,
-};
-use crate::types::{EncryptionContext, EsdkCommitmentPolicy, MaterialSource};
+use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
+use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest};
+use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, EncryptionMaterialsRequest, SharedCmm};
+use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
-    AlgorithmSuiteId, CommitmentPolicy, DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
+    AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
+    DecryptionMaterials, EncryptedDataKey, EncryptionMaterials,
 };
 
-/// A cryptographic materials manager resolved from the caller's input: either
-/// the caller's own CMM, or a [`DefaultCmm`] wrapping the caller's keyring.
-pub(crate) struct ResolvedCmm(Arc<dyn Cmm>);
-
-/// Check that every encryption context entry is valid UTF-8.
-///
-/// The context is byte-keyed, but the specification defines its entries as UTF-8
-/// encoded strings, so a CMM returning non-UTF-8 bytes has violated the
-/// materials contract. Rejecting at this boundary names the CMM as the culprit
-/// and fails before any of it reaches the header.
-///
-/// # Errors
-/// Returns an error if any key or value is not valid UTF-8.
-// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
-fn validate_utf8_encryption_context(ec: &EncryptionContext) -> Result<(), Error> {
-    for (key, value) in ec.iter() {
-        if std::str::from_utf8(key).is_err() {
-            return Err(val_err("Encryption context key is not valid UTF-8"));
-        }
-        if std::str::from_utf8(value).is_err() {
-            return Err(val_err("Encryption context value is not valid UTF-8"));
+impl MaterialSource {
+    /// The caller's keyring or CMM, as a `Resource` for errors about its materials.
+    pub(crate) fn resource(&self) -> Resource {
+        match self {
+            Self::Cmm(cmm) => Resource::Cmm(CmmResource::new(cmm.name())),
+            Self::Keyring(keyring) => Resource::Keyring(KeyringResource::new(keyring.name())),
         }
     }
-    Ok(())
 }
 
-/// Convert the MPL's byte-keyed required-encryption-context key set to the
-/// `String` keys the ESDK header serialization works with.
-///
-/// # Errors
-/// Returns an error if any key is not valid UTF-8, which the ESDK message
-/// format requires.
-fn from_mpl_required_keys(keys: &BTreeSet<Vec<u8>>) -> Result<Vec<String>, Error> {
-    keys.iter()
-        .map(|k| {
-            String::from_utf8(k.clone())
-                .map_err(|_| val_err("Required encryption context key is not valid UTF-8"))
-        })
-        .collect()
+/// Name the caller's keyring or CMM, `source`, in an error about the materials it provided,
+/// unless the error already names something more specific, such as a branch key.
+pub(crate) fn name_material_source(mut e: Error, source: Option<&Resource>) -> Error {
+    if (e.is_invalid_materials() || e.is_no_matching_data_key()) && e.resource().is_none() {
+        e.set_resource(source.cloned());
+    }
+    e
 }
 
-/// Materials returned by a CMM, together with the UTF-8 views of the two
-/// byte-keyed fields the ESDK must serialize as strings.
-///
-/// The MPL models the encryption context and the required-encryption-context
-/// keys as raw bytes, but the encryption context is specified as "a key-value
-/// mapping of arbitrary, non-secret, UTF-8 encoded strings". Converting at this
-/// single boundary means a CMM returning non-UTF-8 bytes is rejected once, with
-/// an error, and every later stage works from `String`.
-// https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/structures.md#encryption-context
-pub(crate) struct ValidatedMaterials<M> {
-    pub(crate) materials: M,
-    pub(crate) encryption_context: EncryptionContext,
-    pub(crate) required_encryption_context_keys: Vec<String>,
-}
-
-/// Build the internal [`ResolvedCmm`] from the resolved material source. A
-/// supplied CMM is used directly; a supplied keyring is wrapped in a
-/// [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
+/// Resolve the CMM for an operation from the resolved material source.
+/// A supplied CMM is used directly.
+/// A supplied keyring is wrapped in a [`DefaultCmm`](aws_crypto_mpl::cmm::DefaultCmm).
 pub(crate) fn create_cmm_from_input(
     input_source: Option<MaterialSource>,
-) -> Result<ResolvedCmm, Error> {
-    match input_source.ok_or_else(|| val_err("A Materials Source must be provided"))? {
-        MaterialSource::Cmm(cmm) => Ok(ResolvedCmm(cmm)),
+) -> Result<SharedCmm, Error> {
+    match input_source.ok_or_else(|| val_err("a keyring or CMM must be provided"))? {
+        MaterialSource::Cmm(cmm) => Ok(cmm),
         MaterialSource::Keyring(keyring) => {
             //= spec/client-apis/encrypt.md#get-the-encryption-materials
             //# If instead the caller supplied a [keyring](../framework/keyring-interface.md),
@@ -90,23 +51,34 @@ pub(crate) fn create_cmm_from_input(
             //= spec/client-apis/decrypt.md#keyring
             //# If the Keyring is provided as the input, the client MUST construct a [default CMM](../framework/default-cmm.md) that uses this keyring,
             //# to obtain the [decryption materials](../framework/structures.md#decryption-materials) that is required for decryption.
-            Ok(ResolvedCmm(Arc::new(DefaultCmm::new(keyring))))
+            Ok(SharedCmm::new(DefaultCmm::new(keyring)))
         }
     }
 }
 
 pub(crate) async fn get_decryption_materials(
-    cmm: ResolvedCmm,
+    cmm: SharedCmm,
     algorithm_suite_id: AlgorithmSuiteId,
     header_body: &HeaderBody,
     reproduced_encryption_context: &EncryptionContext,
-    commitment_policy: EsdkCommitmentPolicy,
-) -> Result<ValidatedMaterials<DecryptionMaterials>, Error> {
-    let policy = CommitmentPolicy::Esdk(commitment_policy);
+    commitment_policy: CommitmentPolicy,
+) -> Result<DecryptionMaterials, Error> {
+    let policy = MplCommitmentPolicy::Esdk(commitment_policy);
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Encryption Context: This MUST be the parsed [encryption context](../data-format/message-header.md#aad)
     //# from the message header.
-    let encryption_context = from_canonical_pairs(header_body.encryption_context().clone());
+    let encryption_context = header_body.encryption_context().clone();
+
+    // A well-formed message carries the signing public key in its encryption context
+    // exactly when its suite signs.
+    // The CMM also rejects a mismatch, but as bad input; on decrypt it means the message is malformed.
+    let has_public_key = encryption_context.contains_key("aws-crypto-public-key");
+    if has_public_key != algorithm_suite_id.has_asymmetric_signing() {
+        return Err(err(
+            Kind::Serialization,
+            "the header encryption context must contain 'aws-crypto-public-key' exactly when the algorithm suite signs",
+        ));
+    }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Encrypted Data Keys: This MUST be the parsed [encrypted data keys](../data-format/message-header.md#encrypted-data-keys)
@@ -124,8 +96,12 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
-    let mut request =
-        DecryptMaterialsRequest::new(algorithm_suite_id, policy, edks, encryption_context);
+    let mut request = DecryptMaterialsRequest::new(
+        MplAlgorithmSuiteId::Esdk(algorithm_suite_id),
+        policy,
+        edks,
+        encryption_context,
+    );
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
@@ -142,52 +118,55 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#keyring
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let materials = cmm.0.decrypt_materials(request).await?;
+    let materials = cmm
+        .decrypt_materials(request)
+        .await
+        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) decrypt MUST yield an error.
     if !policy.allows_for_decrypt(materials.algorithm_suite_id()) {
-        return Err(val_err(
-            "Algorithm suite is not supported by the configured commitment policy for decryption",
+        return Err(err(
+            Kind::InvalidMaterials,
+            "algorithm suite is not supported by the configured commitment policy for decryption",
         ));
     }
 
-    if materials.plaintext_data_key().is_none() {
-        return Err(val_err(
-            "Decryption materials are missing a plaintext data key",
+    let Some(plaintext_data_key) = materials.plaintext_data_key() else {
+        return Err(err(
+            Kind::InvalidMaterials,
+            "decryption materials are missing a plaintext data key",
+        ));
+    };
+    let expected_len = materials.algorithm_suite().encryption_key_length();
+    if plaintext_data_key.len() != expected_len {
+        return Err(err(
+            Kind::InvalidMaterials,
+            format!(
+                "decryption materials have a {}-byte plaintext data key, expected {expected_len} for the algorithm suite",
+                plaintext_data_key.len()
+            ),
         ));
     }
 
-    // Required keys first: the MPL constructors enforce that the required-key set
-    // is a subset of the context keys, so a non-UTF-8 required key is always also
-    // a non-UTF-8 context key. Checking it first makes the specific error reachable.
-    let required_encryption_context_keys =
-        from_mpl_required_keys(materials.required_encryption_context_keys())?;
-    let encryption_context = materials.encryption_context();
-    validate_utf8_encryption_context(encryption_context)?;
-    let encryption_context = encryption_context.clone();
-
-    if !is_esdk_encryption_context(&encryption_context) {
-        return Err(val_err(
-            "CMM failed to return serializable decryption materials",
+    if !is_esdk_encryption_context(materials.encryption_context()) {
+        return Err(err(
+            Kind::InvalidMaterials,
+            "decryption materials have an encryption context that cannot be serialized",
         ));
     }
-    Ok(ValidatedMaterials {
-        materials,
-        encryption_context,
-        required_encryption_context_keys,
-    })
+    Ok(materials)
 }
 
 pub(crate) async fn get_encryption_materials(
-    cmm: ResolvedCmm,
+    cmm: SharedCmm,
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: EncryptionContext,
     max_plaintext_length: Option<usize>,
-    commitment_policy: EsdkCommitmentPolicy,
-) -> Result<ValidatedMaterials<EncryptionMaterials>, Error> {
-    let policy = CommitmentPolicy::Esdk(commitment_policy);
+    commitment_policy: CommitmentPolicy,
+) -> Result<EncryptionMaterials, Error> {
+    let policy = MplCommitmentPolicy::Esdk(commitment_policy);
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# - Commitment Policy: This MUST be the [commitment policy](client.md#commitment-policy)
@@ -205,7 +184,7 @@ pub(crate) async fn get_encryption_materials(
     //= reason=algorithm_suite_id is Option; None means the field is not set on the request
     //# If no Algorithm Suite is provided, this field MUST NOT be included.
     if let Some(id) = algorithm_suite_id {
-        request = request.with_algorithm_suite_id(id);
+        request = request.with_algorithm_suite_id(MplAlgorithmSuiteId::Esdk(id));
     }
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
@@ -224,45 +203,49 @@ pub(crate) async fn get_encryption_materials(
         request = request.with_max_plaintext_length(len as u64);
     }
 
-    let materials = cmm.0.get_encryption_materials(request).await?;
+    let materials = cmm
+        .get_encryption_materials(request)
+        .await
+        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?;
 
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
     //# configured in the [client](client.md) encrypt MUST yield an error.
     if !policy.allows_for_encrypt(materials.algorithm_suite_id()) {
-        return Err(val_err(
-            "Algorithm suite is not supported by the configured commitment policy for encryption",
+        return Err(err(
+            Kind::InvalidMaterials,
+            "algorithm suite is not supported by the configured commitment policy for encryption",
         ));
     }
 
-    if materials.plaintext_data_key().is_none() {
-        return Err(val_err(
-            "Encryption materials are missing a plaintext data key",
+    let Some(plaintext_data_key) = materials.plaintext_data_key() else {
+        return Err(err(
+            Kind::InvalidMaterials,
+            "encryption materials are missing a plaintext data key",
+        ));
+    };
+    let expected_len = materials.algorithm_suite().encryption_key_length();
+    if plaintext_data_key.len() != expected_len {
+        return Err(err(
+            Kind::InvalidMaterials,
+            format!(
+                "encryption materials have a {}-byte plaintext data key, expected {expected_len} for the algorithm suite",
+                plaintext_data_key.len()
+            ),
         ));
     }
 
-    // Required keys first: the MPL constructors enforce that the required-key set
-    // is a subset of the context keys, so a non-UTF-8 required key is always also
-    // a non-UTF-8 context key. Checking it first makes the specific error reachable.
-    let required_encryption_context_keys =
-        from_mpl_required_keys(materials.required_encryption_context_keys())?;
-    let encryption_context = materials.encryption_context();
-    validate_utf8_encryption_context(encryption_context)?;
-    let encryption_context = encryption_context.clone();
-
-    if !is_esdk_encryption_context(&encryption_context) {
-        return Err(val_err(
-            "CMM failed to return serializable encryption materials",
+    if !is_esdk_encryption_context(materials.encryption_context()) {
+        return Err(err(
+            Kind::InvalidMaterials,
+            "encryption materials have an encryption context that cannot be serialized",
         ));
     }
     if !is_esdk_encrypted_data_keys(materials.encrypted_data_keys()) {
-        return Err(val_err(
-            "CMM failed to return serializable encrypted data keys",
+        return Err(err(
+            Kind::InvalidMaterials,
+            "encryption materials have encrypted data keys that cannot be serialized",
         ));
     }
-    Ok(ValidatedMaterials {
-        materials,
-        encryption_context,
-        required_encryption_context_keys,
-    })
+    Ok(materials)
 }
