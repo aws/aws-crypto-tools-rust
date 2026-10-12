@@ -162,18 +162,18 @@ fn oversubscribed_round_trips(rt: tokio::runtime::Runtime, tasks: usize, iters: 
             set.spawn(async move {
                 for i in 0..iters {
                     let plaintext = format!("task {t} message {i}").into_bytes();
-                    let enc_input = EncryptInput::with_legacy_keyring(
-                        &plaintext,
-                        EncryptionContext::new(),
-                        keyring.clone(),
-                    );
+                    let enc_input = EncryptInput::builder()
+                        .plaintext(&plaintext)
+                        .keyring(keyring.clone())
+                        .build()
+                        .unwrap();
                     let out = encrypt(&enc_input).await.unwrap();
 
-                    let dec_input = DecryptInput::with_legacy_keyring(
-                        &out.ciphertext,
-                        EncryptionContext::new(),
-                        keyring.clone(),
-                    );
+                    let dec_input = DecryptInput::builder()
+                        .ciphertext(&out.ciphertext)
+                        .keyring(keyring.clone())
+                        .build()
+                        .unwrap();
                     let dec = decrypt(&dec_input).await.unwrap();
                     assert_eq!(
                         dec.plaintext, plaintext,
