@@ -303,7 +303,6 @@ impl KeyStoreClientBuilder {
     }
 
     /// Validate the configuration, build a default for any unset client, and resolve the key store identifier.
-    /// Returns the key store as a [`KeyStoreClient`].
     ///
     /// Building a default client is the only reason this is `async`.
     /// With both clients supplied it does no IO and completes on the first poll.

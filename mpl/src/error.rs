@@ -174,8 +174,7 @@ impl Error {
     /// The message is "`operation` failed", and the source is the SDK error.
     ///
     /// A custom keyring or CMM that calls an AWS service returns this,
-    /// so callers can match its failures by variant and [`service`](Self::service)
-    /// instead of by message.
+    /// so callers can match its failures by variant and [`service`](Self::service).
     #[track_caller]
     pub fn from_sdk<E>(
         service: Service,

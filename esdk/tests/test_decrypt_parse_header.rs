@@ -234,7 +234,6 @@ async fn test_max_encrypted_data_keys_enforcement() {
     let plaintext = b"max edk decrypt test";
     let ct = Esdk::default().encrypt().plaintext(plaintext).keyring(multi_keyring.clone()).send().await.unwrap().ciphertext;
 
-    // Two clients differing only in max_encrypted_data_keys.
     let allowing = esdk_with_max_edks(2);
     let limiting = esdk_with_max_edks(1);
 

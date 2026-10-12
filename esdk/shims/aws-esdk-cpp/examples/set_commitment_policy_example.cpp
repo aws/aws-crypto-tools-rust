@@ -4,7 +4,7 @@
 // Use ForbidEncryptAllowDecrypt only while migrating from an ESDK version 1.x that cannot read committing messages,
 // and move to the default once every reader is upgraded.
 //
-// The policy is set once on an EncryptionSDK, which applies it to every operation it runs.
+// An EncryptionSDK applies its policy to every operation it runs.
 
 #include <iostream>
 #include <string>

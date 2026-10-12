@@ -3,9 +3,8 @@
 
 //! The [`Esdk`] client and its [`EsdkConfig`].
 //!
-//! `Esdk` holds an [`EsdkConfig`]: a commitment policy and an optional cap on the number of
-//! encrypted data keys. Each operation starts a fluent builder that takes those two settings
-//! from the client and has no setters for them:
+//! `Esdk` holds an [`EsdkConfig`]: a commitment policy and an optional cap on encrypted data keys.
+//! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
 //! ```ignore
 //! let esdk = Esdk::builder().commitment_policy(policy).build();
@@ -59,11 +58,12 @@ impl Default for EsdkConfig {
     }
 }
 
-/// The AWS Encryption SDK client. Applies one [`EsdkConfig`] to every operation.
+/// The AWS Encryption SDK client.
+/// Applies one [`EsdkConfig`] to every operation.
 ///
 /// Each operation method returns a fluent builder that takes `commitment_policy`
-/// and `max_encrypted_data_keys` from the client; set the rest on the builder
-/// and finish with `send`.
+/// and `max_encrypted_data_keys` from the client.
+/// Set the rest on the builder and finish with `send`.
 ///
 /// # Example
 ///
@@ -421,9 +421,7 @@ impl EsdkBuilder {
         self
     }
 
-    /// Set the commitment policy from an `Option`.
-    /// `None` leaves it unset.
-    /// To set a value, use [`Self::commitment_policy`].
+    /// Set or clear the commitment policy from an `Option`.
     #[must_use]
     pub const fn set_commitment_policy(
         mut self,
@@ -443,9 +441,7 @@ impl EsdkBuilder {
         self
     }
 
-    /// Set the maximum number of encrypted data keys from an `Option`.
-    /// `None` leaves it unset.
-    /// To set a value, use [`Self::max_encrypted_data_keys`].
+    /// Set or clear the maximum number of encrypted data keys from an `Option`.
     #[must_use]
     pub const fn set_max_encrypted_data_keys(
         mut self,

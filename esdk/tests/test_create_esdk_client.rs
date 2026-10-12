@@ -68,8 +68,7 @@ async fn test_net_v400_message_is_not_readable() {
     );
 }
 
-// A client built without a commitment policy refuses to encrypt with a
-// non-committing suite and refuses to decrypt a non-committing message.
+// A client without a commitment policy rejects a non-committing suite on encrypt and decrypt.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_default_commitment_policy() {
     let keyring = test_keyring().await;
@@ -156,8 +155,6 @@ async fn test_frame_length_default_is_4096() {
     assert_eq!(header_frame_length(&out.ciphertext), 4096);
 }
 
-// Round-trip with every optional input set. Each populated optional field is
-// proven "accepted" by the operation returning Ok(_).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
     let keyring = test_keyring().await;
@@ -293,7 +290,6 @@ async fn test_encrypt_decrypt_accepts_cmm() {
     );
 }
 
-// Encrypt rejects a call that sets neither keyring nor cmm, and one that sets both.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
@@ -333,7 +329,6 @@ async fn test_encrypt_rejects_neither_and_both_sources() {
     );
 }
 
-// Decrypt rejects a call that sets neither keyring nor cmm, and one that sets both.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
@@ -449,7 +444,6 @@ fn test_esdk_new_takes_explicit_config() {
     );
 }
 
-// Round-trip through the Esdk client's fluent builders.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_esdk_encrypt_decrypt_round_trip() {
     let plaintext: &[u8] = b"hello via Esdk client";
@@ -491,9 +485,7 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
     );
 }
 
-// With `ForbidEncryptAllowDecrypt` configured on the client and a committing
-// (V2) suite selected, encrypt must reject. Under the default policy the same
-// call succeeds, so the failure shows the client's policy is applied.
+// The default policy accepts this committing suite, so the rejection comes from the client's policy.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_esdk_commitment_policy_actually_gates_encrypt() {
     let keyring = test_keyring().await;
@@ -524,9 +516,7 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
     //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
 }
 
-// A client configured with `ForbidEncryptAllowDecrypt` decrypts a
-// non-committing (V1) message that the default client rejects, so the success
-// shows the client's policy is applied on decrypt.
+// The default policy rejects this V1 message, so the success comes from the client's policy.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_esdk_commitment_policy_actually_gates_decrypt() {
     let keyring = test_keyring().await;

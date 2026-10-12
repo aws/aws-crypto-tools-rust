@@ -1,13 +1,11 @@
 // Handles the exceptions that the hierarchical keyring throws.
 //
 // Every failure is an AwsEncryptionSdkException, or a subclass for its kind.
-// The exception carries everything you might decide on as a field:
-// whether a retry can help (retryable()), the kind of failure (the exception type),
-// the AWS service involved (service()), and the resource to act on (resource()).
-// Use as much or as little of that as your application needs;
-// the handlers below are one way to handle these exceptions, not the only one.
-// Decide from the fields, never from what():
-// messages are for people and logs, and their text can change in any release.
+// Decide from its fields, never from what(), whose text can change in any release:
+// - retryable(): whether a retry can help
+// - the exception type: the kind of failure
+// - service(): the AWS service involved
+// - resource(): the resource to act on
 //
 // Requires AWS credentials and the key store in basic_hierarchical_keyring_example.cpp.
 
@@ -37,8 +35,7 @@ int main() {
         auto keyring = Aws::Esdk::HierarchicalKeyring(keystore, kBranchKeyId, 600s);
         Aws::Esdk::EncryptionSDK esdk;
 
-        // ---- Encrypt: from coarse to fine ----
-        //
+        // Encrypt, handling errors from coarse to fine.
         // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
         // so encrypt can fail in either service.
         const std::string plaintext = "Hello World";
@@ -47,23 +44,20 @@ int main() {
             // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
             encrypted = esdk.encrypt(plaintext, keyring);
         } catch (const Aws::Esdk::AwsEncryptionSdkException& e) {
-            // Checking retryable() before the type catches throttling, timeouts, connection failures
-            // and AWS server errors in one place, whatever their type.
-            // The AWS SDK clients already retried these, so retry at a higher level;
+            // Checking retryable() first catches throttling, timeouts, etc. in one place, whatever their type.
+            // The AWS SDK clients already retried these, so retry at a higher level.
             // retry_kind() says how to back off.
             if (e.retryable()) {
                 std::cerr << "retry later: " << e.what() << "\n";
                 return 1;
             }
 
-            // The exception type says what kind of failure it is.
-            // Many applications stop here and handle each exception type the same way.
+            // Many applications stop at the exception type.
             // Rethrowing lets the typed catch clauses below pick the type.
             try {
                 throw;
             } catch (const Aws::Esdk::AccessDeniedException& denied) {
-                // is_credentials() refines one type further:
-                // AWS rejected the credentials themselves, not a permission on a resource.
+                // is_credentials() means AWS rejected the credentials themselves, not a permission on a resource.
                 if (denied.is_credentials()) {
                     std::cerr << "the AWS credentials are expired or invalid\n";
                     return 1;
@@ -80,15 +74,13 @@ int main() {
                 }
                 switch (*service) {
                 case Aws::Esdk::Service::Kms:
-                    // resource() is the resource to act on.
-                    // resource() is a copy of the resource this exception carries.
+                    // resource() returns a copy of the resource to act on.
                     switch (resource_type) {
                     case Aws::Esdk::ResourceType::KmsKey:
                         std::cerr << "grant access to the KMS key " << resource->name() << "\n";
                         break;
                     default:
-                        // Later releases add resource types,
-                        // so every switch on the resource ends in a default case.
+                        // Later releases add resource types, so end every switch on the resource with a default case.
                         std::cerr << "AWS KMS denied access: " << denied.what() << "\n";
                     }
                     break;
@@ -106,8 +98,7 @@ int main() {
                     std::cerr << "access denied: " << denied.what() << "\n";
                 }
             } catch (const Aws::Esdk::ResourceNotFoundException& not_found) {
-                // A missing resource carries the resource to create or fix.
-                // Branch on the service, then on the resource within it, the same way.
+                // A missing resource: branch on the service, then on the resource, the same way.
                 const auto service = not_found.service();
                 const auto resource = not_found.resource();
                 const auto resource_type = resource ? resource->type() : Aws::Esdk::ResourceType::Unknown;
@@ -143,15 +134,14 @@ int main() {
                     std::cerr << "a resource does not exist: " << not_found.what() << "\n";
                 }
             } catch (const Aws::Esdk::AwsEncryptionSdkException& other) {
-                // Later releases add exception types,
-                // so the base class catches every other failure, today's and future ones.
-                // full_message() adds every cause below the error, for the log.
+                // Later releases add exception types, so the base class catches every other failure.
+                // full_message() adds every cause below the error.
                 std::cerr << "encrypt failed: " << other.full_message() << "\n";
             }
             return 1;
         }
 
-        // ---- Decrypt: failures only decrypt has ----
+        // Decrypt, handling the failures only decrypt has.
         try {
             auto decrypted = esdk.decrypt(encrypted->ciphertext, keyring);
             if (decrypted.plaintext.as_string_view() != plaintext) {
@@ -174,7 +164,8 @@ int main() {
             std::cerr << "the message was encrypted under a different keyring: " << e.what() << "\n";
             return 1;
         } catch (const Aws::Esdk::CryptographicException&) {
-            // The message is corrupt or was modified. Retrying cannot help.
+            // The message is corrupt or was modified.
+            // Retrying cannot help.
             std::cerr << "the message is corrupt or was tampered with\n";
             return 1;
         } catch (const Aws::Esdk::SerializationException&) {

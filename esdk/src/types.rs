@@ -410,7 +410,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -615,7 +615,7 @@ impl EncryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -771,7 +771,7 @@ impl<'a> DecryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -909,7 +909,7 @@ impl DecryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders take this from the client instead.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);

@@ -4,18 +4,16 @@
 //! Handles the errors that the hierarchical keyring and its key store return.
 //!
 //! Every operation returns one `aws_esdk::Error`.
-//! The error carries everything you might decide on as a field:
-//! whether a retry can help (`is_retryable()`), the kind of failure (the variant),
-//! the AWS service involved (`service()`), and the resource to act on (`resource()`).
-//! Use as much or as little of that as your application needs;
-//! the arms below are one way to handle these errors, not the only one.
-//! Decide from the fields, never from the message:
-//! messages are for people and logs, and their text can change in any release.
+//! Decide from its fields, never from the message text, which can change in any release:
+//! - `is_retryable()`: whether a retry can help
+//! - the variant: the kind of failure
+//! - `service()`: the AWS service involved
+//! - `resource()`: the resource to act on
 //!
-//! The encrypt call shows handling from coarse to fine.
-//! The decrypt call shows the failures only decrypt has, and how to see every failure
-//! when the keyring tried more than one encrypted data key.
-//! The key store call shows a key store error with a reason.
+//! The encrypt call handles errors from coarse to fine.
+//! The decrypt call handles the failures only decrypt has,
+//! and lists every failure when the keyring tried more than one encrypted data key.
+//! The key store call handles a key store error with a reason.
 //!
 //! Requires AWS credentials and an existing key store with a provisioned branch key.
 
@@ -54,8 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .branch_key_id(BRANCH_KEY_ID)
         .build()?;
 
-    // ---- Encrypt: from coarse to fine ----
-    //
+    // Encrypt, handling errors from coarse to fine.
     // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
     // so encrypt can fail in either service.
     let esdk = Esdk::default();
@@ -69,18 +66,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(output) => output,
         Err(e) => {
             match &e {
-                // Checking `is_retryable()` before the variant catches throttling, timeouts,
-                // connection failures and AWS server errors in one arm, whatever their variant.
-                // The AWS SDK clients already retried these with their own backoff,
-                // so retry at a higher level; `e.retry_kind()` says how to back off.
+                // Checking `is_retryable()` first catches throttling, timeouts, etc. in one arm, whatever their variant.
+                // The AWS SDK clients already retried these, so retry at a higher level.
+                // `e.retry_kind()` says how to back off.
                 _ if e.is_retryable() => {
                     eprintln!("retry later ({:?}): {e}", e.retry_kind());
                 }
 
-                // The variant says what kind of failure it is.
-                // Many applications stop here and handle each variant the same way, for example `Error::AccessDenied(_) => alert_on_call()`.
-                // `is_credentials()` refines one variant further:
-                // AWS rejected the credentials themselves, not a permission on a resource.
+                // Many applications stop at the variant, for example `Error::AccessDenied(_) => alert_on_call()`.
+                // `is_credentials()` means AWS rejected the credentials themselves, not a permission on a resource.
                 Error::AccessDenied(denied) if denied.is_credentials() => {
                     eprintln!("the AWS credentials are expired or invalid");
                 }
@@ -90,13 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Error::AccessDenied(denied) => match denied.service() {
                     Some(Service::Kms) => match denied.resource() {
                         // `resource()` is the resource to act on.
-                        // `key` is the KMS key this error carries, bound by the pattern;
-                        // read its details through accessors.
                         Some(Resource::KmsKey(key)) => {
                             eprintln!("grant access to the KMS key {}", key.arn());
                         }
-                        // `Resource` gains new kinds in later releases,
-                        // so every match on it ends in a catch-all arm.
+                        // `Resource` gains kinds in later releases, so end every match on it with a catch-all arm.
                         _ => eprintln!("AWS KMS denied access: {e}"),
                     },
                     Some(Service::DynamoDb) => match denied.resource() {
@@ -109,8 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ => eprintln!("access denied: {e}"),
                 },
 
-                // A missing resource carries the resource to create or fix.
-                // Branch on the service, then on the resource within it, the same way.
+                // A missing resource: branch on the service, then on the resource, the same way.
                 Error::ResourceNotFound(not_found) => match not_found.service() {
                     Some(Service::Kms) => match not_found.resource() {
                         Some(Resource::KmsKey(key)) => {
@@ -132,16 +122,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ => eprintln!("a resource does not exist: {e}"),
                 },
 
-                // `Error` gains new variants in later releases,
-                // so the last arm handles every other failure, today's and future ones.
-                // `{e:#}` prints the error and every cause below it, for the log.
+                // `Error` gains variants in later releases, so the last arm handles every other failure.
+                // `{e:#}` prints the error and every cause below it.
                 _ => eprintln!("encrypt failed: {e:#}"),
             }
             return Err(e.into());
         }
     };
 
-    // ---- Decrypt: failures only decrypt has, and every failure behind an error ----
+    // Decrypt, handling the failures only decrypt has.
     let result = esdk
         .decrypt()
         .ciphertext(&encrypted.ciphertext)
@@ -174,15 +163,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                // The message is corrupt or was modified. Retrying cannot help.
+                // The message is corrupt or was modified.
+                // Retrying cannot help.
                 Error::Cryptographic(_) | Error::Serialization(_) => {
                     eprintln!("the message is corrupt or was tampered with");
                 }
 
-                // A message can have several encrypted data keys, and the keyring tries each one.
-                // When they all fail, `e` is the most actionable failure,
-                // and `failures()` returns every one of them, each a full `Error`
-                // you can match the same way as above.
+                // The keyring tries each of the message's encrypted data keys.
+                // When all fail, `e` is the most actionable failure,
+                // and `failures()` returns every one, each a full `Error`.
                 _ => {
                     for failure in e.failures() {
                         match &failure {
@@ -204,13 +193,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(decrypted.plaintext, PLAINTEXT);
     println!("decrypted the message");
 
-    // ---- Key store: a failure with a reason ----
-    //
-    // Key store operations return `aws_crypto_mpl::Error`, which has the same variants and accessors.
-    // A `Conflict` says why through `reason()`.
-    // Creating a branch key whose ID is already in use is `AlreadyExists`;
-    // rotating a branch key that another caller rotated at the same time is `ConcurrentModification`.
-    // This call uses the provisioned branch key's ID, so it reaches the `AlreadyExists` arm.
+    // Key store operations return `aws_crypto_mpl::Error`, with the same variants and accessors.
+    // A `Conflict` says why through `reason()`:
+    // - `AlreadyExists`: the branch key ID is already in use
+    // - `ConcurrentModification`: another caller rotated the branch key at the same time
+    // This call reuses the provisioned branch key's ID, so it reaches `AlreadyExists`.
     let mut branch_key_context = EncryptionContext::new();
     branch_key_context.insert("purpose", "example");
     match key_store

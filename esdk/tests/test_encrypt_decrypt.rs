@@ -80,8 +80,7 @@ async fn test_encrypt_decrypt_short() {
         .unwrap()
         .ciphertext;
     let cipher_len: usize = esdk_ciphertext.len();
-    // Truncate the last byte of the ciphertext. For the default signing suite this
-    // chops off the final byte of the footer signature, so decrypt fails with a Serialization error.
+    // The last byte belongs to the footer signature, so decrypt fails with a Serialization error.
     //= spec/client-apis/decrypt.md#behavior
     //= type=test
     //= reason=Truncating the ciphertext's last byte makes footer deserialization fail; decrypt MUST halt with an error
@@ -188,9 +187,7 @@ async fn test_bad_encrypt_input() {
     );
 }
 
-// Sweeps frame_length from 4 (multi-frame) up to plaintext.len() (single
-// full frame), round-tripping at each length to confirm encrypt+decrypt
-// agree across both frame-count regimes.
+// Frame lengths from 4 (multi-frame) up to plaintext.len() (one full frame).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_decrypt_varied_frame_lengths() {
     let keyring = test_keyring().await;

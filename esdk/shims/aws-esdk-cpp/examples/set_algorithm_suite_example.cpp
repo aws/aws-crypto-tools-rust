@@ -1,4 +1,4 @@
-// Encrypts with a chosen algorithm suite instead of the default.
+// Encrypts with a non-default algorithm suite.
 //
 // The default suite, AlgAes256GcmHkdfSha512CommitKeyEcdsaP384, commits to the data key and signs the message.
 // Signing lets a decryptor verify that the message came from someone allowed to encrypt,

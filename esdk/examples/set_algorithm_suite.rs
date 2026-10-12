@@ -1,7 +1,7 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Encrypts with a chosen algorithm suite instead of the default.
+//! Encrypts with a non-default algorithm suite.
 //!
 //! The default suite, `AlgAes256GcmHkdfSha512CommitKeyEcdsaP384`, commits to the data key and signs the message.
 //! Signing lets a decryptor verify that the message came from someone allowed to encrypt,
@@ -9,8 +9,7 @@
 //! When encryptors and decryptors are equally trusted, a suite without signing is faster.
 //! This example uses `AlgAes256GcmHkdfSha512CommitKey`, which commits but does not sign.
 //!
-//! The algorithm suite protects the message with the data key.
-//! It is separate from the keyring's wrapping algorithm, which protects the data key.
+//! The algorithm suite is separate from the keyring's wrapping algorithm, which protects the data key.
 //!
 //! Runs offline.
 

@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let keyring = make_keyring()?;
     let after_rotation = encrypt_with(keyring.clone()).await?;
 
-    // Both messages decrypt: the old one under the earlier version, the new one under the active version.
+    // Both messages decrypt: the first one under the earlier version, the new one under the active version.
     for encrypted in [before_rotation, after_rotation] {
         let decrypted = esdk
             .decrypt()

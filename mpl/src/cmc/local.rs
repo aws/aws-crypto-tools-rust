@@ -87,8 +87,8 @@ impl LocalCmc {
         entry_pruning_tail_size: usize,
         now: Clock,
     ) -> Self {
-        // `None` for the no-store cache.
-        // `sparse` allocates as entries arrive, so building a large cache is cheap.
+        // A zero capacity gives `None`: a cache that stores nothing.
+        // `sparse` allocates as entries arrive, so a large capacity costs nothing up front.
         let inner = NonZeroUsize::new(entry_capacity).map(LruCache::sparse);
         Self {
             inner: Arc::new(LocalCmcInner {

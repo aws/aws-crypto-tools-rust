@@ -1049,7 +1049,7 @@ fn load_default_sdk_config() -> Result<SdkConfig, String> {
     Ok(shared_config.to_builder().app_name(app_name).build())
 }
 
-/// C++ to Rust for static credentials.
+/// Convert C++ static credentials to AWS SDK credentials.
 fn credentials_target_to_core(
     input: &ffi::Credentials,
     operation: &str,

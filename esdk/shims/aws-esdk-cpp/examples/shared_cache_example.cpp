@@ -30,7 +30,7 @@ int main() {
                 "KeyStoreDdbTable",
                 "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126"
                 // KMS and DynamoDB clients are optional and omitted here.
-                // The ESDK will build defaults from the standard AWS config chain (region and credentials).
+                // The ESDK builds defaults from the standard AWS config chain (region and credentials).
             );
         };
         auto keystore_a = make_keystore();

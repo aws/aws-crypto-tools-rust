@@ -7,7 +7,7 @@
 //! Use `ForbidEncryptAllowDecrypt` only while migrating from an ESDK version 1.x that cannot read committing messages,
 //! and move to the default once every reader is upgraded.
 //!
-//! The policy is set once on an `Esdk` client, which applies it to every operation the client starts.
+//! An `Esdk` client applies its policy to every operation it starts.
 //!
 //! Runs offline.
 

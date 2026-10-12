@@ -7,7 +7,7 @@
 //! with a unique data key, which is itself encrypted by one or more
 //! wrapping keys (key providers / keyrings).
 //!
-//! Configure an [`Esdk`](crate::Esdk) client with [`Esdk::builder`](crate::Esdk::builder),
+//! Configure an [`Esdk`] client with [`Esdk::builder`](crate::Esdk::builder),
 //! then start each operation with [`Esdk::encrypt`](crate::Esdk::encrypt) /
 //! [`Esdk::decrypt`](crate::Esdk::decrypt) (or the streaming variants) and finish it with `send`:
 //!

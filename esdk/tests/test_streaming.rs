@@ -130,8 +130,6 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
     );
 }
 
-// Streaming encrypt and decrypt reject a call that sets neither keyring nor cmm,
-// and one that sets both.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streaming_rejects_neither_and_both_sources() {
     let keyring = test_keyring().await;
@@ -185,10 +183,8 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     }
 }
 
-// An async source that hands out one byte per read and pends between reads,
-// and a sink that accepts at most three bytes per write.
-// The round trip through them checks that the streaming APIs resume
-// correctly after every partial and pending read and write.
+// Reads one byte at a time with a pending poll between reads; writes at most three bytes at a time.
+// Exercises resuming after every partial and pending read and write.
 struct Trickle<T> {
     inner: T,
     ready: bool,
@@ -331,7 +327,6 @@ async fn test_large_message_yields_to_other_tasks() {
     ticker.abort();
 }
 
-// A std::io reader and writer passed through SyncReader and SyncWriter round-trip.
 #[tokio::test]
 async fn test_streaming_round_trip_through_sync_adapters() {
     use aws_esdk::io::{SyncReader, SyncWriter};

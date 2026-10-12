@@ -5,8 +5,6 @@
 //!
 //! The keyring's builder, its OnEncrypt and OnDecrypt operations,
 //! and the branch key lookup they share: the cache first, then the key store.
-//! The pure-crypto wrap and unwrap operations live in [`super::branch_key_wrap`]
-//! and the cache identifier formulas in [`super::cache_entry_identifier`].
 
 use crate::Error;
 use crate::builder::required;
@@ -200,8 +198,6 @@ impl BranchKeySupplier for SharedBranchKeySupplier {
 /// AWS KMS Hierarchical Keyring.
 ///
 /// Construct with [`HierarchicalKeyring::builder`].
-/// The [`Keyring`] impl wires the configured cache and key store into the
-/// OnEncrypt / OnDecrypt algorithms.
 #[derive(Clone)]
 pub struct HierarchicalKeyring {
     inner: Arc<HierarchicalKeyringInner>,
@@ -474,8 +470,6 @@ impl HierarchicalKeyringBuilder {
             None => generate_partition_id()?,
         };
 
-        // Resolve the key store's logical name once, here, so the OnEncrypt and
-        // OnDecrypt paths can build cache identifiers without re-reading it.
         let logical_key_store_name = key_store
             .get_key_store_info()
             .send()

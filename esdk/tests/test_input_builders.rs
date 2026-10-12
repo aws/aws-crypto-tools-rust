@@ -60,8 +60,8 @@ async fn test_send_requires_plaintext_and_ciphertext() {
     assert!(err.is_validation(), "{:?}", err);
 }
 
-// The non-committing SUITE only encrypts under POLICY, so success shows the
-// suite was applied; the frame count shows the frame length was applied.
+// The non-committing SUITE encrypts only under POLICY, so success shows the suite was set.
+// The frame count shows the frame length was set.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_encrypt_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);
@@ -202,8 +202,7 @@ async fn test_encrypt_stream_setters_take_effect() {
         .expect("encrypt_stream with set_cmm must succeed");
 }
 
-// A reproduced encryption context that conflicts with the message fails, so a
-// matching one succeeding and a conflicting one failing shows it was applied.
+// A matching reproduced encryption context succeeds and a conflicting one fails.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decrypt_setters_take_effect() {
     let keyring = SharedKeyring::new(test_keyring().await);

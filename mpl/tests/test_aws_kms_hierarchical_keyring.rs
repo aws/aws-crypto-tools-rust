@@ -92,12 +92,10 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
     }
 }
 
-/// A real DynamoDB key store that is never consulted.
+/// A real DynamoDB key store whose table and KMS key do not exist.
 ///
-/// The type is the one callers actually pass to the keyring,
-/// but it points at a table and KMS key that do not exist, so any key store call would fail.
-/// No test using it makes one: building the keyring reads only the key store's configuration.
-/// Tests that run OnEncrypt / OnDecrypt use the `FakeKeyStore` doubles in `mod onencrypt` / `mod ondecrypt`.
+/// Building a keyring reads only the key store's configuration, so no test using this makes a key store call.
+/// OnEncrypt / OnDecrypt tests use the `FakeKeyStore` doubles.
 fn key_store_never_consulted() -> KeyStoreClient {
     let (kms, ddb) = dummy_clients();
     build_without_io(

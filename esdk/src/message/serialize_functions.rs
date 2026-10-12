@@ -74,7 +74,7 @@ pub(crate) async fn write_to_sink(w: &mut dyn Sink, data: &[u8]) -> Result<(), E
     w.write_all(data).await.map_err(ser_io)
 }
 
-/// Flush an output stream, so every byte written to it has reached its destination.
+/// Flush an output stream.
 pub(crate) async fn flush_sink(w: &mut dyn Sink) -> Result<(), Error> {
     w.flush().await.map_err(ser_io)
 }

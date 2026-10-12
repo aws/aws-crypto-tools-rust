@@ -4,7 +4,7 @@ A native Rust implementation of the AWS Encryption SDK.
 
 The AWS Encryption SDK is a client-side encryption library.
 It uses envelope encryption: a data key encrypts your data, and one or more wrapping keys in a _keyring_ encrypt that data key.
-The encrypted data keys are stored in the encrypted message, so you don't track them separately.
+The encrypted message carries the encrypted data keys, so you don't track them separately.
 
 Every operation starts on an [`Esdk`](#the-esdk-client) client.
 The two primary operations are `encrypt` and `decrypt`.
