@@ -9,6 +9,9 @@
 //! [`super::branch_key_wrap`] and the cache identifier formulas in
 //! [`super::cache_entry_identifier`].
 
+use crate::Error;
+use crate::error::{Cache, DataKeyInfo, Kind, Resource};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -20,11 +23,12 @@ use crate::aws_kms::cache_entry_identifier;
 use crate::cmc::cache_config::{
     CacheType, DEFAULT_CACHE_ENTRY_CAPACITY, DefaultCache, create_cryptographic_materials_cache,
 };
-use crate::cmc::{CacheEntry, CachedMaterials, Cmc, TimeUnits, UsageMetadata};
-use crate::keystore::Keystore;
+use crate::cmc::{CacheEntry, CachedMaterials, Cmc, SharedCmc, UsageMetadata};
+use crate::keystore::{Keystore, SharedKeystore};
+use crate::shared::IntoShared;
 use crate::structures::{
     AlgorithmSuite, BranchKeyMaterials, DecryptionMaterials, EncryptedDataKey, EncryptionContext,
-    EncryptionMaterials, MaterialsError, MaterialsErrorKind, PlaintextDataKey,
+    EncryptionMaterials, PlaintextDataKey,
 };
 
 /// Input for [`BranchKeySupplier::get_branch_key_id`]. Mirrors the Smithy
@@ -89,85 +93,232 @@ impl GetBranchKeyIdOutput {
 /// synchronous. An implementation that must perform IO to reach its answer is
 /// responsible for bridging to it itself (for example
 /// `tokio::task::block_in_place`).
+///
+/// To hold a supplier whose concrete type is chosen at runtime, use [`SharedBranchKeySupplier`].
 pub trait BranchKeySupplier: Send + Sync {
     /// Return the branch key id to use for a given encryption context.
-    fn get_branch_key_id(
-        &self,
-        input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, MaterialsError>;
+    fn get_branch_key_id(&self, input: GetBranchKeyIdInput) -> Result<GetBranchKeyIdOutput, Error>;
+}
+
+crate::shared::shared_handle!(
+    /// A branch key supplier whose concrete type is chosen at runtime.
+    ///
+    /// It implements [`BranchKeySupplier`], so it can be passed anywhere a branch key supplier is accepted.
+    /// Callers that know their branch key supplier's type pass it directly and never need this one.
+    SharedBranchKeySupplier,
+    BranchKeySupplier
+);
+
+impl BranchKeySupplier for SharedBranchKeySupplier {
+    fn get_branch_key_id(&self, input: GetBranchKeyIdInput) -> Result<GetBranchKeyIdOutput, Error> {
+        self.0.get_branch_key_id(input)
+    }
 }
 
 /// AWS KMS Hierarchical Keyring.
 ///
-/// See [`HierarchicalKeyring::new`] for construction. The [`Keyring`]
-/// impl wires the configured cache and keystore into the OnEncrypt /
-/// OnDecrypt algorithms.
+/// Construct with [`HierarchicalKeyring::builder`].
+/// The [`Keyring`] impl wires the configured cache and keystore into the
+/// OnEncrypt / OnDecrypt algorithms.
+#[derive(Clone)]
 pub struct HierarchicalKeyring {
-    keystore: Arc<dyn Keystore>,
+    inner: Arc<HierarchicalKeyringInner>,
+}
 
-    ttl_seconds: u64,
+struct HierarchicalKeyringInner {
+    keystore: SharedKeystore,
+
+    ttl: Duration,
 
     /// The single branch key id this keyring wraps and unwraps with, when
     /// configured with one. Exactly one of this and `branch_key_id_supplier`
-    /// is `Some`, checked in [`HierarchicalKeyring::new`].
+    /// is `Some`, checked in [`HierarchicalKeyringBuilder::build`].
     branch_key_id: Option<String>,
 
     /// The supplier that chooses a branch key id per operation, when
     /// configured with one instead of a static `branch_key_id`.
-    branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
+    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
 
     partition_id_bytes: Vec<u8>,
 
     /// The keystore's logical name, which the cache identifier formulas bind.
     /// Not a construction parameter: it is read from the keystore's own
-    /// `get_key_store_info` once in [`HierarchicalKeyring::new`].
+    /// `get_key_store_info` once in [`HierarchicalKeyringBuilder::build`].
     logical_keystore_name: String,
 
     /// Cryptographic-materials cache for branch-key materials. Either a
     /// keyring-local `LocalCmc`/`StormTrackingCmc` built at construction
     /// time, or a `Shared` cache supplied by the caller.
-    cache: Arc<dyn Cmc>,
+    cache: SharedCmc,
 }
 
 impl HierarchicalKeyring {
+    /// Start a builder for `HierarchicalKeyring`.
+    #[must_use]
+    pub fn builder() -> HierarchicalKeyringBuilder {
+        HierarchicalKeyringBuilder::default()
+    }
+
+    /// The configured TTL for cached branch-key materials.
+    pub fn ttl(&self) -> Duration {
+        self.inner.ttl
+    }
+
+    /// The configured static branch key id, if this keyring was built with one
+    /// rather than with a [`BranchKeySupplier`].
+    pub fn branch_key_id(&self) -> Option<&str> {
+        self.inner.branch_key_id.as_deref()
+    }
+
+    /// The configured branch key id supplier, if this keyring was built with
+    /// one rather than with a static branch key id.
+    pub fn branch_key_id_supplier(&self) -> Option<&SharedBranchKeySupplier> {
+        self.inner.branch_key_id_supplier.as_ref()
+    }
+
+    /// The configured keystore.
+    pub fn keystore(&self) -> &SharedKeystore {
+        &self.inner.keystore
+    }
+
+    /// The partition id: the UTF-8 bytes of the caller's string,
+    /// or the 16 bytes of a v4 UUID the keyring generated.
+    ///
+    /// Not part of the public API; exposed for tests.
+    #[doc(hidden)]
+    pub fn partition_id_bytes(&self) -> &[u8] {
+        &self.inner.partition_id_bytes
+    }
+
+    /// The configured cache.
+    ///
+    /// Not part of the public API; exposed for tests.
+    #[doc(hidden)]
+    pub fn cache(&self) -> &SharedCmc {
+        &self.inner.cache
+    }
+}
+
+/// Builder for [`HierarchicalKeyring`], returned by
+/// [`HierarchicalKeyring::builder`].
+#[derive(Default)]
+pub struct HierarchicalKeyringBuilder {
+    key_store: Option<SharedKeystore>,
+    ttl: Option<Duration>,
+    branch_key_id: Option<String>,
+    branch_key_id_supplier: Option<SharedBranchKeySupplier>,
+    cache: Option<CacheType>,
+    partition_id: Option<String>,
+}
+
+impl std::fmt::Debug for HierarchicalKeyringBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HierarchicalKeyringBuilder")
+            .field("ttl", &self.ttl)
+            .field("branch_key_id", &self.branch_key_id)
+            .field("partition_id", &self.partition_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl HierarchicalKeyringBuilder {
+    /// The keystore. Required.
+    #[must_use]
+    pub fn key_store(mut self, key_store: impl Keystore + 'static) -> Self {
+        self.key_store = Some(key_store.into_shared());
+        self
+    }
+
+    /// The TTL for cached branch-key materials.
+    /// Required, and must be greater than zero.
+    #[must_use]
+    pub fn ttl(mut self, ttl: Duration) -> Self {
+        self.ttl = Some(ttl);
+        self
+    }
+
+    /// A static branch key id.
+    /// Set this or [`branch_key_id_supplier`](Self::branch_key_id_supplier), not both.
+    #[must_use]
+    pub fn branch_key_id(mut self, branch_key_id: impl Into<String>) -> Self {
+        self.branch_key_id = Some(branch_key_id.into());
+        self
+    }
+
+    /// A [`BranchKeySupplier`].
+    /// Set this or [`branch_key_id`](Self::branch_key_id), not both.
+    #[must_use]
+    pub fn branch_key_id_supplier(mut self, supplier: impl BranchKeySupplier + 'static) -> Self {
+        self.branch_key_id_supplier = Some(supplier.into_shared());
+        self
+    }
+
+    /// The cache for branch key materials; see [`CacheType`].
+    /// When unset, behaves as `CacheType::Default(DefaultCache::new(1000))`.
+    #[must_use]
+    pub fn cache(mut self, cache: CacheType) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// The partition id.
+    /// When unset, the keyring generates a fresh v4 UUID and stores it as the 16-byte partition id.
+    #[must_use]
+    pub fn partition_id(mut self, partition_id: impl Into<String>) -> Self {
+        self.partition_id = Some(partition_id.into());
+        self
+    }
+
     /// Construct a new hierarchical keyring.
     ///
-    /// `ttl_seconds` must be greater than zero.
+    /// # Errors
     ///
-    /// If `partition_id` is `None`, a fresh v4 UUID is generated and stored
-    /// as the 16-byte partition id.
+    /// - [`Validation`](crate::Error::Validation): no key store or TTL is set, the TTL is zero, both or neither of a branch key id and a branch key id supplier are set, a storm-tracking grace period is not less than the TTL, or the materials cache rejects its parameters.
+    /// - [`Cryptographic`](crate::Error::Cryptographic): the random number generator failed while creating the default partition id.
     ///
-    /// `cache_type` selects the cache backing — see [`CacheType`]. When
-    /// `None`, behaves as `Some(CacheType::Default(DefaultCache::default()))`.
-    pub fn new(
-        keystore: Arc<dyn Keystore>,
-        ttl_seconds: u64,
-        branch_key_id: Option<String>,
-        branch_key_id_supplier: Option<Arc<dyn BranchKeySupplier>>,
-        cache_type: Option<CacheType>,
-        partition_id: Option<String>,
-    ) -> Result<Self, MaterialsError> {
-        if ttl_seconds == 0 {
-            return Err(MaterialsError::new(
-                "HierarchicalKeyring TTL (ttl_seconds) must be greater than zero",
+    /// If the key store's [`get_key_store_info`](crate::Keystore::get_key_store_info) fails, returns that error unchanged.
+    /// The built-in [`BranchKeyStore`](crate::BranchKeyStore) does not fail it.
+    pub fn build(self) -> Result<HierarchicalKeyring, Error> {
+        let Self {
+            key_store,
+            ttl,
+            branch_key_id,
+            branch_key_id_supplier,
+            cache,
+            partition_id,
+        } = self;
+
+        let Some(keystore) = key_store else {
+            return Err(Error::new(Kind::Validation, "a key store is required"));
+        };
+
+        let Some(ttl) = ttl else {
+            return Err(Error::new(Kind::Validation, "a TTL is required"));
+        };
+        if ttl.is_zero() {
+            return Err(Error::new(
+                Kind::Validation,
+                "TTL must be greater than zero",
             ));
         }
 
         if branch_key_id.is_some() && branch_key_id_supplier.is_some() {
-            return Err(MaterialsError::new(
-                "Cannot initialize keyring with both a branch_key_id and a branch_key_id_supplier",
+            return Err(Error::new(
+                Kind::Validation,
+                "cannot initialize keyring with both a branch_key_id and a branch_key_id_supplier",
             ));
         }
         if branch_key_id.is_none() && branch_key_id_supplier.is_none() {
-            return Err(MaterialsError::new(
-                "Must initialize keyring with either a branch_key_id or a branch_key_id_supplier",
+            return Err(Error::new(
+                Kind::Validation,
+                "must initialize keyring with either a branch_key_id or a branch_key_id_supplier",
             ));
         }
 
-        // An absent `cache_type` is where the 1000-entry default lives: the
-        // model requires `DefaultCache.entryCapacity`, and documents this
-        // number on the keyring's own `cache` member.
-        let cache_type = cache_type.unwrap_or(CacheType::Default(DefaultCache::new(
+        // An absent `cache` is where the 1000-entry default lives: the model
+        // requires `DefaultCache.entryCapacity`, and documents this number on
+        // the keyring's own `cache` member.
+        let cache_type = cache.unwrap_or(CacheType::Default(DefaultCache::new(
             DEFAULT_CACHE_ENTRY_CAPACITY,
         )));
 
@@ -175,22 +326,21 @@ impl HierarchicalKeyring {
         // keyring's TTL, so it is checked here rather than inside
         // `create_cryptographic_materials_cache`, which has no TTL to compare
         // against when a cache is built standalone.
-        if let CacheType::StormTracking(params) = &cache_type {
-            let grace_in_seconds = match params.time_units.unwrap_or_default() {
-                TimeUnits::Seconds => params.grace_period,
-                TimeUnits::Milliseconds => params.grace_period / 1000,
-            };
-            if grace_in_seconds >= ttl_seconds {
-                return Err(MaterialsError::new(format!(
-                    "HierarchicalKeyring: storm-tracking grace period ({} {:?}) must be less than the cache limit TTL ({ttl_seconds} seconds)",
-                    params.grace_period,
-                    params.time_units.unwrap_or_default(),
-                )));
-            }
+        if let CacheType::StormTracking(params) = &cache_type
+            && params.grace_period() >= ttl
+        {
+            return Err(Error::new(
+                Kind::Validation,
+                format!(
+                    "storm-tracking grace period ({:?}) must be less than the cache limit TTL ({ttl:?})",
+                    params.grace_period(),
+                ),
+            ));
         }
 
-        let cache = create_cryptographic_materials_cache(cache_type)
-            .map_err(|e| MaterialsError::new(format!("HierarchicalKeyring: {e}")))?;
+        let cache = create_cryptographic_materials_cache(cache_type).map_err(|e| {
+            Error::with_cause(Kind::Validation, "could not create the materials cache", e)
+        })?;
 
         let partition_id_bytes = match partition_id {
             Some(s) => s.into_bytes(),
@@ -201,63 +351,20 @@ impl HierarchicalKeyring {
         // OnDecrypt paths can build cache identifiers without re-reading it.
         let logical_keystore_name = keystore
             .get_key_store_info()
-            .map_err(|e| {
-                MaterialsError::new(format!(
-                    "HierarchicalKeyring: get_key_store_info failed: {e}",
-                ))
-            })?
+            .map_err(|e| Error::wrap("could not read the key store info", e))?
             .logical_keystore_name;
 
-        Ok(Self {
-            keystore,
-            ttl_seconds,
-            branch_key_id,
-            branch_key_id_supplier,
-            partition_id_bytes,
-            logical_keystore_name,
-            cache,
+        Ok(HierarchicalKeyring {
+            inner: Arc::new(HierarchicalKeyringInner {
+                keystore,
+                ttl,
+                branch_key_id,
+                branch_key_id_supplier,
+                partition_id_bytes,
+                logical_keystore_name,
+                cache,
+            }),
         })
-    }
-
-    /// The configured TTL for cached branch-key materials, in seconds.
-    pub fn ttl_seconds(&self) -> u64 {
-        self.ttl_seconds
-    }
-
-    /// The configured static branch key id, if this keyring was built with one
-    /// rather than with a [`BranchKeySupplier`].
-    pub fn branch_key_id(&self) -> Option<&str> {
-        self.branch_key_id.as_deref()
-    }
-
-    /// The configured branch key id supplier, if this keyring was built with
-    /// one rather than with a static branch key id.
-    pub fn branch_key_id_supplier(&self) -> Option<&Arc<dyn BranchKeySupplier>> {
-        self.branch_key_id_supplier.as_ref()
-    }
-
-    /// The configured keystore.
-    pub fn keystore(&self) -> &Arc<dyn Keystore> {
-        &self.keystore
-    }
-
-    /// The 16-byte partition id of this keyring. Either the UTF-8 bytes of the
-    /// caller-provided string, or a freshly-generated v4 UUID.
-    ///
-    /// Hidden from the public API surface; intended for tests verifying the
-    /// v4-UUID variant/version bits and round-tripping of caller-provided
-    /// strings.
-    #[doc(hidden)]
-    pub fn partition_id_bytes(&self) -> &[u8] {
-        &self.partition_id_bytes
-    }
-
-    /// The configured cache. Hidden from the public API surface;
-    /// intended for tests asserting that `CacheType::Shared(...)` round-
-    /// trips the supplied `Arc<dyn Cmc>` verbatim.
-    #[doc(hidden)]
-    pub fn cache(&self) -> &Arc<dyn Cmc> {
-        &self.cache
     }
 }
 
@@ -266,11 +373,12 @@ impl HierarchicalKeyring {
 /// than the `uuid` crate's own entropy source, so all randomness in this crate
 /// comes from one audited primitive. `Builder::from_random_bytes` sets the
 /// version and variant bits.
-fn generate_partition_id() -> Result<Vec<u8>, MaterialsError> {
+fn generate_partition_id() -> Result<Vec<u8>, Error> {
     let mut bytes = [0u8; 16];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
-        MaterialsError::new_with_cause(
-            "HierarchicalKeyring: failed to obtain entropy for partition-id v4 UUID",
+        Error::with_cause(
+            Kind::Cryptographic,
+            "failed to obtain entropy for partition-id v4 UUID",
             e,
         )
     })?;
@@ -292,10 +400,15 @@ fn uuid_16_bytes_to_str(bytes: &[u8; CIPHERTEXT_VERSION_LEN]) -> String {
 
 #[async_trait]
 impl Keyring for HierarchicalKeyring {
+    /// The configured branch key ID, or `"supplier"` when a branch key ID supplier chooses it.
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.inner.branch_key_id.as_deref().unwrap_or("supplier"))
+    }
+
     async fn on_encrypt(
         &self,
         materials: EncryptionMaterials,
-    ) -> Result<EncryptionMaterials, MaterialsError> {
+    ) -> Result<EncryptionMaterials, Error> {
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
         let plaintext_dk = match materials.plaintext_data_key() {
@@ -305,52 +418,39 @@ impl Keyring for HierarchicalKeyring {
 
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_ENCRYPT,
-            &self.partition_id_bytes,
-            &self.logical_keystore_name,
+            &self.inner.partition_id_bytes,
+            &self.inner.logical_keystore_name,
             &branch_key_id,
             None,
         );
 
-        let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
-            MaterialsError::keyring_failed_with_cause(
-                format!("HierarchicalKeyring: cache get_cache_entry failed: {e}"),
-                e,
-            )
-        })?;
+        let cached = self
+            .inner
+            .cache
+            .get_cache_entry(&cache_id)
+            .await
+            .map_err(|e| name_branch_key_in_cache_wait(e, &branch_key_id))?;
 
         let ciphertext = match cached {
-            Some(entry) if cache_entry_within_limits(&entry, self.ttl_seconds) => {
+            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
                 let bkm = as_branch_key_materials(&entry)?;
                 branch_key_wrap::wrap(bkm, materials.encryption_context(), plaintext_dk.as_bytes())?
             }
             _ => {
                 let bkm = self
+                    .inner
                     .keystore
                     .get_active_branch_key(branch_key_id.clone())
-                    .await
-                    .map_err(|e| {
-                        MaterialsError::keyring_failed_with_cause(
-                            format!("HierarchicalKeyring: get_active_branch_key failed: {e}"),
-                            e,
-                        )
-                    })?;
+                    .await?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    now + Duration::from_secs(self.ttl_seconds),
+                    now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
-                self.cache
-                    .put_cache_entry(&cache_id, entry)
-                    .await
-                    .map_err(|e| {
-                        MaterialsError::keyring_failed_with_cause(
-                            format!("HierarchicalKeyring: cache put_cache_entry failed: {e}"),
-                            e,
-                        )
-                    })?;
+                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
 
                 branch_key_wrap::wrap(
                     &bkm,
@@ -388,16 +488,17 @@ impl Keyring for HierarchicalKeyring {
         &self,
         materials: DecryptionMaterials,
         encrypted_data_keys: &[EncryptedDataKey],
-    ) -> Result<DecryptionMaterials, MaterialsError> {
+    ) -> Result<DecryptionMaterials, Error> {
         if materials.plaintext_data_key().is_some() {
-            return Err(MaterialsError::plaintext_data_key_already_present(
-                "HierarchicalKeyring::on_decrypt: decryption materials already contain a plaintext data key",
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "decryption materials already contain a plaintext data key",
             ));
         }
 
         let branch_key_id = self.resolve_branch_key_id(materials.encryption_context())?;
 
-        let mut collected_errors: Vec<MaterialsError> = Vec::new();
+        let mut collected_errors: Vec<Error> = Vec::new();
         for edk in encrypted_data_keys {
             if edk.key_provider_id != KEY_PROVIDER_ID_HIERARCHY {
                 continue;
@@ -435,9 +536,10 @@ impl Keyring for HierarchicalKeyring {
         // the keystore was consulted, so this is not an aggregate of failures
         // but a distinct one — no encrypted data key matched this keyring.
         if collected_errors.is_empty() {
-            return Err(MaterialsError::no_matching_data_key(
-                "HierarchicalKeyring::on_decrypt: no encrypted data key matched.",
-            ));
+            return Err(
+                Error::new(Kind::NoMatchingDataKey, "no encrypted data key matched")
+                    .with_encrypted_data_keys(encrypted_data_keys.iter().map(DataKeyInfo::from)),
+            );
         }
 
         // At least one candidate was attempted and every one failed. The
@@ -449,9 +551,9 @@ impl Keyring for HierarchicalKeyring {
         //    errors."
         //
         // https://github.com/awslabs/aws-encryption-sdk-specification/blob/master/framework/aws-kms/aws-kms-hierarchical-keyring.md#ondecrypt
-        Err(MaterialsError::collection(
-            MaterialsErrorKind::KeyringFailed,
-            "HierarchicalKeyring::on_decrypt: failed to decrypt any encrypted data key",
+        // With one candidate, `all_failed` returns that candidate's error itself.
+        Err(Error::all_failed(
+            "failed to decrypt any encrypted data key",
             collected_errors,
         ))
     }
@@ -494,16 +596,17 @@ impl HierarchicalKeyring {
     fn resolve_branch_key_id(
         &self,
         encryption_context: &EncryptionContext,
-    ) -> Result<String, MaterialsError> {
-        if let Some(id) = &self.branch_key_id {
+    ) -> Result<String, Error> {
+        if let Some(id) = &self.inner.branch_key_id {
             return Ok(id.clone());
         }
 
         // `new` rejects the configuration where neither is set, so reaching
         // here means the supplier is present.
-        let Some(supplier) = &self.branch_key_id_supplier else {
-            return Err(MaterialsError::new(
-                "HierarchicalKeyring: neither a branch_key_id nor a branch_key_id_supplier is configured",
+        let Some(supplier) = &self.inner.branch_key_id_supplier else {
+            return Err(Error::new(
+                Kind::Internal,
+                "neither a branch_key_id nor a branch_key_id_supplier is configured",
             ));
         };
 
@@ -526,7 +629,7 @@ impl HierarchicalKeyring {
         materials: &DecryptionMaterials,
         edk: &EncryptedDataKey,
         branch_key_id: &str,
-    ) -> Result<Vec<u8>, MaterialsError> {
+    ) -> Result<Vec<u8>, Error> {
         // Parse the 16-byte branch-key version out of the on-wire layout
         // `salt(16) || iv(12) || version(16) || encrypted_key(var) || tag(16)`.
         // branch_key_wrap::unwrap re-validates the full layout (including the
@@ -534,11 +637,14 @@ impl HierarchicalKeyring {
         // need the slice for the version.
         let ciphertext = &edk.ciphertext;
         if ciphertext.len() < CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN {
-            return Err(MaterialsError::keyring_failed(format!(
-                "HierarchicalKeyring::on_decrypt: EDK ciphertext too short to contain branch-key version: {} bytes (need at least {})",
-                ciphertext.len(),
-                CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN,
-            )));
+            return Err(Error::new(
+                Kind::Cryptographic,
+                format!(
+                    "encrypted data key ciphertext too short to contain the branch key version: {} bytes (need at least {})",
+                    ciphertext.len(),
+                    CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN,
+                ),
+            ));
         }
         let version_bytes: [u8; CIPHERTEXT_VERSION_LEN] = ciphertext
             [CIPHERTEXT_VERSION_OFFSET..CIPHERTEXT_VERSION_OFFSET + CIPHERTEXT_VERSION_LEN]
@@ -546,69 +652,83 @@ impl HierarchicalKeyring {
             .expect("16-byte slice into [u8; 16]");
 
         let branch_key_version = uuid_16_bytes_to_str(&version_bytes);
+        self.decrypt_edk_at_version(materials, edk, branch_key_id, &branch_key_version)
+            .await
+            .map_err(|e| e.at_branch_key_version(branch_key_id, &branch_key_version))
+    }
 
+    /// Unwrap `edk` with version `branch_key_version` of the branch key, from the cache or the key store.
+    async fn decrypt_edk_at_version(
+        &self,
+        materials: &DecryptionMaterials,
+        edk: &EncryptedDataKey,
+        branch_key_id: &str,
+        branch_key_version: &str,
+    ) -> Result<Vec<u8>, Error> {
         let cache_id = cache_entry_identifier::build_cache_identifier(
             SCOPE_ID_DECRYPT,
-            &self.partition_id_bytes,
-            &self.logical_keystore_name,
+            &self.inner.partition_id_bytes,
+            &self.inner.logical_keystore_name,
             branch_key_id,
-            Some(&branch_key_version),
+            Some(branch_key_version),
         );
 
-        let cached = self.cache.get_cache_entry(&cache_id).await.map_err(|e| {
-            MaterialsError::keyring_failed_with_cause(
-                format!("HierarchicalKeyring: cache get_cache_entry failed: {e}"),
-                e,
-            )
-        })?;
+        let cached = self
+            .inner
+            .cache
+            .get_cache_entry(&cache_id)
+            .await
+            .map_err(|e| name_branch_key_in_cache_wait(e, branch_key_id))?;
 
         let bkm = match cached {
-            Some(entry) if cache_entry_within_limits(&entry, self.ttl_seconds) => {
+            Some(entry) if cache_entry_within_limits(&entry, self.inner.ttl) => {
                 as_branch_key_materials(&entry)?.clone()
             }
             _ => {
                 let bkm = self
+                    .inner
                     .keystore
-                    .get_branch_key_version(branch_key_id.to_string(), branch_key_version.clone())
-                    .await
-                    .map_err(|e| {
-                        MaterialsError::keyring_failed_with_cause(
-                            format!("HierarchicalKeyring: get_branch_key_version failed: {e}"),
-                            e,
-                        )
-                    })?;
+                    .get_branch_key_version(
+                        branch_key_id.to_string(),
+                        branch_key_version.to_owned(),
+                    )
+                    .await?;
 
                 let now = SystemTime::now();
                 let entry = CacheEntry::new(
                     CachedMaterials::BranchKey(bkm.clone()),
                     now,
-                    now + Duration::from_secs(self.ttl_seconds),
+                    now + self.inner.ttl,
                     UsageMetadata::default(),
                 );
-                self.cache
-                    .put_cache_entry(&cache_id, entry)
-                    .await
-                    .map_err(|e| {
-                        MaterialsError::keyring_failed_with_cause(
-                            format!("HierarchicalKeyring: cache put_cache_entry failed: {e}"),
-                            e,
-                        )
-                    })?;
+                self.inner.cache.put_cache_entry(&cache_id, entry).await?;
                 bkm
             }
         };
 
-        branch_key_wrap::unwrap(&bkm, materials.encryption_context(), ciphertext)
+        branch_key_wrap::unwrap(&bkm, materials.encryption_context(), &edk.ciphertext)
     }
+}
+
+/// Name the branch key in the message of a cache throttling error.
+/// The cache names only itself, because its keys are opaque.
+fn name_branch_key_in_cache_wait(mut e: Error, branch_key_id: &str) -> Error {
+    if e.is_throttling() && e.resource() == Some(&Resource::Cache(Cache::new())) {
+        e.set_message(format!(
+            "timed out waiting for another caller to fetch branch key {branch_key_id}"
+        ));
+    }
+    e
 }
 
 /// Generate a random plaintext data key of the algorithm suite's
 /// configured encryption-key length using the `aws-mpl-primitives` CSPRNG.
-fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, MaterialsError> {
+fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, Error> {
     let mut bytes = vec![0u8; suite.encryption_key_length()];
     aws_mpl_primitives::generate_random_bytes(&mut bytes).map_err(|e| {
-        MaterialsError::keyring_failed_with_cause(
-            "HierarchicalKeyring: failed to obtain entropy for random plaintext data key",
+        Error::with_cause(
+            Kind::Cryptographic,
+            "failed to obtain entropy for random plaintext data key",
             e,
         )
     })?;
@@ -617,22 +737,23 @@ fn generate_random_data_key(suite: AlgorithmSuite) -> Result<PlaintextDataKey, M
 
 /// Whether a cache entry is still within its TTL:
 /// `time.now() - cacheEntryCreationTime <= ttlSeconds`.
-fn cache_entry_within_limits(entry: &CacheEntry, ttl_seconds: u64) -> bool {
+fn cache_entry_within_limits(entry: &CacheEntry, ttl: Duration) -> bool {
     let now = SystemTime::now();
     let elapsed = now
         .duration_since(entry.creation_time)
         .unwrap_or(Duration::ZERO);
-    elapsed.as_secs() <= ttl_seconds
+    elapsed <= ttl
 }
 
 /// Extract a borrowed [`BranchKeyMaterials`] reference from a cache
 /// entry, failing if the entry holds non-branch-key materials (which
 /// would indicate a cache identifier collision).
-fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, MaterialsError> {
+fn as_branch_key_materials(entry: &CacheEntry) -> Result<&BranchKeyMaterials, Error> {
     match &entry.materials {
         CachedMaterials::BranchKey(bkm) => Ok(bkm),
-        _ => Err(MaterialsError::keyring_failed(
-            "HierarchicalKeyring: cache entry has wrong materials kind (expected BranchKey)",
+        _ => Err(Error::new(
+            Kind::Validation,
+            "cache entry has wrong materials kind (expected BranchKey)",
         )),
     }
 }

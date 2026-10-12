@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <istream>
 #include <map>
@@ -11,7 +12,9 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #if defined(__has_include)
@@ -23,8 +26,7 @@
 #include <span>
 #endif
 
-namespace Aws {
-namespace Esdk {
+namespace Aws::Esdk {
 
 // File-wide invariants.
 // Each requirement below holds for every type and operation in this facade.
@@ -83,11 +85,188 @@ namespace Esdk {
 //= type=implication
 //# - The shim MUST define its own error type for its public surface.
 //
-/// Base exception for every failure this library reports.
-/// Catching this type catches everything the shim can throw.
+/// The kind of an AwsEncryptionSdkException, which kind() returns.
+/// Each kind has an exception class of the same name, such as ThrottlingException,
+/// whose docs say when it occurs and what to do.
+/// The kinds match the ESDK Rust `Error` variants of the same names.
+///
+/// To handle an error:
+/// 1. Check retryable().
+///    A retryable error might succeed if the same call is made again later.
+/// 2. Otherwise decide from the exception type or kind().
+///    Later releases can add kinds, so code that switches on the kind needs a default case.
+///
+/// Log full_message(): what() holds the message and details, and full_message() adds the causes.
+///
+/// Messages are for people and logs: their text can change in any release, even a patch release.
+/// Decide from the exception type and its accessors, never from what().
+///
+/// What a minor or patch release can change:
+/// - Message text: what(), full_message(), and every other message.
+/// - Failures without a specific exception type.
+///   An exception that is neither an AwsEncryptionSdkException nor an InternalException is a bug,
+///   and a minor or patch release can turn it into a specific exception type.
+/// - Which exception type a collection of several `failures()` becomes.
+/// - Add new kinds and enum values, so every switch needs a default case.
+enum class ErrorKind : std::uint8_t {
+    Validation = 0,
+    Serialization = 1,
+    Cryptographic = 2,
+    InvalidMaterials = 3,
+    EncryptionContextMismatch = 4,
+    NoMatchingDataKey = 5,
+    AccessDenied = 6,
+    ResourceNotFound = 7,
+    Service = 8,
+    Dispatch = 9,
+    Internal = 10,
+    Io = 11,
+    Throttling = 12,
+    Conflict = 13,
+};
+
+/// Why an error might succeed if the same call is made again later.
+/// The values match the AWS SDK's retry classification.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
+enum class RetryKind : std::uint8_t {
+    /// A connection-level failure, such as a timeout.
+    Transient = 0,
+    /// A service or resource throttled the request.
+    Throttling = 1,
+    /// The service failed on its side.
+    Server = 2,
+    /// The request failed but a retry can succeed.
+    Client = 3,
+};
+
+/// The AWS service an error is about.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
+enum class Service : std::uint8_t {
+    Kms = 0,
+    DynamoDb = 1,
+};
+
+/// The kind of resource an error is about, which Resource::type() returns.
+/// A resource need not be an AWS resource: a keyring, a CMM, or the materials cache can be one.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
+enum class ResourceType : std::uint8_t {
+    /// A KMS key; the name is its ARN.
+    KmsKey = 0,
+    /// A DynamoDB table; the name is the table name.
+    DynamoDbTable = 1,
+    /// A hierarchical keyring branch key; the name is its ID.
+    BranchKey = 2,
+    /// A cryptographic materials cache; the name is empty.
+    Cache = 3,
+    /// A keyring; the name is the keyring's name.
+    Keyring = 4,
+    /// A CMM; the name is the CMM's name.
+    Cmm = 5,
+    /// A resource this library does not know yet; the name describes it.
+    Unknown = 255,
+};
+
+/// The resource you need to act on.
+/// The message names any other resources involved.
+class Resource {
+public:
+    Resource(ResourceType type, std::string name) : type_(type), name_(std::move(name)) {}
+    /// What kind of resource this is.
+    ResourceType type() const noexcept { return type_; }
+    /// The resource's name; what it holds depends on type().
+    const std::string& name() const noexcept { return name_; }
+
+private:
+    ResourceType type_;
+    std::string name_;
+};
+
+/// Why a request conflicts with the current state of a resource.
+///
+/// Later releases can add values, so code that switches on the value needs a default case.
+enum class ConflictReason : std::uint8_t {
+    /// The resource already exists, for example create_key with a branch key ID that is in use.
+    AlreadyExists = 0,
+    /// Another caller changed the resource between this call's read and its write,
+    /// for example two version_key calls on the same branch key.
+    ConcurrentModification = 1,
+};
+
+/// The details an exception carries beyond its kind and message.
+/// For constructing exceptions in tests; read an exception's details through its accessors.
+struct ErrorDetails {
+    bool retryable = false;
+    /// Empty when the error is not retryable, or its retry kind is one this library does not know yet.
+    std::optional<RetryKind> retry_kind;
+    std::optional<Service> service;
+    std::optional<Resource> resource;
+    std::optional<std::string> code;
+    std::optional<std::string> request_id;
+    std::optional<ConflictReason> conflict_reason;
+    bool credentials = false;
+    /// The Rust variant name, such as "Throttling".
+    std::string name;
+    /// The Rust error with its causes, as `{:#}` prints it.
+    std::string full_message;
+    /// Where the Rust error was created; empty unless backtrace capture is enabled.
+    std::string backtrace;
+};
+
+namespace detail {
+// Rethrows an encoded ESDK Rust error as the matching exception.
+[[noreturn]] void throw_shim_exception(const std::string& what);
+}  // namespace detail
+
+/// The base class of every exception this library throws; catch it to handle every failure.
 class AwsEncryptionSdkException : public std::runtime_error {
 public:
-    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg) {}
+    explicit AwsEncryptionSdkException(const std::string& msg) : std::runtime_error(msg), message_(msg) {}
+    /// This exception's kind, or empty when ESDK Rust reports a kind this library does not know yet.
+    std::optional<ErrorKind> kind() const noexcept { return kind_; }
+    /// Whether the same call might succeed if made again later.
+    bool retryable() const noexcept { return details_.retryable; }
+    /// Why the same call might succeed if made again later,
+    /// or empty when it cannot or the reason is one this library does not know yet.
+    std::optional<RetryKind> retry_kind() const noexcept { return details_.retry_kind; }
+    /// The AWS service the failed call went to,
+    /// or empty when no AWS service was involved, such as for the materials cache.
+    std::optional<Service> service() const noexcept { return details_.service; }
+    /// The resource you need to act on, or empty when the error is not about a resource.
+    /// The message names any other resources involved.
+    std::optional<Resource> resource() const { return details_.resource; }
+    /// The AWS service's error code, such as "AccessDeniedException",
+    /// or empty when no AWS service answered.
+    std::optional<std::string> code() const { return details_.code; }
+    /// The AWS request ID, which AWS Support asks for, or empty when no AWS service answered.
+    std::optional<std::string> request_id() const { return details_.request_id; }
+    /// The ESDK Rust variant name, such as "Throttling",
+    /// or empty for an exception this library raised without a Rust error.
+    /// The name does not change across releases, so metrics and logs can use it.
+    const std::string& name() const noexcept { return details_.name; }
+    /// The message with every cause, for logs; equal to what() when there is no cause.
+    const std::string& full_message() const noexcept {
+        return details_.full_message.empty() ? message_ : details_.full_message;
+    }
+    /// Where in ESDK Rust the error was created, for bug reports.
+    /// Empty unless the process set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1` before the error occurred.
+    /// Also empty for an exception this library raised without a Rust error.
+    const std::string& backtrace() const noexcept { return details_.backtrace; }
+
+protected:
+    /// An empty kind is an ESDK Rust error kind this library does not know yet.
+    AwsEncryptionSdkException(std::optional<ErrorKind> kind, ErrorDetails details, const std::string& msg)
+        : std::runtime_error(msg), kind_(kind), details_(std::move(details)), message_(msg) {}
+    const ErrorDetails& details() const noexcept { return details_; }
+
+private:
+    friend void detail::throw_shim_exception(const std::string& what);
+
+    std::optional<ErrorKind> kind_;
+    ErrorDetails details_;
+    std::string message_;
 };
 
 //= spec/shim/shim.md#error-classification
@@ -96,26 +275,155 @@ public:
 //# - Every exposed error kind MUST also be identifiable as the shim's own base
 //# error type, so a target that handles only the base type is unaffected when a
 //# kind is added.
-//
-/// The message bytes are malformed and could not be read or written.
-/// No cryptography was attempted.
-class SerializationException : public AwsEncryptionSdkException {
-public:
-    explicit SerializationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
-};
 
-/// A cryptographic operation failed (ex. auth tag did not verify).
-/// Retrying the same input cannot succeed.
-class CryptographicException : public AwsEncryptionSdkException {
-public:
-    explicit CryptographicException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
-};
-
-/// An input is invalid (malformed/unrecognized value, or a missing required input type.)
-/// Fix the input; retrying the same input cannot succeed.
+/// An input or configuration value is invalid,
+/// for example an input with no keyring or CMM, a zero TTL, or a wrapping key of the wrong length.
+///
+/// Fix the input; retrying cannot succeed.
 class ValidationException : public AwsEncryptionSdkException {
 public:
-    explicit ValidationException(const std::string& msg) : AwsEncryptionSdkException(msg) {}
+    explicit ValidationException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Validation, std::move(details), msg) {}
+};
+
+/// The bytes are not a well-formed encrypted message,
+/// for example truncated input, an unsupported message version, or data after the footer.
+///
+/// Treat the message as corrupt; retrying cannot succeed.
+class SerializationException : public AwsEncryptionSdkException {
+public:
+    explicit SerializationException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Serialization, std::move(details), msg) {}
+};
+
+/// A cryptographic check failed,
+/// for example an AES-GCM authentication tag or a message signature did not verify.
+///
+/// The message is corrupt or modified, or you are decrypting it with the wrong key;
+/// retrying cannot succeed.
+class CryptographicException : public AwsEncryptionSdkException {
+public:
+    explicit CryptographicException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Cryptographic, std::move(details), msg) {}
+};
+
+/// A keyring, CMM, or key store returned materials that are inconsistent or malformed,
+/// for example no plaintext data key after encryption, a signing key for a suite that does not sign,
+/// or a branch key record with a missing attribute or a key of the wrong length.
+///
+/// Usually a bug in a custom keyring or CMM, or a corrupt key store record;
+/// retrying cannot succeed.
+/// resource() names the branch key, keyring, or CMM.
+class InvalidMaterialsException : public AwsEncryptionSdkException {
+public:
+    explicit InvalidMaterialsException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::InvalidMaterials, std::move(details), msg) {}
+};
+
+/// An encryption context does not match,
+/// for example a required key is missing, or a value passed to decrypt differs from the message's.
+///
+/// Check the encryption context passed to the call.
+class EncryptionContextMismatchException : public AwsEncryptionSdkException {
+public:
+    explicit EncryptionContextMismatchException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::EncryptionContextMismatch, std::move(details), msg) {}
+};
+
+/// None of the configured keys wrapped any of the message's encrypted data keys,
+/// for example when decrypting with a keyring that did not encrypt the message.
+///
+/// Decrypt with a keyring that has one of the message's keys.
+/// resource() names the keyring or CMM that was used.
+class NoMatchingDataKeyException : public AwsEncryptionSdkException {
+public:
+    explicit NoMatchingDataKeyException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::NoMatchingDataKey, std::move(details), msg) {}
+};
+
+/// AWS KMS or DynamoDB denied access.
+///
+/// If is_credentials() is true, the credentials are expired or invalid.
+/// Otherwise fix the permissions for service() on resource().
+class AccessDeniedException : public AwsEncryptionSdkException {
+public:
+    explicit AccessDeniedException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::AccessDenied, std::move(details), msg) {}
+    /// Whether the credentials are expired or invalid, rather than missing a permission.
+    bool is_credentials() const noexcept { return details().credentials; }
+};
+
+/// A KMS key, DynamoDB table, or branch key does not exist.
+///
+/// Fix the configuration that names resource().
+class ResourceNotFoundException : public AwsEncryptionSdkException {
+public:
+    explicit ResourceNotFoundException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::ResourceNotFound, std::move(details), msg) {}
+};
+
+/// A service or resource throttled the request.
+///
+/// Always retryable, with RetryKind::Throttling.
+/// service() and resource() say what was throttled: AWS KMS, DynamoDB, or the materials cache,
+/// which is ResourceType::Cache with no service().
+class ThrottlingException : public AwsEncryptionSdkException {
+public:
+    explicit ThrottlingException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Throttling, std::move(details), msg) {}
+};
+
+/// The request conflicts with the current state of resource(),
+/// for example creating a branch key whose ID already exists,
+/// or rotating a branch key that another caller rotated at the same time.
+///
+/// Not retryable: re-read the resource before acting, because repeating the same call unchanged is not safe.
+/// reason() says which conflict occurred.
+class ConflictException : public AwsEncryptionSdkException {
+public:
+    explicit ConflictException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Conflict, std::move(details), msg) {}
+    /// Why the request conflicts, when known.
+    std::optional<ConflictReason> reason() const noexcept { return details().conflict_reason; }
+};
+
+/// AWS KMS or DynamoDB rejected or failed the request for any other reason,
+/// for example an internal service error or a KMS IncorrectKeyException.
+///
+/// A server-side failure is retryable.
+/// code() is the service's error code.
+class ServiceException : public AwsEncryptionSdkException {
+public:
+    explicit ServiceException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Service, std::move(details), msg) {}
+};
+
+/// A request to AWS KMS or DynamoDB was not sent, or its response did not arrive,
+/// for example because of a network error, a timeout, or missing credentials or region.
+///
+/// Retryable for a network error or timeout.
+class DispatchException : public AwsEncryptionSdkException {
+public:
+    explicit DispatchException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Dispatch, std::move(details), msg) {}
+};
+
+/// An internal invariant was violated, for example a poisoned lock.
+///
+/// A bug in this library; report it.
+/// Never retryable.
+class InternalException : public AwsEncryptionSdkException {
+public:
+    explicit InternalException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Internal, std::move(details), msg) {}
+};
+
+/// A stream you passed failed while streaming,
+/// for example a closed connection or a full disk.
+class IoException : public AwsEncryptionSdkException {
+public:
+    explicit IoException(const std::string& msg, ErrorDetails details = {})
+        : AwsEncryptionSdkException(ErrorKind::Io, std::move(details), msg) {}
 };
 
 /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
@@ -162,6 +470,15 @@ struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
 struct CacheTypeLowerer;
 struct BytesFactory;
+
+// Every duration parameter accepts any integer std::chrono::duration.
+template <class Rep, class Period>
+std::chrono::nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> d) {
+    static_assert(
+        std::is_convertible_v<std::chrono::duration<Rep, Period>, std::chrono::nanoseconds>,
+        "durations must be an integer std::chrono::duration, such as std::chrono::seconds");
+    return d;
+}
 }  // namespace detail
 
 /// AWS service-client configuration for AWS SDK clients.
@@ -291,10 +608,6 @@ public:
     explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-/// Time unit for a storm-tracking cache's grace_period, grace_interval, and
-/// inflight_ttl. Left unset, they are seconds.
-enum class TimeUnits { Seconds, Milliseconds };
-
 // TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
 /// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
 class CacheType {
@@ -307,38 +620,55 @@ public:
     /// For a cache with sensible defaults, use Default instead.
     /// \param entry_capacity Maximum number of entries cached.
     /// \param entry_pruning_tail_size Number of entries to prune at a time.
-    /// \param grace_period Time before expiration to begin refreshing, in time_units.
-    /// \param grace_interval Time between refresh attempts, in time_units.
+    /// \param grace_period Time before expiration to begin refreshing.
+    /// \param grace_interval Time between refresh attempts.
     /// \param fan_out Maximum number of simultaneous refresh attempts.
-    /// \param inflight_ttl Time until a refresh attempt is forgotten, in time_units.
-    /// \param sleep_milli Milliseconds a thread sleeps when fan_out is exceeded.
-    /// \param time_units Unit for grace_period, grace_interval, and inflight_ttl. Unset means seconds.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten.
+    /// \param sleep Time a thread sleeps when fan_out is exceeded.
+    template <class GraceRep, class GracePeriod, class IntervalRep, class IntervalPeriod,
+              class InflightRep, class InflightPeriod, class SleepRep, class SleepPeriod>
     static CacheType StormTracking(
         std::uint32_t entry_capacity,
         std::uint32_t entry_pruning_tail_size,
-        std::uint32_t grace_period,
-        std::uint32_t grace_interval,
+        std::chrono::duration<GraceRep, GracePeriod> grace_period,
+        std::chrono::duration<IntervalRep, IntervalPeriod> grace_interval,
         std::uint32_t fan_out,
-        std::uint32_t inflight_ttl,
-        std::uint32_t sleep_milli,
-        std::optional<TimeUnits> time_units = std::nullopt);
+        std::chrono::duration<InflightRep, InflightPeriod> inflight_ttl,
+        std::chrono::duration<SleepRep, SleepPeriod> sleep) {
+        return StormTracking(entry_capacity, entry_pruning_tail_size,
+                             detail::to_nanoseconds(grace_period),
+                             detail::to_nanoseconds(grace_interval), fan_out,
+                             detail::to_nanoseconds(inflight_ttl), detail::to_nanoseconds(sleep),
+                             Tag{});
+    }
     /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
     /// the user should provide an already constructed CryptographicMaterialsCache
     /// to the Hierarchical Keyring at initialization.
     static CacheType Shared(const CryptographicMaterialsCache& cache);
 
 private:
+    // Keeps the private overload out of overload resolution for callers,
+    // so std::chrono::nanoseconds arguments still select the public template.
+    struct Tag {};
+    static CacheType StormTracking(std::uint32_t entry_capacity,
+                                   std::uint32_t entry_pruning_tail_size,
+                                   std::chrono::nanoseconds grace_period,
+                                   std::chrono::nanoseconds grace_interval,
+                                   std::uint32_t fan_out,
+                                   std::chrono::nanoseconds inflight_ttl,
+                                   std::chrono::nanoseconds sleep,
+                                   Tag);
+
     enum class Kind { Default, StormTracking, Shared };
     explicit CacheType(Kind kind) : kind_(kind) {}
     Kind kind_;
     std::uint32_t entry_capacity_ = 0;
     std::uint32_t entry_pruning_tail_size_ = 0;
-    std::uint32_t grace_period_ = 0;
-    std::uint32_t grace_interval_ = 0;
+    std::chrono::nanoseconds grace_period_{};
+    std::chrono::nanoseconds grace_interval_{};
     std::uint32_t fan_out_ = 0;
-    std::uint32_t inflight_ttl_ = 0;
-    std::uint32_t sleep_milli_ = 0;
-    std::optional<TimeUnits> time_units_;
+    std::chrono::nanoseconds inflight_ttl_{};
+    std::chrono::nanoseconds sleep_{};
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
     friend class CryptographicMaterialsCache;
     friend class HierarchicalKeyring;
@@ -382,14 +712,28 @@ public:
     ///        wrapping and unwrapping data keys.
     /// \param branch_key_id The identifier for the single Branch Key responsible for
     ///        wrapping and unwrapping the data key.
-    /// \param ttl_seconds How many seconds the Branch Key material is allowed to be reused
-    ///        within the local cache before it is re-retrieved from Amazon DynamoDB and
+    /// \param ttl How long the Branch Key material is allowed to be reused within the
+    ///        local cache before it is re-retrieved from Amazon DynamoDB and
     ///        re-authenticated with AWS KMS.
     /// \param options Optional Hierarchical Keyring parameters.
+    template <class Rep, class Period>
     HierarchicalKeyring(KeyStore key_store,
                         const std::string& branch_key_id,
-                        std::uint32_t ttl_seconds,
-                        const HierarchicalKeyringOptions& options = {});
+                        std::chrono::duration<Rep, Period> ttl,
+                        const HierarchicalKeyringOptions& options = {})
+        : HierarchicalKeyring(std::move(key_store), branch_key_id, detail::to_nanoseconds(ttl),
+                              options, Tag{}) {}
+
+private:
+    // Keeps the private constructor out of overload resolution for callers,
+    // so a std::chrono::nanoseconds argument still selects the public template.
+    struct Tag {};
+
+    HierarchicalKeyring(KeyStore key_store,
+                        const std::string& branch_key_id,
+                        std::chrono::nanoseconds ttl,
+                        const HierarchicalKeyringOptions& options,
+                        Tag);
 };
 
 /// Keyring that wraps and unwraps data keys locally with AES-GCM.
@@ -773,5 +1117,4 @@ public:
 #endif
 };
 
-}  // namespace Esdk
-}  // namespace Aws
+}  // namespace Aws::Esdk

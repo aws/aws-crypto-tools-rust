@@ -69,7 +69,7 @@ fn test_branch_key_version_getter() {
 #[test]
 fn test_branch_key_encryption_context_getter() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"key".to_vec(), b"value".to_vec());
+    ec.insert("key", "value");
     let mat = BranchKeyMaterials::new(
         [0x00; 32],
         "id".to_string(),

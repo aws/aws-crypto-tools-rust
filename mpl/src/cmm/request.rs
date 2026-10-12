@@ -24,7 +24,7 @@ pub struct EncryptionMaterialsRequest {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     /// Optional set of encryption context keys that MUST be reproducible at
     /// decrypt time.
-    required_encryption_context_keys: Option<BTreeSet<Vec<u8>>>,
+    required_encryption_context_keys: Option<BTreeSet<String>>,
     /// Maximum plaintext length the returned materials are valid for. `None`
     /// means unbounded.
     max_plaintext_length: Option<u64>,
@@ -51,8 +51,11 @@ impl EncryptionMaterialsRequest {
     }
 
     /// Set the optional Required Encryption Context Keys set on this request.
-    pub fn with_required_encryption_context_keys(mut self, keys: BTreeSet<Vec<u8>>) -> Self {
-        self.required_encryption_context_keys = Some(keys);
+    pub fn with_required_encryption_context_keys(
+        mut self,
+        keys: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.required_encryption_context_keys = Some(keys.into_iter().map(Into::into).collect());
         self
     }
 
@@ -78,7 +81,7 @@ impl EncryptionMaterialsRequest {
     }
 
     /// Borrow the optional Required Encryption Context Keys set.
-    pub fn required_encryption_context_keys(&self) -> Option<&BTreeSet<Vec<u8>>> {
+    pub fn required_encryption_context_keys(&self) -> Option<&BTreeSet<String>> {
         self.required_encryption_context_keys.as_ref()
     }
 
