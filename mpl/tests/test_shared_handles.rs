@@ -1,15 +1,21 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Converting an existing `Shared*` handle reuses it instead of nesting it.
+//! Converting an existing `Shared*` handle reuses it instead of nesting it,
+//! and a handle's fluent builders reach the component it wraps.
 
 use aws_crypto_mpl::Error;
 use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{GetBranchKeyIdInput, GetBranchKeyIdOutput};
+use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials};
+use aws_crypto_mpl::structures::{
+    AlgorithmSuiteId, EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
+};
 use aws_crypto_mpl::{
     AesGcm, BranchKeySupplier, Cmc, Cmm, DefaultCmm, IntoShared, Keyring, LocalCmc, RawAesKeyring,
     SharedBranchKeySupplier, SharedCmc, SharedCmm, SharedKeyring,
 };
+use std::time::{Duration, SystemTime};
 
 fn keyring() -> RawAesKeyring {
     RawAesKeyring::builder()
@@ -29,16 +35,18 @@ fn cache() -> LocalCmc {
         .unwrap()
 }
 
+/// Returns the encryption context's `tenant` value as the branch key ID.
 struct Supplier;
 
 #[async_trait]
 impl BranchKeySupplier for Supplier {
     async fn get_branch_key_id(
         &self,
-        _input: GetBranchKeyIdInput,
+        input: GetBranchKeyIdInput,
     ) -> Result<GetBranchKeyIdOutput, Error> {
+        let tenant = input.encryption_context().get("tenant").unwrap_or_default();
         GetBranchKeyIdOutput::builder()
-            .branch_key_id("branch-key-id".to_string())
+            .branch_key_id(tenant)
             .build()
     }
 }
@@ -98,4 +106,75 @@ fn an_arc_keyring_and_cmm_keep_the_inner_name() {
     let cmm = DefaultCmm::new(keyring());
     let name = cmm.name().into_owned();
     assert_eq!(std::sync::Arc::new(cmm).name(), name);
+}
+
+#[tokio::test]
+async fn shared_cmc_fluent_builders_reach_the_cache() {
+    let cache = SharedCmc::new(cache());
+    let now = SystemTime::now();
+    let materials = EncryptionMaterials::builder()
+        .algorithm_suite_id(AlgorithmSuiteId::Esdk(
+            EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
+        ))
+        .build()
+        .unwrap();
+    let entry = CacheEntry::builder()
+        .materials(CachedMaterials::Encryption(materials))
+        .creation_time(now)
+        .expiry_time(now + Duration::from_secs(3600))
+        .build()
+        .unwrap();
+    cache
+        .put_cache_entry()
+        .identifier(b"id")
+        .entry(entry)
+        .send()
+        .await
+        .unwrap();
+    cache
+        .update_usage_metadata()
+        .identifier(b"id")
+        .bytes_used(7)
+        .send()
+        .await
+        .unwrap();
+
+    let usage = cache
+        .get_cache_entry()
+        .identifier(b"id")
+        .send()
+        .await
+        .unwrap()
+        .into_entry()
+        .expect("the entry put above")
+        .usage_metadata();
+    assert_eq!(usage.messages_used().get(), 1);
+    assert_eq!(usage.bytes_used().get(), 7);
+
+    cache
+        .delete_cache_entry()
+        .identifier(b"id")
+        .send()
+        .await
+        .unwrap();
+    let after_delete = cache
+        .get_cache_entry()
+        .identifier(b"id")
+        .send()
+        .await
+        .unwrap();
+    assert!(after_delete.entry().is_none());
+}
+
+#[tokio::test]
+async fn shared_branch_key_supplier_fluent_builder_reaches_the_supplier() {
+    let mut encryption_context = EncryptionContext::new();
+    encryption_context.insert("tenant", "tenant-a");
+    let output = SharedBranchKeySupplier::new(Supplier)
+        .get_branch_key_id()
+        .encryption_context(encryption_context)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(output.branch_key_id(), "tenant-a");
 }

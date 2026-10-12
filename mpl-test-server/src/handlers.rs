@@ -4,10 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
 
 use aws_crypto_mpl::AesGcm;
-use aws_crypto_mpl::cmm::{
-    Cmm, DecryptMaterialsInput, DefaultCmm, GetEncryptionMaterialsInput, SharedCmm,
-};
-use aws_crypto_mpl::keyring::{Keyring, OnDecryptInput, OnEncryptInput, SharedKeyring};
+use aws_crypto_mpl::cmm::{DefaultCmm, SharedCmm};
+use aws_crypto_mpl::keyring::SharedKeyring;
 use aws_crypto_mpl::structures::algorithm_suite::{
     PlaintextDataKey, SigningKey, SymmetricSigningKey, VerificationKey,
 };
@@ -108,12 +106,10 @@ impl AppState {
         req: OnEncryptRequest,
     ) -> Result<OnEncryptResponse, ServerError> {
         let keyring = self.get_keyring(&req.keyring_id)?;
-        let input = OnEncryptInput::builder()
-            .materials(shape_to_encryption_materials(req.materials)?)
-            .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
         let output = keyring
-            .on_encrypt(input)
+            .on_encrypt()
+            .materials(shape_to_encryption_materials(req.materials)?)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(OnEncryptResponse {
@@ -126,13 +122,11 @@ impl AppState {
         req: OnDecryptRequest,
     ) -> Result<OnDecryptResponse, ServerError> {
         let keyring = self.get_keyring(&req.keyring_id)?;
-        let input = OnDecryptInput::builder()
+        let output = keyring
+            .on_decrypt()
             .materials(shape_to_decryption_materials(req.materials)?)
             .encrypted_data_keys(map_edks(req.encrypted_data_keys)?)
-            .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
-        let output = keyring
-            .on_decrypt(input)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         Ok(OnDecryptResponse {
@@ -146,16 +140,13 @@ impl AppState {
     ) -> Result<GetEncryptionMaterialsResponse, ServerError> {
         let cmm = self.get_cmm(&req.cmm_id)?;
 
-        let input = GetEncryptionMaterialsInput::builder()
+        let output = cmm
+            .get_encryption_materials()
             .encryption_context(map_encryption_context(&req.encryption_context))
             .commitment_policy(map_commitment_policy(req.commitment_policy))
             .set_algorithm_suite_id(req.algorithm_suite_id.map(map_algorithm_suite_id))
             .set_max_plaintext_length(req.max_plaintext_length)
-            .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
-
-        let output = cmm
-            .get_encryption_materials(input)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         let materials = output.encryption_materials();
@@ -193,7 +184,8 @@ impl AppState {
     ) -> Result<DecryptMaterialsResponse, ServerError> {
         let cmm = self.get_cmm(&req.cmm_id)?;
 
-        let input = DecryptMaterialsInput::builder()
+        let output = cmm
+            .decrypt_materials()
             .algorithm_suite_id(map_algorithm_suite_id(req.algorithm_suite_id))
             .commitment_policy(map_commitment_policy(req.commitment_policy))
             .encrypted_data_keys(map_edks(req.encrypted_data_keys)?)
@@ -203,11 +195,7 @@ impl AppState {
                     .as_ref()
                     .map(map_encryption_context),
             )
-            .build()
-            .map_err(|e| ServerError::mpl(e.to_string()))?;
-
-        let output = cmm
-            .decrypt_materials(input)
+            .send()
             .await
             .map_err(|e| ServerError::mpl(e.to_string()))?;
         let materials = output.decryption_materials();

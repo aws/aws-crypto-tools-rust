@@ -18,8 +18,7 @@
 //! cover the on-wire shape of the encrypted data key, the two constructor
 //! validations, and the negative paths Dafny leaves to its proofs.
 
-use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
-use aws_crypto_mpl::{Keyring, RawAesKeyring};
+use aws_crypto_mpl::{RawAesKeyring, SharedKeyring};
 use aws_mpl_primitives::AesGcm;
 
 use aws_crypto_mpl::structures::{
@@ -73,9 +72,9 @@ fn keyring_with(name: &str, wrapping_key_byte: u8) -> RawAesKeyring {
         .expect("constructing a 256-bit raw AES keyring")
 }
 
-fn default_keyring() -> RawAesKeyring {
+fn default_keyring() -> SharedKeyring {
     let (_, name) = namespace_and_name();
-    keyring_with(&name, 0)
+    SharedKeyring::new(keyring_with(&name, 0))
 }
 
 fn encryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> EncryptionMaterials {
@@ -103,12 +102,9 @@ async fn test_on_encrypt_on_decrypt_generate_data_key() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -135,13 +131,10 @@ async fn test_on_encrypt_on_decrypt_generate_data_key() {
     let edk = encrypt_output.encrypted_data_keys()[0].clone();
 
     let decrypt_output = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![edk])
+        .send()
         .await
         .expect("on_decrypt succeeds")
         .into_materials();
@@ -166,12 +159,9 @@ async fn test_on_encrypt_on_decrypt_supplied_data_key() {
     let supplied_pdk = vec![0u8; 32];
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), Some(supplied_pdk.clone())))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), Some(supplied_pdk.clone())))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -188,13 +178,10 @@ async fn test_on_encrypt_on_decrypt_supplied_data_key() {
     let edk = encrypt_output.encrypted_data_keys()[0].clone();
 
     let decrypt_output = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![edk])
+        .send()
         .await
         .expect("on_decrypt succeeds")
         .into_materials();
@@ -214,29 +201,23 @@ async fn test_on_encrypt_on_decrypt_supplied_data_key() {
 async fn test_on_decrypt_key_name_mismatch() {
     let keyring = default_keyring();
     // Same key namespace, different key name and wrapping key.
-    let mismatched_keyring = keyring_with("mismatched", 1);
+    let mismatched_keyring = SharedKeyring::new(keyring_with("mismatched", 1));
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
     let edk = encrypt_output.encrypted_data_keys()[0].clone();
 
     let result = mismatched_keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -257,12 +238,9 @@ async fn test_on_decrypt_bad_and_good_edk_succeeds() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -283,13 +261,10 @@ async fn test_on_decrypt_bad_and_good_edk_succeeds() {
         .unwrap();
 
     let decrypt_output = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![fake_edk, edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![fake_edk, edk])
+        .send()
         .await
         .expect("on_decrypt must keep going after a failing EDK and succeed on the next")
         .into_materials();
@@ -310,13 +285,10 @@ async fn test_on_decrypt_no_edks() {
     let keyring = default_keyring();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(small_encryption_context_a(), None))
-                .encrypted_data_keys(Vec::new())
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(small_encryption_context_a(), None))
+        .encrypted_data_keys(Vec::new())
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -330,15 +302,12 @@ async fn test_on_encrypt_unserializable_encryption_context() {
     let keyring = default_keyring();
 
     let result = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(
-                    unserializable_encryption_context(),
-                    None,
-                ))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(
+            unserializable_encryption_context(),
+            None,
+        ))
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -352,28 +321,22 @@ async fn test_on_decrypt_unserializable_encryption_context() {
     let keyring = default_keyring();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(small_encryption_context_a(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(small_encryption_context_a(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
     let edk = encrypt_output.encrypted_data_keys()[0].clone();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(
-                    unserializable_encryption_context(),
-                    None,
-                ))
-                .encrypted_data_keys(vec![edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(
+            unserializable_encryption_context(),
+            None,
+        ))
+        .encrypted_data_keys(vec![edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -392,25 +355,19 @@ async fn test_on_decrypt_with_existing_plaintext_data_key_fails() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
     let edk = encrypt_output.encrypted_data_keys()[0].clone();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, Some(vec![0x11; 32])))
-                .encrypted_data_keys(vec![edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, Some(vec![0x11; 32])))
+        .encrypted_data_keys(vec![edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -431,16 +388,13 @@ async fn test_on_decrypt_unserializable_encryption_context_fails_before_edk_loop
         .unwrap();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(
-                    unserializable_encryption_context(),
-                    None,
-                ))
-                .encrypted_data_keys(vec![foreign_edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(
+            unserializable_encryption_context(),
+            None,
+        ))
+        .encrypted_data_keys(vec![foreign_edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -454,12 +408,9 @@ async fn test_encrypted_data_key_wire_format() {
     let (namespace, name) = namespace_and_name();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(small_encryption_context_a(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(small_encryption_context_a(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -514,22 +465,21 @@ async fn test_encrypted_data_key_wire_format() {
 async fn test_round_trip_every_wrapping_algorithm() {
     for alg in [AesGcm::Aes128Gcm, AesGcm::Aes192Gcm, AesGcm::Aes256Gcm] {
         let (namespace, name) = namespace_and_name();
-        let keyring = RawAesKeyring::builder()
-            .key_namespace(namespace)
-            .key_name(name)
-            .wrapping_key(vec![0x2A; usize::from(alg.key_len())])
-            .wrapping_alg(alg)
-            .build()
-            .unwrap_or_else(|e| panic!("constructing a keyring for {alg:?}: {e}"));
+        let keyring = SharedKeyring::new(
+            RawAesKeyring::builder()
+                .key_namespace(namespace)
+                .key_name(name)
+                .wrapping_key(vec![0x2A; usize::from(alg.key_len())])
+                .wrapping_alg(alg)
+                .build()
+                .unwrap_or_else(|e| panic!("constructing a keyring for {alg:?}: {e}")),
+        );
         let ec = small_encryption_context_a();
 
         let encrypt_output = keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(encryption_materials(ec.clone(), None))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(encryption_materials(ec.clone(), None))
+            .send()
             .await
             .unwrap_or_else(|e| panic!("on_encrypt for {alg:?}: {e}"))
             .into_materials();
@@ -541,13 +491,10 @@ async fn test_round_trip_every_wrapping_algorithm() {
         let edk = encrypt_output.encrypted_data_keys()[0].clone();
 
         let decrypt_output = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(decryption_materials(ec, None))
-                    .encrypted_data_keys(vec![edk])
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(decryption_materials(ec, None))
+            .encrypted_data_keys(vec![edk])
+            .send()
             .await
             .unwrap_or_else(|e| panic!("on_decrypt for {alg:?}: {e}"))
             .into_materials();
@@ -568,12 +515,9 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
     let keyring = default_keyring();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(small_encryption_context_a(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(small_encryption_context_a(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -585,13 +529,10 @@ async fn test_on_decrypt_rejects_tampered_encryption_context() {
     tampered_ec.insert("keyA", "valB");
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(tampered_ec, None))
-                .encrypted_data_keys(vec![edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(tampered_ec, None))
+        .encrypted_data_keys(vec![edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -605,12 +546,9 @@ async fn test_on_decrypt_rejects_tampered_iv() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -629,13 +567,10 @@ async fn test_on_decrypt_rejects_tampered_iv() {
         .unwrap();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![tampered_edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![tampered_edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -649,12 +584,9 @@ async fn test_on_decrypt_skips_edk_with_wrong_key_provider_id() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -668,13 +600,10 @@ async fn test_on_decrypt_skips_edk_with_wrong_key_provider_id() {
         .unwrap();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![foreign_edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![foreign_edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -688,12 +617,9 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -713,13 +639,10 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_tag_length() {
         .unwrap();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![tampered_edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![tampered_edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -733,12 +656,9 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -757,13 +677,10 @@ async fn test_on_decrypt_rejects_provider_info_with_wrong_iv_length() {
         .unwrap();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![tampered_edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![tampered_edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -777,12 +694,9 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
     let ec = small_encryption_context_a();
 
     let encrypt_output = keyring
-        .on_encrypt(
-            OnEncryptInput::builder()
-                .materials(encryption_materials(ec.clone(), None))
-                .build()
-                .unwrap(),
-        )
+        .on_encrypt()
+        .materials(encryption_materials(ec.clone(), None))
+        .send()
         .await
         .expect("on_encrypt succeeds")
         .into_materials();
@@ -796,13 +710,10 @@ async fn test_on_decrypt_rejects_ciphertext_shorter_than_the_tag() {
         .unwrap();
 
     let result = keyring
-        .on_decrypt(
-            OnDecryptInput::builder()
-                .materials(decryption_materials(ec, None))
-                .encrypted_data_keys(vec![truncated_edk])
-                .build()
-                .unwrap(),
-        )
+        .on_decrypt()
+        .materials(decryption_materials(ec, None))
+        .encrypted_data_keys(vec![truncated_edk])
+        .send()
         .await
         .map(|o| o.into_materials());
 
@@ -938,18 +849,17 @@ fn test_debug_does_not_leak_the_wrapping_key() {
 
 #[tokio::test]
 async fn test_clone_is_interchangeable_with_original() {
-    let original = default_keyring();
-    let clone = original.clone();
+    let (_, name) = namespace_and_name();
+    let original = keyring_with(&name, 0);
+    let clone = SharedKeyring::new(original.clone());
+    let original = SharedKeyring::new(original);
     let ec = small_encryption_context_a();
 
     for (encryptor, decryptor) in [(&original, &clone), (&clone, &original)] {
         let encrypt_output = encryptor
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(encryption_materials(ec.clone(), None))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(encryption_materials(ec.clone(), None))
+            .send()
             .await
             .expect("on_encrypt succeeds")
             .into_materials();
@@ -960,13 +870,10 @@ async fn test_clone_is_interchangeable_with_original() {
             .to_vec();
 
         let decrypt_output = decryptor
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(decryption_materials(ec.clone(), None))
-                    .encrypted_data_keys(encrypt_output.encrypted_data_keys().to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(decryption_materials(ec.clone(), None))
+            .encrypted_data_keys(encrypt_output.encrypted_data_keys().to_vec())
+            .send()
             .await
             .expect("on_decrypt succeeds")
             .into_materials();

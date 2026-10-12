@@ -205,6 +205,12 @@ impl KeyStoreClientBuilder {
         self
     }
 
+    /// The DynamoDB table name, if set.
+    #[must_use]
+    pub const fn get_ddb_table_name(&self) -> &Option<String> {
+        &self.ddb_table_name
+    }
+
     /// Set the logical name cryptographically bound to all keys in the
     /// table. Required.
     #[must_use]
@@ -219,6 +225,12 @@ impl KeyStoreClientBuilder {
     pub fn set_logical_key_store_name(mut self, logical_key_store_name: Option<String>) -> Self {
         self.logical_key_store_name = logical_key_store_name;
         self
+    }
+
+    /// The logical key store name, if set.
+    #[must_use]
+    pub const fn get_logical_key_store_name(&self) -> &Option<String> {
+        &self.logical_key_store_name
     }
 
     /// Set the KMS key configuration governing encryption and decryption.
@@ -237,6 +249,12 @@ impl KeyStoreClientBuilder {
         self
     }
 
+    /// The KMS configuration, if set.
+    #[must_use]
+    pub const fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
+        &self.kms_configuration
+    }
+
     /// Set the key store identifier.
     /// Defaults to a v4 UUID generated at construction.
     #[must_use]
@@ -253,6 +271,12 @@ impl KeyStoreClientBuilder {
         self
     }
 
+    /// The ID, if set.
+    #[must_use]
+    pub const fn get_id(&self) -> &Option<String> {
+        &self.id
+    }
+
     /// Set the AWS KMS grant tokens. Defaults to none.
     #[must_use]
     pub fn grant_tokens(mut self, tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
@@ -266,6 +290,12 @@ impl KeyStoreClientBuilder {
     pub fn set_grant_tokens(mut self, tokens: Option<Vec<String>>) -> Self {
         self.grant_tokens = tokens;
         self
+    }
+
+    /// The grant tokens, if set.
+    #[must_use]
+    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+        &self.grant_tokens
     }
 
     /// Set the AWS KMS client. Defaults to a client for the Region parsed
@@ -285,6 +315,12 @@ impl KeyStoreClientBuilder {
         self
     }
 
+    /// The KMS client, if set.
+    #[must_use]
+    pub const fn get_kms_client(&self) -> &Option<KmsClient> {
+        &self.kms_client
+    }
+
     /// Set the Amazon DynamoDB client. Defaults to a client for the Region
     /// parsed from the KMS configuration (the SDK's default region provider
     /// chain for `Discovery`).
@@ -300,6 +336,12 @@ impl KeyStoreClientBuilder {
     pub fn set_ddb_client(mut self, client: Option<DynamoDbClient>) -> Self {
         self.ddb_client = client;
         self
+    }
+
+    /// The DynamoDB client, if set.
+    #[must_use]
+    pub const fn get_ddb_client(&self) -> &Option<DynamoDbClient> {
+        &self.ddb_client
     }
 
     /// Validate the configuration, build a default for any unset client, and resolve the key store identifier.

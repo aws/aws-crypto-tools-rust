@@ -89,6 +89,12 @@ impl BeaconKeyMaterialsBuilder {
         self
     }
 
+    /// The beacon key ID, if set.
+    #[must_use]
+    pub const fn get_beacon_key_id(&self) -> &Option<String> {
+        &self.beacon_key_id
+    }
+
     /// Set the custom encryption context of the beacon key.
     /// Required.
     #[must_use]
@@ -103,6 +109,12 @@ impl BeaconKeyMaterialsBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
+    }
+
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        &self.encryption_context
     }
 
     /// Set the plaintext beacon key.
@@ -120,6 +132,12 @@ impl BeaconKeyMaterialsBuilder {
         self
     }
 
+    /// The beacon key, if set.
+    #[must_use]
+    pub const fn get_beacon_key(&self) -> &Option<Vec<u8>> {
+        &self.beacon_key
+    }
+
     /// Set the HMAC keys derived from the beacon key, by name.
     #[must_use]
     pub fn hmac_keys(mut self, hmac_keys: impl Into<BTreeMap<String, Vec<u8>>>) -> Self {
@@ -133,6 +151,12 @@ impl BeaconKeyMaterialsBuilder {
     pub fn set_hmac_keys(mut self, hmac_keys: Option<BTreeMap<String, Vec<u8>>>) -> Self {
         self.hmac_keys = hmac_keys;
         self
+    }
+
+    /// The HMAC keys, if set.
+    #[must_use]
+    pub const fn get_hmac_keys(&self) -> &Option<BTreeMap<String, Vec<u8>>> {
+        &self.hmac_keys
     }
 
     /// Build the `BeaconKeyMaterials`.

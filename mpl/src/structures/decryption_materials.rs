@@ -154,6 +154,12 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
+    /// The algorithm suite ID, if set.
+    #[must_use]
+    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+        &self.algorithm_suite_id
+    }
+
     /// Set the encryption context.
     /// Defaults to empty.
     #[must_use]
@@ -168,6 +174,12 @@ impl DecryptionMaterialsBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context.unwrap_or_default();
         self
+    }
+
+    /// The encryption context set so far.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
     }
 
     /// Set the required encryption context keys.
@@ -196,6 +208,12 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
+    /// The required encryption context keys set so far.
+    #[must_use]
+    pub const fn get_required_encryption_context_keys(&self) -> &BTreeSet<String> {
+        &self.required_encryption_context_keys
+    }
+
     /// Set the plaintext data key.
     #[must_use]
     pub fn plaintext_data_key(mut self, plaintext_data_key: impl Into<PlaintextDataKey>) -> Self {
@@ -211,6 +229,12 @@ impl DecryptionMaterialsBuilder {
         self
     }
 
+    /// The plaintext data key, if set.
+    #[must_use]
+    pub const fn get_plaintext_data_key(&self) -> &Option<PlaintextDataKey> {
+        &self.plaintext_data_key
+    }
+
     /// Set the verification key.
     #[must_use]
     pub fn verification_key(mut self, verification_key: impl Into<VerificationKey>) -> Self {
@@ -224,6 +248,12 @@ impl DecryptionMaterialsBuilder {
     pub fn set_verification_key(mut self, verification_key: Option<VerificationKey>) -> Self {
         self.verification_key = verification_key;
         self
+    }
+
+    /// The verification key, if set.
+    #[must_use]
+    pub const fn get_verification_key(&self) -> &Option<VerificationKey> {
+        &self.verification_key
     }
 
     /// Set the symmetric signing key.
@@ -245,6 +275,12 @@ impl DecryptionMaterialsBuilder {
     ) -> Self {
         self.symmetric_signing_key = symmetric_signing_key;
         self
+    }
+
+    /// The symmetric signing key, if set.
+    #[must_use]
+    pub const fn get_symmetric_signing_key(&self) -> &Option<SymmetricSigningKey> {
+        &self.symmetric_signing_key
     }
 
     /// Build the `DecryptionMaterials`.

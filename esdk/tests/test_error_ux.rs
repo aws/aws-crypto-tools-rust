@@ -8,8 +8,8 @@ mod fake_aws;
 
 use aws_crypto_mpl::async_trait;
 use aws_crypto_mpl::keyring::OnEncryptInput;
-use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
+use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::EncryptionContext;
 use aws_esdk::Esdk;
 use aws_esdk::error::{
@@ -635,20 +635,18 @@ async fn version_key_without_an_active_branch_key_names_the_branch_key() {
 }
 
 /// Wraps the data key under two keyrings, so the message has two encrypted data keys.
-struct Both<A, B>(A, B);
+struct Both(SharedKeyring, SharedKeyring);
 
 #[async_trait]
-impl<A: aws_crypto_mpl::Keyring, B: aws_crypto_mpl::Keyring> aws_crypto_mpl::Keyring
-    for Both<A, B>
-{
+impl aws_crypto_mpl::Keyring for Both {
     async fn on_encrypt(
         &self,
         input: OnEncryptInput,
     ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
-        let materials = self.0.on_encrypt(input).await?.into_materials();
-        self.1
-            .on_encrypt(OnEncryptInput::builder().materials(materials).build()?)
-            .await
+        let materials = aws_crypto_mpl::Keyring::on_encrypt(&self.0, input)
+            .await?
+            .into_materials();
+        self.1.on_encrypt().materials(materials).send().await
     }
 
     async fn on_decrypt(
@@ -676,7 +674,11 @@ async fn failures_lists_every_attempt_behind_a_keyring_error() {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()
         .unwrap();
-    let ciphertext = encrypt_with(Both(other, same_name_other_key)).await;
+    let ciphertext = encrypt_with(Both(
+        SharedKeyring::new(other),
+        SharedKeyring::new(same_name_other_key),
+    ))
+    .await;
     let keyring = RawAesKeyring::builder()
         .key_namespace("ns")
         .key_name("key")
@@ -725,8 +727,8 @@ async fn two_attempts_denied_and_throttled_is_retryable_throttling() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     let ciphertext = encrypt_with(Both(
-        FakeAws::ok().keyring().await,
-        FakeAws::ok().keyring().await,
+        SharedKeyring::new(FakeAws::ok().keyring().await),
+        SharedKeyring::new(FakeAws::ok().keyring().await),
     ))
     .await;
     let calls = Arc::new(AtomicUsize::new(0));

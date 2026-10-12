@@ -88,6 +88,12 @@ impl BranchKeyMaterialsBuilder {
         self
     }
 
+    /// The branch key, if set.
+    #[must_use]
+    pub const fn get_branch_key(&self) -> &Option<[u8; 32]> {
+        &self.branch_key
+    }
+
     /// Set the branch key identifier.
     /// Required, and must not be empty.
     #[must_use]
@@ -102,6 +108,12 @@ impl BranchKeyMaterialsBuilder {
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
         self
+    }
+
+    /// The branch key ID, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        &self.branch_key_id
     }
 
     /// Set the branch key version.
@@ -120,6 +132,12 @@ impl BranchKeyMaterialsBuilder {
         self
     }
 
+    /// The branch key version, if set.
+    #[must_use]
+    pub const fn get_branch_key_version(&self) -> &Option<String> {
+        &self.branch_key_version
+    }
+
     /// Set the custom encryption context of the branch key.
     /// Required.
     #[must_use]
@@ -134,6 +152,12 @@ impl BranchKeyMaterialsBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
+    }
+
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        &self.encryption_context
     }
 
     /// Build the `BranchKeyMaterials`.

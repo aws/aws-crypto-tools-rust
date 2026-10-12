@@ -10,6 +10,7 @@
 
 pub mod default;
 pub mod entry;
+mod fluent_builders;
 pub mod local;
 mod operation;
 pub mod storm_tracking;
@@ -21,6 +22,10 @@ pub use default::{DefaultCmc, DefaultCmcBuilder};
 pub use entry::{
     BytesUsage, CacheEntry, CacheEntryBuilder, CachedMaterials, MessageUsage, UsageMetadata,
     UsageMetadataBuilder,
+};
+pub use fluent_builders::{
+    DeleteCacheEntryFluentBuilder, GetCacheEntryFluentBuilder, PutCacheEntryFluentBuilder,
+    UpdateUsageMetadataFluentBuilder,
 };
 pub use local::{LocalCmc, LocalCmcBuilder};
 pub use operation::{
@@ -90,6 +95,8 @@ crate::shared::shared_handle!(
     /// It implements [`Cmc`], so it can be passed anywhere a cache is accepted.
     /// Callers that know their cache's type pass it directly and never need this one.
     ///
+    /// Each operation returns a fluent builder: set the input, then call `send`.
+    ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
     /// Give several keyrings clones of one handle
     /// and they read and write the same entries.
@@ -103,28 +110,28 @@ impl Cmc for SharedCmc {
         &self,
         input: PutCacheEntryInput,
     ) -> Result<PutCacheEntryOutput, Error> {
-        self.0.put_cache_entry(input).await
+        Cmc::put_cache_entry(&*self.0, input).await
     }
 
     async fn get_cache_entry(
         &self,
         input: GetCacheEntryInput,
     ) -> Result<GetCacheEntryOutput, Error> {
-        self.0.get_cache_entry(input).await
+        Cmc::get_cache_entry(&*self.0, input).await
     }
 
     async fn delete_cache_entry(
         &self,
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error> {
-        self.0.delete_cache_entry(input).await
+        Cmc::delete_cache_entry(&*self.0, input).await
     }
 
     async fn update_usage_metadata(
         &self,
         input: UpdateUsageMetadataInput,
     ) -> Result<UpdateUsageMetadataOutput, Error> {
-        self.0.update_usage_metadata(input).await
+        Cmc::update_usage_metadata(&*self.0, input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {

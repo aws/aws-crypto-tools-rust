@@ -219,6 +219,12 @@ impl LocalCmcBuilder {
         self
     }
 
+    /// The entry capacity, if set.
+    #[must_use]
+    pub const fn get_entry_capacity(&self) -> &Option<usize> {
+        &self.entry_capacity
+    }
+
     /// Set how many least-recently-used entries each get checks for expired entries to evict.
     /// Defaults to 1.
     #[must_use]
@@ -233,6 +239,12 @@ impl LocalCmcBuilder {
     pub const fn set_entry_pruning_tail_size(mut self, n: Option<usize>) -> Self {
         self.entry_pruning_tail_size = n;
         self
+    }
+
+    /// The entry pruning tail size, if set.
+    #[must_use]
+    pub const fn get_entry_pruning_tail_size(&self) -> &Option<usize> {
+        &self.entry_pruning_tail_size
     }
 
     /// Replace the cache's clock, so tests can advance time without sleeping.

@@ -136,6 +136,12 @@ impl UsageMetadataBuilder {
         self
     }
 
+    /// The messages used, if set.
+    #[must_use]
+    pub const fn get_messages_used(&self) -> &Option<MessageUsage> {
+        &self.messages_used
+    }
+
     /// Set the number of plaintext bytes encrypted. Defaults to 0.
     #[must_use]
     pub const fn bytes_used(mut self, bytes_used: BytesUsage) -> Self {
@@ -149,6 +155,12 @@ impl UsageMetadataBuilder {
     pub const fn set_bytes_used(mut self, bytes_used: Option<BytesUsage>) -> Self {
         self.bytes_used = bytes_used;
         self
+    }
+
+    /// The bytes used, if set.
+    #[must_use]
+    pub const fn get_bytes_used(&self) -> &Option<BytesUsage> {
+        &self.bytes_used
     }
 
     /// Construct the usage metadata.
@@ -264,6 +276,12 @@ impl CacheEntryBuilder {
         self
     }
 
+    /// The materials, if set.
+    #[must_use]
+    pub const fn get_materials(&self) -> &Option<CachedMaterials> {
+        &self.materials
+    }
+
     /// Set the creation time. Required.
     #[must_use]
     pub const fn creation_time(mut self, creation_time: SystemTime) -> Self {
@@ -276,6 +294,12 @@ impl CacheEntryBuilder {
     pub const fn set_creation_time(mut self, creation_time: Option<SystemTime>) -> Self {
         self.creation_time = creation_time;
         self
+    }
+
+    /// The creation time, if set.
+    #[must_use]
+    pub const fn get_creation_time(&self) -> &Option<SystemTime> {
+        &self.creation_time
     }
 
     /// Set the expiry time. Required.
@@ -292,6 +316,12 @@ impl CacheEntryBuilder {
         self
     }
 
+    /// The expiry time, if set.
+    #[must_use]
+    pub const fn get_expiry_time(&self) -> &Option<SystemTime> {
+        &self.expiry_time
+    }
+
     /// Set the usage metadata. Defaults to zero messages and zero bytes.
     #[must_use]
     pub const fn usage_metadata(mut self, usage_metadata: UsageMetadata) -> Self {
@@ -305,6 +335,12 @@ impl CacheEntryBuilder {
     pub const fn set_usage_metadata(mut self, usage_metadata: Option<UsageMetadata>) -> Self {
         self.usage_metadata = usage_metadata;
         self
+    }
+
+    /// The usage metadata, if set.
+    #[must_use]
+    pub const fn get_usage_metadata(&self) -> &Option<UsageMetadata> {
+        &self.usage_metadata
     }
 
     /// Construct the entry.

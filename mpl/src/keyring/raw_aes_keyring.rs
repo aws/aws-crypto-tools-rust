@@ -239,6 +239,12 @@ impl RawAesKeyringBuilder {
         self
     }
 
+    /// The key namespace, if set.
+    #[must_use]
+    pub const fn get_key_namespace(&self) -> &Option<String> {
+        &self.key_namespace
+    }
+
     /// Set the key name, which this keyring serializes into the key provider information of each EDK.
     /// Required.
     #[must_use]
@@ -253,6 +259,12 @@ impl RawAesKeyringBuilder {
     pub fn set_key_name(mut self, key_name: Option<String>) -> Self {
         self.key_name = key_name;
         self
+    }
+
+    /// The key name, if set.
+    #[must_use]
+    pub const fn get_key_name(&self) -> &Option<String> {
+        &self.key_name
     }
 
     /// Set the wrapping key.
@@ -274,6 +286,12 @@ impl RawAesKeyringBuilder {
         self
     }
 
+    /// The wrapping key, if set.
+    #[must_use]
+    pub const fn get_wrapping_key(&self) -> &Option<Vec<u8>> {
+        &self.wrapping_key
+    }
+
     /// Set the wrapping algorithm.
     /// Required.
     #[must_use]
@@ -288,6 +306,12 @@ impl RawAesKeyringBuilder {
     pub const fn set_wrapping_alg(mut self, wrapping_alg: Option<AesGcm>) -> Self {
         self.wrapping_alg = wrapping_alg;
         self
+    }
+
+    /// The wrapping algorithm, if set.
+    #[must_use]
+    pub const fn get_wrapping_alg(&self) -> &Option<AesGcm> {
+        &self.wrapping_alg
     }
 
     /// Build the `RawAesKeyring`.

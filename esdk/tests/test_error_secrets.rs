@@ -7,7 +7,7 @@
 mod fake_aws;
 
 use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring};
+use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
@@ -61,7 +61,7 @@ fn raw(name: &str) -> RawAesKeyring {
 }
 
 /// A raw AES keyring whose data key is `KEY_BYTE` repeated.
-struct KnownDataKey(RawAesKeyring);
+struct KnownDataKey(SharedKeyring);
 
 #[async_trait]
 impl Keyring for KnownDataKey {
@@ -79,16 +79,14 @@ impl Keyring for KnownDataKey {
             .set_signing_key(m.signing_key().cloned())
             .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))
             .build()?;
-        self.0
-            .on_encrypt(OnEncryptInput::builder().materials(m).build()?)
-            .await
+        self.0.on_encrypt().materials(m).send().await
     }
 
     async fn on_decrypt(
         &self,
         input: OnDecryptInput,
     ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
-        self.0.on_decrypt(input).await
+        Keyring::on_decrypt(&self.0, input).await
     }
 }
 
@@ -98,7 +96,7 @@ async fn ciphertext() -> Vec<u8> {
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .keyring(KnownDataKey(raw("name")))
+        .keyring(KnownDataKey(SharedKeyring::new(raw("name"))))
         .send()
         .await
         .unwrap()

@@ -62,6 +62,12 @@ impl DefaultCmcBuilder {
         self
     }
 
+    /// The entry capacity, if set.
+    #[must_use]
+    pub const fn get_entry_capacity(&self) -> &Option<usize> {
+        &self.entry_capacity
+    }
+
     /// Construct the cache.
     ///
     /// # Errors

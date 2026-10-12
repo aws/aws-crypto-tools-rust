@@ -61,9 +61,11 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 
+mod fluent_builders;
 pub mod raw_aes_keyring;
 mod types;
 
+pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
 pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
 pub use types::{
     OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,
@@ -147,6 +149,8 @@ crate::shared::shared_handle!(
     ///
     /// It implements [`Keyring`], so it can be passed anywhere a keyring is accepted.
     /// Callers that know their keyring's type pass it directly and never need this one.
+    ///
+    /// Each operation returns a fluent builder: set the input, then call `send`.
     SharedKeyring,
     Keyring
 );
@@ -158,11 +162,11 @@ impl Keyring for SharedKeyring {
     }
 
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        self.0.on_encrypt(input).await
+        Keyring::on_encrypt(&*self.0, input).await
     }
 
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-        self.0.on_decrypt(input).await
+        Keyring::on_decrypt(&*self.0, input).await
     }
 }
 

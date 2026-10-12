@@ -91,6 +91,12 @@ impl GetEncryptionMaterialsInputBuilder {
         self
     }
 
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        &self.encryption_context
+    }
+
     /// Set the commitment policy the algorithm suite must satisfy.
     /// Required.
     #[must_use]
@@ -107,6 +113,12 @@ impl GetEncryptionMaterialsInputBuilder {
         self
     }
 
+    /// The commitment policy, if set.
+    #[must_use]
+    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+        &self.commitment_policy
+    }
+
     /// Set the algorithm suite to use.
     /// When unset, the CMM picks one from the commitment policy.
     #[must_use]
@@ -121,6 +133,12 @@ impl GetEncryptionMaterialsInputBuilder {
     pub fn set_algorithm_suite_id(mut self, algorithm_suite_id: Option<AlgorithmSuiteId>) -> Self {
         self.algorithm_suite_id = algorithm_suite_id;
         self
+    }
+
+    /// The algorithm suite ID, if set.
+    #[must_use]
+    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+        &self.algorithm_suite_id
     }
 
     /// Set the encryption context keys that must be supplied again at decrypt time.
@@ -149,6 +167,12 @@ impl GetEncryptionMaterialsInputBuilder {
         self
     }
 
+    /// The required encryption context keys, if set.
+    #[must_use]
+    pub const fn get_required_encryption_context_keys(&self) -> &Option<BTreeSet<String>> {
+        &self.required_encryption_context_keys
+    }
+
     /// Set the maximum plaintext length the materials are for.
     /// When unset, there is no bound.
     #[must_use]
@@ -163,6 +187,12 @@ impl GetEncryptionMaterialsInputBuilder {
     pub fn set_max_plaintext_length(mut self, max_plaintext_length: Option<u64>) -> Self {
         self.max_plaintext_length = max_plaintext_length;
         self
+    }
+
+    /// The max plaintext length, if set.
+    #[must_use]
+    pub const fn get_max_plaintext_length(&self) -> &Option<u64> {
+        &self.max_plaintext_length
     }
 
     /// Build the `GetEncryptionMaterialsInput`.
@@ -235,6 +265,12 @@ impl GetEncryptionMaterialsOutputBuilder {
     ) -> Self {
         self.encryption_materials = encryption_materials;
         self
+    }
+
+    /// The encryption materials, if set.
+    #[must_use]
+    pub const fn get_encryption_materials(&self) -> &Option<EncryptionMaterials> {
+        &self.encryption_materials
     }
 
     /// Build the `GetEncryptionMaterialsOutput`.
@@ -326,6 +362,12 @@ impl DecryptMaterialsInputBuilder {
         self
     }
 
+    /// The algorithm suite ID, if set.
+    #[must_use]
+    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+        &self.algorithm_suite_id
+    }
+
     /// Set the commitment policy the algorithm suite must satisfy.
     /// Required.
     #[must_use]
@@ -340,6 +382,12 @@ impl DecryptMaterialsInputBuilder {
     pub fn set_commitment_policy(mut self, commitment_policy: Option<CommitmentPolicy>) -> Self {
         self.commitment_policy = commitment_policy;
         self
+    }
+
+    /// The commitment policy, if set.
+    #[must_use]
+    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+        &self.commitment_policy
     }
 
     /// Set the encrypted data keys in the message header.
@@ -364,6 +412,12 @@ impl DecryptMaterialsInputBuilder {
         self
     }
 
+    /// The encrypted data keys, if set.
+    #[must_use]
+    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+        &self.encrypted_data_keys
+    }
+
     /// Set the encryption context in the message header.
     /// Required, and may be empty.
     #[must_use]
@@ -378,6 +432,12 @@ impl DecryptMaterialsInputBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context;
         self
+    }
+
+    /// The encryption context, if set.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &Option<EncryptionContext> {
+        &self.encryption_context
     }
 
     /// Set the encryption context the caller expects the message to have.
@@ -399,6 +459,12 @@ impl DecryptMaterialsInputBuilder {
     ) -> Self {
         self.reproduced_encryption_context = reproduced_encryption_context;
         self
+    }
+
+    /// The reproduced encryption context, if set.
+    #[must_use]
+    pub const fn get_reproduced_encryption_context(&self) -> &Option<EncryptionContext> {
+        &self.reproduced_encryption_context
     }
 
     /// Build the `DecryptMaterialsInput`.
@@ -471,6 +537,12 @@ impl DecryptMaterialsOutputBuilder {
     ) -> Self {
         self.decryption_materials = decryption_materials;
         self
+    }
+
+    /// The decryption materials, if set.
+    #[must_use]
+    pub const fn get_decryption_materials(&self) -> &Option<DecryptionMaterials> {
+        &self.decryption_materials
     }
 
     /// Build the `DecryptMaterialsOutput`.

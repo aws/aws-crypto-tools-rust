@@ -57,6 +57,12 @@ impl OnEncryptInputBuilder {
         self
     }
 
+    /// The materials, if set.
+    #[must_use]
+    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+        &self.materials
+    }
+
     /// Build the `OnEncryptInput`.
     ///
     /// # Errors
@@ -117,6 +123,12 @@ impl OnEncryptOutputBuilder {
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.materials = materials;
         self
+    }
+
+    /// The materials, if set.
+    #[must_use]
+    pub const fn get_materials(&self) -> &Option<EncryptionMaterials> {
+        &self.materials
     }
 
     /// Build the `OnEncryptOutput`.
@@ -195,6 +207,12 @@ impl OnDecryptInputBuilder {
         self
     }
 
+    /// The materials, if set.
+    #[must_use]
+    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+        &self.materials
+    }
+
     /// Set the encrypted data keys to try.
     /// Required.
     #[must_use]
@@ -215,6 +233,12 @@ impl OnDecryptInputBuilder {
     ) -> Self {
         self.encrypted_data_keys = encrypted_data_keys;
         self
+    }
+
+    /// The encrypted data keys, if set.
+    #[must_use]
+    pub const fn get_encrypted_data_keys(&self) -> &Option<Vec<EncryptedDataKey>> {
+        &self.encrypted_data_keys
     }
 
     /// Build the `OnDecryptInput`.
@@ -278,6 +302,12 @@ impl OnDecryptOutputBuilder {
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.materials = materials;
         self
+    }
+
+    /// The materials, if set.
+    #[must_use]
+    pub const fn get_materials(&self) -> &Option<DecryptionMaterials> {
+        &self.materials
     }
 
     /// Build the `OnDecryptOutput`.

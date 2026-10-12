@@ -155,65 +155,84 @@ impl Esdk {
     }
 }
 
-/// Forward a setter to the wrapped input builder.
+/// Forward a member's setters to the wrapped input builder, and add its getter.
 macro_rules! forward {
-    ($(#[$meta:meta])* $name:ident($arg:ident: $ty:ty)) => {
-        $(#[$meta])*
-        pub fn $name(mut self, $arg: $ty) -> Self {
-            self.inner = self.inner.$name($arg);
-            self
+    (
+        $(#[$getter_meta:meta])*
+        $getter:ident -> $out:ty {
+            $($(#[$meta:meta])* $name:ident($arg:ident: $ty:ty);)+
+        }
+    ) => {
+        $(
+            $(#[$meta])*
+            pub fn $name(mut self, $arg: $ty) -> Self {
+                self.inner = self.inner.$name($arg);
+                self
+            }
+        )+
+
+        $(#[$getter_meta])*
+        #[must_use]
+        #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
+        pub const fn $getter(&self) -> &Option<$out> {
+            self.inner.$getter()
         }
     };
 }
 
-/// The setters every operation's fluent builder has.
+/// The members every operation's fluent builder has.
 macro_rules! forward_common {
     () => {
         forward!(
-            /// Set the encryption context. Default is empty.
-            encryption_context(encryption_context: impl Into<EncryptionContext>)
+            /// The encryption context set so far.
+            get_encryption_context -> EncryptionContext {
+                /// Set the encryption context. Default is empty.
+                encryption_context(encryption_context: impl Into<EncryptionContext>);
+                /// Set or clear the encryption context from an `Option`.
+                set_encryption_context(encryption_context: Option<EncryptionContext>);
+            }
         );
         forward!(
-            /// Set or clear the encryption context from an `Option`.
-            set_encryption_context(encryption_context: Option<EncryptionContext>)
+            /// The keyring set so far.
+            get_keyring -> SharedKeyring {
+                /// Set the keyring. Set exactly one of a keyring or a CMM.
+                keyring(keyring: impl Keyring + 'static);
+                /// Set or clear the keyring from an `Option`.
+                set_keyring(keyring: Option<SharedKeyring>);
+            }
         );
         forward!(
-            /// Set the keyring. Set exactly one of a keyring or a CMM.
-            keyring(keyring: impl Keyring + 'static)
-        );
-        forward!(
-            /// Set or clear the keyring from an `Option`.
-            set_keyring(keyring: Option<SharedKeyring>)
-        );
-        forward!(
-            /// Set the cryptographic materials manager. Set exactly one of a keyring or a CMM.
-            cmm(cmm: impl Cmm + 'static)
-        );
-        forward!(
-            /// Set or clear the CMM from an `Option`.
-            set_cmm(cmm: Option<SharedCmm>)
+            /// The CMM set so far.
+            get_cmm -> SharedCmm {
+                /// Set the cryptographic materials manager. Set exactly one of a keyring or a CMM.
+                cmm(cmm: impl Cmm + 'static);
+                /// Set or clear the CMM from an `Option`.
+                set_cmm(cmm: Option<SharedCmm>);
+            }
         );
     };
 }
 
-/// The setters the two encrypt builders share.
+/// The members the two encrypt builders share.
 macro_rules! forward_encrypt {
     () => {
         forward!(
-            /// Set the algorithm suite. Unset uses the commitment policy's default suite.
-            algorithm_suite_id(algorithm_suite_id: AlgorithmSuiteId)
+            /// The algorithm suite set so far.
+            get_algorithm_suite_id -> AlgorithmSuiteId {
+                /// Set the algorithm suite. Unset uses the commitment policy's default suite.
+                algorithm_suite_id(algorithm_suite_id: AlgorithmSuiteId);
+                /// Set or clear the algorithm suite from an `Option`.
+                set_algorithm_suite_id(algorithm_suite_id: Option<AlgorithmSuiteId>);
+            }
         );
         forward!(
-            /// Set or clear the algorithm suite from an `Option`.
-            set_algorithm_suite_id(algorithm_suite_id: Option<AlgorithmSuiteId>)
-        );
-        forward!(
-            /// Set the frame length in bytes. Defaults to 4096.
-            frame_length(frame_length: NonZeroU32)
-        );
-        forward!(
-            /// Set or clear the frame length from an `Option`.
-            set_frame_length(frame_length: Option<NonZeroU32>)
+            /// The frame length set so far.
+            get_frame_length -> NonZeroU32 {
+                /// Set the frame length in bytes. Defaults to 4096.
+                frame_length(frame_length: NonZeroU32);
+                /// Set or clear the frame length from an `Option`.
+                set_frame_length(frame_length: Option<NonZeroU32>);
+            }
         );
     };
 }
@@ -228,8 +247,11 @@ pub struct EncryptFluentBuilder<'a> {
 
 impl<'a> EncryptFluentBuilder<'a> {
     forward!(
-        /// Set the plaintext to encrypt. Required.
-        plaintext(plaintext: &'a [u8])
+        /// The plaintext set so far.
+        get_plaintext -> &'a [u8] {
+            /// Set the plaintext to encrypt. Required.
+            plaintext(plaintext: &'a [u8]);
+        }
     );
     forward_common!();
     forward_encrypt!();
@@ -271,8 +293,11 @@ pub struct DecryptFluentBuilder<'a> {
 
 impl<'a> DecryptFluentBuilder<'a> {
     forward!(
-        /// Set the encrypted message to decrypt. Required.
-        ciphertext(ciphertext: &'a [u8])
+        /// The encrypted message set so far.
+        get_ciphertext -> &'a [u8] {
+            /// Set the encrypted message to decrypt. Required.
+            ciphertext(ciphertext: &'a [u8]);
+        }
     );
     forward_common!();
 
@@ -316,12 +341,13 @@ impl EncryptStreamFluentBuilder {
     forward_common!();
     forward_encrypt!();
     forward!(
-        /// Set the plaintext length in bytes, when it is known in advance.
-        data_size(data_size: usize)
-    );
-    forward!(
-        /// Set or clear the plaintext length from an `Option`.
-        set_data_size(data_size: Option<usize>)
+        /// The plaintext length set so far.
+        get_data_size -> usize {
+            /// Set the plaintext length in bytes, when it is known in advance.
+            data_size(data_size: usize);
+            /// Set or clear the plaintext length from an `Option`.
+            set_data_size(data_size: Option<usize>);
+        }
     );
 
     /// Encrypt `plaintext` into `ciphertext`.
@@ -449,6 +475,20 @@ impl EsdkBuilder {
     ) -> Self {
         self.max_encrypted_data_keys = max_encrypted_data_keys;
         self
+    }
+
+    /// The commitment policy set so far.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_commitment_policy(&self) -> &Option<CommitmentPolicy> {
+        &self.commitment_policy
+    }
+
+    /// The maximum number of encrypted data keys set so far.
+    #[must_use]
+    #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+    pub const fn get_max_encrypted_data_keys(&self) -> &Option<NonZeroUsize> {
+        &self.max_encrypted_data_keys
     }
 
     /// Build the `Esdk`. Unset fields use their defaults

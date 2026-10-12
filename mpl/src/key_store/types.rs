@@ -112,6 +112,12 @@ impl GetKeyStoreInfoOutputBuilder {
         self
     }
 
+    /// The key store ID, if set.
+    #[must_use]
+    pub const fn get_key_store_id(&self) -> &Option<String> {
+        &self.key_store_id
+    }
+
     /// Set the DynamoDB table name that backs the key store.
     /// Required.
     #[must_use]
@@ -128,6 +134,12 @@ impl GetKeyStoreInfoOutputBuilder {
         self
     }
 
+    /// The key store name, if set.
+    #[must_use]
+    pub const fn get_key_store_name(&self) -> &Option<String> {
+        &self.key_store_name
+    }
+
     /// Set the logical key store name, which is cryptographically bound to the keys it holds.
     /// Required.
     #[must_use]
@@ -142,6 +154,12 @@ impl GetKeyStoreInfoOutputBuilder {
     pub fn set_logical_key_store_name(mut self, logical_key_store_name: Option<String>) -> Self {
         self.logical_key_store_name = logical_key_store_name;
         self
+    }
+
+    /// The logical key store name, if set.
+    #[must_use]
+    pub const fn get_logical_key_store_name(&self) -> &Option<String> {
+        &self.logical_key_store_name
     }
 
     /// Set the AWS KMS grant tokens the key store uses.
@@ -163,6 +181,12 @@ impl GetKeyStoreInfoOutputBuilder {
         self
     }
 
+    /// The grant tokens, if set.
+    #[must_use]
+    pub const fn get_grant_tokens(&self) -> &Option<Vec<String>> {
+        &self.grant_tokens
+    }
+
     /// Set the KMS configuration of the key store.
     /// Required.
     #[must_use]
@@ -177,6 +201,12 @@ impl GetKeyStoreInfoOutputBuilder {
     pub fn set_kms_configuration(mut self, kms_configuration: Option<KmsConfiguration>) -> Self {
         self.kms_configuration = kms_configuration;
         self
+    }
+
+    /// The KMS configuration, if set.
+    #[must_use]
+    pub const fn get_kms_configuration(&self) -> &Option<KmsConfiguration> {
+        &self.kms_configuration
     }
 
     /// Build the `GetKeyStoreInfoOutput`.
@@ -274,6 +304,12 @@ impl CreateKeyStoreOutputBuilder {
     pub fn set_table_arn(mut self, table_arn: Option<String>) -> Self {
         self.table_arn = table_arn;
         self
+    }
+
+    /// The table ARN, if set.
+    #[must_use]
+    pub const fn get_table_arn(&self) -> &Option<String> {
+        &self.table_arn
     }
 
     /// Build the `CreateKeyStoreOutput`.
@@ -431,6 +467,12 @@ impl CreateKeyOutputBuilder {
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
         self
+    }
+
+    /// The branch key ID, if set.
+    #[must_use]
+    pub const fn get_branch_key_id(&self) -> &Option<String> {
+        &self.branch_key_id
     }
 
     /// Build the `CreateKeyOutput`.
@@ -653,6 +695,12 @@ impl GetActiveBranchKeyOutputBuilder {
         self
     }
 
+    /// The branch key materials, if set.
+    #[must_use]
+    pub const fn get_branch_key_materials(&self) -> &Option<BranchKeyMaterials> {
+        &self.branch_key_materials
+    }
+
     /// Build the `GetActiveBranchKeyOutput`.
     ///
     /// # Errors
@@ -814,6 +862,12 @@ impl GetBranchKeyVersionOutputBuilder {
         self
     }
 
+    /// The branch key materials, if set.
+    #[must_use]
+    pub const fn get_branch_key_materials(&self) -> &Option<BranchKeyMaterials> {
+        &self.branch_key_materials
+    }
+
     /// Build the `GetBranchKeyVersionOutput`.
     ///
     /// # Errors
@@ -942,6 +996,12 @@ impl GetBeaconKeyOutputBuilder {
     ) -> Self {
         self.beacon_key_materials = beacon_key_materials;
         self
+    }
+
+    /// The beacon key materials, if set.
+    #[must_use]
+    pub const fn get_beacon_key_materials(&self) -> &Option<BeaconKeyMaterials> {
+        &self.beacon_key_materials
     }
 
     /// Build the `GetBeaconKeyOutput`.

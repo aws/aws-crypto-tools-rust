@@ -20,7 +20,7 @@ use super::{
     DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
     GetEncryptionMaterialsOutput,
 };
-use crate::keyring::{Keyring, OnDecryptInput, OnEncryptInput, SharedKeyring};
+use crate::keyring::{Keyring, SharedKeyring};
 use crate::shared::IntoShared;
 use crate::structures::{
     AsymmetricSignatureAlgorithm, DecryptionMaterials, EncryptionContext, EncryptionMaterials,
@@ -162,11 +162,9 @@ impl Cmm for DefaultCmm {
 
         let materials = self
             .keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(empty_materials)
-                    .build()?,
-            )
+            .on_encrypt()
+            .materials(empty_materials)
+            .send()
             .await?
             .into_materials();
 
@@ -241,13 +239,12 @@ impl Cmm for DefaultCmm {
             .set_verification_key(verification_key)
             .build()?;
 
-        let on_decrypt_input = OnDecryptInput::builder()
-            .materials(empty_materials)
-            .encrypted_data_keys(input.encrypted_data_keys)
-            .build()?;
         let materials = self
             .keyring
-            .on_decrypt(on_decrypt_input)
+            .on_decrypt()
+            .materials(empty_materials)
+            .encrypted_data_keys(input.encrypted_data_keys)
+            .send()
             .await?
             .into_materials();
 

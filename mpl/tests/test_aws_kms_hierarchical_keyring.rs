@@ -45,12 +45,11 @@ use aws_crypto_mpl::key_store::{
     GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, KeyStoreClientBuilder, KmsKeyArn,
     VersionKeyInput, VersionKeyOutput,
 };
-use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BranchKeyMaterials, DecryptionMaterials, EncryptionContext,
     EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, StormTrackingCmc};
+use aws_crypto_mpl::{Cmc, LocalCmc, SharedCmc, SharedKeyring, StormTrackingCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -1386,15 +1385,17 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
 }
 
 /// Build a keyring over a [`FakeKeyStore`] with a static branch key id and its own `LocalCmc`.
-fn build_keyring(key_store: FakeKeyStore, branch_key_id: &str) -> HierarchicalKeyring {
-    HierarchicalKeyring::builder()
-        .key_store(key_store)
-        .ttl(Duration::from_secs(3600))
-        .branch_key_id(branch_key_id)
-        .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
-        .partition_id("partition-id")
-        .build()
-        .unwrap()
+fn build_keyring(key_store: FakeKeyStore, branch_key_id: &str) -> SharedKeyring {
+    SharedKeyring::new(
+        HierarchicalKeyring::builder()
+            .key_store(key_store)
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id(branch_key_id)
+            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
+            .partition_id("partition-id")
+            .build()
+            .unwrap(),
+    )
 }
 
 /// Pick a non-signing suite so `signing_key` / `symmetric_signing_keys`
@@ -1405,7 +1406,6 @@ fn non_signing_suite() -> AlgorithmSuiteId {
 
 mod onencrypt {
     use super::*;
-    use aws_crypto_mpl::Keyring;
 
     #[tokio::test]
     async fn on_encrypt_caches_branch_key_materials_after_key_store_call() {
@@ -1414,12 +1414,9 @@ mod onencrypt {
 
         // First call: cache miss → key store is called.
         keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(empty_encryption_materials(non_signing_suite()))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(empty_encryption_materials(non_signing_suite()))
+            .send()
             .await
             .unwrap();
         assert_eq!(
@@ -1429,12 +1426,9 @@ mod onencrypt {
         );
 
         keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(empty_encryption_materials(non_signing_suite()))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(empty_encryption_materials(non_signing_suite()))
+            .send()
             .await
             .unwrap();
         assert_eq!(
@@ -1458,16 +1452,17 @@ mod onencrypt {
     /// whose cache already holds its entry, created `age` ago.
     /// The entry's own expiry is an hour out, so only the keyring's TTL check can reject it.
     async fn on_encrypt_consults_key_store_for_entry_aged(age: Duration) -> bool {
-        use aws_crypto_mpl::Cmc;
-        use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials, PutCacheEntryInput};
+        use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials};
         use std::time::SystemTime;
 
         const PARTITION: &str = "partition-id";
-        let cache = LocalCmc::builder()
-            .entry_capacity(8)
-            .entry_pruning_tail_size(4)
-            .build()
-            .unwrap();
+        let cache = SharedCmc::new(
+            LocalCmc::builder()
+                .entry_capacity(8)
+                .entry_pruning_tail_size(4)
+                .build()
+                .unwrap(),
+        );
         let now = SystemTime::now();
         let entry = CacheEntry::builder()
             .materials(CachedMaterials::BranchKey(fake_branch_key_materials()))
@@ -1476,38 +1471,34 @@ mod onencrypt {
             .build()
             .unwrap();
         cache
-            .put_cache_entry(
-                PutCacheEntryInput::builder()
-                    .identifier(build_cache_identifier(
-                        SCOPE_ID_ENCRYPT,
-                        PARTITION.as_bytes(),
-                        FAKE_LOGICAL_KEY_STORE_NAME,
-                        FAKE_BRANCH_KEY_ID,
-                        None,
-                    ))
-                    .entry(entry)
-                    .build()
-                    .unwrap(),
-            )
+            .put_cache_entry()
+            .identifier(build_cache_identifier(
+                SCOPE_ID_ENCRYPT,
+                PARTITION.as_bytes(),
+                FAKE_LOGICAL_KEY_STORE_NAME,
+                FAKE_BRANCH_KEY_ID,
+                None,
+            ))
+            .entry(entry)
+            .send()
             .await
             .unwrap();
 
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
-        let keyring = HierarchicalKeyring::builder()
-            .key_store(key_store.clone())
-            .ttl(Duration::from_millis(1500))
-            .branch_key_id(FAKE_BRANCH_KEY_ID)
-            .cache(SharedCmc::new(cache))
-            .partition_id(PARTITION)
-            .build()
-            .unwrap();
+        let keyring = SharedKeyring::new(
+            HierarchicalKeyring::builder()
+                .key_store(key_store.clone())
+                .ttl(Duration::from_millis(1500))
+                .branch_key_id(FAKE_BRANCH_KEY_ID)
+                .cache(cache)
+                .partition_id(PARTITION)
+                .build()
+                .unwrap(),
+        );
         keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(empty_encryption_materials(non_signing_suite()))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(empty_encryption_materials(non_signing_suite()))
+            .send()
             .await
             .unwrap();
         key_store.get_active_calls() == 1
@@ -1574,21 +1565,20 @@ mod onencrypt {
                 unimplemented!()
             }
         }
-        let keyring = HierarchicalKeyring::builder()
-            .key_store(FailingKeyStore)
-            .ttl(Duration::from_secs(3600))
-            .branch_key_id("bk")
-            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
-            .build()
-            .unwrap();
+        let keyring = SharedKeyring::new(
+            HierarchicalKeyring::builder()
+                .key_store(FailingKeyStore)
+                .ttl(Duration::from_secs(3600))
+                .branch_key_id("bk")
+                .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
+                .build()
+                .unwrap(),
+        );
 
         let err = match keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(empty_encryption_materials(non_signing_suite()))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(empty_encryption_materials(non_signing_suite()))
+            .send()
             .await
         {
             Ok(_) => panic!("on_encrypt must fail when key store.get_active_branch_key fails"),
@@ -1609,21 +1599,20 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
-        let keyring = HierarchicalKeyring::builder()
-            .key_store(key_store.clone())
-            .ttl(Duration::from_secs(3600))
-            .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
-            .build()
-            .unwrap();
+        let keyring = SharedKeyring::new(
+            HierarchicalKeyring::builder()
+                .key_store(key_store.clone())
+                .ttl(Duration::from_secs(3600))
+                .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
+                .build()
+                .unwrap(),
+        );
 
         let materials_out = keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(empty_encryption_materials(non_signing_suite()))
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(empty_encryption_materials(non_signing_suite()))
+            .send()
             .await
             .unwrap()
             .into_materials();
@@ -1636,7 +1625,6 @@ mod onencrypt {
 
 mod ondecrypt {
     use super::*;
-    use aws_crypto_mpl::Keyring;
     use aws_crypto_mpl::error::{BranchKey, DataKeyInfo, Resource};
     use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
 
@@ -1652,17 +1640,14 @@ mod ondecrypt {
     /// resulting (plaintext_data_key, edks) pair. Used to seed every
     /// round-trip on_decrypt test.
     async fn produce_edk(
-        keyring: &HierarchicalKeyring,
+        keyring: &SharedKeyring,
         suite_id: AlgorithmSuiteId,
     ) -> (PlaintextDataKey, Vec<EncryptedDataKey>) {
         let materials_in = empty_encryption_materials(suite_id);
         let materials_out = keyring
-            .on_encrypt(
-                OnEncryptInput::builder()
-                    .materials(materials_in)
-                    .build()
-                    .unwrap(),
-            )
+            .on_encrypt()
+            .materials(materials_in)
+            .send()
             .await
             .unwrap()
             .into_materials();
@@ -1696,13 +1681,10 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(dm)
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(dm)
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
         assert!(err.is_invalid_materials(), "{:?}", err);
@@ -1730,13 +1712,10 @@ mod ondecrypt {
         assert_eq!(on_wire_version, &FAKE_BRANCH_KEY_VERSION_BYTES);
 
         let _ = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .unwrap()
             .into_materials();
@@ -1758,13 +1737,10 @@ mod ondecrypt {
 
         // First on_decrypt: cache MISS → key store is called.
         let _ = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .unwrap()
             .into_materials();
@@ -1775,13 +1751,10 @@ mod ondecrypt {
         );
 
         let _ = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .unwrap()
             .into_materials();
@@ -1810,13 +1783,10 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK")
             .into_materials();
@@ -1844,13 +1814,10 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK")
             .into_materials();
@@ -1876,13 +1843,10 @@ mod ondecrypt {
         edks.insert(0, bogus);
 
         let dm_out = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .expect("on_decrypt must succeed by falling through to the matching EDK")
             .into_materials();
@@ -1901,13 +1865,10 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
 
         let err = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(Vec::new())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(Vec::new())
+            .send()
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
 
@@ -1935,13 +1896,10 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(vec![foreign])
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(vec![foreign])
+            .send()
             .await
             .expect_err("an EDK from another provider MUST NOT be decrypted");
 
@@ -1984,13 +1942,10 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(vec![truncated])
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(vec![truncated])
+            .send()
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         // One candidate EDK, so its error comes back unchanged, not as a collection of one.
@@ -2020,13 +1975,10 @@ mod ondecrypt {
             .unwrap();
 
         let err = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(vec![truncated_4, truncated_8])
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(vec![truncated_4, truncated_8])
+            .send()
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
         assert!(err.is_cryptographic(), "{:?}", err);
@@ -2132,23 +2084,22 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
         let (_, edks) = produce_edk(&priming_keyring, suite_id).await;
 
-        let keyring = HierarchicalKeyring::builder()
-            .key_store(FailingKeyStore)
-            .ttl(Duration::from_secs(3600))
-            .branch_key_id(FAKE_BRANCH_KEY_ID)
-            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
-            .partition_id("partition-id")
-            .build()
-            .unwrap();
+        let keyring = SharedKeyring::new(
+            HierarchicalKeyring::builder()
+                .key_store(FailingKeyStore)
+                .ttl(Duration::from_secs(3600))
+                .branch_key_id(FAKE_BRANCH_KEY_ID)
+                .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
+                .partition_id("partition-id")
+                .build()
+                .unwrap(),
+        );
 
         let err = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             // One candidate EDK, so the key store's error comes back unchanged.
             .expect_err("on_decrypt must fail when key store.get_branch_key_version fails");
@@ -2166,26 +2117,25 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
         let key_store = FakeKeyStore::new(fake_branch_key_materials());
-        let keyring = HierarchicalKeyring::builder()
-            .key_store(key_store.clone())
-            .ttl(Duration::from_secs(3600))
-            .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-            .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
-            .partition_id("partition-id")
-            .build()
-            .unwrap();
+        let keyring = SharedKeyring::new(
+            HierarchicalKeyring::builder()
+                .key_store(key_store.clone())
+                .ttl(Duration::from_secs(3600))
+                .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+                .cache(LocalCmc::builder().entry_capacity(1000).build().unwrap())
+                .partition_id("partition-id")
+                .build()
+                .unwrap(),
+        );
         let suite_id = non_signing_suite();
 
         let (expected_pdk, edks) = produce_edk(&keyring, suite_id).await;
 
         let dm_out = keyring
-            .on_decrypt(
-                OnDecryptInput::builder()
-                    .materials(empty_decryption_materials(suite_id))
-                    .encrypted_data_keys(edks.to_vec())
-                    .build()
-                    .unwrap(),
-            )
+            .on_decrypt()
+            .materials(empty_decryption_materials(suite_id))
+            .encrypted_data_keys(edks.to_vec())
+            .send()
             .await
             .expect("on_decrypt with a supplier-resolved branch_key_id must succeed")
             .into_materials();

@@ -274,6 +274,19 @@ impl<'a> EncryptInput<'a> {
 }
 
 /// Fluent builder for [`EncryptInput`].
+/// `get_x(&self) -> &Option<T>` getters for an input builder's `x: Option<T>` fields.
+macro_rules! getters {
+    ($($getter:ident: $field:ident -> $ty:ty),+ $(,)?) => {
+        $(
+            #[must_use]
+            #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
+            pub(crate) const fn $getter(&self) -> &Option<$ty> {
+                &self.$field
+            }
+        )+
+    };
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct EncryptInputBuilder<'a> {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -287,6 +300,15 @@ pub(crate) struct EncryptInputBuilder<'a> {
 }
 
 impl<'a> EncryptInputBuilder<'a> {
+    getters!(
+        get_plaintext: plaintext -> &'a [u8],
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+        get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
+        get_frame_length: frame_length -> NonZeroU32,
+    );
+
     /// Set the algorithm suite.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
@@ -489,6 +511,15 @@ pub(crate) struct EncryptStreamInputBuilder {
 }
 
 impl EncryptStreamInputBuilder {
+    getters!(
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+        get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
+        get_frame_length: frame_length -> NonZeroU32,
+        get_data_size: data_size -> usize,
+    );
+
     /// Set the algorithm suite.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
@@ -688,6 +719,13 @@ pub(crate) struct DecryptInputBuilder<'a> {
 }
 
 impl<'a> DecryptInputBuilder<'a> {
+    getters!(
+        get_ciphertext: ciphertext -> &'a [u8],
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+    );
+
     /// Set the encrypted message (the serialized AWS Encryption SDK message) to decrypt.
     /// Required.
     #[must_use]
@@ -838,6 +876,12 @@ pub(crate) struct DecryptStreamInputBuilder {
 }
 
 impl DecryptStreamInputBuilder {
+    getters!(
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+    );
+
     /// Set the encryption context to verify against the encrypted message.
     /// If non-empty, `decrypt_stream` requires every entry to be present in the message's
     /// encryption context (subset check).

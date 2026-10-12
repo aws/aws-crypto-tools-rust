@@ -12,6 +12,7 @@
 //! for which error variant to return.
 
 pub mod default_cmm;
+mod fluent_builders;
 mod types;
 
 use crate::Error;
@@ -20,6 +21,7 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 
 pub use default_cmm::DefaultCmm;
+pub use fluent_builders::{DecryptMaterialsFluentBuilder, GetEncryptionMaterialsFluentBuilder};
 pub use types::{
     DecryptMaterialsInput, DecryptMaterialsInputBuilder, DecryptMaterialsOutput,
     DecryptMaterialsOutputBuilder, GetEncryptionMaterialsInput, GetEncryptionMaterialsInputBuilder,
@@ -62,6 +64,8 @@ crate::shared::shared_handle!(
     ///
     /// It implements [`Cmm`], so it can be passed anywhere a CMM is accepted.
     /// Callers that know their CMM's type pass it directly and never need this one.
+    ///
+    /// Each operation returns a fluent builder: set the input, then call `send`.
     SharedCmm,
     Cmm
 );
@@ -76,14 +80,14 @@ impl Cmm for SharedCmm {
         &self,
         input: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, Error> {
-        self.0.get_encryption_materials(input).await
+        Cmm::get_encryption_materials(&*self.0, input).await
     }
 
     async fn decrypt_materials(
         &self,
         input: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, Error> {
-        self.0.decrypt_materials(input).await
+        Cmm::decrypt_materials(&*self.0, input).await
     }
 }
 

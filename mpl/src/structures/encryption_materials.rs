@@ -185,6 +185,12 @@ impl EncryptionMaterialsBuilder {
         self
     }
 
+    /// The algorithm suite ID, if set.
+    #[must_use]
+    pub const fn get_algorithm_suite_id(&self) -> &Option<AlgorithmSuiteId> {
+        &self.algorithm_suite_id
+    }
+
     /// Set the encrypted data keys.
     /// Defaults to none.
     #[must_use]
@@ -207,6 +213,12 @@ impl EncryptionMaterialsBuilder {
         self
     }
 
+    /// The encrypted data keys set so far.
+    #[must_use]
+    pub const fn get_encrypted_data_keys(&self) -> &Vec<EncryptedDataKey> {
+        &self.encrypted_data_keys
+    }
+
     /// Set the encryption context.
     /// Defaults to empty.
     #[must_use]
@@ -221,6 +233,12 @@ impl EncryptionMaterialsBuilder {
     pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
         self.encryption_context = encryption_context.unwrap_or_default();
         self
+    }
+
+    /// The encryption context set so far.
+    #[must_use]
+    pub const fn get_encryption_context(&self) -> &EncryptionContext {
+        &self.encryption_context
     }
 
     /// Set the required encryption context keys.
@@ -249,6 +267,12 @@ impl EncryptionMaterialsBuilder {
         self
     }
 
+    /// The required encryption context keys set so far.
+    #[must_use]
+    pub const fn get_required_encryption_context_keys(&self) -> &BTreeSet<String> {
+        &self.required_encryption_context_keys
+    }
+
     /// Set the plaintext data key.
     #[must_use]
     pub fn plaintext_data_key(mut self, plaintext_data_key: impl Into<PlaintextDataKey>) -> Self {
@@ -264,6 +288,12 @@ impl EncryptionMaterialsBuilder {
         self
     }
 
+    /// The plaintext data key, if set.
+    #[must_use]
+    pub const fn get_plaintext_data_key(&self) -> &Option<PlaintextDataKey> {
+        &self.plaintext_data_key
+    }
+
     /// Set the signing key.
     #[must_use]
     pub fn signing_key(mut self, signing_key: impl Into<SigningKey>) -> Self {
@@ -277,6 +307,12 @@ impl EncryptionMaterialsBuilder {
     pub fn set_signing_key(mut self, signing_key: Option<SigningKey>) -> Self {
         self.signing_key = signing_key;
         self
+    }
+
+    /// The signing key, if set.
+    #[must_use]
+    pub const fn get_signing_key(&self) -> &Option<SigningKey> {
+        &self.signing_key
     }
 
     /// Set the symmetric signing keys.
@@ -298,6 +334,12 @@ impl EncryptionMaterialsBuilder {
     ) -> Self {
         self.symmetric_signing_keys = symmetric_signing_keys;
         self
+    }
+
+    /// The symmetric signing keys, if set.
+    #[must_use]
+    pub const fn get_symmetric_signing_keys(&self) -> &Option<Vec<SymmetricSigningKey>> {
+        &self.symmetric_signing_keys
     }
 
     /// Build the `EncryptionMaterials`.

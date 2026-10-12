@@ -66,6 +66,12 @@ impl PutCacheEntryInputBuilder {
         self
     }
 
+    /// The identifier, if set.
+    #[must_use]
+    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+        &self.identifier
+    }
+
     /// Set the entry to store. Required.
     #[must_use]
     pub fn entry(mut self, entry: impl Into<CacheEntry>) -> Self {
@@ -78,6 +84,12 @@ impl PutCacheEntryInputBuilder {
     pub fn set_entry(mut self, entry: Option<CacheEntry>) -> Self {
         self.entry = entry;
         self
+    }
+
+    /// The entry, if set.
+    #[must_use]
+    pub const fn get_entry(&self) -> &Option<CacheEntry> {
+        &self.entry
     }
 
     /// Construct the input.
@@ -170,6 +182,12 @@ impl GetCacheEntryInputBuilder {
         self
     }
 
+    /// The identifier, if set.
+    #[must_use]
+    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+        &self.identifier
+    }
+
     /// Construct the input.
     ///
     /// # Errors
@@ -231,6 +249,12 @@ impl GetCacheEntryOutputBuilder {
         self
     }
 
+    /// The entry, if set.
+    #[must_use]
+    pub const fn get_entry(&self) -> &Option<Arc<CacheEntry>> {
+        &self.entry
+    }
+
     /// Construct the output.
     ///
     /// # Errors
@@ -287,6 +311,12 @@ impl DeleteCacheEntryInputBuilder {
     pub fn set_identifier(mut self, identifier: Option<Vec<u8>>) -> Self {
         self.identifier = identifier;
         self
+    }
+
+    /// The identifier, if set.
+    #[must_use]
+    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+        &self.identifier
     }
 
     /// Construct the input.
@@ -380,6 +410,12 @@ impl UpdateUsageMetadataInputBuilder {
         self
     }
 
+    /// The identifier, if set.
+    #[must_use]
+    pub const fn get_identifier(&self) -> &Option<Vec<u8>> {
+        &self.identifier
+    }
+
     /// Set the plaintext bytes of the message. Required.
     #[must_use]
     pub const fn bytes_used(mut self, bytes_used: u64) -> Self {
@@ -392,6 +428,12 @@ impl UpdateUsageMetadataInputBuilder {
     pub const fn set_bytes_used(mut self, bytes_used: Option<u64>) -> Self {
         self.bytes_used = bytes_used;
         self
+    }
+
+    /// The bytes used, if set.
+    #[must_use]
+    pub const fn get_bytes_used(&self) -> &Option<u64> {
+        &self.bytes_used
     }
 
     /// Construct the input.

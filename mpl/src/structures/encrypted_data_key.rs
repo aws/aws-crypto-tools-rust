@@ -76,6 +76,12 @@ impl EncryptedDataKeyBuilder {
         self
     }
 
+    /// The key provider ID, if set.
+    #[must_use]
+    pub const fn get_key_provider_id(&self) -> &Option<String> {
+        &self.key_provider_id
+    }
+
     /// Set the key provider information.
     /// Required.
     #[must_use]
@@ -92,6 +98,12 @@ impl EncryptedDataKeyBuilder {
         self
     }
 
+    /// The key provider info, if set.
+    #[must_use]
+    pub const fn get_key_provider_info(&self) -> &Option<Vec<u8>> {
+        &self.key_provider_info
+    }
+
     /// Set the ciphertext.
     /// Required.
     #[must_use]
@@ -106,6 +118,12 @@ impl EncryptedDataKeyBuilder {
     pub fn set_ciphertext(mut self, ciphertext: Option<Vec<u8>>) -> Self {
         self.ciphertext = ciphertext;
         self
+    }
+
+    /// The ciphertext, if set.
+    #[must_use]
+    pub const fn get_ciphertext(&self) -> &Option<Vec<u8>> {
+        &self.ciphertext
     }
 
     /// Build the `EncryptedDataKey`.

@@ -10,10 +10,10 @@ mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
 use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::cmm::GetEncryptionMaterialsInput;
-use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm, SharedCmm};
 use aws_crypto_mpl::cmm::{
-    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsOutput,
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput,
 };
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_esdk::*;
@@ -22,7 +22,7 @@ use fixtures::*;
 
 // Wraps a real CMM but forces a different algorithm suite on encrypt.
 struct SuiteOverrideCmm {
-    inner: DefaultCmm,
+    inner: SharedCmm,
     suite: AlgorithmSuiteId,
 }
 
@@ -36,20 +36,18 @@ impl Cmm for SuiteOverrideCmm {
         // with the CMM's chosen suite while carrying the remaining fields
         // through unchanged. The inner default CMM then produces materials
         // bound to the overridden suite.
-        let mut inner_request = GetEncryptionMaterialsInput::builder()
+        self.inner
+            .get_encryption_materials()
             .encryption_context(request.encryption_context().clone())
             .commitment_policy(request.commitment_policy())
             .algorithm_suite_id(aws_crypto_mpl::structures::AlgorithmSuiteId::Esdk(
                 self.suite,
-            ));
-        if let Some(keys) = request.required_encryption_context_keys() {
-            inner_request = inner_request.required_encryption_context_keys(keys.clone());
-        }
-        if let Some(len) = request.max_plaintext_length() {
-            inner_request = inner_request.max_plaintext_length(len);
-        }
-        self.inner
-            .get_encryption_materials(inner_request.build()?)
+            ))
+            .set_required_encryption_context_keys(
+                request.required_encryption_context_keys().cloned(),
+            )
+            .set_max_plaintext_length(request.max_plaintext_length())
+            .send()
             .await
     }
 
@@ -57,7 +55,7 @@ impl Cmm for SuiteOverrideCmm {
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        self.inner.decrypt_materials(request).await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 
@@ -76,7 +74,7 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     // The CMM always resolves to a committing-only suite, ignoring the
     // caller's requested suite, over a default CMM backed by the raw AES keyring.
     let cmm = SuiteOverrideCmm {
-        inner: DefaultCmm::new(keyring.clone()),
+        inner: SharedCmm::new(DefaultCmm::new(keyring.clone())),
         suite: AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey,
     };
 

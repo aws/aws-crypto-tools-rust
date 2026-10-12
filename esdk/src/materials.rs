@@ -8,7 +8,7 @@ use crate::message::header_types::HeaderBody;
 use crate::message::serializable_types::{is_esdk_encrypted_data_keys, is_esdk_encryption_context};
 use crate::types::{AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, MaterialSource};
 use aws_crypto_mpl::cmm::DefaultCmm;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsInput, GetEncryptionMaterialsInput, SharedCmm};
+use aws_crypto_mpl::cmm::{Cmm, SharedCmm};
 use aws_crypto_mpl::keyring::Keyring;
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId as MplAlgorithmSuiteId, CommitmentPolicy as MplCommitmentPolicy,
@@ -96,7 +96,8 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Commitment Policy: This MUST be the commitment policy configured on the client.
-    let mut request = DecryptMaterialsInput::builder()
+    let mut request = cmm
+        .decrypt_materials()
         .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(algorithm_suite_id))
         .commitment_policy(policy)
         .encrypted_data_keys(edks)
@@ -107,9 +108,6 @@ pub(crate) async fn get_decryption_materials(
     if !reproduced_encryption_context.is_empty() {
         request = request.reproduced_encryption_context(reproduced_encryption_context.clone());
     }
-    let request = request
-        .build()
-        .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?;
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# This operation MUST obtain this set of [decryption materials](../framework/structures.md#decryption-materials),
@@ -120,8 +118,8 @@ pub(crate) async fn get_decryption_materials(
     //
     //= spec/client-apis/decrypt.md#keyring
     //# This default CMM constructed from the keyring MUST obtain the decryption materials required for decryption.
-    let materials = cmm
-        .decrypt_materials(request)
+    let materials = request
+        .send()
         .await
         .map_err(|e| Error::from_mpl("decrypt could not get decryption materials", e))?
         .into_decryption_materials();
@@ -172,7 +170,8 @@ pub(crate) async fn get_encryption_materials(
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= reason=Encryption context is empty by default
     //# Otherwise, this MUST be an empty encryption context.
-    let mut request = GetEncryptionMaterialsInput::builder()
+    let mut request = cmm
+        .get_encryption_materials()
         .encryption_context(encryption_context)
         .commitment_policy(policy);
 
@@ -198,12 +197,9 @@ pub(crate) async fn get_encryption_materials(
     if let Some(len) = max_plaintext_length {
         request = request.max_plaintext_length(len as u64);
     }
-    let request = request
-        .build()
-        .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?;
 
-    let materials = cmm
-        .get_encryption_materials(request)
+    let materials = request
+        .send()
         .await
         .map_err(|e| Error::from_mpl("encrypt could not get encryption materials", e))?
         .into_encryption_materials();

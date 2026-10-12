@@ -9,7 +9,7 @@ use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_esdk::{
     AlgorithmSuiteId, CommitmentPolicy, EncryptionContext, Esdk, SharedCmm, SharedKeyring,
 };
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use test_helpers::{count_frames, esdk_with, test_keyring};
 
 const SUITE: AlgorithmSuiteId = AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256;
@@ -327,4 +327,75 @@ async fn test_decrypt_stream_setters_take_effect() {
         .send(ct.as_slice(), Vec::new())
         .await
         .expect("decrypt_stream with set_cmm must succeed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_getters_return_set_values() {
+    let keyring = SharedKeyring::new(test_keyring().await);
+    let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
+    let bytes = plaintext();
+    let edks = NonZeroUsize::new(3).unwrap();
+    let esdk = Esdk::default();
+
+    let b = Esdk::builder();
+    assert_eq!(
+        (b.get_commitment_policy(), b.get_max_encrypted_data_keys()),
+        (&None, &None)
+    );
+    let b = b.commitment_policy(POLICY).max_encrypted_data_keys(edks);
+    assert_eq!(b.get_commitment_policy(), &Some(POLICY));
+    assert_eq!(b.get_max_encrypted_data_keys(), &Some(edks));
+
+    let b = esdk.encrypt();
+    assert!(b.get_plaintext().is_none() && b.get_encryption_context().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
+    let b = b
+        .plaintext(&bytes)
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .cmm(cmm.clone())
+        .algorithm_suite_id(SUITE)
+        .frame_length(frame_length());
+    assert_eq!(b.get_plaintext(), &Some(bytes.as_slice()));
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
+    assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
+    assert_eq!(b.get_frame_length(), &Some(frame_length()));
+
+    let b = esdk.encrypt_stream();
+    assert!(b.get_encryption_context().is_none() && b.get_data_size().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    assert!(b.get_algorithm_suite_id().is_none() && b.get_frame_length().is_none());
+    let b = b
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .cmm(cmm.clone())
+        .algorithm_suite_id(SUITE)
+        .frame_length(frame_length())
+        .data_size(bytes.len());
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
+    assert_eq!(b.get_algorithm_suite_id(), &Some(SUITE));
+    assert_eq!(b.get_frame_length(), &Some(frame_length()));
+    assert_eq!(b.get_data_size(), &Some(bytes.len()));
+
+    let b = esdk.decrypt();
+    assert!(b.get_ciphertext().is_none() && b.get_encryption_context().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    let b = b
+        .ciphertext(&bytes)
+        .encryption_context(ec())
+        .keyring(keyring.clone())
+        .cmm(cmm.clone());
+    assert_eq!(b.get_ciphertext(), &Some(bytes.as_slice()));
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
+
+    let b = esdk.decrypt_stream();
+    assert!(b.get_encryption_context().is_none());
+    assert!(b.get_keyring().is_none() && b.get_cmm().is_none());
+    let b = b.encryption_context(ec()).keyring(keyring).cmm(cmm);
+    assert_eq!(b.get_encryption_context(), &Some(ec()));
+    assert!(b.get_keyring().is_some() && b.get_cmm().is_some());
 }
