@@ -5,6 +5,7 @@
 
 use super::serialize_functions::{read_seq_u16, read_str_u16, read_u16, write_bytes, write_u16};
 use super::{Error, ser_err};
+use crate::error::{Kind, err};
 use crate::types::{SafeRead, SafeWrite};
 use aws_crypto_mpl::structures::EncryptedDataKey;
 
@@ -19,7 +20,10 @@ pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Re
     //= spec/data-format/message-header.md#encrypted-data-key-count
     //# This value MUST be greater than 0.
     if edks.is_empty() {
-        return ser_err("Cannot serialize empty encrypted data keys list");
+        return Err(err(
+            Kind::InvalidMaterials,
+            "cannot serialize empty encrypted data keys list",
+        ));
     }
 
     //= spec/data-format/message-header.md#encrypted-data-key-count
@@ -28,7 +32,7 @@ pub(crate) fn write_edks(w: &mut dyn SafeWrite, edks: &[EncryptedDataKey]) -> Re
     //= spec/data-format/message-header.md#encrypted-data-key-count
     //# The encrypted data key count MUST be interpreted as a UInt16.
     let Ok(edk_count) = u16::try_from(edks.len()) else {
-        return ser_err("Count too large for UInt16");
+        return Err(err(Kind::InvalidMaterials, "count too large for UInt16"));
     };
     write_u16(w, edk_count)?;
 
@@ -57,7 +61,10 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //= spec/data-format/message-header.md#key-provider-id-length
     //# The key provider ID length MUST be interpreted as a UInt16.
     let Ok(kp_id_len) = u16::try_from(kp_id_bytes.len()) else {
-        return ser_err("Key provider ID length too long for 16 bits");
+        return Err(err(
+            Kind::InvalidMaterials,
+            "key provider ID length too long for 16 bits",
+        ));
     };
 
     //= spec/data-format/message-header.md#key-provider-id-length
@@ -79,7 +86,10 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //= spec/data-format/message-header.md#key-provider-information-length
     //# The key provider information length MUST be interpreted as a UInt16.
     let Ok(kp_info_len) = u16::try_from(edk.key_provider_info.len()) else {
-        return ser_err("Key provider info length too long for 16 bits");
+        return Err(err(
+            Kind::InvalidMaterials,
+            "key provider info length too long for 16 bits",
+        ));
     };
 
     //= spec/data-format/message-header.md#key-provider-information-length
@@ -101,7 +111,10 @@ pub(crate) fn write_edk(w: &mut dyn SafeWrite, edk: &EncryptedDataKey) -> Result
     //= spec/data-format/message-header.md#encrypted-data-key-length
     //# The encrypted data key length MUST be interpreted as a UInt16.
     let Ok(edk_len) = u16::try_from(edk.ciphertext.len()) else {
-        return ser_err("Encrypted data key length too long for 16 bits");
+        return Err(err(
+            Kind::InvalidMaterials,
+            "encrypted data key length too long for 16 bits",
+        ));
     };
 
     //= spec/data-format/message-header.md#encrypted-data-key-length
@@ -142,7 +155,7 @@ pub(crate) fn read_edks(
     //= spec/data-format/message-header.md#encrypted-data-key-count
     //# This value MUST be greater than 0.
     if count == 0 {
-        return ser_err("Encrypted data key count must be greater than 0");
+        return ser_err("encrypted data key count must be greater than 0");
     }
 
     if let Some(max_edks) = max_edks
@@ -157,7 +170,13 @@ pub(crate) fn read_edks(
         //# is greater than the [maximum number of encrypted data keys](client.md#maximum-number-of-encrypted-data-keys) configured in the [client](client.md),
         //# then as soon as that can be determined during deserializing
         //# decrypt MUST process no more bytes and yield an error.
-        return ser_err("Ciphertext encrypted data keys exceed maximum encrypted data keys limit");
+        return Err(err(
+            Kind::Validation,
+            format!(
+                "encrypted data key count {count} exceeds configured maximum {}",
+                max_edks.get()
+            ),
+        ));
     }
 
     // Encrypted Data Key Entries

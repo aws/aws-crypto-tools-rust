@@ -431,7 +431,7 @@ pub enum KmsRsaEncryptionAlgorithm {
 }
 
 /// Hierarchical keyring config: branch keys live in a DynamoDB key store and are
-/// wrapped by a KMS key. Built via the legacy (Dafny) MPL key store client.
+/// wrapped by a KMS key. Built over the MPL branch key store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AwsKmsHierarchicalKeyringConfig {
     #[serde(rename = "branchKeyId")]

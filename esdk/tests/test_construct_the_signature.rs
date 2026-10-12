@@ -7,7 +7,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::ErrorKind;
 use test_helpers::*;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -44,13 +43,13 @@ async fn test_signature_uses_signing_algorithm() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"algorithm choice test",
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"algorithm choice test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring)
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
@@ -109,13 +108,13 @@ async fn test_signature_key_is_signing_key() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"signing key direct test",
-        aws_esdk::EncryptionContext::new(),
-        keyring,
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"signing key direct test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring)
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
@@ -190,18 +189,17 @@ async fn test_signature_input_is_header_plus_body() {
         "header tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered header → ValidationError (header auth tag mismatch).
+    // Valid ct decrypts; a tampered header fails decrypt with a Cryptographic error.
     assert!(
         decrypt_ciphertext_result(&valid_ct).await.is_ok(),
         "valid ct must decrypt"
     );
-    assert_eq!(
+    assert!(
         decrypt_ciphertext_result(&tampered_header)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::ValidationError,
-        "tampered header body byte must produce ValidationError"
+            .is_cryptographic(),
+        "tampered header body byte must produce Cryptographic error"
     );
 
     // Tamper body (first byte of the first frame's encrypted content).
@@ -214,14 +212,13 @@ async fn test_signature_input_is_header_plus_body() {
         "body tamper must change the byte"
     );
 
-    // Valid ct decrypts; tampered body → CryptographicError (AES-GCM auth failure).
-    assert_eq!(
+    // Valid ct decrypts; a tampered body fails AES-GCM authentication with a Cryptographic error.
+    assert!(
         decrypt_ciphertext_result(&tampered_body)
             .await
             .unwrap_err()
-            .kind,
-        ErrorKind::CryptographicError,
-        "tampered body must produce CryptographicError"
+            .is_cryptographic(),
+        "tampered body must produce Cryptographic error"
     );
 }
 
@@ -299,13 +296,13 @@ async fn test_footer_equals_calculated() {
     use aws_mpl_primitives::{DigestContext, EcdsaSignatureAlgorithm, ecdsa_verify_context};
 
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"footer equals calculated test",
-        aws_esdk::EncryptionContext::new(),
-        keyring.clone(),
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"footer equals calculated test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring.clone())
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let output = aws_esdk::encrypt(&enc_input).await.unwrap();
     let ct = &output.ciphertext;
 
@@ -333,8 +330,12 @@ async fn test_footer_equals_calculated() {
     );
 
     // Round-trip corroboration.
-    let dec_input =
-        aws_esdk::DecryptInput::with_keyring(ct, aws_esdk::EncryptionContext::new(), keyring);
+    let dec_input = aws_esdk::DecryptInput::builder()
+        .ciphertext(ct)
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring)
+        .build()
+        .unwrap();
     let pt = aws_esdk::decrypt(&dec_input).await.unwrap().plaintext;
     assert_eq!(pt, b"footer equals calculated test");
 }
@@ -366,13 +367,13 @@ async fn test_no_signature_without_signing_suite() {
 async fn test_footer_serialized_releases_all_bytes() {
     // Signing suite output ends exactly at the footer; proves all bytes released atomically.
     let keyring = test_keyring().await;
-    let mut enc_input = aws_esdk::EncryptInput::with_keyring(
-        b"release all bytes test",
-        aws_esdk::EncryptionContext::new(),
-        keyring.clone(),
-    );
-    enc_input.algorithm_suite_id =
-        Some(aws_esdk::EsdkAlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
+    let enc_input = aws_esdk::EncryptInput::builder()
+        .plaintext(b"release all bytes test")
+        .encryption_context(aws_esdk::EncryptionContext::new())
+        .keyring(keyring.clone())
+        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
+        .build()
+        .unwrap();
     let ct = aws_esdk::encrypt(&enc_input).await.unwrap().ciphertext;
 
     let (footer_offset, sig_len) = find_footer_offset(&ct);

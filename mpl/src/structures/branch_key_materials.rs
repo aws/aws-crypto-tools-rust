@@ -4,7 +4,7 @@
 //! Branch key materials structure.
 
 use super::encryption_context::EncryptionContext;
-use super::error::MaterialsError;
+use crate::Error;
 
 /// Materials for establishing a key hierarchy to reuse a data key that wraps other data keys.
 ///
@@ -28,7 +28,7 @@ impl BranchKeyMaterials {
         branch_key_id: String,
         branch_key_version: String,
         encryption_context: EncryptionContext,
-    ) -> Result<Self, MaterialsError> {
+    ) -> Result<Self, Error> {
         Ok(Self {
             branch_key,
             branch_key_id,

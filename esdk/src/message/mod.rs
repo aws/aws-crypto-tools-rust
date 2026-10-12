@@ -30,6 +30,7 @@ pub(crate) mod serializable_types;
 pub(crate) mod serialize_functions;
 pub(crate) mod v1_header_body;
 pub(crate) mod v2_header_body;
+use crate::suites::get_ecdsa_alg;
 use aws_mpl_primitives::DigestContext;
 
 pub(crate) use super::error::Error;
@@ -66,7 +67,7 @@ impl DigestWriter {
         suite: &aws_crypto_mpl::structures::AlgorithmSuite,
     ) -> Result<Self, Error> {
         if suite.asymmetric_signature_algorithm().is_some() {
-            let alg = crate::suites::get_ecdsa_alg(suite)?;
+            let alg = get_ecdsa_alg(suite)?;
             let context = Some(DigestContext::new_from_ecdsa(alg)?);
             Ok(Self { context })
         } else {

@@ -30,7 +30,7 @@ fn get_len(len: usize) -> Result<&'static aws_lc_rs::aead::Algorithm, Error> {
         16 => Ok(&aws_lc_rs::aead::AES_128_GCM),
         24 => Ok(&aws_lc_rs::aead::AES_192_GCM),
         32 => Ok(&aws_lc_rs::aead::AES_256_GCM),
-        _ => Err(serr(format!("Invalid key length {len} passed to HKDF"))),
+        _ => Err(serr(format!("invalid key length {len} for HKDF"))),
     }
 }
 
@@ -51,8 +51,10 @@ pub fn hkdf(
     let prk = salt.extract(ikm);
     let inner_okm = prk
         .expand(info, get_len(okm.len())?)
-        .map_err(|e| serr(format!("{e:?}")))?;
-    inner_okm.fill(okm).map_err(|e| serr(format!("{e:?}")))?;
+        .map_err(|_| serr("HKDF expand failed".to_owned()))?;
+    inner_okm
+        .fill(okm)
+        .map_err(|_| serr("HKDF expand failed".to_owned()))?;
     Ok(())
 }
 
@@ -97,7 +99,9 @@ pub fn hkdf_expand(prk: &Prk, info: &[&[u8]], okm: &mut [u8]) -> Result<(), Erro
     let inner_okm = prk
         .prk
         .expand(info, get_len(okm.len())?)
-        .map_err(|e| serr(format!("{e:?}")))?;
-    inner_okm.fill(okm).map_err(|e| serr(format!("{e:?}")))?;
+        .map_err(|_| serr("HKDF expand failed".to_owned()))?;
+    inner_okm
+        .fill(okm)
+        .map_err(|_| serr("HKDF expand failed".to_owned()))?;
     Ok(())
 }

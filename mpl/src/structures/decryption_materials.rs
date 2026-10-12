@@ -3,13 +3,14 @@
 
 //! Decryption materials structure.
 
+use crate::Error;
+use crate::error::Kind;
 use std::collections::BTreeSet;
 
 use super::algorithm_suite::{
     AlgorithmSuite, AlgorithmSuiteId, PlaintextDataKey, SymmetricSigningKey, VerificationKey,
 };
 use super::encryption_context::EncryptionContext;
-use super::error::MaterialsError;
 
 /// Materials needed for decryption.
 ///
@@ -17,7 +18,7 @@ use super::error::MaterialsError;
 pub struct DecryptionMaterials {
     algorithm_suite_id: AlgorithmSuiteId,
     encryption_context: EncryptionContext,
-    required_encryption_context_keys: BTreeSet<Vec<u8>>,
+    required_encryption_context_keys: BTreeSet<String>,
     plaintext_data_key: Option<PlaintextDataKey>,
     verification_key: Option<VerificationKey>,
     symmetric_signing_key: Option<SymmetricSigningKey>,
@@ -28,27 +29,31 @@ impl DecryptionMaterials {
     pub fn new(
         algorithm_suite_id: AlgorithmSuiteId,
         encryption_context: EncryptionContext,
-        required_encryption_context_keys: BTreeSet<Vec<u8>>,
+        required_encryption_context_keys: BTreeSet<String>,
         plaintext_data_key: Option<PlaintextDataKey>,
         verification_key: Option<VerificationKey>,
         symmetric_signing_key: Option<SymmetricSigningKey>,
-    ) -> Result<Self, MaterialsError> {
+    ) -> Result<Self, Error> {
         let suite = algorithm_suite_id.specification();
 
         // Required encryption context keys must be a subset of encryption context keys
         for key in &required_encryption_context_keys {
             if !encryption_context.contains_key(key) {
-                return Err(MaterialsError::new(format!(
-                    "Required encryption context key {:?} not found in encryption context",
-                    key
-                )));
+                return Err(Error::new(
+                    Kind::EncryptionContextMismatch,
+                    format!(
+                        "required encryption context key {:?} not found in encryption context",
+                        key
+                    ),
+                ));
             }
         }
 
         // If no asymmetric signing, verification key must not be present.
         if !algorithm_suite_id.has_asymmetric_signing() && verification_key.is_some() {
-            return Err(MaterialsError::new(
-                "Verification key must not be present when algorithm suite has no asymmetric signing",
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "verification key must not be present when algorithm suite has no asymmetric signing",
             ));
         }
 
@@ -58,17 +63,21 @@ impl DecryptionMaterials {
             && let Some(expected_len) = suite.verification_key_length()
             && vk.len() != expected_len
         {
-            return Err(MaterialsError::new(format!(
-                "Verification key length ({}) does not match expected length ({}) for algorithm suite",
-                vk.len(),
-                expected_len
-            )));
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                format!(
+                    "verification key length ({}) does not match expected length ({}) for algorithm suite",
+                    vk.len(),
+                    expected_len
+                ),
+            ));
         }
 
         // If no symmetric signing, symmetric signing key must not be included
         if !algorithm_suite_id.has_symmetric_signing() && symmetric_signing_key.is_some() {
-            return Err(MaterialsError::new(
-                "Symmetric signing key must not be present when algorithm suite has no symmetric signing",
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "symmetric signing key must not be present when algorithm suite has no symmetric signing",
             ));
         }
 
@@ -94,7 +103,7 @@ impl DecryptionMaterials {
         &self.encryption_context
     }
 
-    pub fn required_encryption_context_keys(&self) -> &BTreeSet<Vec<u8>> {
+    pub fn required_encryption_context_keys(&self) -> &BTreeSet<String> {
         &self.required_encryption_context_keys
     }
 
@@ -111,18 +120,20 @@ impl DecryptionMaterials {
     }
 
     /// Validate the aws-crypto-public-key convention for decryption materials.
-    pub fn validate_aws_crypto_public_key(&self) -> Result<(), MaterialsError> {
+    pub fn validate_aws_crypto_public_key(&self) -> Result<(), Error> {
         let has_key = self
             .encryption_context
-            .contains_key(b"aws-crypto-public-key");
+            .contains_key("aws-crypto-public-key");
         if self.verification_key.is_some() && !has_key {
-            return Err(MaterialsError::new(
-                "Encryption context MUST include 'aws-crypto-public-key' when verification key is present",
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "encryption context MUST include 'aws-crypto-public-key' when verification key is present",
             ));
         }
         if self.verification_key.is_none() && has_key {
-            return Err(MaterialsError::new(
-                "Encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
+            return Err(Error::new(
+                Kind::InvalidMaterials,
+                "encryption context MUST NOT include 'aws-crypto-public-key' when verification key is absent",
             ));
         }
         Ok(())

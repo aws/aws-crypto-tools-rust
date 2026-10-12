@@ -20,29 +20,30 @@
 use std::error::Error as _;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_kms::Client as KmsClient;
 
+use aws_crypto_mpl::Error;
 use aws_crypto_mpl::aws_kms::__test_internals::{
     build_cache_identifier, compute_aad, unwrap as branch_key_unwrap, wrap as branch_key_wrap,
 };
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::{
     BranchKeySupplier, GetBranchKeyIdInput, GetBranchKeyIdOutput, HierarchicalKeyring,
-    SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
+    HierarchicalKeyringBuilder, SCOPE_ID_DECRYPT, SCOPE_ID_ENCRYPT,
 };
 use aws_crypto_mpl::cmc::cache_config::{CacheType, DefaultCache, StormTrackingCache};
-use aws_crypto_mpl::keystore::error::KeystoreErrorKind;
 use aws_crypto_mpl::keystore::{
-    BranchKeyStore, KeyStoreConfig, KeyStoreInfo, Keystore, KeystoreError, KmsConfiguration,
+    BranchKeyStore, BranchKeyStoreBuilder, KeyStoreInfo, Keystore, KmsConfiguration,
 };
 use aws_crypto_mpl::structures::{
     AlgorithmSuiteId, BeaconKeyMaterials, BranchKeyMaterials, DecryptionMaterials,
-    EncryptionContext, EncryptionMaterials, MaterialsError, MaterialsErrorKind,
+    EncryptionContext, EncryptionMaterials, EsdkAlgorithmSuiteId,
 };
-use aws_crypto_mpl::{Cmc, LocalCmc};
+use aws_crypto_mpl::{LocalCmc, SharedCmc};
 
 /// Construct a pair of zero-config AWS SDK clients suitable for tests that
 /// never invoke a remote operation. `BehaviorVersion::latest()` is required by
@@ -76,7 +77,7 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
     fn get_branch_key_id(
         &self,
         _input: GetBranchKeyIdInput,
-    ) -> Result<GetBranchKeyIdOutput, MaterialsError> {
+    ) -> Result<GetBranchKeyIdOutput, Error> {
         Ok(GetBranchKeyIdOutput::new(self.0.to_string()))
     }
 }
@@ -86,127 +87,187 @@ impl BranchKeySupplier for FixedBranchKeySupplier {
 /// The type is the one callers actually pass to the keyring, but it points at
 /// a table and KMS key that do not exist, so any keystore call would fail.
 /// That is safe here because no test using this helper makes one:
-/// `HierarchicalKeyring::new` only stores the handle, and the keystore is
-/// first consulted inside OnEncrypt / OnDecrypt. Tests that do exercise those
-/// operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod
-/// ondecrypt` instead. Both SDK clients are supplied, so this goes through the
-/// synchronous [`BranchKeyStore::with_clients`] — there is nothing to resolve
-/// and so nothing to await.
-fn keystore_never_consulted() -> Arc<dyn Keystore> {
+/// `HierarchicalKeyringBuilder::build` reads only the keystore's local configuration,
+/// and the keystore first reaches KMS or DynamoDB inside OnEncrypt / OnDecrypt.
+/// Tests that exercise those operations use the `FakeKeystore` doubles in `mod onencrypt` / `mod ondecrypt` instead.
+fn keystore_never_consulted() -> BranchKeyStore {
     let (kms, ddb) = dummy_clients();
-    let store = BranchKeyStore::with_clients(KeyStoreConfig {
-        ddb_table_name: "test-table".to_string(),
-        kms_configuration: KmsConfiguration::KmsKeyArn(
-            "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
-                .to_string(),
-        ),
-        logical_keystore_name: "test-logical".to_string(),
-        id: None,
-        grant_tokens: None,
-        ddb_client: Some(ddb),
-        kms_client: Some(kms),
-    })
-    .expect("BranchKeyStore construction with a valid config must succeed");
-    Arc::new(store)
+    build_without_io(
+        BranchKeyStore::builder()
+            .ddb_table_name("test-table")
+            .kms_configuration(KmsConfiguration::KmsKeyArn(
+                "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+                    .to_string(),
+            ))
+            .logical_keystore_name("test-logical")
+            .kms_client(kms)
+            .ddb_client(ddb),
+    )
+}
+
+/// Builds `builder` by polling its future once.
+/// With both clients supplied, `build` does no IO, so it is ready on the first poll.
+fn build_without_io(builder: BranchKeyStoreBuilder) -> BranchKeyStore {
+    use std::future::Future;
+    use std::task::{Context, Poll, Waker};
+    let mut fut = std::pin::pin!(builder.build());
+    match fut.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+        Poll::Ready(result) => result.expect("BranchKeyStore construction must succeed"),
+        Poll::Pending => panic!("build with both clients supplied must not await"),
+    }
 }
 
 #[test]
-fn new_with_zero_ttl_returns_validation_error() {
+fn build_with_zero_ttl_returns_validation_error() {
     let keystore = keystore_never_consulted();
-    let result = HierarchicalKeyring::new(
-        keystore,
-        0, // zero TTL — must be rejected
-        Some("branch-key-id".to_string()),
-        None,
-        None,
-        None,
-    );
+    let result = HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(Duration::from_secs(0))
+        .branch_key_id("branch-key-id")
+        .build();
 
     let err = match result {
         Err(e) => e,
         Ok(_) => panic!("expected zero TTL to return a validation error"),
     };
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::Validation,
-        "expected Validation error for ttl_seconds=0; got {err:?}",
-    );
     assert!(
-        err.message.contains("greater than zero"),
-        "error message should identify the TTL>0 rule; got: {}",
-        err.message,
+        err.is_validation(),
+        "expected Validation error for a zero TTL; got {err:?}"
     );
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
-fn new_with_both_branch_key_id_and_supplier_returns_validation_error() {
+fn build_with_both_branch_key_id_and_supplier_returns_validation_error() {
     // The keyring takes branchKeyId and branchKeyIdSupplier as two optional
     // inputs, mirroring CreateAwsKmsHierarchicalKeyringInput, so the "exactly
     // one" rule is enforced here rather than by the type system.
-    let err = match HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("branch-key-id".to_string()),
-        Some(Arc::new(FixedBranchKeySupplier("unused")) as Arc<dyn BranchKeySupplier>),
-        None,
-        None,
-    ) {
+    let err = match HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("branch-key-id")
+        .branch_key_id_supplier(FixedBranchKeySupplier("unused"))
+        .build()
+    {
         Err(e) => e,
         Ok(_) => panic!("supplying both a branch_key_id and a supplier MUST be rejected"),
     };
 
-    assert_eq!(err.kind, MaterialsErrorKind::Validation);
-    assert!(
-        err.message.contains("both"),
-        "error should identify the both-supplied case; got: {}",
-        err.message,
-    );
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
-fn new_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
-    let err =
-        match HierarchicalKeyring::new(keystore_never_consulted(), 3600, None, None, None, None) {
-            Err(e) => e,
-            Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
-        };
+fn build_with_neither_branch_key_id_nor_supplier_returns_validation_error() {
+    let err = match HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .build()
+    {
+        Err(e) => e,
+        Ok(_) => panic!("supplying neither a branch_key_id nor a supplier MUST be rejected"),
+    };
 
-    assert_eq!(err.kind, MaterialsErrorKind::Validation);
-    assert!(
-        err.message.contains("either"),
-        "error should identify the neither-supplied case; got: {}",
-        err.message,
-    );
+    assert!(err.is_validation(), "{:?}", err);
+}
+
+/// The error from `build()`; panics with `label` if the build succeeds.
+fn build_err(builder: HierarchicalKeyringBuilder, label: &str) -> Error {
+    match builder.build() {
+        Err(e) => e,
+        Ok(_) => panic!("{label}: build() MUST be rejected"),
+    }
 }
 
 #[test]
-fn new_with_positive_ttl_succeeds() {
+fn build_without_key_store_returns_validation_error() {
+    let err = build_err(
+        HierarchicalKeyring::builder()
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id("branch-key-id"),
+        "no key store",
+    );
+    assert!(err.is_validation(), "{:?}", err);
+}
+
+#[test]
+fn build_without_ttl_returns_validation_error() {
+    let err = build_err(
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .branch_key_id("branch-key-id"),
+        "no TTL",
+    );
+    assert!(err.is_validation(), "{:?}", err);
+}
+
+#[test]
+fn build_with_sub_second_ttl_keeps_it_exactly() {
+    for ttl in [
+        Duration::from_millis(1500),
+        Duration::from_millis(500),
+        Duration::from_nanos(1),
+    ] {
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(ttl)
+            .branch_key_id("branch-key-id")
+            .build()
+            .unwrap_or_else(|e| panic!("{ttl:?} must be accepted: {e}"));
+        assert_eq!(keyring.ttl(), ttl);
+    }
+}
+
+#[test]
+fn build_compares_storm_tracking_grace_period_to_sub_second_ttl() {
+    let with_grace_ms = |grace_period_ms| {
+        let params = StormTrackingCache::builder()
+            .entry_capacity(16)
+            .entry_pruning_tail_size(4)
+            .grace_period(Duration::from_millis(grace_period_ms))
+            .grace_interval(Duration::from_millis(100))
+            .fan_out(4)
+            .inflight_ttl(Duration::from_millis(100))
+            .sleep(Duration::from_millis(10))
+            .build()
+            .expect("valid StormTrackingCache");
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_millis(1500))
+            .branch_key_id("bk")
+            .cache(CacheType::StormTracking(params))
+            .build()
+    };
+    with_grace_ms(1_499).expect("1499 ms grace period < 1500 ms TTL must succeed");
+    let err = match with_grace_ms(1_500) {
+        Ok(_) => panic!("1500 ms grace period == 1500 ms TTL must fail"),
+        Err(e) => e,
+    };
+    assert!(err.is_validation(), "{:?}", err);
+}
+
+#[test]
+fn build_with_positive_ttl_succeeds() {
     let keystore = keystore_never_consulted();
-    let result = HierarchicalKeyring::new(
-        keystore,
-        1, // smallest legal TTL
-        Some("branch-key-id".to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::new(1000))),
-        None,
-    );
+    let result = HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(Duration::from_secs(1))
+        .branch_key_id("branch-key-id")
+        .cache(CacheType::Default(DefaultCache::new(1000)))
+        .build();
 
-    let keyring = result.expect("ttl_seconds=1 must be accepted");
-    assert_eq!(keyring.ttl_seconds(), 1);
+    let keyring = result.expect("a 1-second TTL must be accepted");
+    assert_eq!(keyring.ttl(), Duration::from_secs(1));
 }
 
 #[test]
 fn partition_id_default_is_16_byte_v4_uuid() {
     let keystore = keystore_never_consulted();
-    let keyring = HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some("branch-key-id".to_string()),
-        None,
-        None,
-        None, // no partition id supplied → must default to v4 UUID bytes
-    )
-    .expect("constructor with no partition id must succeed");
+    let keyring = HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("branch-key-id")
+        .build()
+        .expect("constructor with no partition id must succeed");
 
     let bytes = keyring.partition_id_bytes();
 
@@ -238,25 +299,19 @@ fn partition_id_default_two_calls_are_distinct() {
     // independent v4 UUIDs. This is regression coverage for the v4-UUID
     // default — a stub that returned all-zero bytes would still pass the
     // length / version-bit checks.
-    let a = HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("branch-key-id".to_string()),
-        None,
-        None,
-        None,
-    )
-    .expect("first constructor call must succeed");
+    let a = HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("branch-key-id")
+        .build()
+        .expect("first constructor call must succeed");
 
-    let b = HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("branch-key-id".to_string()),
-        None,
-        None,
-        None,
-    )
-    .expect("second constructor call must succeed");
+    let b = HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("branch-key-id")
+        .build()
+        .expect("second constructor call must succeed");
 
     assert_ne!(
         a.partition_id_bytes(),
@@ -295,17 +350,15 @@ fn partition_id_provided_is_utf8_round_tripped() {
     ];
 
     for (label, original) in cases {
-        let keyring = HierarchicalKeyring::new(
-            keystore_never_consulted(),
-            3600,
-            Some("branch-key-id".to_string()),
-            None,
-            None,
-            Some((*original).to_string()),
-        )
-        .unwrap_or_else(|e| {
-            panic!("{label}: constructor with explicit partition id must succeed: {e}")
-        });
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id("branch-key-id")
+            .partition_id(*original)
+            .build()
+            .unwrap_or_else(|e| {
+                panic!("{label}: constructor with explicit partition id must succeed: {e}")
+            });
 
         assert_eq!(
             keyring.partition_id_bytes(),
@@ -325,17 +378,15 @@ fn partition_id_is_not_unicode_normalized() {
     let decomposed = "cafe\u{0301}"; // e + combining acute
 
     let id_of = |partition: &str| {
-        HierarchicalKeyring::new(
-            keystore_never_consulted(),
-            3600,
-            Some("branch-key-id".to_string()),
-            None,
-            None,
-            Some(partition.to_string()),
-        )
-        .expect("constructor must succeed")
-        .partition_id_bytes()
-        .to_vec()
+        HierarchicalKeyring::builder()
+            .key_store(keystore_never_consulted())
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id("branch-key-id")
+            .partition_id(partition)
+            .build()
+            .expect("constructor must succeed")
+            .partition_id_bytes()
+            .to_vec()
     };
 
     assert_eq!(id_of(precomposed), precomposed.as_bytes());
@@ -348,21 +399,17 @@ fn partition_id_is_not_unicode_normalized() {
 }
 
 #[test]
-fn new_with_branch_key_id_supplier_succeeds() {
+fn build_with_branch_key_id_supplier_succeeds() {
     // Smoke test that configuring a supplier instead of a static branch key
     // id is usable — construct a no-op supplier, pass it as the
     // branch_key_id_supplier, and confirm the keyring can be built with it.
-    let supplier: Arc<dyn BranchKeySupplier> =
-        Arc::new(FixedBranchKeySupplier("branch-id-from-supplier"));
-    let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        None,
-        Some(supplier),
-        None,
-        None,
-    )
-    .expect("constructor with supplier variant must succeed");
+    let supplier = FixedBranchKeySupplier("branch-id-from-supplier");
+    let keyring = HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id_supplier(supplier)
+        .build()
+        .expect("constructor with supplier variant must succeed");
 
     assert!(
         keyring.branch_key_id().is_none(),
@@ -378,167 +425,144 @@ fn new_with_branch_key_id_supplier_succeeds() {
 // assertion. Cache behaviour — capacity, LRU eviction, TTL pruning — belongs to
 // the cache's own suites in `test_local_cmc.rs` and `test_storm_tracking_cmc.rs`
 // and is deliberately not re-derived through the keyring. The one exception is
-// `CacheType::Shared`, where the keyring must store the caller's `Arc` verbatim
+// `CacheType::Shared`, where the keyring must store the caller's cache verbatim
 // rather than build its own; nothing but a keyring test can check that.
 
 #[test]
-fn new_with_default_cache_succeeds() {
-    HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("bk".to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::new(1))),
-        None,
-    )
-    .expect("CacheType::Default must build a keyring-local cache");
+fn build_with_default_cache_succeeds() {
+    HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("bk")
+        .cache(CacheType::Default(DefaultCache::new(1)))
+        .build()
+        .expect("CacheType::Default must build a keyring-local cache");
 }
 
 #[test]
-fn new_with_cache_type_none_succeeds() {
-    HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("bk".to_string()),
-        None,
-        None,
-        None,
-    )
-    .expect("None cache_type must default to a built-in cache");
+fn build_with_cache_type_none_succeeds() {
+    HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("bk")
+        .build()
+        .expect("None cache_type must default to a built-in cache");
 }
 
 #[test]
-fn new_with_shared_cache_round_trips_provided_arc() {
-    let supplied: Arc<dyn Cmc> = Arc::new(LocalCmc::new(8, 4).unwrap());
-    let supplied_for_compare = Arc::clone(&supplied);
+fn build_with_shared_cache_round_trips_provided_cache() {
+    let supplied = SharedCmc::new(LocalCmc::new(8, 4).unwrap());
 
-    let keyring = HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600,
-        Some("bk".to_string()),
-        None,
-        Some(CacheType::Shared(supplied)),
-        None,
-    )
-    .expect("CacheType::Shared(Arc<dyn Cmc>) must succeed");
+    let keyring = HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id("bk")
+        .cache(CacheType::Shared(supplied.clone()))
+        .build()
+        .expect("CacheType::Shared must succeed");
 
-    // The exact `Arc` supplied is what the keyring stores. Tested via
+    // The exact cache supplied is what the keyring stores. Tested via
     // pointer-identity rather than behaviour because the struct field is
     // not directly observable.
-    let stored: &Arc<dyn Cmc> = keyring.cache();
+    let stored: &SharedCmc = keyring.cache();
     assert!(
-        Arc::ptr_eq(stored, &supplied_for_compare),
-        "CacheType::Shared MUST round-trip the supplied Arc verbatim"
+        SharedCmc::ptr_eq(stored, &supplied),
+        "CacheType::Shared MUST round-trip the supplied cache verbatim"
     );
 }
 
 #[test]
-fn new_with_storm_tracking_cache_succeeds() {
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 60,
-        grace_interval: 1,
-        fan_out: 4,
-        inflight_ttl: 30,
-        sleep_milli: 10,
-        time_units: None,
-    };
-    HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        3600, // ttl_seconds — strictly greater than grace_period (60).
-        Some("bk".to_string()),
-        None,
-        Some(CacheType::StormTracking(params)),
-        None,
-    )
-    .expect("CacheType::StormTracking with grace_period < ttl must succeed");
+fn build_with_storm_tracking_cache_succeeds() {
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_secs(60))
+        .grace_interval(Duration::from_secs(1))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_secs(30))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
+    HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(3600)) // strictly greater than grace_period (60).
+        .branch_key_id("bk")
+        .cache(CacheType::StormTracking(params))
+        .build()
+        .expect("CacheType::StormTracking with grace_period < ttl must succeed");
 }
 
 #[test]
-fn new_with_storm_tracking_grace_period_equal_to_ttl_fails() {
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 60,
-        grace_interval: 1,
-        fan_out: 4,
-        inflight_ttl: 30,
-        sleep_milli: 10,
-        time_units: None,
-    };
-    let err = match HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        60, // ttl_seconds == grace_period — must fail.
-        Some("bk".to_string()),
-        None,
-        Some(CacheType::StormTracking(params)),
-        None,
-    ) {
-        Ok(_) => panic!("StormTracking with grace_period == ttl_seconds must fail"),
+fn build_with_storm_tracking_grace_period_equal_to_ttl_fails() {
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_secs(60))
+        .grace_interval(Duration::from_secs(1))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_secs(30))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
+    let err = match HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(60)) // equal to grace_period (60).
+        .branch_key_id("bk")
+        .cache(CacheType::StormTracking(params))
+        .build()
+    {
+        Ok(_) => panic!("StormTracking with grace_period == TTL must fail"),
         Err(e) => e,
     };
-    assert!(
-        err.message.contains("grace period"),
-        "error message must mention the grace period; got: {}",
-        err.message
-    );
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
-fn new_with_storm_tracking_grace_period_greater_than_ttl_fails() {
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 120, // > ttl_seconds below
-        grace_interval: 1,
-        fan_out: 4,
-        inflight_ttl: 30,
-        sleep_milli: 10,
-        time_units: None,
-    };
-    let err = match HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        60,
-        Some("bk".to_string()),
-        None,
-        Some(CacheType::StormTracking(params)),
-        None,
-    ) {
-        Ok(_) => panic!("StormTracking with grace_period > ttl_seconds must fail"),
+fn build_with_storm_tracking_grace_period_greater_than_ttl_fails() {
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_secs(120))
+        .grace_interval(Duration::from_secs(1))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_secs(30))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
+    let err = match HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(60))
+        .branch_key_id("bk")
+        .cache(CacheType::StormTracking(params))
+        .build()
+    {
+        Ok(_) => panic!("StormTracking with grace_period > TTL must fail"),
         Err(e) => e,
     };
-    assert!(
-        err.message.contains("grace period"),
-        "error message must mention the grace period; got: {}",
-        err.message
-    );
+    assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
-fn new_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
-    use aws_crypto_mpl::TimeUnits;
-    // grace_period = 5_000 ms = 5 s, ttl_seconds = 60 s → strict less-than.
+fn build_with_storm_tracking_milliseconds_grace_period_under_ttl_succeeds() {
+    // grace_period = 5_000 ms = 5 s, less than the 60 s TTL.
     // inflight_ttl <= grace_period is required by StormTrackingCmc.
-    let params = StormTrackingCache {
-        entry_capacity: 16,
-        entry_pruning_tail_size: 4,
-        grace_period: 5_000,
-        grace_interval: 100,
-        fan_out: 4,
-        inflight_ttl: 1_000,
-        sleep_milli: 10,
-        time_units: Some(TimeUnits::Milliseconds),
-    };
-    HierarchicalKeyring::new(
-        keystore_never_consulted(),
-        60,
-        Some("bk".to_string()),
-        None,
-        Some(CacheType::StormTracking(params)),
-        None,
-    )
-    .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
+    let params = StormTrackingCache::builder()
+        .entry_capacity(16)
+        .entry_pruning_tail_size(4)
+        .grace_period(Duration::from_millis(5_000))
+        .grace_interval(Duration::from_millis(100))
+        .fan_out(4)
+        .inflight_ttl(Duration::from_millis(1_000))
+        .sleep(Duration::from_millis(10))
+        .build()
+        .expect("valid StormTrackingCache");
+    HierarchicalKeyring::builder()
+        .key_store(keystore_never_consulted())
+        .ttl(Duration::from_secs(60))
+        .branch_key_id("bk")
+        .cache(CacheType::StormTracking(params))
+        .build()
+        .expect("ms-unit grace_period (5_000ms = 5s) < ttl (60s) must succeed");
 }
 
 // ─── Cache entry identifier formula tests ───────────────────────────────────
@@ -777,7 +801,7 @@ fn compute_aad_appends_serialized_encryption_context() {
     let branch_key_id = "id-with-ec";
     let version = "01234567-0123-4123-8123-0123456789ab";
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), b"v".to_vec());
+    ec.insert("k", "v");
 
     let aad = compute_aad(branch_key_id, version, &ec).expect("AAD construction must succeed");
 
@@ -800,15 +824,14 @@ fn compute_aad_fails_when_encryption_context_value_too_large() {
     let version = "01234567-0123-4123-8123-0123456789ab";
     let mut ec = EncryptionContext::new();
     // value length > u16::MAX makes EncryptionContext::serialize() fail.
-    ec.insert(b"k".to_vec(), vec![0u8; 65_536]);
+    ec.insert("k", "\0".repeat(65_536));
 
     let result = compute_aad(branch_key_id, version, &ec);
     let err = result.expect_err("compute_aad must fail when EC serialization fails");
 
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::Validation,
-        "expected Validation error from EC serialize; got {err:?}",
+    assert!(
+        err.is_validation(),
+        "expected Validation error from EC serialize; got {err:?}"
     );
 }
 
@@ -838,8 +861,8 @@ fn wrap_unwrap_round_trip_recovers_plaintext() {
 #[test]
 fn wrap_round_trip_with_nonempty_encryption_context() {
     let mut ec = EncryptionContext::new();
-    ec.insert(b"purpose".to_vec(), b"test".to_vec());
-    ec.insert(b"region".to_vec(), b"us-west-2".to_vec());
+    ec.insert("purpose", "test");
+    ec.insert("region", "us-west-2");
     let materials = fixture_materials_with_ec(ec);
 
     let plaintext = vec![0xAA_u8; 32];
@@ -899,10 +922,9 @@ fn wrap_then_unwrap_with_tampered_encrypted_key_fails() {
     // Tampering a byte in the encrypted-key region invalidates the AES-GCM
     // authentication tag, so unwrap must fail; this proves the encrypted-key
     // bytes were the AES-GCM ciphertext input.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed for AEAD verification failure; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for AEAD verification failure; got {err:?}"
     );
 }
 
@@ -932,10 +954,9 @@ fn wrap_then_unwrap_with_tampered_tag_fails() {
     // Tampering a byte in the tag region invalidates the AES-GCM authentication,
     // so unwrap must fail; this proves the tag bytes were used as the AES-GCM
     // input authentication tag.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed for tag verification failure; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for tag verification failure; got {err:?}"
     );
 }
 
@@ -962,10 +983,9 @@ fn wrap_then_unwrap_with_tampered_iv_fails() {
     // Tampering the IV causes AES-GCM authentication to fail because the tag
     // was computed under the original IV; this proves the IV from
     // deserialization was used as the AES-GCM input IV.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed for IV-tampered AEAD; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for IV-tampered AEAD; got {err:?}"
     );
 }
 
@@ -1002,10 +1022,9 @@ fn wrap_then_unwrap_with_different_branch_key_fails() {
     // Different branch_key bytes derive a different AES-256-GCM cipher key
     // on each side, so AES-GCM authentication fails on unwrap; this proves
     // the cipher key on both wrap and unwrap was the derivedBranchKey.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed when branch_key differs; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic when branch_key differs; got {err:?}"
     );
 }
 
@@ -1044,10 +1063,9 @@ fn wrap_then_unwrap_with_different_aad_branch_key_id_fails() {
     // was the AES-GCM AAD on the wrap side, and that the keyring
     // included branch_key_id as part of the AAD for both Encrypt and
     // Decrypt calls.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed when AAD differs; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic when AAD differs; got {err:?}"
     );
 }
 
@@ -1065,7 +1083,7 @@ fn wrap_then_unwrap_with_different_encryption_context_fails() {
     .expect("wrap must succeed");
 
     let mut other_ec = EncryptionContext::new();
-    other_ec.insert(b"region".to_vec(), b"us-east-1".to_vec());
+    other_ec.insert("region", "us-east-1");
     let materials_unwrap = fixture_materials_with_ec(other_ec);
 
     let result = branch_key_unwrap(
@@ -1078,10 +1096,9 @@ fn wrap_then_unwrap_with_different_encryption_context_fails() {
     // The serialized encryption context is part of the AES-GCM AAD on both
     // sides; if the unwrap-side EC differs from the wrap-side EC, the AAD
     // differs and AES-GCM authentication fails.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed when EC differs; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic when EC differs; got {err:?}"
     );
 }
 
@@ -1106,8 +1123,7 @@ fn wrap_two_calls_produce_distinct_ciphertexts() {
 
 #[test]
 fn unwrap_too_short_ciphertext_returns_error() {
-    // A ciphertext shorter than the fixed 60-byte overhead cannot possibly
-    // hold the salt+iv+version+tag layout. Unwrap must fail with KeyringFailed.
+    // Shorter than the 60-byte salt, IV, version, and tag overhead, so unwrap fails with Cryptographic.
     let materials = fixture_materials_empty_ec();
     let too_short = vec![0u8; 32];
 
@@ -1117,10 +1133,9 @@ fn unwrap_too_short_ciphertext_returns_error() {
     // The unwrap call cannot complete deserialization (a required step)
     // when the input is shorter than the fixed overhead, so it must
     // return an error rather than silently succeed.
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::KeyringFailed,
-        "expected KeyringFailed for ciphertext shorter than fixed overhead; got {err:?}",
+    assert!(
+        err.is_cryptographic(),
+        "expected Cryptographic for ciphertext shorter than fixed overhead; got {err:?}"
     );
 }
 
@@ -1177,16 +1192,15 @@ fn wrap_fails_when_encryption_context_value_too_large() {
     // to do any of the above, OnEncrypt MUST fail" failure-propagation
     // contract at the wrap boundary.
     let mut ec = EncryptionContext::new();
-    ec.insert(b"k".to_vec(), vec![0u8; 65_536]);
+    ec.insert("k", "\0".repeat(65_536));
     let materials = fixture_materials_with_ec(ec);
 
     let result = branch_key_wrap(&materials, materials.encryption_context(), &[0u8; 32]);
     let err = result.expect_err("wrap must fail when EC serialization fails");
 
-    assert_eq!(
-        err.kind,
-        MaterialsErrorKind::Validation,
-        "expected Validation error from EC serialize via wrap; got {err:?}",
+    assert!(
+        err.is_validation(),
+        "expected Validation error from EC serialize via wrap; got {err:?}"
     );
 }
 
@@ -1223,21 +1237,22 @@ const FAKE_LOGICAL_KEYSTORE_NAME: &str = "test-logical-name";
 /// counters are `Mutex<..>` rather than `Cell<..>` because `Keystore` requires
 /// `Send + Sync`; each lock is taken and released inside a single statement, so
 /// no guard is ever held across an `.await`.
+#[derive(Clone)]
 struct FakeKeystore {
     materials: BranchKeyMaterials,
-    get_active_calls: Mutex<u32>,
-    get_version_calls: Mutex<u32>,
-    last_version_arg: Mutex<Option<String>>,
+    get_active_calls: Arc<Mutex<u32>>,
+    get_version_calls: Arc<Mutex<u32>>,
+    last_version_arg: Arc<Mutex<Option<String>>>,
 }
 
 impl FakeKeystore {
-    fn new(materials: BranchKeyMaterials) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(materials: BranchKeyMaterials) -> Self {
+        Self {
             materials,
-            get_active_calls: Mutex::new(0),
-            get_version_calls: Mutex::new(0),
-            last_version_arg: Mutex::new(None),
-        })
+            get_active_calls: Arc::new(Mutex::new(0)),
+            get_version_calls: Arc::new(Mutex::new(0)),
+            last_version_arg: Arc::new(Mutex::new(None)),
+        }
     }
 
     fn get_active_calls(&self) -> u32 {
@@ -1255,7 +1270,7 @@ impl FakeKeystore {
 
 #[async_trait]
 impl Keystore for FakeKeystore {
-    fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+    fn get_key_store_info(&self) -> Result<KeyStoreInfo, Error> {
         Ok(KeyStoreInfo {
             keystore_id: "test-id".to_string(),
             keystore_name: "test-table".to_string(),
@@ -1265,24 +1280,24 @@ impl Keystore for FakeKeystore {
         })
     }
 
-    async fn create_key_store(&self) -> Result<String, KeystoreError> {
+    async fn create_key_store(&self) -> Result<String, Error> {
         unimplemented!("FakeKeystore::create_key_store")
     }
     async fn create_key(
         &self,
         _branch_key_id: Option<String>,
         _encryption_context: Option<EncryptionContext>,
-    ) -> Result<String, KeystoreError> {
+    ) -> Result<String, Error> {
         unimplemented!("FakeKeystore::create_key")
     }
-    async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
+    async fn version_key(&self, _branch_key_id: String) -> Result<(), Error> {
         unimplemented!("FakeKeystore::version_key")
     }
 
     async fn get_active_branch_key(
         &self,
         _branch_key_id: String,
-    ) -> Result<BranchKeyMaterials, KeystoreError> {
+    ) -> Result<BranchKeyMaterials, Error> {
         *self.get_active_calls.lock().unwrap() += 1;
         Ok(self.materials.clone())
     }
@@ -1291,15 +1306,12 @@ impl Keystore for FakeKeystore {
         &self,
         _branch_key_id: String,
         branch_key_version: String,
-    ) -> Result<BranchKeyMaterials, KeystoreError> {
+    ) -> Result<BranchKeyMaterials, Error> {
         *self.get_version_calls.lock().unwrap() += 1;
         *self.last_version_arg.lock().unwrap() = Some(branch_key_version);
         Ok(self.materials.clone())
     }
-    async fn get_beacon_key(
-        &self,
-        _branch_key_id: String,
-    ) -> Result<BeaconKeyMaterials, KeystoreError> {
+    async fn get_beacon_key(&self, _branch_key_id: String) -> Result<BeaconKeyMaterials, Error> {
         unimplemented!("FakeKeystore::get_beacon_key")
     }
 }
@@ -1347,22 +1359,21 @@ fn empty_decryption_materials(suite_id: AlgorithmSuiteId) -> DecryptionMaterials
 
 /// Build a keyring over a [`FakeKeystore`] with a static branch key id and a
 /// keyring-local default cache.
-fn build_keyring(keystore: Arc<FakeKeystore>, branch_key_id: &str) -> HierarchicalKeyring {
-    HierarchicalKeyring::new(
-        keystore,
-        3600,
-        Some(branch_key_id.to_string()),
-        None,
-        Some(CacheType::Default(DefaultCache::new(1000))),
-        Some("partition-id".to_string()),
-    )
-    .unwrap()
+fn build_keyring(keystore: FakeKeystore, branch_key_id: &str) -> HierarchicalKeyring {
+    HierarchicalKeyring::builder()
+        .key_store(keystore)
+        .ttl(Duration::from_secs(3600))
+        .branch_key_id(branch_key_id)
+        .cache(CacheType::Default(DefaultCache::new(1000)))
+        .partition_id("partition-id")
+        .build()
+        .unwrap()
 }
 
 /// Pick a non-signing suite so `signing_key` / `symmetric_signing_keys`
 /// invariants don't intrude on the test.
 fn non_signing_suite() -> AlgorithmSuiteId {
-    AlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf
+    AlgorithmSuiteId::Esdk(EsdkAlgorithmSuiteId::AlgAes256GcmIv12Tag16NoKdf)
 }
 
 mod onencrypt {
@@ -1372,7 +1383,7 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_caches_branch_key_materials_after_keystore_call() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
 
         // First call: cache miss → keystore is called.
         keyring
@@ -1406,13 +1417,71 @@ mod onencrypt {
         );
     }
 
+    /// Whether on_encrypt calls the keystore for a keyring with a 1 s TTL
+    /// whose cache already holds its entry, created `age` ago.
+    /// The entry's own expiry is an hour out, so only the keyring's TTL check can reject it.
+    async fn on_encrypt_consults_keystore_for_entry_aged(age: Duration) -> bool {
+        use aws_crypto_mpl::Cmc;
+        use aws_crypto_mpl::cmc::{CacheEntry, CachedMaterials, UsageMetadata};
+        use std::time::SystemTime;
+
+        const PARTITION: &str = "partition-id";
+        let cache = LocalCmc::new(8, 4).unwrap();
+        let now = SystemTime::now();
+        cache
+            .put_cache_entry(
+                &build_cache_identifier(
+                    SCOPE_ID_ENCRYPT,
+                    PARTITION.as_bytes(),
+                    FAKE_LOGICAL_KEYSTORE_NAME,
+                    FAKE_BRANCH_KEY_ID,
+                    None,
+                ),
+                CacheEntry::new(
+                    CachedMaterials::BranchKey(fake_branch_key_materials()),
+                    now - age,
+                    now + Duration::from_secs(3600),
+                    UsageMetadata::default(),
+                ),
+            )
+            .await
+            .unwrap();
+
+        let keystore = FakeKeystore::new(fake_branch_key_materials());
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(keystore.clone())
+            .ttl(Duration::from_millis(1500))
+            .branch_key_id(FAKE_BRANCH_KEY_ID)
+            .cache(CacheType::Shared(SharedCmc::new(cache)))
+            .partition_id(PARTITION)
+            .build()
+            .unwrap();
+        keyring
+            .on_encrypt(empty_encryption_materials(non_signing_suite()))
+            .await
+            .unwrap();
+        keystore.get_active_calls() == 1
+    }
+
+    #[tokio::test]
+    async fn on_encrypt_ttl_compares_the_full_duration() {
+        assert!(
+            !on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1000)).await,
+            "an entry aged 1 s is within a 1.5 s TTL",
+        );
+        assert!(
+            on_encrypt_consults_keystore_for_entry_aged(Duration::from_millis(1800)).await,
+            "an entry aged 1.8 s is past a 1.5 s TTL",
+        );
+    }
+
     #[tokio::test]
     async fn on_encrypt_propagates_keystore_failure() {
         struct FailingKeystore;
 
         #[async_trait]
         impl Keystore for FailingKeystore {
-            fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            fn get_key_store_info(&self) -> Result<KeyStoreInfo, Error> {
                 Ok(KeyStoreInfo {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
@@ -1421,52 +1490,49 @@ mod onencrypt {
                     kms_configuration: KmsConfiguration::Discovery,
                 })
             }
-            async fn create_key_store(&self) -> Result<String, KeystoreError> {
+            async fn create_key_store(&self) -> Result<String, Error> {
                 unimplemented!()
             }
             async fn create_key(
                 &self,
                 _branch_key_id: Option<String>,
                 _encryption_context: Option<EncryptionContext>,
-            ) -> Result<String, KeystoreError> {
+            ) -> Result<String, Error> {
                 unimplemented!()
             }
-            async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
+            async fn version_key(&self, _branch_key_id: String) -> Result<(), Error> {
                 unimplemented!()
             }
             async fn get_active_branch_key(
                 &self,
                 _branch_key_id: String,
-            ) -> Result<BranchKeyMaterials, KeystoreError> {
-                Err(KeystoreError::with_cause(
-                    KeystoreErrorKind::RecordNotFound,
-                    "no such branch key",
-                    IoError::new(IoErrorKind::NotFound, "ddb: item not found"),
+            ) -> Result<BranchKeyMaterials, Error> {
+                Err(Error::from(
+                    aws_crypto_mpl::error::ResourceNotFoundError::new("no such branch key")
+                        .with_source(IoError::new(IoErrorKind::NotFound, "ddb: item not found")),
                 ))
             }
             async fn get_branch_key_version(
                 &self,
                 _branch_key_id: String,
                 _branch_key_version: String,
-            ) -> Result<BranchKeyMaterials, KeystoreError> {
+            ) -> Result<BranchKeyMaterials, Error> {
                 unimplemented!()
             }
             async fn get_beacon_key(
                 &self,
                 _branch_key_id: String,
-            ) -> Result<BeaconKeyMaterials, KeystoreError> {
+            ) -> Result<BeaconKeyMaterials, Error> {
                 unimplemented!()
             }
         }
-        let keyring = HierarchicalKeyring::new(
-            Arc::new(FailingKeystore) as Arc<dyn Keystore>,
-            3600,
-            Some("bk".to_string()),
-            None,
-            Some(CacheType::Default(DefaultCache::new(1000))),
-            None,
-        )
-        .unwrap();
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(FailingKeystore)
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id("bk")
+            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .build()
+            .unwrap();
 
         let err = match keyring
             .on_encrypt(empty_encryption_materials(non_signing_suite()))
@@ -1475,27 +1541,12 @@ mod onencrypt {
             Ok(_) => panic!("on_encrypt must fail when keystore.get_active_branch_key fails"),
             Err(e) => e,
         };
-        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+        assert!(err.is_resource_not_found(), "{:?}", err);
 
-        // The keystore failure is attached as the cause, not merely formatted
-        // into the message, so a caller can recover the originating
-        // `KeystoreError` by type instead of parsing text.
-        let cause = err
-            .source()
-            .expect("the keystore failure must be attached as the cause");
-        let keystore_err = cause
-            .downcast_ref::<KeystoreError>()
-            .expect("the cause must be the originating KeystoreError");
-        assert_eq!(keystore_err.kind(), &KeystoreErrorKind::RecordNotFound);
-
-        // The chain is walkable past the keystore boundary too: whatever the
-        // keystore itself wrapped stays reachable. In production this level is
-        // the AWS SDK error carrying the concrete KMS or DDB exception.
-        let root = keystore_err
-            .source()
-            .expect("the keystore's own cause must remain reachable");
+        // The key store's error comes back unchanged, and its cause stays reachable.
+        // In production that cause is the AWS SDK error.
         assert_eq!(
-            root.downcast_ref::<IoError>()
+            err.find_source::<IoError>()
                 .expect("the root cause must survive unchanged")
                 .kind(),
             IoErrorKind::NotFound,
@@ -1505,16 +1556,12 @@ mod onencrypt {
     #[tokio::test]
     async fn on_encrypt_uses_branch_key_supplier_when_configured() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring =
-            HierarchicalKeyring::new(
-                Arc::clone(&keystore) as Arc<dyn Keystore>,
-                3600,
-                None,
-                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-                    as Arc<dyn BranchKeySupplier>),
-                Some(CacheType::Default(DefaultCache::new(1000))),
-                None,
-            )
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(keystore.clone())
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .build()
             .unwrap();
 
         let materials_out = keyring
@@ -1534,6 +1581,7 @@ mod onencrypt {
 mod ondecrypt {
     use super::*;
     use aws_crypto_mpl::Keyring;
+    use aws_crypto_mpl::error::{BranchKey, DataKeyInfo, Resource};
     use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
 
     /// The 16-byte representation of `FAKE_BRANCH_KEY_VERSION`. Hard-
@@ -1590,7 +1638,7 @@ mod ondecrypt {
             .on_decrypt(dm, &edks)
             .await
             .expect_err("on_decrypt must fail when materials already carry a plaintext data key");
-        assert_eq!(err.kind, MaterialsErrorKind::PlaintextDataKeyAlreadyPresent);
+        assert!(err.is_invalid_materials(), "{:?}", err);
     }
 
     #[tokio::test]
@@ -1602,7 +1650,7 @@ mod ondecrypt {
         // MUST be the canonical UUID string parsed from the 16 raw bytes
         // at offset salt+iv inside the EDK ciphertext.
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (_, edks) = produce_edk(&keyring, suite_id).await;
@@ -1629,7 +1677,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_caches_branch_key_after_keystore_call() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (_, edks) = produce_edk(&keyring, suite_id).await;
@@ -1659,7 +1707,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_wrong_provider_id() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1685,7 +1733,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_non_utf8_provider_info() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1711,7 +1759,7 @@ mod ondecrypt {
     #[tokio::test]
     async fn on_decrypt_skips_edks_with_wrong_branch_key_id() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring = build_keyring(Arc::clone(&keystore), FAKE_BRANCH_KEY_ID);
+        let keyring = build_keyring(keystore.clone(), FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
 
         let (expected_pdk, mut edks) = produce_edk(&keyring, suite_id).await;
@@ -1745,9 +1793,9 @@ mod ondecrypt {
             .await
             .expect_err("on_decrypt must fail when no EDK in the input matches the filter");
 
-        assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
+        assert!(err.is_no_matching_data_key(), "{:?}", err);
         assert!(
-            !err.is_collection(),
+            err.collected().is_empty(),
             "with nothing attempted there is nothing to collect; got: {err}",
         );
     }
@@ -1772,15 +1820,29 @@ mod ondecrypt {
             .await
             .expect_err("an EDK from another provider MUST NOT be decrypted");
 
-        assert_eq!(err.kind, MaterialsErrorKind::NoMatchingDataKey);
+        assert!(err.is_no_matching_data_key(), "{:?}", err);
         assert!(
-            !err.is_collection(),
+            err.collected().is_empty(),
             "a filtered-out EDK is not an attempt, so there is nothing to collect; got: {err}",
+        );
+        let Error::NoMatchingDataKey(e) = &err else {
+            unreachable!()
+        };
+        assert_eq!(
+            e.encrypted_data_keys(),
+            [DataKeyInfo::new(
+                "some-other-provider",
+                b"some-other-info".to_vec()
+            )]
+        );
+        assert_eq!(
+            err.to_string(),
+            "NoMatchingDataKey: no encrypted data key matched (message has: some-other-provider)"
         );
     }
 
     #[tokio::test]
-    async fn on_decrypt_with_a_single_failing_edk_attaches_it_as_the_cause() {
+    async fn on_decrypt_with_a_single_failing_edk_returns_its_error() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
         let keyring = build_keyring(keystore, FAKE_BRANCH_KEY_ID);
         let suite_id = non_signing_suite();
@@ -1799,33 +1861,9 @@ mod ondecrypt {
             .on_decrypt(empty_decryption_materials(suite_id), &[truncated])
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
-        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
-        assert!(
-            err.to_string().contains("ciphertext too short"),
-            "the rendered error must surface the collected per-EDK error; got: {err}",
-        );
-
-        // Exactly one candidate EDK failed, so that failure is attached as the
-        // cause rather than only being formatted into the message.
-        let per_edk = err
-            .source()
-            .expect("the single per-EDK failure must be attached as the cause")
-            .downcast_ref::<MaterialsError>()
-            .expect("the cause must be the per-EDK MaterialsError");
-        assert!(
-            per_edk.message.contains("ciphertext too short"),
-            "the cause must be the per-EDK error itself; got: {}",
-            per_edk.message,
-        );
-
-        // It is also present on `collected`, so a caller has one uniform place
-        // to read the collected failures without branching on how many there
-        // were.
-        assert_eq!(
-            err.collected_errors(),
-            std::slice::from_ref(per_edk),
-            "the single failure must also be collected",
-        );
+        // One candidate EDK, so its error comes back unchanged, not as a collection of one.
+        assert!(err.is_cryptographic(), "{:?}", err);
+        assert!(err.collected().is_empty());
     }
 
     #[tokio::test]
@@ -1854,35 +1892,36 @@ mod ondecrypt {
             )
             .await
             .expect_err("on_decrypt must fail when every EDK attempt errors");
-        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
+        assert!(err.is_cryptographic(), "{:?}", err);
 
-        let rendered = err.to_string();
         assert!(
-            rendered.contains("4 bytes") && rendered.contains("8 bytes"),
-            "the aggregate must surface every per-EDK error; got: {rendered}",
+            err.collected()
+                .iter()
+                .any(|e| e.message().contains("4 bytes"))
+                && err
+                    .collected()
+                    .iter()
+                    .any(|e| e.message().contains("8 bytes")),
+            "the aggregate must surface every per-EDK error; got: {err:?}",
         );
 
         // The collected failures stay typed, not merely formatted into the
         // message, so a caller can inspect each attempt. This is what carries
         // the spec's "MUST yield an error that includes all the collected
         // errors" structurally rather than as prose.
-        let collected = err.collected_errors();
+        let collected = err.collected();
         assert_eq!(
             collected.len(),
             2,
             "both candidate EDK failures must be collected; got: {collected:?}",
         );
         for per_edk in collected {
-            assert_eq!(per_edk.kind, MaterialsErrorKind::KeyringFailed);
-            assert!(
-                per_edk.message.contains("ciphertext too short"),
-                "each collected error must be the per-EDK failure itself; got: {}",
-                per_edk.message,
-            );
+            assert!(per_edk.is_cryptographic(), "{:?}", per_edk);
         }
         // Collected in attempt order, so a caller can tell which EDK is which.
-        assert!(collected[0].message.contains("4 bytes"));
-        assert!(collected[1].message.contains("8 bytes"));
+        // Both failures have the same kind, so only the message tells them apart.
+        assert!(collected[0].message().contains("4 bytes"));
+        assert!(collected[1].message().contains("8 bytes"));
 
         // With more than one failure there is no single error to nominate as
         // the cause; the typed failures live on `collected` instead. If this
@@ -1901,7 +1940,7 @@ mod ondecrypt {
 
         #[async_trait]
         impl Keystore for FailingKeystore {
-            fn get_key_store_info(&self) -> Result<KeyStoreInfo, KeystoreError> {
+            fn get_key_store_info(&self) -> Result<KeyStoreInfo, Error> {
                 Ok(KeyStoreInfo {
                     keystore_id: "id".to_string(),
                     keystore_name: "table".to_string(),
@@ -1910,39 +1949,41 @@ mod ondecrypt {
                     kms_configuration: KmsConfiguration::Discovery,
                 })
             }
-            async fn create_key_store(&self) -> Result<String, KeystoreError> {
+            async fn create_key_store(&self) -> Result<String, Error> {
                 unimplemented!()
             }
             async fn create_key(
                 &self,
                 _branch_key_id: Option<String>,
                 _encryption_context: Option<EncryptionContext>,
-            ) -> Result<String, KeystoreError> {
+            ) -> Result<String, Error> {
                 unimplemented!()
             }
-            async fn version_key(&self, _branch_key_id: String) -> Result<(), KeystoreError> {
+            async fn version_key(&self, _branch_key_id: String) -> Result<(), Error> {
                 unimplemented!()
             }
             async fn get_active_branch_key(
                 &self,
                 _branch_key_id: String,
-            ) -> Result<BranchKeyMaterials, KeystoreError> {
+            ) -> Result<BranchKeyMaterials, Error> {
                 unimplemented!()
             }
             async fn get_branch_key_version(
                 &self,
                 _branch_key_id: String,
                 _branch_key_version: String,
-            ) -> Result<BranchKeyMaterials, KeystoreError> {
-                Err(KeystoreError::new(
-                    KeystoreErrorKind::RecordNotFound,
-                    "no such branch key version",
+            ) -> Result<BranchKeyMaterials, Error> {
+                Err(Error::from(
+                    aws_crypto_mpl::error::ResourceNotFoundError::builder()
+                        .message("no such branch key version")
+                        .resource(BranchKey::new(FAKE_BRANCH_KEY_ID))
+                        .build(),
                 ))
             }
             async fn get_beacon_key(
                 &self,
                 _branch_key_id: String,
-            ) -> Result<BeaconKeyMaterials, KeystoreError> {
+            ) -> Result<BeaconKeyMaterials, Error> {
                 unimplemented!()
             }
         }
@@ -1957,58 +1998,41 @@ mod ondecrypt {
         let suite_id = non_signing_suite();
         let (_, edks) = produce_edk(&priming_keyring, suite_id).await;
 
-        let keyring = HierarchicalKeyring::new(
-            Arc::new(FailingKeystore) as Arc<dyn Keystore>,
-            3600,
-            Some(FAKE_BRANCH_KEY_ID.to_string()),
-            None,
-            Some(CacheType::Default(DefaultCache::new(1000))),
-            Some("partition-id".to_string()),
-        )
-        .unwrap();
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(FailingKeystore)
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id(FAKE_BRANCH_KEY_ID)
+            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .partition_id("partition-id")
+            .build()
+            .unwrap();
 
         let err = keyring
             .on_decrypt(empty_decryption_materials(suite_id), &edks)
             .await
             .expect_err("on_decrypt must fail when keystore.get_branch_key_version fails");
-        assert_eq!(err.kind, MaterialsErrorKind::KeyringFailed);
-        // The per-attempt text is rendered by Display from `collected`, not
-        // baked into `message`, so the assertion reads the rendered form.
-        assert!(
-            err.to_string().contains("get_branch_key_version failed"),
-            "the rendered error must surface the keystore failure; got: {err}",
+        // One candidate EDK, so the key store's error comes back unchanged.
+        assert!(err.is_resource_not_found(), "{:?}", err);
+        assert!(err.collected().is_empty());
+        assert_eq!(err.message(), "no such branch key version");
+        assert_eq!(
+            err.resource(),
+            Some(&Resource::BranchKey(
+                BranchKey::new(FAKE_BRANCH_KEY_ID).with_version(FAKE_BRANCH_KEY_VERSION)
+            ))
         );
-
-        // One candidate EDK, so on_decrypt attaches that per-EDK failure as
-        // the cause and the chain stays walkable all the way to the keystore.
-        let per_edk = err
-            .source()
-            .expect("a single failing EDK must be attached as the cause")
-            .downcast_ref::<MaterialsError>()
-            .expect("the cause must be the per-EDK MaterialsError");
-        assert_eq!(per_edk.kind, MaterialsErrorKind::KeyringFailed);
-
-        let keystore_err = per_edk
-            .source()
-            .expect("the per-EDK failure must itself carry the keystore cause")
-            .downcast_ref::<KeystoreError>()
-            .expect("the root cause must be the originating KeystoreError");
-        assert_eq!(keystore_err.kind(), &KeystoreErrorKind::RecordNotFound);
     }
 
     #[tokio::test]
     async fn on_decrypt_uses_branch_key_supplier_when_configured() {
         let keystore = FakeKeystore::new(fake_branch_key_materials());
-        let keyring =
-            HierarchicalKeyring::new(
-                Arc::clone(&keystore) as Arc<dyn Keystore>,
-                3600,
-                None,
-                Some(Arc::new(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
-                    as Arc<dyn BranchKeySupplier>),
-                Some(CacheType::Default(DefaultCache::new(1000))),
-                Some("partition-id".to_string()),
-            )
+        let keyring = HierarchicalKeyring::builder()
+            .key_store(keystore.clone())
+            .ttl(Duration::from_secs(3600))
+            .branch_key_id_supplier(FixedBranchKeySupplier(FAKE_BRANCH_KEY_ID))
+            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .partition_id("partition-id")
+            .build()
             .unwrap();
         let suite_id = non_signing_suite();
 
