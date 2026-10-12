@@ -96,6 +96,14 @@ jobs:
             echo "FEATURE_FLAGS=--all-features" >> "$GITHUB_ENV"
           fi
 
+      # The C++ test server links against a prebuilt shim.
+      - name: Build the aws-esdk-cpp shim
+        if: matrix.project == 'esdk-cpp-test-server'
+        working-directory: esdk/shims/aws-esdk-cpp
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+        run: cargo build
+
       - name: Measure total line coverage
         working-directory: ${{ matrix.project }}
         env:
