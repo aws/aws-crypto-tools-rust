@@ -900,6 +900,11 @@ fn apply_storm_tracking_options(
 //# value.
 //
 //= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
+//= type=exception
+//= reason=Will be added in the future
+//# - The shim MUST support creating a cache that performs no caching.
+//
+//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
 //# - The shim MUST support creating a storm tracking cache.
 fn create_storm_tracking_cmc(
     options: &ffi::StormTrackingCmcOptions,
@@ -928,10 +933,6 @@ fn create_default_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsC
     }))
 }
 
-//= spec/shim/esdk-shim.md#create-cryptographic-materials-cache
-//= type=exception
-//= reason=Will be added in the future
-//# - The shim MUST support creating a cache that performs no caching.
 fn create_local_cmc(entry_capacity: u32) -> Result<Box<CryptographicMaterialsCache>, String> {
     let op = "create_local_cmc";
     let cache = LocalCmc::builder()
@@ -1232,10 +1233,8 @@ fn create_keystore(input: &ffi::KeyStoreConfig) -> Result<Box<KeyStore>, String>
         .set_kms_client(unsafe { input.kms_client.as_ref() }.map(|c| c.inner.clone()))
         .set_ddb_client(unsafe { input.ddb_client.as_ref() }.map(|c| c.inner.clone()));
 
-    let store = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
-    Ok(Box::new(KeyStore {
-        inner: KeyStoreClient::new(store),
-    }))
+    let inner = TOKIO_RUNTIME.block_on(builder.build()).map_err(core_err)?;
+    Ok(Box::new(KeyStore { inner }))
 }
 
 /// An empty target list means no grant tokens were supplied.

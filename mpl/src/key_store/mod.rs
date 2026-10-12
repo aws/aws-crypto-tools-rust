@@ -6,18 +6,16 @@
 //!
 //! ```no_run
 //! # async fn example() -> Result<(), aws_crypto_mpl::Error> {
-//! use aws_crypto_mpl::key_store::{BranchKeyStore, KeyStoreClient, KmsConfiguration};
+//! use aws_crypto_mpl::key_store::{BranchKeyStore, KmsConfiguration};
 //!
-//! let key_store = KeyStoreClient::new(
-//!     BranchKeyStore::builder()
-//!         .ddb_table_name("my-table")
-//!         .logical_key_store_name("my-table")
-//!         .kms_configuration(KmsConfiguration::KmsKeyArn(
-//!             "arn:aws:kms:us-west-2:111122223333:key/my-key".to_owned(),
-//!         ))
-//!         .build()
-//!         .await?,
-//! );
+//! let key_store = BranchKeyStore::builder()
+//!     .ddb_table_name("my-table")
+//!     .logical_key_store_name("my-table")
+//!     .kms_configuration(KmsConfiguration::KmsKeyArn(
+//!         "arn:aws:kms:us-west-2:111122223333:key/my-key".to_owned(),
+//!     ))
+//!     .build()
+//!     .await?;
 //! let branch_key_id = key_store.create_key().send().await?.into_branch_key_id();
 //! key_store.version_key().branch_key_id(&branch_key_id).send().await?;
 //! # Ok(())

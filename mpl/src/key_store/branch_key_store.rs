@@ -53,13 +53,13 @@ use crate::key_store::{
     CreateKeyInput, CreateKeyOutput, CreateKeyStoreInput, CreateKeyStoreOutput,
     GetActiveBranchKeyInput, GetActiveBranchKeyOutput, GetBeaconKeyInput, GetBeaconKeyOutput,
     GetBranchKeyVersionInput, GetBranchKeyVersionOutput, GetKeyStoreInfoInput,
-    GetKeyStoreInfoOutput, KeyStore, VersionKeyInput, VersionKeyOutput,
+    GetKeyStoreInfoOutput, KeyStore, KeyStoreClient, VersionKeyInput, VersionKeyOutput,
 };
 use crate::structures::BeaconKeyMaterials;
 
 /// A [`KeyStore`] backed by AWS KMS and Amazon DynamoDB.
 ///
-/// Construct with [`BranchKeyStore::builder`].
+/// [`BranchKeyStore::builder`] builds one and returns it as a [`KeyStoreClient`].
 #[derive(Clone)]
 pub struct BranchKeyStore {
     inner: Arc<BranchKeyStoreInner>,
@@ -83,7 +83,7 @@ const DDB_TABLE_NAME_MIN_LEN: usize = 3;
 const DDB_TABLE_NAME_MAX_LEN: usize = 255;
 
 impl BranchKeyStore {
-    /// Start a builder for `BranchKeyStore`.
+    /// Start a builder for a `BranchKeyStore`.
     #[must_use]
     pub fn builder() -> BranchKeyStoreBuilder {
         BranchKeyStoreBuilder::default()
@@ -109,12 +109,6 @@ impl BranchKeyStore {
                      KmsMrKeyArn); Discovery and MRDiscovery are not supported",
             )),
         }
-    }
-
-    /// The key store identifier: the one set on the builder,
-    /// or a v4 UUID generated at construction.
-    pub fn key_store_id(&self) -> &str {
-        &self.inner.key_store_id
     }
 
     /// Borrow the configured grant tokens (or an empty slice if `None`).
@@ -288,6 +282,7 @@ impl BranchKeyStoreBuilder {
     }
 
     /// Validate the configuration, build a default for any unset client, and resolve the key store identifier.
+    /// Returns the key store as a [`KeyStoreClient`].
     ///
     /// Building a default client is the only reason this is `async`.
     /// With both clients supplied it does no IO and completes on the first poll.
@@ -295,7 +290,11 @@ impl BranchKeyStoreBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): a required field is unset, the table name is not 3 to 255 characters long, or the KMS configuration is invalid (malformed ARN, alias, or non-`kms` service).
-    pub async fn build(self) -> Result<BranchKeyStore, Error> {
+    pub async fn build(self) -> Result<KeyStoreClient, Error> {
+        self.build_store().await.map(KeyStoreClient::new)
+    }
+
+    async fn build_store(self) -> Result<BranchKeyStore, Error> {
         let ddb_table_name = required(self.ddb_table_name, "ddb_table_name")?;
         let logical_key_store_name =
             required(self.logical_key_store_name, "logical_key_store_name")?;
@@ -1122,7 +1121,7 @@ fn record_from_ddb_item(
 }
 
 /// Internal accessors exposed solely so integration tests under `tests/` can
-/// assert on the SDK clients resolved during construction. Gated behind
+/// build a `BranchKeyStore` and assert on the SDK clients resolved during construction. Gated behind
 /// `test-utils` so it is not compiled for library consumers. Not part of the
 /// public API. Do not use.
 ///
@@ -1131,7 +1130,12 @@ fn record_from_ddb_item(
 #[cfg(feature = "test-utils")]
 #[doc(hidden)]
 pub mod __test_internals {
-    use super::BranchKeyStore;
+    use super::{BranchKeyStore, BranchKeyStoreBuilder};
+    use crate::Error;
+
+    pub async fn build(builder: BranchKeyStoreBuilder) -> Result<BranchKeyStore, Error> {
+        builder.build_store().await
+    }
 
     pub fn kms_client(store: &BranchKeyStore) -> &aws_sdk_kms::Client {
         store.kms_client()

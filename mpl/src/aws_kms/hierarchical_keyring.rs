@@ -287,7 +287,7 @@ impl HierarchicalKeyringBuilder {
     /// The key store.
     /// Required.
     ///
-    /// Pass a [`KeyStoreClient`] or any [`KeyStore`](crate::KeyStore) such as a [`BranchKeyStore`](crate::BranchKeyStore).
+    /// Pass the [`KeyStoreClient`] that [`BranchKeyStore::builder`](crate::BranchKeyStore::builder) builds, or any [`KeyStore`](crate::KeyStore).
     #[must_use]
     pub fn key_store(mut self, key_store: impl Into<KeyStoreClient>) -> Self {
         self.key_store = Some(key_store.into());

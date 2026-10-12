@@ -62,7 +62,6 @@ async fn key_store_with(
         .build()
         .await
         .expect("the key store configuration is valid")
-        .into()
 }
 
 async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str) -> Error {
