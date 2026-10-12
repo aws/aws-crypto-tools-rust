@@ -109,8 +109,8 @@
 #![allow(clippy::too_many_lines)] // disagree: arbitrary line-count threshold
 #![allow(unused_crate_dependencies)] // false positives across workspace dev-deps
 
-mod error;
-pub use error::*;
+pub mod error;
+pub use error::Error;
 mod encrypt;
 pub use encrypt::*;
 mod decrypt;
@@ -141,5 +141,6 @@ pub mod __test_internals {
     pub use crate::message::header_types::HeaderBody;
     pub use crate::suites::{
         algorithm_suite_from_bytes, algorithm_suite_id_from_bytes, get_ecdsa_alg,
+        get_esdk_algorithm_suite_id,
     };
 }
