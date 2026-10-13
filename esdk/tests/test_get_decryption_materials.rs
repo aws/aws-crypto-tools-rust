@@ -355,7 +355,7 @@ impl cmm::Cmm for DecryptSpyCmm {
         &self,
         request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        self.inner.get_encryption_materials(request).await
+        Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(

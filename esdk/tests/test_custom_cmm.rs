@@ -44,7 +44,7 @@ impl Cmm for RecordingCmm {
         self.saw_get_encryption_materials
             .store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner.get_encryption_materials(request).await
+        Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(
@@ -53,7 +53,7 @@ impl Cmm for RecordingCmm {
     ) -> Result<DecryptMaterialsOutput, MplError> {
         self.saw_decrypt_materials.store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner.decrypt_materials(request).await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 
