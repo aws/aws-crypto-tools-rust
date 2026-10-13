@@ -310,3 +310,22 @@ impl DecryptMaterialsFluentBuilder {
         Cmm::decrypt_materials(&*self.handle.0, input).await
     }
 }
+
+/// Add the [`SharedCmm`] fluent calls to a built-in CMM.
+macro_rules! fluent_cmm {
+    ($($ty:ty),+) => {$(
+        impl $ty {
+            /// Start a [`Cmm::get_encryption_materials`] call.
+            pub fn get_encryption_materials(&self) -> GetEncryptionMaterialsFluentBuilder {
+                SharedCmm::new(self.clone()).get_encryption_materials()
+            }
+
+            /// Start a [`Cmm::decrypt_materials`] call.
+            pub fn decrypt_materials(&self) -> DecryptMaterialsFluentBuilder {
+                SharedCmm::new(self.clone()).decrypt_materials()
+            }
+        }
+    )+};
+}
+
+fluent_cmm!(super::DefaultCmm);

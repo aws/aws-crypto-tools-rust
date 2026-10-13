@@ -718,7 +718,7 @@ impl Cmc for StormTrackingCmc {
         // and start a redundant refresh — defeating storm-tracking
         // coalescing. It also preserves inflight state if the inner put
         // fails, so a failed refresh doesn't lose the leader signal.
-        self.inner.local.put_cache_entry(input).await?;
+        Cmc::put_cache_entry(&self.inner.local, input).await?;
 
         let now = (self.inner.now)();
         let mut state = self.state_locked(now, &cache_id)?;
@@ -751,14 +751,14 @@ impl Cmc for StormTrackingCmc {
         &self,
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error> {
-        self.inner.local.delete_cache_entry(input).await
+        Cmc::delete_cache_entry(&self.inner.local, input).await
     }
 
     async fn update_usage_metadata(
         &self,
         input: UpdateUsageMetadataInput,
     ) -> Result<UpdateUsageMetadataOutput, Error> {
-        self.inner.local.update_usage_metadata(input).await
+        Cmc::update_usage_metadata(&self.inner.local, input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {

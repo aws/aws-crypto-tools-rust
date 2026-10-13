@@ -72,9 +72,9 @@ fn keyring_with(name: &str, wrapping_key_byte: u8) -> RawAesKeyring {
         .expect("constructing a 256-bit raw AES keyring")
 }
 
-fn default_keyring() -> SharedKeyring {
+fn default_keyring() -> RawAesKeyring {
     let (_, name) = namespace_and_name();
-    SharedKeyring::new(keyring_with(&name, 0))
+    keyring_with(&name, 0)
 }
 
 fn encryption_materials(ec: EncryptionContext, pdk: Option<Vec<u8>>) -> EncryptionMaterials {

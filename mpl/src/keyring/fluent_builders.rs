@@ -149,3 +149,25 @@ impl OnDecryptFluentBuilder {
         Keyring::on_decrypt(&*self.handle.0, input).await
     }
 }
+
+/// Add the [`SharedKeyring`] fluent calls to a built-in keyring.
+macro_rules! fluent_keyring {
+    ($($ty:ty),+) => {$(
+        impl $ty {
+            /// Start a [`Keyring::on_encrypt`] call.
+            pub fn on_encrypt(&self) -> OnEncryptFluentBuilder {
+                SharedKeyring::new(self.clone()).on_encrypt()
+            }
+
+            /// Start a [`Keyring::on_decrypt`] call.
+            pub fn on_decrypt(&self) -> OnDecryptFluentBuilder {
+                SharedKeyring::new(self.clone()).on_decrypt()
+            }
+        }
+    )+};
+}
+
+fluent_keyring!(
+    super::RawAesKeyring,
+    crate::aws_kms::hierarchical_keyring::HierarchicalKeyring
+);
