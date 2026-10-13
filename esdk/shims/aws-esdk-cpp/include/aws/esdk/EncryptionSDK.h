@@ -461,6 +461,7 @@ enum class AesWrappingAlgorithm : std::uint8_t {
 // Deliberately left incomplete here so no consumer can construct, copy, or inspect them.
 namespace detail {
 struct ClientConfigImpl;
+struct HttpClientImpl;
 struct EncryptStreamImpl;
 struct DecryptStreamImpl;
 struct KmsClientImpl;
@@ -504,6 +505,16 @@ public:
 /// AWS service-client configuration for AWS SDK clients.
 /// A field left unset defers to the ESDK Rust's default configuration resolution.
 /// One ClientConfig may configure multiple clients.
+/// An HTTP client and its connection pool.
+/// Pass one to several ClientConfigs to make their service clients share connections.
+class HttpClient {
+    std::shared_ptr<detail::HttpClientImpl> impl_;
+    friend class ClientConfig;
+
+public:
+    HttpClient();
+};
+
 class ClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
@@ -520,11 +531,14 @@ public:
     /// Credentials the client signs every request with, in place of the default credential chain.
     /// Throws ValidationException if the expiration is before the Unix epoch.
     ClientConfig& with_credentials(const Credentials& credentials);
+    /// HTTP client the service client sends requests through.
+    /// Unset gives each service client its own connection pool.
+    ClientConfig& with_http_client(const HttpClient& http_client);
 };
 
 /// KMS Client.
-/// Every KmsClient and DdbClient in a process shares one connection pool.
-/// Clients without explicit credentials also share one default credential chain.
+/// Each client has its own connection pool unless its ClientConfig sets an HttpClient.
+/// Clients without explicit credentials share one default credential chain.
 class KmsClient {
     std::shared_ptr<detail::KmsClientImpl> impl_;
     friend class KeyStore;
@@ -540,8 +554,8 @@ public:
 };
 
 /// DynamoDB client.
-/// Every KmsClient and DdbClient in a process shares one connection pool.
-/// Clients without explicit credentials also share one default credential chain.
+/// Each client has its own connection pool unless its ClientConfig sets an HttpClient.
+/// Clients without explicit credentials share one default credential chain.
 class DdbClient {
     std::shared_ptr<detail::DdbClientImpl> impl_;
     friend class KeyStore;

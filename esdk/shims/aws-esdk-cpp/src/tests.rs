@@ -1110,7 +1110,7 @@ fn create_sdk_config_defers_retry_when_unset() {
     let default_ref = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
         aws_config::BehaviorVersion::latest(),
     ));
-    let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
+    let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
     //= spec/shim/esdk-shim.md#service-client-configuration
     //= type=test
     //# - If the target does not supply a retry configuration, the shim MUST defer to
@@ -1130,7 +1130,7 @@ fn create_sdk_config_applies_every_field() {
     };
     cfg.retry.max_attempts = set_u32(7);
     cfg.retry.mode_adaptive = true;
-    let sdk = create_sdk_config(&cfg).expect("build sdk config");
+    let sdk = create_sdk_config(&cfg, None).expect("build sdk config");
 
     let region: Option<&str> = sdk.region().map(|r| r.as_ref());
     //= spec/shim/esdk-shim.md#service-client-configuration
@@ -1156,7 +1156,7 @@ fn create_sdk_config_applies_every_field() {
 fn create_sdk_config_adds_the_user_agent_once() {
     let ua = shim_user_agent();
     for _ in 0..2 {
-        let sdk = create_sdk_config(&unset_client_config()).expect("build sdk config");
+        let sdk = create_sdk_config(&unset_client_config(), None).expect("build sdk config");
         let app_name: &str = sdk.app_name().expect("app name is set").as_ref();
         assert_eq!(app_name.matches(ua.as_str()).count(), 1, "{app_name}");
     }

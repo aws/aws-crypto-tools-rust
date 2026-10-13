@@ -388,6 +388,10 @@ mod ffi {
         // destructor runs cxx's generated drop glue and drops the Rust Box.
         type MplDdbClient;
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
+        fn create_ddb_client_with_http_client(
+            value: &MplAwsClientConfig,
+            http_client: &HttpClient,
+        ) -> Result<Box<MplDdbClient>>;
         fn ddb_client_with_credentials(
             base: &MplDdbClient,
             credentials: &Credentials,
@@ -407,8 +411,15 @@ mod ffi {
         fn create_hierarchical_keyring(value: &HierarchicalKeyringInput) -> Result<Box<Keyring>>;
         fn create_raw_aes_keyring(value: &RawAesKeyringInput) -> Result<Box<Keyring>>;
 
+        type HttpClient;
+        fn create_http_client() -> Result<Box<HttpClient>>;
+
         type MplKmsClient;
         fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
+        fn create_kms_client_with_http_client(
+            value: &MplAwsClientConfig,
+            http_client: &HttpClient,
+        ) -> Result<Box<MplKmsClient>>;
         fn kms_client_with_credentials(
             base: &MplKmsClient,
             credentials: &Credentials,
@@ -456,6 +467,11 @@ impl ffi::OptCredentials {
 }
 
 // Resources
+
+/// An HTTP client, with its connection pool, that service clients can share.
+struct HttpClient {
+    inner: SharedHttpClient,
+}
 
 struct MplKmsClient {
     inner: aws_sdk_kms::Client,
@@ -1019,7 +1035,7 @@ fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
 }
 
 // Loaded once per process.
-// Every client config derives from it, so all clients share one credential chain and HTTP client.
+// Every client config derives from it, so clients without explicit credentials share one credential chain.
 static DEFAULT_SDK_CONFIG: LazyLock<Result<SdkConfig, String>> =
     LazyLock::new(load_default_sdk_config);
 
@@ -1031,12 +1047,8 @@ fn default_http_client() -> Option<SharedHttpClient> {
 }
 
 fn load_default_sdk_config() -> Result<SdkConfig, String> {
-    let mut loader = aws_config::defaults(BehaviorVersion::latest());
-    // A config without an HTTP client gives each service client its own connection pool.
-    if let Some(http_client) = default_http_client() {
-        loader = loader.http_client(http_client);
-    }
-    let shared_config = TOKIO_RUNTIME.block_on(loader.load());
+    let shared_config =
+        TOKIO_RUNTIME.block_on(aws_config::defaults(BehaviorVersion::latest()).load());
 
     let user_agent_string = shim_user_agent();
     let current_app_name = shared_config
@@ -1100,11 +1112,21 @@ fn credentials_target_to_core(
 //= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
 //# - The shim SHOULD allow one client configuration to be applied to multiple
 //# service clients.
-fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
+fn create_sdk_config(
+    input: &ffi::MplAwsClientConfig,
+    http_client: Option<&HttpClient>,
+) -> Result<SdkConfig, String> {
     let mut builder = DEFAULT_SDK_CONFIG
         .as_ref()
         .map_err(Clone::clone)?
         .to_builder();
+    // Without a shared HTTP client, each service client gets its own connection pool.
+    // It is set on the config so clients derived with `with_credentials` reuse it.
+    let http_client = match http_client {
+        Some(shared) => Some(shared.inner.clone()),
+        None => default_http_client(),
+    };
+    builder.set_http_client(http_client);
     if let Some(credentials) = input.credentials.as_option() {
         let credentials = credentials_target_to_core(credentials, "client configuration")?;
         // Static credentials need no cache.
@@ -1288,10 +1310,24 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
 //# - The shim MUST provide an operation that creates a KMS service client backed by
 //# the core ESDK.
 fn create_kms_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplKmsClient>, String> {
+    kms_client(input, None)
+}
+
+fn create_kms_client_with_http_client(
+    input: &ffi::MplAwsClientConfig,
+    http_client: &HttpClient,
+) -> Result<Box<MplKmsClient>, String> {
+    kms_client(input, Some(http_client))
+}
+
+fn kms_client(
+    input: &ffi::MplAwsClientConfig,
+    http_client: Option<&HttpClient>,
+) -> Result<Box<MplKmsClient>, String> {
     //= spec/shim/esdk-shim.md#create-kms-client
     //# - Creating a KMS client MUST apply the target-supplied client configuration, as
     //# defined in [Service client configuration](#service-client-configuration).
-    let sdk_config = create_sdk_config(input)?;
+    let sdk_config = create_sdk_config(input, http_client)?;
     Ok(Box::new(MplKmsClient {
         inner: aws_sdk_kms::Client::new(&sdk_config),
     }))
@@ -1301,13 +1337,38 @@ fn create_kms_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplKmsClient
 //# - The shim MUST provide an operation that creates a DynamoDB service client
 //# backed by the core ESDK.
 fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient>, String> {
+    ddb_client(input, None)
+}
+
+fn create_ddb_client_with_http_client(
+    input: &ffi::MplAwsClientConfig,
+    http_client: &HttpClient,
+) -> Result<Box<MplDdbClient>, String> {
+    ddb_client(input, Some(http_client))
+}
+
+fn ddb_client(
+    input: &ffi::MplAwsClientConfig,
+    http_client: Option<&HttpClient>,
+) -> Result<Box<MplDdbClient>, String> {
     //= spec/shim/esdk-shim.md#create-dynamodb-client
     //# - Creating a DynamoDB client MUST apply the target-supplied client configuration,
     //# as defined in [Service client configuration](#service-client-configuration).
-    let sdk_config = create_sdk_config(input)?;
+    let sdk_config = create_sdk_config(input, http_client)?;
     Ok(Box::new(MplDdbClient {
         inner: aws_sdk_dynamodb::Client::new(&sdk_config),
     }))
+}
+
+fn create_http_client() -> Result<Box<HttpClient>, String> {
+    let inner = default_http_client().ok_or_else(|| {
+        shim_err(
+            ffi::ShimErrorKind::Internal,
+            "create HTTP client",
+            "no default HTTP client is available",
+        )
+    })?;
+    Ok(Box::new(HttpClient { inner }))
 }
 
 // A derived client keeps the base client's configuration and HTTP client.
