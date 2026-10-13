@@ -551,6 +551,12 @@ public:
     /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
     /// This client is unchanged.
     KmsClient with_credentials(const Credentials& credentials) const;
+    /// Returns a copy of this client that adds `headers` (name, value) to every request.
+    /// The headers are signed with the request.
+    /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
+    /// This client is unchanged.
+    /// Throws ValidationException if `headers` is empty, or a name or value is empty, invalid, or repeated.
+    KmsClient with_headers(const std::vector<std::pair<std::string, std::string>>& headers) const;
 };
 
 /// DynamoDB client.

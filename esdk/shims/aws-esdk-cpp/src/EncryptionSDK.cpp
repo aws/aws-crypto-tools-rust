@@ -411,6 +411,17 @@ KmsClient KmsClient::with_credentials(const Credentials& credentials) const {
         detail::guard([&] { return ::ffi::kms_client_with_credentials(*impl_->handle, ffi_credentials); })));
 }
 
+KmsClient KmsClient::with_headers(
+    const std::vector<std::pair<std::string, std::string>>& headers) const {
+    ::rust::Vec<::ffi::HttpHeader> ffi_headers;
+    for (const auto& [name, value] : headers) {
+        ffi_headers.push_back(::ffi::HttpHeader{::rust::String(name), ::rust::String(value)});
+    }
+    return KmsClient(std::make_shared<detail::KmsClientImpl>(
+        detail::Retained{},
+        detail::guard([&] { return ::ffi::kms_client_with_headers(*impl_->handle, std::move(ffi_headers)); })));
+}
+
 DdbClient::DdbClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
