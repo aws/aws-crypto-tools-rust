@@ -40,7 +40,7 @@ impl Cmm for SigningSuiteOnlyCmm {
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         // The caller may leave the suite unset and let the default CMM choose,
         // so check the suite on the materials it returns.
-        let output = self.inner.get_encryption_materials(input).await?;
+        let output = Cmm::get_encryption_materials(&self.inner, input).await?;
         let suite = output.encryption_materials().algorithm_suite();
         if suite.asymmetric_signature_algorithm().is_none() {
             return Err(MplError::validation("algorithm suite must use signing"));
@@ -55,7 +55,7 @@ impl Cmm for SigningSuiteOnlyCmm {
         if !input.algorithm_suite_id().has_asymmetric_signing() {
             return Err(MplError::validation("algorithm suite must use signing"));
         }
-        self.inner.decrypt_materials(input).await
+        Cmm::decrypt_materials(&self.inner, input).await
     }
 }
 
