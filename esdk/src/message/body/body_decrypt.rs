@@ -60,6 +60,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
     let mut enc_content = vec![0u8; frame_length_usize];
     let mut result = vec![0; frame_length_usize];
     let mut aad = Vec::new();
+    let mut yielder = super::FrameYielder::new(frame_length_usize);
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= reason=The loop continuously reads and decrypts frames from the ciphertext stream, processing each frame as its bytes become available, until the final frame is encountered
@@ -68,9 +69,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
     //# wait for the end to the encrypted message to be indicated,
     //# or deserialize and/or decrypt the consumable bytes.
     loop {
-        if expected_frame.is_multiple_of(super::FRAMES_PER_YIELD) {
-            tokio::task::yield_now().await;
-        }
+        yielder.next_frame().await;
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# If deserializing [framed data](../data-format/message-body.md#framed-data),
         //# the Decrypt operation MUST use the first 4 bytes of a frame to determine

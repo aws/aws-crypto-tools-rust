@@ -282,9 +282,10 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
 }
 
 // On a single-threaded runtime, another task runs only when this one yields.
-// A large one-shot encrypt and decrypt must let it run.
+// A large one-shot encrypt and decrypt must let it run, at the default frame length and with large frames.
 #[tokio::test(flavor = "current_thread")]
 async fn test_large_message_yields_to_other_tasks() {
+    use std::num::NonZeroU32;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -302,27 +303,34 @@ async fn test_large_message_yields_to_other_tasks() {
     let keyring = test_keyring().await;
     let plaintext = vec![0u8; 4 << 20];
     let esdk = Esdk::default();
-    let ciphertext = esdk
-        .encrypt()
-        .plaintext(&plaintext)
-        .keyring(keyring.clone())
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .send()
-        .await
-        .unwrap()
-        .ciphertext;
-    let after_encrypt = ticks.load(Ordering::Relaxed);
-    assert!(after_encrypt > 0, "the ticker never ran during encrypt");
+    for frame_length in [4096, 1 << 20] {
+        let before_encrypt = ticks.load(Ordering::Relaxed);
+        let ciphertext = esdk
+            .encrypt()
+            .plaintext(&plaintext)
+            .keyring(keyring.clone())
+            .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
+            .frame_length(NonZeroU32::new(frame_length).unwrap())
+            .send()
+            .await
+            .unwrap()
+            .ciphertext;
+        let after_encrypt = ticks.load(Ordering::Relaxed);
+        assert!(
+            after_encrypt > before_encrypt,
+            "the ticker never ran during encrypt with {frame_length}-byte frames"
+        );
 
-    esdk.decrypt()
-        .ciphertext(&ciphertext)
-        .keyring(keyring)
-        .send()
-        .await
-        .unwrap();
-    assert!(
-        ticks.load(Ordering::Relaxed) > after_encrypt,
-        "the ticker never ran during decrypt"
-    );
+        esdk.decrypt()
+            .ciphertext(&ciphertext)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            ticks.load(Ordering::Relaxed) > after_encrypt,
+            "the ticker never ran during decrypt with {frame_length}-byte frames"
+        );
+    }
     ticker.abort();
 }
