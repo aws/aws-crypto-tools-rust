@@ -417,6 +417,11 @@ impl<'a> EncryptInputBuilder<'a> {
         self
     }
 
+    pub(crate) const fn set_plaintext(mut self, plaintext: Option<&'a [u8]>) -> Self {
+        self.plaintext = plaintext;
+        self
+    }
+
     /// Set the maximum number of encrypted data keys from an `Option`.
     /// `None` leaves it unset.
     /// To set a value, use [`Self::max_encrypted_data_keys`].
@@ -731,6 +736,11 @@ impl<'a> DecryptInputBuilder<'a> {
     #[must_use]
     pub(crate) const fn ciphertext(mut self, ciphertext: &'a [u8]) -> Self {
         self.ciphertext = Some(ciphertext);
+        self
+    }
+
+    pub(crate) const fn set_ciphertext(mut self, ciphertext: Option<&'a [u8]>) -> Self {
+        self.ciphertext = ciphertext;
         self
     }
 
