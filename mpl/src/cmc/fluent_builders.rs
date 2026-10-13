@@ -268,3 +268,32 @@ impl UpdateUsageMetadataFluentBuilder {
         Cmc::update_usage_metadata(&*self.handle.0, input).await
     }
 }
+
+/// Add the [`SharedCmc`] fluent calls to a built-in cache.
+macro_rules! fluent_cmc {
+    ($($ty:ty),+) => {$(
+        impl $ty {
+            /// Start a [`Cmc::put_cache_entry`] call.
+            pub fn put_cache_entry(&self) -> PutCacheEntryFluentBuilder {
+                SharedCmc::new(self.clone()).put_cache_entry()
+            }
+
+            /// Start a [`Cmc::get_cache_entry`] call.
+            pub fn get_cache_entry(&self) -> GetCacheEntryFluentBuilder {
+                SharedCmc::new(self.clone()).get_cache_entry()
+            }
+
+            /// Start a [`Cmc::delete_cache_entry`] call.
+            pub fn delete_cache_entry(&self) -> DeleteCacheEntryFluentBuilder {
+                SharedCmc::new(self.clone()).delete_cache_entry()
+            }
+
+            /// Start a [`Cmc::update_usage_metadata`] call.
+            pub fn update_usage_metadata(&self) -> UpdateUsageMetadataFluentBuilder {
+                SharedCmc::new(self.clone()).update_usage_metadata()
+            }
+        }
+    )+};
+}
+
+fluent_cmc!(super::DefaultCmc, super::LocalCmc, super::StormTrackingCmc);
