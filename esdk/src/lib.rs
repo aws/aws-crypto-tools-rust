@@ -110,7 +110,6 @@ pub mod error;
 pub use error::Error;
 mod decrypt;
 mod encrypt;
-pub mod io;
 mod suites;
 mod types;
 pub use types::*;
