@@ -323,9 +323,7 @@ impl Cmm for DuplicateEdkCmm {
         &self,
         request: GetEncryptionMaterialsInput,
     ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        let materials = self
-            .inner
-            .get_encryption_materials(request)
+        let materials = Cmm::get_encryption_materials(&self.inner, request)
             .await?
             .into_encryption_materials();
         let Some(first) = materials.encrypted_data_keys().first().cloned() else {
@@ -343,7 +341,7 @@ impl Cmm for DuplicateEdkCmm {
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        self.inner.decrypt_materials(request).await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 
@@ -663,14 +661,14 @@ impl Cmm for SpyCmm {
         *self.observed_max_plaintext_length.lock().unwrap() =
             Some(request.max_plaintext_length().map(|len| len as i64));
 
-        self.inner.get_encryption_materials(request).await
+        Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(
         &self,
         request: DecryptMaterialsInput,
     ) -> Result<DecryptMaterialsOutput, MplError> {
-        self.inner.decrypt_materials(request).await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 

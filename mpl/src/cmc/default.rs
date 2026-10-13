@@ -90,28 +90,28 @@ impl Cmc for DefaultCmc {
         &self,
         input: PutCacheEntryInput,
     ) -> Result<PutCacheEntryOutput, Error> {
-        self.inner.put_cache_entry(input).await
+        Cmc::put_cache_entry(&self.inner, input).await
     }
 
     async fn get_cache_entry(
         &self,
         input: GetCacheEntryInput,
     ) -> Result<GetCacheEntryOutput, Error> {
-        self.inner.get_cache_entry(input).await
+        Cmc::get_cache_entry(&self.inner, input).await
     }
 
     async fn delete_cache_entry(
         &self,
         input: DeleteCacheEntryInput,
     ) -> Result<DeleteCacheEntryOutput, Error> {
-        self.inner.delete_cache_entry(input).await
+        Cmc::delete_cache_entry(&self.inner, input).await
     }
 
     async fn update_usage_metadata(
         &self,
         input: UpdateUsageMetadataInput,
     ) -> Result<UpdateUsageMetadataOutput, Error> {
-        self.inner.update_usage_metadata(input).await
+        Cmc::update_usage_metadata(&self.inner, input).await
     }
 
     fn grace_period(&self) -> Option<Duration> {

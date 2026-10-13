@@ -372,7 +372,7 @@ impl cmm::Cmm for DecryptSpyCmm {
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
-        self.inner.decrypt_materials(request).await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 
