@@ -2,23 +2,88 @@
 // SPDX-License-Identifier: Apache-2.0
 //! # AWS Encryption SDK for Rust
 //!
-//! A native Rust implementation of the AWS Encryption SDK, providing
-//! client-side encryption using envelope encryption. Data is encrypted
-//! with a unique data key, which is itself encrypted by one or more
-//! wrapping keys (key providers / keyrings).
+//! The AWS Encryption SDK is a client-side encryption library.
+//! It encrypts data with a unique data key per message,
+//! and protects that data key with one or more wrapping keys you control, through a keyring.
+//! The result is an encrypted message that holds the encrypted data keys, the encryption context and the ciphertext.
 //!
-//! Configure an [`Esdk`] client with [`Esdk::builder`](crate::Esdk::builder),
-//! then start each operation with [`Esdk::encrypt`](crate::Esdk::encrypt) /
-//! [`Esdk::decrypt`](crate::Esdk::decrypt) (or the streaming variants) and finish it with `send`:
+//! ## Getting started
 //!
-//! ```ignore
-//! let esdk = Esdk::default();
-//! let encrypted = esdk.encrypt().plaintext(b"hello").keyring(keyring.clone()).send().await?;
-//! let decrypted = esdk.decrypt().ciphertext(&encrypted.ciphertext).keyring(keyring).send().await?;
+//! Add the SDK, the Material Providers Library (for keyrings) and an async runtime to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! aws-esdk = "2"
+//! aws-crypto-mpl = "0.1"
+//! tokio = { version = "1", features = ["full"] }
 //! ```
 //!
-//! The SDK supports both **framed** and **nonframed** message body formats,
-//! as well as **V1** and **V2** message format versions (V2 adds key commitment).
+//! Then create an [`Esdk`] client, and encrypt and decrypt with a keyring:
+//!
+//! ```
+//! use aws_crypto_mpl::{AesGcm, RawAesKeyring};
+//! use aws_esdk::{EncryptionContext, Esdk};
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // For demonstration only: load your wrapping key from a secure store.
+//! let keyring = RawAesKeyring::builder()
+//!     .key_namespace("my-key-namespace")
+//!     .key_name("my-key-name")
+//!     .wrapping_key(vec![0x2A; 32])
+//!     .wrapping_alg(AesGcm::Aes256Gcm)
+//!     .build()?;
+//!
+//! let mut encryption_context = EncryptionContext::new();
+//! encryption_context.insert("purpose", "example");
+//!
+//! let esdk = Esdk::default();
+//! let encrypted = esdk
+//!     .encrypt()
+//!     .plaintext(b"Hello World")
+//!     .encryption_context(encryption_context.clone())
+//!     .keyring(keyring.clone())
+//!     .send()
+//!     .await?;
+//! let decrypted = esdk
+//!     .decrypt()
+//!     .ciphertext(&encrypted.ciphertext)
+//!     .encryption_context(encryption_context)
+//!     .keyring(keyring)
+//!     .send()
+//!     .await?;
+//! assert_eq!(decrypted.plaintext, b"Hello World");
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Using the SDK
+//!
+//! [`Esdk`] is the client. Configure settings that apply to every call, such as the commitment policy,
+//! with [`Esdk::builder`]. Each operation is a method on the client that returns a fluent builder:
+//! set its members, then call `send`.
+//!
+//! | Operation | Fluent builder | Output |
+//! |---|---|---|
+//! | [`Esdk::encrypt`] | [`EncryptFluentBuilder`] | [`EncryptOutput`] |
+//! | [`Esdk::decrypt`] | [`DecryptFluentBuilder`] | [`DecryptOutput`] |
+//! | [`Esdk::encrypt_stream`] | [`EncryptStreamFluentBuilder`] | [`EncryptStreamOutput`] |
+//! | [`Esdk::decrypt_stream`] | [`DecryptStreamFluentBuilder`] | [`DecryptStreamOutput`] |
+//!
+//! Keyrings and cryptographic materials managers (CMMs) come from `aws_crypto_mpl`.
+//! To write your own, implement [`Keyring`] or [`Cmm`].
+//!
+//! Every operation fails with an [`Error`]; see the [`error`] module for how to handle each kind.
+//!
+//! ## Crate organization
+//!
+//! - The crate root holds the [`Esdk`] client, its configuration, the fluent builders and their outputs,
+//!   and the types they take: [`EncryptionContext`], [`AlgorithmSuiteId`], [`CommitmentPolicy`],
+//!   and the [`Keyring`] and [`Cmm`] traits.
+//! - [`error`] holds [`Error`] and the details each error carries.
+//!
+//! The SDK reads and writes framed and nonframed message bodies, and message format versions 1 and 2
+//! (version 2 adds key commitment).
 //!
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Project lint policy. We opt in to several rustc/clippy lint groups plus
