@@ -320,9 +320,6 @@ pub(crate) async fn encrypt_and_serialize_body(
     //# this operation MUST process as much of the consumable bytes as possible
     //# by [constructing regular frames](#construct-a-frame).
     loop {
-        if sequence_number.is_multiple_of(super::FRAMES_PER_YIELD) {
-            tokio::task::yield_now().await;
-        }
         in_size = read_up_to_peek(plaintext, &mut plaintext_frame, next_char).await?;
 
         //= spec/client-apis/encrypt.md#construct-the-body
