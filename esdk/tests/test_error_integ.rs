@@ -14,8 +14,8 @@ use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::structures::EncryptionContext;
 use aws_crypto_mpl::{Discovery, HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
+use aws_esdk::Esdk;
 use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
-use aws_esdk::{EncryptInput, encrypt};
 
 const TABLE: &str = "KeyStoreDdbTable";
 const KMS_KEY_ARN: &str =
@@ -77,12 +77,13 @@ async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str
         )
         .build()
         .expect("the keyring configuration is valid");
-    let input = EncryptInput::builder()
+    Esdk::default()
+        .encrypt()
         .plaintext(b"hello")
         .keyring(keyring)
-        .build()
-        .unwrap();
-    encrypt(&input).await.expect_err("the AWS call fails")
+        .send()
+        .await
+        .expect_err("the AWS call fails")
 }
 
 fn random_id() -> String {

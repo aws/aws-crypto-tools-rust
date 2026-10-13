@@ -124,7 +124,7 @@
 //= spec/shim/shim.md#streaming
 //# If a core library resource or operation supports [streamed](../client-apis/streaming.md) inputs/outputs,
 //# the shim library SHOULD support it as well.
-use aws_config::{AppName, Region, SdkConfig};
+use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_crypto_mpl::aws_config;
 use aws_crypto_mpl::aws_kms::hierarchical_keyring::HierarchicalKeyring;
 use aws_crypto_mpl::cmc::{
@@ -134,10 +134,15 @@ use aws_crypto_mpl::key_store::{Discovery, KeyStoreClient, KmsConfiguration, MrD
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::{EsdkAlgorithmSuiteId, EsdkCommitmentPolicy};
 use aws_crypto_mpl::{aws_sdk_dynamodb, aws_sdk_kms};
+use aws_esdk::Esdk;
 use aws_esdk::error::{Resource, RetryKind, Service};
+use aws_sdk_kms::config::{IdentityCache, SharedCredentialsProvider, SharedHttpClient};
+use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
+use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
+use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 // ESDK Rust's methods are all async. This runtime runs those async methods for C++ users.
 static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -294,9 +299,23 @@ mod ffi {
         max_attempts: OptU32,
     }
 
+    struct Credentials {
+        access_key_id: String,
+        secret_access_key: String,
+        session_token: OptString,
+        /// Time since the Unix epoch.
+        expiration: OptDuration,
+    }
+
+    struct OptCredentials {
+        set: bool,
+        value: Credentials,
+    }
+
     struct MplAwsClientConfig {
         region: OptString,
         retry: RetryConfig,
+        credentials: OptCredentials,
     }
 
     enum KmsConfigurationType {
@@ -369,6 +388,10 @@ mod ffi {
         // destructor runs cxx's generated drop glue and drops the Rust Box.
         type MplDdbClient;
         fn create_ddb_client(value: &MplAwsClientConfig) -> Result<Box<MplDdbClient>>;
+        fn ddb_client_with_credentials(
+            base: &MplDdbClient,
+            credentials: &Credentials,
+        ) -> Result<Box<MplDdbClient>>;
 
         type KeyStore;
         fn create_keystore(value: &KeyStoreConfig) -> Result<Box<KeyStore>>;
@@ -386,6 +409,10 @@ mod ffi {
 
         type MplKmsClient;
         fn create_kms_client(value: &MplAwsClientConfig) -> Result<Box<MplKmsClient>>;
+        fn kms_client_with_credentials(
+            base: &MplKmsClient,
+            credentials: &Credentials,
+        ) -> Result<Box<MplKmsClient>>;
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
         fn decrypt(input: &DecryptInput) -> Result<DecryptOutput>;
@@ -420,6 +447,13 @@ opt_to_option!(
     OptCommitmentPolicy => ffi::EsdkCommitmentPolicy,
     OptDuration => ffi::Duration,
 );
+
+impl ffi::OptCredentials {
+    /// `Some(&value)` when `set` is true, else `None`.
+    fn as_option(&self) -> Option<&ffi::Credentials> {
+        self.set.then_some(&self.value)
+    }
+}
 
 // Resources
 
@@ -617,11 +651,6 @@ fn classify_core_error(e: &aws_esdk::Error) -> ffi::ShimErrorKind {
         E::Internal(_) => S::Internal,
         _ => S::Unknown,
     }
-}
-
-/// Map a core input builder's `build()` error through the shim's error translation.
-fn build_core_input<T>(built: Result<T, aws_esdk::Error>) -> Result<T, String> {
-    built.map_err(core_err)
 }
 
 /// Validates a C++-supplied resource handle, then borrows the resource behind it.
@@ -989,15 +1018,25 @@ fn merge_user_agent(current_app_name: &str, shim_ua: &str) -> String {
     }
 }
 
-//= spec/shim/esdk-shim.md#service-client-configuration
-//= type=implication
-//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
-//# - The shim SHOULD allow one client configuration to be applied to multiple
-//# service clients.
-fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
-    let shared_config = TOKIO_RUNTIME.block_on(aws_config::load_defaults(
-        aws_config::BehaviorVersion::latest(),
-    ));
+// Loaded once per process.
+// Every client config derives from it, so all clients share one credential chain and HTTP client.
+static DEFAULT_SDK_CONFIG: LazyLock<Result<SdkConfig, String>> =
+    LazyLock::new(load_default_sdk_config);
+
+/// The AWS SDK's default HTTPS client.
+fn default_http_client() -> Option<SharedHttpClient> {
+    default_http_client_plugin_v2(BehaviorVersion::latest())?
+        .runtime_components(&RuntimeComponentsBuilder::new("aws-esdk-cpp"))
+        .http_client()
+}
+
+fn load_default_sdk_config() -> Result<SdkConfig, String> {
+    let mut loader = aws_config::defaults(BehaviorVersion::latest());
+    // A config without an HTTP client gives each service client its own connection pool.
+    if let Some(http_client) = default_http_client() {
+        loader = loader.http_client(http_client);
+    }
+    let shared_config = TOKIO_RUNTIME.block_on(loader.load());
 
     let user_agent_string = shim_user_agent();
     let current_app_name = shared_config
@@ -1012,7 +1051,68 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
             format!("invalid app name: {e}"),
         )
     })?;
-    let mut builder = shared_config.to_builder().app_name(app_name);
+    Ok(shared_config.to_builder().app_name(app_name).build())
+}
+
+/// Convert C++ static credentials to AWS SDK credentials.
+fn credentials_target_to_core(
+    input: &ffi::Credentials,
+    operation: &str,
+) -> Result<aws_sdk_kms::config::Credentials, String> {
+    // Messages name the empty field only; they never carry credential values.
+    for (field, value) in [
+        ("access key id", &input.access_key_id),
+        ("secret access key", &input.secret_access_key),
+    ] {
+        if value.is_empty() {
+            return Err(shim_err(
+                ffi::ShimErrorKind::Validation,
+                operation,
+                format!("{field} must not be empty"),
+            ));
+        }
+    }
+    let expiration = match input.expiration.to_option() {
+        None => None,
+        Some(d) => {
+            let since_epoch = from_ffi_duration(d, "credentials expiration", operation)?;
+            let Some(expiration) = SystemTime::UNIX_EPOCH.checked_add(since_epoch) else {
+                return Err(shim_err(
+                    ffi::ShimErrorKind::Validation,
+                    operation,
+                    "credentials expiration is out of range",
+                ));
+            };
+            Some(expiration)
+        }
+    };
+    Ok(aws_sdk_kms::config::Credentials::new(
+        input.access_key_id.as_str(),
+        input.secret_access_key.as_str(),
+        input.session_token.to_option(),
+        expiration,
+        "aws-esdk-cpp",
+    ))
+}
+
+//= spec/shim/esdk-shim.md#service-client-configuration
+//= type=implication
+//= reason=create_kms_client and create_ddb_client each build their SdkConfig from the same MplAwsClientConfig, so one configuration can be applied to multiple clients.
+//# - The shim SHOULD allow one client configuration to be applied to multiple
+//# service clients.
+fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, String> {
+    let mut builder = DEFAULT_SDK_CONFIG
+        .as_ref()
+        .map_err(Clone::clone)?
+        .to_builder();
+    if let Some(credentials) = input.credentials.as_option() {
+        let credentials = credentials_target_to_core(credentials, "client configuration")?;
+        // Static credentials need no cache.
+        // A cached copy would take a slot in the identity cache that every client shares.
+        builder = builder
+            .credentials_provider(SharedCredentialsProvider::new(credentials))
+            .identity_cache(IdentityCache::no_cache());
+    }
     //= spec/shim/esdk-shim.md#service-client-configuration
     //# - If the target does not supply a retry configuration, the shim MUST defer to
     //# the core ESDK's default retry configuration and MUST NOT substitute its own.
@@ -1032,11 +1132,16 @@ fn create_sdk_config(input: &ffi::MplAwsClientConfig) -> Result<SdkConfig, Strin
 
 // ESDK/MPL Client Operations
 
-fn apply_encrypt_options<'a>(
-    builder: aws_esdk::EncryptInputBuilder<'a>,
-    input: &ffi::EncryptInput<'_>,
-) -> Result<aws_esdk::EncryptInputBuilder<'a>, String> {
-    Ok(builder
+/// The core ESDK settings an `ffi::EncryptInput` carries besides its payload,
+/// encryption context, and keyring.
+struct EncryptSettings {
+    esdk: Esdk,
+    algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,
+    frame_length: Option<NonZeroU32>,
+}
+
+fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, String> {
+    let esdk = Esdk::builder()
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
         //# the core ESDK, converted as defined in
@@ -1048,16 +1153,6 @@ fn apply_encrypt_options<'a>(
                 .and_then(max_edks_target_to_core),
         )
         //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST provide the target-supplied frame length to the core ESDK,
-        //# converted as defined in [Frame length](#frame-length).
-        .set_frame_length(
-            input
-                .frame_length
-                .to_option()
-                .map(make_frame_length)
-                .transpose()?,
-        )
-        //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied commitment policy to the core ESDK,
         //# converted as defined in [Commitment policy](#commitment-policy).
         .set_commitment_policy(
@@ -1067,23 +1162,30 @@ fn apply_encrypt_options<'a>(
                 .map(commitment_policy_target_to_core)
                 .transpose()?,
         )
+        .build();
+    Ok(EncryptSettings {
+        esdk,
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST provide the target-supplied algorithm suite to the core ESDK,
         //# converted as defined in [Algorithm suite identifier](#algorithm-suite-identifier).
-        .set_algorithm_suite_id(
-            input
-                .algorithm_suite_id
-                .to_option()
-                .map(alg_id_target_to_core)
-                .transpose()?,
-        ))
+        algorithm_suite_id: input
+            .algorithm_suite_id
+            .to_option()
+            .map(alg_id_target_to_core)
+            .transpose()?,
+        //= spec/shim/esdk-shim.md#encrypt-inputs
+        //# - MUST provide the target-supplied frame length to the core ESDK,
+        //# converted as defined in [Frame length](#frame-length).
+        frame_length: input
+            .frame_length
+            .to_option()
+            .map(make_frame_length)
+            .transpose()?,
+    })
 }
 
-fn apply_decrypt_options<'a>(
-    builder: aws_esdk::DecryptInputBuilder<'a>,
-    input: &ffi::DecryptInput<'_>,
-) -> Result<aws_esdk::DecryptInputBuilder<'a>, String> {
-    Ok(builder
+fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Esdk, String> {
+    Ok(Esdk::builder()
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
         //# the core ESDK, converted as defined in
@@ -1103,7 +1205,8 @@ fn apply_decrypt_options<'a>(
                 .to_option()
                 .map(commitment_policy_target_to_core)
                 .transpose()?,
-        ))
+        )
+        .build())
 }
 
 fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
@@ -1112,7 +1215,10 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
     //# materials source is supplied.
     let keyring = require_handle(input.keyring, "keyring", "encrypt")?;
 
-    let builder = aws_esdk::EncryptInput::builder()
+    let settings = encrypt_settings(input)?;
+    let output = settings
+        .esdk
+        .encrypt()
         //= spec/shim/esdk-shim.md#encrypt-inputs
         //# - MUST pass the target-supplied plaintext to the core ESDK unmodified.
         .plaintext(input.plaintext)
@@ -1125,10 +1231,11 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= reason=The shim sets exactly one materials-source field (keyring) and never sets the cmm field.
         //# - Each of `encrypt` and `decrypt` MUST be supplied with exactly one materials
         //# source (see [Resources](#resources)).
-        .keyring(keyring.inner.clone());
-    let core_input = build_core_input(apply_encrypt_options(builder, input)?.build())?;
-    let output = TOKIO_RUNTIME.block_on(aws_esdk::encrypt(&core_input));
-    let output = output.map_err(core_err)?;
+        .keyring(keyring.inner.clone())
+        .set_algorithm_suite_id(settings.algorithm_suite_id)
+        .set_frame_length(settings.frame_length)
+        .send();
+    let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
     Ok(ffi::EncryptOutput {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1150,7 +1257,8 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
     //# materials source is supplied.
     let keyring = require_handle(input.keyring, "keyring", "decrypt")?;
 
-    let builder = aws_esdk::DecryptInput::builder()
+    let output = decrypt_client(input)?
+        .decrypt()
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST pass the target-supplied ciphertext to the core ESDK unmodified.
         .ciphertext(input.ciphertext)
@@ -1158,10 +1266,9 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //# - MUST provide the target-supplied encryption context to the core ESDK,
         //# converted as defined in [Encryption context](#encryption-context).
         .encryption_context(encryption_context_target_to_core(&input.encryption_context))
-        .keyring(keyring.inner.clone());
-    let core_input = build_core_input(apply_decrypt_options(builder, input)?.build())?;
-    let output = TOKIO_RUNTIME.block_on(aws_esdk::decrypt(&core_input));
-    let output = output.map_err(core_err)?;
+        .keyring(keyring.inner.clone())
+        .send();
+    let output = TOKIO_RUNTIME.block_on(output).map_err(core_err)?;
     Ok(ffi::DecryptOutput {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
@@ -1200,6 +1307,43 @@ fn create_ddb_client(input: &ffi::MplAwsClientConfig) -> Result<Box<MplDdbClient
     let sdk_config = create_sdk_config(input)?;
     Ok(Box::new(MplDdbClient {
         inner: aws_sdk_dynamodb::Client::new(&sdk_config),
+    }))
+}
+
+// A derived client keeps the base client's configuration and HTTP client.
+// See create_sdk_config for why static credentials skip the identity cache.
+
+fn kms_client_with_credentials(
+    base: &MplKmsClient,
+    credentials: &ffi::Credentials,
+) -> Result<Box<MplKmsClient>, String> {
+    let credentials = credentials_target_to_core(credentials, "KMS client with credentials")?;
+    let config = base
+        .inner
+        .config()
+        .to_builder()
+        .credentials_provider(credentials)
+        .identity_cache(IdentityCache::no_cache())
+        .build();
+    Ok(Box::new(MplKmsClient {
+        inner: aws_sdk_kms::Client::from_conf(config),
+    }))
+}
+
+fn ddb_client_with_credentials(
+    base: &MplDdbClient,
+    credentials: &ffi::Credentials,
+) -> Result<Box<MplDdbClient>, String> {
+    let credentials = credentials_target_to_core(credentials, "DynamoDB client with credentials")?;
+    let config = base
+        .inner
+        .config()
+        .to_builder()
+        .credentials_provider(credentials)
+        .identity_cache(IdentityCache::no_cache())
+        .build();
+    Ok(Box::new(MplDdbClient {
+        inner: aws_sdk_dynamodb::Client::from_conf(config),
     }))
 }
 
@@ -1433,6 +1577,44 @@ impl std::fmt::Debug for ChannelWriter {
     }
 }
 
+// The worker thread runs the ESDK operation with `block_on`,
+// so these polls block only that thread while they wait on C++.
+impl tokio::io::AsyncRead for ChannelReader {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let n = std::io::Read::read(self.get_mut(), buf.initialize_unfilled())?;
+        buf.advance(n);
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+impl tokio::io::AsyncWrite for ChannelWriter {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::task::Poll::Ready(std::io::Write::write(self.get_mut(), buf))
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
 /// One in-flight streaming operation connecting C++ to the worker thread that runs ESDK Rust
 struct StreamState {
     // Sends C++ chunks to the Rust ChannelReader
@@ -1559,46 +1741,18 @@ struct DecryptStream {
 //# target supplies incrementally.
 fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "encrypt_stream")?;
-    let core_input = aws_esdk::EncryptStreamInput::builder()
+    let settings = encrypt_settings(input)?;
+    let builder = settings
+        .esdk
+        .encrypt_stream()
         .keyring(keyring.inner.clone())
         .encryption_context(encryption_context_target_to_core(&input.encryption_context))
-        .set_algorithm_suite_id(
-            input
-                .algorithm_suite_id
-                .to_option()
-                .map(alg_id_target_to_core)
-                .transpose()?,
-        )
-        .set_frame_length(
-            input
-                .frame_length
-                .to_option()
-                .map(make_frame_length)
-                .transpose()?,
-        )
-        .set_max_encrypted_data_keys(
-            input
-                .max_encrypted_data_keys
-                .to_option()
-                .and_then(max_edks_target_to_core),
-        )
-        .set_commitment_policy(
-            input
-                .commitment_policy
-                .to_option()
-                .map(commitment_policy_target_to_core)
-                .transpose()?,
-        )
-        .build();
-    let core_input = build_core_input(core_input)?;
+        .set_algorithm_suite_id(settings.algorithm_suite_id)
+        .set_frame_length(settings.frame_length);
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
-                .block_on(aws_esdk::encrypt_stream(
-                    &mut reader,
-                    &mut writer,
-                    &core_input,
-                ))
+                .block_on(builder.send(&mut reader, &mut writer))
                 .map_err(core_err)?;
             //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
             //# - A successful finish step MUST return the same non-payload outputs as
@@ -1622,32 +1776,14 @@ fn encrypt_stream_finish(stream: &mut EncryptStream) -> Result<ffi::StreamFinish
 
 fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>, String> {
     let keyring = require_handle(input.keyring, "keyring", "decrypt_stream")?;
-    let core_input = aws_esdk::DecryptStreamInput::builder()
+    let builder = decrypt_client(input)?
+        .decrypt_stream()
         .keyring(keyring.inner.clone())
-        .encryption_context(encryption_context_target_to_core(&input.encryption_context))
-        .set_max_encrypted_data_keys(
-            input
-                .max_encrypted_data_keys
-                .to_option()
-                .and_then(max_edks_target_to_core),
-        )
-        .set_commitment_policy(
-            input
-                .commitment_policy
-                .to_option()
-                .map(commitment_policy_target_to_core)
-                .transpose()?,
-        )
-        .build();
-    let core_input = build_core_input(core_input)?;
+        .encryption_context(encryption_context_target_to_core(&input.encryption_context));
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
-                .block_on(aws_esdk::decrypt_stream(
-                    &mut reader,
-                    &mut writer,
-                    &core_input,
-                ))
+                .block_on(builder.send(&mut reader, &mut writer))
                 //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
                 //= reason=The core's refusal (and every other core error) propagates through this map_err; the shim releases only what the core's writer produced.
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,

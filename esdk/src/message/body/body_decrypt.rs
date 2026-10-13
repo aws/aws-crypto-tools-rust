@@ -8,15 +8,15 @@ use crate::error::{Kind, err};
 use crate::message::header::{ENDFRAME_SEQUENCE_NUMBER, HeaderInfo, START_SEQUENCE_NUMBER};
 use crate::message::serializable_types::{get_iv_length, get_tag_length};
 use crate::message::serialize_functions::{
-    read_bytes, read_seq_u32_bounded, read_u32, write_bytes,
+    read_bytes, read_seq_u32_bounded, read_u32, write_to_sink,
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
-use crate::types::{SafeRead, SafeWrite};
+use crate::types::{Sink, Source, Tee};
 use aws_mpl_primitives::aes_decrypt;
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
-fn release_previous_frame(
-    w: &mut dyn SafeWrite,
+async fn release_previous_frame(
+    w: &mut dyn Sink,
     result: &[u8],
     fail_if_multi_frame: bool,
 ) -> Result<(), Error> {
@@ -26,15 +26,15 @@ fn release_previous_frame(
             "streaming a multi-frame signed message would release plaintext before signature verification. Use the non-streaming `decrypt` API for multi-frame signed messages",
         ));
     }
-    write_bytes(w, result)
+    write_to_sink(w, result).await
 }
 
-pub(crate) fn read_and_decrypt_framed_message_body(
-    ciphertext: &mut dyn SafeRead,
-    w: &mut dyn SafeWrite,
+pub(crate) async fn read_and_decrypt_framed_message_body(
+    ciphertext: &mut dyn Source,
+    w: &mut dyn Sink,
     header: &HeaderInfo,
     key: &[u8],
-    sig_digest: &mut dyn SafeWrite,
+    sig_digest: &mut Tee,
     fail_if_multi_frame: bool,
 ) -> Result<Vec<u8>, Error> {
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -68,6 +68,9 @@ pub(crate) fn read_and_decrypt_framed_message_body(
     //# wait for the end to the encrypted message to be indicated,
     //# or deserialize and/or decrypt the consumable bytes.
     loop {
+        if expected_frame.is_multiple_of(super::FRAMES_PER_YIELD) {
+            tokio::task::yield_now().await;
+        }
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# If deserializing [framed data](../data-format/message-body.md#framed-data),
         //# the Decrypt operation MUST use the first 4 bytes of a frame to determine
@@ -86,7 +89,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //
         //= spec/data-format/message-body.md#regular-frame-sequence-number
         //# The sequence number MUST be interpreted as a UInt32.
-        let seq_num = read_u32(ciphertext, sig_digest)?;
+        let seq_num = read_u32(ciphertext, sig_digest).await?;
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# If the first 4 bytes have a value of 0xFFFFFFFF,
@@ -140,7 +143,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //
             //= spec/data-format/message-body.md#regular-frame-sequence-number
             //# The sequence number MUST be interpreted as a UInt32.
-            let seq_num: u32 = read_u32(ciphertext, sig_digest)?;
+            let seq_num: u32 = read_u32(ciphertext, sig_digest).await?;
             if seq_num != expected_frame {
                 return ser_err("final sequence number out of order");
             }
@@ -158,7 +161,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //= type=implication
             //= reason=read_bytes fills a &mut [u8] buffer; the bytes are not reinterpreted as any other type
             //# The IV MUST be interpreted as bytes.
-            read_bytes(ciphertext, &mut iv, sig_digest)?;
+            read_bytes(ciphertext, &mut iv, sig_digest).await?;
 
             // Encrypted Content Length + Encrypted Content
 
@@ -198,7 +201,8 @@ pub(crate) fn read_and_decrypt_framed_message_body(
                 "content length MUST NOT exceed the frame length",
                 &mut enc_content,
                 sig_digest,
-            )?;
+            )
+            .await?;
 
             // Authentication Tag
 
@@ -214,7 +218,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             //= type=implication
             //= reason=read_bytes fills a &mut [u8] buffer; the bytes are not reinterpreted as any other type
             //# The authentication tag MUST be interpreted as bytes.
-            read_bytes(ciphertext, &mut auth_tag, sig_digest)?;
+            read_bytes(ciphertext, &mut auth_tag, sig_digest).await?;
 
             // AAD
 
@@ -295,7 +299,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
             } else {
                 // write previous frame's data, now that we know we have another frame.
                 if expected_frame != START_SEQUENCE_NUMBER {
-                    release_previous_frame(w, &result, fail_if_multi_frame)?;
+                    release_previous_frame(w, &result, fail_if_multi_frame).await?;
                 }
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
                 //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
@@ -351,7 +355,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //# succeeds.
         // write previous frame's data, now that we know we have another frame.
         if expected_frame != START_SEQUENCE_NUMBER {
-            release_previous_frame(w, &result, fail_if_multi_frame)?;
+            release_previous_frame(w, &result, fail_if_multi_frame).await?;
         }
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -376,7 +380,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //# - The streamed Decrypt operation SHOULD input the serialized frame to the signature algorithm as soon as it is deserialized,
         //# such that the serialized frame isn't required to remain in memory to complete
         //# the [signature verification](#verify-the-signature).
-        read_bytes(ciphertext, &mut iv, sig_digest)?;
+        read_bytes(ciphertext, &mut iv, sig_digest).await?;
 
         // Encrypted Content
 
@@ -392,7 +396,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //= type=implication
         //= reason=read_bytes fills a &mut [u8] buffer; the bytes are not reinterpreted as any other type
         //# The encrypted content MUST be interpreted as bytes.
-        read_bytes(ciphertext, &mut enc_content, sig_digest)?;
+        read_bytes(ciphertext, &mut enc_content, sig_digest).await?;
 
         // Authentication Tag
 
@@ -404,7 +408,7 @@ pub(crate) fn read_and_decrypt_framed_message_body(
         //= type=implication
         //= reason=read_bytes fills a &mut [u8] buffer; the bytes are not reinterpreted as any other type
         //# The authentication tag MUST be interpreted as bytes.
-        read_bytes(ciphertext, &mut auth_tag, sig_digest)?;
+        read_bytes(ciphertext, &mut auth_tag, sig_digest).await?;
 
         // AAD
 
@@ -494,11 +498,11 @@ pub(crate) fn read_and_decrypt_framed_message_body(
     }
 }
 
-pub(crate) fn read_and_decrypt_non_framed_message_body(
-    ciphertext: &mut dyn SafeRead,
+pub(crate) async fn read_and_decrypt_non_framed_message_body(
+    ciphertext: &mut dyn Source,
     header: &HeaderInfo,
     key: &[u8],
-    sig_digest: &mut dyn SafeWrite,
+    sig_digest: &mut Tee,
 ) -> Result<Vec<u8>, Error> {
     // nonframed write-path requirements: ESDK only encrypts framed data
     //= spec/data-format/message-body.md#nonframed-data-iv
@@ -536,7 +540,8 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //= type=implication
     //= reason=read_vec returns Vec<u8>
     //# The IV MUST be interpreted as bytes.
-    let iv = serialize_functions::read_vec(ciphertext, get_iv_length(&header.suite), sig_digest)?;
+    let iv =
+        serialize_functions::read_vec(ciphertext, get_iv_length(&header.suite), sig_digest).await?;
     debug_assert_eq!(iv.len(), get_iv_length(&header.suite));
 
     //= spec/data-format/message-body.md#nonframed-data-encrypted-content-length
@@ -565,7 +570,8 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
         header::SAFE_MAX_ENCRYPT,
         "nonframed encrypted content length exceeds the 64 GiB maximum",
         sig_digest,
-    )?;
+    )
+    .await?;
     // read_seq_u64_bounded reads the u64 length then reads exactly that many bytes,
     // so enc_content.len() is guaranteed to equal the deserialized content length field.
     debug_assert!(matches!(
@@ -589,7 +595,8 @@ pub(crate) fn read_and_decrypt_non_framed_message_body(
     //= reason=read_vec returns Vec<u8>
     //# The authentication tag value MUST be interpreted as bytes.
     let auth_tag =
-        serialize_functions::read_vec(ciphertext, get_tag_length(&header.suite), sig_digest)?;
+        serialize_functions::read_vec(ciphertext, get_tag_length(&header.suite), sig_digest)
+            .await?;
     debug_assert_eq!(auth_tag.len(), get_tag_length(&header.suite));
     let mut aad = Vec::new();
 

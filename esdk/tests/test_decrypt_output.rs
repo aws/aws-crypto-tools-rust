@@ -16,19 +16,24 @@ use test_helpers::*;
 async fn test_decrypt_output_includes_encryption_context() {
     let keyring = test_keyring().await;
     let ec = small_encryption_context(SmallEncryptionContextVariation::AB);
-    let enc_input = EncryptInput::builder()
+    let ct = Esdk::default()
+        .encrypt()
         .plaintext(b"ec test")
         .encryption_context(ec.clone())
         .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
-    let dec_input = DecryptInput::builder_from_encrypt(&enc_input)
+    let result = Esdk::default()
+        .decrypt()
         .ciphertext(&ct)
-        .build()
+        .encryption_context(ec.clone())
+        .keyring(keyring.clone())
+        .send()
+        .await
         .unwrap();
-    let result = decrypt(&dec_input).await.unwrap();
     for (k, v) in ec.iter() {
         //= spec/client-apis/decrypt.md#output
         //= type=test
@@ -41,19 +46,23 @@ async fn test_decrypt_output_includes_encryption_context() {
 async fn test_decrypt_output_includes_algorithm_suite() {
     let keyring = test_keyring().await;
     let suite = AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey;
-    let enc_input = EncryptInput::builder()
+    let ct = Esdk::default()
+        .encrypt()
         .plaintext(b"suite test")
         .keyring(keyring.clone())
         .algorithm_suite_id(suite)
-        .build()
-        .unwrap();
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
-    let dec_input = DecryptInput::builder_from_encrypt(&enc_input)
+    let result = Esdk::default()
+        .decrypt()
         .ciphertext(&ct)
-        .build()
+        .keyring(keyring.clone())
+        .send()
+        .await
         .unwrap();
-    let result = decrypt(&dec_input).await.unwrap();
     //= spec/client-apis/decrypt.md#output
     //= type=test
     //# - Decrypt operation output MUST include an [algorithm suite](#algorithm-suite) value.
@@ -72,14 +81,16 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     // unlike tampering the post-authentication signature).
     let keyring = test_keyring().await;
     let pt = vec![0xABu8; 20];
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Esdk::default()
+        .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .frame_length(NonZeroU32::new(10).unwrap())
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // Tamper the first regular frame's auth tag: [seq_num(4)][IV(12)][content(10)][tag(16)].
     let body_start = find_body_start(&valid_ct, 10).expect("must find body");
@@ -87,22 +98,26 @@ async fn test_decrypt_no_unauthenticated_data_released() {
     let mut tampered_ct = valid_ct.clone();
     tampered_ct[tag_end] ^= 0xFF;
 
-    let valid_input = DecryptInput::builder_from_encrypt(&enc_input)
-        .ciphertext(&valid_ct)
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder_from_encrypt(&enc_input)
-        .ciphertext(&tampered_ct)
-        .build()
-        .unwrap();
-
     //= spec/client-apis/decrypt.md#authenticated-data
     //= type=test
     //= reason=Untampered ct decrypts; tampered body auth tag → Cryptographic error with no DecryptOutput, so unauthenticated plaintext is never released
     //# This operation MUST NOT release any unauthenticated plaintext or unauthenticated associated data.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring.clone())
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -116,14 +131,16 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let plaintext = b"discard on failure test";
     // frame_length 4096 exceeds the plaintext, keeping this a single-frame
     // message so decrypt_stream exercises signature verification.
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Esdk::default()
+        .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(4096).unwrap())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // Tamper with the last few bytes (signature area) to cause verification failure.
     let mut tampered_ct = valid_ct.clone();
@@ -134,10 +151,6 @@ async fn test_streaming_callers_must_discard_on_failure() {
     let mut valid_output = Vec::new();
     let mut tampered_cursor = std::io::Cursor::new(tampered_ct.as_slice());
     let mut tampered_output = Vec::new();
-    let stream_input = DecryptStreamInput::builder()
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#security-considerations
     //= type=test
@@ -145,13 +158,19 @@ async fn test_streaming_callers_must_discard_on_failure() {
     //# Additionally, if this operation fails, callers MUST discard the released plaintext and encryption context
     //# and MUST rollback any processing done due to the released plaintext or encryption context.
     assert!(
-        decrypt_stream(&mut valid_cursor, &mut valid_output, &stream_input)
+        Esdk::default()
+            .decrypt_stream()
+            .keyring(keyring.clone())
+            .send(&mut valid_cursor, &mut valid_output)
             .await
             .is_ok(),
         "valid ct must stream to Ok"
     );
     assert!(
-        decrypt_stream(&mut tampered_cursor, &mut tampered_output, &stream_input)
+        Esdk::default()
+            .decrypt_stream()
+            .keyring(keyring)
+            .send(&mut tampered_cursor, &mut tampered_output)
             .await
             .unwrap_err()
             .is_cryptographic(),

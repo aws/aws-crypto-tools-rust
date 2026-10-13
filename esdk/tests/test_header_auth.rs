@@ -8,7 +8,6 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::*;
 use test_helpers::*;
 
 /// Helper: find the V1 header auth start offset (immediately after header body).
@@ -157,20 +156,19 @@ async fn test_corrupted_header_auth_tag_fails_decrypt() {
         };
         ct[tag_offset] ^= 0xFF;
 
-        let dec_input = DecryptInput::builder()
-            .ciphertext(&ct)
-            .keyring(keyring.clone())
-            .commitment_policy(commitment_policy_for(version))
-            .build()
-            .unwrap();
-
         //= spec/client-apis/decrypt.md#verify-the-header
         //= type=test
         //= reason=Corrupted auth tag causes AES-GCM verification failure, proving the tag is checked.
         //# If this tag verification fails, this operation MUST immediately halt and fail.
-        let err = decrypt(&dec_input).await.expect_err(&format!(
-            "{version:?}: corrupted header auth tag must fail decryption"
-        ));
+        let err = esdk_with(commitment_policy_for(version))
+            .decrypt()
+            .ciphertext(&ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .expect_err(&format!(
+                "{version:?}: corrupted header auth tag must fail decryption"
+            ));
         assert!(
             err.is_cryptographic(),
             "{version:?}: expected Cryptographic error, got {err:?}"

@@ -41,14 +41,13 @@ async fn test_encrypt_non_committing_with_require_policy_fails() {
     let keyring = test_keyring().await;
     let pt = b"test encrypt non-committing fails";
     // Non-committing suite with RequireEncryptRequireDecrypt: should fail
-    let enc_input = EncryptInput::builder()
+    let result = esdk_with(CommitmentPolicy::RequireEncryptRequireDecrypt)
+        .encrypt()
         .plaintext(pt)
         .keyring(keyring)
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
-        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-        .build()
-        .unwrap();
-    let result = encrypt(&enc_input).await;
+        .send()
+        .await;
     //= spec/client-apis/encrypt.md#get-the-encryption-materials
     //= type=test
     //# If this [algorithm suite](../framework/algorithm-suites.md) is not supported by the [commitment policy](client.md#commitment-policy)
@@ -76,13 +75,12 @@ async fn test_decrypt_non_committing_with_require_policy_fails() {
     )
     .await;
     // Decrypt with RequireEncryptRequireDecrypt: should fail because suite is non-committing
-    let dec_input = DecryptInput::builder()
+    let result = esdk_with(CommitmentPolicy::RequireEncryptRequireDecrypt)
+        .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)
-        .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-        .build()
-        .unwrap();
-    let result = decrypt(&dec_input).await;
+        .send()
+        .await;
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //= type=test
     //# If the algorithm suite is not supported by the [commitment policy](client.md#commitment-policy)

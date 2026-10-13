@@ -144,15 +144,15 @@ async fn test_empty_plaintext_constructs_empty_final_frame() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_plaintext_length_bound_must_not_encrypt_longer() {
     let keyring = test_keyring().await;
-    let stream_input = EncryptStreamInput::builder()
-        .keyring(keyring)
-        .data_size(5)
-        .build()
-        .unwrap();
     let plaintext = vec![0xAAu8; 20];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    let result = encrypt_stream(&mut reader, &mut output, &stream_input).await;
+    let result = Esdk::default()
+        .encrypt_stream()
+        .keyring(keyring)
+        .data_size(5)
+        .send(&mut reader, &mut output)
+        .await;
 
     //= spec/client-apis/encrypt.md#plaintext-length-bound
     //= type=test
@@ -166,16 +166,16 @@ async fn test_plaintext_length_bound_must_not_encrypt_longer() {
 async fn test_construct_body_plaintext_length_bound_runtime_enforcement() {
     // Bound 10, plaintext 50, frame 10: encoder must fail mid-stream.
     let keyring = test_keyring().await;
-    let stream_input = EncryptStreamInput::builder()
-        .keyring(keyring)
-        .data_size(10)
-        .frame_length(NonZeroU32::new(10).unwrap())
-        .build()
-        .unwrap();
     let plaintext = vec![0xBBu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    let result = encrypt_stream(&mut reader, &mut output, &stream_input).await;
+    let result = Esdk::default()
+        .encrypt_stream()
+        .keyring(keyring)
+        .data_size(10)
+        .frame_length(NonZeroU32::new(10).unwrap())
+        .send(&mut reader, &mut output)
+        .await;
 
     //= spec/client-apis/encrypt.md#construct-the-body
     //= type=test

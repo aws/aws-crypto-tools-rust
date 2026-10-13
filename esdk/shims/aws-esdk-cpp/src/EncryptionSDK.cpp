@@ -281,6 +281,20 @@ struct ClientConfigImpl {
     ::ffi::MplAwsClientConfig cfg{};
 };
 
+struct CredentialsAccess {
+    static ::ffi::Credentials to_ffi(const Credentials& c) {
+        ::ffi::Credentials out;
+        out.access_key_id = ::rust::String(c.access_key_id_);
+        out.secret_access_key = ::rust::String(c.secret_access_key_);
+        out.session_token = to_opt(c.session_token_);
+        out.expiration = c.expiration_
+            ? ::ffi::OptDuration{true, detail::to_ffi(c.expiration_->time_since_epoch(),
+                                                      "credentials expiration")}
+            : ::ffi::OptDuration{false, {}};
+        return out;
+    }
+};
+
 // Resources
 
 // Resources may depend on other resources.
@@ -360,6 +374,10 @@ ClientConfig& ClientConfig::with_region(const std::string& r) {
     impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
     return *this;
 }
+ClientConfig& ClientConfig::with_credentials(const Credentials& credentials) {
+    impl_->cfg.credentials = ::ffi::OptCredentials{true, detail::CredentialsAccess::to_ffi(credentials)};
+    return *this;
+}
 
 // Service clients
 
@@ -368,10 +386,24 @@ KmsClient::KmsClient(const ClientConfig& cfg)
           detail::Retained{},
           detail::guard([&] { return ::ffi::create_kms_client(cfg.impl_->cfg); }))) {}
 
+KmsClient KmsClient::with_credentials(const Credentials& credentials) const {
+    const auto ffi_credentials = detail::CredentialsAccess::to_ffi(credentials);
+    return KmsClient(std::make_shared<detail::KmsClientImpl>(
+        detail::Retained{},
+        detail::guard([&] { return ::ffi::kms_client_with_credentials(*impl_->handle, ffi_credentials); })));
+}
+
 DdbClient::DdbClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
           detail::guard([&] { return ::ffi::create_ddb_client(cfg.impl_->cfg); }))) {}
+
+DdbClient DdbClient::with_credentials(const Credentials& credentials) const {
+    const auto ffi_credentials = detail::CredentialsAccess::to_ffi(credentials);
+    return DdbClient(std::make_shared<detail::DdbClientImpl>(
+        detail::Retained{},
+        detail::guard([&] { return ::ffi::ddb_client_with_credentials(*impl_->handle, ffi_credentials); })));
+}
 
 // KeyStore
 

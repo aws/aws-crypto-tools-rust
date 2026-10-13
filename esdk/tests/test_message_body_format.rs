@@ -929,12 +929,11 @@ async fn test_final_frame_auth_tag_authenticates_final_frame() {
     let mut tampered = ct.clone();
     tampered[final_frame.tag_offset] ^= 0xFF;
 
-    let dec_input = DecryptInput::builder()
+    let err = Esdk::default()
+        .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = decrypt(&dec_input)
+        .send()
         .await
         .expect_err("tampered final frame auth tag must cause decryption failure");
     assert!(
@@ -961,12 +960,11 @@ async fn test_regular_frame_auth_tag_authenticates_regular_frame() {
     let mut tampered = ct.clone();
     tampered[regular.tag_offset] ^= 0xFF;
 
-    let dec_input = DecryptInput::builder()
+    let err = Esdk::default()
+        .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = decrypt(&dec_input)
+        .send()
         .await
         .expect_err("tampered regular frame auth tag must cause decryption failure");
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -1014,12 +1012,11 @@ async fn test_regular_frame_seq_num_out_of_order_rejected() {
     tampered[frame1.seq_num_offset..frame1.seq_num_offset + 4]
         .copy_from_slice(&tampered_seq.to_be_bytes());
 
-    let dec_input = DecryptInput::builder()
+    let err = Esdk::default()
+        .decrypt()
         .ciphertext(&tampered)
         .keyring(keyring)
-        .build()
-        .unwrap();
-    let err = decrypt(&dec_input)
+        .send()
         .await
         .expect_err("out-of-order seq num must be rejected");
     assert!(

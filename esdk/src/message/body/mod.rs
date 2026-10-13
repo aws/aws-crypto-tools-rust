@@ -26,3 +26,7 @@ pub(crate) fn get_alg_suite(info: &AlgorithmSuite) -> Result<AesGcm, Error> {
         )),
     }
 }
+
+/// Frames processed between yields to the async runtime,
+/// so a large message does not hold one worker thread for its whole duration.
+pub(crate) const FRAMES_PER_YIELD: u32 = 64;

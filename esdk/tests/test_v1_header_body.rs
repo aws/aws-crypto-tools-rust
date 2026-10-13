@@ -138,8 +138,8 @@ async fn test_v1_header_message_id() {
 
 // TODO(native-mpl): relies on required-encryption-context CMM
 // (create_required_encryption_context_cmm) not yet implemented; native
-// aws-crypto-mpl exposes no required-EC CMM and EncryptInput has no
-// required_encryption_context_keys field.
+// aws-crypto-mpl exposes no required-EC CMM and the encrypt builder has no
+// required_encryption_context_keys setter.
 /*
 #[tokio::test(flavor = "multi_thread")]
 async fn test_v1_header_aad() {
@@ -176,12 +176,17 @@ async fn test_v1_header_aad() {
         .unwrap();
 
     let pt = b"aad required ec test";
-    let mut enc_input = EncryptInput::with_legacy_cmm(pt, ec.clone(), req_cmm);
-    enc_input.algorithm_suite_id =
-        Some(aws_mpl_legacy::suites::AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256);
-    enc_input.commitment_policy =
-        CommitmentPolicy::ForbidEncryptAllowDecrypt;
-    let ct = encrypt(&enc_input).await.unwrap().ciphertext;
+    let esdk = esdk_v1();
+    let ct = esdk
+        .encrypt()
+        .plaintext(pt)
+        .encryption_context(ec.clone())
+        .cmm(req_cmm)
+        .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmIv12Tag16HkdfSha256)
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // The AAD section of the header is at offset 20 (after Version+Type+AlgSuiteID+MessageID).
     // Search the raw header bytes for the required key — it MUST NOT appear.
@@ -209,8 +214,17 @@ async fn test_v1_header_aad() {
     );
 
     // Round-trip proves the message is still valid when required EC is supplied on decrypt
-    let dec_input = DecryptInput::builder().ciphertext(&ct).encryption_context(std::collections::HashMap::from([("required_key".to_string(), "required_val".to_string())])).keyring(keyring).commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt).build().unwrap();
-    let result = decrypt(&dec_input).await.unwrap();
+    let result = esdk
+        .decrypt()
+        .ciphertext(&ct)
+        .encryption_context(std::collections::HashMap::from([(
+            "required_key".to_string(),
+            "required_val".to_string(),
+        )]))
+        .keyring(keyring)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(
         result.plaintext, pt,
         "round-trip with required EC proves correctness"
@@ -475,19 +489,16 @@ async fn test_v1_reserved_bytes_tampered_rejected() {
     // Tamper: set reserved bytes to non-zero
     ct[reserved_offset] = 0x01;
 
-    let dec_input = DecryptInput::builder()
-        .ciphertext(&ct)
-        .keyring(keyring)
-        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build()
-        .unwrap();
-
     //= spec/data-format/message-header.md#reserved
     //= type=test
     //= reason=Tampering the reserved bytes to a non-zero value and verifying decrypt rejects it proves the reserved-bytes validation is enforced on the read path.
     //# A reserved sequence of 4 bytes
     //# that MUST have the value (hex) of `00 00 00 00`.
-    let err = decrypt(&dec_input)
+    let err = esdk_v1()
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("decrypt must reject tampered reserved bytes");
     assert!(
@@ -508,19 +519,16 @@ async fn test_v1_iv_length_mismatch_rejected() {
     assert_eq!(ct[iv_length_offset], 12, "baseline: IV length should be 12");
     ct[iv_length_offset] = 11;
 
-    let dec_input = DecryptInput::builder()
-        .ciphertext(&ct)
-        .keyring(keyring)
-        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build()
-        .unwrap();
-
     //= spec/data-format/message-header.md#iv-length
     //= type=test
     //= reason=Tampering the IV length byte to a value that does not match the algorithm suite and verifying decrypt rejects it proves the IV-length validation is enforced on the read path.
     //# This value MUST be equal to the [IV length](../framework/algorithm-suites.md#iv-length) value of the
     //# [algorithm suite](../framework/algorithm-suites.md) specified by the [Algorithm Suite ID](#algorithm-suite-id) field.
-    let err = decrypt(&dec_input)
+    let err = esdk_v1()
+        .decrypt()
+        .ciphertext(&ct)
+        .keyring(keyring)
+        .send()
         .await
         .expect_err("decrypt must reject mismatched IV length");
     assert!(

@@ -44,24 +44,27 @@ async fn test_decrypt_final_frame_content_length_validation() {
     }
 
     let keyring = test_keyring().await;
-    let valid_input = DecryptInput::builder()
-        .ciphertext(&valid_ct)
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder()
-        .ciphertext(&tampered_ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
     //= reason=Untampered ct decrypts; content_length tampered to 11 (> frame_length=10) → Serialization error
     //# If this is a final frame, this MUST be determined by using the [final frame encrypted content length](../data-format/message-body.md#final-frame-encrypted-content-length).
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_serialization(),
@@ -80,16 +83,6 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
     tampered_ct[tag_end] ^= 0xFF;
 
     let keyring = test_keyring().await;
-    let valid_input = DecryptInput::builder()
-        .ciphertext(&valid_ct)
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder()
-        .ciphertext(&tampered_ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -113,9 +106,22 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
     //= type=test
     //= reason=Untampered ct decrypts; tampered auth tag byte → Cryptographic error
     //# If this decryption fails, this operation MUST immediately halt and fail.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -235,16 +241,6 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
     tampered_ct[tamper_offset] ^= 0xFF;
 
     let keyring = test_keyring().await;
-    let valid_input = DecryptInput::builder()
-        .ciphertext(&valid_ct)
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder()
-        .ciphertext(&tampered_ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -255,9 +251,22 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
     //= type=test
     //= reason=Untampered body decrypts (Ok includes plaintext); tampered body returns Err with no DecryptOutput, so no plaintext released
     //# This operation MUST NOT release any unauthenticated plaintext.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -272,30 +281,21 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     // pending signature verification and never released.
     let keyring = test_keyring().await;
     let pt = vec![0xABu8; 16];
-    let enc_input = EncryptInput::builder()
+    let valid_ct = Esdk::default()
+        .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(4096).unwrap())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-        .build()
-        .unwrap();
-    let valid_ct = encrypt(&enc_input).await.unwrap().ciphertext;
+        .send()
+        .await
+        .unwrap()
+        .ciphertext;
 
     // Tamper with the last byte of the signature to cause verification failure
     let mut tampered_ct = valid_ct.clone();
     let last = tampered_ct.len() - 1;
     tampered_ct[last] ^= 0xFF;
-
-    let valid_input = DecryptInput::builder()
-        .ciphertext(&valid_ct)
-        .keyring(keyring.clone())
-        .build()
-        .unwrap();
-    let tampered_input = DecryptInput::builder()
-        .ciphertext(&tampered_ct)
-        .keyring(keyring)
-        .build()
-        .unwrap();
 
     //= spec/client-apis/decrypt.md#decrypt-the-message-body
     //= type=test
@@ -303,9 +303,22 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     //# Any plaintext decrypted from [nonframed data](../data-format/message-body.md#nonframed-data) or
     //# a final frame in a streamed Decrypt operation MUST NOT be released until [signature verification](#verify-the-signature)
     //# successfully completes.
-    assert!(decrypt(&valid_input).await.is_ok(), "valid ct must decrypt");
     assert!(
-        decrypt(&tampered_input)
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&valid_ct)
+            .keyring(keyring.clone())
+            .send()
+            .await
+            .is_ok(),
+        "valid ct must decrypt"
+    );
+    assert!(
+        Esdk::default()
+            .decrypt()
+            .ciphertext(&tampered_ct)
+            .keyring(keyring)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),

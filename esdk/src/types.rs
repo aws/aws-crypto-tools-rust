@@ -3,6 +3,7 @@
 //! Public API types for encrypt and decrypt operations.
 
 use crate::Error;
+use crate::builder::required;
 use crate::error::val_err;
 use std::num::{NonZeroU32, NonZeroUsize};
 
@@ -51,55 +52,57 @@ fn validate_material_source(
 //# This value MUST default to 4096 bytes.
 const DEFAULT_FRAME_LENGTH: NonZeroU32 = NonZeroU32::new(4096).expect("4096 is non-zero");
 
-/// Output bytes sink for streaming encrypt/decrypt operations.
-///
-/// Auto-implemented for any type that is `Write + Send + Sync + Debug`
-/// (e.g. `Vec<u8>`, `std::fs::File`).
+/// The output a streaming encrypt or decrypt writes to:
+/// any [`AsyncWrite`](tokio::io::AsyncWrite) that is `Unpin + Send`.
 //= spec/client-apis/streaming.md#outputs
 //# In order to support streaming, the operation MUST produce some output within a streaming framework.
 //
 //= spec/client-apis/streaming.md#outputs
-//= reason=SafeWrite wraps std::io::Write; write() is the output release mechanism
+//= reason=Sink is tokio's AsyncWrite; write is the output release mechanism
 //# - There MUST be a mechanism for output bytes to be released.
-pub trait SafeWrite: std::io::Write + Send + Sync + std::fmt::Debug {}
+#[doc(hidden)]
+pub trait Sink: tokio::io::AsyncWrite + Unpin + Send {}
 //= spec/client-apis/streaming.md#outputs
-//= reason=encrypt_stream/decrypt_stream return Result; Ok(()) is the end-of-output indicator
+//= reason=encrypt_stream/decrypt_stream flush the output and then return Ok, the end-of-output indicator
 //# - There MUST be a mechanism to indicate that the entire output has been released.
-impl<T: std::io::Write + Send + Sync + std::fmt::Debug> SafeWrite for T {}
+impl<T: tokio::io::AsyncWrite + Unpin + Send + ?Sized> Sink for T {}
 
-/// Input bytes source for streaming encrypt/decrypt operations.
-///
-/// Auto-implemented for any type that is `Read + Send + Sync + Debug`
-/// (e.g. `std::io::Cursor`, `std::fs::File`).
+/// The input a streaming encrypt or decrypt reads from:
+/// any [`AsyncRead`](tokio::io::AsyncRead) that is `Unpin + Send`.
 //= spec/client-apis/streaming.md#inputs
 //# In order to support streaming, the operation MUST accept some input within a streaming framework.
 //
 //= spec/client-apis/streaming.md#inputs
-//= reason=SafeRead wraps std::io::Read; read() is the input consumption mechanism
+//= reason=Source is tokio's AsyncRead; read is the input consumption mechanism
 //# - There MUST be a mechanism for input bytes to become consumable.
-pub trait SafeRead: std::io::Read + Send + Sync + std::fmt::Debug {}
+#[doc(hidden)]
+pub trait Source: tokio::io::AsyncRead + Unpin + Send {}
 //= spec/client-apis/streaming.md#overview
 //= type=implication
-//= reason=SafeRead wraps std::io::Read; the trait exposes only incremental reads, so callers never need to hold the full input in memory
+//= reason=Source is tokio's AsyncRead; it exposes only incremental reads, so callers never need to hold the full input in memory
 //# If an implementation requires holding the entire input in memory in order to perform the operation,
 //# that implementation SHOULD NOT provide an API that allows the caller to stream the operation.
 //
 //= spec/client-apis/streaming.md#overview
 //= type=implication
-//= reason=SafeRead wraps std::io::Read; processing happens incrementally regardless of input size
+//= reason=Source is tokio's AsyncRead; processing happens incrementally regardless of input size
 //# APIs that support streaming of the encrypt or decrypt operation SHOULD allow customers
 //# to be able to process arbitrarily large inputs with a finite amount of working memory.
 //
 //= spec/client-apis/encrypt.md#plaintext
 //= type=implication
-//= reason=SafeRead wraps std::io::Read; the plaintext flows in incrementally and is never held whole
+//= reason=Source is tokio's AsyncRead; the plaintext flows in incrementally and is never held whole
 //# If an implementation requires holding the input entire plaintext in memory in order to perform this operation,
 //# that implementation SHOULD NOT provide an API that allows this input to be streamed.
 //
 //= spec/client-apis/streaming.md#inputs
-//= reason=SafeRead wraps std::io::Read; read() returning Ok(0) is the EOF indicator
+//= reason=Source is tokio's AsyncRead; a read of zero bytes is the EOF indicator
 //# - There MUST be a mechanism to indicate that there are no more input bytes.
-impl<T: std::io::Read + Send + Sync + std::fmt::Debug> SafeRead for T {}
+impl<T: tokio::io::AsyncRead + Unpin + Send + ?Sized> Source for T {}
+
+/// An in-memory writer that mirrors the bytes a step reads or writes, such as a signature digest.
+#[doc(hidden)]
+pub type Tee = dyn std::io::Write + Send;
 
 /// Algorithm suite identifiers for the ESDK.
 ///
@@ -124,6 +127,9 @@ pub use aws_crypto_mpl::keyring::Keyring;
 /// The Material Providers Library's CMM trait, re-exported.
 /// Implement it to supply a custom CMM.
 pub use aws_crypto_mpl::cmm::Cmm;
+
+/// Put `#[async_trait]` on an `impl` of [`Keyring`] or [`Cmm`].
+pub use aws_crypto_mpl::async_trait;
 
 /// The Material Providers Library's conversion into a shared handle, re-exported.
 /// `keyring.into_shared()` returns a [`SharedKeyring`], reusing it if it already is one.
@@ -153,7 +159,7 @@ pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output for [`encrypt`](crate::encrypt).
+/// Output of [`Esdk::encrypt`](crate::Esdk::encrypt).
 //= spec/client-apis/encrypt.md#output
 //= type=exception
 //= reason=EncryptOutput provides encryption_context and algorithm_suite_id individually instead of a parsed header
@@ -178,7 +184,7 @@ pub struct EncryptOutput {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output for [`encrypt_stream`](crate::encrypt_stream).
+/// Output of [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream).
 pub struct EncryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub algorithm_suite_id: AlgorithmSuiteId,
@@ -187,7 +193,7 @@ pub struct EncryptStreamOutput {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output for [decrypt](crate::decrypt).
+/// Output of [`Esdk::decrypt`](crate::Esdk::decrypt).
 pub struct DecryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub algorithm_suite_id: AlgorithmSuiteId,
@@ -202,7 +208,7 @@ pub struct DecryptOutput {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output for [`decrypt_stream`](crate::decrypt_stream).
+/// Output of [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream).
 pub struct DecryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub algorithm_suite_id: AlgorithmSuiteId,
@@ -211,8 +217,7 @@ pub struct DecryptStreamOutput {
 }
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`encrypt`](crate::encrypt).
-/// Construct via [`EncryptInput::builder`].
+/// Input for [`Esdk::encrypt`](crate::Esdk::encrypt), built by its fluent builder.
 //= spec/client-apis/encrypt.md#input
 //= type=exception
 //= reason=EncryptInput plaintext is &[u8] with known length; Plaintext Length Bound is not implemented here
@@ -226,7 +231,7 @@ pub struct DecryptStreamOutput {
 //# a [Plaintext Length Bound](#plaintext-length-bound),
 //# the [Plaintext Length Bound](#plaintext-length-bound) MUST NOT be used during the Encrypt operation
 //# and MUST be ignored.
-pub struct EncryptInput<'a> {
+pub(crate) struct EncryptInput<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [Algorithm Suite](#algorithm-suite) argument.
     pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
@@ -252,97 +257,38 @@ pub struct EncryptInput<'a> {
     //= reason=&[u8] is a sequence of bytes by definition
     //# This MUST be a sequence of bytes.
     pub(crate) plaintext: &'a [u8],
-    //= spec/client-apis/client.md#initialization
-    //# - On client initialization,
-    //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
-    //
-    //= spec/client-apis/client.md#initialization
-    //# If no [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys) is provided
-    //# the default MUST result in no limit on the number of encrypted data keys (aside from the limit imposed by the [message format](../format/message-header.md)).
     pub(crate) max_encrypted_data_keys: Option<NonZeroUsize>,
-    //= spec/client-apis/client.md#commitment-policy
-    //= reason=CommitmentPolicy is a re-export of the MPL's aws_crypto_mpl::structures::EsdkCommitmentPolicy
-    //# The AWS Encryption SDK MUST use the ESDK [commitment policies](../framework/commitment-policy.md) defined in the Material Providers Library.
-    //
-    //= spec/client-apis/client.md#initialization
-    //= reason=EncryptInputBuilder::build() sets this field to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt when unset
-    //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    //
-    //= spec/client-apis/client.md#initialization
-    //= type=implication
-    //= reason=the field is private with a getter only, and encrypt()/decrypt() take &EncryptInput/&DecryptInput
-    //# Once a [commitment policy](#commitment-policy) has been set it SHOULD be immutable.
-    //
-    //= spec/client-apis/client.md#initialization
-    //# - On client initialization,
-    //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     pub(crate) commitment_policy: CommitmentPolicy,
 }
 
 impl<'a> EncryptInput<'a> {
     /// Start a fluent builder for `EncryptInput`.
     #[must_use]
-    pub fn builder() -> EncryptInputBuilder<'a> {
+    pub(crate) fn builder() -> EncryptInputBuilder<'a> {
         EncryptInputBuilder::default()
-    }
-
-    /// The algorithm suite, if one was set.
-    /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    #[must_use]
-    pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
-        self.algorithm_suite_id
-    }
-
-    /// Key-value pairs to associate with the encrypted data.
-    #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
-        &self.encryption_context
-    }
-
-    /// Bytes of plaintext data per frame.
-    #[must_use]
-    pub const fn frame_length(&self) -> NonZeroU32 {
-        self.frame_length
-    }
-
-    /// The keyring, if this input was built with one.
-    #[must_use]
-    pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.keyring.as_ref()
-    }
-
-    /// The CMM, if this input was built with one.
-    #[must_use]
-    pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.cmm.as_ref()
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
         resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
-
-    /// The data to be encrypted.
-    #[must_use]
-    pub const fn plaintext(&self) -> &'a [u8] {
-        self.plaintext
-    }
-
-    /// The cap on the number of encrypted data keys, if one was set.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-        self.max_encrypted_data_keys
-    }
-
-    /// The commitment policy.
-    #[must_use]
-    pub const fn commitment_policy(&self) -> CommitmentPolicy {
-        self.commitment_policy
-    }
 }
 
 /// Fluent builder for [`EncryptInput`].
+/// `get_x(&self) -> &Option<T>` getters for an input builder's `x: Option<T>` fields.
+macro_rules! getters {
+    ($($getter:ident: $field:ident -> $ty:ty),+ $(,)?) => {
+        $(
+            #[must_use]
+            #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
+            pub(crate) const fn $getter(&self) -> &Option<$ty> {
+                &self.$field
+            }
+        )+
+    };
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct EncryptInputBuilder<'a> {
+pub(crate) struct EncryptInputBuilder<'a> {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
     frame_length: Option<NonZeroU32>,
@@ -354,10 +300,19 @@ pub struct EncryptInputBuilder<'a> {
 }
 
 impl<'a> EncryptInputBuilder<'a> {
+    getters!(
+        get_plaintext: plaintext -> &'a [u8],
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+        get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
+        get_frame_length: frame_length -> NonZeroU32,
+    );
+
     /// Set the algorithm suite.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
+    pub(crate) const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
         self
     }
@@ -366,7 +321,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
-    pub const fn set_algorithm_suite_id(
+    pub(crate) const fn set_algorithm_suite_id(
         mut self,
         algorithm_suite_id: Option<AlgorithmSuiteId>,
     ) -> Self {
@@ -377,8 +332,8 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the key-value pairs to associate with the encrypted data.
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -386,7 +341,10 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
     #[must_use]
-    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+    pub(crate) fn set_encryption_context(
+        mut self,
+        encryption_context: Option<EncryptionContext>,
+    ) -> Self {
         self.encryption_context = encryption_context;
         self
     }
@@ -399,7 +357,7 @@ impl<'a> EncryptInputBuilder<'a> {
     //= reason=NonZeroU32 is greater than 0 and at most u32::MAX = 2^32 - 1
     //# This value MUST be greater than 0 and MUST NOT exceed the value 2^32 - 1.
     #[must_use]
-    pub const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
+    pub(crate) const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
@@ -408,7 +366,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+    pub(crate) const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
         self.frame_length = frame_length;
         self
     }
@@ -418,7 +376,7 @@ impl<'a> EncryptInputBuilder<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [keyring](../framework/keyring-interface.md) argument.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -427,7 +385,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::keyring`].
     #[must_use]
-    pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
+    pub(crate) fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
@@ -437,7 +395,7 @@ impl<'a> EncryptInputBuilder<'a> {
     //= spec/client-apis/encrypt.md#input
     //# - Encrypt operation input MUST accept an optional [cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -446,7 +404,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::cmm`].
     #[must_use]
-    pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
+    pub(crate) fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
         self
     }
@@ -454,18 +412,8 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the data to be encrypted.
     /// Required.
     #[must_use]
-    pub const fn plaintext(mut self, plaintext: &'a [u8]) -> Self {
+    pub(crate) const fn plaintext(mut self, plaintext: &'a [u8]) -> Self {
         self.plaintext = Some(plaintext);
-        self
-    }
-
-    /// Set the maximum number of encrypted data keys.
-    /// Default is no limit.
-    ///
-    /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
-        self.max_encrypted_data_keys = Some(n);
         self
     }
 
@@ -473,7 +421,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
-    pub const fn set_max_encrypted_data_keys(
+    pub(crate) const fn set_max_encrypted_data_keys(
         mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
     ) -> Self {
@@ -484,22 +432,10 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::encrypt`](crate::Esdk::encrypt) — the client provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
+    pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
-        self
-    }
-
-    /// Set the commitment policy from an `Option`.
-    /// `None` leaves it unset.
-    /// To set a value, use [`Self::commitment_policy`].
-    #[must_use]
-    pub const fn set_commitment_policy(
-        mut self,
-        commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
-        self.commitment_policy = commitment_policy;
         self
     }
 
@@ -508,10 +444,8 @@ impl<'a> EncryptInputBuilder<'a> {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no plaintext was set, or not exactly one of a keyring or CMM was set.
-    pub fn build(self) -> Result<EncryptInput<'a>, Error> {
-        let plaintext = self
-            .plaintext
-            .ok_or_else(|| val_err("a plaintext must be provided"))?;
+    pub(crate) fn build(self) -> Result<EncryptInput<'a>, Error> {
+        let plaintext = required(self.plaintext, "plaintext")?;
         //= spec/client-apis/encrypt.md#input
         //# The Encrypt operation MUST validate that exactly one keyring or CMM was provided by the caller.
         //
@@ -533,9 +467,8 @@ impl<'a> EncryptInputBuilder<'a> {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`encrypt_stream`](crate::encrypt_stream).
-/// Construct via [`EncryptStreamInput::builder`].
-pub struct EncryptStreamInput {
+/// Input for [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream), built by its fluent builder.
+pub(crate) struct EncryptStreamInput {
     pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
     pub(crate) encryption_context: EncryptionContext,
     pub(crate) frame_length: NonZeroU32,
@@ -555,67 +488,18 @@ pub struct EncryptStreamInput {
 impl EncryptStreamInput {
     /// Start a fluent builder for `EncryptStreamInput`.
     #[must_use]
-    pub fn builder() -> EncryptStreamInputBuilder {
+    pub(crate) fn builder() -> EncryptStreamInputBuilder {
         EncryptStreamInputBuilder::default()
-    }
-
-    /// The algorithm suite, if one was set.
-    /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
-    #[must_use]
-    pub const fn algorithm_suite_id(&self) -> Option<AlgorithmSuiteId> {
-        self.algorithm_suite_id
-    }
-
-    /// Key-value pairs to associate with the encrypted data.
-    #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
-        &self.encryption_context
-    }
-
-    /// Bytes of plaintext data per frame.
-    #[must_use]
-    pub const fn frame_length(&self) -> NonZeroU32 {
-        self.frame_length
-    }
-
-    /// The keyring, if this input was built with one.
-    #[must_use]
-    pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.keyring.as_ref()
-    }
-
-    /// The CMM, if this input was built with one.
-    #[must_use]
-    pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.cmm.as_ref()
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
         resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
-
-    /// The expected size of the input plaintext stream, if one was set.
-    #[must_use]
-    pub const fn data_size(&self) -> Option<usize> {
-        self.data_size
-    }
-
-    /// The cap on the number of encrypted data keys, if one was set.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-        self.max_encrypted_data_keys
-    }
-
-    /// The commitment policy.
-    #[must_use]
-    pub const fn commitment_policy(&self) -> CommitmentPolicy {
-        self.commitment_policy
-    }
 }
 
 /// Fluent builder for [`EncryptStreamInput`].
 #[derive(Debug, Clone, Default)]
-pub struct EncryptStreamInputBuilder {
+pub(crate) struct EncryptStreamInputBuilder {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
     frame_length: Option<NonZeroU32>,
@@ -627,10 +511,19 @@ pub struct EncryptStreamInputBuilder {
 }
 
 impl EncryptStreamInputBuilder {
+    getters!(
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+        get_algorithm_suite_id: algorithm_suite_id -> AlgorithmSuiteId,
+        get_frame_length: frame_length -> NonZeroU32,
+        get_data_size: data_size -> usize,
+    );
+
     /// Set the algorithm suite.
     /// See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     #[must_use]
-    pub const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
+    pub(crate) const fn algorithm_suite_id(mut self, id: AlgorithmSuiteId) -> Self {
         self.algorithm_suite_id = Some(id);
         self
     }
@@ -639,7 +532,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::algorithm_suite_id`].
     #[must_use]
-    pub const fn set_algorithm_suite_id(
+    pub(crate) const fn set_algorithm_suite_id(
         mut self,
         algorithm_suite_id: Option<AlgorithmSuiteId>,
     ) -> Self {
@@ -650,8 +543,8 @@ impl EncryptStreamInputBuilder {
     /// Set the key-value pairs to associate with the encrypted data.
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -659,7 +552,10 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
     #[must_use]
-    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+    pub(crate) fn set_encryption_context(
+        mut self,
+        encryption_context: Option<EncryptionContext>,
+    ) -> Self {
         self.encryption_context = encryption_context;
         self
     }
@@ -667,7 +563,7 @@ impl EncryptStreamInputBuilder {
     /// Set the bytes of plaintext data per frame.
     /// Default is 4096.
     #[must_use]
-    pub const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
+    pub(crate) const fn frame_length(mut self, frame_length: NonZeroU32) -> Self {
         self.frame_length = Some(frame_length);
         self
     }
@@ -676,7 +572,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::frame_length`].
     #[must_use]
-    pub const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
+    pub(crate) const fn set_frame_length(mut self, frame_length: Option<NonZeroU32>) -> Self {
         self.frame_length = frame_length;
         self
     }
@@ -684,7 +580,7 @@ impl EncryptStreamInputBuilder {
     /// Set the keyring.
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -693,7 +589,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::keyring`].
     #[must_use]
-    pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
+    pub(crate) fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
@@ -701,7 +597,7 @@ impl EncryptStreamInputBuilder {
     /// Set the cryptographic materials manager (CMM).
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -710,7 +606,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::cmm`].
     #[must_use]
-    pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
+    pub(crate) fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
         self
     }
@@ -721,7 +617,7 @@ impl EncryptStreamInputBuilder {
     /// CMM or keyring requires the plaintext length up front (e.g. for a
     /// signing scheme that pre-computes a digest size).
     #[must_use]
-    pub const fn data_size(mut self, data_size: usize) -> Self {
+    pub(crate) const fn data_size(mut self, data_size: usize) -> Self {
         self.data_size = Some(data_size);
         self
     }
@@ -730,19 +626,8 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::data_size`].
     #[must_use]
-    pub const fn set_data_size(mut self, data_size: Option<usize>) -> Self {
+    pub(crate) const fn set_data_size(mut self, data_size: Option<usize>) -> Self {
         self.data_size = data_size;
-        self
-    }
-
-    /// Set the maximum number of encrypted data keys.
-    /// Default is no limit.
-    ///
-    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
-    /// provides this.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
-        self.max_encrypted_data_keys = Some(n);
         self
     }
 
@@ -750,7 +635,7 @@ impl EncryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
-    pub const fn set_max_encrypted_data_keys(
+    pub(crate) const fn set_max_encrypted_data_keys(
         mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
     ) -> Self {
@@ -761,23 +646,10 @@ impl EncryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream) — the client
-    /// provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
+    pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
-        self
-    }
-
-    /// Set the commitment policy from an `Option`.
-    /// `None` leaves it unset.
-    /// To set a value, use [`Self::commitment_policy`].
-    #[must_use]
-    pub const fn set_commitment_policy(
-        mut self,
-        commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
-        self.commitment_policy = commitment_policy;
         self
     }
 
@@ -786,7 +658,7 @@ impl EncryptStreamInputBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set.
-    pub fn build(self) -> Result<EncryptStreamInput, Error> {
+    pub(crate) fn build(self) -> Result<EncryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(EncryptStreamInput {
             algorithm_suite_id: self.algorithm_suite_id,
@@ -803,9 +675,8 @@ impl EncryptStreamInputBuilder {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`decrypt`](crate::decrypt).
-/// Construct via [`DecryptInput::builder`].
-pub struct DecryptInput<'a> {
+/// Input for [`Esdk::decrypt`](crate::Esdk::decrypt), built by its fluent builder.
+pub(crate) struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept a required [Encrypted Message](#encrypted-message) argument.
     //
@@ -827,69 +698,18 @@ pub struct DecryptInput<'a> {
 impl<'a> DecryptInput<'a> {
     /// Start a fluent builder for `DecryptInput`.
     #[must_use]
-    pub fn builder() -> DecryptInputBuilder<'a> {
+    pub(crate) fn builder() -> DecryptInputBuilder<'a> {
         DecryptInputBuilder::default()
-    }
-
-    /// Start a `DecryptInput` builder with the encryption context, keyring or CMM,
-    /// commitment policy, and EDK cap of `e`.
-    /// Set the ciphertext before building.
-    #[must_use]
-    pub fn builder_from_encrypt(e: &EncryptInput<'_>) -> DecryptInputBuilder<'a> {
-        DecryptInputBuilder {
-            ciphertext: None,
-            encryption_context: Some(e.encryption_context.clone()),
-            keyring: e.keyring().cloned(),
-            cmm: e.cmm().cloned(),
-            max_encrypted_data_keys: e.max_encrypted_data_keys,
-            commitment_policy: Some(e.commitment_policy),
-        }
-    }
-
-    /// The encrypted message to decrypt.
-    #[must_use]
-    pub const fn ciphertext(&self) -> &'a [u8] {
-        self.ciphertext
-    }
-
-    /// The encryption context to verify against the encrypted message.
-    #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
-        &self.encryption_context
-    }
-
-    /// The keyring, if this input was built with one.
-    #[must_use]
-    pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.keyring.as_ref()
-    }
-
-    /// The CMM, if this input was built with one.
-    #[must_use]
-    pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.cmm.as_ref()
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
         resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
-
-    /// The cap on the number of encrypted data keys, if one was set.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-        self.max_encrypted_data_keys
-    }
-
-    /// The commitment policy.
-    #[must_use]
-    pub const fn commitment_policy(&self) -> CommitmentPolicy {
-        self.commitment_policy
-    }
 }
 
 /// Fluent builder for [`DecryptInput`].
 #[derive(Debug, Clone, Default)]
-pub struct DecryptInputBuilder<'a> {
+pub(crate) struct DecryptInputBuilder<'a> {
     ciphertext: Option<&'a [u8]>,
     encryption_context: Option<EncryptionContext>,
     keyring: Option<SharedKeyring>,
@@ -899,10 +719,17 @@ pub struct DecryptInputBuilder<'a> {
 }
 
 impl<'a> DecryptInputBuilder<'a> {
+    getters!(
+        get_ciphertext: ciphertext -> &'a [u8],
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+    );
+
     /// Set the encrypted message (the serialized AWS Encryption SDK message) to decrypt.
     /// Required.
     #[must_use]
-    pub const fn ciphertext(mut self, ciphertext: &'a [u8]) -> Self {
+    pub(crate) const fn ciphertext(mut self, ciphertext: &'a [u8]) -> Self {
         self.ciphertext = Some(ciphertext);
         self
     }
@@ -912,8 +739,8 @@ impl<'a> DecryptInputBuilder<'a> {
     /// context (subset check).
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -921,7 +748,10 @@ impl<'a> DecryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
     #[must_use]
-    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+    pub(crate) fn set_encryption_context(
+        mut self,
+        encryption_context: Option<EncryptionContext>,
+    ) -> Self {
         self.encryption_context = encryption_context;
         self
     }
@@ -931,7 +761,7 @@ impl<'a> DecryptInputBuilder<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Keyring](../framework/keyring-interface.md) argument.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -940,7 +770,7 @@ impl<'a> DecryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::keyring`].
     #[must_use]
-    pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
+    pub(crate) fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
@@ -950,7 +780,7 @@ impl<'a> DecryptInputBuilder<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept an optional [Cryptographic Materials Manager (CMM)](../framework/cmm-interface.md) argument.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -959,18 +789,8 @@ impl<'a> DecryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::cmm`].
     #[must_use]
-    pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
+    pub(crate) fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
-        self
-    }
-
-    /// Set the maximum number of encrypted data keys.
-    /// Default is no limit.
-    ///
-    /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
-        self.max_encrypted_data_keys = Some(n);
         self
     }
 
@@ -978,7 +798,7 @@ impl<'a> DecryptInputBuilder<'a> {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
-    pub const fn set_max_encrypted_data_keys(
+    pub(crate) const fn set_max_encrypted_data_keys(
         mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
     ) -> Self {
@@ -989,22 +809,10 @@ impl<'a> DecryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::decrypt`](crate::Esdk::decrypt) — the client provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
+    pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
-        self
-    }
-
-    /// Set the commitment policy from an `Option`.
-    /// `None` leaves it unset.
-    /// To set a value, use [`Self::commitment_policy`].
-    #[must_use]
-    pub const fn set_commitment_policy(
-        mut self,
-        commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
-        self.commitment_policy = commitment_policy;
         self
     }
 
@@ -1013,10 +821,8 @@ impl<'a> DecryptInputBuilder<'a> {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): no ciphertext was set, or not exactly one of a keyring or CMM was set.
-    pub fn build(self) -> Result<DecryptInput<'a>, Error> {
-        let ciphertext = self
-            .ciphertext
-            .ok_or_else(|| val_err("a ciphertext must be provided"))?;
+    pub(crate) fn build(self) -> Result<DecryptInput<'a>, Error> {
+        let ciphertext = required(self.ciphertext, "ciphertext")?;
         //= spec/client-apis/decrypt.md#input
         //# The Decrypt operation MUST validate that exactly one of a keyring or CMM was provided by the caller.
         //
@@ -1036,9 +842,8 @@ impl<'a> DecryptInputBuilder<'a> {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`decrypt_stream`](crate::decrypt_stream).
-/// Construct via [`DecryptStreamInput::builder`].
-pub struct DecryptStreamInput {
+/// Input for [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream), built by its fluent builder.
+pub(crate) struct DecryptStreamInput {
     pub(crate) encryption_context: EncryptionContext,
     /// The keyring to use for this operation.
     pub(crate) keyring: Option<SharedKeyring>,
@@ -1051,61 +856,18 @@ pub struct DecryptStreamInput {
 impl DecryptStreamInput {
     /// Start a fluent builder for `DecryptStreamInput`.
     #[must_use]
-    pub fn builder() -> DecryptStreamInputBuilder {
+    pub(crate) fn builder() -> DecryptStreamInputBuilder {
         DecryptStreamInputBuilder::default()
-    }
-
-    /// Start a `DecryptStreamInput` builder with the encryption context, keyring or CMM,
-    /// commitment policy, and EDK cap of `e`.
-    #[must_use]
-    pub fn builder_from_encrypt(e: &EncryptInput<'_>) -> DecryptStreamInputBuilder {
-        DecryptStreamInputBuilder {
-            encryption_context: Some(e.encryption_context.clone()),
-            keyring: e.keyring().cloned(),
-            cmm: e.cmm().cloned(),
-            max_encrypted_data_keys: e.max_encrypted_data_keys,
-            commitment_policy: Some(e.commitment_policy),
-        }
-    }
-
-    /// The encryption context to verify against the encrypted message.
-    #[must_use]
-    pub const fn encryption_context(&self) -> &EncryptionContext {
-        &self.encryption_context
-    }
-
-    /// The keyring, if this input was built with one.
-    #[must_use]
-    pub const fn keyring(&self) -> Option<&SharedKeyring> {
-        self.keyring.as_ref()
-    }
-
-    /// The CMM, if this input was built with one.
-    #[must_use]
-    pub const fn cmm(&self) -> Option<&SharedCmm> {
-        self.cmm.as_ref()
     }
 
     pub(crate) fn material_source(&self) -> Option<MaterialSource> {
         resolve_material_source(self.keyring.as_ref(), self.cmm.as_ref())
     }
-
-    /// The cap on the number of encrypted data keys, if one was set.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(&self) -> Option<NonZeroUsize> {
-        self.max_encrypted_data_keys
-    }
-
-    /// The commitment policy.
-    #[must_use]
-    pub const fn commitment_policy(&self) -> CommitmentPolicy {
-        self.commitment_policy
-    }
 }
 
 /// Fluent builder for [`DecryptStreamInput`].
 #[derive(Debug, Clone, Default)]
-pub struct DecryptStreamInputBuilder {
+pub(crate) struct DecryptStreamInputBuilder {
     encryption_context: Option<EncryptionContext>,
     keyring: Option<SharedKeyring>,
     cmm: Option<SharedCmm>,
@@ -1114,13 +876,19 @@ pub struct DecryptStreamInputBuilder {
 }
 
 impl DecryptStreamInputBuilder {
+    getters!(
+        get_encryption_context: encryption_context -> EncryptionContext,
+        get_keyring: keyring -> SharedKeyring,
+        get_cmm: cmm -> SharedCmm,
+    );
+
     /// Set the encryption context to verify against the encrypted message.
     /// If non-empty, `decrypt_stream` requires every entry to be present in the message's
     /// encryption context (subset check).
     /// Default is empty.
     #[must_use]
-    pub fn encryption_context(mut self, ec: EncryptionContext) -> Self {
-        self.encryption_context = Some(ec);
+    pub(crate) fn encryption_context(mut self, ec: impl Into<EncryptionContext>) -> Self {
+        self.encryption_context = Some(ec.into());
         self
     }
 
@@ -1128,7 +896,10 @@ impl DecryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::encryption_context`].
     #[must_use]
-    pub fn set_encryption_context(mut self, encryption_context: Option<EncryptionContext>) -> Self {
+    pub(crate) fn set_encryption_context(
+        mut self,
+        encryption_context: Option<EncryptionContext>,
+    ) -> Self {
         self.encryption_context = encryption_context;
         self
     }
@@ -1136,7 +907,7 @@ impl DecryptStreamInputBuilder {
     /// Set the keyring.
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
+    pub(crate) fn keyring(mut self, keyring: impl Keyring + 'static) -> Self {
         self.keyring = Some(keyring.into_shared());
         self
     }
@@ -1145,7 +916,7 @@ impl DecryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::keyring`].
     #[must_use]
-    pub fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
+    pub(crate) fn set_keyring(mut self, keyring: Option<SharedKeyring>) -> Self {
         self.keyring = keyring;
         self
     }
@@ -1153,7 +924,7 @@ impl DecryptStreamInputBuilder {
     /// Set the cryptographic materials manager (CMM).
     /// Provide exactly one of a keyring or a CMM.
     #[must_use]
-    pub fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
+    pub(crate) fn cmm(mut self, cmm: impl Cmm + 'static) -> Self {
         self.cmm = Some(cmm.into_shared());
         self
     }
@@ -1162,19 +933,8 @@ impl DecryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::cmm`].
     #[must_use]
-    pub fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
+    pub(crate) fn set_cmm(mut self, cmm: Option<SharedCmm>) -> Self {
         self.cmm = cmm;
-        self
-    }
-
-    /// Set the maximum number of encrypted data keys.
-    /// Default is no limit.
-    ///
-    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
-    /// provides this.
-    #[must_use]
-    pub const fn max_encrypted_data_keys(mut self, n: NonZeroUsize) -> Self {
-        self.max_encrypted_data_keys = Some(n);
         self
     }
 
@@ -1182,7 +942,7 @@ impl DecryptStreamInputBuilder {
     /// `None` leaves it unset.
     /// To set a value, use [`Self::max_encrypted_data_keys`].
     #[must_use]
-    pub const fn set_max_encrypted_data_keys(
+    pub(crate) const fn set_max_encrypted_data_keys(
         mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
     ) -> Self {
@@ -1193,23 +953,10 @@ impl DecryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// Leave unset when calling [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream) — the client
-    /// provides this.
+    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
     #[must_use]
-    pub const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
+    pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
-        self
-    }
-
-    /// Set the commitment policy from an `Option`.
-    /// `None` leaves it unset.
-    /// To set a value, use [`Self::commitment_policy`].
-    #[must_use]
-    pub const fn set_commitment_policy(
-        mut self,
-        commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
-        self.commitment_policy = commitment_policy;
         self
     }
 
@@ -1218,7 +965,7 @@ impl DecryptStreamInputBuilder {
     /// # Errors
     ///
     /// - [`Validation`](crate::Error::Validation): not exactly one of a keyring or CMM was set.
-    pub fn build(self) -> Result<DecryptStreamInput, Error> {
+    pub(crate) fn build(self) -> Result<DecryptStreamInput, Error> {
         validate_material_source(self.keyring.as_ref(), self.cmm.as_ref())?;
         Ok(DecryptStreamInput {
             encryption_context: self.encryption_context.unwrap_or_default(),
