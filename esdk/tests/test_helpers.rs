@@ -27,7 +27,12 @@ use aws_mpl_primitives::AesGcm;
 
 /// Build a native raw-AES keyring.
 fn raw_aes(ns: String, name: String, key: [u8; 32]) -> RawAesKeyring {
-    RawAesKeyring::new(ns, name, key.to_vec(), AesGcm::Aes256Gcm)
+    RawAesKeyring::builder()
+        .key_namespace(ns)
+        .key_name(name)
+        .wrapping_key(key.to_vec())
+        .wrapping_alg(AesGcm::Aes256Gcm)
+        .build()
         .expect("raw AES keyring construction must succeed for test key material")
 }
 

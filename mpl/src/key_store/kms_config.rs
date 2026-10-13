@@ -6,7 +6,7 @@
 use crate::Error;
 use crate::aws_kms::mrk_match::aws_kms_mrk_match_for_decrypt;
 use crate::error::Kind;
-use crate::keystore::config::KmsConfiguration;
+use crate::key_store::config::KmsConfiguration;
 
 /// The parsed parts of an AWS ARN.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,11 +85,11 @@ pub fn validate_kms_key_arn(arn: &str) -> Result<ArnParts, Error> {
 /// - `Discovery` / `MrDiscovery`: always compatible (returns true).
 pub fn is_arn_compatible(config: &KmsConfiguration, stored_arn: &str) -> bool {
     match config {
-        KmsConfiguration::KmsKeyArn(configured) => configured == stored_arn,
+        KmsConfiguration::KmsKeyArn(configured) => configured.as_str() == stored_arn,
         KmsConfiguration::KmsMrKeyArn(configured) => {
-            aws_kms_mrk_match_for_decrypt(configured, stored_arn)
+            aws_kms_mrk_match_for_decrypt(configured.as_str(), stored_arn)
         }
-        KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => true,
+        KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => true,
     }
 }
 
@@ -97,10 +97,9 @@ impl KmsConfiguration {
     /// Validates the configuration's ARN (if any) per the branch-key-store spec.
     pub fn validate(&self) -> Result<(), Error> {
         match self {
-            KmsConfiguration::KmsKeyArn(a) | KmsConfiguration::KmsMrKeyArn(a) => {
-                validate_kms_key_arn(a).map(|_| ())
-            }
-            KmsConfiguration::Discovery | KmsConfiguration::MrDiscovery { .. } => Ok(()),
+            KmsConfiguration::KmsKeyArn(a) => validate_kms_key_arn(a.as_str()).map(|_| ()),
+            KmsConfiguration::KmsMrKeyArn(a) => validate_kms_key_arn(a.as_str()).map(|_| ()),
+            KmsConfiguration::Discovery(_) | KmsConfiguration::MrDiscovery(_) => Ok(()),
         }
     }
 

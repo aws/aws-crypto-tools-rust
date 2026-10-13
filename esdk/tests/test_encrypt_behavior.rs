@@ -9,8 +9,12 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials};
+use aws_crypto_mpl::async_trait;
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
+use aws_crypto_mpl::cmm::{
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput,
+};
 use aws_esdk::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -313,35 +317,32 @@ struct DuplicateEdkCmm {
     inner: DefaultCmm,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Cmm for DuplicateEdkCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MplError> {
-        let materials = self.inner.get_encryption_materials(request).await?;
-        let mut edks = materials.encrypted_data_keys().to_vec();
-        let Some(first) = edks.first().cloned() else {
-            return Err(MplError::from(aws_crypto_mpl::error::ValidationError::new(
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
+        let materials = self
+            .inner
+            .get_encryption_materials(request)
+            .await?
+            .into_encryption_materials();
+        let Some(first) = materials.encrypted_data_keys().first().cloned() else {
+            return Err(MplError::validation(
                 "inner CMM returned no encrypted data keys",
-            )));
+            ));
         };
-        edks.push(first);
-        EncryptionMaterials::new(
-            materials.algorithm_suite_id(),
-            edks,
-            materials.encryption_context().clone(),
-            materials.required_encryption_context_keys().clone(),
-            materials.plaintext_data_key().cloned(),
-            materials.signing_key().cloned(),
-            materials.symmetric_signing_keys().map(<[_]>::to_vec),
-        )
+        let materials = materials.add_encrypted_data_key(first)?;
+        GetEncryptionMaterialsOutput::builder()
+            .encryption_materials(materials)
+            .build()
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MplError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }
@@ -651,12 +652,12 @@ struct SpyCmm {
     observed_max_plaintext_length: Arc<std::sync::Mutex<Option<Option<i64>>>>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Cmm for SpyCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MplError> {
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         // Record observations from the request the ESDK constructed.
         *self.observed_algorithm_suite_id.lock().unwrap() = Some(request.algorithm_suite_id());
         *self.observed_max_plaintext_length.lock().unwrap() =
@@ -667,8 +668,8 @@ impl Cmm for SpyCmm {
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MplError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         self.inner.decrypt_materials(request).await
     }
 }

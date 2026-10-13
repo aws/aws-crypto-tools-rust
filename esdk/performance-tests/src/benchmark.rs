@@ -4,9 +4,7 @@
 use anyhow::Result;
 use std::time::Duration;
 
-use aws_crypto_mpl::{
-    BranchKeyStore, CacheType, DefaultCache, HierarchicalKeyring, KmsConfiguration,
-};
+use aws_crypto_mpl::{HierarchicalKeyring, KeyStoreClient, KmsConfiguration, cmc::DefaultCmc};
 use aws_esdk::{CommitmentPolicy, Esdk};
 use log::info;
 use sysinfo::System;
@@ -68,12 +66,12 @@ impl EsdkBenchmark {
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
-        let key_store = BranchKeyStore::builder()
+        let key_store = KeyStoreClient::builder()
             .kms_client(aws_sdk_kms::Client::new(&sdk_config))
             .ddb_client(aws_sdk_dynamodb::Client::new(&sdk_config))
             .ddb_table_name(BRANCH_KEY_STORE_NAME)
-            .logical_keystore_name(LOGICAL_KEY_STORE_NAME)
-            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.to_string()))
+            .logical_key_store_name(LOGICAL_KEY_STORE_NAME)
+            .kms_configuration(KmsConfiguration::KmsKeyArn(HIERARCHY_KEY_ARN.into()))
             .build()
             .await
             .map_err(|e| anyhow::anyhow!("failed to build the key store: {e}"))?;
@@ -82,7 +80,12 @@ impl EsdkBenchmark {
             .key_store(key_store)
             .branch_key_id(BRANCH_KEY_ID)
             .ttl(Duration::from_secs(600_000))
-            .cache(CacheType::Default(DefaultCache::new(1000)))
+            .cache(
+                DefaultCmc::builder()
+                    .entry_capacity(1000)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to build the cache: {e}"))?,
+            )
             .build()
             .map_err(|e| anyhow::anyhow!("failed to create the hierarchical keyring: {e}"))?;
 
