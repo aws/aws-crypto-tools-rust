@@ -82,7 +82,7 @@ pub fn compute_aad(
 /// bytes.
 ///
 /// This parse is the validation gate on the branch-key-version string.
-/// A malformed string, such as one from a corrupted key store record,
+/// A malformed string, such as one from a corrupted keystore record,
 /// returns an `InvalidMaterials` error naming the branch key.
 ///
 /// The explicit length check keeps the gate strict: `Uuid::parse_str` also

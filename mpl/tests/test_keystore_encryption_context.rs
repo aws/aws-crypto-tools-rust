@@ -1,16 +1,14 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for key store encryption context construction.
+//! Tests for keystore encryption context construction.
 
-#![cfg(feature = "test-utils")]
-
-use aws_crypto_mpl::key_store::__test_internals::attributes::{
+use aws_crypto_mpl::keystore::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BEACON_ACTIVE,
     TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
-use aws_crypto_mpl::key_store::__test_internals::encryption_context::{
+use aws_crypto_mpl::keystore::encryption_context::{
     EncryptionContextInput, active_encryption_context, beacon_key_encryption_context,
     decrypt_only_encryption_context,
 };
@@ -20,7 +18,7 @@ fn sample_input() -> EncryptionContextInput<'static> {
     EncryptionContextInput {
         branch_key_id: "b3c7f8a1-4d2e-4f6b-9a8c-1e2d3f4a5b6c",
         create_time: "2024-01-15T10:30:00.123456Z",
-        logical_key_store_name: "my-key store-table",
+        logical_keystore_name: "my-keystore-table",
         kms_arn: "arn:aws:kms:us-east-1:123456789012:key/mrk-12345678-1234-1234-1234-123456789012",
         hierarchy_version: 1,
         custom_ec: None,
@@ -100,11 +98,11 @@ fn beacon_key_encryption_context_omits_version_attribute() {
 }
 
 #[test]
-fn encryption_context_includes_tablename_from_logical_key_store_name() {
+fn encryption_context_includes_tablename_from_logical_keystore_name() {
     let input = sample_input();
     let ec = active_encryption_context(&input, "v1").unwrap();
 
-    assert_eq!(ec[ATTR_TABLENAME], "my-key store-table");
+    assert_eq!(ec[ATTR_TABLENAME], "my-keystore-table");
 }
 
 #[test]
@@ -132,7 +130,7 @@ fn custom_ec_keys_are_prefixed_with_aws_crypto_ec() {
     let input = EncryptionContextInput {
         branch_key_id: "b3c7f8a1-4d2e-4f6b-9a8c-1e2d3f4a5b6c",
         create_time: "2024-01-15T10:30:00.123456Z",
-        logical_key_store_name: "my-key store-table",
+        logical_keystore_name: "my-keystore-table",
         kms_arn: "arn:aws:kms:us-east-1:123456789012:key/mrk-12345678-1234-1234-1234-123456789012",
         hierarchy_version: 1,
         custom_ec: Some(&custom),
@@ -155,7 +153,7 @@ fn custom_ec_values_are_preserved() {
     let input = EncryptionContextInput {
         branch_key_id: "b3c7f8a1-4d2e-4f6b-9a8c-1e2d3f4a5b6c",
         create_time: "2024-01-15T10:30:00.123456Z",
-        logical_key_store_name: "my-key store-table",
+        logical_keystore_name: "my-keystore-table",
         kms_arn: "arn:aws:kms:us-east-1:123456789012:key/mrk-12345678-1234-1234-1234-123456789012",
         hierarchy_version: 1,
         custom_ec: Some(&custom),
@@ -171,7 +169,7 @@ fn empty_branch_key_id_is_rejected() {
     let input = EncryptionContextInput {
         branch_key_id: "",
         create_time: "2024-01-15T10:30:00.123456Z",
-        logical_key_store_name: "my-key store-table",
+        logical_keystore_name: "my-keystore-table",
         kms_arn: "arn:aws:kms:us-east-1:123456789012:key/mrk-12345678-1234-1234-1234-123456789012",
         hierarchy_version: 1,
         custom_ec: None,

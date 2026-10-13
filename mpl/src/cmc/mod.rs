@@ -4,40 +4,27 @@
 //! The `Cmc` trait — the abstract contract every Cryptographic Materials
 //! Cache MUST implement.
 //!
-//! Implement it with [`#[async_trait]`](macro@crate::async_trait).
-//! The macro rewrites each `async fn` to return a boxed future,
-//! so a keyring can hold a cache whose type is chosen at runtime.
+//! The MPL needs `dyn Cmc` and `Box<dyn Cmc>` for plug-in caches so that a
+//! caching CMM can hold an arbitrary, runtime-configured cache.
+//! `async_trait` allows us to get a `dyn Cmc` and `Box<dyn Cmc>`.
 
-pub mod default;
+pub mod cache_config;
 pub mod entry;
-mod fluent_builders;
 pub mod local;
-mod operation;
 pub mod storm_tracking;
+
+use std::sync::Arc;
 
 use crate::Error;
 use async_trait::async_trait;
 
-pub use default::{DefaultCmc, DefaultCmcBuilder};
-pub use entry::{
-    BytesUsage, CacheEntry, CacheEntryBuilder, CachedMaterials, MessageUsage, UsageMetadata,
-    UsageMetadataBuilder,
+pub use cache_config::{
+    CacheType, DefaultCache, StormTrackingCache, StormTrackingCacheBuilder,
+    create_cryptographic_materials_cache,
 };
-pub use fluent_builders::{
-    DeleteCacheEntryFluentBuilder, GetCacheEntryFluentBuilder, PutCacheEntryFluentBuilder,
-    UpdateUsageMetadataFluentBuilder,
-};
-pub use local::{LocalCmc, LocalCmcBuilder};
-pub use operation::{
-    DeleteCacheEntryInput, DeleteCacheEntryInputBuilder, DeleteCacheEntryOutput,
-    DeleteCacheEntryOutputBuilder, GetCacheEntryInput, GetCacheEntryInputBuilder,
-    GetCacheEntryOutput, GetCacheEntryOutputBuilder, PutCacheEntryInput, PutCacheEntryInputBuilder,
-    PutCacheEntryOutput, PutCacheEntryOutputBuilder, UpdateUsageMetadataInput,
-    UpdateUsageMetadataInputBuilder, UpdateUsageMetadataOutput, UpdateUsageMetadataOutputBuilder,
-};
-pub use storm_tracking::{StormTrackingCmc, StormTrackingCmcBuilder};
-
-use std::time::Duration;
+pub use entry::{BytesUsage, CacheEntry, CachedMaterials, MessageUsage, UsageMetadata};
+pub use local::LocalCmc;
+pub use storm_tracking::StormTrackingCmc;
 
 //
 /// To hold a cache whose concrete type is chosen at runtime, use [`SharedCmc`].
@@ -47,46 +34,19 @@ pub trait Cmc: Send + Sync {
     /// Mirrors the `Put Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#put-cache-entry).
     //
-    async fn put_cache_entry(
-        &self,
-        input: PutCacheEntryInput,
-    ) -> Result<PutCacheEntryOutput, Error>;
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error>;
 
-    /// Retrieve the cache entry for the supplied cache identifier.
-    /// The output's entry is `None` on a cache miss.
-    /// Mirrors the `Get Cache Entry` behavior of the
+    /// Retrieve the cache entry for the supplied cache identifier, returning
+    /// `None` on cache miss. Mirrors the `Get Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#get-cache-entry).
     //
-    async fn get_cache_entry(
-        &self,
-        input: GetCacheEntryInput,
-    ) -> Result<GetCacheEntryOutput, Error>;
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error>;
 
     /// Delete the cache entry for the supplied cache identifier. Returns
     /// successfully whether or not an entry was present. Mirrors the
     /// `Delete Cache Entry` behavior of the
     /// [CMC interface specification](../../../spec/framework/cryptographic-materials-cache.md#delete-cache-entry).
-    async fn delete_cache_entry(
-        &self,
-        input: DeleteCacheEntryInput,
-    ) -> Result<DeleteCacheEntryOutput, Error>;
-
-    /// Count one more message of `bytes_used` plaintext bytes against the entry for the identifier.
-    /// Does nothing if there is no entry.
-    /// Deletes the entry if either counter would overflow.
-    /// A caching CMM calls this each time it reuses cached encryption materials.
-    async fn update_usage_metadata(
-        &self,
-        input: UpdateUsageMetadataInput,
-    ) -> Result<UpdateUsageMetadataOutput, Error>;
-
-    /// How long before an entry expires the cache sends one caller to refresh it.
-    /// Return `None`, the default, if the cache does not refresh early.
-    ///
-    /// A hierarchical keyring requires this to be less than its TTL.
-    fn grace_period(&self) -> Option<Duration> {
-        None
-    }
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error>;
 }
 
 crate::shared::shared_handle!(
@@ -95,10 +55,8 @@ crate::shared::shared_handle!(
     /// It implements [`Cmc`], so it can be passed anywhere a cache is accepted.
     /// Callers that know their cache's type pass it directly and never need this one.
     ///
-    /// Each operation returns a fluent builder: set the input, then call `send`.
-    ///
     /// A clone of a `SharedCmc` refers to the same cache, not a copy of it.
-    /// Give several keyrings clones of one handle
+    /// Give several keyrings clones of one handle through [`CacheType::Shared`]
     /// and they read and write the same entries.
     SharedCmc,
     Cmc
@@ -106,35 +64,15 @@ crate::shared::shared_handle!(
 
 #[async_trait]
 impl Cmc for SharedCmc {
-    async fn put_cache_entry(
-        &self,
-        input: PutCacheEntryInput,
-    ) -> Result<PutCacheEntryOutput, Error> {
-        Cmc::put_cache_entry(&*self.0, input).await
+    async fn put_cache_entry(&self, cache_id: &[u8], entry: CacheEntry) -> Result<(), Error> {
+        self.0.put_cache_entry(cache_id, entry).await
     }
 
-    async fn get_cache_entry(
-        &self,
-        input: GetCacheEntryInput,
-    ) -> Result<GetCacheEntryOutput, Error> {
-        Cmc::get_cache_entry(&*self.0, input).await
+    async fn get_cache_entry(&self, cache_id: &[u8]) -> Result<Option<Arc<CacheEntry>>, Error> {
+        self.0.get_cache_entry(cache_id).await
     }
 
-    async fn delete_cache_entry(
-        &self,
-        input: DeleteCacheEntryInput,
-    ) -> Result<DeleteCacheEntryOutput, Error> {
-        Cmc::delete_cache_entry(&*self.0, input).await
-    }
-
-    async fn update_usage_metadata(
-        &self,
-        input: UpdateUsageMetadataInput,
-    ) -> Result<UpdateUsageMetadataOutput, Error> {
-        Cmc::update_usage_metadata(&*self.0, input).await
-    }
-
-    fn grace_period(&self) -> Option<Duration> {
-        self.0.grace_period()
+    async fn delete_cache_entry(&self, cache_id: &[u8]) -> Result<(), Error> {
+        self.0.delete_cache_entry(cache_id).await
     }
 }

@@ -6,11 +6,11 @@
 
 mod fake_aws;
 
-use aws_crypto_mpl::async_trait;
-use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring, SharedKeyring};
-use aws_crypto_mpl::keyring::{OnDecryptInput, OnEncryptInput};
-use aws_crypto_mpl::keyring::{OnDecryptOutput, OnEncryptOutput};
-use aws_crypto_mpl::structures::{EncryptionContext, EncryptionMaterials, PlaintextDataKey};
+use async_trait::async_trait;
+use aws_crypto_mpl::keyring::{Keyring, RawAesKeyring};
+use aws_crypto_mpl::structures::{
+    DecryptionMaterials, EncryptedDataKey, EncryptionContext, EncryptionMaterials, PlaintextDataKey,
+};
 use aws_esdk::{AlgorithmSuiteId, DecryptInput, EncryptInput, Error, decrypt, encrypt};
 use aws_mpl_primitives::AesGcm;
 use fake_aws::{BRANCH_KEY_ID, FakeAws, KEY_ARN, Reply};
@@ -51,42 +51,36 @@ fn context(value: &str) -> EncryptionContext {
 }
 
 fn raw(name: &str) -> RawAesKeyring {
-    RawAesKeyring::builder()
-        .key_namespace("ns")
-        .key_name(name)
-        .wrapping_key(vec![KEY_BYTE; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
-        .build()
-        .unwrap()
+    RawAesKeyring::new("ns", name, vec![KEY_BYTE; 32], AesGcm::Aes256Gcm).unwrap()
 }
 
 /// A raw AES keyring whose data key is `KEY_BYTE` repeated.
-struct KnownDataKey(SharedKeyring);
+struct KnownDataKey(RawAesKeyring);
 
 #[async_trait]
 impl Keyring for KnownDataKey {
     async fn on_encrypt(
         &self,
-        input: OnEncryptInput,
-    ) -> Result<OnEncryptOutput, aws_crypto_mpl::Error> {
-        let m = input.materials();
-        let m = EncryptionMaterials::builder()
-            .algorithm_suite_id(m.algorithm_suite_id())
-            .encrypted_data_keys(m.encrypted_data_keys().to_vec())
-            .encryption_context(m.encryption_context().clone())
-            .required_encryption_context_keys(m.required_encryption_context_keys().clone())
-            .plaintext_data_key(PlaintextDataKey::new(vec![KEY_BYTE; 32]))
-            .set_signing_key(m.signing_key().cloned())
-            .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))
-            .build()?;
-        self.0.on_encrypt().materials(m).send().await
+        m: EncryptionMaterials,
+    ) -> Result<EncryptionMaterials, aws_crypto_mpl::Error> {
+        let m = EncryptionMaterials::new(
+            m.algorithm_suite_id(),
+            m.encrypted_data_keys().to_vec(),
+            m.encryption_context().clone(),
+            m.required_encryption_context_keys().clone(),
+            Some(PlaintextDataKey::new(vec![KEY_BYTE; 32])),
+            m.signing_key().cloned(),
+            m.symmetric_signing_keys().map(<[_]>::to_vec),
+        )?;
+        self.0.on_encrypt(m).await
     }
 
     async fn on_decrypt(
         &self,
-        input: OnDecryptInput,
-    ) -> Result<OnDecryptOutput, aws_crypto_mpl::Error> {
-        Keyring::on_decrypt(&self.0, input).await
+        m: DecryptionMaterials,
+        edks: &[EncryptedDataKey],
+    ) -> Result<DecryptionMaterials, aws_crypto_mpl::Error> {
+        self.0.on_decrypt(m, edks).await
     }
 }
 
@@ -95,7 +89,7 @@ async fn ciphertext() -> Vec<u8> {
         .plaintext(PLAINTEXT.as_bytes())
         .encryption_context(context(EC_VALUE))
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .keyring(KnownDataKey(SharedKeyring::new(raw("name"))))
+        .keyring(KnownDataKey(raw("name")))
         .build()
         .unwrap();
     encrypt(&input).await.unwrap().ciphertext

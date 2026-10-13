@@ -8,13 +8,11 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::cmm::{self, DefaultCmm};
-use aws_crypto_mpl::cmm::{
-    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
-    GetEncryptionMaterialsOutput,
-};
+use aws_crypto_mpl::cmm::{self, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
 use aws_crypto_mpl::keyring::RawAesKeyring;
-use aws_crypto_mpl::structures::KeyDerivationAlgorithm;
+use aws_crypto_mpl::structures::{
+    DecryptionMaterials, EncryptionMaterials, KeyDerivationAlgorithm,
+};
 use aws_esdk::*;
 use aws_mpl_primitives::AesGcm;
 use fixtures::*;
@@ -35,12 +33,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     // A different keyring (different namespace, different wrapping key) — its
     // default CMM cannot unwrap the EDK encrypted by `keyring`.
     let (ns, name) = namespace_and_name(1);
-    let wrong_keyring = RawAesKeyring::builder()
-        .key_namespace(ns)
-        .key_name(name)
-        .wrapping_key(vec![1u8; 32])
-        .wrapping_alg(AesGcm::Aes256Gcm)
-        .build()
+    let wrong_keyring = RawAesKeyring::new(ns, name, vec![1u8; 32], AesGcm::Aes256Gcm)
         .expect("raw AES keyring construction must succeed for test key material");
 
     let valid_input = DecryptInput::builder()
@@ -354,15 +347,15 @@ struct DecryptSpyCmm {
 impl cmm::Cmm for DecryptSpyCmm {
     async fn get_encryption_materials(
         &self,
-        request: GetEncryptionMaterialsInput,
-    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
-        cmm::Cmm::get_encryption_materials(&self.inner, request).await
+        request: EncryptionMaterialsRequest,
+    ) -> Result<EncryptionMaterials, MplError> {
+        self.inner.get_encryption_materials(request).await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsInput,
-    ) -> Result<DecryptMaterialsOutput, MplError> {
+        request: DecryptMaterialsRequest,
+    ) -> Result<DecryptionMaterials, MplError> {
         // Record observations from the request the ESDK constructed.
         *self.observed_edk_count.lock().unwrap() = Some(request.encrypted_data_keys().len());
         let keys: Vec<String> = request
@@ -372,7 +365,7 @@ impl cmm::Cmm for DecryptSpyCmm {
             .collect();
         *self.observed_ec_keys.lock().unwrap() = Some(keys);
         // Delegate to the inner default CMM so real materials are returned.
-        Cmm::decrypt_materials(&self.inner, request).await
+        self.inner.decrypt_materials(request).await
     }
 }
 

@@ -3,7 +3,7 @@
 
 //! AWS KMS shared utilities.
 
-pub(crate) mod mrk_match;
+pub mod mrk_match;
 
 pub(crate) mod branch_key_wrap;
 
@@ -13,31 +13,13 @@ pub mod hierarchical_keyring;
 
 pub(crate) mod user_agent;
 
-/// Internals that integration tests reach.
-/// Not part of the public API and may change in any release.
-#[cfg(feature = "test-utils")]
+/// Crate-internal surfaces re-exported for integration tests.
+///
+/// Hidden from the public API surface; do NOT depend on these from outside
+/// the crate's own integration tests — they are not stable API.
 #[doc(hidden)]
 pub mod __test_internals {
     pub use super::branch_key_wrap::{compute_aad, unwrap, wrap};
     pub use super::cache_entry_identifier::build_cache_identifier;
-    pub use super::mrk_match::aws_kms_mrk_match_for_decrypt;
-
-    use super::hierarchical_keyring::HierarchicalKeyring;
-    use crate::cmc::SharedCmc;
-
-    /// The cache-identifier scope byte of OnEncrypt.
-    pub const SCOPE_ID_ENCRYPT: u8 = super::hierarchical_keyring::SCOPE_ID_ENCRYPT;
-
-    /// The cache-identifier scope byte of OnDecrypt.
-    pub const SCOPE_ID_DECRYPT: u8 = super::hierarchical_keyring::SCOPE_ID_DECRYPT;
-
-    /// The keyring's partition id bytes.
-    pub fn partition_id_bytes(keyring: &HierarchicalKeyring) -> &[u8] {
-        keyring.partition_id_bytes()
-    }
-
-    /// The keyring's cache.
-    pub fn cache(keyring: &HierarchicalKeyring) -> &SharedCmc {
-        keyring.cache()
-    }
+    pub use super::user_agent::{MPL_FRAMEWORK_NAME, with_user_agent};
 }

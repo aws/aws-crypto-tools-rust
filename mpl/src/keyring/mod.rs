@@ -3,9 +3,9 @@
 
 //! The `Keyring` trait — the abstract contract every keyring MUST implement.
 //!
-//! Implement it with [`#[async_trait]`](macro@crate::async_trait).
-//! The macro rewrites each `async fn` to return a boxed future,
-//! so a CMM can hold a keyring whose type is chosen at runtime.
+//! Uses #[async_trait] so that the CMM can hold any runtime defined
+//! keyring. The macro makes this work by rewriting each `async fn`
+//! to return a boxed future.
 //!
 //! # Errors for keyring and CMM authors
 //!
@@ -61,62 +61,13 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 
-mod fluent_builders;
 pub mod raw_aes_keyring;
-mod types;
 
-pub use fluent_builders::{OnDecryptFluentBuilder, OnEncryptFluentBuilder};
-pub use raw_aes_keyring::{RawAesKeyring, RawAesKeyringBuilder};
-pub use types::{
-    OnDecryptInput, OnDecryptInputBuilder, OnDecryptOutput, OnDecryptOutputBuilder, OnEncryptInput,
-    OnEncryptInputBuilder, OnEncryptOutput, OnEncryptOutputBuilder,
-};
+pub use raw_aes_keyring::RawAesKeyring;
+
+use crate::structures::{DecryptionMaterials, EncryptedDataKey, EncryptionMaterials};
 
 /// To hold a keyring whose concrete type is chosen at runtime, use [`SharedKeyring`].
-///
-/// A keyring changes the materials only through `add_data_key` and `add_encrypted_data_key`:
-///
-/// ```
-/// use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
-/// use aws_crypto_mpl::structures::{EncryptedDataKey, PlaintextDataKey};
-/// use aws_crypto_mpl::{Error, Keyring, async_trait};
-///
-/// struct MyKeyring;
-///
-/// # impl MyKeyring {
-/// #     fn generate(&self, _len: usize) -> Result<PlaintextDataKey, Error> { unimplemented!() }
-/// #     fn wrap(&self, _key: &PlaintextDataKey) -> Result<EncryptedDataKey, Error> { unimplemented!() }
-/// #     fn unwrap(&self, _edk: &EncryptedDataKey) -> Result<Option<PlaintextDataKey>, Error> { unimplemented!() }
-/// # }
-/// #[async_trait]
-/// impl Keyring for MyKeyring {
-///     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-///         let materials = input.into_materials();
-///         let materials = match materials.plaintext_data_key() {
-///             Some(key) => {
-///                 let edk = self.wrap(key)?;
-///                 materials.add_encrypted_data_key(edk)?
-///             }
-///             None => {
-///                 let key = self.generate(materials.algorithm_suite().encryption_key_length())?;
-///                 let edk = self.wrap(&key)?;
-///                 materials.add_data_key(key, edk)?
-///             }
-///         };
-///         Ok(materials.into())
-///     }
-///
-///     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-///         let (materials, encrypted_data_keys) = input.into_parts();
-///         for edk in &encrypted_data_keys {
-///             if let Some(key) = self.unwrap(edk)? {
-///                 return Ok(materials.add_data_key(key)?.into());
-///             }
-///         }
-///         Err(Error::no_matching_data_key("no encrypted data key belongs to this keyring"))
-///     }
-/// }
-/// ```
 #[async_trait]
 pub trait Keyring: Send + Sync {
     /// A short name for this keyring, which errors show.
@@ -130,18 +81,24 @@ pub trait Keyring: Send + Sync {
         Cow::Borrowed(std::any::type_name::<Self>())
     }
 
-    /// Add a data key to the input's encryption materials and return them.
-    /// When the materials have no plaintext data key, generate one.
-    /// See the [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
+    /// Modify the supplied [`EncryptionMaterials`] by generating and/or
+    /// encrypting a data key. See the
+    /// [OnEncrypt](../../../spec/framework/keyring-interface.md#onencrypt)
     /// section of the keyring interface specification.
-    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error>;
+    async fn on_encrypt(
+        &self,
+        materials: EncryptionMaterials,
+    ) -> Result<EncryptionMaterials, Error>;
 
-    /// Decrypt one of the input's encrypted data keys,
-    /// add its plaintext data key to the input's decryption materials,
-    /// and return them.
-    /// See the [OnDecrypt](../../../spec/framework/keyring-interface.md#ondecrypt)
+    /// Modify the supplied [`DecryptionMaterials`] by deriving the plaintext
+    /// data key from one of the supplied encrypted data keys. See the
+    /// [OnDecrypt](../../../spec/framework/keyring-interface.md#ondecrypt)
     /// section of the keyring interface specification.
-    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error>;
+    async fn on_decrypt(
+        &self,
+        materials: DecryptionMaterials,
+        encrypted_data_keys: &[EncryptedDataKey],
+    ) -> Result<DecryptionMaterials, Error>;
 }
 
 crate::shared::shared_handle!(
@@ -149,8 +106,6 @@ crate::shared::shared_handle!(
     ///
     /// It implements [`Keyring`], so it can be passed anywhere a keyring is accepted.
     /// Callers that know their keyring's type pass it directly and never need this one.
-    ///
-    /// Each operation returns a fluent builder: set the input, then call `send`.
     SharedKeyring,
     Keyring
 );
@@ -161,27 +116,18 @@ impl Keyring for SharedKeyring {
         self.0.name()
     }
 
-    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        Keyring::on_encrypt(&*self.0, input).await
+    async fn on_encrypt(
+        &self,
+        materials: EncryptionMaterials,
+    ) -> Result<EncryptionMaterials, Error> {
+        self.0.on_encrypt(materials).await
     }
 
-    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-        Keyring::on_decrypt(&*self.0, input).await
-    }
-}
-
-/// A keyring behind an `Arc` is a keyring, so one instance can be shared without being `Clone`.
-#[async_trait]
-impl<T: Keyring + ?Sized> Keyring for std::sync::Arc<T> {
-    fn name(&self) -> Cow<'_, str> {
-        (**self).name()
-    }
-
-    async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, Error> {
-        (**self).on_encrypt(input).await
-    }
-
-    async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, Error> {
-        (**self).on_decrypt(input).await
+    async fn on_decrypt(
+        &self,
+        materials: DecryptionMaterials,
+        encrypted_data_keys: &[EncryptedDataKey],
+    ) -> Result<DecryptionMaterials, Error> {
+        self.0.on_decrypt(materials, encrypted_data_keys).await
     }
 }

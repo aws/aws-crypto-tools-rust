@@ -10,12 +10,7 @@ fn test_valid_construction() {
     let ec = EncryptionContext::new();
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
-    let result = BranchKeyMaterials::builder()
-        .branch_key(branch_key)
-        .branch_key_id("key-id".to_string())
-        .branch_key_version(version)
-        .encryption_context(ec)
-        .build();
+    let result = BranchKeyMaterials::new(branch_key, "key-id".to_string(), version, ec);
     assert!(result.is_ok());
     let mat = result.unwrap();
     assert_eq!(mat.branch_key(), &[0xAB; 32]);
@@ -34,12 +29,12 @@ fn test_construction_accepts_various_version_strings() {
     ];
 
     for uuid in valid_uuids {
-        let result = BranchKeyMaterials::builder()
-            .branch_key(branch_key)
-            .branch_key_id("id".to_string())
-            .branch_key_version(uuid.to_string())
-            .encryption_context(EncryptionContext::new())
-            .build();
+        let result = BranchKeyMaterials::new(
+            branch_key,
+            "id".to_string(),
+            uuid.to_string(),
+            EncryptionContext::new(),
+        );
         assert!(result.is_ok(), "Construction should succeed: {}", uuid);
     }
 }
@@ -48,26 +43,26 @@ fn test_construction_accepts_various_version_strings() {
 fn test_branch_key_32_bytes_by_construction() {
     // Type-system enforcement (implication in source); test exists for regression coverage.
     let branch_key = [0x42u8; 32];
-    let mat = BranchKeyMaterials::builder()
-        .branch_key(branch_key)
-        .branch_key_id("id".to_string())
-        .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string())
-        .encryption_context(EncryptionContext::new())
-        .build()
-        .unwrap();
+    let mat = BranchKeyMaterials::new(
+        branch_key,
+        "id".to_string(),
+        "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string(),
+        EncryptionContext::new(),
+    )
+    .unwrap();
     assert_eq!(mat.branch_key().len(), 32);
 }
 
 #[test]
 fn test_branch_key_version_getter() {
     let version = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
-    let mat = BranchKeyMaterials::builder()
-        .branch_key([0x00; 32])
-        .branch_key_id("id".to_string())
-        .branch_key_version(version.to_string())
-        .encryption_context(EncryptionContext::new())
-        .build()
-        .unwrap();
+    let mat = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        version.to_string(),
+        EncryptionContext::new(),
+    )
+    .unwrap();
     assert_eq!(mat.branch_key_version(), version);
 }
 
@@ -75,46 +70,26 @@ fn test_branch_key_version_getter() {
 fn test_branch_key_encryption_context_getter() {
     let mut ec = EncryptionContext::new();
     ec.insert("key", "value");
-    let mat = BranchKeyMaterials::builder()
-        .branch_key([0x00; 32])
-        .branch_key_id("id".to_string())
-        .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string())
-        .encryption_context(ec)
-        .build()
-        .unwrap();
+    let mat = BranchKeyMaterials::new(
+        [0x00; 32],
+        "id".to_string(),
+        "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string(),
+        ec,
+    )
+    .unwrap();
     assert_eq!(mat.encryption_context().len(), 1);
 }
 
 #[test]
 fn test_debug_redacts_branch_key() {
-    let mat = BranchKeyMaterials::builder()
-        .branch_key([0xFF; 32])
-        .branch_key_id("id".to_string())
-        .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string())
-        .encryption_context(EncryptionContext::new())
-        .build()
-        .unwrap();
+    let mat = BranchKeyMaterials::new(
+        [0xFF; 32],
+        "id".to_string(),
+        "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string(),
+        EncryptionContext::new(),
+    )
+    .unwrap();
     let debug_output = format!("{:?}", mat);
     assert!(debug_output.contains("REDACTED"));
     assert!(!debug_output.contains("255")); // 0xFF = 255
-}
-
-#[test]
-fn build_rejects_missing_and_empty_fields() {
-    let valid = || {
-        BranchKeyMaterials::builder()
-            .branch_key([0u8; 32])
-            .branch_key_id("id")
-            .branch_key_version("a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d")
-            .encryption_context(EncryptionContext::new())
-    };
-    for builder in [
-        valid().set_branch_key(None),
-        valid().set_encryption_context(None),
-        valid().branch_key_id(""),
-        valid().branch_key_version(""),
-    ] {
-        let err = builder.build().unwrap_err();
-        assert!(err.is_validation(), "{err:?}");
-    }
 }

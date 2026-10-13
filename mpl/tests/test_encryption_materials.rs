@@ -24,21 +24,7 @@ fn make_ec_with_keys(keys: &[&str]) -> EncryptionContext {
 }
 
 fn make_edk() -> EncryptedDataKey {
-    edk_with_ciphertext(b"c")
-}
-
-fn edk_with_ciphertext(ciphertext: &[u8]) -> EncryptedDataKey {
-    EncryptedDataKey::builder()
-        .key_provider_id("p")
-        .key_provider_info(b"i")
-        .ciphertext(ciphertext)
-        .build()
-        .unwrap()
-}
-
-// A plaintext data key of the length NO_SIGN_SUITE and SIGN_SUITE require.
-fn pdk_32() -> PlaintextDataKey {
-    PlaintextDataKey::new(vec![0x5a; 32])
+    EncryptedDataKey::new("p".to_string(), b"i".to_vec(), b"c".to_vec())
 }
 
 // A correctly-sized P-256 signing key (private scalar): 32 bytes.
@@ -54,14 +40,10 @@ fn p384_signing_key() -> SigningKey {
 #[test]
 fn test_valid_construction_minimal() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::<String>::new();
+    let reck = BTreeSet::new();
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
-    let result = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .build();
+    let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None);
     assert!(result.is_ok());
 }
 
@@ -69,19 +51,13 @@ fn test_valid_construction_minimal() {
 fn test_valid_construction_with_all_optional_fields() {
     let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
     let reck = BTreeSet::from(["k1".to_string()]);
-    let pdk = pdk_32();
+    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
     let sk = p384_signing_key();
     let edk = make_edk();
 
     // ESDK signing suite: asymmetric signing only (no symmetric_signing_keys).
-    let result = EncryptionMaterials::builder()
-        .algorithm_suite_id(SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .plaintext_data_key(pdk)
-        .signing_key(sk)
-        .build();
+    let result =
+        EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None);
     assert!(result.is_ok());
 }
 
@@ -90,11 +66,7 @@ fn test_required_ec_keys_must_be_subset() {
     let ec = make_ec_with_keys(&["existing"]);
     let reck = BTreeSet::from(["missing".to_string()]);
 
-    let result = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .build();
+    let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_encryption_context_mismatch());
 }
@@ -102,15 +74,10 @@ fn test_required_ec_keys_must_be_subset() {
 #[test]
 fn test_edks_must_be_empty_without_pdk() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::<String>::new();
+    let reck = BTreeSet::new();
     let edk = make_edk();
 
-    let result = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .build();
+    let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![edk], ec, reck, None, None, None);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_invalid_materials());
 }
@@ -118,15 +85,10 @@ fn test_edks_must_be_empty_without_pdk() {
 #[test]
 fn test_signing_key_rejected_without_asymmetric_signing() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::<String>::new();
+    let reck = BTreeSet::new();
     let sk = SigningKey::new(b"sign".to_vec());
 
-    let result = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .signing_key(sk)
-        .build();
+    let result = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, Some(sk), None);
     assert!(result.is_err());
     assert!(result.unwrap_err().is_invalid_materials());
 }
@@ -147,19 +109,12 @@ fn test_signing_key_accepted_regardless_of_length() {
     ];
     for (suite_id, sk) in cases {
         let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
-        let reck = BTreeSet::<String>::new();
-        let pdk =
-            PlaintextDataKey::new(vec![0x5a; suite_id.specification().encryption_key_length()]);
+        let reck = BTreeSet::new();
+        let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
         let edk = make_edk();
 
-        let result = EncryptionMaterials::builder()
-            .algorithm_suite_id(suite_id)
-            .encrypted_data_keys(vec![edk])
-            .encryption_context(ec)
-            .required_encryption_context_keys(reck)
-            .plaintext_data_key(pdk)
-            .signing_key(sk)
-            .build();
+        let result =
+            EncryptionMaterials::new(suite_id, vec![edk], ec, reck, Some(pdk), Some(sk), None);
         assert!(
             result.is_ok(),
             "{suite_id:?} signing key must be accepted: {:?}",
@@ -171,19 +126,20 @@ fn test_signing_key_accepted_regardless_of_length() {
 #[test]
 fn test_symmetric_keys_rejected_without_symmetric_signing() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::<String>::new();
+    let reck = BTreeSet::new();
     let ssk = vec![SymmetricSigningKey::new(b"sym".to_vec())];
-    let pdk = pdk_32();
+    let pdk = PlaintextDataKey::new(b"key".to_vec());
     let edk = make_edk();
 
-    let result = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .plaintext_data_key(pdk)
-        .symmetric_signing_keys(ssk)
-        .build();
+    let result = EncryptionMaterials::new(
+        NO_SIGN_SUITE,
+        vec![edk],
+        ec,
+        reck,
+        Some(pdk),
+        None,
+        Some(ssk),
+    );
     assert!(result.is_err());
     assert!(result.unwrap_err().is_invalid_materials());
 }
@@ -191,19 +147,12 @@ fn test_symmetric_keys_rejected_without_symmetric_signing() {
 #[test]
 fn test_validate_aws_crypto_public_key_happy_path() {
     let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
-    let reck = BTreeSet::<String>::new();
-    let pdk = pdk_32();
+    let reck = BTreeSet::new();
+    let pdk = PlaintextDataKey::new(b"key".to_vec());
     let sk = p384_signing_key();
     let edk = make_edk();
 
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .plaintext_data_key(pdk)
-        .signing_key(sk)
-        .build()
+    let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
     assert!(mat.validate_aws_crypto_public_key().is_ok());
 }
@@ -211,14 +160,9 @@ fn test_validate_aws_crypto_public_key_happy_path() {
 #[test]
 fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
     let ec = make_ec_with_keys(&["aws-crypto-public-key"]);
-    let reck = BTreeSet::<String>::new();
+    let reck = BTreeSet::new();
 
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .build()
-        .unwrap();
+    let mat = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None).unwrap();
     assert!(
         mat.validate_aws_crypto_public_key()
             .unwrap_err()
@@ -229,19 +173,14 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_signing() {
 #[test]
 fn test_plaintext_data_key_immutability() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::<String>::new();
-    let pdk = pdk_32();
+    let reck = BTreeSet::new();
+    let pdk = PlaintextDataKey::new(b"secret".to_vec());
 
     // Type-system enforcement (implication in source); test exists for regression coverage.
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .plaintext_data_key(pdk)
-        .build()
-        .unwrap();
+    let mat =
+        EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, Some(pdk), None, None).unwrap();
     let pdk_ref = mat.plaintext_data_key().unwrap();
-    assert_eq!(pdk_ref.as_bytes(), [0x5a; 32]);
+    assert_eq!(pdk_ref.as_bytes(), b"secret");
 }
 
 #[test]
@@ -271,19 +210,20 @@ fn test_symmetric_signing_key_debug_redacted() {
 fn test_field_getters_return_constructed_values() {
     let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
     let reck = BTreeSet::from(["k1".to_string()]);
-    let pdk = pdk_32();
+    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
     let sk = p384_signing_key();
     let edk = make_edk();
 
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec.clone())
-        .required_encryption_context_keys(reck.clone())
-        .plaintext_data_key(pdk)
-        .signing_key(sk)
-        .build()
-        .unwrap();
+    let mat = EncryptionMaterials::new(
+        SIGN_SUITE,
+        vec![edk],
+        ec.clone(),
+        reck.clone(),
+        Some(pdk),
+        Some(sk),
+        None,
+    )
+    .unwrap();
 
     assert_eq!(mat.algorithm_suite_id(), SIGN_SUITE);
     assert_eq!(mat.encrypted_data_keys().len(), 1);
@@ -296,14 +236,9 @@ fn test_field_getters_return_constructed_values() {
 #[test]
 fn test_field_getters_return_none_for_omitted_optional_fields() {
     let ec = EncryptionContext::new();
-    let reck = BTreeSet::<String>::new();
+    let reck = BTreeSet::new();
 
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .build()
-        .unwrap();
+    let mat = EncryptionMaterials::new(NO_SIGN_SUITE, vec![], ec, reck, None, None, None).unwrap();
 
     assert!(mat.plaintext_data_key().is_none());
     assert!(mat.signing_key().is_none());
@@ -314,18 +249,11 @@ fn test_field_getters_return_none_for_omitted_optional_fields() {
 fn test_debug_format_includes_all_fields() {
     let ec = make_ec_with_keys(&["k1", "aws-crypto-public-key"]);
     let reck = BTreeSet::from(["k1".to_string()]);
-    let pdk = pdk_32();
+    let pdk = PlaintextDataKey::new(b"secret-key".to_vec());
     let sk = p384_signing_key();
     let edk = make_edk();
 
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .plaintext_data_key(pdk)
-        .signing_key(sk)
-        .build()
+    let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
 
     let s = format!("{:?}", mat);
@@ -342,19 +270,12 @@ fn test_debug_format_includes_all_fields() {
 #[test]
 fn test_validate_aws_crypto_public_key_should_include_with_signing() {
     let ec = make_ec_with_keys(&["other-key"]);
-    let reck = BTreeSet::<String>::new();
-    let pdk = pdk_32();
+    let reck = BTreeSet::new();
+    let pdk = PlaintextDataKey::new(b"key".to_vec());
     let sk = p384_signing_key();
     let edk = make_edk();
 
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(SIGN_SUITE)
-        .encrypted_data_keys(vec![edk])
-        .encryption_context(ec)
-        .required_encryption_context_keys(reck)
-        .plaintext_data_key(pdk)
-        .signing_key(sk)
-        .build()
+    let mat = EncryptionMaterials::new(SIGN_SUITE, vec![edk], ec, reck, Some(pdk), Some(sk), None)
         .unwrap();
     let err = mat.validate_aws_crypto_public_key().unwrap_err();
     assert!(err.is_invalid_materials(), "{:?}", err);
@@ -370,20 +291,13 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
     // a wrong `commit_kdf` pass silently.
     for suite_id in [NO_SIGN_SUITE, SIGN_SUITE] {
         let ec = EncryptionContext::new();
-        let reck = BTreeSet::<String>::new();
+        let reck = BTreeSet::new();
         let (sk, edks) = if suite_id == SIGN_SUITE {
             (Some(p384_signing_key()), vec![])
         } else {
             (None, vec![])
         };
-        let mat = EncryptionMaterials::builder()
-            .algorithm_suite_id(suite_id)
-            .encrypted_data_keys(edks)
-            .encryption_context(ec)
-            .required_encryption_context_keys(reck)
-            .set_signing_key(sk)
-            .build()
-            .unwrap();
+        let mat = EncryptionMaterials::new(suite_id, edks, ec, reck, None, sk, None).unwrap();
         assert_eq!(
             mat.algorithm_suite(),
             suite_id.specification(),
@@ -391,82 +305,4 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
             suite_id
         );
     }
-}
-
-#[test]
-fn test_builder_requires_algorithm_suite() {
-    let err = EncryptionMaterials::builder().build().unwrap_err();
-    assert!(err.is_validation(), "{:?}", err);
-}
-
-#[test]
-fn test_add_data_key_sets_key_and_appends_edk() {
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .build()
-        .unwrap()
-        .add_data_key(PlaintextDataKey::new(vec![7; 32]), make_edk())
-        .unwrap();
-    assert_eq!(mat.plaintext_data_key().unwrap().as_bytes(), [7; 32]);
-    assert_eq!(mat.encrypted_data_keys(), [make_edk()]);
-}
-
-#[test]
-fn test_add_data_key_rejects_existing_key() {
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .plaintext_data_key(PlaintextDataKey::new(vec![7; 32]))
-        .build()
-        .unwrap();
-    let err = mat
-        .add_data_key(PlaintextDataKey::new(vec![8; 32]), make_edk())
-        .unwrap_err();
-    assert!(err.is_invalid_materials(), "{:?}", err);
-}
-
-#[test]
-fn test_add_data_key_rejects_wrong_length() {
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .build()
-        .unwrap();
-    let err = mat
-        .add_data_key(PlaintextDataKey::new(vec![7; 16]), make_edk())
-        .unwrap_err();
-    assert!(err.is_invalid_materials(), "{:?}", err);
-}
-
-#[test]
-fn test_add_encrypted_data_key_appends() {
-    let first = edk_with_ciphertext(b"first");
-    let second = edk_with_ciphertext(b"second");
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .build()
-        .unwrap()
-        .add_data_key(PlaintextDataKey::new(vec![7; 32]), first.clone())
-        .unwrap()
-        .add_encrypted_data_key(second.clone())
-        .unwrap();
-    assert_eq!(mat.encrypted_data_keys(), [first, second]);
-}
-
-#[test]
-fn test_build_rejects_wrong_length_plaintext_data_key() {
-    let err = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .plaintext_data_key(PlaintextDataKey::new(vec![7; 16]))
-        .build()
-        .unwrap_err();
-    assert!(err.is_invalid_materials(), "{:?}", err);
-}
-
-#[test]
-fn test_add_encrypted_data_key_requires_plaintext_data_key() {
-    let mat = EncryptionMaterials::builder()
-        .algorithm_suite_id(NO_SIGN_SUITE)
-        .build()
-        .unwrap();
-    let err = mat.add_encrypted_data_key(make_edk()).unwrap_err();
-    assert!(err.is_invalid_materials(), "{:?}", err);
 }

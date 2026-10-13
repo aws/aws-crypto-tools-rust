@@ -4,7 +4,7 @@
 //! Unit tests for the `error_chain` helpers over synthetic chains.
 //!
 //! Behavior against a real `SdkError` is asserted in
-//! `tests/test_key_store_branch_key_store.rs`, which has the fixtures to
+//! `tests/test_keystore_branch_key_store.rs`, which has the fixtures to
 //! produce one; a real service code is asserted in the integration suites.
 
 use std::error::Error as _;
@@ -14,13 +14,13 @@ use aws_crypto_mpl::Error;
 use aws_crypto_mpl::error_chain::{aws_service_error_code, find_in_error_chain};
 
 /// A three-link chain `Error -> Error -> io::Error`,
-/// the shape a keyring produces when the key store fails beneath it.
+/// the shape a keyring produces when the keystore fails beneath it.
 fn nested_chain() -> Error {
     let root = IoError::new(IoErrorKind::ConnectionReset, "connection reset by peer");
     let middle =
         Error::from(aws_crypto_mpl::error::DispatchError::new("DynamoDB failed").with_source(root));
     Error::from(
-        aws_crypto_mpl::error::DispatchError::new("keyring could not reach its key store")
+        aws_crypto_mpl::error::DispatchError::new("keyring could not reach its keystore")
             .with_source(middle),
     )
 }
@@ -29,7 +29,7 @@ fn nested_chain() -> Error {
 fn find_in_error_chain_returns_the_error_itself_at_depth_zero() {
     let err = nested_chain();
     let found = find_in_error_chain::<Error>(&err).expect("the outermost error matches its type");
-    assert_eq!(found.message(), "keyring could not reach its key store");
+    assert_eq!(found.message(), "keyring could not reach its keystore");
 }
 
 #[test]

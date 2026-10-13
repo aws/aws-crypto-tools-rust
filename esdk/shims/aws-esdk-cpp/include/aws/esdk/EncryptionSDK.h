@@ -468,6 +468,7 @@ struct DdbClientImpl;
 struct KeyStoreImpl;
 struct KeyringImpl;
 struct CryptographicMaterialsCacheImpl;
+struct CacheTypeLowerer;
 struct BytesFactory;
 
 // Every duration parameter accepts any integer std::chrono::duration.
@@ -589,104 +590,109 @@ public:
     static Keyring adopt(void* raw_handle);
 };
 
-/// Base class of the cryptographic materials caches below.
-/// A copy refers to the same cache, so keyrings given copies of one cache share its entries.
+class CacheType;
+
+/// A constructed cryptographic materials cache.
+/// Copies share the underlying cache.
 class CryptographicMaterialsCache {
     std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl_;
+    friend class CacheType;
     friend class HierarchicalKeyring;
-
-protected:
     explicit CryptographicMaterialsCache(
         std::shared_ptr<detail::CryptographicMaterialsCacheImpl> impl)
         : impl_(std::move(impl)) {}
-};
-
-/// Optional StormTrackingCmc parameters.
-/// A field left unset keeps the ESDK Rust's default.
-class StormTrackingCmcOptions {
-    std::optional<std::uint32_t> entry_capacity_;
-    std::optional<std::uint32_t> entry_pruning_tail_size_;
-    std::optional<std::chrono::nanoseconds> grace_period_;
-    std::optional<std::chrono::nanoseconds> grace_interval_;
-    std::optional<std::uint32_t> fan_out_;
-    std::optional<std::chrono::nanoseconds> inflight_ttl_;
-    std::optional<std::chrono::nanoseconds> sleep_;
-    friend class StormTrackingCmc;
 
 public:
-    /// Maximum number of entries cached. Defaults to 1000.
-    StormTrackingCmcOptions& with_entry_capacity(std::uint32_t n) { entry_capacity_ = n; return *this; }
-    /// Number of least-recently-used entries checked for expiry on each lookup. Defaults to 1.
-    StormTrackingCmcOptions& with_entry_pruning_tail_size(std::uint32_t n) { entry_pruning_tail_size_ = n; return *this; }
-    /// Time before expiry at which one request starts refreshing an entry. Defaults to 10 seconds.
-    /// Must be less than the TTL of any Hierarchical Keyring using this cache.
-    template <class Rep, class Period>
-    StormTrackingCmcOptions& with_grace_period(std::chrono::duration<Rep, Period> d) {
-        grace_period_ = detail::to_nanoseconds(d);
-        return *this;
-    }
-    /// Time one request has to refresh an entry before another request may try. Defaults to 1 second.
-    template <class Rep, class Period>
-    StormTrackingCmcOptions& with_grace_interval(std::chrono::duration<Rep, Period> d) {
-        grace_interval_ = detail::to_nanoseconds(d);
-        return *this;
-    }
-    /// Maximum number of refreshes in flight at once. Defaults to 20.
-    StormTrackingCmcOptions& with_fan_out(std::uint32_t n) { fan_out_ = n; return *this; }
-    /// Time a request waits for another request's refresh before failing. Defaults to 10 seconds.
-    template <class Rep, class Period>
-    StormTrackingCmcOptions& with_inflight_ttl(std::chrono::duration<Rep, Period> d) {
-        inflight_ttl_ = detail::to_nanoseconds(d);
-        return *this;
-    }
-    /// Time a waiting request sleeps before checking the cache again. Defaults to 20 milliseconds.
-    template <class Rep, class Period>
-    StormTrackingCmcOptions& with_sleep(std::chrono::duration<Rep, Period> d) {
-        sleep_ = detail::to_nanoseconds(d);
-        return *this;
-    }
+    /// Constructs the cache described by `cache`.
+    /// \param cache Which type of local cache to use.
+    explicit CryptographicMaterialsCache(const CacheType& cache);
 };
 
-/// The best choice for most situations:
-/// a StormTrackingCmc with default options and the given entry capacity.
-class DefaultCmc : public CryptographicMaterialsCache {
+// TODO: expose remaining MPL cache kinds (No, SingleThreaded, MultiThreaded)
+/// Selects a kind of cryptographic materials cache, carrying that kind's own parameters.
+class CacheType {
 public:
-    /// Creates the default cache.
+    /// The best choice for most situations. Probably a StormTrackingCache.
     /// \param entry_capacity Maximum number of entries cached.
-    explicit DefaultCmc(std::uint32_t entry_capacity);
-};
+    static CacheType Default(std::uint32_t entry_capacity);
+    /// A cache safe for multi-threaded use that also limits redundant and
+    /// overly parallel backend calls.
+    /// For a cache with sensible defaults, use Default instead.
+    /// \param entry_capacity Maximum number of entries cached.
+    /// \param entry_pruning_tail_size Number of entries to prune at a time.
+    /// \param grace_period Time before expiration to begin refreshing.
+    /// \param grace_interval Time between refresh attempts.
+    /// \param fan_out Maximum number of simultaneous refresh attempts.
+    /// \param inflight_ttl Time until a refresh attempt is forgotten.
+    /// \param sleep Time a thread sleeps when fan_out is exceeded.
+    template <class GraceRep, class GracePeriod, class IntervalRep, class IntervalPeriod,
+              class InflightRep, class InflightPeriod, class SleepRep, class SleepPeriod>
+    static CacheType StormTracking(
+        std::uint32_t entry_capacity,
+        std::uint32_t entry_pruning_tail_size,
+        std::chrono::duration<GraceRep, GracePeriod> grace_period,
+        std::chrono::duration<IntervalRep, IntervalPeriod> grace_interval,
+        std::uint32_t fan_out,
+        std::chrono::duration<InflightRep, InflightPeriod> inflight_ttl,
+        std::chrono::duration<SleepRep, SleepPeriod> sleep) {
+        return StormTracking(entry_capacity, entry_pruning_tail_size,
+                             detail::to_nanoseconds(grace_period),
+                             detail::to_nanoseconds(grace_interval), fan_out,
+                             detail::to_nanoseconds(inflight_ttl), detail::to_nanoseconds(sleep),
+                             Tag{});
+    }
+    /// Shared cache across multiple Hierarchical Keyrings. For this cache type,
+    /// the user should provide an already constructed CryptographicMaterialsCache
+    /// to the Hierarchical Keyring at initialization.
+    static CacheType Shared(const CryptographicMaterialsCache& cache);
 
-/// A cache safe for multi-threaded use that limits redundant and concurrent backend calls.
-/// Use it over DefaultCmc to change the storm tracking parameters.
-class StormTrackingCmc : public CryptographicMaterialsCache {
-public:
-    /// Creates a storm tracking cache.
-    /// \param options Parameters to change; unset ones keep their defaults.
-    explicit StormTrackingCmc(const StormTrackingCmcOptions& options = {});
-};
+private:
+    // Keeps the private overload out of overload resolution for callers,
+    // so std::chrono::nanoseconds arguments still select the public template.
+    struct Tag {};
+    static CacheType StormTracking(std::uint32_t entry_capacity,
+                                   std::uint32_t entry_pruning_tail_size,
+                                   std::chrono::nanoseconds grace_period,
+                                   std::chrono::nanoseconds grace_interval,
+                                   std::uint32_t fan_out,
+                                   std::chrono::nanoseconds inflight_ttl,
+                                   std::chrono::nanoseconds sleep,
+                                   Tag);
 
-/// An LRU cache with no storm tracking.
-class LocalCmc : public CryptographicMaterialsCache {
-public:
-    /// Creates a local cache.
-    /// \param entry_capacity Maximum number of entries cached. Zero caches nothing.
-    explicit LocalCmc(std::uint32_t entry_capacity);
+    enum class Kind { Default, StormTracking, Shared };
+    explicit CacheType(Kind kind) : kind_(kind) {}
+    Kind kind_;
+    std::uint32_t entry_capacity_ = 0;
+    std::uint32_t entry_pruning_tail_size_ = 0;
+    std::chrono::nanoseconds grace_period_{};
+    std::chrono::nanoseconds grace_interval_{};
+    std::uint32_t fan_out_ = 0;
+    std::chrono::nanoseconds inflight_ttl_{};
+    std::chrono::nanoseconds sleep_{};
+    std::shared_ptr<detail::CryptographicMaterialsCacheImpl> shared_;
+    friend class CryptographicMaterialsCache;
+    friend class HierarchicalKeyring;
+    friend struct detail::CacheTypeLowerer;
 };
 
 /// Optional hierarchical keyring parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class HierarchicalKeyringOptions {
-    std::optional<CryptographicMaterialsCache> cache_;
+    std::optional<CacheType> cache_;
     std::optional<std::string> partition_id_;
     friend class HierarchicalKeyring;
 
 public:
-    /// The cache for this Hierarchical Keyring.
-    /// Give several keyrings copies of one cache to share its entries.
-    /// If not set, the keyring creates its own DefaultCmc with an entry capacity of 1000.
-    /// The cache's grace period, if it has one, must be less than the keyring's TTL;
-    /// DefaultCmc's is 10 seconds.
-    HierarchicalKeyringOptions& with_cache(const CryptographicMaterialsCache& cache) {
+    /// Sets the type of cache for this Hierarchical Keyring.
+    /// By providing an already initialized 'Shared' cache, users can determine the scope of the cache.
+    /// That is, if the cache is shared across other Cryptographic Material Providers,
+    /// for instance other Hierarchical Keyrings or Caching Cryptographic Materials Managers (Caching CMMs).
+    /// If any other type of cache in the CacheType union is provided,
+    /// the Hierarchical Keyring will initialize a cache of that type,
+    /// to be used with only this Hierarchical Keyring.
+    /// If not set, a DefaultCache is initialized to be used with only this Hierarchical Keyring
+    /// with entryCapacity = 1000.
+    HierarchicalKeyringOptions& with_cache(const CacheType& cache) {
         cache_ = cache;
         return *this;
     }

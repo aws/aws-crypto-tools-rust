@@ -1,9 +1,9 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! KMS-backed read helpers for the DynamoDB key store.
+//! KMS-backed read helpers for the [`BranchKeyStore`](super::BranchKeyStore).
 //!
-//! Implements the cross-cutting "Authenticating a KeyStore item" and
+//! Implements the cross-cutting "Authenticating a Keystore item" and
 //! "AWS KMS Branch Key Decryption" sections of `branch-key-store.md`,
 //! used by `GetActiveBranchKey`, `GetBranchKeyVersion`, `GetBeaconKey`,
 //! and `VersionKey`.
@@ -22,25 +22,24 @@ use aws_sdk_kms::config::http::HttpResponse;
 use aws_sdk_kms::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_kms::primitives::Blob;
 
-use crate::aws_kms::user_agent::user_agent_override;
-use crate::key_store::attributes::{ATTR_ENC, ATTR_KMS_ARN};
-use crate::key_store::config::KmsConfiguration;
-use crate::key_store::kms_config::{is_arn_compatible, parse_arn};
-use crate::key_store::record::EncryptedRecord;
+use crate::keystore::attributes::{ATTR_ENC, ATTR_KMS_ARN};
+use crate::keystore::config::KmsConfiguration;
+use crate::keystore::kms_config::{is_arn_compatible, parse_arn};
+use crate::keystore::record::EncryptedRecord;
 
-/// Encryption-context key under which the logical key store name is
+/// Encryption-context key under which the logical keystore name is
 /// bound. Per `branch-key-store.md#encryption-context` this key is the
 /// only EC key NOT echoed as a DDB attribute.
 const EC_KEY_TABLENAME: &str = "tablename";
 
 /// Build the authenticated encryption context used for both
-/// `Authenticating a KeyStore item` and `AWS KMS Branch Key Decryption`.
+/// `Authenticating a Keystore item` and `AWS KMS Branch Key Decryption`.
 ///
 /// The constructed EC contains:
 /// 1. Every attribute on the DDB response item (these are authenticated
 ///    end-to-end by KMS).
 /// 2. A single `tablename` entry whose value is the configured logical
-///    key store name.
+///    keystore name.
 ///
 /// `record_attributes` is taken from [`EncryptedRecord::attributes`] —
 /// note that `enc` is not part of `attributes` (it lives in the
@@ -48,7 +47,7 @@ const EC_KEY_TABLENAME: &str = "tablename";
 /// `enc`" rule is satisfied by the input shape.
 pub(crate) fn build_authenticated_encryption_context(
     record_attributes: &BTreeMap<String, String>,
-    logical_key_store_name: &str,
+    logical_keystore_name: &str,
 ) -> BTreeMap<String, String> {
     let mut ec = BTreeMap::new();
 
@@ -56,12 +55,12 @@ pub(crate) fn build_authenticated_encryption_context(
         ec.insert(k.clone(), v.clone());
     }
 
-    // Bind the configured logical key store name. This is the only EC key
-    // that is NOT echoed as a DDB attribute (it lives in the key store's
+    // Bind the configured logical keystore name. This is the only EC key
+    // that is NOT echoed as a DDB attribute (it lives in the keystore's
     // configuration, not the record).
     ec.insert(
         EC_KEY_TABLENAME.to_string(),
-        logical_key_store_name.to_string(),
+        logical_keystore_name.to_string(),
     );
 
     // `EncryptedRecord::attributes` does not contain `enc` by construction
@@ -85,32 +84,32 @@ pub(crate) fn build_authenticated_encryption_context(
 /// - `MrDiscovery { region }`: the record's `kms-arn` MUST NOT be an
 ///   alias. Returns the record's ARN with its region rewritten to the
 ///   configured region.
-pub(crate) fn resolve_key_store_arn(
+pub(crate) fn resolve_keystore_arn(
     kms_config: &KmsConfiguration,
     record_kms_arn: &str,
     branch_key_id: &str,
 ) -> Result<String, Error> {
-    let configured = match kms_config {
-        KmsConfiguration::KmsKeyArn(configured) => configured.as_str(),
-        KmsConfiguration::KmsMrKeyArn(configured) => configured.as_str(),
-        KmsConfiguration::Discovery(_) => {
-            reject_alias_arn(record_kms_arn, branch_key_id)?;
-            return Ok(record_kms_arn.to_string());
+    match kms_config {
+        KmsConfiguration::KmsKeyArn(configured) | KmsConfiguration::KmsMrKeyArn(configured) => {
+            if !is_arn_compatible(kms_config, record_kms_arn) {
+                return Err(Error::new(
+                    Kind::Validation,
+                    format!(
+                        "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
+                    ),
+                ));
+            }
+            Ok(configured.clone())
         }
-        KmsConfiguration::MrDiscovery(mr_discovery) => {
+        KmsConfiguration::Discovery => {
             reject_alias_arn(record_kms_arn, branch_key_id)?;
-            return rewrite_arn_region(record_kms_arn, mr_discovery.region(), branch_key_id);
+            Ok(record_kms_arn.to_string())
         }
-    };
-    if !is_arn_compatible(kms_config, record_kms_arn) {
-        return Err(Error::new(
-            Kind::Validation,
-            format!(
-                "record kms-arn '{record_kms_arn}' is not compatible with the configured KMS Key '{configured}'",
-            ),
-        ));
+        KmsConfiguration::MrDiscovery { region } => {
+            reject_alias_arn(record_kms_arn, branch_key_id)?;
+            rewrite_arn_region(record_kms_arn, region, branch_key_id)
+        }
     }
-    Ok(configured.to_owned())
 }
 
 /// Validate that `arn` is not an AWS KMS alias ARN. Used by Discovery
@@ -164,10 +163,10 @@ pub(crate) async fn decrypt_branch_key(
     kms_config: &KmsConfiguration,
     record: &EncryptedRecord,
     branch_key_id: &str,
-    logical_key_store_name: &str,
+    logical_keystore_name: &str,
     grant_tokens: &[String],
 ) -> Result<Vec<u8>, Error> {
-    let ec = build_authenticated_encryption_context(&record.attributes, logical_key_store_name);
+    let ec = build_authenticated_encryption_context(&record.attributes, logical_keystore_name);
 
     let record_kms_arn = record.attributes.get(ATTR_KMS_ARN).ok_or_else(|| {
         malformed_record(
@@ -176,7 +175,7 @@ pub(crate) async fn decrypt_branch_key(
         )
     })?;
 
-    let resolved_key_id = resolve_key_store_arn(kms_config, record_kms_arn, branch_key_id)?;
+    let resolved_key_id = resolve_keystore_arn(kms_config, record_kms_arn, branch_key_id)?;
 
     let response = kms_client
         .decrypt()
@@ -184,8 +183,6 @@ pub(crate) async fn decrypt_branch_key(
         .ciphertext_blob(Blob::new(record.enc.clone()))
         .set_encryption_context(Some(ec.into_iter().collect()))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
-        .customize()
-        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| {
@@ -240,8 +237,6 @@ pub(crate) async fn generate_wrapped_key(
                 .collect(),
         ))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
-        .customize()
-        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| map_kms_error("GenerateDataKeyWithoutPlaintext", key_arn, e))?;
@@ -287,8 +282,6 @@ pub(crate) async fn reencrypt_wrapped_key(
                 .collect(),
         ))
         .set_grant_tokens(Some(grant_tokens.to_vec()))
-        .customize()
-        .config_override(user_agent_override())
         .send()
         .await
         .map_err(|e| map_kms_error("ReEncrypt", key_arn, e))?;

@@ -3,7 +3,7 @@
 //!
 //! Both keyrings are built from the MPL ([`aws_crypto_mpl`]):
 //! - Raw AES via [`RawAesKeyring`].
-//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over the key store [`KeyStoreClient::builder`](aws_crypto_mpl::KeyStoreClient::builder) builds.
+//! - AWS KMS Hierarchical via [`HierarchicalKeyring`] over a [`BranchKeyStore`].
 //!
 //! Enforces the "exactly one variant member set" invariant that the Smithy
 //! tagged-union-via-optional-members shapes cannot express in the type system.
@@ -14,7 +14,7 @@ use crate::error::ServerError;
 use crate::model::{
     AwsKmsHierarchicalKeyringConfig, CryptographicMaterialsManager, Keyring, RawAesKeyringConfig,
 };
-use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
+use aws_crypto_mpl::keystore::{BranchKeyStore, KmsConfiguration};
 use aws_crypto_mpl::{AesGcm, HierarchicalKeyring, RawAesKeyring};
 use aws_esdk::SharedKeyring;
 
@@ -86,13 +86,13 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
         crate::model::AesWrappingAlg::Alg192 => AesGcm::Aes192Gcm,
         crate::model::AesWrappingAlg::Alg256 => AesGcm::Aes256Gcm,
     };
-    let keyring = RawAesKeyring::builder()
-        .key_namespace(config.key_namespace.clone())
-        .key_name(config.key_name.clone())
-        .wrapping_key(config.wrapping_key.clone())
-        .wrapping_alg(wrapping_alg)
-        .build()
-        .map_err(|e| ServerError::esdk(e.to_string()))?;
+    let keyring = RawAesKeyring::new(
+        config.key_namespace.clone(),
+        config.key_name.clone(),
+        config.wrapping_key.clone(),
+        wrapping_alg,
+    )
+    .map_err(|e| ServerError::esdk(e.to_string()))?;
     Ok(SharedKeyring::new(keyring))
 }
 
@@ -105,9 +105,9 @@ async fn build_raw_aes(config: &RawAesKeyringConfig) -> Result<SharedKeyring, Se
 async fn build_hierarchical(
     config: &AwsKmsHierarchicalKeyringConfig,
 ) -> Result<SharedKeyring, ServerError> {
-    let key_store = KeyStoreClient::builder()
+    let key_store = BranchKeyStore::builder()
         .ddb_table_name(config.key_store_table_name.clone())
-        .logical_key_store_name(config.logical_key_store_name.clone())
+        .logical_keystore_name(config.logical_key_store_name.clone())
         .kms_configuration(KmsConfiguration::KmsKeyArn(config.kms_key_arn.clone()))
         .build()
         .await

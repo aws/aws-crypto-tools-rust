@@ -7,9 +7,9 @@ use crate::Error;
 use crate::error::{BranchKey, Kind, Resource, Service};
 use std::collections::BTreeMap;
 
-use crate::key_store::attributes::{
-    ATTR_BRANCH_KEY_ID, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
-    TYPE_BRANCH_VERSION_PREFIX,
+use crate::keystore::attributes::{
+    ATTR_BRANCH_KEY_ID, ATTR_ENC, ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX,
+    TYPE_BRANCH_ACTIVE, TYPE_BRANCH_VERSION_PREFIX,
 };
 use crate::structures::{BranchKeyMaterials, EncryptionContext};
 
@@ -22,7 +22,7 @@ pub struct EncryptedRecord {
 
 /// Projects an [`EncryptedRecord`] into the authenticated encryption context,
 /// mirroring the Dafny `ToBranchKeyContext`: every stored attribute except
-/// `enc`, plus a `tablename` attribute holding the logical key store name.
+/// `enc`, plus a `tablename` attribute holding the logical keystore name.
 ///
 /// Attributes present on the item beyond the standard record fields are
 /// carried through verbatim — the spec requires every item attribute (except
@@ -31,21 +31,20 @@ pub struct EncryptedRecord {
 /// here. `enc` is held separately on [`EncryptedRecord`] and is never part of
 /// the encryption context; an `enc` key appearing among `attributes` is
 /// dropped defensively.
-#[cfg(feature = "test-utils")]
 pub fn encryption_context_from_item(
     record: &EncryptedRecord,
-    logical_key_store_name: &str,
+    logical_keystore_name: &str,
 ) -> BTreeMap<String, String> {
     let mut ec: BTreeMap<String, String> = record
         .attributes
         .iter()
-        .filter(|(k, _)| k.as_str() != super::attributes::ATTR_ENC)
+        .filter(|(k, _)| k.as_str() != ATTR_ENC)
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
     ec.insert(
-        super::attributes::ATTR_TABLENAME.to_string(),
-        logical_key_store_name.to_string(),
+        ATTR_TABLENAME.to_string(),
+        logical_keystore_name.to_string(),
     );
 
     ec
@@ -55,14 +54,13 @@ pub fn encryption_context_from_item(
 /// `ToAttributeMap`: the stored attributes are the encryption context minus
 /// `tablename` (which exists only in the context), and the wrapped branch key
 /// becomes the separate `enc` value.
-#[cfg(feature = "test-utils")]
 pub fn to_attribute_map(
     encryption_context: &BTreeMap<String, String>,
     encrypted_key: Vec<u8>,
 ) -> EncryptedRecord {
     let attributes = encryption_context
         .iter()
-        .filter(|(k, _)| k.as_str() != super::attributes::ATTR_TABLENAME)
+        .filter(|(k, _)| k.as_str() != ATTR_TABLENAME)
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
@@ -164,15 +162,15 @@ pub fn branch_key_materials_from_authenticated_encryption_context(
         )
     })?;
 
-    BranchKeyMaterials::builder()
-        .branch_key(branch_key)
-        .branch_key_id(branch_key_id)
-        .branch_key_version(branch_key_version)
-        .encryption_context(encryption_context)
-        .build()
-        .map_err(|e| {
-            malformed(authenticated_ec, "failed to construct branch key materials").with_source(e)
-        })
+    BranchKeyMaterials::new(
+        branch_key,
+        branch_key_id,
+        branch_key_version,
+        encryption_context,
+    )
+    .map_err(|e| {
+        malformed(authenticated_ec, "failed to construct branch key materials").with_source(e)
+    })
 }
 
 /// An `InvalidMaterials` error for a malformed branch key record.

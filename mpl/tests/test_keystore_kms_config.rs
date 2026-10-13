@@ -3,12 +3,8 @@
 
 //! Tests for KMS configuration ARN parsing, validation, and compatibility.
 
-#![cfg(feature = "test-utils")]
-
-use aws_crypto_mpl::key_store::__test_internals::kms_config::{
-    is_arn_compatible, parse_arn, validate_kms_key_arn,
-};
-use aws_crypto_mpl::key_store::{Discovery, KmsConfiguration, MrDiscovery};
+use aws_crypto_mpl::keystore::KmsConfiguration;
+use aws_crypto_mpl::keystore::kms_config::{is_arn_compatible, parse_arn, validate_kms_key_arn};
 
 const VALID_KMS_ARN: &str =
     "arn:aws:kms:us-east-1:111122223333:key/abcd1234-1234-abcd-1234-1234567890ab";
@@ -87,32 +83,32 @@ fn validate_kms_key_arn_rejects_malformed_string() {
 
 #[test]
 fn kms_key_arn_compatible_only_when_byte_equal() {
-    let config: KmsConfiguration = KmsConfiguration::KmsKeyArn(VALID_KMS_ARN.into());
+    let config = KmsConfiguration::KmsKeyArn(VALID_KMS_ARN.to_string());
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(!is_arn_compatible(&config, VALID_MRK_ARN));
 }
 
 #[test]
 fn kms_key_arn_incompatible_with_different_region() {
-    let config: KmsConfiguration = KmsConfiguration::KmsKeyArn(VALID_MRK_ARN.into());
+    let config = KmsConfiguration::KmsKeyArn(VALID_MRK_ARN.to_string());
     assert!(!is_arn_compatible(&config, MRK_DIFFERENT_REGION));
 }
 
 #[test]
 fn kms_mr_key_arn_compatible_with_same_key_different_region() {
-    let config: KmsConfiguration = KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.into());
+    let config = KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.to_string());
     assert!(is_arn_compatible(&config, MRK_DIFFERENT_REGION));
 }
 
 #[test]
 fn kms_mr_key_arn_compatible_with_byte_equal_arn() {
-    let config: KmsConfiguration = KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.into());
+    let config = KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.to_string());
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
 }
 
 #[test]
 fn kms_mr_key_arn_incompatible_with_different_account() {
-    let config: KmsConfiguration = KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.into());
+    let config = KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.to_string());
     let different_account =
         "arn:aws:kms:us-east-1:999988887777:key/mrk-1234abcd-12ab-34cd-56ef-1234567890ab";
     assert!(!is_arn_compatible(&config, different_account));
@@ -120,8 +116,7 @@ fn kms_mr_key_arn_incompatible_with_different_account() {
 
 #[test]
 fn discovery_compatible_with_any_arn() {
-    let config: KmsConfiguration =
-        KmsConfiguration::Discovery(Discovery::builder().build().unwrap());
+    let config = KmsConfiguration::Discovery;
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
     assert!(is_arn_compatible(&config, ALIAS_ARN));
@@ -129,55 +124,36 @@ fn discovery_compatible_with_any_arn() {
 
 #[test]
 fn mrdiscovery_compatible_with_any_arn() {
-    let config: KmsConfiguration =
-        KmsConfiguration::MrDiscovery(MrDiscovery::builder().region("us-west-2").build().unwrap());
+    let config = KmsConfiguration::MrDiscovery {
+        region: "us-west-2".to_string(),
+    };
     assert!(is_arn_compatible(&config, VALID_KMS_ARN));
     assert!(is_arn_compatible(&config, VALID_MRK_ARN));
 }
 
 #[test]
 fn kms_key_arn_validate_accepts_valid_arn() {
-    let config: KmsConfiguration = KmsConfiguration::KmsKeyArn(VALID_KMS_ARN.into());
+    let config = KmsConfiguration::KmsKeyArn(VALID_KMS_ARN.to_string());
     assert!(config.validate().is_ok());
 }
 
 #[test]
 fn kms_key_arn_validate_rejects_alias() {
-    let config: KmsConfiguration = KmsConfiguration::KmsKeyArn(ALIAS_ARN.into());
+    let config = KmsConfiguration::KmsKeyArn(ALIAS_ARN.to_string());
     let err = config.validate().unwrap_err();
     assert!(err.is_validation(), "{:?}", err);
 }
 
 #[test]
 fn discovery_validate_is_always_ok() {
-    let config: KmsConfiguration =
-        KmsConfiguration::Discovery(Discovery::builder().build().unwrap());
+    let config = KmsConfiguration::Discovery;
     assert!(config.validate().is_ok());
 }
 
 #[test]
 fn mrdiscovery_validate_is_always_ok() {
-    let config: KmsConfiguration =
-        KmsConfiguration::MrDiscovery(MrDiscovery::builder().region("eu-west-1").build().unwrap());
+    let config = KmsConfiguration::MrDiscovery {
+        region: "eu-west-1".to_string(),
+    };
     assert!(config.validate().is_ok());
-}
-
-#[test]
-fn kms_configuration_structs_convert_into_matching_variants() {
-    assert!(matches!(
-        KmsConfiguration::KmsKeyArn(VALID_KMS_ARN.into()),
-        KmsConfiguration::KmsKeyArn(k) if k == VALID_KMS_ARN
-    ));
-    assert!(matches!(
-        KmsConfiguration::KmsMrKeyArn(VALID_MRK_ARN.into()),
-        KmsConfiguration::KmsMrKeyArn(k) if k == VALID_MRK_ARN
-    ));
-    assert!(matches!(
-        KmsConfiguration::Discovery(Discovery::builder().build().unwrap()),
-        KmsConfiguration::Discovery(_)
-    ));
-    assert!(matches!(
-        KmsConfiguration::MrDiscovery(MrDiscovery::builder().region("us-west-2").build().unwrap()),
-        KmsConfiguration::MrDiscovery(m) if m.region() == "us-west-2"
-    ));
 }

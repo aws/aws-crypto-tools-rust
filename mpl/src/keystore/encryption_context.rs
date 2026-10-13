@@ -14,15 +14,15 @@ use super::attributes::{
 };
 use crate::structures::EncryptionContext;
 
-/// Inputs required to construct any flavor of key store encryption context.
+/// Inputs required to construct any flavor of keystore encryption context.
 #[derive(Debug, Clone)]
 pub struct EncryptionContextInput<'a> {
     /// The branch key identifier.
     pub branch_key_id: &'a str,
     /// ISO 8601 creation timestamp.
     pub create_time: &'a str,
-    /// Logical key store name (becomes `tablename` value per spec).
-    pub logical_key_store_name: &'a str,
+    /// Logical keystore name (becomes `tablename` value per spec).
+    pub logical_keystore_name: &'a str,
     /// KMS key ARN.
     pub kms_arn: &'a str,
     /// Hierarchy version (becomes string representation).
@@ -68,7 +68,7 @@ fn build_base(
 
     ec.insert(
         ATTR_TABLENAME.to_string(),
-        input.logical_key_store_name.to_string(),
+        input.logical_keystore_name.to_string(),
     );
 
     ec.insert(ATTR_KMS_ARN.to_string(), input.kms_arn.to_string());

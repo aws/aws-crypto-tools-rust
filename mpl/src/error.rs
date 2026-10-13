@@ -75,21 +75,17 @@
 //! and [`reason`](ConflictError::reason) says why:
 //!
 //! ```no_run
-//! # async fn example(key_store: aws_crypto_mpl::KeyStoreClient) -> Result<(), aws_crypto_mpl::Error> {
+//! # async fn example(store: aws_crypto_mpl::BranchKeyStore) -> Result<(), aws_crypto_mpl::Error> {
+//! use aws_crypto_mpl::Keystore;
 //! use aws_crypto_mpl::error::{ConflictReason, Error};
 //!
-//! match key_store.version_key().branch_key_id("my-branch-key").send().await {
-//!     Ok(_) => {}
+//! match store.version_key("my-branch-key".into()).await {
 //!     // Another caller rotated the branch key first; it has a new version already.
-//!     Err(Error::Conflict(e)) if e.reason() == Some(&ConflictReason::ConcurrentModification) => {}
-//!     Err(e) => return Err(e),
-//! }
+//!     Err(Error::Conflict(e)) if e.reason() == Some(&ConflictReason::ConcurrentModification) => Ok(()),
+//!     other => other,
+//! }?;
 //!
-//! let create = key_store
-//!     .create_key()
-//!     .branch_key_id("my-branch-key")
-//!     .encryption_context(aws_crypto_mpl::structures::EncryptionContext::new());
-//! match create.send().await {
+//! match store.create_key(Some("my-branch-key".into()), Some(Default::default())).await {
 //!     Ok(_) => {}
 //!     // The branch key ID is in use; use the existing key or pick another ID.
 //!     Err(Error::Conflict(e)) if e.reason() == Some(&ConflictReason::AlreadyExists) => {}
@@ -169,14 +165,9 @@ pub use aws_smithy_types::retry::{ErrorKind as RetryErrorKind, ProvideErrorKind}
 impl Error {
     /// Classify a failed AWS SDK call to `service` about `resource`.
     ///
-    /// The variant, retry kind, error code, and request ID come from the SDK error,
-    /// the same way this library's own keyrings and key store classify theirs.
     /// The message is "`operation` failed", and the source is the SDK error.
-    ///
-    /// A custom keyring or CMM that calls an AWS service returns this,
-    /// so callers can match its failures by variant and [`service`](Self::service).
     #[track_caller]
-    pub fn from_sdk<E>(
+    pub(crate) fn from_sdk<E>(
         service: Service,
         operation: &str,
         resource: Option<Resource>,
