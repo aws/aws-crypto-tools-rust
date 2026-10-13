@@ -1,18 +1,20 @@
 // Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for `keystore::record` module.
+//! Tests for `key_store::record` module.
+
+#![cfg(feature = "test-utils")]
 
 use std::collections::BTreeMap;
 
 use aws_crypto_mpl::error::{BranchKey, Resource, Service};
 
-use aws_crypto_mpl::keystore::attributes::{
+use aws_crypto_mpl::key_store::__test_internals::attributes::{
     ATTR_BRANCH_KEY_ID, ATTR_CREATE_TIME, ATTR_ENC, ATTR_HIERARCHY_VERSION, ATTR_KMS_ARN,
     ATTR_TABLENAME, ATTR_TYPE, ATTR_VERSION, CUSTOM_EC_PREFIX, TYPE_BRANCH_ACTIVE,
     TYPE_BRANCH_VERSION_PREFIX,
 };
-use aws_crypto_mpl::keystore::record::{
+use aws_crypto_mpl::key_store::__test_internals::record::{
     EncryptedRecord, branch_key_materials_from_authenticated_encryption_context,
     custom_encryption_context_from_authenticated_encryption_context, encryption_context_from_item,
     to_attribute_map,
