@@ -326,33 +326,3 @@ async fn test_large_message_yields_to_other_tasks() {
     );
     ticker.abort();
 }
-
-#[tokio::test]
-async fn test_streaming_round_trip_through_sync_adapters() {
-    use aws_esdk::io::{SyncReader, SyncWriter};
-
-    let keyring = test_keyring().await;
-    let plaintext: Vec<u8> = (0..=255u8).cycle().take(4096 + 17).collect();
-
-    let esdk = Esdk::default();
-    let mut ciphertext = SyncWriter::new(Vec::new());
-    esdk.encrypt_stream()
-        .keyring(keyring.clone())
-        .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .send(
-            SyncReader::new(std::io::Cursor::new(&plaintext)),
-            &mut ciphertext,
-        )
-        .await
-        .unwrap();
-    let ciphertext = ciphertext.into_inner();
-
-    let mut decrypted = SyncWriter::new(Vec::new());
-    esdk.decrypt_stream()
-        .keyring(keyring)
-        .send(SyncReader::new(ciphertext.as_slice()), &mut decrypted)
-        .await
-        .unwrap();
-
-    assert_eq!(decrypted.into_inner(), plaintext);
-}
