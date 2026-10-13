@@ -1163,8 +1163,9 @@ fn create_sdk_config(
 
 // ESDK/MPL Client Operations
 
-/// The core ESDK settings an `ffi::EncryptInput` carries besides its payload,
-/// encryption context, and keyring.
+/// An `ffi::EncryptInput`'s settings, converted for the core ESDK:
+/// the `EncryptionSDK` client's commitment policy and encrypted data key cap as an `Esdk`,
+/// and the per-call algorithm suite and frame length for its encrypt builder.
 struct EncryptSettings {
     esdk: Esdk,
     algorithm_suite_id: Option<EsdkAlgorithmSuiteId>,

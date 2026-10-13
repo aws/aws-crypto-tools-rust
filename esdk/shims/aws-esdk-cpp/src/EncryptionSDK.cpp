@@ -563,26 +563,18 @@ EncryptResult EncryptionSDK::encrypt(const std::uint8_t* plaintext,
     in.plaintext = ::rust::Slice<const std::uint8_t>(plaintext, plaintext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
     in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
+    in.frame_length = detail::to_opt(options.frame_length_);
     //= spec/shim/esdk-shim.md#client-configuration
+    //= type=implication
+    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
-    if (commitment_policy_ && options.commitment_policy_)
-        throw ValidationException(
-            "commitment_policy is provided by both the EncryptionSDK client and the "
-            "per-call options. Set it in exactly one place.");
+    //
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
-                                                                     : commitment_policy_);
-    in.frame_length = detail::to_opt(options.frame_length_);
-    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
-        throw ValidationException(
-            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
-            "the per-call options. Set it in exactly one place.");
-    in.max_encrypted_data_keys = detail::to_opt(
-        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                         : max_encrypted_data_keys_);
+    in.commitment_policy = detail::to_opt(commitment_policy_);
+    in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::EncryptOutput out = detail::guard([&] { return ::ffi::encrypt(in); });
     EncryptResult result;
     result.ciphertext = detail::make_bytes(std::move(out.ciphertext));
@@ -612,24 +604,16 @@ DecryptResult EncryptionSDK::decrypt(const std::uint8_t* ciphertext,
     in.ciphertext = ::rust::Slice<const std::uint8_t>(ciphertext, ciphertext_len);
     in.encryption_context = detail::to_ec(options.encryption_context_);
     //= spec/shim/esdk-shim.md#client-configuration
+    //= type=implication
+    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
-    if (commitment_policy_ && options.commitment_policy_)
-        throw ValidationException(
-            "commitment_policy is provided by both the EncryptionSDK client and the "
-            "per-call options. Set it in exactly one place.");
+    //
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
-                                                                     : commitment_policy_);
-    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
-        throw ValidationException(
-            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
-            "the per-call options. Set it in exactly one place.");
-    in.max_encrypted_data_keys = detail::to_opt(
-        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                         : max_encrypted_data_keys_);
+    in.commitment_policy = detail::to_opt(commitment_policy_);
+    in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     ::ffi::DecryptOutput out = detail::guard([&] { return ::ffi::decrypt(in); });
     DecryptResult result;
     result.plaintext = detail::make_bytes(std::move(out.plaintext));
@@ -646,26 +630,18 @@ EncryptStream EncryptionSDK::create_encrypt_stream(const Keyring& keyring,
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
     in.algorithm_suite_id = detail::to_opt(options.algorithm_suite_);
+    in.frame_length = detail::to_opt(options.frame_length_);
     //= spec/shim/esdk-shim.md#client-configuration
+    //= type=implication
+    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
-    if (commitment_policy_ && options.commitment_policy_)
-        throw ValidationException(
-            "commitment_policy is provided by both the EncryptionSDK client and the "
-            "per-call options. Set it in exactly one place.");
+    //
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
-                                                                     : commitment_policy_);
-    in.frame_length = detail::to_opt(options.frame_length_);
-    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
-        throw ValidationException(
-            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
-            "the per-call options. Set it in exactly one place.");
-    in.max_encrypted_data_keys = detail::to_opt(
-        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                         : max_encrypted_data_keys_);
+    in.commitment_policy = detail::to_opt(commitment_policy_);
+    in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return EncryptStream(std::make_shared<detail::EncryptStreamImpl>(
@@ -679,24 +655,16 @@ DecryptStream EncryptionSDK::create_decrypt_stream(const Keyring& keyring,
     in.keyring = &*keyring.impl_->handle;
     in.encryption_context = detail::to_ec(options.encryption_context_);
     //= spec/shim/esdk-shim.md#client-configuration
+    //= type=implication
+    //= reason=The commitment policy and encrypted data key cap are set only on the EncryptionSDK client; per-call options have no field for either, so neither can be supplied twice.
     //# - A configuration value the target supplies on both the client and a
     //# per-operation input MUST be rejected as invalid input.
-    if (commitment_policy_ && options.commitment_policy_)
-        throw ValidationException(
-            "commitment_policy is provided by both the EncryptionSDK client and the "
-            "per-call options. Set it in exactly one place.");
+    //
     //= spec/shim/esdk-shim.md#client-configuration
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
-    in.commitment_policy = detail::to_opt(options.commitment_policy_ ? options.commitment_policy_
-                                                                     : commitment_policy_);
-    if (max_encrypted_data_keys_ && options.max_encrypted_data_keys_)
-        throw ValidationException(
-            "max_encrypted_data_keys is provided by both the EncryptionSDK client and "
-            "the per-call options. Set it in exactly one place.");
-    in.max_encrypted_data_keys = detail::to_opt(
-        options.max_encrypted_data_keys_ ? options.max_encrypted_data_keys_
-                                         : max_encrypted_data_keys_);
+    in.commitment_policy = detail::to_opt(commitment_policy_);
+    in.max_encrypted_data_keys = detail::to_opt(max_encrypted_data_keys_);
     // Keyring MUST be retained.
     // The stream outlives this call and must not outlive the keyring it was created from.
     return DecryptStream(std::make_shared<detail::DecryptStreamImpl>(
