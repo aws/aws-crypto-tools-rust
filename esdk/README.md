@@ -114,6 +114,7 @@ Run one with `cargo run --example <name>`:
 | `rotate_branch_key` | KMS + DynamoDB |
 | `shared_storm_tracking_cache` | KMS + DynamoDB |
 | `handling_errors` | KMS + DynamoDB |
+| `per_request_credentials` | KMS + DynamoDB |
 
 `make examples` runs every example.
 `make examples LOCAL_ONLY=--local-only` runs only the ones that don't need AWS.
