@@ -4,7 +4,7 @@
 
 #include <chrono>
 #include <iostream>
-#include <string>
+#include <vector>
 #include <aws/esdk/EncryptionSDK.h>
 
 using namespace std::chrono_literals;
@@ -32,33 +32,13 @@ int main() {
 
         Aws::Esdk::EncryptionSDK esdk;
 
-        const std::string plaintext = "Hello World";
-        try {
-            // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
-            auto encrypted = esdk.encrypt(plaintext, keyring);
+        std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+        auto encrypted = esdk.encrypt(plaintext, keyring);
 
-            auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
+        auto decrypted = esdk.decrypt(encrypted.ciphertext, keyring);
 
-            if (decrypted.plaintext.as_string_view() != plaintext) {
-                std::cerr << "Decryption failed: plaintext mismatch\n";
-                return 1;
-            }
-        } catch (const Aws::Esdk::ResourceNotFoundException& e) {
-            const auto resource = e.resource();
-            if (resource && resource->type() == Aws::Esdk::ResourceType::BranchKey) {
-                std::cerr << "branch key " << resource->name() << " is not in the key store\n";
-            } else {
-                std::cerr << "an AWS resource does not exist: " << e.what() << "\n";
-            }
-            return 1;
-        } catch (const Aws::Esdk::AccessDeniedException& e) {
-            if (e.service() == Aws::Esdk::Service::Kms) {
-                std::cerr << "AWS KMS denied access: " << e.what() << "\n";
-            } else if (e.service() == Aws::Esdk::Service::DynamoDb) {
-                std::cerr << "DynamoDB denied access: " << e.what() << "\n";
-            } else {
-                std::cerr << "access denied: " << e.what() << "\n";
-            }
+        if (plaintext != decrypted.plaintext) {
+            std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;
         }
 
