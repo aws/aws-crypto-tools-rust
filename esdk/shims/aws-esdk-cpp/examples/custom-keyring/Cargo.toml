@@ -14,6 +14,7 @@ crate-type = ["staticlib"]
 # in your own project, depend on a published version instead
 # (e.g. aws-esdk-cpp = "X.Y.Z").
 aws-esdk-cpp = { path = "../.." }
+aws-esdk = { path = "../../../.." }
 aws-crypto-mpl = { path = "../../../../../mpl" }
 
 # Standalone crate, not a member of the shim's workspace
