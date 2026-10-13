@@ -750,46 +750,30 @@ public:
 /// A field left unset keeps the ESDK Rust's default.
 class EncryptOptions {
     std::optional<AlgorithmSuiteId> algorithm_suite_;
-    std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
     std::optional<std::uint32_t> frame_length_;
-    std::optional<std::uint32_t> max_encrypted_data_keys_;
     friend class EncryptionSDK;
 
 public:
     /// Algorithm suite for encryption, identified by the two-byte ID from the ESDK message format. 
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     EncryptOptions& with_algorithm_suite(AlgorithmSuiteId a) { algorithm_suite_ = a; return *this; }
-    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
-    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
-    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    EncryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Key-value pairs to associate with the encrypted data.
     /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/concepts.html#encryption-context>
     EncryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
     /// Length of each frame of framed data in bytes. Default 4096.
     EncryptOptions& with_frame_length(std::uint32_t n) { frame_length_ = n; return *this; }
-    /// Limit to number of encrypted data keys on a message.
-    /// 0 means no limit.
-    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
-    EncryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Optional decrypt parameters.
 /// A field left unset keeps the ESDK Rust's default.
 class DecryptOptions {
-    std::optional<CommitmentPolicy> commitment_policy_;
     std::map<std::string, std::string> encryption_context_;
-    std::optional<std::uint32_t> max_encrypted_data_keys_;
     friend class EncryptionSDK;
 
 public:
-    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
-    DecryptOptions& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Encryption context to verify against the encrypted message; every entry must be present in the message's context.
     DecryptOptions& with_encryption_context(const std::map<std::string, std::string>& ec) { encryption_context_ = ec; return *this; }
-    /// 0 means no limit.
-    DecryptOptions& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 
 /// Read-only byte buffer returned by encrypt and decrypt.
@@ -910,9 +894,13 @@ class EncryptionSDKConfig {
 
 public:
     /// Commitment policy applied to every operation on this client.
+    /// Governs whether messages are encrypted with, and are required to carry, key commitment.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/migrate-commitment-policy.html>
+    /// Default is CommitmentPolicy::RequireEncryptRequireDecrypt.
     EncryptionSDKConfig& with_commitment_policy(CommitmentPolicy p) { commitment_policy_ = p; return *this; }
     /// Cap on the number of encrypted data keys per message, applied to every
     /// operation on this client. 0 means no limit.
+    /// <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/configure.html#config-limit-keys>
     EncryptionSDKConfig& with_max_encrypted_data_keys(std::uint32_t n) { max_encrypted_data_keys_ = n; return *this; }
 };
 

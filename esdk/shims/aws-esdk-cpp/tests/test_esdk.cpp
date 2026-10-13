@@ -98,7 +98,6 @@ void test_round_trip_with_encryption_context(const TestConfig& cfg) {
     auto encrypted = sdk.encrypt(plaintext, keyring,
                                  Aws::Esdk::EncryptOptions()
                                      .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384)
-                                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)
                                      .with_encryption_context(ec));
     ESDK_CHECK(encrypted.algorithm_suite_id ==
           Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKeyEcdsaP384);
@@ -433,16 +432,6 @@ void test_client_configuration() {
 
     //= spec/shim/esdk-shim.md#client-configuration
     //= type=test
-    //# - A configuration value the target supplies on both the client and a
-    //# per-operation input MUST be rejected as invalid input.
-    CHECK_THROWS_TYPE(
-        Aws::Esdk::ValidationException,
-        forbid_sdk.encrypt(to_bytes("set in two places"), keyring,
-                           Aws::Esdk::EncryptOptions().with_commitment_policy(
-                               Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt)));
-
-    //= spec/shim/esdk-shim.md#client-configuration
-    //= type=test
     //# - A configuration value the target supplies on neither the client nor the
     //# operation MUST defer to the core ESDK's default.
     Aws::Esdk::EncryptionSDK default_sdk;
@@ -504,7 +493,9 @@ void test_streaming() {
     std::vector<std::uint8_t> key(32, 0x2A);
     Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", key,
                                      Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
-    Aws::Esdk::EncryptionSDK sdk;
+    Aws::Esdk::EncryptionSDK sdk(Aws::Esdk::EncryptionSDKConfig()
+                                     .with_max_encrypted_data_keys(3)
+                                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
     // MUST be a non-signing suite to test round-trip here.
     // Streamed decrypt of multi-frame signed messages is refused by any ESDK.
     //
@@ -516,9 +507,7 @@ void test_streaming() {
     //# target supplies incrementally.
     auto opts = Aws::Esdk::EncryptOptions()
                     .with_algorithm_suite(Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-                    .with_frame_length(4096)
-                    .with_max_encrypted_data_keys(3)
-                    .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt);
+                    .with_frame_length(4096);
 
     std::vector<std::uint8_t> plaintext(20000);
     for (std::size_t i = 0; i < plaintext.size(); ++i) plaintext[i] = static_cast<std::uint8_t>(i % 251);
@@ -569,10 +558,7 @@ void test_streaming() {
     ESDK_CHECK(sdk.decrypt(ciphertext, keyring).plaintext == plaintext);
 
     // Streamed decrypt recovers the plaintext.
-    auto dec = sdk.create_decrypt_stream(
-        keyring, Aws::Esdk::DecryptOptions()
-                     .with_max_encrypted_data_keys(3)
-                     .with_commitment_policy(Aws::Esdk::CommitmentPolicy::RequireEncryptRequireDecrypt));
+    auto dec = sdk.create_decrypt_stream(keyring);
     std::vector<std::uint8_t> recovered;
     for (std::size_t off = 0; off < ciphertext.size(); off += 1517) {
         auto n = std::min<std::size_t>(1517, ciphertext.size() - off);
