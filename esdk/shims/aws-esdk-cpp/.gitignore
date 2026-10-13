@@ -38,3 +38,5 @@ Cargo.lock
 /shared_cache_example
 /set_algorithm_suite_example
 /set_commitment_policy_example
+/per_request_credentials_example
+/enum_parity_test
