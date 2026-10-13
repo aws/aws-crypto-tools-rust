@@ -277,8 +277,14 @@ Bytes make_bytes(::rust::Vec<std::uint8_t> buf) {
 
 // MPL Client Config
 
+struct HttpClientImpl {
+    ::rust::Box<::ffi::HttpClient> handle;
+    explicit HttpClientImpl(::rust::Box<::ffi::HttpClient> h) : handle(std::move(h)) {}
+};
+
 struct ClientConfigImpl {
     ::ffi::MplAwsClientConfig cfg{};
+    std::shared_ptr<HttpClientImpl> http_client;
 };
 
 struct CredentialsAccess {
@@ -361,7 +367,15 @@ struct DecryptStreamImpl {
 
 // ClientConfig
 
+HttpClient::HttpClient()
+    : impl_(std::make_shared<detail::HttpClientImpl>(
+          detail::guard([] { return ::ffi::create_http_client(); }))) {}
+
 ClientConfig::ClientConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
+ClientConfig& ClientConfig::with_http_client(const HttpClient& http_client) {
+    impl_->http_client = http_client.impl_;
+    return *this;
+}
 ClientConfig& ClientConfig::with_max_retry_attempts(std::uint32_t n) {
     impl_->cfg.retry.max_attempts = ::ffi::OptU32{true, n};
     return *this;
@@ -384,7 +398,11 @@ ClientConfig& ClientConfig::with_credentials(const Credentials& credentials) {
 KmsClient::KmsClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::KmsClientImpl>(
           detail::Retained{},
-          detail::guard([&] { return ::ffi::create_kms_client(cfg.impl_->cfg); }))) {}
+          detail::guard([&] {
+              const auto& http = cfg.impl_->http_client;
+              return http ? ::ffi::create_kms_client_with_http_client(cfg.impl_->cfg, *http->handle)
+                          : ::ffi::create_kms_client(cfg.impl_->cfg);
+          }))) {}
 
 KmsClient KmsClient::with_credentials(const Credentials& credentials) const {
     const auto ffi_credentials = detail::CredentialsAccess::to_ffi(credentials);
@@ -396,7 +414,11 @@ KmsClient KmsClient::with_credentials(const Credentials& credentials) const {
 DdbClient::DdbClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
-          detail::guard([&] { return ::ffi::create_ddb_client(cfg.impl_->cfg); }))) {}
+          detail::guard([&] {
+              const auto& http = cfg.impl_->http_client;
+              return http ? ::ffi::create_ddb_client_with_http_client(cfg.impl_->cfg, *http->handle)
+                          : ::ffi::create_ddb_client(cfg.impl_->cfg);
+          }))) {}
 
 DdbClient DdbClient::with_credentials(const Credentials& credentials) const {
     const auto ffi_credentials = detail::CredentialsAccess::to_ffi(credentials);

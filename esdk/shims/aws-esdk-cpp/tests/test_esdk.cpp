@@ -451,6 +451,20 @@ void test_client_configuration() {
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
 }
 
+// Offline: clients that share one HttpClient, and copies derived from them.
+void test_shared_http_client() {
+    Aws::Esdk::HttpClient http;
+    const auto config = Aws::Esdk::ClientConfig().with_region("us-west-2").with_http_client(http);
+    Aws::Esdk::KmsClient kms(config);
+    Aws::Esdk::DdbClient ddb(config);
+    const auto credentials = Aws::Esdk::Credentials("AKIDREQUEST", "request-secret");
+    Aws::Esdk::KeyStore key_store("valid-table-name", "valid-table-name",
+                                  "arn:aws:kms:us-west-2:000000000000:key/test",
+                                  Aws::Esdk::KeyStoreOptions()
+                                      .with_kms_client(kms.with_credentials(credentials))
+                                      .with_ddb_client(ddb.with_credentials(credentials)));
+}
+
 // Offline: building clients and a key store sends no requests.
 void test_client_credentials() {
     const auto credentials = Aws::Esdk::Credentials("AKIDBASE", "base-secret")
@@ -918,6 +932,7 @@ int main(int argc, char** argv) {
         test_values_this_library_does_not_know();
         test_client_configuration();
         test_client_credentials();
+        test_shared_http_client();
         test_bytes_and_string_ergonomics();
         test_streaming();
         test_streaming_signed_message_refused();
