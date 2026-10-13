@@ -465,6 +465,18 @@ void test_shared_http_client() {
                                       .with_ddb_client(ddb.with_credentials(credentials)));
 }
 
+// Offline: a KMS client copy with extra request headers.
+void test_kms_client_with_headers() {
+    Aws::Esdk::KmsClient kms(Aws::Esdk::ClientConfig().with_region("us-west-2"));
+    const auto with_headers = kms.with_headers({{"x-test-one", "1"}, {"x-test-two", "two"}})
+                                  .with_credentials(Aws::Esdk::Credentials("AKIDREQUEST", "request-secret"));
+    Aws::Esdk::KeyStore key_store("valid-table-name", "valid-table-name",
+                                  "arn:aws:kms:us-west-2:000000000000:key/test",
+                                  Aws::Esdk::KeyStoreOptions().with_kms_client(with_headers));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, kms.with_headers({}));
+    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, kms.with_headers({{"x-test", "a"}, {"X-Test", "b"}}));
+}
+
 // Offline: building clients and a key store sends no requests.
 void test_client_credentials() {
     const auto credentials = Aws::Esdk::Credentials("AKIDBASE", "base-secret")
@@ -933,6 +945,7 @@ int main(int argc, char** argv) {
         test_client_configuration();
         test_client_credentials();
         test_shared_http_client();
+        test_kms_client_with_headers();
         test_bytes_and_string_ergonomics();
         test_streaming();
         test_streaming_signed_message_refused();

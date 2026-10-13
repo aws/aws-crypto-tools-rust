@@ -1453,3 +1453,100 @@ fn stream_write_after_worker_failure_surfaces_error() {
     let err = surfaced.expect("write must surface the failed worker");
     assert!(err.contains("worker failed"), "unexpected error: {err}");
 }
+
+// Records every header of a request, then fails it before it is sent.
+#[derive(Debug, Clone, Default)]
+struct CaptureHeaders(std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>);
+
+impl aws_sdk_kms::config::Intercept for CaptureHeaders {
+    fn name(&self) -> &'static str {
+        "CaptureHeaders"
+    }
+
+    fn read_before_transmit(
+        &self,
+        context: &aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextRef<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        *self.0.lock().unwrap() = context
+            .request()
+            .headers()
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.to_string()))
+            .collect();
+        Err("request captured".into())
+    }
+}
+
+fn kms_sent_headers(client: &MplKmsClient) -> Vec<(String, String)> {
+    let capture = CaptureHeaders::default();
+    let config = client
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(capture.clone())
+        .build();
+    let result = TOKIO_RUNTIME.block_on(aws_sdk_kms::Client::from_conf(config).list_keys().send());
+    assert!(result.is_err(), "the interceptor stops every request");
+    capture.0.lock().unwrap().clone()
+}
+
+fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+fn http_header(name: &str, value: &str) -> ffi::HttpHeader {
+    ffi::HttpHeader {
+        name: name.to_string(),
+        value: value.to_string(),
+    }
+}
+
+#[test]
+fn kms_client_with_headers_sends_and_signs_the_headers() {
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let base = create_kms_client(&cfg).expect("kms client");
+    let derived = kms_client_with_headers(
+        &base,
+        vec![
+            http_header("x-test-one", "1"),
+            http_header("x-test-two", "two"),
+        ],
+    )
+    .expect("derived kms client");
+
+    let sent = kms_sent_headers(&derived);
+    assert_eq!(header_value(&sent, "x-test-one"), Some("1"));
+    assert_eq!(header_value(&sent, "x-test-two"), Some("two"));
+    let authorization = header_value(&sent, "authorization").expect("signed request");
+    assert!(
+        authorization.contains("x-test-one;x-test-two"),
+        "headers must be signed: {authorization}"
+    );
+
+    assert_eq!(header_value(&kms_sent_headers(&base), "x-test-one"), None);
+}
+
+#[test]
+fn kms_client_with_headers_rejects_invalid_headers() {
+    let base = create_kms_client(&unset_client_config()).expect("kms client");
+    let cases = [
+        vec![],
+        vec![http_header("", "v")],
+        vec![http_header("x-test", "")],
+        vec![http_header("bad name", "v")],
+        vec![http_header("x-test", "bad\nvalue")],
+        vec![http_header("x-test", "a"), http_header("X-Test", "b")],
+    ];
+    for headers in cases {
+        let err = expect_err(kms_client_with_headers(&base, headers));
+        assert!(
+            err.starts_with(&err_prefix(ffi::ShimErrorKind::Validation, "")),
+            "{err}"
+        );
+    }
+}

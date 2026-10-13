@@ -312,6 +312,11 @@ mod ffi {
         value: Credentials,
     }
 
+    struct HttpHeader {
+        name: String,
+        value: String,
+    }
+
     struct MplAwsClientConfig {
         region: OptString,
         retry: RetryConfig,
@@ -423,6 +428,10 @@ mod ffi {
         fn kms_client_with_credentials(
             base: &MplKmsClient,
             credentials: &Credentials,
+        ) -> Result<Box<MplKmsClient>>;
+        fn kms_client_with_headers(
+            base: &MplKmsClient,
+            headers: Vec<HttpHeader>,
         ) -> Result<Box<MplKmsClient>>;
 
         fn encrypt(input: &EncryptInput) -> Result<EncryptOutput>;
@@ -1389,6 +1398,76 @@ fn kms_client_with_credentials(
     Ok(Box::new(MplKmsClient {
         inner: aws_sdk_kms::Client::from_conf(config),
     }))
+}
+
+fn kms_client_with_headers(
+    base: &MplKmsClient,
+    headers: Vec<ffi::HttpHeader>,
+) -> Result<Box<MplKmsClient>, String> {
+    let invalid = |message: String| {
+        shim_err(
+            ffi::ShimErrorKind::Validation,
+            "KMS client with headers",
+            message,
+        )
+    };
+    if headers.is_empty() {
+        return Err(invalid("headers is empty".to_string()));
+    }
+    // try_insert applies the request's own name and value rules,
+    // and returns the previous value for a repeated name.
+    let mut checked = aws_sdk_kms::config::http::HttpRequest::empty();
+    for header in &headers {
+        if header.name.is_empty() || header.value.is_empty() {
+            return Err(invalid(format!(
+                "header {:?} has an empty name or value",
+                header.name
+            )));
+        }
+        match checked
+            .headers_mut()
+            .try_insert(header.name.clone(), header.value.clone())
+        {
+            Ok(None) => {}
+            Ok(Some(_)) => return Err(invalid(format!("header {:?} is repeated", header.name))),
+            Err(e) => return Err(invalid(format!("header {:?} is invalid: {e}", header.name))),
+        }
+    }
+    let config = base
+        .inner
+        .config()
+        .to_builder()
+        .interceptor(RequestHeaders(
+            headers.into_iter().map(|h| (h.name, h.value)).collect(),
+        ))
+        .build();
+    Ok(Box::new(MplKmsClient {
+        inner: aws_sdk_kms::Client::from_conf(config),
+    }))
+}
+
+/// Adds fixed headers to every request.
+#[derive(Debug)]
+struct RequestHeaders(Vec<(String, String)>);
+
+impl aws_sdk_kms::config::Intercept for RequestHeaders {
+    fn name(&self) -> &'static str {
+        "RequestHeaders"
+    }
+
+    // Before signing, so SigV4 signs the headers.
+    fn modify_before_signing(
+        &self,
+        context: &mut aws_sdk_kms::config::interceptors::BeforeTransmitInterceptorContextMut<'_>,
+        _runtime_components: &aws_sdk_kms::config::RuntimeComponents,
+        _cfg: &mut aws_sdk_kms::config::ConfigBag,
+    ) -> Result<(), aws_sdk_kms::error::BoxError> {
+        let headers = context.request_mut().headers_mut();
+        for (name, value) in &self.0 {
+            headers.try_insert(name.clone(), value.clone())?;
+        }
+        Ok(())
+    }
 }
 
 fn ddb_client_with_credentials(
