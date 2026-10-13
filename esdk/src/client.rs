@@ -112,8 +112,23 @@ impl Esdk {
         &self.config
     }
 
-    /// Start an encrypt with this client's commitment policy and encrypted data key cap.
-    /// Set the rest on the returned builder, then call [`send`](EncryptFluentBuilder::send).
+    /// Constructs a fluent builder for the encrypt operation, which encrypts a plaintext held in memory into an encrypted message.
+    ///
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send()`](EncryptFluentBuilder::send).
+    ///
+    /// - The fluent builder is configurable:
+    ///   - [`plaintext(&[u8])`](EncryptFluentBuilder::plaintext) / [`set_plaintext(Option<&[u8]>)`](EncryptFluentBuilder::set_plaintext):<br>required: **true**<br>The data to encrypt.<br>
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
+    ///   - [`frame_length(NonZeroU32)`](EncryptFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
+    ///   - [`keyring(impl Keyring)`](EncryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](EncryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    /// - On success, responds with [`EncryptOutput`] with field(s):
+    ///   - [`ciphertext`](EncryptOutput::ciphertext): The encrypted message.
+    ///   - [`encryption_context`](EncryptOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
+    ///   - [`algorithm_suite_id`](EncryptOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`](crate::Error); [`send`](EncryptFluentBuilder::send) lists each variant.
     //= spec/client-apis/client.md#encrypt
     //# The AWS Encryption SDK Client MUST provide an [encrypt](./encrypt.md#input) function
     //# that adheres to [encrypt](./encrypt.md).
@@ -124,8 +139,21 @@ impl Esdk {
         }
     }
 
-    /// Start a decrypt with this client's commitment policy and encrypted data key cap.
-    /// Set the rest on the returned builder, then call [`send`](DecryptFluentBuilder::send).
+    /// Constructs a fluent builder for the decrypt operation, which decrypts an encrypted message held in memory.
+    ///
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send()`](DecryptFluentBuilder::send).
+    ///
+    /// - The fluent builder is configurable:
+    ///   - [`ciphertext(&[u8])`](DecryptFluentBuilder::ciphertext) / [`set_ciphertext(Option<&[u8]>)`](DecryptFluentBuilder::set_ciphertext):<br>required: **true**<br>The encrypted message to decrypt.<br>
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`keyring(impl Keyring)`](DecryptFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](DecryptFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    /// - On success, responds with [`DecryptOutput`] with field(s):
+    ///   - [`plaintext`](DecryptOutput::plaintext): The decrypted data.
+    ///   - [`encryption_context`](DecryptOutput::encryption_context): The message's encryption context.
+    ///   - [`algorithm_suite_id`](DecryptOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`](crate::Error); [`send`](DecryptFluentBuilder::send) lists each variant.
     //= spec/client-apis/client.md#decrypt
     //# The AWS Encryption SDK Client MUST provide an [decrypt](./decrypt.md#input) function
     //# that adheres to [decrypt](./decrypt.md).
@@ -136,8 +164,22 @@ impl Esdk {
         }
     }
 
-    /// Start a streaming encrypt with this client's commitment policy and encrypted data key cap.
-    /// Set the rest on the returned builder, then call [`send`](EncryptStreamFluentBuilder::send).
+    /// Constructs a fluent builder for the streaming encrypt operation, which reads plaintext from an `AsyncRead` and writes the encrypted message to an `AsyncWrite`.
+    ///
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send(plaintext, ciphertext)`](EncryptStreamFluentBuilder::send).
+    ///
+    /// - The fluent builder is configurable:
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
+    ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptStreamFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
+    ///   - [`frame_length(NonZeroU32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
+    ///   - [`keyring(impl Keyring)`](EncryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](EncryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](EncryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](EncryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`data_size(usize)`](EncryptStreamFluentBuilder::data_size) / [`set_data_size(Option<usize>)`](EncryptStreamFluentBuilder::set_data_size):<br>required: **false**<br>An upper bound on the plaintext length, in bytes. It is passed to the CMM, and encrypt fails if the stream is longer.<br>
+    /// - On success, responds with [`EncryptStreamOutput`] with field(s):
+    ///   - [`encryption_context`](EncryptStreamOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
+    ///   - [`algorithm_suite_id`](EncryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`](crate::Error); [`send`](EncryptStreamFluentBuilder::send) lists each variant.
     pub fn encrypt_stream(&self) -> EncryptStreamFluentBuilder {
         EncryptStreamFluentBuilder {
             config: self.config,
@@ -145,8 +187,19 @@ impl Esdk {
         }
     }
 
-    /// Start a streaming decrypt with this client's commitment policy and encrypted data key cap.
-    /// Set the rest on the returned builder, then call [`send`](DecryptStreamFluentBuilder::send).
+    /// Constructs a fluent builder for the streaming decrypt operation, which reads an encrypted message from an `AsyncRead` and writes the plaintext to an `AsyncWrite`.
+    ///
+    /// The client's commitment policy and encrypted data key cap apply.
+    /// Finish with [`send(ciphertext, plaintext)`](DecryptStreamFluentBuilder::send).
+    ///
+    /// - The fluent builder is configurable:
+    ///   - [`encryption_context(impl Into<EncryptionContext>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
+    ///   - [`keyring(impl Keyring)`](DecryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
+    ///   - [`cmm(impl Cmm)`](DecryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
+    /// - On success, responds with [`DecryptStreamOutput`] with field(s):
+    ///   - [`encryption_context`](DecryptStreamOutput::encryption_context): The message's encryption context.
+    ///   - [`algorithm_suite_id`](DecryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
+    /// - On failure, responds with [`Error`](crate::Error); [`send`](DecryptStreamFluentBuilder::send) lists each variant.
     pub fn decrypt_stream(&self) -> DecryptStreamFluentBuilder {
         DecryptStreamFluentBuilder {
             config: self.config,
@@ -155,89 +208,93 @@ impl Esdk {
     }
 }
 
-/// Forward a member's setters to the wrapped input builder, and add its getter.
-macro_rules! forward {
+/// Add a member's setter, `set_` setter and getter, each documented with `doc`,
+/// all forwarding to the wrapped input builder.
+macro_rules! member {
     (
-        $(#[$getter_meta:meta])*
-        $getter:ident -> $out:ty {
-            $($(#[$meta:meta])* $name:ident($arg:ident: $ty:ty);)+
-        }
+        $(#[doc = $doc:expr])+
+        $name:ident($arg:ty), $set:ident, $get:ident -> $ty:ty
     ) => {
-        $(
-            $(#[$meta])*
-            pub fn $name(mut self, $arg: $ty) -> Self {
-                self.inner = self.inner.$name($arg);
-                self
-            }
-        )+
+        $(#[doc = $doc])+
+        pub fn $name(mut self, input: $arg) -> Self {
+            self.inner = self.inner.$name(input);
+            self
+        }
 
-        $(#[$getter_meta])*
+        $(#[doc = $doc])+
+        pub fn $set(mut self, input: Option<$ty>) -> Self {
+            self.inner = self.inner.$set(input);
+            self
+        }
+
+        $(#[doc = $doc])+
         #[must_use]
         #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
-        pub const fn $getter(&self) -> &Option<$out> {
-            self.inner.$getter()
+        pub const fn $get(&self) -> &Option<$ty> {
+            self.inner.$get()
         }
     };
 }
 
-/// The members every operation's fluent builder has.
-macro_rules! forward_common {
+/// The keyring and CMM members every operation's fluent builder has.
+macro_rules! material_source_members {
     () => {
-        forward!(
-            /// The encryption context set so far.
-            get_encryption_context -> EncryptionContext {
-                /// Set the encryption context. Default is empty.
-                encryption_context(encryption_context: impl Into<EncryptionContext>);
-                /// Set or clear the encryption context from an `Option`.
-                set_encryption_context(encryption_context: Option<EncryptionContext>);
-            }
+        member!(
+            /// The keyring that protects the message's data key.
+            /// Set exactly one of a keyring or a CMM.
+            keyring(impl Keyring + 'static), set_keyring, get_keyring -> SharedKeyring
         );
-        forward!(
-            /// The keyring set so far.
-            get_keyring -> SharedKeyring {
-                /// Set the keyring. Set exactly one of a keyring or a CMM.
-                keyring(keyring: impl Keyring + 'static);
-                /// Set or clear the keyring from an `Option`.
-                set_keyring(keyring: Option<SharedKeyring>);
-            }
-        );
-        forward!(
-            /// The CMM set so far.
-            get_cmm -> SharedCmm {
-                /// Set the cryptographic materials manager. Set exactly one of a keyring or a CMM.
-                cmm(cmm: impl Cmm + 'static);
-                /// Set or clear the CMM from an `Option`.
-                set_cmm(cmm: Option<SharedCmm>);
-            }
+        member!(
+            /// The cryptographic materials manager (CMM) that supplies the message's data key.
+            /// Set exactly one of a keyring or a CMM.
+            cmm(impl Cmm + 'static), set_cmm, get_cmm -> SharedCmm
         );
     };
 }
 
 /// The members the two encrypt builders share.
-macro_rules! forward_encrypt {
+macro_rules! encrypt_members {
     () => {
-        forward!(
-            /// The algorithm suite set so far.
-            get_algorithm_suite_id -> AlgorithmSuiteId {
-                /// Set the algorithm suite. Unset uses the commitment policy's default suite.
-                algorithm_suite_id(algorithm_suite_id: AlgorithmSuiteId);
-                /// Set or clear the algorithm suite from an `Option`.
-                set_algorithm_suite_id(algorithm_suite_id: Option<AlgorithmSuiteId>);
-            }
+        member!(
+            /// Key-value pairs bound to the message.
+            /// They are authenticated, not encrypted, so never put secrets in them.
+            /// Default is empty.
+            encryption_context(impl Into<EncryptionContext>),
+            set_encryption_context,
+            get_encryption_context -> EncryptionContext
         );
-        forward!(
-            /// The frame length set so far.
-            get_frame_length -> NonZeroU32 {
-                /// Set the frame length in bytes. Defaults to 4096.
-                frame_length(frame_length: NonZeroU32);
-                /// Set or clear the frame length from an `Option`.
-                set_frame_length(frame_length: Option<NonZeroU32>);
-            }
+        member!(
+            /// The algorithm suite to encrypt with.
+            /// Unset uses the default suite for the client's commitment policy.
+            algorithm_suite_id(AlgorithmSuiteId),
+            set_algorithm_suite_id,
+            get_algorithm_suite_id -> AlgorithmSuiteId
+        );
+        member!(
+            /// Bytes of plaintext per frame. Default is 4096.
+            frame_length(NonZeroU32), set_frame_length, get_frame_length -> NonZeroU32
         );
     };
 }
 
-/// An encrypt started by [`Esdk::encrypt`].
+/// The members the two decrypt builders share.
+macro_rules! decrypt_members {
+    () => {
+        member!(
+            /// Key-value pairs the message's encryption context must contain.
+            /// Decrypt fails if a pair is missing from the message or has a different value.
+            /// Default is empty.
+            encryption_context(impl Into<EncryptionContext>),
+            set_encryption_context,
+            get_encryption_context -> EncryptionContext
+        );
+    };
+}
+
+/// Fluent builder for the encrypt operation, started by [`Esdk::encrypt`].
+///
+/// Encrypts a plaintext held in memory into an encrypted message.
+/// The keyring or CMM supplies the data key and the encrypted data keys stored in the message header.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct EncryptFluentBuilder<'a> {
@@ -246,15 +303,12 @@ pub struct EncryptFluentBuilder<'a> {
 }
 
 impl<'a> EncryptFluentBuilder<'a> {
-    forward!(
-        /// The plaintext set so far.
-        get_plaintext -> &'a [u8] {
-            /// Set the plaintext to encrypt. Required.
-            plaintext(plaintext: &'a [u8]);
-        }
+    member!(
+        /// The data to encrypt.
+        plaintext(&'a [u8]), set_plaintext, get_plaintext -> &'a [u8]
     );
-    forward_common!();
-    forward_encrypt!();
+    encrypt_members!();
+    material_source_members!();
 
     /// Encrypt.
     ///
@@ -283,7 +337,11 @@ impl<'a> EncryptFluentBuilder<'a> {
     }
 }
 
-/// A decrypt started by [`Esdk::decrypt`].
+/// Fluent builder for the decrypt operation, started by [`Esdk::decrypt`].
+///
+/// Decrypts an encrypted message held in memory.
+/// The keyring or CMM recovers the data key from one of the message's encrypted data keys.
+/// No plaintext is returned unless the whole message, including any signature, verifies.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct DecryptFluentBuilder<'a> {
@@ -292,14 +350,12 @@ pub struct DecryptFluentBuilder<'a> {
 }
 
 impl<'a> DecryptFluentBuilder<'a> {
-    forward!(
-        /// The encrypted message set so far.
-        get_ciphertext -> &'a [u8] {
-            /// Set the encrypted message to decrypt. Required.
-            ciphertext(ciphertext: &'a [u8]);
-        }
+    member!(
+        /// The encrypted message to decrypt.
+        ciphertext(&'a [u8]), set_ciphertext, get_ciphertext -> &'a [u8]
     );
-    forward_common!();
+    decrypt_members!();
+    material_source_members!();
 
     /// Decrypt.
     ///
@@ -329,7 +385,9 @@ impl<'a> DecryptFluentBuilder<'a> {
     }
 }
 
-/// A streaming encrypt started by [`Esdk::encrypt_stream`].
+/// Fluent builder for the streaming encrypt operation, started by [`Esdk::encrypt_stream`].
+///
+/// Reads plaintext from an `AsyncRead` and writes the encrypted message to an `AsyncWrite`, one frame at a time.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct EncryptStreamFluentBuilder {
@@ -338,16 +396,12 @@ pub struct EncryptStreamFluentBuilder {
 }
 
 impl EncryptStreamFluentBuilder {
-    forward_common!();
-    forward_encrypt!();
-    forward!(
-        /// The plaintext length set so far.
-        get_data_size -> usize {
-            /// Set the plaintext length in bytes, when it is known in advance.
-            data_size(data_size: usize);
-            /// Set or clear the plaintext length from an `Option`.
-            set_data_size(data_size: Option<usize>);
-        }
+    encrypt_members!();
+    material_source_members!();
+    member!(
+        /// An upper bound on the plaintext length, in bytes.
+        /// It is passed to the CMM, and encrypt fails if the stream is longer.
+        data_size(usize), set_data_size, get_data_size -> usize
     );
 
     /// Encrypt `plaintext` into `ciphertext`.
@@ -382,7 +436,10 @@ impl EncryptStreamFluentBuilder {
     }
 }
 
-/// A streaming decrypt started by [`Esdk::decrypt_stream`].
+/// Fluent builder for the streaming decrypt operation, started by [`Esdk::decrypt_stream`].
+///
+/// Reads an encrypted message from an `AsyncRead` and writes plaintext to an `AsyncWrite`, one frame at a time.
+/// Plaintext is written before the whole message is verified: don't act on it until `send` returns `Ok`.
 #[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
 pub struct DecryptStreamFluentBuilder {
@@ -391,7 +448,8 @@ pub struct DecryptStreamFluentBuilder {
 }
 
 impl DecryptStreamFluentBuilder {
-    forward_common!();
+    decrypt_members!();
+    material_source_members!();
 
     /// Decrypt `ciphertext` into `plaintext`.
     ///
