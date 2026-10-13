@@ -451,81 +451,6 @@ void test_client_configuration() {
     ESDK_CHECK(pt.plaintext == to_bytes("defaults"));
 }
 
-// Offline: clients that share one HttpClient, and copies derived from them.
-void test_shared_http_client() {
-    Aws::Esdk::HttpClient http;
-    const auto config = Aws::Esdk::ClientConfig().with_region("us-west-2").with_http_client(http);
-    Aws::Esdk::KmsClient kms(config);
-    Aws::Esdk::DdbClient ddb(config);
-    const auto credentials = Aws::Esdk::Credentials("AKIDREQUEST", "request-secret");
-    Aws::Esdk::KeyStore key_store("valid-table-name", "valid-table-name",
-                                  "arn:aws:kms:us-west-2:000000000000:key/test",
-                                  Aws::Esdk::KeyStoreOptions()
-                                      .with_kms_client(kms.with_credentials(credentials))
-                                      .with_ddb_client(ddb.with_credentials(credentials)));
-}
-
-// Offline: a KMS client copy with extra request headers.
-void test_kms_client_with_headers() {
-    Aws::Esdk::KmsClient kms(Aws::Esdk::ClientConfig().with_region("us-west-2"));
-    const auto with_headers = kms.with_headers({{"x-test-one", "1"}, {"x-test-two", "two"}})
-                                  .with_credentials(Aws::Esdk::Credentials("AKIDREQUEST", "request-secret"));
-    Aws::Esdk::KeyStore key_store("valid-table-name", "valid-table-name",
-                                  "arn:aws:kms:us-west-2:000000000000:key/test",
-                                  Aws::Esdk::KeyStoreOptions().with_kms_client(with_headers));
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, kms.with_headers({}));
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException, kms.with_headers({{"x-test", "a"}, {"X-Test", "b"}}));
-}
-
-// Offline: building clients and a key store sends no requests.
-void test_client_credentials() {
-    const auto credentials = Aws::Esdk::Credentials("AKIDBASE", "base-secret")
-                                 .with_session_token("base-token")
-                                 .with_expiration(std::chrono::system_clock::now() + 1h);
-    const auto config = Aws::Esdk::ClientConfig().with_region("us-west-2").with_credentials(credentials);
-    Aws::Esdk::KmsClient kms(config);
-    Aws::Esdk::DdbClient ddb(config);
-
-    const auto request_credentials = Aws::Esdk::Credentials("AKIDREQUEST", "request-secret");
-    Aws::Esdk::KeyStore key_store("valid-table-name", "valid-table-name",
-                                  "arn:aws:kms:us-west-2:000000000000:key/test",
-                                  Aws::Esdk::KeyStoreOptions()
-                                      .with_kms_client(kms.with_credentials(request_credentials))
-                                      .with_ddb_client(ddb.with_credentials(request_credentials)));
-
-    const auto check_rejected = [](auto&& make) {
-        ++esdk_test::g_checks;
-        try {
-            make();
-            ++esdk_test::g_failures;
-            std::cerr << "FAIL: empty credentials were accepted\n";
-        } catch (const Aws::Esdk::ValidationException& e) {
-            const std::string what = e.what();
-            if (what.find("secret-value") != std::string::npos ||
-                what.find("token-value") != std::string::npos) {
-                ++esdk_test::g_failures;
-                std::cerr << "FAIL: exception message contains a credential: " << what << "\n";
-            }
-        } catch (const std::exception& e) {
-            ++esdk_test::g_failures;
-            std::cerr << "FAIL: wrong exception type: " << e.what() << "\n";
-        }
-    };
-    for (const auto& empty : {Aws::Esdk::Credentials("", "secret-value").with_session_token("token-value"),
-                              Aws::Esdk::Credentials("AKID", "").with_session_token("token-value")}) {
-        const auto empty_config = Aws::Esdk::ClientConfig().with_credentials(empty);
-        check_rejected([&] { Aws::Esdk::KmsClient{empty_config}; });
-        check_rejected([&] { Aws::Esdk::DdbClient{empty_config}; });
-        check_rejected([&] { kms.with_credentials(empty); });
-        check_rejected([&] { ddb.with_credentials(empty); });
-    }
-
-    CHECK_THROWS_TYPE(Aws::Esdk::ValidationException,
-                      Aws::Esdk::ClientConfig().with_credentials(
-                          Aws::Esdk::Credentials("AKID", "secret")
-                              .with_expiration(std::chrono::system_clock::time_point(-1s))));
-}
-
 // String-view and Bytes ergonomics for non-std::vector input/output types
 void test_bytes_and_string_ergonomics() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -686,31 +611,6 @@ void test_streaming() {
         std::cerr << "FAIL: tampered stream did not throw\n";
     } catch (const Aws::Esdk::CryptographicException&) {
         // expected
-    }
-}
-
-// A hierarchical keyring round trip through a shared HttpClient and a KMS client copy with extra headers.
-// KMS accepts the request only if the extra headers are part of the signature.
-void test_shared_http_client_with_headers_round_trip(const TestConfig& cfg) {
-    const Aws::Esdk::HttpClient http;
-    auto client_config = Aws::Esdk::ClientConfig().with_http_client(http);
-    if (!cfg.region.empty()) {
-        client_config.with_region(cfg.region);
-    }
-    const Aws::Esdk::KmsClient kms(client_config);
-    const Aws::Esdk::DdbClient ddb(client_config);
-    Aws::Esdk::EncryptionSDK sdk;
-
-    for (const char* request : {"request-1", "request-2"}) {
-        auto keystore = Aws::Esdk::KeyStore(
-            cfg.ddb_table, cfg.logical_keystore, cfg.kms_key_arn,
-            Aws::Esdk::KeyStoreOptions()
-                .with_kms_client(kms.with_headers({{"x-esdk-test-request", request}}))
-                .with_ddb_client(ddb));
-        auto keyring = Aws::Esdk::HierarchicalKeyring(keystore, cfg.branch_key_id, std::chrono::seconds{600});
-        auto encrypted = sdk.encrypt(to_bytes("shared http client"), keyring);
-        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
-        ESDK_CHECK(decrypted.plaintext == to_bytes("shared http client"));
     }
 }
 
@@ -968,9 +868,6 @@ int main(int argc, char** argv) {
         test_error_kinds();
         test_values_this_library_does_not_know();
         test_client_configuration();
-        test_client_credentials();
-        test_shared_http_client();
-        test_kms_client_with_headers();
         test_bytes_and_string_ergonomics();
         test_streaming();
         test_streaming_signed_message_refused();
@@ -993,7 +890,6 @@ int main(int argc, char** argv) {
         test_decrypt_garbage_throws(*cfg);
         test_tampered_ciphertext_throws(*cfg);
         test_full_resource_chain(*cfg);
-        test_shared_http_client_with_headers_round_trip(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

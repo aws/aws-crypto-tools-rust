@@ -277,28 +277,8 @@ Bytes make_bytes(::rust::Vec<std::uint8_t> buf) {
 
 // MPL Client Config
 
-struct HttpClientImpl {
-    ::rust::Box<::ffi::HttpClient> handle;
-    explicit HttpClientImpl(::rust::Box<::ffi::HttpClient> h) : handle(std::move(h)) {}
-};
-
 struct ClientConfigImpl {
     ::ffi::MplAwsClientConfig cfg{};
-    std::shared_ptr<HttpClientImpl> http_client;
-};
-
-struct CredentialsAccess {
-    static ::ffi::Credentials to_ffi(const Credentials& c) {
-        ::ffi::Credentials out;
-        out.access_key_id = ::rust::String(c.access_key_id_);
-        out.secret_access_key = ::rust::String(c.secret_access_key_);
-        out.session_token = to_opt(c.session_token_);
-        out.expiration = c.expiration_
-            ? ::ffi::OptDuration{true, detail::to_ffi(c.expiration_->time_since_epoch(),
-                                                      "credentials expiration")}
-            : ::ffi::OptDuration{false, {}};
-        return out;
-    }
 };
 
 // Resources
@@ -367,15 +347,7 @@ struct DecryptStreamImpl {
 
 // ClientConfig
 
-HttpClient::HttpClient()
-    : impl_(std::make_shared<detail::HttpClientImpl>(
-          detail::guard([] { return ::ffi::create_http_client(); }))) {}
-
 ClientConfig::ClientConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
-ClientConfig& ClientConfig::with_http_client(const HttpClient& http_client) {
-    impl_->http_client = http_client.impl_;
-    return *this;
-}
 ClientConfig& ClientConfig::with_max_retry_attempts(std::uint32_t n) {
     impl_->cfg.retry.max_attempts = ::ffi::OptU32{true, n};
     return *this;
@@ -388,55 +360,18 @@ ClientConfig& ClientConfig::with_region(const std::string& r) {
     impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
     return *this;
 }
-ClientConfig& ClientConfig::with_credentials(const Credentials& credentials) {
-    impl_->cfg.credentials = ::ffi::OptCredentials{true, detail::CredentialsAccess::to_ffi(credentials)};
-    return *this;
-}
 
 // Service clients
 
 KmsClient::KmsClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::KmsClientImpl>(
           detail::Retained{},
-          detail::guard([&] {
-              const auto& http = cfg.impl_->http_client;
-              return http ? ::ffi::create_kms_client_with_http_client(cfg.impl_->cfg, *http->handle)
-                          : ::ffi::create_kms_client(cfg.impl_->cfg);
-          }))) {}
-
-KmsClient KmsClient::with_credentials(const Credentials& credentials) const {
-    const auto ffi_credentials = detail::CredentialsAccess::to_ffi(credentials);
-    return KmsClient(std::make_shared<detail::KmsClientImpl>(
-        detail::Retained{},
-        detail::guard([&] { return ::ffi::kms_client_with_credentials(*impl_->handle, ffi_credentials); })));
-}
-
-KmsClient KmsClient::with_headers(
-    const std::vector<std::pair<std::string, std::string>>& headers) const {
-    ::rust::Vec<::ffi::HttpHeader> ffi_headers;
-    for (const auto& [name, value] : headers) {
-        ffi_headers.push_back(::ffi::HttpHeader{::rust::String(name), ::rust::String(value)});
-    }
-    return KmsClient(std::make_shared<detail::KmsClientImpl>(
-        detail::Retained{},
-        detail::guard([&] { return ::ffi::kms_client_with_headers(*impl_->handle, std::move(ffi_headers)); })));
-}
+          detail::guard([&] { return ::ffi::create_kms_client(cfg.impl_->cfg); }))) {}
 
 DdbClient::DdbClient(const ClientConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
-          detail::guard([&] {
-              const auto& http = cfg.impl_->http_client;
-              return http ? ::ffi::create_ddb_client_with_http_client(cfg.impl_->cfg, *http->handle)
-                          : ::ffi::create_ddb_client(cfg.impl_->cfg);
-          }))) {}
-
-DdbClient DdbClient::with_credentials(const Credentials& credentials) const {
-    const auto ffi_credentials = detail::CredentialsAccess::to_ffi(credentials);
-    return DdbClient(std::make_shared<detail::DdbClientImpl>(
-        detail::Retained{},
-        detail::guard([&] { return ::ffi::ddb_client_with_credentials(*impl_->handle, ffi_credentials); })));
-}
+          detail::guard([&] { return ::ffi::create_ddb_client(cfg.impl_->cfg); }))) {}
 
 // KeyStore
 
