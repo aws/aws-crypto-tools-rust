@@ -68,9 +68,6 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
     //# wait for the end to the encrypted message to be indicated,
     //# or deserialize and/or decrypt the consumable bytes.
     loop {
-        if expected_frame.is_multiple_of(super::FRAMES_PER_YIELD) {
-            tokio::task::yield_now().await;
-        }
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
         //# If deserializing [framed data](../data-format/message-body.md#framed-data),
         //# the Decrypt operation MUST use the first 4 bytes of a frame to determine
