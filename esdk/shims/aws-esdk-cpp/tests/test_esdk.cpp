@@ -689,6 +689,31 @@ void test_streaming() {
     }
 }
 
+// A hierarchical keyring round trip through a shared HttpClient and a KMS client copy with extra headers.
+// KMS accepts the request only if the extra headers are part of the signature.
+void test_shared_http_client_with_headers_round_trip(const TestConfig& cfg) {
+    const Aws::Esdk::HttpClient http;
+    auto client_config = Aws::Esdk::ClientConfig().with_http_client(http);
+    if (!cfg.region.empty()) {
+        client_config.with_region(cfg.region);
+    }
+    const Aws::Esdk::KmsClient kms(client_config);
+    const Aws::Esdk::DdbClient ddb(client_config);
+    Aws::Esdk::EncryptionSDK sdk;
+
+    for (const char* request : {"request-1", "request-2"}) {
+        auto keystore = Aws::Esdk::KeyStore(
+            cfg.ddb_table, cfg.logical_keystore, cfg.kms_key_arn,
+            Aws::Esdk::KeyStoreOptions()
+                .with_kms_client(kms.with_headers({{"x-esdk-test-request", request}}))
+                .with_ddb_client(ddb));
+        auto keyring = Aws::Esdk::HierarchicalKeyring(keystore, cfg.branch_key_id, std::chrono::seconds{600});
+        auto encrypted = sdk.encrypt(to_bytes("shared http client"), keyring);
+        auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
+        ESDK_CHECK(decrypted.plaintext == to_bytes("shared http client"));
+    }
+}
+
 void test_full_resource_chain(const TestConfig& cfg) {
     auto client_config = Aws::Esdk::ClientConfig().with_max_retry_attempts(3);
     if (!cfg.region.empty()) {
@@ -968,6 +993,7 @@ int main(int argc, char** argv) {
         test_decrypt_garbage_throws(*cfg);
         test_tampered_ciphertext_throws(*cfg);
         test_full_resource_chain(*cfg);
+        test_shared_http_client_with_headers_round_trip(*cfg);
     } catch (const std::exception& e) {
         std::cerr << "FATAL: unexpected exception aborted the suite: " << e.what() << "\n";
         return 2;

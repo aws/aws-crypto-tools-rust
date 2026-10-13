@@ -1550,3 +1550,104 @@ fn kms_client_with_headers_rejects_invalid_headers() {
         );
     }
 }
+
+// A local HTTP/1.1 server that answers every KMS request with an empty `ListKeys` result
+// and counts the TCP connections it accepts.
+fn connection_counting_server() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = TOKIO_RUNTIME
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .expect("bind");
+    let url = format!("http://{}", listener.local_addr().expect("local addr"));
+    let accepted = std::sync::Arc::new(AtomicUsize::new(0));
+    let counter = accepted.clone();
+    TOKIO_RUNTIME.spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else { return };
+            counter.fetch_add(1, Ordering::SeqCst);
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                loop {
+                    // Read one request: headers, then a Content-Length body.
+                    let header_end = loop {
+                        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            break i + 4;
+                        }
+                        let mut chunk = [0u8; 4096];
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                        }
+                    };
+                    let head = String::from_utf8_lossy(&buf[..header_end]).to_ascii_lowercase();
+                    let body_len = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    while buf.len() < header_end + body_len {
+                        let mut chunk = [0u8; 4096];
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    buf.drain(..header_end + body_len);
+                    let body = br#"{"Keys":[],"Truncated":false}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/x-amz-json-1.1\r\ncontent-length: {}\r\n\r\n",
+                        body.len()
+                    );
+                    if socket.write_all(response.as_bytes()).await.is_err()
+                        || socket.write_all(body).await.is_err()
+                    {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    (url, accepted)
+}
+
+/// A copy of `client` that sends to `url`, keeping its HTTP client.
+fn pointed_at(client: &MplKmsClient, url: &str) -> aws_sdk_kms::Client {
+    aws_sdk_kms::Client::from_conf(client.inner.config().to_builder().endpoint_url(url).build())
+}
+
+fn list_keys(client: &aws_sdk_kms::Client) {
+    TOKIO_RUNTIME
+        .block_on(client.list_keys().send())
+        .expect("list_keys against the local server");
+}
+
+#[test]
+fn clients_sharing_an_http_client_reuse_one_connection() {
+    let (url, accepted) = connection_counting_server();
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let http = create_http_client().expect("http client");
+    let first = create_kms_client_with_http_client(&cfg, &http).expect("kms client");
+    let second = create_kms_client_with_http_client(&cfg, &http).expect("kms client");
+    let derived = kms_client_with_headers(&first, vec![http_header("x-test", "1")]).expect("copy");
+
+    list_keys(&pointed_at(&first, &url));
+    list_keys(&pointed_at(&second, &url));
+    list_keys(&pointed_at(&derived, &url));
+
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn clients_without_a_shared_http_client_use_their_own_connections() {
+    let (url, accepted) = connection_counting_server();
+    let cfg = client_config_with_credentials(test_credentials("AKIDBASE", "secret-base", None));
+    let first = create_kms_client(&cfg).expect("kms client");
+    let second = create_kms_client(&cfg).expect("kms client");
+
+    list_keys(&pointed_at(&first, &url));
+    list_keys(&pointed_at(&second, &url));
+
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
