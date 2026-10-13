@@ -16,8 +16,11 @@ mod fixtures;
 mod test_helpers;
 
 use aws_crypto_mpl::Error as MplError;
-use aws_crypto_mpl::cmm::{Cmm, DecryptMaterialsRequest, DefaultCmm, EncryptionMaterialsRequest};
-use aws_crypto_mpl::structures::{DecryptionMaterials, EncryptionMaterials};
+use aws_crypto_mpl::cmm::{Cmm, DefaultCmm};
+use aws_crypto_mpl::cmm::{
+    DecryptMaterialsInput, DecryptMaterialsOutput, GetEncryptionMaterialsInput,
+    GetEncryptionMaterialsOutput,
+};
 use aws_esdk::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,21 +38,21 @@ struct RecordingCmm {
 impl Cmm for RecordingCmm {
     async fn get_encryption_materials(
         &self,
-        request: EncryptionMaterialsRequest,
-    ) -> Result<EncryptionMaterials, MplError> {
+        request: GetEncryptionMaterialsInput,
+    ) -> Result<GetEncryptionMaterialsOutput, MplError> {
         self.saw_get_encryption_materials
             .store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner.get_encryption_materials(request).await
+        Cmm::get_encryption_materials(&self.inner, request).await
     }
 
     async fn decrypt_materials(
         &self,
-        request: DecryptMaterialsRequest,
-    ) -> Result<DecryptionMaterials, MplError> {
+        request: DecryptMaterialsInput,
+    ) -> Result<DecryptMaterialsOutput, MplError> {
         self.saw_decrypt_materials.store(true, Ordering::Relaxed);
         // Forward the request unchanged to the wrapped default CMM.
-        self.inner.decrypt_materials(request).await
+        Cmm::decrypt_materials(&self.inner, request).await
     }
 }
 
