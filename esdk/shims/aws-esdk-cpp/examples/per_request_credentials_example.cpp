@@ -61,8 +61,11 @@ void handle_request(const Aws::Esdk::KmsClient& base_kms,
 int main() {
     try {
         // Created once and shared by every request.
+        // One HttpClient gives the KMS and DynamoDB clients, and every per-request copy of them,
+        // a single connection pool.
         // DynamoDB calls use the default credential chain; KMS calls use each request's credentials.
-        const auto config = Aws::Esdk::ClientConfig().with_region("us-west-2");
+        const Aws::Esdk::HttpClient http;
+        const auto config = Aws::Esdk::ClientConfig().with_region("us-west-2").with_http_client(http);
         const Aws::Esdk::KmsClient base_kms(config);
         const Aws::Esdk::DdbClient ddb(config);
         Aws::Esdk::EncryptionSDK esdk;
