@@ -3,43 +3,41 @@
 
 //! Defines a custom keyring by implementing the [`Keyring`] trait.
 //!
-//! `RequireContextKeyring` wraps a raw AES keyring and refuses any message
-//! whose encryption context lacks a `department` key.
+//! `AuditKeyring` wraps a raw AES keyring and logs which key providers each call uses.
 //!
 //! Runs offline.
 
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
+use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::{AesGcm, Error as MplError, Keyring, RawAesKeyring, async_trait};
-use aws_esdk::error::Error;
 use aws_esdk::{EncryptionContext, Esdk};
 
-/// The encryption context key every message must carry.
-const REQUIRED_KEY: &str = "department";
-
+/// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
 #[derive(Clone)]
-struct RequireContextKeyring {
+struct AuditKeyring {
     inner: RawAesKeyring,
 }
 
-fn check(encryption_context: &EncryptionContext) -> Result<(), MplError> {
-    if encryption_context.contains_key(REQUIRED_KEY) {
-        Ok(())
-    } else {
-        Err(MplError::validation(format!(
-            "the encryption context must contain {REQUIRED_KEY:?}"
-        )))
-    }
+fn providers(edks: &[EncryptedDataKey]) -> Vec<&str> {
+    edks.iter().map(EncryptedDataKey::key_provider_id).collect()
 }
 
 #[async_trait]
-impl Keyring for RequireContextKeyring {
+impl Keyring for AuditKeyring {
     async fn on_encrypt(&self, input: OnEncryptInput) -> Result<OnEncryptOutput, MplError> {
-        check(input.materials().encryption_context())?;
-        Keyring::on_encrypt(&self.inner, input).await
+        let output = Keyring::on_encrypt(&self.inner, input).await?;
+        println!(
+            "audit: encrypt wrote data keys for {:?}",
+            providers(output.materials().encrypted_data_keys())
+        );
+        Ok(output)
     }
 
     async fn on_decrypt(&self, input: OnDecryptInput) -> Result<OnDecryptOutput, MplError> {
-        check(input.materials().encryption_context())?;
+        println!(
+            "audit: decrypt tried data keys from {:?}",
+            providers(input.encrypted_data_keys())
+        );
         Keyring::on_decrypt(&self.inner, input).await
     }
 }
@@ -54,12 +52,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wrapping_key(vec![0x2A; 32])
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()?;
-    let keyring = RequireContextKeyring { inner };
+    let keyring = AuditKeyring { inner };
 
     let plaintext = b"Hello World";
 
+    // The encryption context is authenticated, not encrypted, and is bound to the message.
     let mut encryption_context = EncryptionContext::new();
-    encryption_context.insert("department", "finance");
+    encryption_context.insert("purpose", "example");
 
     let esdk = Esdk::default();
 
@@ -75,24 +74,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .decrypt()
         .ciphertext(&encrypted.ciphertext)
         .encryption_context(encryption_context)
-        .keyring(keyring.clone())
+        .keyring(keyring)
         .send()
         .await?;
     assert_eq!(
         decrypted.plaintext, plaintext,
         "Decryption failed: plaintext mismatch"
-    );
-
-    // The keyring refuses a message without a `department` key.
-    let refused = esdk
-        .encrypt()
-        .plaintext(plaintext)
-        .keyring(keyring)
-        .send()
-        .await;
-    assert!(
-        matches!(refused, Err(Error::Validation(_))),
-        "the keyring accepted a message without a department"
     );
 
     println!("Success! Encryption and decryption completed successfully.");
