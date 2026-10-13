@@ -20,8 +20,6 @@ aws-mpl-primitives = { path = "../../../prim" }
 cxx = "1.0.202"
 tokio = {version = "1.49", features = ["full"] }
 aws-esdk = { path = "../.." }
-aws-smithy-runtime = { version = "1.16", features = ["client", "default-https-client"] }
-aws-smithy-runtime-api = { version = "1.19", features = ["client"] }
 
 [build-dependencies]
 cxx-build = "1.0.202"
