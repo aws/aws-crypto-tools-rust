@@ -23,13 +23,23 @@ int main() {
 
         const std::string plaintext = "Hello World";
         // This uses the string API; the bytes APIs take a std::vector, a pointer and length, or a std::span (C++20).
-        auto encrypted = sdk.encrypt(plaintext, keyring);
+        auto encrypted = sdk.encrypt(
+            plaintext, keyring,
+            Aws::Esdk::EncryptOptions().with_encryption_context({{"department", "finance"}}));
 
         auto decrypted = sdk.decrypt(encrypted.ciphertext, keyring);
 
         if (decrypted.plaintext.as_string_view() != plaintext) {
             std::cerr << "Decryption failed: plaintext mismatch\n";
             return 1;
+        }
+
+        // The keyring refuses a message without a "department" key.
+        try {
+            sdk.encrypt(plaintext, keyring);
+            std::cerr << "The keyring accepted a message without a department\n";
+            return 1;
+        } catch (const Aws::Esdk::ValidationException&) {
         }
 
         std::cout << "Success! Encryption and decryption completed successfully.\n";
