@@ -80,7 +80,7 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
 
     // Caller requests signing+committing, but CMM overrides to committing-only.
 
-    let out = Esdk::default()
+    let out = Client::default()
         .encrypt()
         .plaintext(b"hello")
         .cmm(cmm)
@@ -104,7 +104,7 @@ async fn test_encrypt_uses_cmm_suite_not_input_suite() {
     );
 
     // Round-trip to prove the ciphertext is valid.
-    let dec = Esdk::default()
+    let dec = Client::default()
         .decrypt()
         .ciphertext(&out.ciphertext)
         .keyring(keyring)

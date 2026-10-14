@@ -22,7 +22,7 @@ async fn test_encryption_context_on_decrypt() {
 
     let encryption_context = small_encryption_context(SmallEncryptionContextVariation::AB);
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let encrypt_output = esdk
         .encrypt()
         .plaintext(asdf)
@@ -56,7 +56,7 @@ async fn test_mismatched_encryption_context_on_decrypt() {
     let bad_encryption_context =
         small_mismatched_encryption_context(SmallEncryptionContextVariation::A);
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let encrypt_output = esdk
         .encrypt()
         .plaintext(asdf)

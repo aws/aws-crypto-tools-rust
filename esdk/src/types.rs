@@ -159,7 +159,7 @@ pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output of [`Esdk::encrypt`](crate::Esdk::encrypt).
+/// Output of [`Client::encrypt`](crate::Client::encrypt).
 //= spec/client-apis/encrypt.md#output
 //= type=exception
 //= reason=EncryptOutput provides encryption_context and algorithm_suite_id individually instead of a parsed header
@@ -184,7 +184,7 @@ pub struct EncryptOutput {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output of [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream).
+/// Output of [`Client::encrypt_stream`](crate::Client::encrypt_stream).
 pub struct EncryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub algorithm_suite_id: AlgorithmSuiteId,
@@ -193,7 +193,7 @@ pub struct EncryptStreamOutput {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output of [`Esdk::decrypt`](crate::Esdk::decrypt).
+/// Output of [`Client::decrypt`](crate::Client::decrypt).
 pub struct DecryptOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub algorithm_suite_id: AlgorithmSuiteId,
@@ -208,7 +208,7 @@ pub struct DecryptOutput {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
-/// Output of [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream).
+/// Output of [`Client::decrypt_stream`](crate::Client::decrypt_stream).
 pub struct DecryptStreamOutput {
     /// Algorithm Suite. See <https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/supported-algorithms.html>
     pub algorithm_suite_id: AlgorithmSuiteId,
@@ -217,7 +217,7 @@ pub struct DecryptStreamOutput {
 }
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`Esdk::encrypt`](crate::Esdk::encrypt), built by its fluent builder.
+/// Input for [`Client::encrypt`](crate::Client::encrypt), built by its fluent builder.
 //= spec/client-apis/encrypt.md#input
 //= type=exception
 //= reason=EncryptInput plaintext is &[u8] with known length; Plaintext Length Bound is not implemented here
@@ -437,7 +437,7 @@ impl<'a> EncryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
+    /// The [`Client`](crate::Client)'s fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -472,7 +472,7 @@ impl<'a> EncryptInputBuilder<'a> {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`Esdk::encrypt_stream`](crate::Esdk::encrypt_stream), built by its fluent builder.
+/// Input for [`Client::encrypt_stream`](crate::Client::encrypt_stream), built by its fluent builder.
 pub(crate) struct EncryptStreamInput {
     pub(crate) algorithm_suite_id: Option<AlgorithmSuiteId>,
     pub(crate) encryption_context: EncryptionContext,
@@ -651,7 +651,7 @@ impl EncryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
+    /// The [`Client`](crate::Client)'s fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -680,7 +680,7 @@ impl EncryptStreamInputBuilder {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`Esdk::decrypt`](crate::Esdk::decrypt), built by its fluent builder.
+/// Input for [`Client::decrypt`](crate::Client::decrypt), built by its fluent builder.
 pub(crate) struct DecryptInput<'a> {
     //= spec/client-apis/decrypt.md#input
     //# - Decrypt operation input MUST accept a required [Encrypted Message](#encrypted-message) argument.
@@ -819,7 +819,7 @@ impl<'a> DecryptInputBuilder<'a> {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
+    /// The [`Client`](crate::Client)'s fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);
@@ -852,7 +852,7 @@ impl<'a> DecryptInputBuilder<'a> {
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-/// Input for [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream), built by its fluent builder.
+/// Input for [`Client::decrypt_stream`](crate::Client::decrypt_stream), built by its fluent builder.
 pub(crate) struct DecryptStreamInput {
     pub(crate) encryption_context: EncryptionContext,
     /// The keyring to use for this operation.
@@ -963,7 +963,7 @@ impl DecryptStreamInputBuilder {
     /// Set the commitment policy.
     /// Default is `CommitmentPolicy::RequireEncryptRequireDecrypt`.
     ///
-    /// The [`Esdk`](crate::Esdk) client's fluent builders set this from the client's config.
+    /// The [`Client`](crate::Client)'s fluent builders set this from the client's config.
     #[must_use]
     pub(crate) const fn commitment_policy(mut self, p: CommitmentPolicy) -> Self {
         self.commitment_policy = Some(p);

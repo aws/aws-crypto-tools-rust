@@ -50,7 +50,7 @@ async fn test_decrypt_final_frame_content_length_validation() {
     //= reason=Untampered ct decrypts; content_length tampered to 11 (> frame_length=10) → Serialization error
     //# If this is a final frame, this MUST be determined by using the [final frame encrypted content length](../data-format/message-body.md#final-frame-encrypted-content-length).
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -60,7 +60,7 @@ async fn test_decrypt_final_frame_content_length_validation() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)
@@ -107,7 +107,7 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
     //= reason=Untampered ct decrypts; tampered auth tag byte → Cryptographic error
     //# If this decryption fails, this operation MUST immediately halt and fail.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -117,7 +117,7 @@ async fn test_decrypt_fails_on_tampered_auth_tag() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)
@@ -252,7 +252,7 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
     //= reason=Untampered body decrypts (Ok includes plaintext); tampered body returns Err with no DecryptOutput, so no plaintext released
     //# This operation MUST NOT release any unauthenticated plaintext.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -262,7 +262,7 @@ async fn test_decrypt_no_unauthenticated_plaintext_released() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)
@@ -281,7 +281,7 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     // pending signature verification and never released.
     let keyring = test_keyring().await;
     let pt = vec![0xABu8; 16];
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
@@ -304,7 +304,7 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
     //# a final frame in a streamed Decrypt operation MUST NOT be released until [signature verification](#verify-the-signature)
     //# successfully completes.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -314,7 +314,7 @@ async fn test_decrypt_final_frame_held_until_signature_verification() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)

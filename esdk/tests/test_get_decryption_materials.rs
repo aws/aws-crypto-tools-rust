@@ -26,7 +26,7 @@ use test_helpers::*;
 async fn test_decrypt_fails_with_wrong_keyring() {
     let keyring = test_keyring().await;
     let pt = b"negative test";
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .keyring(keyring.clone())
@@ -52,7 +52,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
     //# If a CMM is not supplied as the input, the decrypt operation MUST construct a [default CMM](../framework/default-cmm.md)
     //# from the input [keyring](../framework/keyring-interface.md).
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&ct)
             .keyring(keyring)
@@ -61,7 +61,7 @@ async fn test_decrypt_fails_with_wrong_keyring() {
             .is_ok(),
         "right keyring must decrypt"
     );
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(wrong_keyring)
@@ -210,7 +210,7 @@ async fn test_commit_key_derived_and_validated() {
     //= reason=Header commit key must equal derived commit key; tampering breaks equality → Cryptographic error
     //# The derived commit key MUST equal the commit key stored in the message header.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -220,7 +220,7 @@ async fn test_commit_key_derived_and_validated() {
         "valid commit key must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)
@@ -290,7 +290,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     let keyring = aes_keyring(0).await;
     let pt = b"unsupported esdk suite test";
 
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .keyring(keyring.clone())
@@ -318,7 +318,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
     //# [algorithm suite ID](../data-format/message-header.md#algorithm-suite-id)
     //# from the message header.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -328,7 +328,7 @@ async fn test_unsupported_esdk_algorithm_suite_yields_error() {
         "valid suite ID must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring)
@@ -381,7 +381,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
     let mut ec = EncryptionContext::new();
     ec.insert("spy-key", "spy-val");
     let pt = b"spy cmm decrypt test";
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(pt)
         .encryption_context(ec)
@@ -400,7 +400,7 @@ async fn test_cmm_decrypt_call_receives_header_edks_and_ec() {
         observed_ec_keys: observed_ec_keys.clone(),
     };
 
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .cmm(spy_cmm)

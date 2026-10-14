@@ -71,7 +71,7 @@ async fn custom_cmm_round_trips_via_public_api() {
     let plaintext = b"custom cmm round trip";
 
     // Encrypt and decrypt entirely through the custom CMM.
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let out = esdk
         .encrypt()
         .plaintext(plaintext)

@@ -14,7 +14,7 @@ use aws_crypto_mpl::cmc::DefaultCmc;
 use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::structures::EncryptionContext;
 use aws_crypto_mpl::{Discovery, HierarchicalKeyring, KeyStoreClient, KmsConfiguration};
-use aws_esdk::Esdk;
+use aws_esdk::Client;
 use aws_esdk::error::{BranchKey, DynamoDbTable, Error, KmsKey, Resource, Service};
 
 const TABLE: &str = "KeyStoreDdbTable";
@@ -77,7 +77,7 @@ async fn encrypt_error(key_store: impl Into<KeyStoreClient>, branch_key_id: &str
         )
         .build()
         .expect("the keyring configuration is valid");
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(b"hello")
         .keyring(keyring)

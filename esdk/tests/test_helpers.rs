@@ -48,24 +48,24 @@ pub async fn aes_keyring(n: u8) -> RawAesKeyring {
     raw_aes(ns, name, [n; 32])
 }
 
-/// An `Esdk` client with `policy`.
-pub fn esdk_with(policy: CommitmentPolicy) -> Esdk {
-    Esdk::builder().commitment_policy(policy).build()
+/// A `Client` with `policy`.
+pub fn esdk_with(policy: CommitmentPolicy) -> Client {
+    Client::builder().commitment_policy(policy).build()
 }
 
-/// An `Esdk` client that encrypts with non-committing suites and decrypts any message.
-pub fn esdk_v1() -> Esdk {
+/// A `Client` that encrypts with non-committing suites and decrypts any message.
+pub fn esdk_v1() -> Client {
     esdk_with(CommitmentPolicy::ForbidEncryptAllowDecrypt)
 }
 
-/// An `Esdk` client whose commitment policy matches messages of `version`.
-pub fn esdk_for(version: Version) -> Esdk {
+/// A `Client` whose commitment policy matches messages of `version`.
+pub fn esdk_for(version: Version) -> Client {
     esdk_with(commitment_policy_for(version))
 }
 
-/// An `Esdk` client that caps each message at `max` encrypted data keys.
-pub fn esdk_with_max_edks(max: usize) -> Esdk {
-    Esdk::builder()
+/// A `Client` that caps each message at `max` encrypted data keys.
+pub fn esdk_with_max_edks(max: usize) -> Client {
+    Client::builder()
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(max).unwrap())
         .build()
 }
@@ -73,7 +73,7 @@ pub fn esdk_with_max_edks(max: usize) -> Esdk {
 /// Encrypt with defaults, return full EncryptOutput.
 pub async fn encrypt_default(plaintext: &[u8]) -> EncryptOutput {
     let keyring = test_keyring().await;
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring)
@@ -128,7 +128,7 @@ pub async fn encrypt_framed_with_keyring(
     frame_length: u32,
     keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -158,7 +158,7 @@ pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -
 /// Encrypt with a signing algorithm suite, return ciphertext bytes.
 pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring)
@@ -176,7 +176,7 @@ pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
 pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xAAu8; 30];
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
@@ -206,7 +206,7 @@ pub async fn encrypt_with_v1_signing_suite(plaintext: &[u8]) -> Vec<u8> {
 /// Encrypt with a non-signing algorithm suite, return ciphertext bytes.
 pub async fn encrypt_without_signing_suite(plaintext: &[u8]) -> Vec<u8> {
     let keyring = test_keyring().await;
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring)
@@ -222,7 +222,7 @@ pub async fn encrypt_without_signing_suite(plaintext: &[u8]) -> Vec<u8> {
 /// messages for per-frame-field assertions.
 pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let keyring = test_keyring().await;
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring)
@@ -240,7 +240,7 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
 pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>) {
     let keyring = test_keyring().await;
     let plaintext = vec![0xBBu8; 30];
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
@@ -366,7 +366,7 @@ pub async fn decrypt_with_keyring_ec(
     ec: EncryptionContext,
     keyring: &RawAesKeyring,
 ) -> Vec<u8> {
-    Esdk::default()
+    Client::default()
         .decrypt()
         .ciphertext(ciphertext)
         .encryption_context(ec)
@@ -399,7 +399,7 @@ pub async fn try_decrypt_with_keyring(
     ciphertext: &[u8],
     keyring: &RawAesKeyring,
 ) -> Result<DecryptOutput, Error> {
-    Esdk::default()
+    Client::default()
         .decrypt()
         .ciphertext(ciphertext)
         .keyring(keyring.clone())
@@ -478,7 +478,7 @@ pub async fn round_trip_v1(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
 /// Encrypt V2 then decrypt, returning decrypted plaintext.
 pub async fn round_trip_v2(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
     let keyring = test_keyring().await;
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .encryption_context(ec)
@@ -499,7 +499,7 @@ pub async fn round_trip_signing(plaintext: &[u8]) -> Vec<u8> {
 /// Encrypt then decrypt with encryption context, returning full DecryptOutput.
 pub async fn round_trip_with_ec(plaintext: &[u8], ec: EncryptionContext) -> DecryptOutput {
     let keyring = test_keyring().await;
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let ct = esdk
         .encrypt()
         .plaintext(plaintext)

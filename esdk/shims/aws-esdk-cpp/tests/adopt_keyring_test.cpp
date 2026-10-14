@@ -38,7 +38,7 @@ int main() {
         //# - The shim MAY let the target adopt a consumer-written implementation of a
         //# core-library interface.
         auto keyring = Aws::Esdk::Keyring::adopt(raw_handle);
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
         auto plaintext = esdk_test::to_bytes("adopted keyring through the facade");
         auto ciphertext = sdk.encrypt(plaintext, keyring).ciphertext;
         ESDK_CHECK(ciphertext != plaintext);

@@ -19,7 +19,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     let ec = EncryptionContext::new();
 
     // Encrypt with a non-signing algorithm suite
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .encryption_context(ec.clone())
@@ -43,7 +43,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
     //= reason=No footer on wire + decrypt succeeds → signature step was not attempted
     //# - If the message header does not contain an algorithm suite including a signature algorithm,
     //# the Decrypt operation MUST NOT perform this step.
-    let decrypt_output = Esdk::default()
+    let decrypt_output = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .encryption_context(ec)
@@ -58,7 +58,7 @@ async fn test_decrypt_skips_signature_step_for_non_signing_algorithm() {
 async fn test_decrypt_halts_on_incomplete_message() {
     let keyring = test_keyring().await;
     let plaintext = b"truncation test data";
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -77,7 +77,7 @@ async fn test_decrypt_halts_on_incomplete_message() {
     //# is unable to complete the above steps with the consumable encrypted message bytes,
     //# this operation MUST halt and indicate a failure to the caller.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -87,7 +87,7 @@ async fn test_decrypt_halts_on_incomplete_message() {
         "full ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&truncated_ct)
             .keyring(keyring)
@@ -103,7 +103,7 @@ async fn test_decrypt_halts_on_incomplete_message() {
 async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     let keyring = test_keyring().await;
     let plaintext = b"trailing bytes test";
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -123,7 +123,7 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
     //# but there are consumable bytes which are intended to be decrypted,
     //# this operation MUST fail.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -133,7 +133,7 @@ async fn test_decrypt_fails_with_trailing_bytes_after_message() {
         "clean ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&trailing_ct)
             .keyring(keyring)
@@ -153,7 +153,7 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let keyring = test_keyring().await;
     // 30 bytes with frame_length=10 → 3 frames (2 regular + 1 final)
     let plaintext = vec![0xAAu8; 30];
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(&plaintext)
         .keyring(keyring.clone())
@@ -168,7 +168,7 @@ async fn test_streaming_fails_for_multi_frame_signed() {
     let mut output = Vec::new();
 
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt_stream()
             .keyring(keyring)
             .send(&mut cursor, &mut output)
@@ -189,7 +189,7 @@ async fn test_signing_suite_must_perform_signature_step() {
     let plaintext = b"signing suite signature step test";
 
     // Encrypt with a signing algorithm suite (ECDSA P384)
-    let valid_ct = Esdk::default()
+    let valid_ct = Client::default()
         .encrypt()
         .plaintext(plaintext)
         .keyring(keyring.clone())
@@ -212,7 +212,7 @@ async fn test_signing_suite_must_perform_signature_step() {
     //# [signature algorithm](../framework/algorithm-suites.md#signature-algorithm),
     //# the Decrypt operation MUST perform this step.
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&valid_ct)
             .keyring(keyring.clone())
@@ -222,7 +222,7 @@ async fn test_signing_suite_must_perform_signature_step() {
         "valid ct must decrypt"
     );
     assert!(
-        Esdk::default()
+        Client::default()
             .decrypt()
             .ciphertext(&tampered_ct)
             .keyring(keyring.clone())

@@ -21,7 +21,7 @@ async fn test_decrypt_rejects_base64_encoded_input() {
     };
 
     let keyring = test_keyring().await;
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&fake_b64_input)
         .keyring(keyring)

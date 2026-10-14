@@ -30,7 +30,7 @@ int main() {
                 .with_cache(Aws::Esdk::DefaultCmc(42))
         );
 
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         std::vector<uint8_t> plaintext = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
         auto encrypted = esdk.encrypt(plaintext, keyring);

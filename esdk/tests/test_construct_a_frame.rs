@@ -21,7 +21,7 @@ async fn test_construct_frame_aead_inputs_authenticated() {
     // frame auth tag is the integrity layer under test.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0u8..=200).collect(); // 201 bytes / frame_length 50 → 4 regular + 1 final
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
@@ -233,7 +233,7 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
     // All-distinct bytes: any reorder, skip, or duplication breaks equality.
     let keyring = test_keyring().await;
     let pt: Vec<u8> = (0..=255).collect();
-    let ct = Esdk::default()
+    let ct = Client::default()
         .encrypt()
         .plaintext(&pt)
         .keyring(keyring.clone())
@@ -246,7 +246,7 @@ async fn test_construct_frame_plaintext_subsequence_consumed_in_order() {
     //= spec/client-apis/encrypt.md#construct-a-frame
     //= type=test
     //# - The plaintext MUST be the next subsequence of consumable plaintext bytes that have not yet been encrypted.
-    let result = Esdk::default()
+    let result = Client::default()
         .decrypt()
         .ciphertext(&ct)
         .keyring(keyring)
@@ -361,7 +361,7 @@ async fn test_construct_frame_streaming_frame_released() {
     let plaintext = vec![0xAAu8; 50];
     let mut reader = std::io::Cursor::new(&plaintext);
     let mut output = Vec::new();
-    Esdk::default()
+    Client::default()
         .encrypt_stream()
         .keyring(keyring.clone())
         .frame_length(NonZeroU32::new(10).unwrap())
@@ -381,7 +381,7 @@ async fn test_construct_frame_streaming_frame_released() {
     //# the serialized frame MUST be released.
     assert!(!output.is_empty());
 
-    let decrypted = Esdk::default()
+    let decrypted = Client::default()
         .decrypt()
         .ciphertext(&output)
         .keyring(keyring)

@@ -11,7 +11,7 @@ use aws_crypto_mpl::keyring::OnEncryptInput;
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptOutput};
 use aws_crypto_mpl::keyring::{RawAesKeyring, SharedKeyring};
 use aws_crypto_mpl::structures::EncryptionContext;
-use aws_esdk::Esdk;
+use aws_esdk::Client;
 use aws_esdk::error::{
     BranchKey, Cache, DynamoDbTable, Error, KeyringResource, KmsKey, Resource, RetryKind, Service,
 };
@@ -25,7 +25,7 @@ fn context() -> EncryptionContext {
 }
 
 async fn encrypt_with(keyring: impl aws_crypto_mpl::Keyring + 'static) -> Vec<u8> {
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(b"hello")
         .encryption_context(context())
@@ -40,7 +40,7 @@ async fn decrypt_with(
     ciphertext: &[u8],
     keyring: impl aws_crypto_mpl::Keyring + 'static,
 ) -> Result<Vec<u8>, Error> {
-    Esdk::default()
+    Client::default()
         .decrypt()
         .ciphertext(ciphertext)
         .keyring(keyring)
@@ -245,7 +245,7 @@ async fn the_materials_cache_timing_out_is_throttling_about_the_cache() {
         .cache(SharedCmc::new(cache))
         .build()
         .unwrap();
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt()
         .plaintext(b"hello")
         .keyring(keyring)
@@ -277,7 +277,7 @@ async fn a_tampered_frame_is_cryptographic() {
         .wrapping_alg(AesGcm::Aes256Gcm)
         .build()
         .unwrap();
-    let mut ciphertext = Esdk::default()
+    let mut ciphertext = Client::default()
         .encrypt()
         .plaintext(b"hello")
         .algorithm_suite_id(aws_esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
@@ -306,7 +306,7 @@ async fn an_encryption_context_mismatch_names_the_key_not_the_value() {
     let ciphertext = encrypt_with(keyring.clone()).await;
     let mut other = EncryptionContext::new();
     other.insert("tenant", "a-different-value");
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt()
         .ciphertext(&ciphertext)
         .encryption_context(other)
@@ -461,7 +461,7 @@ async fn version_key_keeps_the_kms_classification_of_the_record_check() {
 
 /// The error from encrypting under the fake's hierarchical keyring.
 async fn hierarchical_encrypt_error(fake: FakeAws) -> Error {
-    Esdk::default()
+    Client::default()
         .encrypt()
         .plaintext(b"hello")
         .keyring(fake.keyring().await)
@@ -811,7 +811,7 @@ async fn a_discovery_key_store_names_the_kms_key_from_the_record() {
         "TrentService.Decrypt" => Some(Reply::error(400, "AccessDeniedException", "disc-req")),
         _ => None,
     });
-    let err = Esdk::default()
+    let err = Client::default()
         .encrypt()
         .plaintext(b"hello")
         .keyring(discovery_keyring(&fake).await)

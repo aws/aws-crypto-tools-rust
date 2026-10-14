@@ -5,13 +5,13 @@
 mod fixtures;
 mod test_helpers;
 
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 use test_helpers::{multi_frame_signed_for_stream, multi_frame_unsigned_for_stream, test_keyring};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_streaming_encrypt_decrypt_round_trip() {
     let keyring = test_keyring().await;
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let plaintext = b"hello streaming world";
 
     let ec = EncryptionContext::new();
@@ -96,7 +96,7 @@ async fn test_decrypt_stream_multi_frame_signed_rejected() {
 
     let mut ct_cursor = std::io::Cursor::new(&ct[..]);
     let mut output: Vec<u8> = Vec::new();
-    let err = Esdk::default()
+    let err = Client::default()
         .decrypt_stream()
         .keyring(keyring)
         .send(&mut ct_cursor, &mut output)
@@ -118,7 +118,7 @@ async fn test_decrypt_stream_multi_frame_unsigned_accepted() {
 
     let mut ct_cursor = std::io::Cursor::new(&ct[..]);
     let mut output: Vec<u8> = Vec::new();
-    Esdk::default()
+    Client::default()
         .decrypt_stream()
         .keyring(keyring)
         .send(&mut ct_cursor, &mut output)
@@ -142,7 +142,7 @@ async fn test_streaming_rejects_neither_and_both_sources() {
     //= spec/client-apis/encrypt.md#input
     //= type=test
     //# If the caller does not provide exactly one of a keyring or CMM, the Encrypt operation MUST fail.
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let neither = esdk.encrypt_stream().send(&b"pt"[..], Vec::new()).await;
     let both = esdk
         .encrypt_stream()
@@ -256,7 +256,7 @@ async fn test_streaming_round_trip_through_pending_partial_io() {
     // Three frames, the last one partial.
     let plaintext: Vec<u8> = (0..=255u8).cycle().take(2 * 4096 + 100).collect();
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let mut ciphertext = Vec::new();
     esdk.encrypt_stream()
         .keyring(keyring.clone())

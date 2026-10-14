@@ -64,7 +64,7 @@ impl DecryptMode {
 //= reason=Caller obligation; Err signals discard
 //# Additionally, if this operation fails, callers MUST discard the released plaintext and encryption context
 //# and MUST rollback any processing done due to the released plaintext or encryption context.
-/// Decrypt an encrypted message stream into a plaintext stream. Called by [`Esdk::decrypt_stream`](crate::Esdk::decrypt_stream).
+/// Decrypt an encrypted message stream into a plaintext stream. Called by [`Client::decrypt_stream`](crate::Client::decrypt_stream).
 pub(crate) async fn decrypt_stream<R, W>(
     //= spec/client-apis/decrypt.md#encrypted-message
     //= type=implication
@@ -113,7 +113,7 @@ where
     Ok(output)
 }
 
-/// Decrypt `input.ciphertext`. Called by [`Esdk::decrypt`](crate::Esdk::decrypt).
+/// Decrypt `input.ciphertext`. Called by [`Client::decrypt`](crate::Client::decrypt).
 pub(crate) async fn decrypt(input: &DecryptInput<'_>) -> Result<DecryptOutput, Error> {
     let mut cursor = std::io::Cursor::new(input.ciphertext);
 
