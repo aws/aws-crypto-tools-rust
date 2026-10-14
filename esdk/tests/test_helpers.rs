@@ -1035,23 +1035,11 @@ pub fn find_footer_offset_only(ct: &[u8]) -> usize {
     panic!("Could not find footer in ciphertext");
 }
 
-/// Returns `true` if the trailing bytes of `ct` look like a valid ECDSA P-384
-/// footer (2-byte length prefix whose value falls in the expected DER signature
-/// range and matches the remaining byte count).
+/// Whether bytes follow the final frame of a message encrypted with the default frame length.
 pub fn has_footer(ct: &[u8]) -> bool {
-    // ECDSA P-384 DER signatures are typically 64..=104 bytes.
-    // The footer is: 2-byte big-endian length + that many signature bytes.
-    for candidate_len in 64..=110 {
-        if ct.len() < 2 + candidate_len {
-            continue;
-        }
-        let offset = ct.len() - 2 - candidate_len;
-        let sig_len = u16::from_be_bytes([ct[offset], ct[offset + 1]]);
-        if sig_len as usize == candidate_len {
-            return true;
-        }
-    }
-    false
+    let frames = parse_all_frames(ct, 4096);
+    let body_end = frames.last().expect("message has a final frame").end_offset;
+    body_end < ct.len()
 }
 
 /// Find the byte offset of the EDK count field in a ciphertext header.
