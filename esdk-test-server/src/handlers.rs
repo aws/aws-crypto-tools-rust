@@ -100,9 +100,10 @@ impl AppState {
         req: CreateClientRequest,
     ) -> Result<CreateClientResponse, ServerError> {
         let keyring = keyring_for_cmm(&req.config.cmm).await?;
-        let esdk = Client::builder()
-            .commitment_policy(map_commitment(req.config.commitment_policy))
-            .set_max_encrypted_data_keys(max_edks(&req.config)?)
+        let mut builder =
+            Client::builder().commitment_policy(map_commitment(req.config.commitment_policy));
+        builder.set_max_encrypted_data_keys(max_edks(&req.config)?);
+        let esdk = builder
             .build()
             .map_err(|e| ServerError::esdk(e.to_string()))?;
         let entry = ClientEntry { esdk, keyring };
@@ -169,6 +170,6 @@ impl AppState {
         let entry = clients
             .get(client_id)
             .ok_or_else(|| ServerError::generic(format!("unknown clientId: {client_id}")))?;
-        Ok((entry.esdk, entry.keyring.clone()))
+        Ok((entry.esdk.clone(), entry.keyring.clone()))
     }
 }

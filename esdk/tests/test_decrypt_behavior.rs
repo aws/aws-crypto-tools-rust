@@ -171,7 +171,9 @@ async fn test_streaming_fails_for_multi_frame_signed() {
         Client::default()
             .decrypt_stream()
             .keyring(keyring)
-            .send(&mut cursor, &mut output)
+            .ciphertext(&mut cursor)
+            .plaintext(&mut output)
+            .send()
             .await
             .unwrap_err()
             .is_validation(),

@@ -5,7 +5,7 @@ use aws_crypto_mpl::cmm::DefaultCmm;
 use aws_crypto_mpl::keyring::RawAesKeyring;
 use aws_esdk::EncryptionContext;
 use aws_mpl_primitives::AesGcm;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 #[allow(clippy::duplicate_mod)]
 mod fixtures;
@@ -442,7 +442,7 @@ fn test_esdk_from_conf_takes_built_config() {
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(7).unwrap())
         .build()
         .unwrap();
-    let esdk = Client::from_conf(config);
+    let esdk = Client::from_conf(config.clone());
     assert_eq!(esdk.config(), &config);
     assert_eq!(
         esdk.config().commitment_policy(),
@@ -464,26 +464,44 @@ fn test_config_builder_defaults_match_client_default() {
 }
 
 #[test]
+fn test_config_to_builder_round_trips_and_overrides_one_field() {
+    let config = Config::builder()
+        .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
+        .max_encrypted_data_keys(NonZeroUsize::new(3).unwrap())
+        .build()
+        .unwrap();
+    assert_eq!(config.to_builder().build().unwrap(), config);
+
+    let changed = config
+        .to_builder()
+        .max_encrypted_data_keys(NonZeroUsize::new(5).unwrap())
+        .build()
+        .unwrap();
+    assert_eq!(changed.commitment_policy(), config.commitment_policy());
+    assert_eq!(changed.max_encrypted_data_keys(), NonZeroUsize::new(5));
+}
+
+#[test]
 fn test_builder_getters_track_setters() {
     let cap = std::num::NonZeroUsize::new(2).unwrap();
     let policy = CommitmentPolicy::RequireEncryptAllowDecrypt;
-    let config = Config::builder()
+    let mut config = Config::builder()
         .commitment_policy(policy)
         .max_encrypted_data_keys(cap);
     assert_eq!(config.get_commitment_policy(), &Some(policy));
     assert_eq!(config.get_max_encrypted_data_keys(), &Some(cap));
-    let config = config
+    config
         .set_commitment_policy(None)
         .set_max_encrypted_data_keys(None);
     assert_eq!(config.get_commitment_policy(), &None);
     assert_eq!(config.get_max_encrypted_data_keys(), &None);
 
-    let client = Client::builder()
+    let mut client = Client::builder()
         .commitment_policy(policy)
         .max_encrypted_data_keys(cap);
     assert_eq!(client.get_commitment_policy(), &Some(policy));
     assert_eq!(client.get_max_encrypted_data_keys(), &Some(cap));
-    let client = client
+    client
         .set_commitment_policy(None)
         .set_max_encrypted_data_keys(None);
     assert_eq!(client.get_commitment_policy(), &None);

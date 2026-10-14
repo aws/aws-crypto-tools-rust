@@ -212,7 +212,9 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     assert!(
         esdk.decrypt_stream()
             .keyring(keyring.clone())
-            .send(&mut valid_cursor, &mut valid_output)
+            .ciphertext(&mut valid_cursor)
+            .plaintext(&mut valid_output)
+            .send()
             .await
             .is_ok(),
         "valid ct must stream to Ok"
@@ -220,7 +222,9 @@ async fn test_streamed_signed_output_not_signed_until_complete() {
     assert!(
         esdk.decrypt_stream()
             .keyring(keyring)
-            .send(&mut tampered_cursor, &mut tampered_output)
+            .ciphertext(&mut tampered_cursor)
+            .plaintext(&mut tampered_output)
+            .send()
             .await
             .unwrap_err()
             .is_cryptographic(),
@@ -252,7 +256,9 @@ async fn test_streamed_release_parsed_header_after_verification() {
     let result = Client::default()
         .decrypt_stream()
         .keyring(keyring)
-        .send(&mut cursor, &mut output)
+        .ciphertext(&mut cursor)
+        .plaintext(&mut output)
+        .send()
         .await
         .unwrap();
     assert_eq!(output, plaintext);

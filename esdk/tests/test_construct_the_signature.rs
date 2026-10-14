@@ -354,9 +354,7 @@ async fn test_no_signature_without_signing_suite() {
     //# the Encrypt operation MUST NOT construct a signature.
 
     // Encrypt with a non-signing suite, then verify on the wire that no footer is
-    // present and that the plaintext round-trips. `has_footer` looks for a 2-byte
-    // length prefix at the tail whose value falls in the ECDSA P-384 DER signature
-    // range and equals the remaining byte count.
+    // present and that the plaintext round-trips.
     let ct = encrypt_without_signing_suite(b"no signature test").await;
     assert!(
         !has_footer(&ct),

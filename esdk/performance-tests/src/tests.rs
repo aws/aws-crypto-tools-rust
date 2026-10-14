@@ -198,7 +198,7 @@ impl EsdkBenchmark {
             let operation_start = Instant::now();
 
             let data_clone = data.clone();
-            let esdk_client = self.esdk_client;
+            let esdk_client = self.esdk_client.clone();
             let keyring = self.keyring.clone();
 
             let operation_task = tokio::spawn(async move {
@@ -310,7 +310,7 @@ impl EsdkBenchmark {
 
         let mut tasks = Vec::new();
         for worker_id in 0..concurrency {
-            let esdk_client = self.esdk_client;
+            let esdk_client = self.esdk_client.clone();
             let keyring = self.keyring.clone();
 
             let task = tokio::spawn(async move {

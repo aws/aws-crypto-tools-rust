@@ -240,3 +240,33 @@ async fn an_unparseable_dynamodb_response_does_not_reach_the_error() {
     assert!(err.is_service(), "{err:?}");
     assert_no_secrets(&err);
 }
+
+/// `Debug` of the encrypt builder and the decrypt output hides the plaintext, as the AWS SDK for Rust does.
+#[tokio::test]
+async fn debug_hides_the_plaintext() {
+    let esdk = Client::default();
+    let builder = esdk
+        .encrypt()
+        .plaintext(PLAINTEXT.as_bytes())
+        .keyring(raw("k"));
+    let builder_debug = format!("{builder:?}");
+
+    let encrypted = builder.send().await.unwrap();
+    let decrypted = esdk
+        .decrypt()
+        .ciphertext(encrypted.ciphertext())
+        .keyring(raw("k"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(decrypted.plaintext(), PLAINTEXT.as_bytes());
+    let output_debug = format!("{decrypted:?}");
+
+    // `{:?}` of a `&[u8]` prints decimal bytes; the first three of PLAINTEXT are "SEC".
+    let plaintext_bytes = format!("{:?}", &PLAINTEXT.as_bytes()[..3]).replace(['[', ']'], "");
+    for text in [&builder_debug, &output_debug] {
+        assert!(text.contains("*** Sensitive Data Redacted ***"), "{text}");
+        assert!(!text.contains(PLAINTEXT), "{text}");
+        assert!(!text.contains(&plaintext_bytes), "{text}");
+    }
+}

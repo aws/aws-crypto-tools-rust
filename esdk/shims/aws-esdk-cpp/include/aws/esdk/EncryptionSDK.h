@@ -502,9 +502,6 @@ public:
     Credentials& with_expiration(std::chrono::system_clock::time_point t) { expiration_ = t; return *this; }
 };
 
-/// AWS service-client configuration for AWS SDK clients.
-/// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One AwsSdkClientConfig may configure multiple clients.
 /// An HTTP client and its connection pool.
 /// Pass one to several AwsSdkClientConfigs to make their service clients share connections.
 class HttpClient {
@@ -515,6 +512,9 @@ public:
     HttpClient();
 };
 
+/// AWS service-client configuration for AWS SDK clients.
+/// A field left unset defers to the ESDK Rust's default configuration resolution.
+/// One AwsSdkClientConfig may configure multiple clients.
 class AwsSdkClientConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
@@ -938,9 +938,7 @@ struct DecryptResult {
 
 /// Configuration for Client.
 ///
-/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
-/// Each field must be set in exactly one place.
-/// A field unset in both defers to the core library's default.
+/// A field left unset defers to the core library's default.
 //
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
@@ -1008,7 +1006,7 @@ public:
 ///
 /// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
-/// Decrypt these messages with Aws::Esdk::decrypt instead.
+/// Decrypt these messages with Client::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
     friend class Client;

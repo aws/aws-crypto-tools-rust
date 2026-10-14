@@ -6,9 +6,13 @@
 //! `Client` holds a [`Config`]: a commitment policy and an optional cap on encrypted data keys.
 //! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
-//! ```ignore
+//! ```no_run
+//! # use aws_esdk::{CommitmentPolicy, SharedKeyring};
+//! # async fn example(policy: CommitmentPolicy, plaintext: &[u8], keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
 //! let esdk = aws_esdk::Client::builder().commitment_policy(policy).build()?;
 //! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::Error;
@@ -20,7 +24,14 @@ use crate::types::{
 };
 use crate::types::{CommitmentPolicy, DEFAULT_COMMITMENT_POLICY};
 use aws_crypto_mpl::{Cmm, Keyring, SharedCmm, SharedKeyring};
+use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
+use tokio::io::{AsyncRead, AsyncWrite};
+
+/// A stream reader held by a streaming fluent builder.
+type Reader<'a> = Box<dyn AsyncRead + Unpin + Send + 'a>;
+/// A stream writer held by a streaming fluent builder.
+type Writer<'a> = Box<dyn AsyncWrite + Unpin + Send + 'a>;
 
 /// Configuration for the [`Client`].
 ///
@@ -35,7 +46,7 @@ use std::num::{NonZeroU32, NonZeroUsize};
 //= spec/client-apis/client.md#initialization
 //= reason=Config::default() sets commitment_policy to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Config {
     /// Commitment policy applied to every operation. Default is
@@ -65,6 +76,15 @@ impl Config {
         ConfigBuilder::default()
     }
 
+    /// A builder preloaded with this config's values.
+    #[must_use]
+    pub const fn to_builder(&self) -> ConfigBuilder {
+        ConfigBuilder {
+            commitment_policy: Some(self.commitment_policy),
+            max_encrypted_data_keys: self.max_encrypted_data_keys,
+        }
+    }
+
     /// The commitment policy applied to every operation.
     #[must_use]
     pub const fn commitment_policy(&self) -> CommitmentPolicy {
@@ -79,7 +99,8 @@ impl Config {
 }
 
 /// Builder for [`Config`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
+#[allow(missing_copy_implementations)] // not Copy, like Config, so it can gain settings that aren't Copy
 pub struct ConfigBuilder {
     commitment_policy: Option<CommitmentPolicy>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
@@ -94,11 +115,10 @@ impl ConfigBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    #[must_use]
     pub const fn set_commitment_policy(
-        mut self,
+        &mut self,
         commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
+    ) -> &mut Self {
         self.commitment_policy = commitment_policy;
         self
     }
@@ -111,11 +131,10 @@ impl ConfigBuilder {
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    #[must_use]
     pub const fn set_max_encrypted_data_keys(
-        mut self,
+        &mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
-    ) -> Self {
+    ) -> &mut Self {
         self.max_encrypted_data_keys = max_encrypted_data_keys;
         self
     }
@@ -159,7 +178,9 @@ impl ConfigBuilder {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```no_run
+/// # use aws_esdk::{CommitmentPolicy, EncryptionContext, SharedKeyring};
+/// # async fn example(plaintext: &[u8], ec: EncryptionContext, keyring: SharedKeyring) -> Result<(), aws_esdk::Error> {
 /// let esdk = aws_esdk::Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build()?;
@@ -170,8 +191,10 @@ impl ConfigBuilder {
 ///     .keyring(keyring)
 ///     .send()
 ///     .await?;
+/// # Ok(())
+/// # }
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Client {
     /// Client configuration applied to every call.
@@ -180,7 +203,7 @@ pub struct Client {
     /// read via [`Client::config`].
     //= spec/client-apis/client.md#initialization
     //= type=implication
-    //= reason=pub(crate) prevents external mutation; Client is Copy so any "change" must construct a new value
+    //= reason=pub(crate) prevents external mutation and Client has no setters, so any "change" must construct a new value
     //# Once a [commitment policy](#commitment-policy) has been set it SHOULD be immutable.
     pub(crate) config: Config,
 }
@@ -226,7 +249,7 @@ impl Client {
     //# that adheres to [encrypt](./encrypt.md).
     pub fn encrypt<'a>(&self) -> EncryptFluentBuilder<'a> {
         EncryptFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: EncryptInput::builder(),
         }
     }
@@ -251,7 +274,7 @@ impl Client {
     //# that adheres to [decrypt](./decrypt.md).
     pub fn decrypt<'a>(&self) -> DecryptFluentBuilder<'a> {
         DecryptFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: DecryptInput::builder(),
         }
     }
@@ -259,9 +282,11 @@ impl Client {
     /// Constructs a fluent builder for the streaming encrypt operation, which reads plaintext from an `AsyncRead` and writes the encrypted message to an `AsyncWrite`.
     ///
     /// The client's commitment policy and encrypted data key cap apply.
-    /// Finish with [`send(plaintext, ciphertext)`](EncryptStreamFluentBuilder::send).
+    /// Finish with [`send()`](EncryptStreamFluentBuilder::send).
     ///
     /// - The fluent builder is configurable:
+    ///   - [`plaintext(impl AsyncRead)`](EncryptStreamFluentBuilder::plaintext) / [`set_plaintext(Option<Box<dyn AsyncRead>>)`](EncryptStreamFluentBuilder::set_plaintext):<br>required: **true**<br>The reader the data to encrypt is read from, until end of stream.<br>
+    ///   - [`ciphertext(impl AsyncWrite)`](EncryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncWrite>>)`](EncryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The writer the encrypted message is written to.<br>
     ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](EncryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](EncryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs bound to the message. They are authenticated, not encrypted, so never put secrets in them.<br>
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamFluentBuilder::algorithm_suite_id) / [`set_algorithm_suite_id(Option<AlgorithmSuiteId>)`](EncryptStreamFluentBuilder::set_algorithm_suite_id):<br>required: **false**<br>The algorithm suite to encrypt with. Unset uses the default suite for the client's commitment policy.<br>
     ///   - [`frame_length(NonZeroU32)`](EncryptStreamFluentBuilder::frame_length) / [`set_frame_length(Option<NonZeroU32>)`](EncryptStreamFluentBuilder::set_frame_length):<br>required: **false**<br>Bytes of plaintext per frame. Default is 4096.<br>
@@ -272,19 +297,23 @@ impl Client {
     ///   - [`encryption_context(&EncryptionContext)`](EncryptStreamOutput::encryption_context): The encryption context bound to the message, including any pairs the CMM added.
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](EncryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
     /// - On failure, responds with [`Error`](crate::Error); [`send`](EncryptStreamFluentBuilder::send) lists each variant.
-    pub fn encrypt_stream(&self) -> EncryptStreamFluentBuilder {
+    pub fn encrypt_stream<'a>(&self) -> EncryptStreamFluentBuilder<'a> {
         EncryptStreamFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: EncryptStreamInput::builder(),
+            plaintext: None,
+            ciphertext: None,
         }
     }
 
     /// Constructs a fluent builder for the streaming decrypt operation, which reads an encrypted message from an `AsyncRead` and writes the plaintext to an `AsyncWrite`.
     ///
     /// The client's commitment policy and encrypted data key cap apply.
-    /// Finish with [`send(ciphertext, plaintext)`](DecryptStreamFluentBuilder::send).
+    /// Finish with [`send()`](DecryptStreamFluentBuilder::send).
     ///
     /// - The fluent builder is configurable:
+    ///   - [`ciphertext(impl AsyncRead)`](DecryptStreamFluentBuilder::ciphertext) / [`set_ciphertext(Option<Box<dyn AsyncRead>>)`](DecryptStreamFluentBuilder::set_ciphertext):<br>required: **true**<br>The reader the encrypted message is read from.<br>
+    ///   - [`plaintext(impl AsyncWrite)`](DecryptStreamFluentBuilder::plaintext) / [`set_plaintext(Option<Box<dyn AsyncWrite>>)`](DecryptStreamFluentBuilder::set_plaintext):<br>required: **true**<br>The writer the decrypted data is written to. It receives plaintext before the whole message is verified.<br>
     ///   - [`encryption_context(impl Into<String>, impl Into<String>)`](DecryptStreamFluentBuilder::encryption_context) / [`set_encryption_context(Option<EncryptionContext>)`](DecryptStreamFluentBuilder::set_encryption_context):<br>required: **false**<br>Key-value pairs the message's encryption context must contain. Decrypt fails if a pair is missing from the message or has a different value.<br>
     ///   - [`keyring(impl Keyring)`](DecryptStreamFluentBuilder::keyring) / [`set_keyring(Option<SharedKeyring>)`](DecryptStreamFluentBuilder::set_keyring):<br>required: **one of keyring or cmm**<br>The keyring that protects the message's data key. Set exactly one of a keyring or a CMM.<br>
     ///   - [`cmm(impl Cmm)`](DecryptStreamFluentBuilder::cmm) / [`set_cmm(Option<SharedCmm>)`](DecryptStreamFluentBuilder::set_cmm):<br>required: **one of keyring or cmm**<br>The cryptographic materials manager (CMM) that supplies the message's data key. Set exactly one of a keyring or a CMM.<br>
@@ -292,10 +321,12 @@ impl Client {
     ///   - [`encryption_context(&EncryptionContext)`](DecryptStreamOutput::encryption_context): The message's encryption context.
     ///   - [`algorithm_suite_id(AlgorithmSuiteId)`](DecryptStreamOutput::algorithm_suite_id): The algorithm suite the message uses.
     /// - On failure, responds with [`Error`](crate::Error); [`send`](DecryptStreamFluentBuilder::send) lists each variant.
-    pub fn decrypt_stream(&self) -> DecryptStreamFluentBuilder {
+    pub fn decrypt_stream<'a>(&self) -> DecryptStreamFluentBuilder<'a> {
         DecryptStreamFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: DecryptStreamInput::builder(),
+            ciphertext: None,
+            plaintext: None,
         }
     }
 }
@@ -351,6 +382,34 @@ macro_rules! member {
         #[allow(clippy::ref_option, clippy::ref_option_ref)] // AWS SDK for Rust getter shape
         pub const fn $get(&self) -> &Option<$ty> {
             self.inner.$get()
+        }
+    };
+}
+
+/// Add a stream member's setter, `set_` setter and getter, each documented with `doc`,
+/// storing the boxed reader or writer on the fluent builder.
+macro_rules! stream_member {
+    (
+        $(#[doc = $doc:expr])+
+        $name:ident(impl $bound:ident), $set:ident, $get:ident -> $ty:ident
+    ) => {
+        $(#[doc = $doc])+
+        pub fn $name(mut self, input: impl $bound + Unpin + Send + 'a) -> Self {
+            self.$name = Some(Box::new(input));
+            self
+        }
+
+        $(#[doc = $doc])+
+        pub fn $set(mut self, input: Option<$ty<'a>>) -> Self {
+            self.$name = input;
+            self
+        }
+
+        $(#[doc = $doc])+
+        #[must_use]
+        #[allow(clippy::ref_option)] // AWS SDK for Rust getter shape
+        pub const fn $get(&self) -> &Option<$ty<'a>> {
+            &self.$name
         }
     };
 }
@@ -507,14 +566,37 @@ impl<'a> DecryptFluentBuilder<'a> {
 /// Fluent builder for the streaming encrypt operation, started by [`Client::encrypt_stream`].
 ///
 /// Reads plaintext from an `AsyncRead` and writes the encrypted message to an `AsyncWrite`, one frame at a time.
-#[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
-pub struct EncryptStreamFluentBuilder {
+pub struct EncryptStreamFluentBuilder<'a> {
     config: Config,
     inner: EncryptStreamInputBuilder,
+    plaintext: Option<Reader<'a>>,
+    ciphertext: Option<Writer<'a>>,
 }
 
-impl EncryptStreamFluentBuilder {
+impl fmt::Debug for EncryptStreamFluentBuilder<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptStreamFluentBuilder")
+            .field("config", &self.config)
+            .field("inner", &self.inner)
+            .field("plaintext", &self.plaintext.as_ref().map(|_| "AsyncRead"))
+            .field(
+                "ciphertext",
+                &self.ciphertext.as_ref().map(|_| "AsyncWrite"),
+            )
+            .finish()
+    }
+}
+
+impl<'a> EncryptStreamFluentBuilder<'a> {
+    stream_member!(
+        /// The reader the data to encrypt is read from, until end of stream.
+        plaintext(impl AsyncRead), set_plaintext, get_plaintext -> Reader
+    );
+    stream_member!(
+        /// The writer the encrypted message is written to.
+        ciphertext(impl AsyncWrite), set_ciphertext, get_ciphertext -> Writer
+    );
     encrypt_members!();
     material_source_members!();
     member!(
@@ -523,12 +605,12 @@ impl EncryptStreamFluentBuilder {
         data_size(usize), set_data_size, get_data_size -> usize
     );
 
-    /// Encrypt `plaintext` into `ciphertext`.
+    /// Encrypt the `plaintext` reader into the `ciphertext` writer.
     ///
     /// # Errors
     ///
     /// Returns an [`Error`](crate::Error), one of:
-    /// - [`Validation`](crate::Error::Validation): an encryption context key uses the reserved `aws-crypto-` prefix, the commitment policy does not allow the requested algorithm suite, the encrypted data key count exceeds the configured maximum, or the plaintext exceeds the size limit.
+    /// - [`Validation`](crate::Error::Validation): the plaintext reader or ciphertext writer is unset, an encryption context key uses the reserved `aws-crypto-` prefix, the commitment policy does not allow the requested algorithm suite, the encrypted data key count exceeds the configured maximum, or the plaintext exceeds the size limit.
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, such as no plaintext data key, an unsupported algorithm suite, or no signing key for a signing suite.
     /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the keyring or CMM rejects the encryption context.
     /// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): the keyring or CMM produces no data key.
@@ -541,11 +623,9 @@ impl EncryptStreamFluentBuilder {
     /// - [`Dispatch`](crate::Error::Dispatch): a request to AWS KMS or `DynamoDB` is not sent, or its response does not arrive.
     /// - [`Io`](crate::Error::Io): the supplied plaintext reader or ciphertext writer fails.
     /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-    pub async fn send<R, W>(self, plaintext: R, ciphertext: W) -> Result<EncryptStreamOutput, Error>
-    where
-        R: tokio::io::AsyncRead + Unpin + Send,
-        W: tokio::io::AsyncWrite + Unpin + Send,
-    {
+    pub async fn send(self) -> Result<EncryptStreamOutput, Error> {
+        let plaintext = crate::builder::required(self.plaintext, "plaintext")?;
+        let ciphertext = crate::builder::required(self.ciphertext, "ciphertext")?;
         let input = self
             .inner
             .commitment_policy(self.config.commitment_policy)
@@ -559,26 +639,48 @@ impl EncryptStreamFluentBuilder {
 ///
 /// Reads an encrypted message from an `AsyncRead` and writes plaintext to an `AsyncWrite`, one frame at a time.
 /// Plaintext is written before the whole message is verified: don't act on it until `send` returns `Ok`.
-#[derive(Debug, Clone)]
 #[must_use = "a fluent builder does nothing until `send` is awaited"]
-pub struct DecryptStreamFluentBuilder {
+pub struct DecryptStreamFluentBuilder<'a> {
     config: Config,
     inner: DecryptStreamInputBuilder,
+    ciphertext: Option<Reader<'a>>,
+    plaintext: Option<Writer<'a>>,
 }
 
-impl DecryptStreamFluentBuilder {
+impl fmt::Debug for DecryptStreamFluentBuilder<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecryptStreamFluentBuilder")
+            .field("config", &self.config)
+            .field("inner", &self.inner)
+            .field("ciphertext", &self.ciphertext.as_ref().map(|_| "AsyncRead"))
+            .field("plaintext", &self.plaintext.as_ref().map(|_| "AsyncWrite"))
+            .finish()
+    }
+}
+
+impl<'a> DecryptStreamFluentBuilder<'a> {
+    stream_member!(
+        /// The reader the encrypted message is read from.
+        ciphertext(impl AsyncRead), set_ciphertext, get_ciphertext -> Reader
+    );
+    stream_member!(
+        /// The writer the decrypted data is written to.
+        /// It receives plaintext before the whole message is verified:
+        /// don't act on it until `send` returns `Ok`.
+        plaintext(impl AsyncWrite), set_plaintext, get_plaintext -> Writer
+    );
     decrypt_members!();
     material_source_members!();
 
-    /// Decrypt `ciphertext` into `plaintext`.
+    /// Decrypt the `ciphertext` reader into the `plaintext` writer.
     ///
-    /// `plaintext` receives output before the whole message is verified.
+    /// The `plaintext` writer receives output before the whole message is verified.
     /// Don't act on it until `send` returns `Ok`; on `Err`, discard it.
     ///
     /// # Errors
     ///
     /// Returns an [`Error`](crate::Error), one of:
-    /// - [`Validation`](crate::Error::Validation): the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`Client::decrypt`] instead).
+    /// - [`Validation`](crate::Error::Validation): the ciphertext reader or plaintext writer is unset, the message's encrypted data key count exceeds the configured maximum, the commitment policy does not allow the message's algorithm suite, or the message is multi-frame and signed (decrypt it with [`Client::decrypt`] instead).
     /// - [`InvalidMaterials`](crate::Error::InvalidMaterials): the keyring or CMM returns materials the ESDK cannot use, or materials that do not match the message's algorithm suite or signature settings.
     /// - [`EncryptionContextMismatch`](crate::Error::EncryptionContextMismatch): the reproduced encryption context conflicts with the message, or a required key is missing.
     /// - [`NoMatchingDataKey`](crate::Error::NoMatchingDataKey): none of the message's encrypted data keys belongs to the keyring or CMM.
@@ -592,11 +694,9 @@ impl DecryptStreamFluentBuilder {
     /// - [`Serialization`](crate::Error::Serialization): the bytes are not a well-formed encrypted message, or carry trailing data after the footer.
     /// - [`Io`](crate::Error::Io): the supplied ciphertext reader or plaintext writer fails.
     /// - [`Internal`](crate::Error::Internal): an internal invariant is violated.
-    pub async fn send<R, W>(self, ciphertext: R, plaintext: W) -> Result<DecryptStreamOutput, Error>
-    where
-        R: tokio::io::AsyncRead + Unpin + Send,
-        W: tokio::io::AsyncWrite + Unpin + Send,
-    {
+    pub async fn send(self) -> Result<DecryptStreamOutput, Error> {
+        let ciphertext = crate::builder::required(self.ciphertext, "ciphertext")?;
+        let plaintext = crate::builder::required(self.plaintext, "plaintext")?;
         let input = self
             .inner
             .commitment_policy(self.config.commitment_policy)
@@ -607,7 +707,7 @@ impl DecryptStreamFluentBuilder {
 }
 
 /// Fluent builder for [`Client`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ClientBuilder {
     config: ConfigBuilder,
 }
@@ -624,12 +724,11 @@ impl ClientBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    #[must_use]
     pub const fn set_commitment_policy(
-        mut self,
+        &mut self,
         commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
-        self.config = self.config.set_commitment_policy(commitment_policy);
+    ) -> &mut Self {
+        self.config.set_commitment_policy(commitment_policy);
         self
     }
 
@@ -644,13 +743,11 @@ impl ClientBuilder {
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    #[must_use]
     pub const fn set_max_encrypted_data_keys(
-        mut self,
+        &mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
-    ) -> Self {
-        self.config = self
-            .config
+    ) -> &mut Self {
+        self.config
             .set_max_encrypted_data_keys(max_encrypted_data_keys);
         self
     }

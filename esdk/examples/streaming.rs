@@ -48,10 +48,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = File::create(&ciphertext_path).await?;
     let result = esdk
         .encrypt_stream()
-        .set_encryption_context(Some(encryption_context.clone()))
+        .set_encryption_context(Some(encryption_context.clone().into()))
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .send(input, output)
+        .plaintext(input)
+        .ciphertext(output)
+        .send()
         .await;
     if let Err(e) = result {
         // On error the ciphertext file is incomplete; delete it.
@@ -65,9 +67,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = File::create(&decrypted_path).await?;
     let result = esdk
         .decrypt_stream()
-        .set_encryption_context(Some(encryption_context))
+        .set_encryption_context(Some(encryption_context.into()))
         .keyring(keyring)
-        .send(input, output)
+        .ciphertext(input)
+        .plaintext(output)
+        .send()
         .await;
     if let Err(e) = result {
         // On error the plaintext written so far is unverified; delete it unused.
