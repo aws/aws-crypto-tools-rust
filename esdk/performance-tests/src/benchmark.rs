@@ -62,7 +62,7 @@ impl EsdkBenchmark {
     async fn setup_esdk() -> Result<(Client, HierarchicalKeyring)> {
         let esdk_client = Client::builder()
             .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-            .build();
+            .build()?;
 
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
 
