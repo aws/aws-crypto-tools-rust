@@ -1617,7 +1617,12 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
     Ok(Box::new(EncryptStream {
         state: StreamState::spawn("encrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
-                .block_on(builder.send(&mut reader, &mut writer))
+                .block_on(
+                    builder
+                        .plaintext(&mut reader)
+                        .ciphertext(&mut writer)
+                        .send(),
+                )
                 .map_err(core_err)?;
             //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
             //# - A successful finish step MUST return the same non-payload outputs as
@@ -1648,7 +1653,12 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
     Ok(Box::new(DecryptStream {
         state: StreamState::spawn("decrypt_stream", move |mut reader, mut writer| {
             let output = TOKIO_RUNTIME
-                .block_on(builder.send(&mut reader, &mut writer))
+                .block_on(
+                    builder
+                        .ciphertext(&mut reader)
+                        .plaintext(&mut writer)
+                        .send(),
+                )
                 //= spec/shim/esdk-shim.md#encrypt-stream-and-decrypt-stream
                 //= reason=The core's refusal (and every other core error) propagates through this map_err; the shim releases only what the core's writer produced.
                 //# - Streamed decrypt MUST NOT release plaintext the core ESDK would not release,
