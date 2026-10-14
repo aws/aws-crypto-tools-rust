@@ -247,7 +247,7 @@ impl VersionKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
@@ -289,7 +289,7 @@ impl GetActiveBranchKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
@@ -331,7 +331,7 @@ impl GetBranchKeyVersionFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self
@@ -345,7 +345,7 @@ impl GetBranchKeyVersionFluentBuilder {
     }
 
     /// Set or clear the branch key version from an `Option`.
-    /// To add one entry, use [`Self::branch_key_version`].
+    /// To set a value, use [`Self::branch_key_version`].
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_version(branch_key_version);
         self
@@ -387,7 +387,7 @@ impl GetBeaconKeyFluentBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.inner = self.inner.set_branch_key_id(branch_key_id);
         self

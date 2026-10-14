@@ -83,7 +83,7 @@ impl BeaconKeyMaterialsBuilder {
     }
 
     /// Set or clear the beacon key identifier from an `Option`.
-    /// To add one entry, use [`Self::beacon_key_id`].
+    /// To set a value, use [`Self::beacon_key_id`].
     #[must_use]
     pub fn set_beacon_key_id(mut self, beacon_key_id: Option<String>) -> Self {
         self.beacon_key_id = beacon_key_id;
@@ -130,7 +130,7 @@ impl BeaconKeyMaterialsBuilder {
     }
 
     /// Set or clear the beacon key from an `Option`.
-    /// To add one entry, use [`Self::beacon_key`].
+    /// To set a value, use [`Self::beacon_key`].
     #[must_use]
     pub fn set_beacon_key(mut self, beacon_key: Option<Vec<u8>>) -> Self {
         self.beacon_key = beacon_key;
@@ -143,19 +143,15 @@ impl BeaconKeyMaterialsBuilder {
         &self.beacon_key
     }
 
-    /// Adds a key-value pair to the HMAC keys derived from the beacon key, by name.
-    ///
-    /// To override the contents of this collection use [`set_hmac_keys`](Self::set_hmac_keys).
+    /// Set the HMAC keys derived from the beacon key, by name.
     #[must_use]
-    pub fn hmac_keys(mut self, k: impl Into<String>, v: impl Into<Vec<u8>>) -> Self {
-        self.hmac_keys
-            .get_or_insert_with(Default::default)
-            .insert(k.into(), v.into());
+    pub fn hmac_keys(mut self, hmac_keys: impl Into<BTreeMap<String, Vec<u8>>>) -> Self {
+        self.hmac_keys = Some(hmac_keys.into());
         self
     }
 
     /// Set or clear the HMAC keys from an `Option`.
-    /// To add one entry, use [`Self::hmac_keys`].
+    /// To set a value, use [`Self::hmac_keys`].
     #[must_use]
     pub fn set_hmac_keys(mut self, hmac_keys: Option<BTreeMap<String, Vec<u8>>>) -> Self {
         self.hmac_keys = hmac_keys;

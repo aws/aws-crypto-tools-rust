@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = File::create(&ciphertext_path).await?;
     let result = esdk
         .encrypt_stream()
-        .set_encryption_context(Some(encryption_context.clone().into()))
+        .set_encryption_context(Some(encryption_context.clone()))
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
         .plaintext(input)
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = File::create(&decrypted_path).await?;
     let result = esdk
         .decrypt_stream()
-        .set_encryption_context(Some(encryption_context.into()))
+        .set_encryption_context(Some(encryption_context))
         .keyring(keyring)
         .ciphertext(input)
         .plaintext(output)

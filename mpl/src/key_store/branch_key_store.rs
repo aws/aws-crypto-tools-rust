@@ -198,7 +198,7 @@ impl KeyStoreClientBuilder {
     }
 
     /// Set or clear the DynamoDB table name from an `Option`.
-    /// To add one entry, use [`Self::ddb_table_name`].
+    /// To set a value, use [`Self::ddb_table_name`].
     #[must_use]
     pub fn set_ddb_table_name(mut self, ddb_table_name: Option<String>) -> Self {
         self.ddb_table_name = ddb_table_name;
@@ -220,7 +220,7 @@ impl KeyStoreClientBuilder {
     }
 
     /// Set or clear the logical key store name from an `Option`.
-    /// To add one entry, use [`Self::logical_key_store_name`].
+    /// To set a value, use [`Self::logical_key_store_name`].
     #[must_use]
     pub fn set_logical_key_store_name(mut self, logical_key_store_name: Option<String>) -> Self {
         self.logical_key_store_name = logical_key_store_name;
@@ -242,7 +242,7 @@ impl KeyStoreClientBuilder {
     }
 
     /// Set or clear the KMS configuration from an `Option`.
-    /// To add one entry, use [`Self::kms_configuration`].
+    /// To set a value, use [`Self::kms_configuration`].
     #[must_use]
     pub fn set_kms_configuration(mut self, kms_configuration: Option<KmsConfiguration>) -> Self {
         self.kms_configuration = kms_configuration;
@@ -277,14 +277,10 @@ impl KeyStoreClientBuilder {
         &self.id
     }
 
-    /// Appends an item to the AWS KMS grant tokens. Defaults to none.
-    ///
-    /// To override the contents of this collection use [`set_grant_tokens`](Self::set_grant_tokens).
+    /// Set the AWS KMS grant tokens. Defaults to none.
     #[must_use]
-    pub fn grant_tokens(mut self, input: impl Into<String>) -> Self {
-        self.grant_tokens
-            .get_or_insert_with(Default::default)
-            .push(input.into());
+    pub fn grant_tokens(mut self, tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.grant_tokens = Some(tokens.into_iter().map(Into::into).collect());
         self
     }
 
@@ -423,7 +419,7 @@ impl KeyStore for DynamoDbKeyStore {
             .key_store_id(&self.inner.key_store_id)
             .key_store_name(&self.inner.ddb_table_name)
             .logical_key_store_name(&self.inner.logical_key_store_name)
-            .set_grant_tokens(Some(self.inner.grant_tokens.clone()))
+            .grant_tokens(&self.inner.grant_tokens)
             .kms_configuration(self.inner.kms_configuration.clone())
             .build()
     }

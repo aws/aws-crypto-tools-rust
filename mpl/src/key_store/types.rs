@@ -105,7 +105,7 @@ impl GetKeyStoreInfoOutputBuilder {
     }
 
     /// Set or clear the key store identifier from an `Option`.
-    /// To add one entry, use [`Self::key_store_id`].
+    /// To set a value, use [`Self::key_store_id`].
     #[must_use]
     pub fn set_key_store_id(mut self, key_store_id: Option<String>) -> Self {
         self.key_store_id = key_store_id;
@@ -127,7 +127,7 @@ impl GetKeyStoreInfoOutputBuilder {
     }
 
     /// Set or clear the DynamoDB table name from an `Option`.
-    /// To add one entry, use [`Self::key_store_name`].
+    /// To set a value, use [`Self::key_store_name`].
     #[must_use]
     pub fn set_key_store_name(mut self, key_store_name: Option<String>) -> Self {
         self.key_store_name = key_store_name;
@@ -149,7 +149,7 @@ impl GetKeyStoreInfoOutputBuilder {
     }
 
     /// Set or clear the logical key store name from an `Option`.
-    /// To add one entry, use [`Self::logical_key_store_name`].
+    /// To set a value, use [`Self::logical_key_store_name`].
     #[must_use]
     pub fn set_logical_key_store_name(mut self, logical_key_store_name: Option<String>) -> Self {
         self.logical_key_store_name = logical_key_store_name;
@@ -162,20 +162,19 @@ impl GetKeyStoreInfoOutputBuilder {
         &self.logical_key_store_name
     }
 
-    /// Appends an item to the AWS KMS grant tokens the key store uses.
-    ///
-    /// To override the contents of this collection use [`set_grant_tokens`](Self::set_grant_tokens).
+    /// Set the AWS KMS grant tokens the key store uses.
     /// Required.
     #[must_use]
-    pub fn grant_tokens(mut self, input: impl Into<String>) -> Self {
-        self.grant_tokens
-            .get_or_insert_with(Default::default)
-            .push(input.into());
+    pub fn grant_tokens(
+        mut self,
+        grant_tokens: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.grant_tokens = Some(grant_tokens.into_iter().map(Into::into).collect());
         self
     }
 
     /// Set or clear the grant tokens from an `Option`.
-    /// To add one entry, use [`Self::grant_tokens`].
+    /// To set a value, use [`Self::grant_tokens`].
     #[must_use]
     pub fn set_grant_tokens(mut self, grant_tokens: Option<Vec<String>>) -> Self {
         self.grant_tokens = grant_tokens;
@@ -197,7 +196,7 @@ impl GetKeyStoreInfoOutputBuilder {
     }
 
     /// Set or clear the KMS configuration from an `Option`.
-    /// To add one entry, use [`Self::kms_configuration`].
+    /// To set a value, use [`Self::kms_configuration`].
     #[must_use]
     pub fn set_kms_configuration(mut self, kms_configuration: Option<KmsConfiguration>) -> Self {
         self.kms_configuration = kms_configuration;
@@ -300,7 +299,7 @@ impl CreateKeyStoreOutputBuilder {
     }
 
     /// Set or clear the table ARN from an `Option`.
-    /// To add one entry, use [`Self::table_arn`].
+    /// To set a value, use [`Self::table_arn`].
     #[must_use]
     pub fn set_table_arn(mut self, table_arn: Option<String>) -> Self {
         self.table_arn = table_arn;
@@ -372,7 +371,7 @@ impl CreateKeyInputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -467,7 +466,7 @@ impl CreateKeyOutputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -529,7 +528,7 @@ impl VersionKeyInputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -619,7 +618,7 @@ impl GetActiveBranchKeyInputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -690,7 +689,7 @@ impl GetActiveBranchKeyOutputBuilder {
     }
 
     /// Set or clear the branch key materials from an `Option`.
-    /// To add one entry, use [`Self::branch_key_materials`].
+    /// To set a value, use [`Self::branch_key_materials`].
     #[must_use]
     pub fn set_branch_key_materials(
         mut self,
@@ -763,7 +762,7 @@ impl GetBranchKeyVersionInputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -785,7 +784,7 @@ impl GetBranchKeyVersionInputBuilder {
     }
 
     /// Set or clear the branch key version from an `Option`.
-    /// To add one entry, use [`Self::branch_key_version`].
+    /// To set a value, use [`Self::branch_key_version`].
     #[must_use]
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.branch_key_version = branch_key_version;
@@ -857,7 +856,7 @@ impl GetBranchKeyVersionOutputBuilder {
     }
 
     /// Set or clear the branch key materials from an `Option`.
-    /// To add one entry, use [`Self::branch_key_materials`].
+    /// To set a value, use [`Self::branch_key_materials`].
     #[must_use]
     pub fn set_branch_key_materials(
         mut self,
@@ -922,7 +921,7 @@ impl GetBeaconKeyInputBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -993,7 +992,7 @@ impl GetBeaconKeyOutputBuilder {
     }
 
     /// Set or clear the beacon key materials from an `Option`.
-    /// To add one entry, use [`Self::beacon_key_materials`].
+    /// To set a value, use [`Self::beacon_key_materials`].
     #[must_use]
     pub fn set_beacon_key_materials(
         mut self,

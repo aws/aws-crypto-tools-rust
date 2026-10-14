@@ -187,7 +187,7 @@ impl ConfigBuilder {
 /// let output = esdk
 ///     .encrypt()
 ///     .plaintext(plaintext)
-///     .encryption_context(ec)
+///     .set_encryption_context(Some(ec))
 ///     .keyring(keyring)
 ///     .send()
 ///     .await?;

@@ -42,7 +42,7 @@ fn test_valid_construction_minimal() {
     let result = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_ok());
 }
@@ -58,7 +58,7 @@ fn test_valid_construction_with_all_optional_fields() {
     let result = DecryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .verification_key(vk)
         .build();
@@ -73,7 +73,7 @@ fn test_required_ec_keys_must_be_subset() {
     let result = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build();
     assert!(result.is_err());
     assert!(result.unwrap_err().is_encryption_context_mismatch());
@@ -88,7 +88,7 @@ fn test_symmetric_key_rejected_without_symmetric_signing() {
     let result = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .symmetric_signing_key(ssk)
         .build();
     assert!(result.is_err());
@@ -115,7 +115,7 @@ fn test_verification_key_length_must_match_algorithm_suite() {
         let result = DecryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
             .set_encryption_context(Some(ec))
-            .set_required_encryption_context_keys(Some(reck))
+            .required_encryption_context_keys(reck)
             .verification_key(bad_vk)
             .build();
         let err = result.expect_err(&format!(
@@ -140,7 +140,7 @@ fn test_verification_key_correct_length_succeeds() {
         let result = DecryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
             .set_encryption_context(Some(ec))
-            .set_required_encryption_context_keys(Some(reck))
+            .required_encryption_context_keys(reck)
             .verification_key(vk)
             .build();
         assert!(
@@ -164,7 +164,7 @@ fn test_verification_key_rejected_without_asymmetric_signing() {
     let result = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .verification_key(vk)
         .build();
     let err = result.expect_err("expected rejection of verification key on non-signing suite");
@@ -180,7 +180,7 @@ fn test_validate_aws_crypto_public_key_happy_path() {
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .verification_key(vk)
         .build()
         .unwrap();
@@ -195,7 +195,7 @@ fn test_validate_aws_crypto_public_key_should_not_include_without_verification()
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build()
         .unwrap();
     assert!(
@@ -216,7 +216,7 @@ fn test_plaintext_data_key_immutability_decryption() {
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .build()
         .unwrap();
@@ -261,7 +261,7 @@ fn test_field_getters_return_constructed_values() {
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
         .set_encryption_context(Some(ec.clone()))
-        .set_required_encryption_context_keys(Some(reck.clone()))
+        .required_encryption_context_keys(reck.clone())
         .plaintext_data_key(pdk)
         .verification_key(vk)
         .build()
@@ -283,7 +283,7 @@ fn test_field_getters_return_none_for_omitted_optional_fields() {
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(NO_SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .build()
         .unwrap();
 
@@ -302,7 +302,7 @@ fn test_debug_format_includes_all_fields() {
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .plaintext_data_key(pdk)
         .verification_key(vk)
         .build()
@@ -328,7 +328,7 @@ fn test_validate_aws_crypto_public_key_should_include_with_verification() {
     let mat = DecryptionMaterials::builder()
         .algorithm_suite_id(SIGN_SUITE)
         .set_encryption_context(Some(ec))
-        .set_required_encryption_context_keys(Some(reck))
+        .required_encryption_context_keys(reck)
         .verification_key(vk)
         .build()
         .unwrap();
@@ -354,7 +354,7 @@ fn test_algorithm_suite_accessor_returns_matching_specification() {
         let mat = DecryptionMaterials::builder()
             .algorithm_suite_id(suite_id)
             .set_encryption_context(Some(ec))
-            .set_required_encryption_context_keys(Some(reck))
+            .required_encryption_context_keys(reck)
             .set_verification_key(vk)
             .build()
             .unwrap();
@@ -426,7 +426,7 @@ fn test_materials_builder_getters_report_unset_and_set() {
     assert!(builder.get_required_encryption_context_keys().is_none());
     let builder = builder
         .set_encryption_context(Some(make_ec_with_keys(&["k1"])))
-        .set_required_encryption_context_keys(Some(["k1"].map(String::from).into()));
+        .required_encryption_context_keys(["k1"]);
     assert!(builder.get_encryption_context().is_some());
     assert_eq!(
         builder.get_required_encryption_context_keys(),

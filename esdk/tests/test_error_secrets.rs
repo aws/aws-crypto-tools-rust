@@ -72,11 +72,9 @@ impl Keyring for KnownDataKey {
         let m = input.materials();
         let m = EncryptionMaterials::builder()
             .algorithm_suite_id(m.algorithm_suite_id())
-            .set_encrypted_data_keys(Some(m.encrypted_data_keys().to_vec()))
+            .encrypted_data_keys(m.encrypted_data_keys().to_vec())
             .set_encryption_context(Some(m.encryption_context().clone()))
-            .set_required_encryption_context_keys(Some(
-                m.required_encryption_context_keys().clone(),
-            ))
+            .required_encryption_context_keys(m.required_encryption_context_keys().clone())
             .plaintext_data_key(PlaintextDataKey::new(vec![KEY_BYTE; 32]))
             .set_signing_key(m.signing_key().cloned())
             .set_symmetric_signing_keys(m.symmetric_signing_keys().map(<[_]>::to_vec))

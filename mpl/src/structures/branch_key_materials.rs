@@ -82,7 +82,7 @@ impl BranchKeyMaterialsBuilder {
     }
 
     /// Set or clear the branch key from an `Option`.
-    /// To add one entry, use [`Self::branch_key`].
+    /// To set a value, use [`Self::branch_key`].
     #[must_use]
     pub const fn set_branch_key(mut self, branch_key: Option<[u8; 32]>) -> Self {
         self.branch_key = branch_key;
@@ -104,7 +104,7 @@ impl BranchKeyMaterialsBuilder {
     }
 
     /// Set or clear the branch key identifier from an `Option`.
-    /// To add one entry, use [`Self::branch_key_id`].
+    /// To set a value, use [`Self::branch_key_id`].
     #[must_use]
     pub fn set_branch_key_id(mut self, branch_key_id: Option<String>) -> Self {
         self.branch_key_id = branch_key_id;
@@ -126,7 +126,7 @@ impl BranchKeyMaterialsBuilder {
     }
 
     /// Set or clear the branch key version from an `Option`.
-    /// To add one entry, use [`Self::branch_key_version`].
+    /// To set a value, use [`Self::branch_key_version`].
     #[must_use]
     pub fn set_branch_key_version(mut self, branch_key_version: Option<String>) -> Self {
         self.branch_key_version = branch_key_version;

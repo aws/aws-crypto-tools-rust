@@ -51,7 +51,7 @@ impl OnEncryptFluentBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     pub fn set_materials(mut self, materials: Option<EncryptionMaterials>) -> Self {
         self.inner = self.inner.set_materials(materials);
         self
@@ -99,7 +99,7 @@ impl OnDecryptFluentBuilder {
     }
 
     /// Set or clear the materials from an `Option`.
-    /// To add one entry, use [`Self::materials`].
+    /// To set a value, use [`Self::materials`].
     pub fn set_materials(mut self, materials: Option<DecryptionMaterials>) -> Self {
         self.inner = self.inner.set_materials(materials);
         self
@@ -111,17 +111,18 @@ impl OnDecryptFluentBuilder {
         self.inner.get_materials()
     }
 
-    /// Appends an item to the encrypted data keys to try.
-    ///
-    /// To override the contents of this collection use [`set_encrypted_data_keys`](Self::set_encrypted_data_keys).
+    /// Set the encrypted data keys to try.
     /// Required.
-    pub fn encrypted_data_keys(mut self, input: EncryptedDataKey) -> Self {
-        self.inner = self.inner.encrypted_data_keys(input);
+    pub fn encrypted_data_keys(
+        mut self,
+        encrypted_data_keys: impl Into<Vec<EncryptedDataKey>>,
+    ) -> Self {
+        self.inner = self.inner.encrypted_data_keys(encrypted_data_keys);
         self
     }
 
     /// Set or clear the encrypted data keys from an `Option`.
-    /// To add one entry, use [`Self::encrypted_data_keys`].
+    /// To set a value, use [`Self::encrypted_data_keys`].
     pub fn set_encrypted_data_keys(
         mut self,
         encrypted_data_keys: Option<Vec<EncryptedDataKey>>,

@@ -442,10 +442,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DefaultCmm::new(keyring()).get_encryption_materials(),
-        set_required_encryption_context_keys,
+        required_encryption_context_keys,
         set_required_encryption_context_keys,
         get_required_encryption_context_keys,
-        Some(["x"].map(String::from).into())
+        ["x"]
     );
     check!(
         DefaultCmm::new(keyring()).get_encryption_materials(),
@@ -470,10 +470,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DefaultCmm::new(keyring()).decrypt_materials(),
-        set_encrypted_data_keys,
+        encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        Some(vec![edk()])
+        vec![edk()]
     );
     check!(
         DefaultCmm::new(keyring()).decrypt_materials(),
@@ -512,10 +512,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         GetEncryptionMaterialsInput::builder(),
-        set_required_encryption_context_keys,
+        required_encryption_context_keys,
         set_required_encryption_context_keys,
         get_required_encryption_context_keys,
-        Some(["x"].map(String::from).into())
+        ["x"]
     );
     check!(
         GetEncryptionMaterialsInput::builder(),
@@ -547,10 +547,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         DecryptMaterialsInput::builder(),
-        set_encrypted_data_keys,
+        encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        Some(vec![edk()])
+        vec![edk()]
     );
     check!(
         DecryptMaterialsInput::builder(),
@@ -597,10 +597,10 @@ async fn every_builder_getter_tracks_its_setter() {
     check!(KeyStoreClient::builder(), id, set_id, get_id, "x");
     check!(
         KeyStoreClient::builder(),
-        set_grant_tokens,
+        grant_tokens,
         set_grant_tokens,
         get_grant_tokens,
-        Some(["x"].map(String::from).into())
+        ["x"]
     );
     check!(
         KeyStoreClient::builder(),
@@ -640,10 +640,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         GetKeyStoreInfoOutput::builder(),
-        set_grant_tokens,
+        grant_tokens,
         set_grant_tokens,
         get_grant_tokens,
-        Some(["x"].map(String::from).into())
+        ["x"]
     );
     check!(
         GetKeyStoreInfoOutput::builder(),
@@ -752,10 +752,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         keyring().on_decrypt(),
-        set_encrypted_data_keys,
+        encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        Some(vec![edk()])
+        vec![edk()]
     );
     check!(
         RawAesKeyring::builder(),
@@ -808,10 +808,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         OnDecryptInput::builder(),
-        set_encrypted_data_keys,
+        encrypted_data_keys,
         set_encrypted_data_keys,
         get_encrypted_data_keys,
-        Some(vec![edk()])
+        vec![edk()]
     );
     check!(
         OnDecryptOutput::builder(),
@@ -843,10 +843,10 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         BeaconKeyMaterials::builder(),
-        set_hmac_keys,
+        hmac_keys,
         set_hmac_keys,
         get_hmac_keys,
-        Some(BTreeMap::new())
+        BTreeMap::new()
     );
     check!(
         BranchKeyMaterials::builder(),
@@ -948,9 +948,9 @@ async fn every_builder_getter_tracks_its_setter() {
     );
     check!(
         EncryptionMaterials::builder(),
-        set_symmetric_signing_keys,
+        symmetric_signing_keys,
         set_symmetric_signing_keys,
         get_symmetric_signing_keys,
-        Some(vec![SymmetricSigningKey::new(vec![1])])
+        vec![SymmetricSigningKey::new(vec![1])]
     );
 }

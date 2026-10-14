@@ -28,7 +28,7 @@ fn test_construction_with_optional_fields() {
         .beacon_key_id("beacon-id".to_string())
         .set_encryption_context(Some(EncryptionContext::new()))
         .beacon_key(b"beacon-key-bytes".to_vec())
-        .set_hmac_keys(Some(hmac_keys))
+        .hmac_keys(hmac_keys)
         .build()
         .unwrap();
     assert_eq!(mat.beacon_key().unwrap(), b"beacon-key-bytes");
@@ -44,7 +44,7 @@ fn test_debug_redacts_secret_material() {
         .beacon_key_id("id".to_string())
         .set_encryption_context(Some(EncryptionContext::new()))
         .beacon_key(b"secret-beacon".to_vec())
-        .set_hmac_keys(Some(hmac_keys))
+        .hmac_keys(hmac_keys)
         .build()
         .unwrap();
     let debug_output = format!("{:?}", mat);

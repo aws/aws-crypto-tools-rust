@@ -100,13 +100,14 @@ pub(crate) async fn get_decryption_materials(
         .decrypt_materials()
         .algorithm_suite_id(MplAlgorithmSuiteId::Esdk(algorithm_suite_id))
         .commitment_policy(policy)
-        .set_encrypted_data_keys(Some(edks))
+        .encrypted_data_keys(edks)
         .set_encryption_context(Some(encryption_context));
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
     //# - Reproduced Encryption Context: This MUST be the [input](#input) encryption context.
     if !reproduced_encryption_context.is_empty() {
-        request = request.reproduced_encryption_context(reproduced_encryption_context.clone());
+        request =
+            request.set_reproduced_encryption_context(Some(reproduced_encryption_context.clone()));
     }
 
     //= spec/client-apis/decrypt.md#get-the-decryption-materials
