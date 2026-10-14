@@ -103,7 +103,8 @@ impl AppState {
         let esdk = Client::builder()
             .commitment_policy(map_commitment(req.config.commitment_policy))
             .set_max_encrypted_data_keys(max_edks(&req.config)?)
-            .build();
+            .build()
+            .map_err(|e| ServerError::esdk(e.to_string()))?;
         let entry = ClientEntry { esdk, keyring };
         let client_id = uuid::Uuid::new_v4().to_string();
         self.clients

@@ -77,7 +77,7 @@ async fn test_default_commitment_policy() {
     //= type=test
     //= reason=a client built without a commitment policy rejects a non-committing suite on encrypt and a non-committing message on decrypt
     //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-    let esdk = Client::builder().build();
+    let esdk = Client::builder().build().unwrap();
     assert_eq!(
         esdk.config().commitment_policy(),
         CommitmentPolicy::RequireEncryptRequireDecrypt
@@ -110,6 +110,7 @@ fn test_default_max_encrypted_data_keys_is_none() {
     assert!(
         Client::builder()
             .build()
+            .unwrap()
             .config()
             .max_encrypted_data_keys()
             .is_none(),
@@ -180,7 +181,8 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //# - On client initialization,
         //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(5).unwrap())
-        .build();
+        .build()
+        .unwrap();
 
     let encrypt_output = esdk
         .encrypt()
@@ -404,7 +406,8 @@ fn test_esdk_builder_sets_commitment_policy() {
     //# the caller MUST have the option to provide a [commitment policy](#commitment-policy).
     let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(
         esdk.config().commitment_policy(),
         CommitmentPolicy::ForbidEncryptAllowDecrypt,
@@ -419,7 +422,10 @@ fn test_esdk_builder_sets_max_encrypted_data_keys() {
     //= type=test
     //# - On client initialization,
     //# the caller MUST have the option to provide a [maximum number of encrypted data keys](#maximum-number-of-encrypted-data-keys).
-    let esdk = Client::builder().max_encrypted_data_keys(cap).build();
+    let esdk = Client::builder()
+        .max_encrypted_data_keys(cap)
+        .build()
+        .unwrap();
     assert_eq!(
         esdk.config().max_encrypted_data_keys(),
         Some(cap),
@@ -432,7 +438,8 @@ fn test_esdk_from_conf_takes_built_config() {
     let config = Config::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(7).unwrap())
-        .build();
+        .build()
+        .unwrap();
     let esdk = Client::from_conf(config);
     assert_eq!(esdk.config(), &config);
     assert_eq!(
@@ -447,9 +454,9 @@ fn test_esdk_from_conf_takes_built_config() {
 
 #[test]
 fn test_config_builder_defaults_match_client_default() {
-    assert_eq!(Config::builder().build(), Config::default());
+    assert_eq!(Config::builder().build().unwrap(), Config::default());
     assert_eq!(
-        Client::builder().build().config(),
+        Client::builder().build().unwrap().config(),
         Client::default().config()
     );
 }
@@ -488,7 +495,8 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
 
     let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-        .build();
+        .build()
+        .unwrap();
 
     let ec = EncryptionContext::new();
     //= spec/client-apis/client.md#encrypt
@@ -528,7 +536,8 @@ async fn test_esdk_commitment_policy_actually_gates_encrypt() {
     let keyring = test_keyring().await;
     let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build();
+        .build()
+        .unwrap();
 
     let err = esdk
         .encrypt()
@@ -569,7 +578,8 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
 
     let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build();
+        .build()
+        .unwrap();
     let out = esdk
         .decrypt()
         .ciphertext(&ct)

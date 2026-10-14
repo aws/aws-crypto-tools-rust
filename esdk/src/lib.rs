@@ -69,10 +69,13 @@
 //! ```
 //! use aws_esdk::{Client, CommitmentPolicy, Config};
 //!
+//! # fn main() -> Result<(), aws_esdk::Error> {
 //! let config = Config::builder()
 //!     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-//!     .build();
+//!     .build()?;
 //! let esdk = Client::from_conf(config);
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! | Operation | Fluent builder | Output |

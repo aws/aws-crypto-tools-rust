@@ -1059,7 +1059,8 @@ fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, St
                 .map(commitment_policy_target_to_core)
                 .transpose()?,
         )
-        .build();
+        .build()
+        .map_err(core_err)?;
     Ok(EncryptSettings {
         esdk,
         //= spec/shim/esdk-shim.md#encrypt-inputs
@@ -1082,7 +1083,7 @@ fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, St
 }
 
 fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Client, String> {
-    Ok(Client::builder()
+    Client::builder()
         //= spec/shim/esdk-shim.md#decrypt-inputs
         //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
         //# the core ESDK, converted as defined in
@@ -1103,7 +1104,8 @@ fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Client, String> {
                 .map(commitment_policy_target_to_core)
                 .transpose()?,
         )
-        .build())
+        .build()
+        .map_err(core_err)
 }
 
 fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {

@@ -50,7 +50,7 @@ pub async fn aes_keyring(n: u8) -> RawAesKeyring {
 
 /// A `Client` with `policy`.
 pub fn esdk_with(policy: CommitmentPolicy) -> Client {
-    Client::builder().commitment_policy(policy).build()
+    Client::builder().commitment_policy(policy).build().unwrap()
 }
 
 /// A `Client` that encrypts with non-committing suites and decrypts any message.
@@ -68,6 +68,7 @@ pub fn esdk_with_max_edks(max: usize) -> Client {
     Client::builder()
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(max).unwrap())
         .build()
+        .unwrap()
 }
 
 /// Encrypt with defaults, return full EncryptOutput.

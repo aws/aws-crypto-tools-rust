@@ -7,7 +7,7 @@
 //! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
 //! ```ignore
-//! let esdk = Client::builder().commitment_policy(policy).build();
+//! let esdk = Client::builder().commitment_policy(policy).build()?;
 //! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
 //! ```
 
@@ -136,12 +136,16 @@ impl ConfigBuilder {
 
     /// Build the `Config`. Unset fields use their defaults
     /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
-    #[must_use]
-    pub fn build(self) -> Config {
-        Config {
+    ///
+    /// # Errors
+    ///
+    /// Currently never fails. Returns a `Result` so that a future validated
+    /// setting is not a breaking change.
+    pub fn build(self) -> Result<Config, Error> {
+        Ok(Config {
             commitment_policy: self.commitment_policy.unwrap_or(DEFAULT_COMMITMENT_POLICY),
             max_encrypted_data_keys: self.max_encrypted_data_keys,
-        }
+        })
     }
 }
 
@@ -158,7 +162,7 @@ impl ConfigBuilder {
 /// ```ignore
 /// let esdk = Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-///     .build();
+///     .build()?;
 /// let output = esdk
 ///     .encrypt()
 ///     .plaintext(plaintext)
@@ -640,8 +644,12 @@ impl ClientBuilder {
 
     /// Build the `Client`. Unset fields use their defaults
     /// (`RequireEncryptRequireDecrypt` commitment policy, no EDK cap).
-    #[must_use]
-    pub fn build(self) -> Client {
-        Client::from_conf(self.config.build())
+    ///
+    /// # Errors
+    ///
+    /// Currently never fails. Returns a `Result` so that a future validated
+    /// setting is not a breaking change.
+    pub fn build(self) -> Result<Client, Error> {
+        Ok(Client::from_conf(self.config.build()?))
     }
 }
