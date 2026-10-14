@@ -49,7 +49,7 @@ Collected concurrent_round_trips(const Aws::Esdk::Keyring& keyring,
                                  Aws::Esdk::CommitmentPolicy policy,
                                  ExtractId extract_id) {
     // One client shared by every thread.
-    Aws::Esdk::Client sdk(Aws::Esdk::Config().with_commitment_policy(policy));
+    const Aws::Esdk::Client sdk(Aws::Esdk::Config().with_commitment_policy(policy));
     Collected collected;
     std::mutex mu;
     std::vector<std::thread> threads;
