@@ -81,7 +81,7 @@ use aws_esdk::{Client, CommitmentPolicy};
 
 let esdk = Client::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-    .build();
+    .build()?;
 let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
 ```
 
@@ -92,7 +92,7 @@ use aws_esdk::{Client, CommitmentPolicy, Config};
 
 let config = Config::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
-    .build();
+    .build()?;
 let esdk = Client::from_conf(config);
 ```
 

@@ -18,7 +18,7 @@ use aws_esdk::{Client, CommitmentPolicy, EncryptionContext};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
-        .build();
+        .build()?;
 
     // For demonstration only.
     // A real application must load its wrapping key from a secure store, never hardcode it.
