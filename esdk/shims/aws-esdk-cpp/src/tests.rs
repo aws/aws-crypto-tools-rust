@@ -298,7 +298,7 @@ fn encryption_context_round_trips() {
     let mut m = aws_esdk::EncryptionContext::new();
     m.insert("k1", "v1");
     m.insert("k2", "\u{1F600}");
-    let list = encryption_context_core_to_target(m.clone());
+    let list = encryption_context_core_to_target(&m);
     assert_eq!(list.len(), 2);
     //= spec/shim/esdk-shim.md#encryption-context
     //= type=test
@@ -323,7 +323,7 @@ fn encryption_context_round_trips() {
 #[test]
 fn encryption_context_empty() {
     let empty = aws_esdk::EncryptionContext::new();
-    assert!(encryption_context_core_to_target(empty).is_empty());
+    assert!(encryption_context_core_to_target(&empty).is_empty());
     assert!(encryption_context_target_to_core(&[]).is_empty());
 }
 

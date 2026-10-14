@@ -94,7 +94,7 @@ pub async fn encrypt_v1(plaintext: &[u8]) -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt with a V1 (non-committing) algorithm suite and encryption context, return ciphertext bytes.
@@ -109,12 +109,12 @@ pub async fn encrypt_v1_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Vec<
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt with default (V2) algorithm suite, return ciphertext bytes.
 pub async fn encrypt_v2(plaintext: &[u8]) -> Vec<u8> {
-    encrypt_default(plaintext).await.ciphertext
+    encrypt_default(plaintext).await.into_ciphertext()
 }
 
 /// Encrypt plaintext with a given frame length, return ciphertext bytes.
@@ -137,7 +137,7 @@ pub async fn encrypt_framed_with_keyring(
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt plaintext with a given frame length under a V1 (non-committing) algorithm
@@ -153,7 +153,7 @@ pub async fn encrypt_v1_with_frame_length(plaintext: &[u8], frame_length: u32) -
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt with a signing algorithm suite, return ciphertext bytes.
@@ -167,7 +167,7 @@ pub async fn encrypt_with_signing_suite(plaintext: &[u8]) -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt a 30-byte 0xAA plaintext with frame_length=10 under the ECDSA-P384
@@ -186,7 +186,7 @@ pub async fn multi_frame_signed_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u8>
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     (plaintext, keyring, ct)
 }
 
@@ -201,7 +201,7 @@ pub async fn encrypt_with_v1_signing_suite(plaintext: &[u8]) -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt with a non-signing algorithm suite, return ciphertext bytes.
@@ -215,7 +215,7 @@ pub async fn encrypt_without_signing_suite(plaintext: &[u8]) -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt under a non-signing committing suite with a given frame length.
@@ -232,7 +232,7 @@ pub async fn encrypt_nonsigning_with_frame_length(plaintext: &[u8], frame_length
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt a 30-byte 0xBB plaintext with frame_length=10 under a non-signing
@@ -250,7 +250,7 @@ pub async fn multi_frame_unsigned_for_stream() -> (Vec<u8>, RawAesKeyring, Vec<u
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     (plaintext, keyring, ct)
 }
 
@@ -269,7 +269,7 @@ pub async fn encrypt_with_suite(
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// The commitment policy that decrypts messages of `version`: V1 messages
@@ -308,7 +308,7 @@ pub async fn encrypt_with_version(
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Encrypt with a non-signing algorithm suite for the given version, with a
@@ -342,7 +342,7 @@ pub async fn encrypt_no_sign_ec_keyring(
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 /// Decrypt ciphertext with a caller-supplied keyring, return plaintext bytes.
@@ -350,7 +350,7 @@ pub async fn decrypt_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring) ->
     try_decrypt_with_keyring(ciphertext, keyring)
         .await
         .unwrap()
-        .plaintext
+        .into_plaintext()
 }
 
 /// Decrypt V1 ciphertext with a caller-supplied keyring, return plaintext bytes.
@@ -358,7 +358,7 @@ pub async fn decrypt_v1_with_keyring(ciphertext: &[u8], keyring: &RawAesKeyring)
     try_decrypt_v1_with_keyring(ciphertext, keyring)
         .await
         .unwrap()
-        .plaintext
+        .into_plaintext()
 }
 
 /// Decrypt ciphertext with a caller-supplied keyring and EC, return plaintext bytes.
@@ -375,7 +375,7 @@ pub async fn decrypt_with_keyring_ec(
         .send()
         .await
         .unwrap()
-        .plaintext
+        .into_plaintext()
 }
 
 /// Decrypt V1 ciphertext with a caller-supplied keyring and EC, return plaintext bytes.
@@ -392,7 +392,7 @@ pub async fn decrypt_v1_with_keyring_ec(
         .send()
         .await
         .unwrap()
-        .plaintext
+        .into_plaintext()
 }
 
 /// Try to decrypt ciphertext with a caller-supplied keyring, return Result.
@@ -460,13 +460,13 @@ pub async fn decrypt_with_version(ciphertext: &[u8], version: Version) -> Decryp
 /// Encrypt then decrypt round-trip, return decrypted plaintext.
 pub async fn round_trip(plaintext: &[u8]) -> Vec<u8> {
     let ct = encrypt_v2(plaintext).await;
-    decrypt_ciphertext(&ct).await.plaintext
+    decrypt_ciphertext(&ct).await.into_plaintext()
 }
 
 /// Encrypt then decrypt with a given frame length, return decrypted plaintext.
 pub async fn round_trip_framed(plaintext: &[u8], frame_length: u32) -> Vec<u8> {
     let ct = encrypt_with_frame_length(plaintext, frame_length).await;
-    decrypt_ciphertext(&ct).await.plaintext
+    decrypt_ciphertext(&ct).await.into_plaintext()
 }
 
 /// Encrypt V1 then decrypt, returning decrypted plaintext.
@@ -487,14 +487,14 @@ pub async fn round_trip_v2(plaintext: &[u8], ec: EncryptionContext) -> Vec<u8> {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     decrypt_with_keyring(&ct, &keyring).await
 }
 
 /// Encrypt then decrypt with a signing algorithm suite.
 pub async fn round_trip_signing(plaintext: &[u8]) -> Vec<u8> {
     let ct = encrypt_with_signing_suite(plaintext).await;
-    decrypt_ciphertext(&ct).await.plaintext
+    decrypt_ciphertext(&ct).await.into_plaintext()
 }
 
 /// Encrypt then decrypt with encryption context, returning full DecryptOutput.
@@ -509,7 +509,7 @@ pub async fn round_trip_with_ec(plaintext: &[u8], ec: EncryptionContext) -> Decr
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     esdk.decrypt()
         .ciphertext(&ct)
         .encryption_context(ec)
@@ -1373,7 +1373,7 @@ pub async fn try_decrypt_external_nonframed(
         .keyring(keyring)
         .send()
         .await
-        .map(|o| o.plaintext)
+        .map(|o| o.into_plaintext())
 }
 
 /// Parsed body fields from an external nonframed message. The nonframed body

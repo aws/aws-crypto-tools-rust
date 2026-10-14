@@ -563,6 +563,34 @@ void test_bytes_and_string_ergonomics() {
     ESDK_CHECK(plain.plaintext.as_string_view() == "outlives original");
 }
 
+void test_decrypt_string_view() {
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", std::vector<std::uint8_t>(32, 0x2A),
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client esdk;
+    auto encrypted = esdk.encrypt(std::string_view("string_view decrypt"), keyring);
+    const std::string ciphertext(encrypted.ciphertext.as_string_view());
+    auto decrypted = esdk.decrypt(std::string_view(ciphertext), keyring);
+    ESDK_CHECK(decrypted.plaintext.as_string_view() == "string_view decrypt");
+}
+
+void test_decrypt_stream_write_string_view() {
+    Aws::Esdk::RawAesKeyring keyring("test-ns", "test-key", std::vector<std::uint8_t>(32, 0x2A),
+                                     Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16);
+    Aws::Esdk::Client esdk;
+    auto encrypted = esdk.encrypt(
+        std::string_view("string_view stream write"), keyring,
+        Aws::Esdk::EncryptOptions().with_algorithm_suite(
+            Aws::Esdk::AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey));
+    const std::string ciphertext(encrypted.ciphertext.as_string_view());
+    auto dec = esdk.create_decrypt_stream(keyring);
+    std::string recovered;
+    auto out = dec.write(std::string_view(ciphertext));
+    recovered.append(out.as_string_view());
+    auto fin = dec.finish();
+    recovered.append(fin.trailing_output.as_string_view());
+    ESDK_CHECK(recovered == "string_view stream write");
+}
+
 // Streaming RTT
 void test_streaming() {
     std::vector<std::uint8_t> key(32, 0x2A);
@@ -958,6 +986,8 @@ int main(int argc, char** argv) {
         test_shared_http_client();
         test_kms_client_with_headers();
         test_bytes_and_string_ergonomics();
+        test_decrypt_string_view();
+        test_decrypt_stream_write_string_view();
         test_streaming();
         test_streaming_signed_message_refused();
         test_streaming_pump();

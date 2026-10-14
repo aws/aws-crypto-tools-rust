@@ -33,7 +33,7 @@ async fn encrypt_with(keyring: impl aws_crypto_mpl::Keyring + 'static) -> Vec<u8
         .send()
         .await
         .unwrap()
-        .ciphertext
+        .into_ciphertext()
 }
 
 async fn decrypt_with(
@@ -46,7 +46,7 @@ async fn decrypt_with(
         .keyring(keyring)
         .send()
         .await
-        .map(|out| out.plaintext)
+        .map(|out| out.into_plaintext())
 }
 
 /// The error from decrypting, against `fake`, a message encrypted under the fake's branch key.
@@ -285,7 +285,7 @@ async fn a_tampered_frame_is_cryptographic() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
     // The last content byte of the final frame, just before its 16-byte tag.
     let i = ciphertext.len() - 17;
     ciphertext[i] ^= 1;

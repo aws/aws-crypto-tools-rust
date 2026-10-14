@@ -67,18 +67,19 @@ fn concurrent_round_trips(
                             .send()
                             .await
                             .unwrap();
-                        ids.lock().unwrap().push(extract_id(&out.ciphertext));
+                        ids.lock().unwrap().push(extract_id(out.ciphertext()));
 
                         // Decrypt and verify the round trip.
                         let dec = esdk
                             .decrypt()
-                            .ciphertext(&out.ciphertext)
+                            .ciphertext(out.ciphertext())
                             .keyring(keyring.clone())
                             .send()
                             .await
                             .unwrap();
                         assert_eq!(
-                            dec.plaintext, plaintext,
+                            dec.plaintext(),
+                            plaintext,
                             "round trip must return the plaintext"
                         );
                     }

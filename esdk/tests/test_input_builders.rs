@@ -78,9 +78,9 @@ async fn test_encrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
-    assert_eq!(count_frames(&out.ciphertext, FRAME_LENGTH), (2, 1));
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(out.ciphertext(), FRAME_LENGTH), (2, 1));
 
     let out = esdk
         .encrypt()
@@ -92,9 +92,9 @@ async fn test_encrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
-    assert_eq!(count_frames(&out.ciphertext, FRAME_LENGTH), (2, 1));
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
+    assert_eq!(count_frames(out.ciphertext(), FRAME_LENGTH), (2, 1));
 
     let out = Client::default()
         .encrypt()
@@ -109,9 +109,9 @@ async fn test_encrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, DEFAULT_SUITE);
-    assert_eq!(count_frames(&out.ciphertext, 4096), (0, 1));
-    assert!(!out.encryption_context.contains_key("k"));
+    assert_eq!(out.algorithm_suite_id(), DEFAULT_SUITE);
+    assert_eq!(count_frames(out.ciphertext(), 4096), (0, 1));
+    assert!(!out.encryption_context().contains_key("k"));
 
     let cmm = SharedCmm::new(DefaultCmm::new(keyring.clone()));
     Client::default()
@@ -150,8 +150,8 @@ async fn test_encrypt_stream_setters_take_effect() {
         .send(plaintext.as_slice(), &mut ct)
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
     assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
     let mut ct = Vec::new();
@@ -165,8 +165,8 @@ async fn test_encrypt_stream_setters_take_effect() {
         .send(plaintext.as_slice(), &mut ct)
         .await
         .unwrap();
-    assert_eq!(out.algorithm_suite_id, SUITE);
-    assert_eq!(out.encryption_context, ec());
+    assert_eq!(out.algorithm_suite_id(), SUITE);
+    assert_eq!(*out.encryption_context(), ec());
     assert_eq!(count_frames(&ct, FRAME_LENGTH), (2, 1));
 
     let err = Client::default()
@@ -216,7 +216,7 @@ async fn test_decrypt_setters_take_effect() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let out = esdk
         .decrypt()
@@ -226,8 +226,8 @@ async fn test_decrypt_setters_take_effect() {
         .send()
         .await
         .unwrap();
-    assert_eq!(out.plaintext, b"plaintext");
-    assert_eq!(out.algorithm_suite_id, SUITE);
+    assert_eq!(out.plaintext(), b"plaintext");
+    assert_eq!(out.algorithm_suite_id(), SUITE);
 
     let err = esdk
         .decrypt()
@@ -287,7 +287,7 @@ async fn test_decrypt_stream_setters_take_effect() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let mut pt = Vec::new();
     esdk.decrypt_stream()

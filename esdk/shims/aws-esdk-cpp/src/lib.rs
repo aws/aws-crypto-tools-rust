@@ -814,10 +814,13 @@ fn encryption_context_target_to_core(
 //# key-value map, to the target's list of key-value pairs, preserving every pair
 //# and the exact key and value of each.
 fn encryption_context_core_to_target(
-    x: aws_esdk::EncryptionContext,
+    x: &aws_esdk::EncryptionContext,
 ) -> Vec<ffi::EncryptionContextItem> {
-    x.into_iter()
-        .map(|(key, value)| ffi::EncryptionContextItem { key, value })
+    x.iter()
+        .map(|(key, value)| ffi::EncryptionContextItem {
+            key: key.to_owned(),
+            value: value.to_owned(),
+        })
         .collect()
 }
 
@@ -1274,14 +1277,14 @@ fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
         //# [Algorithm suite identifier](#algorithm-suite-identifier).
-        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-        //= spec/shim/esdk-shim.md#encrypt-outputs
-        //# - MUST return the core ESDK's ciphertext unmodified.
-        ciphertext: output.ciphertext,
+        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
         //= spec/shim/esdk-shim.md#encrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context),
+        encryption_context: encryption_context_core_to_target(output.encryption_context()),
+        //= spec/shim/esdk-shim.md#encrypt-outputs
+        //# - MUST return the core ESDK's ciphertext unmodified.
+        ciphertext: output.into_ciphertext(),
     })
 }
 
@@ -1307,14 +1310,14 @@ fn decrypt(input: &ffi::DecryptInput) -> Result<ffi::DecryptOutput, String> {
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the used algorithm suite, converted as defined in
         //# [Algorithm suite identifier](#algorithm-suite-identifier).
-        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-        //= spec/shim/esdk-shim.md#decrypt-outputs
-        //# - MUST return the core ESDK's plaintext unmodified.
-        plaintext: output.plaintext,
+        algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
         //= spec/shim/esdk-shim.md#decrypt-outputs
         //# - MUST return the result encryption context, converted as defined in
         //# [Encryption context](#encryption-context).
-        encryption_context: encryption_context_core_to_target(output.encryption_context),
+        encryption_context: encryption_context_core_to_target(output.encryption_context()),
+        //= spec/shim/esdk-shim.md#decrypt-outputs
+        //# - MUST return the core ESDK's plaintext unmodified.
+        plaintext: output.into_plaintext(),
     })
 }
 
@@ -1901,8 +1904,8 @@ fn create_encrypt_stream(input: &ffi::EncryptInput) -> Result<Box<EncryptStream>
             //# - A successful finish step MUST return the same non-payload outputs as
             //# [encrypt outputs](#encrypt-outputs) or [decrypt outputs](#decrypt-outputs).
             Ok(ffi::StreamFinishOutput {
-                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-                encryption_context: encryption_context_core_to_target(output.encryption_context),
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context()),
                 trailing_output: Vec::new(),
             })
         }),
@@ -1934,8 +1937,8 @@ fn create_decrypt_stream(input: &ffi::DecryptInput) -> Result<Box<DecryptStream>
                 //# verification cannot complete until the end of the message.
                 .map_err(core_err)?;
             Ok(ffi::StreamFinishOutput {
-                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id)?,
-                encryption_context: encryption_context_core_to_target(output.encryption_context),
+                algorithm_suite_id: alg_id_core_to_target(output.algorithm_suite_id())?,
+                encryption_context: encryption_context_core_to_target(output.encryption_context()),
                 trailing_output: Vec::new(),
             })
         }),
