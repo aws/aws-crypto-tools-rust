@@ -833,7 +833,9 @@ async fn test_plaintext_length_bound_used_for_unknown_length() {
         .encrypt_stream()
         .cmm(cmm_ref)
         .data_size(100)
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await
         .unwrap();
 
@@ -868,7 +870,9 @@ async fn test_no_plaintext_length_bound_field_not_included() {
     Client::default()
         .encrypt_stream()
         .cmm(cmm_ref)
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await
         .unwrap();
 
@@ -895,7 +899,9 @@ async fn test_streaming_header_released_after_serialization() {
         .encrypt_stream()
         .keyring(keyring.clone())
         .data_size(20)
-        .send(&mut reader, &mut output)
+        .plaintext(&mut reader)
+        .ciphertext(&mut output)
+        .send()
         .await
         .unwrap();
 

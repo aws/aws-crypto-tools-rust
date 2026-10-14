@@ -192,7 +192,11 @@ mod decrypt;
 mod encrypt;
 mod suites;
 mod types;
-pub use types::*;
+pub use types::{
+    AlgorithmSuiteId, Cmm, CommitmentPolicy, DecryptOutput, DecryptStreamOutput, EncryptOutput,
+    EncryptStreamOutput, EncryptionContext, IntoShared, Keyring, SharedCmm, SharedKeyring,
+    async_trait,
+};
 mod client;
 pub use client::*;
 
@@ -218,4 +222,5 @@ pub mod __test_internals {
         algorithm_suite_from_bytes, algorithm_suite_id_from_bytes, get_ecdsa_alg,
         get_esdk_algorithm_suite_id,
     };
+    pub use crate::types::{Sink, Source, Tee};
 }
