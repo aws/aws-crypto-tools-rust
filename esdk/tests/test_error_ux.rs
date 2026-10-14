@@ -779,20 +779,17 @@ const RECORD_KEY_ARN: &str = "arn:aws:kms:us-west-2:444455556666:key/5678efgh";
 
 /// A hierarchical keyring over a discovery key store: the KMS key comes from each branch key record.
 async fn discovery_keyring(fake: &FakeAws) -> aws_crypto_mpl::HierarchicalKeyring {
-    let key_store = aws_crypto_mpl::KeyStoreClient::from_conf(
-        aws_crypto_mpl::KeyStoreConfig::builder()
-            .ddb_table_name(TABLE)
-            .logical_key_store_name(TABLE)
-            .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
-                aws_crypto_mpl::Discovery::builder().build().unwrap(),
-            ))
-            .kms_client(fake.kms_client())
-            .ddb_client(fake.ddb_client())
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let key_store = aws_crypto_mpl::KeyStoreClient::builder()
+        .ddb_table_name(TABLE)
+        .logical_key_store_name(TABLE)
+        .kms_configuration(aws_crypto_mpl::KmsConfiguration::Discovery(
+            aws_crypto_mpl::Discovery::builder().build().unwrap(),
+        ))
+        .kms_client(fake.kms_client())
+        .ddb_client(fake.ddb_client())
+        .build()
+        .await
+        .unwrap();
     aws_crypto_mpl::HierarchicalKeyring::builder()
         .key_store(key_store)
         .branch_key_id(BRANCH_KEY_ID)

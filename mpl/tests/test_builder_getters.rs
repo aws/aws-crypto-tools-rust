@@ -138,20 +138,17 @@ fn ddb() -> DynamoDbClient {
 }
 
 async fn key_store() -> KeyStoreClient {
-    KeyStoreClient::from_conf(
-        KeyStoreConfig::builder()
-            .ddb_table_name("table")
-            .logical_key_store_name("table")
-            .kms_configuration(KmsConfiguration::KmsKeyArn(
-                "arn:aws:kms:us-west-2:111122223333:key/k".into(),
-            ))
-            .kms_client(kms())
-            .ddb_client(ddb())
-            .build()
-            .unwrap(),
-    )
-    .await
-    .unwrap()
+    KeyStoreClient::builder()
+        .ddb_table_name("table")
+        .logical_key_store_name("table")
+        .kms_configuration(KmsConfiguration::KmsKeyArn(
+            "arn:aws:kms:us-west-2:111122223333:key/k".into(),
+        ))
+        .kms_client(kms())
+        .ddb_client(ddb())
+        .build()
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -577,43 +574,43 @@ async fn every_builder_getter_tracks_its_setter() {
         dec()
     );
     check!(
-        KeyStoreConfig::builder(),
+        KeyStoreClient::builder(),
         ddb_table_name,
         set_ddb_table_name,
         get_ddb_table_name,
         "x"
     );
     check!(
-        KeyStoreConfig::builder(),
+        KeyStoreClient::builder(),
         logical_key_store_name,
         set_logical_key_store_name,
         get_logical_key_store_name,
         "x"
     );
     check!(
-        KeyStoreConfig::builder(),
+        KeyStoreClient::builder(),
         kms_configuration,
         set_kms_configuration,
         get_kms_configuration,
         KmsConfiguration::KmsKeyArn("arn".into())
     );
-    check!(KeyStoreConfig::builder(), id, set_id, get_id, "x");
+    check!(KeyStoreClient::builder(), id, set_id, get_id, "x");
     check!(
-        KeyStoreConfig::builder(),
+        KeyStoreClient::builder(),
         grant_tokens,
         set_grant_tokens,
         get_grant_tokens,
         ["x"]
     );
     check!(
-        KeyStoreConfig::builder(),
+        KeyStoreClient::builder(),
         kms_client,
         set_kms_client,
         get_kms_client,
         kms()
     );
     check!(
-        KeyStoreConfig::builder(),
+        KeyStoreClient::builder(),
         ddb_client,
         set_ddb_client,
         get_ddb_client,
