@@ -880,9 +880,7 @@ struct DecryptResult {
 
 /// Configuration for Client.
 ///
-/// A field set both here and on a per-call EncryptOptions/DecryptOptions is rejected with ValidationException.
-/// Each field must be set in exactly one place.
-/// A field unset in both defers to the core library's default.
+/// A field left unset defers to the core library's default.
 //
 //= spec/shim/esdk-shim.md#client-configuration
 //# The ESDK shim MAY expose a client-level configuration mirroring the core
@@ -950,7 +948,7 @@ public:
 ///
 /// Streamed decrypt cannot be used to decrypt messages
 /// that were encrypted with signing suites and have multiple frames.
-/// Decrypt these messages with Aws::Esdk::decrypt instead.
+/// Decrypt these messages with Client::decrypt instead.
 class DecryptStream {
     std::shared_ptr<detail::DecryptStreamImpl> impl_;
     friend class Client;
