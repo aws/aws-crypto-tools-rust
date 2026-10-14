@@ -442,7 +442,7 @@ fn test_esdk_from_conf_takes_built_config() {
         .max_encrypted_data_keys(std::num::NonZeroUsize::new(7).unwrap())
         .build()
         .unwrap();
-    let esdk = Client::from_conf(config);
+    let esdk = Client::from_conf(config.clone());
     assert_eq!(esdk.config(), &config);
     assert_eq!(
         esdk.config().commitment_policy(),

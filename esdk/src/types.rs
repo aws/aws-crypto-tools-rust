@@ -151,6 +151,9 @@ pub use aws_crypto_mpl::structures::EsdkCommitmentPolicy as CommitmentPolicy;
 /// Commitment policy used when the caller provides none.
 //= spec/client-apis/client.md#initialization
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
+/// What `Debug` prints in place of plaintext, as the AWS SDK for Rust does.
+const REDACTED: &str = "*** Sensitive Data Redacted ***";
+
 pub(crate) const DEFAULT_COMMITMENT_POLICY: CommitmentPolicy =
     CommitmentPolicy::RequireEncryptRequireDecrypt;
 
@@ -228,7 +231,7 @@ impl EncryptStreamOutput {
         &self.encryption_context
     }
 }
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 #[non_exhaustive]
 /// Output of [`Client::decrypt`](crate::Client::decrypt).
 pub struct DecryptOutput {
@@ -242,6 +245,16 @@ pub struct DecryptOutput {
     //= reason=Vec<u8> is a sequence of bytes by definition
     //# This MUST be a sequence of bytes.
     pub(crate) plaintext: Vec<u8>,
+}
+
+impl std::fmt::Debug for DecryptOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DecryptOutput")
+            .field("algorithm_suite_id", &self.algorithm_suite_id)
+            .field("encryption_context", &self.encryption_context)
+            .field("plaintext", &REDACTED)
+            .finish()
+    }
 }
 
 impl DecryptOutput {
@@ -292,7 +305,7 @@ impl DecryptStreamOutput {
         &self.encryption_context
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 /// Input for [`Client::encrypt`](crate::Client::encrypt), built by its fluent builder.
 //= spec/client-apis/encrypt.md#input
@@ -364,7 +377,7 @@ macro_rules! getters {
     };
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub(crate) struct EncryptInputBuilder<'a> {
     algorithm_suite_id: Option<AlgorithmSuiteId>,
     encryption_context: Option<EncryptionContext>,
@@ -374,6 +387,36 @@ pub(crate) struct EncryptInputBuilder<'a> {
     plaintext: Option<&'a [u8]>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
     commitment_policy: Option<CommitmentPolicy>,
+}
+
+impl std::fmt::Debug for EncryptInput<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptInput")
+            .field("algorithm_suite_id", &self.algorithm_suite_id)
+            .field("encryption_context", &self.encryption_context)
+            .field("frame_length", &self.frame_length)
+            .field("keyring", &self.keyring)
+            .field("cmm", &self.cmm)
+            .field("plaintext", &REDACTED)
+            .field("max_encrypted_data_keys", &self.max_encrypted_data_keys)
+            .field("commitment_policy", &self.commitment_policy)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for EncryptInputBuilder<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptInputBuilder")
+            .field("algorithm_suite_id", &self.algorithm_suite_id)
+            .field("encryption_context", &self.encryption_context)
+            .field("frame_length", &self.frame_length)
+            .field("keyring", &self.keyring)
+            .field("cmm", &self.cmm)
+            .field("plaintext", &REDACTED)
+            .field("max_encrypted_data_keys", &self.max_encrypted_data_keys)
+            .field("commitment_policy", &self.commitment_policy)
+            .finish()
+    }
 }
 
 impl<'a> EncryptInputBuilder<'a> {

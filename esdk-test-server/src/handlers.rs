@@ -169,6 +169,6 @@ impl AppState {
         let entry = clients
             .get(client_id)
             .ok_or_else(|| ServerError::generic(format!("unknown clientId: {client_id}")))?;
-        Ok((entry.esdk, entry.keyring.clone()))
+        Ok((entry.esdk.clone(), entry.keyring.clone()))
     }
 }

@@ -39,7 +39,7 @@ use std::num::{NonZeroU32, NonZeroUsize};
 //= spec/client-apis/client.md#initialization
 //= reason=Config::default() sets commitment_policy to DEFAULT_COMMITMENT_POLICY = RequireEncryptRequireDecrypt
 //# If no [commitment policy](#commitment-policy) is provided the default MUST be [REQUIRE_ENCRYPT_REQUIRE_DECRYPT](../framework/algorithm-suites.md#require_encrypt_require_decrypt).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Config {
     /// Commitment policy applied to every operation. Default is
@@ -83,7 +83,8 @@ impl Config {
 }
 
 /// Builder for [`Config`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
+#[allow(missing_copy_implementations)] // not Copy, like Config, so it can gain settings that aren't Copy
 pub struct ConfigBuilder {
     commitment_policy: Option<CommitmentPolicy>,
     max_encrypted_data_keys: Option<NonZeroUsize>,
@@ -179,7 +180,7 @@ impl ConfigBuilder {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Client {
     /// Client configuration applied to every call.
@@ -188,7 +189,7 @@ pub struct Client {
     /// read via [`Client::config`].
     //= spec/client-apis/client.md#initialization
     //= type=implication
-    //= reason=pub(crate) prevents external mutation; Client is Copy so any "change" must construct a new value
+    //= reason=pub(crate) prevents external mutation and Client has no setters, so any "change" must construct a new value
     //# Once a [commitment policy](#commitment-policy) has been set it SHOULD be immutable.
     pub(crate) config: Config,
 }
@@ -234,7 +235,7 @@ impl Client {
     //# that adheres to [encrypt](./encrypt.md).
     pub fn encrypt<'a>(&self) -> EncryptFluentBuilder<'a> {
         EncryptFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: EncryptInput::builder(),
         }
     }
@@ -259,7 +260,7 @@ impl Client {
     //# that adheres to [decrypt](./decrypt.md).
     pub fn decrypt<'a>(&self) -> DecryptFluentBuilder<'a> {
         DecryptFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: DecryptInput::builder(),
         }
     }
@@ -282,7 +283,7 @@ impl Client {
     /// - On failure, responds with [`Error`](crate::Error); [`send`](EncryptStreamFluentBuilder::send) lists each variant.
     pub fn encrypt_stream(&self) -> EncryptStreamFluentBuilder {
         EncryptStreamFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: EncryptStreamInput::builder(),
         }
     }
@@ -302,7 +303,7 @@ impl Client {
     /// - On failure, responds with [`Error`](crate::Error); [`send`](DecryptStreamFluentBuilder::send) lists each variant.
     pub fn decrypt_stream(&self) -> DecryptStreamFluentBuilder {
         DecryptStreamFluentBuilder {
-            config: self.config,
+            config: self.config.clone(),
             inner: DecryptStreamInput::builder(),
         }
     }
@@ -588,7 +589,7 @@ impl DecryptStreamFluentBuilder {
 }
 
 /// Fluent builder for [`Client`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ClientBuilder {
     config: ConfigBuilder,
 }
