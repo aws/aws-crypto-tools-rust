@@ -996,7 +996,7 @@ public:
     EncryptResult encrypt(
         const std::vector<std::uint8_t>& plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Encrypts a plaintext held in any contiguous buffer
     /// (e.g. an mmap'd file or another library's buffer)
@@ -1012,18 +1012,18 @@ public:
         const std::uint8_t* plaintext,
         std::size_t plaintext_len,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     DecryptResult decrypt(
         const std::vector<std::uint8_t>& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in a Aws::Esdk::Bytes without copying it.
     DecryptResult decrypt(
         const Bytes& ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Decrypts a ciphertext held in any contiguous buffer without copying it into a std::vector first.
     /// The buffer must stay valid for the duration of the call.
@@ -1032,14 +1032,14 @@ public:
         const std::uint8_t* ciphertext,
         std::size_t ciphertext_len,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a text payload viewed through a std::string_view without copying it.
     /// The view must stay valid for the duration of the call.
     EncryptResult encrypt(
         std::string_view plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(reinterpret_cast<const std::uint8_t*>(plaintext.data()),
                        plaintext.size(), keyring, options);
     }
@@ -1049,7 +1049,7 @@ public:
     DecryptResult decrypt(
         std::string_view ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
+        const DecryptOptions& options = {}) const {
         return decrypt(reinterpret_cast<const std::uint8_t*>(ciphertext.data()),
                        ciphertext.size(), keyring, options);
     }
@@ -1057,13 +1057,13 @@ public:
     /// Creates a streaming encrypt operation.
     EncryptStream create_encrypt_stream(
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Creates a streaming decrypt operation.
     /// See DecryptStream documentation for the verification semantics of streamed plaintext.
     DecryptStream create_decrypt_stream(
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
     /// Encrypts a whole stream: reads plaintext from `source` in chunks, encrypts
     /// each, and writes the ciphertext to `sink` until `source` is exhausted,
@@ -1075,7 +1075,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const EncryptOptions& options = {});
+        const EncryptOptions& options = {}) const;
 
     /// Decrypts a whole stream: reads ciphertext from `source`, writes plaintext
     /// to `sink`, and returns the message metadata.
@@ -1088,7 +1088,7 @@ public:
         std::istream& source,
         std::ostream& sink,
         const Keyring& keyring,
-        const DecryptOptions& options = {});
+        const DecryptOptions& options = {}) const;
 
 #if defined(__cpp_lib_span)
     /// Encrypts a plaintext viewed through a std::span without copying it.
@@ -1096,7 +1096,7 @@ public:
     EncryptResult encrypt(
         std::span<const std::uint8_t> plaintext,
         const Keyring& keyring,
-        const EncryptOptions& options = {}) {
+        const EncryptOptions& options = {}) const {
         return encrypt(plaintext.data(), plaintext.size(), keyring, options);
     }
 
@@ -1105,7 +1105,7 @@ public:
     DecryptResult decrypt(
         std::span<const std::uint8_t> ciphertext,
         const Keyring& keyring,
-        const DecryptOptions& options = {}) {
+        const DecryptOptions& options = {}) const {
         return decrypt(ciphertext.data(), ciphertext.size(), keyring, options);
     }
 #endif
