@@ -1041,29 +1041,28 @@ struct EncryptSettings {
 }
 
 fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, String> {
-    let esdk = Client::builder()
-        //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-        //# the core ESDK, converted as defined in
-        //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-        .set_max_encrypted_data_keys(
-            input
-                .max_encrypted_data_keys
-                .to_option()
-                .and_then(max_edks_target_to_core),
-        )
-        //= spec/shim/esdk-shim.md#encrypt-inputs
-        //# - MUST provide the target-supplied commitment policy to the core ESDK,
-        //# converted as defined in [Commitment policy](#commitment-policy).
-        .set_commitment_policy(
-            input
-                .commitment_policy
-                .to_option()
-                .map(commitment_policy_target_to_core)
-                .transpose()?,
-        )
-        .build()
-        .map_err(core_err)?;
+    let mut builder = Client::builder();
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    builder.set_max_encrypted_data_keys(
+        input
+            .max_encrypted_data_keys
+            .to_option()
+            .and_then(max_edks_target_to_core),
+    );
+    //= spec/shim/esdk-shim.md#encrypt-inputs
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    builder.set_commitment_policy(
+        input
+            .commitment_policy
+            .to_option()
+            .map(commitment_policy_target_to_core)
+            .transpose()?,
+    );
+    let esdk = builder.build().map_err(core_err)?;
     Ok(EncryptSettings {
         esdk,
         //= spec/shim/esdk-shim.md#encrypt-inputs
@@ -1086,29 +1085,28 @@ fn encrypt_settings(input: &ffi::EncryptInput<'_>) -> Result<EncryptSettings, St
 }
 
 fn decrypt_client(input: &ffi::DecryptInput<'_>) -> Result<Client, String> {
-    Client::builder()
-        //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
-        //# the core ESDK, converted as defined in
-        //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
-        .set_max_encrypted_data_keys(
-            input
-                .max_encrypted_data_keys
-                .to_option()
-                .and_then(max_edks_target_to_core),
-        )
-        //= spec/shim/esdk-shim.md#decrypt-inputs
-        //# - MUST provide the target-supplied commitment policy to the core ESDK,
-        //# converted as defined in [Commitment policy](#commitment-policy).
-        .set_commitment_policy(
-            input
-                .commitment_policy
-                .to_option()
-                .map(commitment_policy_target_to_core)
-                .transpose()?,
-        )
-        .build()
-        .map_err(core_err)
+    let mut builder = Client::builder();
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied maximum-encrypted-data-keys value to
+    //# the core ESDK, converted as defined in
+    //# [Maximum encrypted data keys](#maximum-encrypted-data-keys).
+    builder.set_max_encrypted_data_keys(
+        input
+            .max_encrypted_data_keys
+            .to_option()
+            .and_then(max_edks_target_to_core),
+    );
+    //= spec/shim/esdk-shim.md#decrypt-inputs
+    //# - MUST provide the target-supplied commitment policy to the core ESDK,
+    //# converted as defined in [Commitment policy](#commitment-policy).
+    builder.set_commitment_policy(
+        input
+            .commitment_policy
+            .to_option()
+            .map(commitment_policy_target_to_core)
+            .transpose()?,
+    );
+    builder.build().map_err(core_err)
 }
 
 fn encrypt(input: &ffi::EncryptInput) -> Result<ffi::EncryptOutput, String> {

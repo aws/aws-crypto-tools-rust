@@ -115,11 +115,10 @@ impl ConfigBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    #[must_use]
     pub const fn set_commitment_policy(
-        mut self,
+        &mut self,
         commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
+    ) -> &mut Self {
         self.commitment_policy = commitment_policy;
         self
     }
@@ -132,11 +131,10 @@ impl ConfigBuilder {
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    #[must_use]
     pub const fn set_max_encrypted_data_keys(
-        mut self,
+        &mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
-    ) -> Self {
+    ) -> &mut Self {
         self.max_encrypted_data_keys = max_encrypted_data_keys;
         self
     }
@@ -699,12 +697,11 @@ impl ClientBuilder {
     }
 
     /// Set or clear the commitment policy from an `Option`.
-    #[must_use]
     pub const fn set_commitment_policy(
-        mut self,
+        &mut self,
         commitment_policy: Option<CommitmentPolicy>,
-    ) -> Self {
-        self.config = self.config.set_commitment_policy(commitment_policy);
+    ) -> &mut Self {
+        self.config.set_commitment_policy(commitment_policy);
         self
     }
 
@@ -719,13 +716,11 @@ impl ClientBuilder {
     }
 
     /// Set or clear the maximum number of encrypted data keys from an `Option`.
-    #[must_use]
     pub const fn set_max_encrypted_data_keys(
-        mut self,
+        &mut self,
         max_encrypted_data_keys: Option<NonZeroUsize>,
-    ) -> Self {
-        self.config = self
-            .config
+    ) -> &mut Self {
+        self.config
             .set_max_encrypted_data_keys(max_encrypted_data_keys);
         self
     }

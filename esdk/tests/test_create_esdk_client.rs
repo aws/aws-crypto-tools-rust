@@ -485,23 +485,23 @@ fn test_config_to_builder_round_trips_and_overrides_one_field() {
 fn test_builder_getters_track_setters() {
     let cap = std::num::NonZeroUsize::new(2).unwrap();
     let policy = CommitmentPolicy::RequireEncryptAllowDecrypt;
-    let config = Config::builder()
+    let mut config = Config::builder()
         .commitment_policy(policy)
         .max_encrypted_data_keys(cap);
     assert_eq!(config.get_commitment_policy(), &Some(policy));
     assert_eq!(config.get_max_encrypted_data_keys(), &Some(cap));
-    let config = config
+    config
         .set_commitment_policy(None)
         .set_max_encrypted_data_keys(None);
     assert_eq!(config.get_commitment_policy(), &None);
     assert_eq!(config.get_max_encrypted_data_keys(), &None);
 
-    let client = Client::builder()
+    let mut client = Client::builder()
         .commitment_policy(policy)
         .max_encrypted_data_keys(cap);
     assert_eq!(client.get_commitment_policy(), &Some(policy));
     assert_eq!(client.get_max_encrypted_data_keys(), &Some(cap));
-    let client = client
+    client
         .set_commitment_policy(None)
         .set_max_encrypted_data_keys(None);
     assert_eq!(client.get_commitment_policy(), &None);
