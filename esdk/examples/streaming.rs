@@ -51,7 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .encryption_context(encryption_context.clone())
         .keyring(keyring.clone())
         .algorithm_suite_id(AlgorithmSuiteId::AlgAes256GcmHkdfSha512CommitKey)
-        .send(input, output)
+        .plaintext(input)
+        .ciphertext(output)
+        .send()
         .await;
     if let Err(e) = result {
         // On error the ciphertext file is incomplete; delete it.
@@ -67,7 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .decrypt_stream()
         .encryption_context(encryption_context)
         .keyring(keyring)
-        .send(input, output)
+        .ciphertext(input)
+        .plaintext(output)
+        .send()
         .await;
     if let Err(e) = result {
         // On error the plaintext written so far is unverified; delete it unused.
