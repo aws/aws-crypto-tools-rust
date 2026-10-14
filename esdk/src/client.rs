@@ -7,7 +7,7 @@
 //! Each operation's fluent builder takes both settings from the client and has no setters for them:
 //!
 //! ```ignore
-//! let esdk = Client::builder().commitment_policy(policy).build()?;
+//! let esdk = aws_esdk::Client::builder().commitment_policy(policy).build()?;
 //! let output = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
 //! ```
 
@@ -160,7 +160,7 @@ impl ConfigBuilder {
 /// # Example
 ///
 /// ```ignore
-/// let esdk = Client::builder()
+/// let esdk = aws_esdk::Client::builder()
 ///     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
 ///     .build()?;
 /// let output = esdk

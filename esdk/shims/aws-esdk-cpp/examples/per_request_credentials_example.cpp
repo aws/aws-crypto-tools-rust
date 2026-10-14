@@ -29,7 +29,7 @@ Aws::Esdk::Credentials credentials_for_request() {
 }
 
 // Handles one request: every KMS call it makes uses that request's credentials.
-void handle_request(const Aws::Esdk::KmsClient& base_kms,
+void handle_request(const Aws::Esdk::KmsClient& kms,
                     const Aws::Esdk::DdbClient& ddb,
                     Aws::Esdk::Client& esdk,
                     const Aws::Esdk::Credentials& credentials) {
@@ -40,7 +40,7 @@ void handle_request(const Aws::Esdk::KmsClient& base_kms,
         "KeyStoreDdbTable",  // logical_key_store_name
         "arn:aws:kms:us-west-2:370957321024:key/9d989aa2-2f9c-438c-a745-cc57d3ad0126",  // kms_arn
         Aws::Esdk::KeyStoreOptions()
-            .with_kms_client(base_kms.with_credentials(credentials))
+            .with_kms_client(kms.with_credentials(credentials))
             .with_ddb_client(ddb));
 
     // A keyring with its own cache, so branch key material fetched with one request's
@@ -66,11 +66,11 @@ int main() {
         // DynamoDB calls use the default credential chain; KMS calls use each request's credentials.
         const Aws::Esdk::HttpClient http;
         const auto config = Aws::Esdk::AwsSdkClientConfig().with_region("us-west-2").with_http_client(http);
-        const Aws::Esdk::KmsClient base_kms(config);
+        const Aws::Esdk::KmsClient kms(config);
         const Aws::Esdk::DdbClient ddb(config);
         Aws::Esdk::Client esdk;
 
-        handle_request(base_kms, ddb, esdk, credentials_for_request());
+        handle_request(kms, ddb, esdk, credentials_for_request());
 
         std::cout << "Success! Encryption and decryption completed successfully.\n";
     } catch (const std::exception& e) {
