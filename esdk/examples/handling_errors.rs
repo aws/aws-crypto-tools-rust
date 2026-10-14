@@ -23,7 +23,7 @@ use aws_crypto_mpl::error::ConflictReason;
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Error, Resource, Service};
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 
 // The AWS Crypto Tools CI test key store.
 // Replace these with your own key store's table, name, KMS key ARN, and branch key ID.
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Encrypt, handling errors from coarse to fine.
     // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,
     // so encrypt can fail in either service.
-    let esdk = Esdk::default();
+    let esdk = Client::default();
     let result = esdk
         .encrypt()
         .plaintext(PLAINTEXT)

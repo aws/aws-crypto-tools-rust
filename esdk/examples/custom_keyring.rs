@@ -10,7 +10,7 @@
 use aws_crypto_mpl::keyring::{OnDecryptInput, OnDecryptOutput, OnEncryptInput, OnEncryptOutput};
 use aws_crypto_mpl::structures::EncryptedDataKey;
 use aws_crypto_mpl::{AesGcm, Error as MplError, Keyring, RawAesKeyring, async_trait};
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 
 /// Wraps another keyring and logs the key providers of the encrypted data keys each call writes or tries.
 #[derive(Clone)]
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "example");
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     let encrypted = esdk
         .encrypt()

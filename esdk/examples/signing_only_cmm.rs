@@ -17,7 +17,7 @@ use aws_crypto_mpl::cmm::{
 };
 use aws_crypto_mpl::{AesGcm, Cmm, DefaultCmm, Error as MplError, Keyring, RawAesKeyring};
 use aws_esdk::error::Error;
-use aws_esdk::{AlgorithmSuiteId, EncryptionContext, Esdk};
+use aws_esdk::{AlgorithmSuiteId, Client, EncryptionContext};
 
 /// Passes requests to a [`DefaultCmm`] and fails any that would use an algorithm suite without a signature.
 struct SigningSuiteOnlyCmm {
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "example");
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     // The default algorithm suite signs, so the CMM allows it.
     let encrypted = esdk

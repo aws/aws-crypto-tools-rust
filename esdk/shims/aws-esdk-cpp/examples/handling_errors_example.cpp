@@ -33,7 +33,7 @@ int main() {
     try {
         auto keystore = Aws::Esdk::KeyStore(kTableName, kLogicalKeyStoreName, kKmsKeyArn);
         auto keyring = Aws::Esdk::HierarchicalKeyring(keystore, kBranchKeyId, 600s);
-        Aws::Esdk::EncryptionSDK esdk;
+        Aws::Esdk::Client esdk;
 
         // Encrypt, handling errors from coarse to fine.
         // The hierarchical keyring reads the branch key from DynamoDB and decrypts it with AWS KMS,

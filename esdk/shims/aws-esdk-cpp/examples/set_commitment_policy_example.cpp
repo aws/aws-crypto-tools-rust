@@ -4,7 +4,7 @@
 // Use ForbidEncryptAllowDecrypt only while migrating from an ESDK version 1.x that cannot read committing messages,
 // and move to the default once every reader is upgraded.
 //
-// An EncryptionSDK applies its policy to every operation it runs.
+// An Client applies its policy to every operation it runs.
 
 #include <iostream>
 #include <string>
@@ -13,7 +13,7 @@
 
 int main() {
     try {
-        Aws::Esdk::EncryptionSDK sdk(Aws::Esdk::EncryptionSDKConfig().with_commitment_policy(
+        Aws::Esdk::Client sdk(Aws::Esdk::Config().with_commitment_policy(
             Aws::Esdk::CommitmentPolicy::ForbidEncryptAllowDecrypt));
 
         // For demonstration only: a real application must source its wrapping

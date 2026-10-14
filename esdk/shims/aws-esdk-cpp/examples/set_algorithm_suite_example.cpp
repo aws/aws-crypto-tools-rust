@@ -22,7 +22,7 @@ int main() {
             Aws::Esdk::AesWrappingAlgorithm::AlgAes256GcmIv12Tag16
         );
 
-        Aws::Esdk::EncryptionSDK sdk;
+        Aws::Esdk::Client sdk;
         const std::string plaintext = "Hello World";
 
         auto encrypted = sdk.encrypt(

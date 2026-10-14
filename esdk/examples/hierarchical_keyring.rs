@@ -10,7 +10,7 @@ use std::time::Duration;
 use aws_crypto_mpl::key_store::{KeyStoreClient, KmsConfiguration};
 use aws_crypto_mpl::{HierarchicalKeyring, aws_config, aws_sdk_dynamodb, aws_sdk_kms};
 use aws_esdk::error::{Error, Resource, Service};
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     encryption_context.insert("purpose", "example");
     encryption_context.insert("is not", "secret");
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     let result = esdk
         .encrypt()

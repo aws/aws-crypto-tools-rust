@@ -7,16 +7,16 @@
 //! Use `ForbidEncryptAllowDecrypt` only while migrating from an ESDK version 1.x that cannot read committing messages,
 //! and move to the default once every reader is upgraded.
 //!
-//! An `Esdk` client applies its policy to every operation it starts.
+//! A `Client` applies its policy to every operation it starts.
 //!
 //! Runs offline.
 
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{CommitmentPolicy, EncryptionContext, Esdk};
+use aws_esdk::{Client, CommitmentPolicy, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let esdk = Esdk::builder()
+    let esdk = Client::builder()
         .commitment_policy(CommitmentPolicy::ForbidEncryptAllowDecrypt)
         .build();
 

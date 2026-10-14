@@ -6,7 +6,7 @@ The AWS Encryption SDK is a client-side encryption library.
 It uses envelope encryption: a data key encrypts your data, and one or more wrapping keys in a _keyring_ encrypt that data key.
 The encrypted message carries the encrypted data keys, so you don't track them separately.
 
-Every operation starts on an [`Esdk`](#the-esdk-client) client.
+Every operation starts on a [`Client`](#the-client).
 The two primary operations are `encrypt` and `decrypt`.
 Each has a streaming variant (`encrypt_stream` / `decrypt_stream`) for data too large to hold in memory.
 
@@ -30,7 +30,7 @@ A one-shot encrypt/decrypt round trip with a raw AES keyring:
 
 ```rust
 use aws_crypto_mpl::{AesGcm, RawAesKeyring};
-use aws_esdk::{EncryptionContext, Esdk};
+use aws_esdk::{Client, EncryptionContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut encryption_context = EncryptionContext::new();
     encryption_context.insert("purpose", "quickstart");
 
-    let esdk = Esdk::default();
+    let esdk = Client::default();
 
     let encrypted = esdk
         .encrypt()
@@ -70,19 +70,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## The `Esdk` client
+## The `Client`
 
-An `Esdk` client holds the commitment policy and the cap on encrypted data keys, and applies them to every operation it starts.
-`Esdk::default()` uses the `RequireEncryptRequireDecrypt` policy and no cap.
-Set either one with `Esdk::builder()`:
+A `Client` holds the commitment policy and the cap on encrypted data keys, and applies them to every operation it starts.
+`Client::default()` uses the `RequireEncryptRequireDecrypt` policy and no cap.
+Set either one with `Client::builder()`:
 
 ```rust
-use aws_esdk::{CommitmentPolicy, Esdk};
+use aws_esdk::{Client, CommitmentPolicy};
 
-let esdk = Esdk::builder()
+let esdk = Client::builder()
     .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
     .build();
 let encrypted = esdk.encrypt().plaintext(plaintext).keyring(keyring).send().await?;
+```
+
+To keep the settings separate from the client, as `aws_sdk_kms::Client::from_conf` does, build a `Config` and pass it to `Client::from_conf`:
+
+```rust
+use aws_esdk::{Client, CommitmentPolicy, Config};
+
+let config = Config::builder()
+    .commitment_policy(CommitmentPolicy::RequireEncryptRequireDecrypt)
+    .build();
+let esdk = Client::from_conf(config);
 ```
 
 ## Streaming
