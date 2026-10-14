@@ -138,7 +138,7 @@ async fn test_frame_length_accepts_max_u32() {
         .send()
         .await
         .unwrap();
-    assert_eq!(header_frame_length(&out.ciphertext), u32::MAX);
+    assert_eq!(header_frame_length(out.ciphertext()), u32::MAX);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -153,7 +153,7 @@ async fn test_frame_length_default_is_4096() {
         .send()
         .await
         .unwrap();
-    assert_eq!(header_frame_length(&out.ciphertext), 4096);
+    assert_eq!(header_frame_length(out.ciphertext()), 4096);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -227,7 +227,7 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         //= reason=ciphertext is the byte-sequence ESDK message; decrypt() accepts and round-trips it
         //# The input encrypted message MUST be a sequence of bytes in the
         //# [message format](../data-format/message.md) specified by the AWS Encryption SDK.
-        .ciphertext(&encrypt_output.ciphertext)
+        .ciphertext(encrypt_output.ciphertext())
         //= spec/client-apis/decrypt.md#input
         //= type=test
         //= reason=the encryption context is populated; decrypt() succeeds
@@ -243,11 +243,12 @@ async fn test_encrypt_decrypt_accepts_all_optional_inputs() {
         .expect("decrypt must accept every optional input");
 
     assert_eq!(
-        decrypt_output.plaintext, plaintext,
+        decrypt_output.plaintext(),
+        plaintext,
         "round-trip plaintext must match"
     );
     assert_eq!(
-        decrypt_output.encryption_context.get("greet"),
+        decrypt_output.encryption_context().get("greet"),
         Some("hello"),
         "encrypt/decrypt must honor the encryption context input"
     );
@@ -276,7 +277,7 @@ async fn test_encrypt_decrypt_accepts_cmm() {
 
     let decrypt_output = esdk
         .decrypt()
-        .ciphertext(&encrypt_output.ciphertext)
+        .ciphertext(encrypt_output.ciphertext())
         //= spec/client-apis/decrypt.md#input
         //= type=test
         //= reason=a CMM is set; decrypt() succeeds
@@ -287,7 +288,8 @@ async fn test_encrypt_decrypt_accepts_cmm() {
         .expect("decrypt must accept a CMM input");
 
     assert_eq!(
-        decrypt_output.plaintext, plaintext,
+        decrypt_output.plaintext(),
+        plaintext,
         "round-trip plaintext must match when using a CMM"
     );
 }
@@ -518,14 +520,15 @@ async fn test_esdk_encrypt_decrypt_round_trip() {
     //# that adheres to [decrypt](./decrypt.md).
     let pt = esdk
         .decrypt()
-        .ciphertext(&ct.ciphertext)
+        .ciphertext(ct.ciphertext())
         .encryption_context(ec)
         .keyring(keyring)
         .send()
         .await
         .expect("Client::decrypt must succeed on the matching ciphertext");
     assert_eq!(
-        pt.plaintext, plaintext,
+        pt.plaintext(),
+        plaintext,
         "Client round-trip must produce the original plaintext"
     );
 }
@@ -588,7 +591,8 @@ async fn test_esdk_commitment_policy_actually_gates_decrypt() {
         .await
         .expect("Esdk(ForbidEncryptAllowDecrypt) must accept a V1 non-committing ciphertext");
     assert_eq!(
-        out.plaintext, plaintext,
+        out.plaintext(),
+        plaintext,
         "decrypt under Client must round-trip the V1 plaintext"
     );
 

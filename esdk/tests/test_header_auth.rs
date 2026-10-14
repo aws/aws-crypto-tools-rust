@@ -85,7 +85,8 @@ async fn test_v1_header_auth_structure() {
     //# The value MUST be the authentication tag calculated above.
     let result = decrypt_with_version(&ct, Version::V1).await;
     assert_eq!(
-        result.plaintext, b"v1 header auth structure",
+        result.plaintext(),
+        b"v1 header auth structure",
         "V1 round-trip must succeed"
     );
 }
@@ -138,7 +139,8 @@ async fn test_v2_header_auth_structure() {
     //# The value MUST be the authentication tag calculated above.
     let result = decrypt_ciphertext(&ct).await;
     assert_eq!(
-        result.plaintext, b"v2 header auth structure",
+        result.plaintext(),
+        b"v2 header auth structure",
         "V2 round-trip must succeed"
     );
 }

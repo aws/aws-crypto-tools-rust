@@ -65,12 +65,12 @@ async fn round_trip(plaintext: &[u8]) {
         .unwrap();
     let dec = esdk
         .decrypt()
-        .ciphertext(&out.ciphertext)
+        .ciphertext(out.ciphertext())
         .keyring(keyring)
         .send()
         .await
         .unwrap();
-    assert_eq!(dec.plaintext, plaintext);
+    assert_eq!(dec.plaintext(), plaintext);
 }
 
 #[test]

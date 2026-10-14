@@ -47,12 +47,12 @@
 //!     .await?;
 //! let decrypted = esdk
 //!     .decrypt()
-//!     .ciphertext(&encrypted.ciphertext)
+//!     .ciphertext(encrypted.ciphertext())
 //!     .encryption_context(encryption_context)
 //!     .keyring(keyring)
 //!     .send()
 //!     .await?;
-//! assert_eq!(decrypted.plaintext, b"Hello World");
+//! assert_eq!(decrypted.plaintext(), b"Hello World");
 //! # Ok(())
 //! # }
 //! ```

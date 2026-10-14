@@ -24,7 +24,7 @@ async fn test_decrypt_output_includes_encryption_context() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let result = Client::default()
         .decrypt()
@@ -38,7 +38,7 @@ async fn test_decrypt_output_includes_encryption_context() {
         //= spec/client-apis/decrypt.md#output
         //= type=test
         //# - Decrypt operation output MUST include an [encryption context](#encryption-context) value.
-        assert_eq!(result.encryption_context.get(k).unwrap(), v);
+        assert_eq!(result.encryption_context().get(k).unwrap(), v);
     }
 }
 
@@ -54,7 +54,7 @@ async fn test_decrypt_output_includes_algorithm_suite() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     let result = Client::default()
         .decrypt()
@@ -71,7 +71,7 @@ async fn test_decrypt_output_includes_algorithm_suite() {
     //= type=test
     //= reason=Output suite matches a supported ESDK suite (AlgAes256GcmHkdfSha512CommitKey)
     //# This algorithm suite MUST be [supported for the ESDK](../framework/algorithm-suites.md#supported-algorithm-suites-enum).
-    assert_eq!(result.algorithm_suite_id, suite);
+    assert_eq!(result.algorithm_suite_id(), suite);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -90,7 +90,7 @@ async fn test_decrypt_no_unauthenticated_data_released() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Tamper the first regular frame's auth tag: [seq_num(4)][IV(12)][content(10)][tag(16)].
     let body_start = find_body_start(&valid_ct, 10).expect("must find body");
@@ -140,7 +140,7 @@ async fn test_streaming_callers_must_discard_on_failure() {
         .send()
         .await
         .unwrap()
-        .ciphertext;
+        .into_ciphertext();
 
     // Tamper with the last few bytes (signature area) to cause verification failure.
     let mut tampered_ct = valid_ct.clone();
