@@ -365,37 +365,37 @@ struct DecryptStreamImpl {
 
 }  // namespace detail
 
-// ClientConfig
+// SdkConfig
 
 HttpClient::HttpClient()
     : impl_(std::make_shared<detail::HttpClientImpl>(
           detail::guard([] { return ::ffi::create_http_client(); }))) {}
 
-ClientConfig::ClientConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
-ClientConfig& ClientConfig::with_http_client(const HttpClient& http_client) {
+SdkConfig::SdkConfig() : impl_(std::make_shared<detail::ClientConfigImpl>()) {}
+SdkConfig& SdkConfig::with_http_client(const HttpClient& http_client) {
     impl_->http_client = http_client.impl_;
     return *this;
 }
-ClientConfig& ClientConfig::with_max_retry_attempts(std::uint32_t n) {
+SdkConfig& SdkConfig::with_max_retry_attempts(std::uint32_t n) {
     impl_->cfg.retry.max_attempts = ::ffi::OptU32{true, n};
     return *this;
 }
-ClientConfig& ClientConfig::with_adaptive_retry(bool a) {
+SdkConfig& SdkConfig::with_adaptive_retry(bool a) {
     impl_->cfg.retry.mode_adaptive = a;
     return *this;
 }
-ClientConfig& ClientConfig::with_region(const std::string& r) {
+SdkConfig& SdkConfig::with_region(const std::string& r) {
     impl_->cfg.region = ::ffi::OptString{true, ::rust::String(r)};
     return *this;
 }
-ClientConfig& ClientConfig::with_credentials(const Credentials& credentials) {
+SdkConfig& SdkConfig::with_credentials(const Credentials& credentials) {
     impl_->cfg.credentials = ::ffi::OptCredentials{true, detail::CredentialsAccess::to_ffi(credentials)};
     return *this;
 }
 
 // Service clients
 
-KmsClient::KmsClient(const ClientConfig& cfg)
+KmsClient::KmsClient(const SdkConfig& cfg)
     : impl_(std::make_shared<detail::KmsClientImpl>(
           detail::Retained{},
           detail::guard([&] {
@@ -422,7 +422,7 @@ KmsClient KmsClient::with_headers(
         detail::guard([&] { return ::ffi::kms_client_with_headers(*impl_->handle, std::move(ffi_headers)); })));
 }
 
-DdbClient::DdbClient(const ClientConfig& cfg)
+DdbClient::DdbClient(const SdkConfig& cfg)
     : impl_(std::make_shared<detail::DdbClientImpl>(
           detail::Retained{},
           detail::guard([&] {

@@ -504,40 +504,40 @@ public:
 
 /// AWS service-client configuration for AWS SDK clients.
 /// A field left unset defers to the ESDK Rust's default configuration resolution.
-/// One ClientConfig may configure multiple clients.
+/// One SdkConfig may configure multiple clients.
 /// An HTTP client and its connection pool.
 /// Pass one to several ClientConfigs to make their service clients share connections.
 class HttpClient {
     std::shared_ptr<detail::HttpClientImpl> impl_;
-    friend class ClientConfig;
+    friend class SdkConfig;
 
 public:
     HttpClient();
 };
 
-class ClientConfig {
+class SdkConfig {
     std::shared_ptr<detail::ClientConfigImpl> impl_;
     friend class KmsClient;
     friend class DdbClient;
 
 public:
-    ClientConfig();
+    SdkConfig();
     /// Maximum request attempts (1 = no retries).
-    ClientConfig& with_max_retry_attempts(std::uint32_t n);
+    SdkConfig& with_max_retry_attempts(std::uint32_t n);
     /// Selects adaptive retry mode instead of the standard one.
-    ClientConfig& with_adaptive_retry(bool a);
+    SdkConfig& with_adaptive_retry(bool a);
     /// AWS region for the client (ex. "us-west-2").
-    ClientConfig& with_region(const std::string& r);
+    SdkConfig& with_region(const std::string& r);
     /// Credentials the client signs every request with, in place of the default credential chain.
     /// Throws ValidationException if the expiration is before the Unix epoch.
-    ClientConfig& with_credentials(const Credentials& credentials);
+    SdkConfig& with_credentials(const Credentials& credentials);
     /// HTTP client the service client sends requests through.
     /// Unset gives each service client its own connection pool.
-    ClientConfig& with_http_client(const HttpClient& http_client);
+    SdkConfig& with_http_client(const HttpClient& http_client);
 };
 
 /// KMS Client.
-/// Each client has its own connection pool unless its ClientConfig sets an HttpClient.
+/// Each client has its own connection pool unless its SdkConfig sets an HttpClient.
 /// Clients without explicit credentials share one default credential chain.
 class KmsClient {
     std::shared_ptr<detail::KmsClientImpl> impl_;
@@ -546,7 +546,7 @@ class KmsClient {
 
 public:
     /// Creates a KMS client.
-    explicit KmsClient(const ClientConfig& cfg = {});
+    explicit KmsClient(const SdkConfig& cfg = {});
     /// Returns a copy of this client that signs requests with `credentials`.
     /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
     /// This client is unchanged.
@@ -560,7 +560,7 @@ public:
 };
 
 /// DynamoDB client.
-/// Each client has its own connection pool unless its ClientConfig sets an HttpClient.
+/// Each client has its own connection pool unless its SdkConfig sets an HttpClient.
 /// Clients without explicit credentials share one default credential chain.
 class DdbClient {
     std::shared_ptr<detail::DdbClientImpl> impl_;
@@ -569,7 +569,7 @@ class DdbClient {
 
 public:
     /// Creates a DynamoDB client.
-    explicit DdbClient(const ClientConfig& cfg = {});
+    explicit DdbClient(const SdkConfig& cfg = {});
     /// Returns a copy of this client that signs requests with `credentials`.
     /// The copy keeps this client's configuration and connection pool, so it is cheap to make per request.
     /// This client is unchanged.

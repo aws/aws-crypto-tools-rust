@@ -98,7 +98,7 @@ int esdk_cpp_create_hierarchical_client(const char* region,
                                         void** out_client,
                                         char** out_err) {
     try {
-        Aws::Esdk::ClientConfig config;
+        Aws::Esdk::SdkConfig config;
         if (region && region[0] != '\0') {
             config.with_region(region);
         }
