@@ -11,15 +11,14 @@ use crate::message::serialize_functions::{
 };
 use crate::message::{DigestWriter, Error, ser_err};
 use crate::types::{Sink, Source};
-use aws_mpl_primitives::{AesGcm, aes_encrypt};
+use aws_mpl_primitives::AesGcmKey;
 
 /// Maximum plaintext bytes per message: 2^36 - 32 (AES-GCM safety bound).
 const MAX_DATA: usize = (1usize << 36) - 32;
 
 /// Input for constructing a single frame (regular or final).
 pub(crate) struct ConstructFrameInput<'a> {
-    pub(crate) alg_suite: AesGcm,
-    pub(crate) key: &'a [u8],
+    pub(crate) key: &'a AesGcmKey,
     pub(crate) plaintext: &'a [u8],
     pub(crate) message_id: &'a [u8],
     pub(crate) aad_content: BodyAADContent,
@@ -218,11 +217,11 @@ pub(crate) async fn construct_frame(
     //# - MUST serialize the [Encrypted Content](../data-format/message-body.md#regular-frame-encrypted-content).
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=aes_encrypt writes encrypted content to frame_buf for both regular and final frames in this shared code path
+    //= reason=AesGcmKey::encrypt writes encrypted content to frame_buf for both regular and final frames in this shared code path
     //# - MUST serialize the [Encrypted Content](../data-format/message-body.md#final-frame-encrypted-content).
     //
     //= spec/data-format/message-body.md#final-frame-encrypted-content
-    //= reason=aes_encrypt output bytes are written directly to frame_buf, interpreted as raw bytes
+    //= reason=AesGcmKey::encrypt output bytes are written directly to frame_buf, interpreted as raw bytes
     //# The encrypted content MUST be interpreted as bytes.
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
@@ -232,22 +231,21 @@ pub(crate) async fn construct_frame(
     //# - MUST serialize the [Authentication Tag](../data-format/message-body.md#regular-frame-authentication-tag).
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
-    //= reason=aes_encrypt writes the authentication tag to frame_buf for both regular and final frames in this shared code path
+    //= reason=AesGcmKey::encrypt writes the authentication tag to frame_buf for both regular and final frames in this shared code path
     //# - MUST serialize the [Authentication Tag](../data-format/message-body.md#final-frame-authentication-tag).
     //
     //= spec/data-format/message-body.md#final-frame-authentication-tag
-    //= reason=aes_encrypt output tag bytes are written directly to frame_buf, interpreted as raw bytes
+    //= reason=AesGcmKey::encrypt output tag bytes are written directly to frame_buf, interpreted as raw bytes
     //# The authentication tag MUST be interpreted as bytes.
     //
     //= spec/client-apis/encrypt.md#construct-a-frame
     //# The value MUST be the authentication tag output when calculating the encrypted content for this frame.
-    aes_encrypt(
-        input.alg_suite,
+    //
+    //= spec/client-apis/encrypt.md#construct-a-frame
+    //= reason=input.key is built from the derived data key in encrypt_and_serialize_body
+    //# - The cipherkey MUST be the derived data key
+    input.key.encrypt(
         iv,
-        //= spec/client-apis/encrypt.md#construct-a-frame
-        //= reason=input.key is set from the derived data key in encrypt_and_serialize_body
-        //# - The cipherkey MUST be the derived data key
-        input.key,
         //= spec/client-apis/encrypt.md#construct-a-frame
         //# - The plaintext MUST be the next subsequence of consumable plaintext bytes that have not yet been encrypted.
         input.plaintext,
@@ -307,7 +305,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     //= reason=START_SEQUENCE_NUMBER is defined as 1
     //# If this is the first frame sequentially, the sequence number value MUST be 1.
     let mut sequence_number = START_SEQUENCE_NUMBER;
-    let alg_suite = get_alg_suite(&header.suite)?;
+    let key = AesGcmKey::new(get_alg_suite(&header.suite)?, key)?;
 
     let mut iv = vec![0; iv_len];
     let mut plaintext_frame = vec![0; frame_length];
@@ -392,8 +390,7 @@ pub(crate) async fn encrypt_and_serialize_body(
         //# and Authentication Tag.
         construct_frame(
             &ConstructFrameInput {
-                alg_suite,
-                key,
+                key: &key,
                 //= spec/client-apis/encrypt.md#construct-a-frame
                 //= reason=plaintext_frame is exactly frame_length bytes (the full buffer read from input)
                 //# - For a regular frame the length of this plaintext MUST equal the frame length.
@@ -462,8 +459,7 @@ pub(crate) async fn encrypt_and_serialize_body(
     //# Final frame serialization MUST conform to the [Final Frame](../data-format/message-body.md#final-frame) specification.
     construct_frame(
         &ConstructFrameInput {
-            alg_suite,
-            key,
+            key: &key,
             //= spec/client-apis/encrypt.md#construct-a-frame
             //= reason=plaintext_frame[0..in_size] is the remaining unencrypted bytes, where in_size <= frame_length
             //# - For a final frame this MUST be the length of the remaining plaintext bytes

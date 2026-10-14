@@ -11,7 +11,7 @@
 //!
 //! [`TestAES.dfy`]: https://github.com/aws/aws-cryptographic-material-providers-library/blob/main/AwsCryptographyPrimitives/test/TestAES.dfy
 
-use aws_mpl_primitives::{AesGcm, Error, aes_decrypt, aes_encrypt};
+use aws_mpl_primitives::{AesGcm, AesGcmKey, Error, aes_decrypt, aes_encrypt};
 
 const KEY_256: [u8; 32] = [1; 32];
 const IV: [u8; 12] = [2; 12];
@@ -231,5 +231,37 @@ fn test_aes_decrypt_tampered_auth_tag() {
         &mut plain_text,
     )
     .unwrap_err();
+    assert!(err.is_cryptographic(), "{:?}", err);
+}
+
+#[test]
+fn test_aes_gcm_key_reused_across_ivs() -> Result<(), Error> {
+    let key = AesGcmKey::new(AesGcm::Aes256Gcm, &KEY_256)?;
+    let ivs = [IV, [9; 12]];
+    for iv in ivs {
+        let mut reused = Vec::new();
+        key.encrypt(&iv, &PLAINTEXT, &AAD, &mut reused)?;
+        let mut one_shot = Vec::new();
+        aes_encrypt(
+            AesGcm::Aes256Gcm,
+            &iv,
+            &KEY_256,
+            &PLAINTEXT,
+            &AAD,
+            &mut one_shot,
+        )?;
+        assert_eq!(reused, one_shot);
+
+        let (ct, tag) = reused.split_at(PLAINTEXT.len());
+        let mut plain_text = [0u8; PLAINTEXT.len()];
+        key.decrypt(ct, tag, &iv, &AAD, &mut plain_text)?;
+        assert_eq!(plain_text, PLAINTEXT);
+    }
+    Ok(())
+}
+
+#[test]
+fn test_aes_gcm_key_bad_key_length() {
+    let err = AesGcmKey::new(AesGcm::Aes256Gcm, &[1u8; 15]).unwrap_err();
     assert!(err.is_cryptographic(), "{:?}", err);
 }

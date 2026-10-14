@@ -12,7 +12,7 @@ use crate::message::serialize_functions::{
 };
 use crate::message::{Error, header, ser_err, serialize_functions};
 use crate::types::{Sink, Source, Tee};
-use aws_mpl_primitives::aes_decrypt;
+use aws_mpl_primitives::{AesGcmKey, aes_decrypt};
 
 /// Write the previous frame's plaintext to the output, or fail if streaming a signed message.
 async fn release_previous_frame(
@@ -49,7 +49,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
     //# The authentication tag length MUST be equal to the authentication tag length of the algorithm suite
     //# specified by the [Algorithm Suite ID](message-header.md#algorithm-suite-id) field.
     let mut auth_tag = vec![0u8; get_tag_length(&header.suite)];
-    let alg_suite = get_alg_suite(&header.suite)?;
+    let key = AesGcmKey::new(get_alg_suite(&header.suite)?, key)?;
     let frame_length_u64 = u64::from(header.body.frame_length());
     let Ok(frame_length_usize) = usize::try_from(header.body.frame_length()) else {
         return ser_err(&format!(
@@ -271,15 +271,13 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
             //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
             if enc_content.is_empty() {
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
-                //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
+                //= reason=`?` propagates AesGcmKey::decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
                 // final frame is empty, so return last full frame
-                aes_decrypt(
-                    alg_suite,
-                    key,
+                key.decrypt(
                     &enc_content,
                     //= spec/data-format/message-body.md#final-frame-authentication-tag
-                    //= reason=auth_tag is passed to aes_decrypt which uses it to authenticate the final frame
+                    //= reason=auth_tag is passed to AesGcmKey::decrypt which uses it to authenticate the final frame
                     //# It MUST be used to authenticate the final frame.
                     &auth_tag,
                     &iv,
@@ -299,11 +297,9 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
                     release_previous_frame(w, &result, fail_if_multi_frame).await?;
                 }
                 //= spec/client-apis/decrypt.md#decrypt-the-message-body
-                //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
+                //= reason=`?` propagates AesGcmKey::decrypt errors, halting decryption immediately
                 //# If this decryption fails, this operation MUST immediately halt and fail.
-                aes_decrypt(
-                    alg_suite,
-                    key,
+                key.decrypt(
                     &enc_content,
                     &auth_tag,
                     &iv,
@@ -458,7 +454,7 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         // Decrypt + authenticate
 
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
-        //= reason=aes_decrypt is called before write_bytes; the ? operator prevents any plaintext release on decryption failure
+        //= reason=AesGcmKey::decrypt is called before write_bytes; the ? operator prevents any plaintext release on decryption failure
         //# This operation MUST NOT release any unauthenticated plaintext.
         //
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
@@ -468,14 +464,13 @@ pub(crate) async fn read_and_decrypt_framed_message_body(
         //# specified by the [algorithm suite](../framework/algorithm-suites.md), with the following inputs:
         //
         //= spec/client-apis/decrypt.md#decrypt-the-message-body
-        //= reason=`?` propagates aes_decrypt errors, halting decryption immediately
+        //= reason=`?` propagates AesGcmKey::decrypt errors, halting decryption immediately
         //# If this decryption fails, this operation MUST immediately halt and fail.
-        aes_decrypt(
-            alg_suite,
-            //= spec/client-apis/decrypt.md#decrypt-the-message-body
-            //= reason=key is the derived data key passed from step_decrypt_body
-            //# - The cipherkey MUST be the derived data key
-            key,
+        //
+        //= spec/client-apis/decrypt.md#decrypt-the-message-body
+        //= reason=key is built from the derived data key passed from step_decrypt_body
+        //# - The cipherkey MUST be the derived data key
+        key.decrypt(
             //= spec/client-apis/decrypt.md#decrypt-the-message-body
             //= reason=enc_content is the encrypted content deserialized from the frame
             //# - The ciphertext MUST be the encrypted content deserialized from the frame or body.
